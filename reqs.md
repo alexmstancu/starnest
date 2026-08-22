@@ -291,6 +291,18 @@ It holds pillar weights per level, plus a **`CriterionSetting`** for each criter
 Anything unset falls back to the criterion's `default_*` value, so a settings record need only
 carry what it overrides.
 
+**Adjusting a weight.** Weights must always sum to 100 — within a level across pillars, and
+within a pillar across criteria. Moving one weight **auto-rebalances the others
+proportionally**, so a profile is never left in an invalid state.
+
+Every weight carries a **lock**. Locked weights hold their value and are excluded from
+rebalancing; the change is absorbed entirely by the unlocked ones. This makes the constraint
+explicit: you pin what you have decided and let the rest move.
+
+> **Edge case that must be handled:** if every other weight in a group is locked, there is
+> nowhere for a change to be absorbed. The UI must refuse the adjustment and say which locks
+> block it, rather than silently breaking the sum or ignoring the drag.
+
 > **Why direction is a preference, not a fact.** `expat_community_size` is the clearest case —
 > a large expat community is a soft landing to one person and a bubble to avoid to another.
 > `avg_annual_temperature` is another: the ideal band is whatever *you* find pleasant.
@@ -581,8 +593,8 @@ Four mechanisms, all active simultaneously:
 - **Manual add** — type a name; it enters immediately as `approved`.
 - **Top N by population** — automatic from a population dataset.
 
-The country list auto-seeds with the **EU member states** initially — not the full EU/EEA + UK
-+ CH scope, which is the eventual target rather than the starting set. Exclusions are stored as
+The country list auto-seeds with the full geographic scope — **EU 27 + Iceland, Norway,
+Liechtenstein + United Kingdom + Switzerland**, 32 countries. Exclusions are stored as
 configuration, not as deletions.
 
 **Adding a country must be first-class, reusable functionality**, not a one-off script: name
@@ -941,7 +953,10 @@ everywhere; each tab owns one stage of the workflow and nests its detail views i
 ### 8.2 Tab 1 — Configure
 
 - **Criteria and weights.** The two-level tree, with sliders at both levels and a live
-  indicator that each level sums to 100%. Criteria can be included or excluded from scoring.
+  indicator that each level sums to 100%. Each weight has a **lock toggle** — locked weights
+  are excluded from proportional rebalancing (§3.4). Criteria can be included or excluded from
+  scoring; an excluded criterion renormalises the remaining weights and does **not** count
+  against coverage, unlike missing data (§5.3).
 - **Criteria profiles.** Create, duplicate, rename, switch. Each holds inclusion, weights,
   directions, ideal bands, scales and thresholds. Compare two profiles' rankings side by side,
   highlighting where they diverge most — including where they disagree on direction.
@@ -1110,7 +1125,8 @@ not only *what*.
 | Q56 | Anchors and breadth kept as separate criteria | One large employer and two hundred small ones are different risks; a single number hides which |
 | Q57 | Administrative criteria use official sources, one shared adapter | Naturalisation, residency, pensions and local admin are published procedures, not unknowables |
 | Q58 | v1 covers the country level only, full features | Exercises every load-bearing abstraction; the city level then adds sources and rows, not machinery |
-| Q59 | Country seed is EU member states initially | The full EU/EEA + UK + CH scope is the target, not the starting set |
+| Q59 | Country seed is the full EU/EEA + UK + CH scope, 32 countries | EU-only would leave the named eligibility filters with no candidates to act on, shipping the mechanism untested — and the UK and Switzerland are genuine candidates whose absence would make the first ranking incomplete |
+| Q76 | Weights auto-rebalance proportionally, with a per-weight lock | Never leaves a profile invalid; locking makes "I have decided this one" explicit. If every other weight in a group is locked, the UI refuses the change and names the blocking locks |
 | Q60 | Adding a country is first-class, reusable, shared with adding a city | Same nomination → approval → profile → acquisition sequence at a different level |
 | Q53 | **Pillar**, not pillar, group or dimension | These are load-bearing verticals of a life, not retail bins. Precedent: Legatum Prosperity Index. "Dimension" implies an axis; "domain" collides with the domain model; "chapter" implies sequence where these coexist |
 | — | `Candidate` replaces `Target` | "Target" also named a role in comparisons; the entity and the role needed separating |
