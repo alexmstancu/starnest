@@ -143,7 +143,7 @@ both levels.
 
 **Pillar:** identifier, display name, level, weight, description.
 
-> **Pillar**, not "pillar", "group" or "dimension". These are not bins things get sorted
+> **Pillar**, "group" or "dimension". These are not bins things get sorted
 > into — they are the load-bearing verticals of a life, and the word should carry that.
 > "Dimension" implies an axis in a space; "pillar" belongs on a retail shelf. The Legatum
 > Prosperity Index uses pillars for the same construct.
@@ -548,16 +548,28 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `tech_software_jobs` | 20% | numeric count, higher better | Job-posting counts — **source unresolved, see `datasources.md` §11** |
-| `tech_product_jobs` | 20% | numeric count, higher better | Job-posting counts — same source |
-| `tech_employment_share` | 20% | numeric, higher better | Eurostat ICT/high-tech employment, ILO |
-| `international_employer_presence` | 15% | **label_list**, more/larger is better | LLM + search, company sites — named major international tech employers operating in the country |
+| `tech_software_jobs` | 22% | numeric count, higher better | Job-posting counts — **source unresolved, see `datasources.md` §11** |
+| `tech_product_jobs` | 22% | numeric count, higher better | Job-posting counts — same source |
+| `international_employers` | 18% | **label_list**, more/larger is better | LLM + search, company sites |
 | `average_working_hours` | 15% | numeric, **ideal_band** | OECD Employment Database, Eurostat `lfsa_ewhun2` |
+| `tech_employment_share` | 13% | numeric, higher better | Eurostat ICT/high-tech employment, ILO |
 | `statutory_paid_leave` | 10% | numeric days, higher better | OECD, EU Working Time Directive, national law |
 
+> **Four measures, four different questions** — they look redundant and are not:
+>
+> - `tech_software_jobs` / `tech_product_jobs` — **flow**: how many roles are open *now*, and
+>   how badly product roles trail engineering ones.
+> - `international_employers` — **type, not volume**: do firms that hire foreigners, work in
+>   English and handle relocation operate here? A country with 5,000 postings all at local
+>   firms in the local language is far less employable than one with 500 at international
+>   firms, and no count reveals that.
+> - `tech_employment_share` — **stock**: how mature and resilient the sector is, rather than
+>   how it is hiring this quarter. It is also the **only tech-market criterion with a confirmed
+>   source**, so if the job-posting source falls through, §5.3 redistributes the counts' weight
+>   onto it and the pillar still functions.
+>
 > The two job counts appear at country level as well as city level. Since v1 covers only the
-> country level (§1.3), omitting them would mean shipping with no way to screen on the product-role
-> scarcity that motivated them.
+> country level (§1.3), omitting them would leave the product-role scarcity unscreenable.
 
 #### Safety & stability — 13%
 
@@ -645,7 +657,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 |---|---|---|---|
 | `tech_software_jobs` | 35% | numeric count, higher better | Job-posting counts — **source unresolved, see `datasources.md` §11** |
 | `tech_product_jobs` | 35% | numeric count, higher better | Job-posting counts — same source |
-| `major_employer_presence` | 30% | **label_list**, more/larger is better | LLM + search, company sites — named employers with an office in *this* city |
+| `international_employers_local` | 30% | **label_list**, more/larger is better | LLM + search, company sites — named international employers with an office in *this* city |
 
 > **Two counts, one shape.** `tech_software_jobs` and `tech_product_jobs` are deliberately
 > symmetric: the same query against the same source, differing only in role family. Product
@@ -653,10 +665,11 @@ registry-bound one with a population floor (`datasources.md` §3).
 > for one person and hostile for the other — and only counting both separately reveals it.
 > The **ratio between them** is worth displaying even though it is not itself a criterion.
 >
-> **Anchors versus counts.** `major_employer_presence` names the large, stable, often
-> visa-sponsoring employers. A city with one big office and nothing else is fragile; a city
-> with two hundred small firms and no anchors is resilient but may never sponsor. The counts
-> measure volume, the list measures who.
+> **Anchors versus counts.** `international_employers_local` is the city-level pair of
+> `international_employers` (§7.1) — the same question, city-resolved: which relocation-friendly,
+> English-working employers actually have an office *here*. A city with one big office and
+> nothing else is fragile; a city with two hundred small local firms is resilient but may never
+> sponsor a foreigner. The counts measure volume, the list measures who.
 
 > Under a `remote-only` weight profile this pillar is down-weighted and `connectivity` up-weighted.
 
@@ -809,7 +822,7 @@ The main results view.
   to define, let alone measure. `local_tech_market` and `product_role_availability` were replaced
   by the countable `tech_software_jobs` and `tech_product_jobs`. The administrative criteria
   moved to documented official sources (§6.9). What remains is
-  `international_employer_presence` and `major_employer_presence`, both of which use **LLM
+  `international_employers` and `international_employers_local`, both of which use **LLM
   proposal with user override, both values retained**.
 - **Job-posting source unresolved.** `tech_software_jobs` and `tech_product_jobs` have a settled
   shape but no confirmed source. See `datasources.md` §11 — the blocking question is EU country
@@ -897,6 +910,8 @@ not only *what*.
 | Q50 | Country nature measures *diversity*, not presence | A large country can hold sea, mountains, lakes and forest at once; coexistence is what is worth screening |
 | Q51 | `CandidateProfile` gains a natural-setting section | Facts describe, criteria judge — "Calanques, 2 km" is context, "nature 8.7" is a score |
 | Q52 | Data sources are plug-ins behind a common interface | Adding a source must be one adapter plus config, never an edit to the acquisition core |
+| Q62 | `international_employers` / `international_employers_local` as a matched pair | One concept at two levels, previously named as if it were two. Matches the `safety_national` / `safety_local` shape |
+| Q63 | `tech_employment_share` kept at low weight | Stock, not flow — and the only tech-market criterion with a confirmed source, so it absorbs the counts' weight if that source fails |
 | Q61 | `tech_software_jobs` and `tech_product_jobs` replace `local_tech_market` and `product_role_availability` | Symmetric counts from one source beat a count plus a vaguely-scoped "market"; the ratio between them exposes a city comfortable for one person and hostile to the other |
 | Q54 | `general_atmosphere` dropped | Too vague to define or measure; no countable proxy and no clear meaning |
 | Q55 | `local_tech_market` redefined as a count | Market *breadth* is countable from job boards and registries; the 1–10 rating was a vibe |

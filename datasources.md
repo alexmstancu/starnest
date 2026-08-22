@@ -206,7 +206,7 @@ LLM + `web_search` path.
 | `income_tax_effective` | **OECD Tax Database** | National tax authorities | **High** |
 | `remote_work_tax_treaty` | OECD treaty database | Manual / LLM | Medium — treaty text needs interpretation |
 | `tech_employment_share` | Eurostat (ICT/high-tech employment) | ILO | **High** |
-| `international_employer_presence` | — | LLM + search | **Low** — no structured source |
+| `international_employers` | — | LLM + search | **Low** — no structured source |
 | `crime_safety_index_national` | UNODC homicide | World Bank `VC.IHR.PSRC.P5`; Eurostat crime | **High** (note: WB mirrors UNODC — not independent) |
 | `political_economic_stability` | World Bank Governance Indicators | — | **High** |
 | `healthcare_system_quality` | **WHO GHO** + OECD Health Statistics | Numbeo healthcare index | **High** (EHCI is dead — §6.1) |
@@ -225,7 +225,7 @@ LLM + `web_search` path.
 | Criterion | Primary | Type | Small-town outlook |
 |---|---|---|---|
 | `tech_software_jobs` | Job-posting counts **(source unresolved, §11)** | — | Poor; postings concentrate in large cities |
-| `major_employer_presence` | LLM + search | — | Poor |
+| `international_employers_local` | LLM + search | — | Poor |
 | `tech_product_jobs` | Job-posting counts **(source unresolved, §11)** | — | Poor; product roles are scarce everywhere |
 | `cost_of_living_2p_monthly` | Numbeo | **R** | **Fails** — fall back to regional figure + LLM |
 | `rent_2br_city_centre` | Numbeo; national listing sites | **R** | **Fails** — LLM + local listings |
@@ -291,8 +291,8 @@ national-culture phenomena, and the country level is where the data is.
 
 ### 6.3 Criteria that will be LLM-or-nothing
 
-`international_employer_presence` · `residency_admin_ease` · `naturalisation_pathway` ·
-`pension_portability` · `major_employer_presence` · `local_admin_ease`
+`international_employers` · `residency_admin_ease` · `naturalisation_pathway` ·
+`pension_portability` · `international_employers_local` · `local_admin_ease`
 
 Eight criteria across both levels with no structured source. This is the real scope of the
 deferred Q20 question — it was framed as being about *atmosphere*, but the harder cases are
