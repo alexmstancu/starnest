@@ -152,6 +152,39 @@ carries weights at both levels, plus its criterion selections and thresholds.
 Identifier, display name, `kind` (`structured` \| `llm` \| `manual`), and default priority
 rank. Manual entry is a source like any other (§6.5).
 
+### 3.5a ExternalScore
+
+A score or rank published by an **outside index**, displayed beside the Starnest score and
+**never fed into it**. The model is a film page showing its own rating with Rotten Tomatoes
+and Metacritic alongside: several opinions, visibly separate, produced by different people
+using different methods.
+
+| Field | Notes |
+|---|---|
+| `candidate`, `provider` | Who published it, about what |
+| `value` | The published number |
+| `scale` | What the number means — `0-100`, `0-10`, `rank`, `index` |
+| `rank`, `rank_of` | Where the provider publishes a position rather than a score |
+| `reference_date`, `retrieval_date` | Same two-date rule as any value (§3.6) |
+| `methodology_url` | So the reader can see how it was built |
+| `notes` | Caveats — paywalled, discontinued, known quirks |
+
+**Hard rule: an `ExternalScore` must never enter the weighted calculation.** It is a second
+opinion, not an input. Ingesting one would import that provider's weights and normalisation,
+contradicting *nothing hardcoded* and the principle that the criteria are the user's.
+
+It is a **separate entity, not a `Value` with a flag** — a flag gets forgotten in a join and
+silently ends up inside a sum.
+
+**The general rule this creates:** *raw indicators become criteria; composite scores become
+ExternalScores.* Eurostat's life-satisfaction survey figure is a criterion; the World Happiness
+Report's weighted composite of six factors is an ExternalScore. The test is whether someone
+else has already applied weights to it.
+
+**Providers to carry:** WhereNext composite (country) · OECD Better Life Index (country) ·
+EIU Global Liveability (city) · Mercer Quality of Living rank (city) · Numbeo Quality of Life
+(both) · World Happiness Report (country).
+
 ### 3.6 Value
 
 A single measurement of one criterion for one candidate from one source. **Values are never
@@ -402,36 +435,33 @@ level — and shifts the weight of several existing criteria.
 ## 7. Criteria catalog
 
 **Categories are parallel across the two phases** — the same named concerns at both levels,
-each holding whichever criteria apply there. This gives one structure to learn, keeps weight
-profiles legible across phases, and lets a country and a city be read on the same named
-concern. **Weights remain fully independent per phase**, each summing to 100%.
+each holding whichever criteria apply there. Weights remain fully independent per phase, each
+summing to 100%. Both levels are user-adjustable: unlike the OECD Better Life Index, which
+locks indicator weights, the sole user here chose every criterion and understands what it means.
 
-`connectivity` is city-only: internet, transit and flight connections have no meaningful
-country-level equivalent for this decision.
+`connectivity` is city-only; `work-life balance` criteria are country-only, since working-hours
+culture and statutory leave are national.
 
 | Category | Country | City |
 |---|---|---|
 | `economics` | ✓ | ✓ |
+| `housing` | ✓ | ✓ |
 | `career` | ✓ | ✓ |
 | `safety` | ✓ | ✓ |
 | `health` | ✓ | ✓ |
 | `climate` | ✓ | ✓ |
 | `connectivity` | — | ✓ |
 | `culture` | ✓ | ✓ |
-| `admin` | ✓ | ✓ |
+| `governance` | ✓ | ✓ |
 | `family` | ✓ | ✓ |
 
-**All weights below are provisional**, to be revised after a first real run. `scale_params`
-and `threshold` are deliberately left `TBD` — they can only be set sensibly once real data has
-been seen. Source columns reflect the analysis in `datasources.md`; **C** marks a
-coordinate-bound source that works at any settlement size, **R** a registry-bound one with a
-population floor.
+**All weights are provisional.** `scale_params` and `threshold` are left `TBD` until real data
+exists. **C** marks a coordinate-bound source that works at any settlement size, **R** a
+registry-bound one with a population floor (`datasources.md` §3).
 
 ### 7.1 Phase 1 — country
 
-Categories sum to 100%. Criterion weights sum to 100% within each category.
-
-#### Economics — 22%
+#### Economics — 16%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -439,54 +469,63 @@ Categories sum to 100%. Criterion weights sum to 100% within each category.
 | `income_tax_effective` | 35% | numeric %, lower better | OECD Tax Database, national tax authorities |
 | `remote_work_tax_treaty` | 25% | label_list, must contain RO treaty | OECD treaty database, manual |
 
-#### Career & work — 18%
+#### Housing — 12%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `tech_employment_share` | 50% | numeric, higher better | Eurostat ICT/high-tech employment, ILO |
-| `international_employer_presence` | 50% | numeric, higher better | LLM + search *(no structured source)* |
+| `house_price_to_income_ratio` | 40% | numeric, lower better | Eurostat, OECD Affordable Housing Database |
+| `housing_cost_overburden_rate` | 35% | numeric %, lower better | Eurostat `ilc_lvho07a` |
+| `overcrowding_rate` | 25% | numeric %, lower better | Eurostat `ilc_lvho05a` |
 
-#### Safety & stability — 17%
+#### Career & work — 16%
+
+| Criterion | Weight | Type / direction | Sources |
+|---|---|---|---|
+| `tech_employment_share` | 30% | numeric, higher better | Eurostat ICT/high-tech employment, ILO |
+| `international_employer_presence` | 25% | numeric, higher better | LLM + search |
+| `average_working_hours` | 25% | numeric, **ideal_band** | OECD Employment Database, Eurostat `lfsa_ewhun2` |
+| `statutory_paid_leave` | 20% | numeric days, higher better | OECD, EU Working Time Directive, national law |
+
+#### Safety & stability — 14%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `crime_safety_index_national` | 50% | numeric, higher better | UNODC homicide, Eurostat crime |
 | `political_economic_stability` | 50% | numeric, higher better | World Bank Governance Indicators |
 
-#### Health — 12%
+#### Health — 11%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `healthcare_system_quality` | 100% | numeric, higher better | WHO Global Health Observatory, OECD Health Statistics |
 
-#### Climate & environment — 10%
+#### Climate & environment — 9%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `climate_zone` | 30% | label_list | Köppen classification |
 | `avg_annual_temperature` | 25% | numeric, **ideal_band** | Open-Meteo archive **(C)** |
-| `annual_sunshine_hours` | 25% | numeric, higher better | Open-Meteo, derived from radiation **(C)** |
-| `climate_trajectory_national` | 20% | numeric, lower risk better | Copernicus CDS projections, IPCC |
+| `annual_sunshine_hours` | 25% | numeric, higher better | Open-Meteo, from radiation **(C)** |
+| `climate_trajectory_national` | 20% | numeric, lower risk better | Copernicus CDS, IPCC |
 
 #### Culture & community — 8%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `openness_to_foreigners` | 60% | numeric, higher better | MIPEX, Eurobarometer, InterNations Ease of Settling In |
-| `english_proficiency` | 40% | numeric, higher better | EF English Proficiency Index |
+| `life_satisfaction` | 40% | numeric 0–10, higher better | Eurostat `ilc_pw01` *(survey figure, not the World Happiness composite — §3.5a)* |
+| `openness_to_foreigners` | 35% | numeric, higher better | MIPEX, Eurobarometer, InterNations |
+| `english_proficiency` | 25% | numeric, higher better | EF English Proficiency Index |
 
-> Both moved here from Phase 2. Every source measuring either is **country-level**, so keeping
-> them as city criteria meant a constant repeated across every city in a country — implying a
-> granularity the data does not have. EF publishes some city breakdowns for larger cities; a
-> city-level variant could be added later if that data proves usable.
-
-#### Admin & settlement — 8%
+#### Governance & administration — 9%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `naturalisation_pathway` | 40% | numeric years, lower better; dual citizenship permitted | National law, LLM + search, manual |
-| `residency_admin_ease` | 35% | numeric, higher better | World Bank B-READY where covered, LLM, manual |
-| `pension_portability` | 25% | numeric, higher better | EU social-security coordination rules, manual |
+| `rule_of_law` | 25% | numeric, higher better | World Bank Governance Indicators, V-Dem |
+| `naturalisation_pathway` | 25% | numeric years, lower better | National law, LLM + search, manual |
+| `control_of_corruption` | 20% | numeric, higher better | World Bank WGI, Transparency International |
+| `residency_admin_ease` | 15% | numeric, higher better | World Bank B-READY where covered, LLM, manual |
+| `press_freedom` | 10% | numeric, higher better | Reporters Without Borders |
+| `pension_portability` | 5% | numeric, higher better | EU coordination rules, manual |
 
 #### Family & education — 5%
 
@@ -498,15 +537,22 @@ Categories sum to 100%. Criterion weights sum to 100% within each category.
 
 ### 7.2 Phase 2 — city
 
-#### Economics — 20%
+#### Economics — 12%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `cost_of_living_2p_monthly` | 40% | numeric EUR/month, lower better | Numbeo **(R)**, LLM fallback |
-| `rent_2br_city_centre` | 35% | numeric EUR/month, lower better | Numbeo **(R)**, national listings, LLM |
-| `property_purchase_price_m2` | 25% | numeric EUR/m², lower better | National land registries, Eurostat **(R)** |
+| `cost_of_living_2p_monthly` | 60% | numeric EUR/month, lower better | Numbeo **(R)**, LLM fallback |
+| `local_purchasing_power` | 40% | numeric, higher better | Numbeo **(R)**, Eurostat Urban Audit **(R)** |
 
-#### Career & work — 17%
+#### Housing — 16%
+
+| Criterion | Weight | Type / direction | Sources |
+|---|---|---|---|
+| `rent_2br_city_centre` | 45% | numeric EUR/month, lower better | Numbeo **(R)**, national listings, LLM |
+| `property_purchase_price_m2` | 35% | numeric EUR/m², lower better | National land registries, Eurostat **(R)** |
+| `housing_quality` | 20% | numeric, higher better | Eurostat Urban Audit rooms-per-person, overcrowding **(R)** |
+
+#### Career & work — 15%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -514,50 +560,49 @@ Categories sum to 100%. Criterion weights sum to 100% within each category.
 | `major_employer_presence` | 20% | boolean, higher better | LLM + search |
 | `product_role_availability` | 20% | numeric, higher better | LLM + search, job boards |
 
-> Under a `remote-only` weight profile this whole category is down-weighted and `connectivity`
-> up-weighted. That is what profiles are for — no separate "remote suitability" criterion.
+> Under a `remote-only` weight profile this category is down-weighted and `connectivity` up-weighted.
 
-#### Safety & stability — 9%
+#### Safety & stability — 8%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `safety_local` | 100% | numeric, higher better | Eurostat Urban Audit **(R)**, Numbeo **(R)**, regional police |
 
-#### Health — 9%
+#### Health — 8%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `healthcare_access_local` | 60% | numeric, higher better | OpenStreetMap Overpass, distance to hospital **(C)** |
+| `healthcare_access_local` | 60% | numeric, higher better | Overpass, distance to hospital **(C)** |
 | `paediatric_healthcare_access` | 40% | numeric, higher better | Overpass **(C)**, national health registries |
 
-#### Climate & environment — 11%
+#### Climate & environment — 10%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `local_climate` | 55% | numeric, **ideal_band** + sunshine | Open-Meteo **(C)** |
 | `air_quality` | 45% | numeric PM2.5, lower better | OpenAQ, EEA nearest station **(C)** |
 
-#### Connectivity — 12%
+#### Connectivity — 11%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `internet_quality` | 30% | numeric Mbps, higher better | Ookla Open Data, ~610 m tiles **(C)** |
-| `public_transport` | 25% | numeric, higher better | Overpass stops and routes **(C)**, Urban Audit |
+| `public_transport` | 25% | numeric, higher better | Overpass **(C)**, Urban Audit |
 | `flights_to_romania` | 25% | numeric, higher better | Flight APIs, manual, via `profile.nearest_airport` |
 | `proximity_to_hub` | 20% | numeric km, lower better | Computed from coordinates **(C)** |
 
-#### Culture & community — 11%
+#### Culture & community — 10%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `heritage_and_culture_density` | 40% | numeric, higher better | UNESCO, national monument registers, Overpass museum/cinema counts **(C)** |
-| `landscape_access` | 35% | numeric, higher better | WDPA protected areas, coastline and elevation from `profile` **(C)** |
-| `expat_community_size` | 25% | numeric, higher better | Eurostat Urban Audit foreign-born **(R)**, national statistics |
+| `heritage_and_culture_density` | 40% | numeric, higher better | UNESCO, monument registers, Overpass museum/cinema counts **(C)** |
+| `landscape_access` | 35% | numeric, higher better | WDPA, coastline and elevation from `profile` **(C)** |
+| `expat_community_size` | 25% | numeric, higher better | Eurostat Urban Audit foreign-born **(R)** |
 
 > **`general_atmosphere`** — irreducibly prose, no countable proxy, **not currently weighted**.
 > Deferred: see §9.
 
-#### Admin & settlement — 4%
+#### Governance & administration — 3%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -567,7 +612,7 @@ Categories sum to 100%. Criterion weights sum to 100% within each category.
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `schooling_options` | 60% | numeric, higher better | Overpass **(C)**, national education registries, international-school directories |
+| `schooling_options` | 60% | numeric, higher better | Overpass **(C)**, national education registries |
 | `childcare_cost_availability` | 40% | numeric, lower cost better | Eurostat **(R)**, national statistics |
 
 ---
@@ -621,6 +666,10 @@ The main results view.
 - **Candidate detail** — the factual profile (§3.2), then every criterion with its full
   provenance, showing **all** stored source values rather than only the active one, plus
   filter verdicts and any overrides.
+- **External scores** (§3.5a) — published scores and ranks from outside indices, shown in a
+  visually distinct panel that makes clear they are *other people's opinions*, not inputs.
+  Each displays the provider, the number, its scale, both dates, and a link to the
+  methodology. Never summed, never averaged with the Starnest score.
 
 ### 8.5 Tab 4 — Compare
 
@@ -717,5 +766,11 @@ not only *what*.
 | Q39 | Categories are parallel across phases | One structure to learn; weight profiles stay legible across levels; fixes a category that bundled healthcare with bureaucracy |
 | Q40 | Country-level education and family policy added | Children are in scope and national school system quality is not substitutable by local school counts |
 | Q41 | `english_proficiency` moved to Phase 1 | Same reasoning as `openness_to_foreigners` — EF EPI is country-level |
+| Q42 | External scores displayed, never computed with | The IMDb model — show other indices as second opinions. Ingesting them would import their weights |
+| Q43 | Raw indicators become criteria; composites become ExternalScores | A general rule: the test is whether someone else already applied weights |
+| Q44 | Four benchmark gaps added | Work–life balance, subjective wellbeing, governance/rights, housing quality — each present in at least two of OECD, EIU, Mercer, Eurostat |
+| Q45 | Housing split from economics | OECD and Mercer both treat it separately; price and quality are different questions |
+| Q46 | Governance folded into `admin`, renamed | Both concern how the state treats you; keeps the category count down |
+| Q47 | Both weight levels stay user-adjustable | OECD locks indicators because it serves the anonymous public; here the sole user chose every criterion |
 | — | "Category" not "group" or "dimension" | Plainest word; "dimension" implies an axis in a space, which these are not |
 | — | `Candidate` replaces `Target` | "Target" also named a role in comparisons; the entity and the role needed separating |
