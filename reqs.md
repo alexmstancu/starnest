@@ -1192,7 +1192,8 @@ only one is used.
 
 ### What is being evaluated
 
-**Candidate** — a place under evaluation: a country or a city. The scoring engine's word. The
+**Candidate** — a place under evaluation: a country or a city. Identified as `country.portugal`
+or `city.portugal.lisbon`; ISO codes are facts, not identifiers. The scoring engine's word. The
 interface says "country" and "city"; `Candidate` is what makes the scoring, filtering and
 comparison logic writable once instead of twice.
 

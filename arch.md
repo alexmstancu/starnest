@@ -112,8 +112,19 @@ permanently while the criterion drops out of active scoring.
 | Entity | ID | Why |
 |---|---|---|
 | Criterion | `city.rent_2br_centre` | `<level>.<name>` — level is identity, pillar is not (`reqs.md` §3.3) |
-| Country | `country.pt` | ISO 3166 alpha-2, already a fact and already unique |
-| City | `city.pt.lisbon` | Country-qualified — city names are not globally unique |
+| Country | `country.portugal` | The name, lowercased, underscores for spaces — `country.united_kingdom` |
+| City | `city.portugal.lisbon` | Country-qualified — city names are not globally unique |
+
+**Identifiers are ours; adapters translate.** World Bank and Eurostat key on `PT`, Numbeo on
+`Portugal` in a URL path, GeoNames on a numeric ID. Each adapter maps our identifier to
+whatever its source expects — that translation is the adapter's whole job and must never leak
+into how we name things internally. ISO 3166 alpha-2 and alpha-3 are stored in
+`CandidateFacts`, where adapters read them.
+
+> Country names do drift — Czechia, Türkiye, Eswatini — which is a genuine argument for codes.
+> But that argues for keeping the code as a **fact**, not for making an unreadable string the
+> identity. Where a name is contested, pick one canonical form for the ID and record the
+> alternates as facts; the ID never changes afterwards, whatever the country later calls itself.
 
 **`value` uses a surrogate primary key.** The natural key is five columns —
 `(candidate_id, criterion_id, source_id, reference_period_start, retrieval_date)` — and
@@ -128,6 +139,9 @@ value          id            surrogate PK
 value_monetary value_id      FK → value.id
                PRIMARY KEY (value_id, key)
 ```
+
+A composite key therefore reads as `city.portugal.lisbon` × `city.rent_2br_centre` — both
+halves legible without a lookup.
 
 The UNIQUE constraint still prevents the same fetch being stored twice, while legitimate
 history — the same source re-fetched later — differs by `retrieval_date` and is preserved. The
