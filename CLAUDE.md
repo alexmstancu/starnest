@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**There is no code yet.** Apart from this file, the repository contains only `relocation-app-master-spec-v1.md`, the master specification. It is not a git repository yet.
+**There is no code yet.** The repository holds planning documents only: `reqs.md` (requirements, written) and `relocation-app-master-spec-v1.md` (the original spec, being retired). Git is initialised.
+
+**`reqs.md` is now authoritative for functional requirements and the ontology.** Read it first. The master spec remains only until Parts 1 and 3 have landed in config data and `arch.md`.
 
 That spec is the authoritative blueprint and should be read before any implementation work. This file summarizes the parts that constrain how code must be written; the spec holds the full criteria lists, weights, and rationale.
 
@@ -12,7 +14,7 @@ That spec is the authoritative blueprint and should be read before any implement
 
 Three documents get written, in order, before any code:
 
-1. `reqs.md` — requirements; what is MVP vs. post-MVP
+1. `reqs.md` — requirements and ontology. **Written.** Deliberately contains no MVP/post-MVP split; that is a separate pass
 2. `arch.md` — architecture; stack, storage, system structure
 3. `devplan.md` — implementation tasks, sequencing, testing strategy
 
@@ -40,7 +42,7 @@ Planned module layout:
 | `acquisition/qualitative.py` | Claude API + `web_search`, structured JSON out (score + summary + sources) |
 | `storage/db.py` | SQLite schema and access |
 | `scoring/engine.py` | Hard filters + weighted score, per phase |
-| `scoring/compare.py` | Target vs. N comparators: deltas, weighted contributions, narrative synthesis |
+| `scoring/compare.py` | Focus candidate vs. N comparators: deltas, weighted contributions, templated synthesis |
 | `ui/app.py` | Streamlit app — 4 tabs: config, run, ranking dashboard, comparison |
 
 ## Architecture: the two-phase pipeline
@@ -50,7 +52,7 @@ The central structural idea. Evaluation is **not** uniform across all candidates
 1. **Phase 1 — country level.** Cheap screening across ~30 countries using structured sources only, **no LLM calls**. Countries below a qualification threshold are excluded.
 2. **Phase 2 — city level.** Only for countries that survived Phase 1, ~5 cities each. Structured *and* qualitative (LLM + search) acquisition.
 
-Both phases share the same machinery: a **Target** is either a Country or a City — same base structure, different level. Scoring, filtering, and comparison logic must be written once against `Target`, not duplicated per phase. What differs per phase is the *data*: each phase has its own criteria set and its own weights, and **weights sum to 100% within a phase, independently of the other phase**.
+Both phases share the same machinery: a **Candidate** is either a Country or a City — same base structure, different level, and exactly two levels (never a third). Scoring, filtering, resolution and comparison logic must be written once against `Candidate`, not duplicated per phase. *(The spec's word "Target" is retired — it also named a role in comparisons. Comparison roles are **focus** and **comparators**.)* What differs per phase is the *data*: each phase has its own criteria set and its own weights, and **weights sum to 100% within a phase, independently of the other phase**.
 
 Hard filters are eligibility gates (yes/no), evaluated separately from the weighted score — a failed filter eliminates the candidate regardless of score.
 
