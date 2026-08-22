@@ -41,7 +41,7 @@ Romania alongside its raw value.
 this document is a requirement; this section says only what arrives first.
 
 **In v1:** pillar and criterion configuration with weights at both levels · thresholds and
-eligibility filters · weight profiles · country nomination and the EU seed list · structured
+eligibility filters · criteria profiles · country nomination and the EU seed list · structured
 acquisition with runs, cost control and selective retry · scoring with per-criterion
 normalisation, weight redistribution, coverage and confidence · elimination reporting ·
 the ranking dashboard with per-criterion drill-down and full provenance · comparison of a
@@ -150,38 +150,63 @@ both levels.
 
 **Criterion:**
 
+**A Criterion defines what is measured. It does not define what that measurement is worth to
+you** — that lives in a `CriteriaProfile` (§3.4). The separation matters because which way is
+"good" can be personal, not just how much a thing matters: one person wants a large expat
+community for a soft landing, another wants to avoid the expat bubble entirely. Same
+criterion, same measured value, opposite direction.
+
 | Field | Notes |
 |---|---|
+| `id`, `name`, `description` | What this measures |
 | `pillar` | Its parent pillar |
 | `level` | `country` or `city` — the same axis as `Candidate.level` |
-| `weight` | Sub-weight within its pillar |
 | `type` | `numeric` \| `number_list` \| `label_list` \| `boolean` \| `text` |
-| `direction` | `lower_is_better` \| `higher_is_better` \| `ideal_band` |
-| `ideal` | For `ideal_band`: the target range and falloff shape |
-| `scale` | `fixed` (default) \| `percentile` \| `passthrough` |
-| `scale_params` | For `fixed`: the anchor values, e.g. 500 EUR → 10, 2500 EUR → 0 |
-| `threshold` | Elimination threshold. Semantics depend on `type` — §5.2 |
-| `required` | If true, a missing value makes the Candidate unscoreable — §5.3 |
-| `max_age` | How quickly this criterion's data goes stale — §3.6 |
-| `source_priority` | Optional override of the global source order |
-| `value_source` | Optional: a `CandidateProfile` attribute this criterion reads instead of being fetched |
 | `unit` | Where applicable |
+| `value_source` | Optional: a `CandidateProfile` attribute this criterion reads instead of being fetched |
+| `max_age` | How quickly this kind of data goes stale (§3.6). **Objective** — rent ages in months whoever is asking |
+| `source_priority` | Optional override of the global source order. **Objective** — an admin quality judgement; §2 says users do not connect sources |
+| `default_*` | Shipped defaults for every preference field in §3.4, so a newly added criterion works immediately |
 
 Criteria that describe the same concept at different levels are **separate criteria** with
 separate identifiers, sources and scales. `safety_national` and `safety_local` are unrelated
 records; the spec treats them as different questions, not one question at two zoom levels.
 
-### 3.4 WeightProfile
+### 3.4 CriteriaProfile and CriterionPreference
 
-A named set of weights, selectable at any moment. One primitive serves two purposes:
+**A `CriteriaProfile` is everything subjective**, held apart from the criteria themselves. It
+is named and selectable at any moment, and one primitive serves two purposes:
 
 - **Work-format scenarios** — `remote-only` versus `local-employment`. The difference decides
   whether a village is absurd or ideal, and it is not yet settled.
-- **Per-person weights** — `alex`, `partner`. The two of you may value climate, career and
-  family proximity differently, and seeing where the rankings diverge is itself informative.
+- **Per-person profiles** — `alex`, `partner`. Not merely differing emphasis: the two of you
+  may want *opposite directions* on the same criterion, and this is where that is expressed.
 
-Switching profiles **recalculates from stored data with no re-fetch** (§5.6). A profile
-carries weights at both levels, plus its criterion selections and thresholds.
+A profile holds pillar weights per level, plus a **`CriterionPreference`** for each criterion:
+
+| Field | Notes |
+|---|---|
+| `included` | Whether this criterion counts toward the score at all |
+| `weight` | Sub-weight within its pillar |
+| `direction` | `lower_is_better` \| `higher_is_better` \| `ideal_band` — **personal**, see below |
+| `ideal` | For `ideal_band`: the target range and falloff. One person's ideal temperature is not another's |
+| `scale` | `fixed` (default) \| `percentile` \| `passthrough` |
+| `scale_params` | For `fixed`: the anchor values, e.g. 500 EUR → 100, 2500 EUR → 0. **What counts as expensive is an opinion** — a larger budget draws the line elsewhere |
+| `threshold` | Elimination threshold. Semantics depend on the criterion's `type` — §5.2 |
+| `required` | If true, a missing value makes the Candidate unscoreable — §5.3 |
+
+Anything unset falls back to the criterion's `default_*` value, so a profile need only record
+what it overrides.
+
+> **Why direction is a preference, not a fact.** `expat_community_size` is the clearest case —
+> a large expat community is a soft landing to one person and a bubble to avoid to another.
+> `avg_annual_temperature` is another: the ideal band is whatever *you* find pleasant.
+> `heritage_and_culture_density` a third — museums and festivals to one reader, tourist crowds
+> to another. Fixing direction on the criterion would silently encode one person's taste as
+> objective truth.
+
+Switching profiles **recalculates from stored data with no re-fetch** (§5.6). Nothing about a
+profile touches acquisition: the measured values are shared, only their reading changes.
 
 ### 3.5 DataSource
 
@@ -294,7 +319,8 @@ criteria; adding the country score would count them twice.
 ### 5.1 Normalisation
 
 Criteria arrive in incompatible units — EUR per month, degrees, hours, indices, 1–10 scores.
-Each criterion declares **its own** scaling method in configuration:
+The active `CriteriaProfile` declares a scaling method **per criterion**, defaulting to the
+criterion's shipped default:
 
 - **`fixed`** (default) — anchor values map to the score range, linearly between. A
   candidate's score for that criterion is **stable**: it does not change when another
@@ -303,16 +329,18 @@ Each criterion declares **its own** scaling method in configuration:
   standing is meaningful.
 - **`passthrough`** — the value is already on the score scale.
 
-Each criterion also declares **which way is good**: `lower_is_better`, `higher_is_better`, or
-`ideal_band` with a target range and falloff, for cases like temperature where both extremes
-are worse than the middle.
+The profile also declares **which way is good** per criterion: `lower_is_better`,
+`higher_is_better`, or `ideal_band` with a target range and falloff. This is a **preference,
+not a property of the criterion** (§3.4) — two profiles may score the same measured value in
+opposite directions.
 
 **Score scale: 0–100, integer, configurable.** Criterion scores and total scores share one
 range. No decimals — 86, not 8.6.
 
 ### 5.2 Thresholds and filters — two mechanisms, one report
 
-**Criterion thresholds** are a property of a criterion. Semantics follow the criterion's type:
+**Criterion thresholds** live in the active profile (§3.4); their semantics follow the
+criterion's `type`:
 
 | Type | Threshold semantics |
 |---|---|
@@ -671,7 +699,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 > nothing else is fragile; a city with two hundred small local firms is resilient but may never
 > sponsor a foreigner. The counts measure volume, the list measures who.
 
-> Under a `remote-only` weight profile this pillar is down-weighted and `connectivity` up-weighted.
+> Under a `remote-only` criteria profile this pillar is down-weighted and `connectivity` up-weighted.
 
 #### Safety & stability — 7%
 
@@ -754,7 +782,7 @@ everywhere; each tab owns one stage of the workflow and nests its detail views i
 ### 8.1 Sidebar — always visible
 
 - Application display name, read from configuration (§10)
-- **Active weight profile** selector
+- **Active criteria profile** selector
 - **Level toggle** — country (1) or city (2)
 - Candidate counts: total, qualified, eliminated, insufficient data
 - Last run summary and a link to run history
@@ -763,8 +791,9 @@ everywhere; each tab owns one stage of the workflow and nests its detail views i
 
 - **Criteria and weights.** The two-level tree, with sliders at both levels and a live
   indicator that each level sums to 100%. Criteria can be included or excluded from scoring.
-- **Weight profiles.** Create, duplicate, rename, switch. Compare two profiles' rankings side
-  by side, highlighting where they diverge most.
+- **Criteria profiles.** Create, duplicate, rename, switch. Each holds inclusion, weights,
+  directions, ideal bands, scales and thresholds. Compare two profiles' rankings side by side,
+  highlighting where they diverge most — including where they disagree on direction.
 - **Thresholds and eligibility filters.** Per-criterion thresholds, typed by criterion type;
   named filters with their verdicts, sources and overrides.
 - **Source priority.** The global default order, plus per-criterion overrides and `max_age`.
@@ -884,7 +913,7 @@ not only *what*.
 | Q23 | Continue, record, retry selectively | Sparse coverage makes routine failure normal |
 | Q24 | Templated synthesis | Content is fully determined by the arithmetic; an LLM would only rephrase it, at cost and non-deterministically |
 | Q25 | Comparisons always live | Matches the confirmed live-recalculation requirement |
-| Q26+Q27 | Named weight profiles, one primitive for both uses | Work-format scenarios and per-person weights are the same object |
+| Q26+Q27 | Named criteria profiles, one primitive for both uses | Work-format scenarios and per-person preferences are the same object |
 | Q28 | Six long-horizon criteria added | The horizon is open-ended; children are in scope |
 | Q29 | Native and converted values stored | The published figure must stay auditable against its source |
 | Q30 | Romania is baseline and candidate | Staying put is a real option and deserves measuring |
@@ -896,7 +925,7 @@ not only *what*.
 | Q36 | Confidence derived from source, age and geography, with override | Reuses `max_age` and `DataSource.kind`; no field anyone must remember to fill |
 | Q37 | `openness_to_foreigners` moved to country level | MIPEX, Eurobarometer and InterNations are country-level only |
 | Q38 | Numbeo scraped first, API later if warranted | Personal, non-commercial use; `robots.txt` restricts only `/heavy_crawling.any`. Its coverage floor is ~150k population either way, so paying buys the same gap |
-| Q39 | Pillars are parallel across levels | One structure to learn; weight profiles stay legible across levels; fixes a pillar that bundled healthcare with bureaucracy |
+| Q39 | Pillars are parallel across levels | One structure to learn; criteria profiles stay legible across levels; fixes a pillar that bundled healthcare with bureaucracy |
 | Q40 | Country-level education and family policy added | Children are in scope and national school system quality is not substitutable by local school counts |
 | Q41 | `english_proficiency` moved to country level | Same reasoning as `openness_to_foreigners` — EF EPI is country-level |
 | Q42 | External scores displayed, never computed with | The IMDb model — show other indices as second opinions. Ingesting them would import their weights |
@@ -910,6 +939,9 @@ not only *what*.
 | Q50 | Country nature measures *diversity*, not presence | A large country can hold sea, mountains, lakes and forest at once; coexistence is what is worth screening |
 | Q51 | `CandidateProfile` gains a natural-setting section | Facts describe, criteria judge — "Calanques, 2 km" is context, "nature 8.7" is a score |
 | Q52 | Data sources are plug-ins behind a common interface | Adding a source must be one adapter plus config, never an edit to the acquisition core |
+| Q64 | Criterion and CriteriaProfile are separate entities | A criterion defines what is measured; a profile defines what it is worth. Conflating them encodes one person's taste as objective truth |
+| Q65 | `direction`, `ideal`, `scale`, `scale_params`, `threshold`, `required`, `included` are all per-profile | Which way is "good" can be personal — a large expat community is a soft landing or a bubble depending on who is asking |
+| Q66 | `max_age` and `source_priority` stay on the Criterion | Objective: rent ages in months whoever is asking, and source authority is an admin judgement, not a user preference |
 | Q62 | `international_employers` / `international_employers_local` as a matched pair | One concept at two levels, previously named as if it were two. Matches the `safety_national` / `safety_local` shape |
 | Q63 | `tech_employment_share` kept at low weight | Stock, not flow — and the only tech-market criterion with a confirmed source, so it absorbs the counts' weight if that source fails |
 | Q61 | `tech_software_jobs` and `tech_product_jobs` replace `local_tech_market` and `product_role_availability` | Symmetric counts from one source beat a count plus a vaguely-scoped "market"; the ratio between them exposes a city comfortable for one person and hostile to the other |
