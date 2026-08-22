@@ -248,9 +248,14 @@ Scoring would then need to pick one — which room count matters depends on `hou
 (`reqs.md` §1.4), making that choice a preference rather than a fact, so it would live in
 `CriteriaSettings`.
 
-**Neither is in v1.** The catalog currently has no multi-value criterion — rent is a single
-criterion fixed at two bedrooms. The `key` column exists so that adding one later is a
-migration of nothing: the column is already there and null for every scalar value.
+**Multi-value is now in use** (`reqs.md` §3.3b): `city.rent_centre` is keyed by bedroom count
+and `city.cost_of_living_monthly` by household size. The `key` column carries it, and stays
+null for every scalar value.
+
+The reducer runs **at scoring time, never at fetch**. An adapter that fetched all three rents
+and stored only the selected one would make changing household size require re-fetching every
+city — and would make simulation impossible, since asking for a three-bedroom needs that figure
+already stored. Every key is written; the choice happens when the score is computed.
 
 ### 3.4 `status`, and never discarding
 

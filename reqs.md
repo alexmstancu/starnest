@@ -55,7 +55,7 @@ household**. They are configuration, not candidate data:
 > acquisition run may cost in API calls is the **spend cap** (§6.3) — a different word for a
 > deliberately different thing.
 
-Without these, `city.cost_of_living_2p_monthly` is an absolute figure that says nothing about whether
+Without these, `city.cost_of_living_monthly` is an absolute figure that says nothing about whether
 *you* can afford to live there. `city.purchasing_power` and `country.house_price_to_income_ratio` use
 population-average income, which answers a different question.
 
@@ -217,7 +217,7 @@ criterion, same measured value, opposite direction.
 
 | Field | Notes |
 |---|---|
-| `id` | `<level>.<name>`, e.g. `city.rent_2br_centre`. Globally unique and **immutable** — see below |
+| `id` | `<level>.<name>`, e.g. `city.rent_centre`. Globally unique and **immutable** — see below |
 | `name`, `description` | Human-readable label and definition |
 | `pillar` | Its parent pillar |
 | `level` | `country` or `city` — the same axis as `Candidate.level` |
@@ -227,6 +227,7 @@ criterion, same measured value, opposite direction.
 | `value_source` | Optional: a `CandidateFacts` attribute this criterion reads instead of being fetched |
 | `max_age` | How quickly this kind of data goes stale (§3.6). **Objective** — rent ages in months whoever is asking |
 | `source_priority` | Optional override of the global source order. **Objective** — an admin quality judgement; §2 says users do not connect sources |
+| `key_domain` | Optional. If set, this criterion holds **several values at once**, one per key — §3.3b |
 | `default_*` | Shipped defaults for every preference field in §3.4, so a newly added criterion works immediately |
 
 Criteria that describe the same concept at different levels are **separate criteria** with
@@ -310,6 +311,44 @@ each declares `> 0` for itself. Likewise `country.avg_annual_temperature` declar
   (§6.4) can pick it up;
 - if a lower-priority source holds a valid value, that one becomes active instead.
 
+### 3.3b Multi-value criteria
+
+Some criteria are not one number. Rent in Lisbon is roughly €1,100 for a one-bedroom flat,
+€1,410 for a two-bedroom and €1,900 for a three-bedroom — none of these is history, they are all
+current, and together they describe the criterion. Such a criterion declares a **`key_domain`**:
+the controlled vocabulary its keys come from.
+
+| Criterion | `key_domain` | Keys |
+|---|---|---|
+| `city.rent_centre` | `bedroom_count` | `one_bedroom`, `two_bedroom`, `three_bedroom`, `four_plus_bedroom` |
+| `city.cost_of_living_monthly` | `household_size` | `one_person`, `two_people`, `three_people`, `four_plus_people` |
+
+Key domains are controlled vocabularies and live in reference tables like everything else.
+
+**Scoring needs one number, so a reducer picks it.** Two kinds:
+
+- **`select`** — one key applies to you. Rent, cost of living, childcare by age band. The
+  default reads the household parameters of §1.4, so a two-person household selects
+  `two_bedroom` with nothing configured.
+- **`aggregate`** — no single key applies and the shape across all of them is what matters.
+  Monthly temperature would be the example: you do not pick a month, you ask how many fall in a
+  comfortable range. *(No criterion uses this yet.)*
+
+**The selection is a setting, and changing it recalculates instantly.** The criterion supplies
+the default; `CriteriaSettings` overrides it. Select a two-bedroom today, run tomorrow with a
+three-bedroom, and the ranking moves immediately — **with no re-fetch**, because every key is
+already stored. Two settings records may disagree: one selecting `two_bedroom` and another
+`three_bedroom`, with the comparison showing where that alone changes the answer.
+
+> **This is why reduction cannot happen when data is fetched.** An adapter that fetched all
+> three rents and stored only the selected one would make changing your household size — a
+> *preference* — require re-fetching every city. That violates §5.6 and would cost real money.
+> Worse, it would make the simulation impossible: asking for a three-bedroom needs that figure
+> already stored.
+>
+> It is also why a key must never be baked into an identifier. `city.rent_centre` froze a
+> preference into an identity — and abbreviated it as well.
+
 ### 3.4 CriteriaSettings and CriterionSetting
 
 **A `CriteriaSettings` record holds everything subjective**, kept apart from the criteria
@@ -332,6 +371,7 @@ It holds pillar weights per level, plus a **`CriterionSetting`** for each criter
 | `scale_params` | For `fixed`: the anchor values, e.g. 500 EUR → 100, 2500 EUR → 0. **What counts as expensive is an opinion** — a larger budget draws the line elsewhere |
 | `threshold` | Elimination threshold. Semantics depend on the criterion's `type` — §5.2 |
 | `required` | If true, a missing value makes the Candidate unscoreable — §5.3 |
+| `reducer` | For multi-value criteria (§3.3b): which key to use, or how to aggregate. Defaults from the household parameters; override it to simulate |
 
 Anything unset falls back to the criterion's `default_*` value, so a settings record need only
 carry what it overrides.
@@ -521,7 +561,7 @@ opposite directions.
 
 **Band labels.** A criterion may declare labels against its scoring anchors, so a number
 displays as a word without ceasing to be a number. `country.economic_outlook` shows *growth*
-for 1.9% per year; `city.rent_2br_centre` could show *affordable* or *stretching*. The value
+for 1.9% per year; `city.rent_centre` could show *affordable* or *stretching*. The value
 stored is always the figure — bands are a reading of it, not a replacement for it, and they
 travel with the anchors in `CriteriaSettings` with a default on the criterion.
 
@@ -573,7 +613,7 @@ Redistribution is computed at scoring time from what data exists. **It must neve
 back into the stored weights.**
 
 **Warnings are not eliminations.** Some rules flag a candidate without disqualifying it. Rent
-is the standing example: `city.rent_2br_centre` has its own threshold, but rent is *also* judged
+is the standing example: `city.rent_centre` has its own threshold, but rent is *also* judged
 **relative to `target_monthly_spend`** (§1.4). Rent that consumes most of the household's total
 spend is flagged as a warning even when it clears its own threshold in isolation, because the
 two figures only mean anything read together.
@@ -936,14 +976,14 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `city.cost_of_living_2p_monthly` | 60% | **Monetary** — EUR/month | Numbeo **(R)**, LLM fallback |
+| `city.cost_of_living_monthly` | 60% | **Monetary** — EUR/month · multi-value, keyed by `household_size` | Numbeo **(R)**, LLM fallback |
 | `city.purchasing_power` | 40% | **Index** — Numbeo 0–100+ | Numbeo **(R)**, Eurostat Urban Audit **(R)** |
 
 #### Housing — 15%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `city.rent_2br_centre` | 45% | **Monetary** — EUR/month | Numbeo **(R)**, national listings, LLM |
+| `city.rent_centre` | 45% | **Monetary** — EUR/month · multi-value, keyed by `bedroom_count` | Numbeo **(R)**, national listings, LLM |
 | `city.property_purchase_price_m2` | 35% | **Monetary** — EUR/m² | National land registries, Eurostat **(R)** |
 | `city.rooms_per_person` | 10% | **Quantity** — rooms | Eurostat Urban Audit **(R)** |
 | `city.overcrowding_rate` | 10% | **Ratio** — share of households overcrowded | Eurostat Urban Audit **(R)** |
@@ -1238,7 +1278,7 @@ climate, connectivity, nature, culture, governance, family. Eleven at each level
 "category" — these are not bins things get sorted into.
 
 **Criterion** — one thing that gets measured, belonging to one pillar at one level. Identified
-as `<level>.<name>` — `city.rent_2br_centre`, `country.rail_network_density`. The level is part
+as `<level>.<name>` — `city.rent_centre`, `country.rail_network_density`. The level is part
 of the identity; the pillar deliberately is not. Defines
 *what* is measured; says nothing about what it is worth to you.
 
@@ -1302,6 +1342,13 @@ household budget, which is what §1.4 means by money.
 **Household parameters** — net income, household size, target monthly spend, rent ceiling.
 Configuration about *you*, not about any candidate, without which cost criteria are absolute
 figures that say nothing about affordability.
+
+**Key domain** — the controlled vocabulary a multi-value criterion's keys come from:
+`bedroom_count`, `household_size`, `month`.
+
+**Reducer** — how a multi-value criterion becomes one number for scoring: `select` one key, or
+`aggregate` across them. A setting, not a fact — change it and the ranking recalculates with no
+re-fetch, which is what makes simulation possible.
 
 **Threshold** — an elimination line. A value that crosses it disqualifies the candidate. The
 value is real; you have decided it is unacceptable.
@@ -1420,6 +1467,10 @@ not only *what*.
 | Q57 | Administrative criteria use official sources, one shared adapter | Naturalisation, residency, pensions and local admin are published procedures, not unknowables |
 | Q58 | v1 covers the country level only, full features | Exercises every load-bearing abstraction; the city level then adds sources and rows, not machinery |
 | Q59 | Country seed is the full EU/EEA + UK + CH scope, 32 countries | EU-only would leave the named eligibility filters with no candidates to act on, shipping the mechanism untested — and the UK and Switzerland are genuine candidates whose absence would make the first ranking incomplete |
+| Q92 | Multi-value criteria: one criterion, several keyed values (§3.3b) | Rent by bedroom count and cost of living by household size are all current at once, not history. Twelve criteria in the catalog could use this |
+| Q93 | Reduction happens at scoring, never when data is fetched | Reducing at fetch would make changing household size require re-fetching every city — violating §5.6 and costing money. It would also make simulation impossible: running with a three-bedroom needs that figure already stored |
+| Q94 | The key selection is a setting, defaulting from household parameters | Right without configuration, overridable to simulate, and two settings records may select different keys |
+| Q95 | `city.rent_2br_centre` → `city.rent_centre`; `city.cost_of_living_2p_monthly` → `city.cost_of_living_monthly` | Both froze a preference into an identity, and both abbreviated it — `2br` meant two-bedroom |
 | Q89 | `country.economic_outlook` added, storing IMF's projected growth figure | The IMF, EC and World Bank already publish projections with real analysis behind them; computing our own trend would be worse work duplicated |
 | Q90 | Band labels display a number as a word | Five outlook bands are a reading of a numeric scale, not a separate type. Storing the figure keeps precision and provenance |
 | Q91 | No `Ordinal` type yet | Genuinely ordered non-numeric data would need one, but nothing in the catalog does. Recorded as a gap rather than added speculatively |
