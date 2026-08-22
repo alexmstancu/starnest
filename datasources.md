@@ -53,7 +53,7 @@ our coverage percentage solves. This is worth sitting with before building.
 | Any locality, including a village of 7,000 | A fixed set of 380 cities |
 | Criteria personal to *this* household — tax vs Romania, flights to Romania, RO double-taxation treaty, naturalisation, children | Generic dimensions for a generic mover |
 | Head-to-head comparison with weighted-contribution deltas | Ranking only |
-| Multi-source resolution with configurable priority | Single blended figure |
+| Multi-source active-value selection with configurable priority | Single blended figure |
 | Named weight profiles per person and per work-format scenario | One weight set per session |
 | Uncertainty **disclosed** as coverage % | Uncertainty **absorbed** by shrinking toward the mean |
 

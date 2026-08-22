@@ -108,8 +108,8 @@ provide context when reading a score. They may, however, be referenced by a crit
 value source, so a fact is stored once rather than fetched twice (§3.3, `value_source`).
 
 Each attribute carries provenance on the same terms as any other value (§3.6), but its
-resolution is simpler: an attribute normally has one authoritative source rather than
-competing ones.
+source priority rarely applies: an attribute normally has one authoritative source rather
+than competing ones.
 
 **Country facts.** Official name; ISO 3166 alpha-2 and alpha-3; capital; population; area;
 population density; **official language(s)** and **recognised regional or minority
@@ -257,7 +257,7 @@ each declares `> 0` for itself. Likewise `avg_annual_temperature` declares a pla
 > eliminate the candidate (§5.2). **Validation** says the value is not credible — it is a data
 > error. Conflating them lets a scraper bug silently eliminate a country.
 
-**On a validation failure**, consistent with *resolution never discards data* (§3.6):
+**On a validation failure**, consistent with *no value is ever discarded* (§3.6):
 
 - the value is **stored and marked rejected**, with the reason — never silently dropped;
 - it does **not** become the active value and does **not** count toward coverage (§5.3);
@@ -379,11 +379,27 @@ currency and an fx rate; a temperature carries a unit; a population carries neit
 
 **The two dates are distinct and must never be merged, conflated, or displayed as one.**
 
-**Resolution.** Where several sources hold a value for the same criterion and candidate, the
-active one is chosen by the criterion's source priority, falling back to the global default.
-If the highest-priority value is older than the criterion's `max_age`, the next source in
-order is promoted automatically. **Every value from every source remains stored and
-visible**; resolution only decides which is active.
+**Choosing the active value.** Where several sources hold a value for the same criterion and
+candidate, exactly one is **active** — the one scoring uses. It is chosen by this rule, in
+order:
+
+1. Discard values that failed validation (§3.3a).
+2. **Fresh beats stale** — a value older than the criterion's `max_age` drops below every
+   fresh value, whatever its source's rank.
+3. **Source priority** — the criterion's ordering, falling back to the global default (§6.6).
+4. **Confidence** breaks ties within the same priority (§5.7).
+5. Most recently retrieved wins any remaining tie.
+
+Steps 1, 2, 4 and 5 are evaluated at runtime, because they depend on the individual value.
+Step 3 is declared in configuration. **Every value from every source remains stored and
+visible** — this rule only decides which is active.
+
+> **Source priority and confidence answer different questions and neither replaces the other.**
+> Priority is a standing editorial judgement about *which source to believe for this
+> measurement*; it can encode knowledge confidence cannot see — Numbeo beats national
+> statistics for city rent, despite being the less reliable source in general. Confidence
+> grades *one particular number*, and three of its four inputs (age, geographic fit, whether it
+> was derived) are only knowable per value.
 
 ### 3.7 EligibilityFilter
 
@@ -414,7 +430,7 @@ sources. Countries below the qualification threshold do not have cities extracte
 **City level.** Detailed evaluation of cities within qualified countries, using
 structured and LLM-assisted sources.
 
-Both levels run on the same machinery. Scoring, filtering, resolution and comparison are
+Both levels run on the same machinery. Scoring, filtering, active-value selection and comparison are
 written once against `Candidate` and must not be duplicated per level. What differs is the
 **data**: each level has its own criteria catalog and its own weights, each summing to 100%
 independently of the other.
@@ -543,7 +559,7 @@ alongside** the derived value, like every other competing value in the system.
 
 - **Display.** Shown beside every figure, and summarised per candidate — "64% coverage, of
   which 20% high, 55% medium, 25% low".
-- **Source priority.** Higher confidence wins ties in the resolution order (§6.6), extending
+- **Source priority.** Higher confidence wins ties in the priority order (§6.6), extending
   the existing `max_age` promotion rule.
 
 **What it must not affect:** the score arithmetic. Low-confidence values are **not** discounted
@@ -1007,7 +1023,7 @@ The main results view.
   or weight appears in application code.
 - **Acquisition and scoring are separate operations** (§5.6).
 - **Raw values are stored separately from computed scores**, with timestamps.
-- **Resolution never discards data** (§3.6).
+- **No value is ever discarded** (§3.6).
 - **Two distinct dates per value**, never conflated (§3.6).
 - **Full provenance on every displayed number** — source, reference date, retrieval date, and
   a quote or summary where applicable.
