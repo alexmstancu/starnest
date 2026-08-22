@@ -548,10 +548,16 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `tech_employment_share` | 30% | numeric, higher better | Eurostat ICT/high-tech employment, ILO |
-| `international_employer_presence` | 25% | **label_list**, more/larger is better | LLM + search, company sites — a named list of major international tech employers operating in the country |
-| `average_working_hours` | 25% | numeric, **ideal_band** | OECD Employment Database, Eurostat `lfsa_ewhun2` |
-| `statutory_paid_leave` | 20% | numeric days, higher better | OECD, EU Working Time Directive, national law |
+| `tech_software_jobs` | 20% | numeric count, higher better | Job-posting counts — **source unresolved, see `datasources.md` §11** |
+| `tech_product_jobs` | 20% | numeric count, higher better | Job-posting counts — same source |
+| `tech_employment_share` | 20% | numeric, higher better | Eurostat ICT/high-tech employment, ILO |
+| `international_employer_presence` | 15% | **label_list**, more/larger is better | LLM + search, company sites — named major international tech employers operating in the country |
+| `average_working_hours` | 15% | numeric, **ideal_band** | OECD Employment Database, Eurostat `lfsa_ewhun2` |
+| `statutory_paid_leave` | 10% | numeric days, higher better | OECD, EU Working Time Directive, national law |
+
+> The two job counts appear at country level as well as city level. Since v1 covers only the
+> country level (§1.3), omitting them would mean shipping with no way to screen on the product-role
+> scarcity that motivated them.
 
 #### Safety & stability — 13%
 
@@ -637,19 +643,20 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `local_tech_market` | 45% | numeric count, higher better | Job-board and company-registry counts — **market breadth**, not a subjective rating |
+| `tech_software_jobs` | 35% | numeric count, higher better | Job-posting counts — **source unresolved, see `datasources.md` §11** |
+| `tech_product_jobs` | 35% | numeric count, higher better | Job-posting counts — same source |
 | `major_employer_presence` | 30% | **label_list**, more/larger is better | LLM + search, company sites — named employers with an office in *this* city |
-| `product_role_availability` | 25% | numeric count, higher better | Job boards — product-management roles specifically |
 
-> **Anchors versus breadth.** `major_employer_presence` names the large, stable, often
-> visa-sponsoring employers; `local_tech_market` counts how many employers exist at all. A city
-> with one big office and nothing else is fragile; a city with two hundred small firms and no
-> anchors is resilient but may never sponsor. Different risks, and one number would hide which
-> you face.
+> **Two counts, one shape.** `tech_software_jobs` and `tech_product_jobs` are deliberately
+> symmetric: the same query against the same source, differing only in role family. Product
+> roles are a small fraction of engineering roles in any market, so a city can be comfortable
+> for one person and hostile for the other — and only counting both separately reveals it.
+> The **ratio between them** is worth displaying even though it is not itself a criterion.
 >
-> `product_role_availability` is deliberately separate: product roles are a small fraction of
-> engineering roles in any market, and this criterion decides whether both people have options
-> or one is dependent on remote work.
+> **Anchors versus counts.** `major_employer_presence` names the large, stable, often
+> visa-sponsoring employers. A city with one big office and nothing else is fragile; a city
+> with two hundred small firms and no anchors is resilient but may never sponsor. The counts
+> measure volume, the list measures who.
 
 > Under a `remote-only` weight profile this pillar is down-weighted and `connectivity` up-weighted.
 
@@ -799,11 +806,14 @@ The main results view.
 ## 9. Open items
 
 - **Prose-bound criteria — largely resolved.** `general_atmosphere` is **dropped**: too vague
-  to define, let alone measure. `local_tech_market` was redefined as a count rather than a
-  rating. The administrative criteria moved to documented official sources (§6.9). What remains
-  is `international_employer_presence`, `major_employer_presence` and `product_role_availability`,
-  all of which use **LLM proposal with user override, both values retained**. These are city-level
-  or LLM-dependent, and therefore land after v1 (§1.3).
+  to define, let alone measure. `local_tech_market` and `product_role_availability` were replaced
+  by the countable `tech_software_jobs` and `tech_product_jobs`. The administrative criteria
+  moved to documented official sources (§6.9). What remains is
+  `international_employer_presence` and `major_employer_presence`, both of which use **LLM
+  proposal with user override, both values retained**.
+- **Job-posting source unresolved.** `tech_software_jobs` and `tech_product_jobs` have a settled
+  shape but no confirmed source. See `datasources.md` §11 — the blocking question is EU country
+  coverage.
 - **Provisional values**, all to be revised after a first real run: every weight in §7, the
   country-level qualification threshold, the ~2000–3000 EUR/month household budget guideline, the
   2000 EUR rent ceiling, `min_coverage`, and every `scale_params` and `threshold` marked TBD.
@@ -887,6 +897,7 @@ not only *what*.
 | Q50 | Country nature measures *diversity*, not presence | A large country can hold sea, mountains, lakes and forest at once; coexistence is what is worth screening |
 | Q51 | `CandidateProfile` gains a natural-setting section | Facts describe, criteria judge — "Calanques, 2 km" is context, "nature 8.7" is a score |
 | Q52 | Data sources are plug-ins behind a common interface | Adding a source must be one adapter plus config, never an edit to the acquisition core |
+| Q61 | `tech_software_jobs` and `tech_product_jobs` replace `local_tech_market` and `product_role_availability` | Symmetric counts from one source beat a count plus a vaguely-scoped "market"; the ratio between them exposes a city comfortable for one person and hostile to the other |
 | Q54 | `general_atmosphere` dropped | Too vague to define or measure; no countable proxy and no clear meaning |
 | Q55 | `local_tech_market` redefined as a count | Market *breadth* is countable from job boards and registries; the 1–10 rating was a vibe |
 | Q56 | Anchors and breadth kept as separate criteria | One large employer and two hundred small ones are different risks; a single number hides which |

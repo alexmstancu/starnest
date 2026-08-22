@@ -224,9 +224,9 @@ LLM + `web_search` path.
 
 | Criterion | Primary | Type | Small-town outlook |
 |---|---|---|---|
-| `local_tech_market` | LLM + search | — | Poor; inherently sparse |
+| `tech_software_jobs` | Job-posting counts **(source unresolved, §11)** | — | Poor; postings concentrate in large cities |
 | `major_employer_presence` | LLM + search | — | Poor |
-| `product_role_availability` | LLM + search | — | Poor |
+| `tech_product_jobs` | Job-posting counts **(source unresolved, §11)** | — | Poor; product roles are scarce everywhere |
 | `cost_of_living_2p_monthly` | Numbeo | **R** | **Fails** — fall back to regional figure + LLM |
 | `rent_2br_city_centre` | Numbeo; national listing sites | **R** | **Fails** — LLM + local listings |
 | `property_purchase_price_m2` | National land registries; Eurostat | **R** | Partial — regional averages exist |
@@ -292,8 +292,7 @@ national-culture phenomena, and the country level is where the data is.
 ### 6.3 Criteria that will be LLM-or-nothing
 
 `international_employer_presence` · `residency_admin_ease` · `naturalisation_pathway` ·
-`pension_portability` · `local_tech_market` · `major_employer_presence` ·
-`product_role_availability` · `local_admin_ease`
+`pension_portability` · `major_employer_presence` · `local_admin_ease`
 
 Eight criteria across both levels with no structured source. This is the real scope of the
 deferred Q20 question — it was framed as being about *atmosphere*, but the harder cases are
@@ -538,6 +537,37 @@ other terms are 0–100 indices, so its coefficient of 1.0 contributes far less 
 to, and nothing in the formula corrects for that. This is precisely the failure mode that the
 per-criterion normalisation decision (`reqs.md` §5.1) exists to prevent — a useful confirmation
 that the decision was the right one.
+
+---
+
+## 11. Job-posting counts — source unresolved
+
+Two criteria at both levels (`tech_software_jobs`, `tech_product_jobs`) need counts of open
+roles by role family and location. **No source is settled.** Candidates, with what is and is
+not confirmed:
+
+| Source | Status |
+|---|---|
+| **Adzuna** | Documented self-serve API, free tier ~1,000 calls/month, with endpoints that return **vacancy counts by region and category** — exactly the query shape needed. Credibility is genuine: it is the **exclusive data partner to the UK Office for National Statistics**, powering the official real-time job vacancy index in the ONS "faster indicators" report from 36M+ adverts. ⚠️ **EU coverage unconfirmed.** The docs publish no country list; "16+ countries" is the only figure found, and the historical footprint skews UK/US/AU. **This must be verified before committing.** |
+| **EURES** | Official EU portal, 30+ countries. ❌ **Not usable for extraction** — terms explicitly forbid "screen scraping or any other automated or manual system to extract job vacancy data"; bulk download decommissioned October 2023; the only API is a reverse-engineered community spec with no stability guarantees. Its **published aggregate statistics** have download buttons and remain legitimate, but give vacancy totals, not tech-specific counts. |
+| **Eurostat job vacancy statistics** | Official, free, complete EU coverage. ⚠️ Sector-level at best — no split between software and product roles. Useful as a denominator or sanity check, not as the criterion value. |
+| **National public employment services** | Every EU state runs one, many with open APIs. ✓ Authoritative and complete per country. ⚠️ 27 different APIs, 27 schemas, 27 languages — the highest-fidelity and highest-effort option. Fits the plug-in model (`reqs.md` §6.7): one adapter per country, added incrementally. |
+| **LinkedIn / Indeed** | Best raw coverage. ❌ No usable free API; both actively block automated access. |
+
+### Open questions before this can be built
+
+1. **Does Adzuna cover the EU member states we care about?** One lookup settles it and decides
+   whether this is one adapter or twenty-seven.
+2. **How are role families defined?** "Software engineer" and "product manager" need a query
+   definition — keyword sets, or a standard taxonomy such as **ESCO**, the EU's own
+   occupation classification, which would travel across languages and countries.
+3. **Absolute counts or per-capita?** Absolute measures whether enough openings exist at all;
+   per-capita measures concentration. Absolute is probably right — three product roles in a
+   city is a hard constraint regardless of population — but it makes the criterion partly a
+   proxy for city size.
+4. **Volatility.** Posting counts swing with hiring cycles, so a single-day snapshot is not
+   representative. This criterion wants a short `max_age` and ideally a rolling average rather
+   than a point reading.
 
 ---
 
