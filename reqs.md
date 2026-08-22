@@ -55,8 +55,8 @@ household**. They are configuration, not candidate data:
 > acquisition run may cost in API calls is the **spend cap** (§6.3) — a different word for a
 > deliberately different thing.
 
-Without these, `cost_of_living_2p_monthly` is an absolute figure that says nothing about whether
-*you* can afford to live there. `local_purchasing_power` and `house_price_to_income_ratio` use
+Without these, `city.cost_of_living_2p_monthly` is an absolute figure that says nothing about whether
+*you* can afford to live there. `city.purchasing_power` and `country.house_price_to_income_ratio` use
 population-average income, which answers a different question.
 
 ### 1.3 Scope of v1
@@ -196,6 +196,19 @@ both levels.
 
 **Criterion:**
 
+**Identifier convention: `<level>.<name>`.** The level is part of the ID because cross-level
+concepts are separate criteria (Q3) and the prefix is what keeps them apart —
+`country.tech_software_jobs` and `city.tech_software_jobs` measure different things. It also
+retires the ad-hoc `_local` / `_national` suffixes that had been applied only where a collision
+happened to be noticed.
+
+**The pillar is deliberately not in the ID.** Pillar assignment may change; identity may not.
+Encoding the pillar would make every reorganisation a retire-and-recreate. Growth within a
+pillar needs no numbering scheme — names do not run out.
+
+*(Eligibility filters, §7.3, keep unprefixed IDs: they are a separate five-item namespace with
+no collisions, and `relocation_window` applies at both levels, so the scheme would not fit.)*
+
 **A Criterion defines what is measured. It does not define what that measurement is worth to
 you** — that lives in the active `CriteriaSettings` (§3.4). The separation matters because which way is
 "good" can be personal, not just how much a thing matters: one person wants a large expat
@@ -204,7 +217,8 @@ criterion, same measured value, opposite direction.
 
 | Field | Notes |
 |---|---|
-| `id`, `name`, `description` | What this measures |
+| `id` | `<level>.<name>`, e.g. `city.rent_2br_centre`. Globally unique and **immutable** — see below |
+| `name`, `description` | Human-readable label and definition |
 | `pillar` | Its parent pillar |
 | `level` | `country` or `city` — the same axis as `Candidate.level` |
 | `value_type` | One of the ten types in §3.3a. Determines what a `Value` carries, how it normalises, how it displays, what thresholds mean, and what is validated |
@@ -216,7 +230,7 @@ criterion, same measured value, opposite direction.
 | `default_*` | Shipped defaults for every preference field in §3.4, so a newly added criterion works immediately |
 
 Criteria that describe the same concept at different levels are **separate criteria** with
-separate identifiers, sources and scales. `safety_national` and `safety_local` are unrelated
+separate identifiers, sources and scales. `safety_national` and `city.safety` are unrelated
 records; the spec treats them as different questions, not one question at two zoom levels.
 
 ### 3.3a The value type system
@@ -281,7 +295,7 @@ The type system carries validation in two layers.
 
 Non-negativity is **not** a `Monetary` type rule — net income after tax or a budget balance may
 legitimately be negative. Every monetary criterion in this catalog is a cost or a benefit, so
-each declares `> 0` for itself. Likewise `avg_annual_temperature` declares a plausible −20 to
+each declares `> 0` for itself. Likewise `country.avg_annual_temperature` declares a plausible −20 to
 40 °C, while nothing about `Quantity` forbids negatives.
 
 > **Validation is not a threshold.** A **threshold** says the value is real and disqualifying —
@@ -334,10 +348,10 @@ explicit: you pin what you have decided and let the rest move.
 > nowhere for a change to be absorbed. The UI must refuse the adjustment and say which locks
 > block it, rather than silently breaking the sum or ignoring the drag.
 
-> **Why direction is a preference, not a fact.** `expat_community_size` is the clearest case —
+> **Why direction is a preference, not a fact.** `city.expat_community_size` is the clearest case —
 > a large expat community is a soft landing to one person and a bubble to avoid to another.
-> `avg_annual_temperature` is another: the ideal band is whatever *you* find pleasant.
-> `heritage_and_culture_density` a third — museums and festivals to one reader, tourist crowds
+> `country.avg_annual_temperature` is another: the ideal band is whatever *you* find pleasant.
+> `city.heritage_and_culture_density` a third — museums and festivals to one reader, tourist crowds
 > to another. Fixing direction on the criterion would silently encode one person's taste as
 > objective truth.
 
@@ -553,7 +567,7 @@ Redistribution is computed at scoring time from what data exists. **It must neve
 back into the stored weights.**
 
 **Warnings are not eliminations.** Some rules flag a candidate without disqualifying it. Rent
-is the standing example: `rent_2br_city_centre` has its own threshold, but rent is *also* judged
+is the standing example: `city.rent_2br_centre` has its own threshold, but rent is *also* judged
 **relative to `target_monthly_spend`** (§1.4). Rent that consumes most of the household's total
 spend is flagged as a warning even when it clears its own threshold in isolation, because the
 two figures only mean anything read together.
@@ -710,7 +724,7 @@ catalog will grow, and growth must stay a data-and-adapter change.
 
 ### 6.9 Administrative procedures are documented, not unknowable
 
-`naturalisation_pathway`, `residency_admin_ease`, `pension_portability` and `local_admin_ease`
+`country.naturalisation_pathway`, `country.residency_admin_ease`, `country.pension_portability` and `city.admin_ease`
 are not subjective. Each is a **published administrative procedure** — requirements, steps,
 timeline, fees — on an official national or municipal website. They were previously grouped
 with the prose-bound criteria; that was a mistake of framing, not of measurement.
@@ -725,12 +739,12 @@ reproducible from the evidence rather than impressionistic:
 
 | Criterion | Scored from |
 |---|---|
-| `residency_admin_ease` | Number of separate agencies involved · in-person appointments required · statutory processing time · available in English · available online |
-| `local_admin_ease` | The same five attributes, at municipal level |
-| `naturalisation_pathway` | Years of residence required · language level demanded · civics test · **whether dual citizenship with Romania is permitted** |
-| `pension_portability` | Aggregation under EU Regulation 883/2004 · years to vest locally · existence of a bilateral totalisation agreement |
+| `country.residency_admin_ease` | Number of separate agencies involved · in-person appointments required · statutory processing time · available in English · available online |
+| `city.admin_ease` | The same five attributes, at municipal level |
+| `country.naturalisation_pathway` | Years of residence required · language level demanded · civics test · **whether dual citizenship with Romania is permitted** |
+| `country.pension_portability` | Aggregation under EU Regulation 883/2004 · years to vest locally · existence of a bilateral totalisation agreement |
 
-> `pension_portability` will barely discriminate across EU and EEA states, where Regulation
+> `country.pension_portability` will barely discriminate across EU and EEA states, where Regulation
 > 883/2004 applies uniformly. It earns its 5% only for the UK, where post-Brexit arrangements
 > differ. Worth revisiting after the first run.
 
@@ -778,38 +792,38 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `cost_of_living_index_country` | 40% | **Index** — Eurostat PLI, EU27 = 100 | Eurostat price level indices, World Bank ICP |
-| `income_tax_effective` | 35% | **Ratio** — share of gross income | OECD Tax Database, national tax authorities |
-| `remote_work_tax_treaty` | 25% | **LabelSet** — treaty partners | OECD treaty database, manual |
+| `country.cost_of_living_index` | 40% | **Index** — Eurostat PLI, EU27 = 100 | Eurostat price level indices, World Bank ICP |
+| `country.income_tax_effective` | 35% | **Ratio** — share of gross income | OECD Tax Database, national tax authorities |
+| `country.remote_work_tax_treaty` | 25% | **LabelSet** — treaty partners | OECD treaty database, manual |
 
 #### Housing — 10%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `house_price_to_income_ratio` | 40% | **Ratio** — price ÷ annual income | Eurostat, OECD Affordable Housing Database |
-| `housing_cost_overburden_rate` | 35% | **Ratio** — share of households | Eurostat `ilc_lvho07a` |
-| `overcrowding_rate` | 25% | **Ratio** — share of households | Eurostat `ilc_lvho05a` |
+| `country.house_price_to_income_ratio` | 40% | **Ratio** — price ÷ annual income | Eurostat, OECD Affordable Housing Database |
+| `country.housing_cost_overburden_rate` | 35% | **Ratio** — share of households | Eurostat `ilc_lvho07a` |
+| `country.overcrowding_rate` | 25% | **Ratio** — share of households | Eurostat `ilc_lvho05a` |
 
 #### Career & work — 14%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `tech_software_jobs` | 22% | **Count** — open postings | Job-posting counts — **source unresolved, see `datasources.md` §11** |
-| `tech_product_jobs` | 22% | **Count** — open postings | Job-posting counts — same source |
-| `international_employers` | 18% | **LabelSet** — named firms | LLM + search, company sites |
-| `average_working_hours` | 15% | **Quantity** — hours/week | OECD Employment Database, Eurostat `lfsa_ewhun2` |
-| `tech_employment_share` | 13% | **Ratio** — share of workforce | Eurostat ICT/high-tech employment, ILO |
-| `statutory_paid_leave` | 10% | **Quantity** — days/year | OECD, EU Working Time Directive, national law |
+| `country.tech_software_jobs` | 22% | **Count** — open postings | Job-posting counts — **source unresolved, see `datasources.md` §11** |
+| `country.tech_product_jobs` | 22% | **Count** — open postings | Job-posting counts — same source |
+| `country.international_employers` | 18% | **LabelSet** — named firms | LLM + search, company sites |
+| `country.average_working_hours` | 15% | **Quantity** — hours/week | OECD Employment Database, Eurostat `lfsa_ewhun2` |
+| `country.tech_employment_share` | 13% | **Ratio** — share of workforce | Eurostat ICT/high-tech employment, ILO |
+| `country.statutory_paid_leave` | 10% | **Quantity** — days/year | OECD, EU Working Time Directive, national law |
 
 > **Four measures, four different questions** — they look redundant and are not:
 >
-> - `tech_software_jobs` / `tech_product_jobs` — **flow**: how many roles are open *now*, and
+> - `country.tech_software_jobs` / `country.tech_product_jobs` — **flow**: how many roles are open *now*, and
 >   how badly product roles trail engineering ones.
-> - `international_employers` — **type, not volume**: do firms that hire foreigners, work in
+> - `country.international_employers` — **type, not volume**: do firms that hire foreigners, work in
 >   English and handle relocation operate here? A country with 5,000 postings all at local
 >   firms in the local language is far less employable than one with 500 at international
 >   firms, and no count reveals that.
-> - `tech_employment_share` — **stock**: how mature and resilient the sector is, rather than
+> - `country.tech_employment_share` — **stock**: how mature and resilient the sector is, rather than
 >   how it is hiring this quarter. It is also the **only tech-market criterion with a confirmed
 >   source**, so if the job-posting source falls through, §5.3 redistributes the counts' weight
 >   onto it and the pillar still functions.
@@ -821,53 +835,53 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `crime_safety_index_national` | 50% | **Index** — Numbeo 0–100 | UNODC homicide, Eurostat crime |
-| `political_economic_stability` | 50% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators |
+| `country.crime_safety_index` | 50% | **Index** — Numbeo 0–100 | UNODC homicide, Eurostat crime |
+| `country.political_economic_stability` | 50% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators |
 
 #### Health — 9%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `healthcare_system_quality` | 100% | **Index** — WHO UHC 0–100 | WHO Global Health Observatory, OECD Health Statistics |
+| `country.healthcare_system_quality` | 100% | **Index** — WHO UHC 0–100 | WHO Global Health Observatory, OECD Health Statistics |
 
 #### Climate & environment — 7%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `climate_zone` | 30% | **LabelSet** — Köppen codes | Köppen classification |
-| `avg_annual_temperature` | 25% | **Quantity** — °C | Open-Meteo archive **(C)** |
-| `annual_sunshine_hours` | 25% | **Quantity** — hours/year | Open-Meteo, from radiation **(C)** |
-| `projected_summer_heat_days` | 20% | **Quantity** — days above 35 °C projected for 2050, SSP2-4.5 | Copernicus CDS climate projections |
+| `country.climate_zone` | 30% | **LabelSet** — Köppen codes | Köppen classification |
+| `country.avg_annual_temperature` | 25% | **Quantity** — °C | Open-Meteo archive **(C)** |
+| `country.annual_sunshine_hours` | 25% | **Quantity** — hours/year | Open-Meteo, from radiation **(C)** |
+| `country.projected_summer_heat_days` | 20% | **Quantity** — days above 35 °C projected for 2050, SSP2-4.5 | Copernicus CDS climate projections |
 
 #### Connectivity — 8%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `rail_network_density` | 30% | **Quantity** — km of line per 1,000 km² | Eurostat rail infrastructure statistics |
-| `international_air_connectivity` | 25% | **Count** — international destinations served | Eurostat air transport, OpenFlights, airport authorities |
-| `broadband_coverage` | 25% | **Ratio** — share of households with high-speed or fibre access | Eurostat DESI, national regulators |
-| `road_network_quality` | 20% | **Quantity** — km of motorway per 1,000 km² | Eurostat road transport statistics |
+| `country.rail_network_density` | 30% | **Quantity** — km of line per 1,000 km² | Eurostat rail infrastructure statistics |
+| `country.international_air_connectivity` | 25% | **Count** — international destinations served | Eurostat air transport, OpenFlights, airport authorities |
+| `country.broadband_coverage` | 25% | **Ratio** — share of households with high-speed or fibre access | Eurostat DESI, national regulators |
+| `country.road_network_quality` | 20% | **Quantity** — km of motorway per 1,000 km² | Eurostat road transport statistics |
 
 > Each pairs with a city criterion without duplicating it, on the `safety_national` /
-> `safety_local` pattern: national broadband coverage **screens**, while Ookla tiles report what
-> a given street actually gets; `international_air_connectivity` asks whether the country
-> connects to the world, while `flights_to_romania` asks whether you can get home from *this*
+> `city.safety` pattern: national broadband coverage **screens**, while Ookla tiles report what
+> a given street actually gets; `country.international_air_connectivity` asks whether the country
+> connects to the world, while `city.flights_to_romania` asks whether you can get home from *this*
 > town; intercity rail is a different question from local trams. Rail matters most for the
-> stated goal of living without a car — `public_transport` covers moving *within* a city, and
+> stated goal of living without a car — `city.public_transport` covers moving *within* a city, and
 > nothing else covers reaching the rest of the country.
 
 #### Nature & landscape — 8%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `natural_diversity` | 25% | **Count** — 0–6, feature types present | **Derived**, see below |
-| `protected_land_share` | 25% | **Ratio** — share of territory | WDPA / Protected Planet, Eurostat |
-| `coastline_access` | 20% | **Quantity** — km coast per 1000 km² | Natural Earth, Eurostat — length relative to area |
-| `forest_cover` | 15% | **Ratio** — share of land area | FAO, Corine Land Cover |
-| `elevation_range` | 15% | **Quantity** — m | Copernicus DEM — relief variety |
+| `country.natural_diversity` | 25% | **Count** — 0–6, feature types present | **Derived**, see below |
+| `country.protected_land_share` | 25% | **Ratio** — share of territory | WDPA / Protected Planet, Eurostat |
+| `country.coastline_access` | 20% | **Quantity** — km coast per 1000 km² | Natural Earth, Eurostat — length relative to area |
+| `country.forest_cover` | 15% | **Ratio** — share of land area | FAO, Corine Land Cover |
+| `country.elevation_range` | 15% | **Quantity** — m | Copernicus DEM — relief variety |
 
 > A large country can host sea, high mountains, lakes and forest **simultaneously**, and that
-> combination is the thing worth screening for. `natural_diversity` measures coexistence rather
+> combination is the thing worth screening for. `country.natural_diversity` measures coexistence rather
 > than presence, separating Austria and Spain from the Netherlands and Denmark.
 >
 > **Computed** as the count of these six conditions that hold, giving 0–6:
@@ -879,28 +893,28 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `life_satisfaction` | 40% | **Quantity** — Cantril ladder 0–10 | Eurostat `ilc_pw01` *(survey figure, not the World Happiness composite — §3.5a)* |
-| `openness_to_foreigners` | 35% | **Index** — MIPEX 0–100 | MIPEX, Eurobarometer, InterNations |
-| `english_proficiency` | 25% | **Index** — EF EPI 0–800 | EF English Proficiency Index |
+| `country.life_satisfaction` | 40% | **Quantity** — Cantril ladder 0–10 | Eurostat `ilc_pw01` *(survey figure, not the World Happiness composite — §3.5a)* |
+| `country.openness_to_foreigners` | 35% | **Index** — MIPEX 0–100 | MIPEX, Eurobarometer, InterNations |
+| `country.english_proficiency` | 25% | **Index** — EF EPI 0–800 | EF English Proficiency Index |
 
 #### Governance & administration — 8%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `rule_of_law` | 25% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators, V-Dem |
-| `naturalisation_pathway` | 25% | **Quantity** — years of residence | **Official administrative sources** — published requirements, steps, timeline and fees; difficulty derived. See §6.9 |
-| `control_of_corruption` | 20% | **Index** — World Bank WGI −2.5–2.5 | World Bank WGI, Transparency International |
-| `residency_admin_ease` | 15% | **AssignedScore** — 0–100, rubric in §6.9 | **Official administrative sources**; World Bank B-READY where covered |
-| `press_freedom` | 10% | **Index** — RSF 0–100 | Reporters Without Borders |
-| `pension_portability` | 5% | **AssignedScore** — 0–100, rubric in §6.9 | **Official administrative sources** — EU social-security coordination rules |
+| `country.rule_of_law` | 25% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators, V-Dem |
+| `country.naturalisation_pathway` | 25% | **Quantity** — years of residence | **Official administrative sources** — published requirements, steps, timeline and fees; difficulty derived. See §6.9 |
+| `country.control_of_corruption` | 20% | **Index** — World Bank WGI −2.5–2.5 | World Bank WGI, Transparency International |
+| `country.residency_admin_ease` | 15% | **AssignedScore** — 0–100, rubric in §6.9 | **Official administrative sources**; World Bank B-READY where covered |
+| `country.press_freedom` | 10% | **Index** — RSF 0–100 | Reporters Without Borders |
+| `country.pension_portability` | 5% | **AssignedScore** — 0–100, rubric in §6.9 | **Official administrative sources** — EU social-security coordination rules |
 
 #### Family & education — 4%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `school_system_quality` | 45% | **Index** — OECD PISA mean score | OECD PISA, UNESCO |
-| `parental_leave_policy` | 30% | **Quantity** — weeks paid | OECD Family Database |
-| `child_benefit_policy` | 25% | **Monetary** — EUR/month per child | OECD, national social-security bodies |
+| `country.school_system_quality` | 45% | **Index** — OECD PISA mean score | OECD PISA, UNESCO |
+| `country.parental_leave_policy` | 30% | **Quantity** — weeks paid | OECD Family Database |
+| `country.child_benefit_policy` | 25% | **Monetary** — EUR/month per child | OECD, national social-security bodies |
 
 ### 7.2 City level
 
@@ -908,27 +922,27 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `cost_of_living_2p_monthly` | 60% | **Monetary** — EUR/month | Numbeo **(R)**, LLM fallback |
-| `local_purchasing_power` | 40% | **Index** — Numbeo 0–100+ | Numbeo **(R)**, Eurostat Urban Audit **(R)** |
+| `city.cost_of_living_2p_monthly` | 60% | **Monetary** — EUR/month | Numbeo **(R)**, LLM fallback |
+| `city.purchasing_power` | 40% | **Index** — Numbeo 0–100+ | Numbeo **(R)**, Eurostat Urban Audit **(R)** |
 
 #### Housing — 15%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `rent_2br_city_centre` | 45% | **Monetary** — EUR/month | Numbeo **(R)**, national listings, LLM |
-| `property_purchase_price_m2` | 35% | **Monetary** — EUR/m² | National land registries, Eurostat **(R)** |
-| `rooms_per_person` | 10% | **Quantity** — rooms | Eurostat Urban Audit **(R)** |
-| `overcrowding_rate_local` | 10% | **Ratio** — share of households overcrowded | Eurostat Urban Audit **(R)** |
+| `city.rent_2br_centre` | 45% | **Monetary** — EUR/month | Numbeo **(R)**, national listings, LLM |
+| `city.property_purchase_price_m2` | 35% | **Monetary** — EUR/m² | National land registries, Eurostat **(R)** |
+| `city.rooms_per_person` | 10% | **Quantity** — rooms | Eurostat Urban Audit **(R)** |
+| `city.overcrowding_rate` | 10% | **Ratio** — share of households overcrowded | Eurostat Urban Audit **(R)** |
 
 #### Career & work — 14%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `tech_software_jobs` | 35% | **Count** — open postings | Job-posting counts — **source unresolved, see `datasources.md` §11** |
-| `tech_product_jobs` | 35% | **Count** — open postings | Job-posting counts — same source |
-| `international_employers_local` | 30% | **LabelSet** — named firms with a local office | LLM + search, company sites — named international employers with an office in *this* city |
+| `city.tech_software_jobs` | 35% | **Count** — open postings | Job-posting counts — **source unresolved, see `datasources.md` §11** |
+| `city.tech_product_jobs` | 35% | **Count** — open postings | Job-posting counts — same source |
+| `city.international_employers` | 30% | **LabelSet** — named firms with a local office | LLM + search, company sites — named international employers with an office in *this* city |
 
-> **Two counts, one shape.** `tech_software_jobs` and `tech_product_jobs` are deliberately
+> **Two counts, one shape.** `city.tech_software_jobs` and `city.tech_product_jobs` are deliberately
 > symmetric: the same query against the same source, differing only in role family. Product
 > roles are a small fraction of engineering roles in any market, so a city can be comfortable
 > for one person and hostile for the other — and only counting both separately reveals it.
@@ -938,8 +952,8 @@ registry-bound one with a population floor (`datasources.md` §3).
 > now and an internal transfer is the lowest-friction relocation path available. It contributes
 > positively and never eliminates — a bonus, not a requirement.
 >
-> **Anchors versus counts.** `international_employers_local` is the city-level pair of
-> `international_employers` (§7.1) — the same question, city-resolved: which relocation-friendly,
+> **Anchors versus counts.** `city.international_employers` is the city-level pair of
+> `country.international_employers` (§7.1) — the same question, city-resolved: which relocation-friendly,
 > English-working employers actually have an office *here*. A city with one big office and
 > nothing else is fragile; a city with two hundred small local firms is resilient but may never
 > sponsor a foreigner. The counts measure volume, the list measures who.
@@ -955,31 +969,31 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `safety_local` | 100% | **Index** — Numbeo 0–100 | Eurostat Urban Audit **(R)**, Numbeo **(R)**, regional police |
+| `city.safety` | 100% | **Index** — Numbeo 0–100 | Eurostat Urban Audit **(R)**, Numbeo **(R)**, regional police |
 
 #### Health — 7%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `healthcare_access_local` | 60% | **Quantity** — km to nearest hospital | Overpass, distance to hospital **(C)** |
-| `paediatric_healthcare_access` | 40% | **Quantity** — km to nearest paediatric facility | Overpass **(C)**, national health registries |
+| `city.healthcare_access` | 60% | **Quantity** — km to nearest hospital | Overpass, distance to hospital **(C)** |
+| `city.paediatric_healthcare_access` | 40% | **Quantity** — km to nearest paediatric facility | Overpass **(C)**, national health registries |
 
 #### Climate & environment — 9%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `local_temperature` | 30% | **Quantity** — °C | Open-Meteo **(C)** |
-| `local_sunshine_hours` | 25% | **Quantity** — hours/year | Open-Meteo **(C)** |
-| `air_quality` | 45% | **Quantity** — µg/m³ PM2.5 | OpenAQ, EEA nearest station **(C)** |
+| `city.temperature` | 30% | **Quantity** — °C | Open-Meteo **(C)** |
+| `city.sunshine_hours` | 25% | **Quantity** — hours/year | Open-Meteo **(C)** |
+| `city.air_quality` | 45% | **Quantity** — µg/m³ PM2.5 | OpenAQ, EEA nearest station **(C)** |
 
 #### Connectivity — 10%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `internet_quality` | 30% | **Quantity** — Mbps | Ookla Open Data, ~610 m tiles **(C)** |
-| `public_transport` | 25% | **Index** — Numbeo 0–100 | Overpass **(C)**, Urban Audit |
-| `flights_to_romania` | 25% | **Count** — direct routes per week | Flight APIs, manual, via `profile.nearest_airport` |
-| `proximity_to_hub` | 20% | **Quantity** — km | Computed from coordinates **(C)** |
+| `city.internet_quality` | 30% | **Quantity** — Mbps | Ookla Open Data, ~610 m tiles **(C)** |
+| `city.public_transport` | 25% | **Index** — Numbeo 0–100 | Overpass **(C)**, Urban Audit |
+| `city.flights_to_romania` | 25% | **Count** — direct routes per week | Flight APIs, manual, via `profile.nearest_airport` |
+| `city.proximity_to_hub` | 20% | **Quantity** — km | Computed from coordinates **(C)** |
 
 #### Nature & landscape — 12%
 
@@ -990,39 +1004,39 @@ point where further distance stops mattering.
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `distance_to_sea` | 18% | **Quantity** — km | OSM / Natural Earth coastline **(C)** |
-| `distance_to_mountains` | 15% | **Quantity** — km | Copernicus DEM, terrain above threshold **(C)** |
-| `hiking_trail_density` | 15% | **Quantity** — km of marked trail per 25 km radius | OSM Overpass marked hiking routes **(C)** |
-| `distance_to_inland_water` | 12% | **Quantity** — km | OSM lakes and rivers, size-filtered **(C)** |
-| `distance_to_protected_area` | 6% | **Quantity** — km | WDPA / Protected Planet **(C)** |
-| `protected_area_extent` | 6% | **Ratio** — share of land within a 50 km radius that is protected | WDPA / Protected Planet **(C)** |
-| `bathing_water_quality` | 10% | **Ratio** — share of beaches rated excellent | EEA Bathing Water Directive dataset |
-| `night_sky_brightness` | 10% | **Quantity** — mcd/m² | VIIRS, World Atlas of Artificial Night Sky Brightness **(C)** |
-| `forest_cover_local` | 8% | **Ratio** — share of land within radius | Corine Land Cover within radius **(C)** |
+| `city.distance_to_sea` | 18% | **Quantity** — km | OSM / Natural Earth coastline **(C)** |
+| `city.distance_to_mountains` | 15% | **Quantity** — km | Copernicus DEM, terrain above threshold **(C)** |
+| `city.hiking_trail_density` | 15% | **Quantity** — km of marked trail per 25 km radius | OSM Overpass marked hiking routes **(C)** |
+| `city.distance_to_inland_water` | 12% | **Quantity** — km | OSM lakes and rivers, size-filtered **(C)** |
+| `city.distance_to_protected_area` | 6% | **Quantity** — km | WDPA / Protected Planet **(C)** |
+| `city.protected_area_extent` | 6% | **Ratio** — share of land within a 50 km radius that is protected | WDPA / Protected Planet **(C)** |
+| `city.bathing_water_quality` | 10% | **Ratio** — share of beaches rated excellent | EEA Bathing Water Directive dataset |
+| `city.night_sky_brightness` | 10% | **Quantity** — mcd/m² | VIIRS, World Atlas of Artificial Night Sky Brightness **(C)** |
+| `city.forest_cover` | 8% | **Ratio** — share of land within radius | Corine Land Cover within radius **(C)** |
 
-> `hiking_trail_density` measures whether you can actually walk; `distance_to_mountains` alone
-> does not. `bathing_water_quality` separates 20 km from the sea from 20 km from water you
+> `city.hiking_trail_density` measures whether you can actually walk; `city.distance_to_mountains` alone
+> does not. `city.bathing_water_quality` separates 20 km from the sea from 20 km from water you
 > would swim in.
 
 #### Culture & community — 8%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `heritage_and_culture_density` | 60% | **Count** — sites and venues within radius | UNESCO, monument registers, Overpass museum/cinema counts **(C)** |
-| `expat_community_size` | 40% | **Ratio** — foreign-born share of population | Eurostat Urban Audit foreign-born **(R)** |
+| `city.heritage_and_culture_density` | 60% | **Count** — sites and venues within radius | UNESCO, monument registers, Overpass museum/cinema counts **(C)** |
+| `city.expat_community_size` | 40% | **Ratio** — foreign-born share of population | Eurostat Urban Audit foreign-born **(R)** |
 
 #### Governance & administration — 2%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `local_admin_ease` | 100% | **AssignedScore** — 0–100, derived from procedure | **Official administrative sources** — municipal service pages. See §6.9 |
+| `city.admin_ease` | 100% | **AssignedScore** — 0–100, derived from procedure | **Official administrative sources** — municipal service pages. See §6.9 |
 
 #### Family & education — 6%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `schooling_options` | 60% | **Count** — schools within radius | Overpass **(C)**, national education registries |
-| `childcare_cost_availability` | 40% | **Monetary** — EUR/month full-time | Eurostat **(R)**, national statistics |
+| `city.schooling_options` | 60% | **Count** — schools within radius | Overpass **(C)**, national education registries |
+| `city.childcare_cost_availability` | 40% | **Monetary** — EUR/month full-time | Eurostat **(R)**, national statistics |
 
 ---
 
@@ -1037,7 +1051,7 @@ eliminated regardless of score** — and stays visible, with its score, showing 
 | `eu_free_movement` | country | The candidate is an EU or EEA state. Automatic pass — Romanian citizenship carries free movement | Definitional, from `CandidateFacts` |
 | `uk_skilled_worker` | country | A realistic Skilled Worker route exists: sponsorship available in the local market, or the salary threshold met | Manual, LLM-assisted (§6.9) |
 | `ch_eu_efta_quota` | country | The annual Swiss EU/EFTA permit quota has capacity for this profile | Manual, LLM-assisted (§6.9) |
-| `two_role_feasibility` | **city** | The local market can plausibly support **two** tech roles — engineering *and* product | Derived from `tech_software_jobs` and `tech_product_jobs` against a configurable floor |
+| `two_role_feasibility` | **city** | The local market can plausibly support **two** tech roles — engineering *and* product | Derived from `city.tech_software_jobs` and `city.tech_product_jobs` against a configurable floor |
 | `relocation_window` | both | Relocation is feasible within the configured window, provisionally **12–18 months**, with no long-lead blocker such as a visa queue or a contract | Manual |
 
 > **`two_role_feasibility` is the one that cannot be replaced by a criterion.** A strong
@@ -1132,9 +1146,10 @@ The main results view.
   to define, let alone measure. `local_tech_market` and `product_role_availability` were replaced
   by the countable `tech_software_jobs` and `tech_product_jobs`. The administrative criteria
   moved to documented official sources (§6.9). What remains is
-  `international_employers` and `international_employers_local`, both of which use **LLM
+  `country.international_employers` and `city.international_employers`, both of which use **LLM
   proposal with user override, both values retained**.
-- **Job-posting source unresolved.** `tech_software_jobs` and `tech_product_jobs` have a settled
+- **Job-posting source unresolved.** The `tech_software_jobs` and `tech_product_jobs` criteria,
+  at both levels, have a settled
   shape but no confirmed source. See `datasources.md` §11 — the blocking question is EU country
   coverage.
 - **Provisional values**, all to be revised after a first real run: every weight in §7, the
@@ -1200,7 +1215,9 @@ screened. Marked, never hidden.
 climate, connectivity, nature, culture, governance, family. Eleven at each level. Not a
 "category" — these are not bins things get sorted into.
 
-**Criterion** — one thing that gets measured, belonging to one pillar at one level. Defines
+**Criterion** — one thing that gets measured, belonging to one pillar at one level. Identified
+as `<level>.<name>` — `city.rent_2br_centre`, `country.rail_network_density`. The level is part
+of the identity; the pillar deliberately is not. Defines
 *what* is measured; says nothing about what it is worth to you.
 
 **Value type** — the semantic type of a criterion's measurement: `Monetary`, `Quantity`,
@@ -1344,11 +1361,11 @@ not only *what*.
 | Q34 | Four tabs plus sidebar | Preserves the spec's shape; newer surfaces nest inside |
 | Q35 | Per-value confidence: display and source priority only | Coverage says how much data exists; confidence says what it is worth. Discounting the score would absorb uncertainty rather than disclose it |
 | Q36 | Confidence derived from source, age and geography, with override | Reuses `max_age` and `DataSource.kind`; no field anyone must remember to fill |
-| Q37 | `openness_to_foreigners` moved to country level | MIPEX, Eurobarometer and InterNations are country-level only |
+| Q37 | `country.openness_to_foreigners` moved to country level | MIPEX, Eurobarometer and InterNations are country-level only |
 | Q38 | Numbeo scraped first, API later if warranted | Personal, non-commercial use; `robots.txt` restricts only `/heavy_crawling.any`. Its coverage floor is ~150k population either way, so paying buys the same gap |
 | Q39 | Pillars are parallel across levels | One structure to learn; criteria profiles stay legible across levels; fixes a pillar that bundled healthcare with bureaucracy |
 | Q40 | Country-level education and family policy added | Children are in scope and national school system quality is not substitutable by local school counts |
-| Q41 | `english_proficiency` moved to country level | Same reasoning as `openness_to_foreigners` — EF EPI is country-level |
+| Q41 | `country.english_proficiency` moved to country level | Same reasoning as `country.openness_to_foreigners` — EF EPI is country-level |
 | Q42 | External scores displayed, never computed with | The IMDb model — show other indices as second opinions. Ingesting them would import their weights |
 | Q43 | Raw indicators become criteria; composites become ExternalScores | A general rule: the test is whether someone else already applied weights |
 | Q44 | Four benchmark gaps added | Work–life balance, subjective wellbeing, governance/rights, housing quality — each present in at least two of OECD, EIU, Mercer, Eurostat |
@@ -1372,8 +1389,8 @@ not only *what*.
 | Q64 | Criterion and CriteriaSettings are separate entities | A criterion defines what is measured; a profile defines what it is worth. Conflating them encodes one person's taste as objective truth |
 | Q65 | `direction`, `ideal`, `scale`, `scale_params`, `threshold`, `required`, `included` are all per-profile | Which way is "good" can be personal — a large expat community is a soft landing or a bubble depending on who is asking |
 | Q66 | `max_age` and `source_priority` stay on the Criterion | Objective: rent ages in months whoever is asking, and source authority is an admin judgement, not a user preference |
-| Q62 | `international_employers` / `international_employers_local` as a matched pair | One concept at two levels, previously named as if it were two. Matches the `safety_national` / `safety_local` shape |
-| Q63 | `tech_employment_share` kept at low weight | Stock, not flow — and the only tech-market criterion with a confirmed source, so it absorbs the counts' weight if that source fails |
+| Q62 | `country.international_employers` / `city.international_employers` as a matched pair | One concept at two levels, previously named as if it were two. Matches the `safety_national` / `city.safety` shape |
+| Q63 | `country.tech_employment_share` kept at low weight | Stock, not flow — and the only tech-market criterion with a confirmed source, so it absorbs the counts' weight if that source fails |
 | Q61 | `tech_software_jobs` and `tech_product_jobs` replace `local_tech_market` and `product_role_availability` | Symmetric counts from one source beat a count plus a vaguely-scoped "market"; the ratio between them exposes a city comfortable for one person and hostile to the other |
 | Q54 | `general_atmosphere` dropped | Too vague to define or measure; no countable proxy and no clear meaning |
 | Q55 | `local_tech_market` redefined as a count | Market *breadth* is countable from job boards and registries; the 1–10 rating was a vibe |
@@ -1381,6 +1398,8 @@ not only *what*.
 | Q57 | Administrative criteria use official sources, one shared adapter | Naturalisation, residency, pensions and local admin are published procedures, not unknowables |
 | Q58 | v1 covers the country level only, full features | Exercises every load-bearing abstraction; the city level then adds sources and rows, not machinery |
 | Q59 | Country seed is the full EU/EEA + UK + CH scope, 32 countries | EU-only would leave the named eligibility filters with no candidates to act on, shipping the mechanism untested — and the UK and Switzerland are genuine candidates whose absence would make the first ranking incomplete |
+| Q87 | Criterion IDs are `<level>.<name>` | `tech_software_jobs` existed at both levels with one ID — either a collision or a Q3 violation. The level prefix makes IDs globally unique and retires the inconsistent `_local`/`_national` suffixes |
+| Q88 | The pillar is not in the ID | Pillar assignment may change and identity may not; encoding it would make every reorganisation a retire-and-recreate. Names do not run out, so growth needs no numbering |
 | Q83 | Eligibility filters enumerated as a catalog (§7.3) | §3.7 was the mechanism with no content. `two_role_feasibility` existed nowhere and cannot be replaced by a criterion — scored criteria only lower a total, and this must be able to eliminate |
 | Q84 | Household parameters are configuration (§1.4) | Cost of living is meaningless in the abstract; it means something only against your own net income. Population-average purchasing power answers a different question |
 | Q85 | Warnings exist, distinct from eliminations | Rent judged against total household spend is a cross-criterion rule that should flag, not disqualify |
@@ -1389,7 +1408,7 @@ not only *what*.
 | Q80 | `reference_date` becomes `reference_period` | A year, a month and a day are all legitimate reference spans; a point date cannot say which |
 | Q81 | Manual entry defaults to `medium` confidence, always overridable | Source tier says nothing useful for manual values — a researched official verdict and a rough estimate are both `source: manual` |
 | Q82 | Excluded criteria renormalise weights but do not reduce coverage | Nothing is missing; you decided it does not apply |
-| Q77 | Five invented composites defined or demoted | `natural_diversity` gets an explicit six-condition count; `rail_network_quality` becomes the concrete `rail_network_density`; `climate_trajectory_national` becomes `projected_summer_heat_days` under a named scenario; the two `AssignedScore` criteria get a stated rubric. None may look sourced while resting on an undefined formula |
+| Q77 | Five invented composites defined or demoted | `country.natural_diversity` gets an explicit six-condition count; `rail_network_quality` becomes the concrete `country.rail_network_density`; `climate_trajectory_national` becomes `country.projected_summer_heat_days` under a named scenario; the two `AssignedScore` criteria get a stated rubric. None may look sourced while resting on an undefined formula |
 | Q78 | Three criteria carrying two measurements each were split | `protected_area_access`, `local_climate` and `housing_quality` each mixed two units in one criterion, which no value type can express |
 | Q76 | Weights auto-rebalance proportionally, with a per-weight lock | Never leaves a profile invalid; locking makes "I have decided this one" explicit. If every other weight in a group is locked, the UI refuses the change and names the blocking locks |
 | Q60 | Adding a country is first-class, reusable, shared with adding a city | Same nomination → approval → profile → acquisition sequence at a different level |

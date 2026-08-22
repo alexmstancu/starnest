@@ -32,7 +32,7 @@ with all that implies) or a declaration kept manually in sync with the code that
 
 ```yaml
 criteria:
-  - id: population
+  - id: country.population
     level: country
     value_type: Count          # ← names an archetype implemented in code
     unit: people
@@ -71,6 +71,10 @@ They do not convert, and they should not:
 
 So the old criterion is marked **retired**: it drops out of active scoring, its values remain
 as historical record, and the new criterion starts empty.
+
+Criterion IDs are `<level>.<name>` — `city.rent_2br_centre`. The level is in the ID because
+cross-level concepts are separate criteria; the pillar is not, precisely so that pillar
+assignment stays mobile.
 
 **What may change freely**, because no stored value depends on it: name, description, pillar
 assignment, sources, source priority, `max_age`. Everything subjective — weight, direction,
@@ -168,13 +172,13 @@ reliability_tier: official
 rate_limit: none
 mode: per_candidate
 provides:
-  - criterion: population
+  - criterion: country.population
     level: country
     indicator: SP.POP.TOTL
     produces: Count
 ```
 
-**Both configs are cross-validated at boot.** Does criterion `population` exist? Does its
+**Both configs are cross-validated at boot.** Does criterion `country.population` exist? Does its
 declared `value_type` match what the adapter claims to produce? A mismatch is a **startup
 error**, not a corrupted value discovered months later. This is the highest-value property of
 the whole design and it costs almost nothing.
@@ -183,7 +187,7 @@ A criterion gets its value by one of three bindings:
 
 | Binding | Declared where | Example |
 |---|---|---|
-| **Adapter fetch** | The adapter's `provides` block | World Bank `SP.POP.TOTL` → `population` |
+| **Adapter fetch** | The adapter's `provides` block | World Bank `SP.POP.TOTL` → `country.population` |
 | **CandidateFacts** | `value_source` on the criterion | `value_source: facts.population` |
 | **Manual entry** | Typed by the user, ranked like any source | The UK visa verdict |
 
