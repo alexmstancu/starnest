@@ -96,7 +96,45 @@ data change*.
 Storage is **narrow**: values are rows keyed by candidate, criterion and source. Adding a
 criterion inserts rows and never alters a table.
 
-### 3.2 A shared parent with typed children
+### 3.2 Identifiers and keys
+
+**Criteria and candidates are rows, not just config entries.** The criteria catalog is loaded
+from config into a `criterion` table at boot (upsert by `id`), and candidates into a
+`candidate` table. `value` then holds **real foreign keys**, not loose strings.
+
+This is what makes retirement work. When a criterion is retired (§2), its stored values must
+keep pointing at something. If criteria existed only in config, deleting an entry would orphan
+every historical value. As a row with `status = retired`, the foreign key stays valid
+permanently while the criterion drops out of active scoring.
+
+**Identifier schemes**, one readable convention across both halves of the key:
+
+| Entity | ID | Why |
+|---|---|---|
+| Criterion | `city.rent_2br_centre` | `<level>.<name>` — level is identity, pillar is not (`reqs.md` §3.3) |
+| Country | `country.pt` | ISO 3166 alpha-2, already a fact and already unique |
+| City | `city.pt.lisbon` | Country-qualified — city names are not globally unique |
+
+**`value` uses a surrogate primary key.** The natural key is five columns —
+`(candidate_id, criterion_id, source_id, reference_period_start, retrieval_date)` — and
+propagating that into ten child tables would mean fifty columns of duplication and joins on
+five conditions. Instead:
+
+```
+value          id            surrogate PK
+               UNIQUE (candidate_id, criterion_id, source_id,
+                       reference_period_start, retrieval_date)
+
+value_monetary value_id      FK → value.id
+               PRIMARY KEY (value_id, key)
+```
+
+The UNIQUE constraint still prevents the same fetch being stored twice, while legitimate
+history — the same source re-fetched later — differs by `retrieval_date` and is preserved. The
+child tables key on `(value_id, key)`, which is what admits keyed and series cardinality (§7)
+without further change.
+
+### 3.3 A shared parent with typed children
 
 Values share seven fields and differ in the rest by type. Rather than one table with nullable
 columns for every type's payload, or ten unrelated tables, the shape is a **parent table with
@@ -130,13 +168,13 @@ This buys three things at once:
 - **Adding a type is one new child table**, which is consistent: adding a type is already a
   code change.
 
-### 3.3 `status`, and never discarding
+### 3.4 `status`, and never discarding
 
 `value.status` is `active`, `superseded` or `rejected`. Nothing is deleted. A value that fails
 validation is stored with `rejected` and its reason; a value outranked by source priority is
 `superseded`. Exactly one value per (candidate, criterion) is `active`.
 
-### 3.4 Scale
+### 3.5 Scale
 
 For v1 — 32 countries × ~44 country criteria × ~2 sources ≈ **2,800 rows**. With cities and
 accumulated history, perhaps 50,000. Small enough that no storage decision here is driven by
