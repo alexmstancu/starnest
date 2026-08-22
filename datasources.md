@@ -432,6 +432,115 @@ it is about crowdsourced submission volume. Lisbon and Porto both return exactly
 
 ---
 
+## 10. Category benchmarks — how reputable indices structure this
+
+Four established frameworks, chosen for methodological transparency and standing. Compared
+against the Starnest catalog (`reqs.md` §7) to find gaps.
+
+### 10.1 The four references
+
+| Index | Structure | Weighting | Notes |
+|---|---|---|---|
+| **OECD Better Life Index** | 11 dimensions, 24 indicators | **User-set at dimension level; indicator weights fixed and equal** | The closest structural precedent to Starnest. Users score each dimension 0–5, weight = score ÷ sum of scores |
+| **EIU Global Liveability Index** | 5 categories, 30 indicators | Fixed: Stability 25%, Culture & Environment 25%, Infrastructure 20%, Healthcare 20%, Education 10% | 173 cities. Indicators rated acceptable → unbearable, scored 1–100 |
+| **Mercer Quality of Living** | 10 categories, 39 factors | Not published | 450+ cities. The corporate relocation standard; largely paywalled |
+| **Eurostat Quality of Life** | 8+1 dimensions, sub-dimensions, indicators | None — a reporting framework, not an index | Official EU framework. Its data is directly fetchable |
+
+**Their categories, verbatim:**
+
+- **OECD:** Housing · Income · Jobs · Community · Education · Environment · Civic Engagement ·
+  Health · Life Satisfaction · Safety · Work–Life Balance
+- **EIU:** Stability · Healthcare · Culture & Environment · Education · Infrastructure
+- **Mercer:** Political & social environment · Economic environment · Socio-cultural
+  environment · Medical & health · Schools & education · Public services & transportation ·
+  Recreation · Consumer goods · Housing · Natural environment
+- **Eurostat:** Material living conditions · Productive/main activity · Health · Education ·
+  Leisure & social interactions · Economic & physical safety · Governance & basic rights ·
+  Natural & living environment · **+1** Overall experience of life
+
+### 10.2 Coverage against the Starnest catalog
+
+| Concern | OECD | EIU | Mercer | Eurostat | Starnest |
+|---|---|---|---|---|---|
+| Income, cost, housing cost | ✓ | ✓ | ✓ | ✓ | `economics` |
+| Employment | ✓ | — | — | ✓ | `career` |
+| Physical safety | ✓ | ✓ | ✓ | ✓ | `safety` |
+| Healthcare | ✓ | ✓ | ✓ | ✓ | `health` |
+| Natural environment, climate | ✓ | ✓ | ✓ | ✓ | `climate` |
+| Transport, utilities, telecoms | — | ✓ | ✓ | — | `connectivity` |
+| Culture, leisure, recreation | ✓ | ✓ | ✓ | ✓ | `culture` |
+| Education | ✓ | ✓ | ✓ | ✓ | `family` |
+| Administrative procedure | — | — | ✓ | — | `admin` |
+| **Work–life balance** | **✓** | — | — | ✓ | **absent** |
+| **Subjective wellbeing** | **✓** | — | — | **✓ (+1)** | **absent** |
+| **Governance, rule of law, rights** | **✓** | ✓ | ✓ | **✓** | **partial** |
+| Social connection | ✓ | — | — | ✓ | partial |
+| Visa eligibility, naturalisation | — | — | — | — | **`admin` — unique to us** |
+| Connection to a specific home country | — | — | — | — | **`connectivity` — unique to us** |
+
+### 10.3 Three gaps worth closing
+
+**1. Work–life balance.** A full dimension in OECD, present in Eurostat under productive
+activity, absent from ours. Measurable at country level: average usual weekly hours,
+employees working very long hours, statutory paid leave. For two people in tech considering a
+permanent move, working-hours culture is one of the sharper differences between, say, the
+Netherlands and Greece — and it is invisible in the current catalog.
+*Sources: OECD Employment Database, Eurostat `lfsa_ewhun2`.*
+
+**2. Subjective wellbeing.** A headline dimension in OECD (Life Satisfaction) and the entire
+"+1" of Eurostat's framework. This is not the deferred `general_atmosphere` question — it is a
+hard number, collected by official statistical agencies on a standard 0–10 Cantril ladder.
+*Sources: Eurostat `ilc_pw01`, World Happiness Report.*
+
+**3. Governance and rights, as distinct from administrative ease.** Our `admin` category is
+procedural — how hard is it to register a residence or open a bank account. Three of the four
+references also cover **rule of law, corruption, press freedom, and discrimination**. For an
+open-ended move to a country where children may grow up, that is arguably weightier than queue
+length, and it is currently only implicit inside `political_economic_stability`.
+*Sources: World Bank Governance Indicators (rule of law, control of corruption), V-Dem,
+Reporters Without Borders Press Freedom Index, EU Justice Scoreboard.*
+
+### 10.4 What the comparison confirms
+
+- **Category count.** EIU 5, Starnest 8/9, Eurostat 9, Mercer 10, OECD 11. We sit mid-range;
+  nothing suggests we are too coarse or too fine.
+- **Weight distribution.** EIU's spread is 25% down to 10%. Ours is 22% down to 4%. Comparable,
+  with no single category dominating.
+- **Two of our categories have no counterpart anywhere** — visa eligibility and naturalisation,
+  and connection to a specific home country. That is expected: these indices rank *places* for
+  a generic reader, while Starnest evaluates *eligibility and fit* for one household. It is the
+  clearest statement of what the app is actually for.
+
+### 10.5 Two methodological lessons
+
+**OECD deliberately locks indicator weights.** Users weight the 11 dimensions but cannot touch
+the 24 indicators beneath them, which stay equal-weighted. Starnest currently allows both
+levels to be adjusted (`reqs.md` §3.3). OECD's restraint is defensible — indicator-level
+weighting demands that the user understand each indicator, and it invites tuning weights until
+a favoured answer appears. Worth a deliberate decision rather than a default.
+
+**Numbeo's published formula is an un-normalised weighted sum:**
+
+```java
+index = max(0, 100
+  + purchasingPowerInclRentIndex / 2.5
+  - housePriceToIncomeRatio * 1.0
+  - costOfLivingIndex / 10
+  + safetyIndex / 2.0
+  + healthIndex / 2.5
+  - trafficTimeIndex / 2.0
+  - pollutionIndex * 2.0 / 3.0
+  + climateIndex / 3.0)
+```
+
+The coefficients are **not** weights. `housePriceToIncomeRatio` ranges roughly 2–30 while the
+other terms are 0–100 indices, so its coefficient of 1.0 contributes far less than it appears
+to, and nothing in the formula corrects for that. This is precisely the failure mode that the
+per-criterion normalisation decision (`reqs.md` §5.1) exists to prevent — a useful confirmation
+that the decision was the right one.
+
+---
+
 ## Sources consulted
 
 WhereNext [index](https://getwherenext.com/data/global-relocation-index-2026) ·
@@ -450,4 +559,9 @@ WhereNext [index](https://getwherenext.com/data/global-relocation-index-2026) ·
 [Numbeo API](https://www.numbeo.com/common/api.jsp) ·
 [Google Places billing](https://developers.google.com/maps/documentation/places/web-service/usage-and-billing) ·
 [Doing Business discontinuation](https://www.worldbank.org/en/businessready/about-us) ·
-[Euro Health Consumer Index](https://en.wikipedia.org/wiki/Euro_Health_Consumer_Index)
+[Euro Health Consumer Index](https://en.wikipedia.org/wiki/Euro_Health_Consumer_Index) ·
+[OECD Better Life Index](https://en.wikipedia.org/wiki/OECD_Better_Life_Index) ·
+[EIU Global Liveability Index](https://en.wikipedia.org/wiki/Global_Liveability_Index) ·
+[Mercer Quality of Living 2024](https://www.mercer.com/en-ie/about/newsroom/2024-quality-of-living-city-ranking/) ·
+[Eurostat Quality of Life indicators](https://ec.europa.eu/eurostat/statistics-explained/index.php?title=Quality_of_life_indicators_-_measuring_quality_of_life) ·
+[Numbeo indices explained](https://www.numbeo.com/quality-of-life/indices_explained.jsp)
