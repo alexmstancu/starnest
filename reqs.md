@@ -18,7 +18,7 @@ them head to head, and explains every number it displays.
 |---|---|
 | **Geography** | EU/EEA + United Kingdom + Switzerland |
 | **Horizon** | Open-ended. The chosen place may be home for life. Any requirement framed around a fixed number of years is wrong. |
-| **Household** | Two adults, both working in tech (engineering and product). **Children are in scope** — see §6.7. |
+| **Household** | Two adults, both working in tech (engineering and product). **Children are in scope** — see §6.8. |
 | **Home country** | Romania. Both are Romanian (EU) citizens. |
 | **Deployment** | Runs locally in a browser. Single user, no authentication, no multi-tenancy. |
 
@@ -96,6 +96,17 @@ membership; administrative subdivision scheme; climate zones present.
 province, department); population, city proper and metropolitan; area; elevation minimum,
 maximum and mean; coordinates; timezone; coastal or landlocked; **subdivisions** — count and
 names, e.g. Paris's 20 arrondissements; nearest major airport and distance to it.
+
+**Natural setting (country):** bordering seas; coastline length; highest peak with name and
+elevation; principal mountain ranges; major rivers; largest lakes; national parks — count and
+names; biomes or ecoregions present.
+
+**Natural setting (city):** nearest coast — sea name and distance; nearest mountain range —
+name, distance, highest peak; nearest significant lake or river — name and distance; nearest
+protected area — name, designation and distance; terrain character.
+
+> These are **facts, not judgements**. "Calanques National Park, 2 km" belongs here; "nature
+> access 8.7" belongs in §7. Same split as population versus cost of living.
 
 **Subdivisions are descriptive only.** They are listed as facts about a city and are never
 scored, ranked, or evaluated separately. Where safety or cost varies sharply between
@@ -423,7 +434,18 @@ it on rent.
 Each criterion declares a **`max_age`**. Past that age, the next source in priority order is
 promoted automatically. Rent ages in months; a climate zone ages in decades.
 
-### 6.7 Children in scope
+### 6.7 Sources are plug-ins
+
+Every data source is a **plug-in behind a common interface**, not a branch inside a fetcher.
+Adding a source must mean writing one new adapter and registering it in configuration — never
+editing the acquisition core, the scoring engine, or any existing adapter.
+
+An adapter declares which criteria it can answer, at which levels, its reliability tier
+(§5.7), its rate limits, and whether it is a bulk download or a per-candidate query
+(`datasources.md` §7). The same requirement applies to the criteria catalog itself: this
+catalog will grow, and growth must stay a data-and-adapter change.
+
+### 6.8 Children in scope
 
 The master spec never mentions children; this document does. Their presence adds the criteria
 in the `family` category at both levels (§7) — national school system quality, parental leave
@@ -451,6 +473,7 @@ culture and statutory leave are national.
 | `health` | ✓ | ✓ |
 | `climate` | ✓ | ✓ |
 | `connectivity` | — | ✓ |
+| `nature` | ✓ | ✓ |
 | `culture` | ✓ | ✓ |
 | `governance` | ✓ | ✓ |
 | `family` | ✓ | ✓ |
@@ -461,7 +484,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 ### 7.1 Phase 1 — country
 
-#### Economics — 16%
+#### Economics — 15%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -469,7 +492,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `income_tax_effective` | 35% | numeric %, lower better | OECD Tax Database, national tax authorities |
 | `remote_work_tax_treaty` | 25% | label_list, must contain RO treaty | OECD treaty database, manual |
 
-#### Housing — 12%
+#### Housing — 11%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -477,7 +500,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `housing_cost_overburden_rate` | 35% | numeric %, lower better | Eurostat `ilc_lvho07a` |
 | `overcrowding_rate` | 25% | numeric %, lower better | Eurostat `ilc_lvho05a` |
 
-#### Career & work — 16%
+#### Career & work — 15%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -486,20 +509,20 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `average_working_hours` | 25% | numeric, **ideal_band** | OECD Employment Database, Eurostat `lfsa_ewhun2` |
 | `statutory_paid_leave` | 20% | numeric days, higher better | OECD, EU Working Time Directive, national law |
 
-#### Safety & stability — 14%
+#### Safety & stability — 13%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `crime_safety_index_national` | 50% | numeric, higher better | UNODC homicide, Eurostat crime |
 | `political_economic_stability` | 50% | numeric, higher better | World Bank Governance Indicators |
 
-#### Health — 11%
+#### Health — 10%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `healthcare_system_quality` | 100% | numeric, higher better | WHO Global Health Observatory, OECD Health Statistics |
 
-#### Climate & environment — 9%
+#### Climate & environment — 8%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -508,7 +531,21 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `annual_sunshine_hours` | 25% | numeric, higher better | Open-Meteo, from radiation **(C)** |
 | `climate_trajectory_national` | 20% | numeric, lower risk better | Copernicus CDS, IPCC |
 
-#### Culture & community — 8%
+#### Nature & landscape — 8%
+
+| Criterion | Weight | Type / direction | Sources |
+|---|---|---|---|
+| `natural_diversity` | 25% | numeric, higher better | Derived — count of coexisting feature types (coast, high mountain, major lake, major river, forest, distinct biomes) |
+| `protected_land_share` | 25% | numeric %, higher better | WDPA / Protected Planet, Eurostat |
+| `coastline_access` | 20% | numeric, higher better | Natural Earth, Eurostat — length relative to area |
+| `forest_cover` | 15% | numeric %, higher better | FAO, Corine Land Cover |
+| `elevation_range` | 15% | numeric m, higher better | Copernicus DEM — relief variety |
+
+> A large country can host sea, high mountains, lakes and forest **simultaneously**, and that
+> combination is the thing worth screening for. `natural_diversity` measures coexistence
+> rather than presence, separating Austria and Spain from the Netherlands and Denmark.
+
+#### Culture & community — 7%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -527,7 +564,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `press_freedom` | 10% | numeric, higher better | Reporters Without Borders |
 | `pension_portability` | 5% | numeric, higher better | EU coordination rules, manual |
 
-#### Family & education — 5%
+#### Family & education — 4%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -537,14 +574,14 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 ### 7.2 Phase 2 — city
 
-#### Economics — 12%
+#### Economics — 10%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `cost_of_living_2p_monthly` | 60% | numeric EUR/month, lower better | Numbeo **(R)**, LLM fallback |
 | `local_purchasing_power` | 40% | numeric, higher better | Numbeo **(R)**, Eurostat Urban Audit **(R)** |
 
-#### Housing — 16%
+#### Housing — 15%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -552,7 +589,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `property_purchase_price_m2` | 35% | numeric EUR/m², lower better | National land registries, Eurostat **(R)** |
 | `housing_quality` | 20% | numeric, higher better | Eurostat Urban Audit rooms-per-person, overcrowding **(R)** |
 
-#### Career & work — 15%
+#### Career & work — 14%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -562,27 +599,27 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 > Under a `remote-only` weight profile this category is down-weighted and `connectivity` up-weighted.
 
-#### Safety & stability — 8%
+#### Safety & stability — 7%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `safety_local` | 100% | numeric, higher better | Eurostat Urban Audit **(R)**, Numbeo **(R)**, regional police |
 
-#### Health — 8%
+#### Health — 7%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `healthcare_access_local` | 60% | numeric, higher better | Overpass, distance to hospital **(C)** |
 | `paediatric_healthcare_access` | 40% | numeric, higher better | Overpass **(C)**, national health registries |
 
-#### Climate & environment — 10%
+#### Climate & environment — 9%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `local_climate` | 55% | numeric, **ideal_band** + sunshine | Open-Meteo **(C)** |
 | `air_quality` | 45% | numeric PM2.5, lower better | OpenAQ, EEA nearest station **(C)** |
 
-#### Connectivity — 11%
+#### Connectivity — 10%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -591,24 +628,45 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `flights_to_romania` | 25% | numeric, higher better | Flight APIs, manual, via `profile.nearest_airport` |
 | `proximity_to_hub` | 20% | numeric km, lower better | Computed from coordinates **(C)** |
 
-#### Culture & community — 10%
+#### Nature & landscape — 12%
+
+All criteria are **coordinate-bound**: they compute for a village as readily as for a capital.
+This is the category where a small town can genuinely outscore a city, and where the data
+exists to demonstrate it. Distances use a **saturating** scale — steep near zero, flat past the
+point where further distance stops mattering.
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `heritage_and_culture_density` | 40% | numeric, higher better | UNESCO, monument registers, Overpass museum/cinema counts **(C)** |
-| `landscape_access` | 35% | numeric, higher better | WDPA, coastline and elevation from `profile` **(C)** |
-| `expat_community_size` | 25% | numeric, higher better | Eurostat Urban Audit foreign-born **(R)** |
+| `distance_to_sea` | 18% | numeric km, lower better, **saturating** | OSM / Natural Earth coastline **(C)** |
+| `distance_to_mountains` | 15% | numeric km, lower better, **saturating** | Copernicus DEM, terrain above threshold **(C)** |
+| `hiking_trail_density` | 15% | numeric km per radius, higher better | OSM Overpass marked hiking routes **(C)** |
+| `distance_to_inland_water` | 12% | numeric km, lower better, **saturating** | OSM lakes and rivers, size-filtered **(C)** |
+| `protected_area_access` | 12% | numeric, higher better | WDPA — distance and area within radius **(C)** |
+| `bathing_water_quality` | 10% | numeric, higher better | EEA Bathing Water Directive dataset |
+| `night_sky_brightness` | 10% | numeric, lower better | VIIRS, World Atlas of Artificial Night Sky Brightness **(C)** |
+| `forest_cover_local` | 8% | numeric %, higher better | Corine Land Cover within radius **(C)** |
+
+> `hiking_trail_density` measures whether you can actually walk; `distance_to_mountains` alone
+> does not. `bathing_water_quality` separates 20 km from the sea from 20 km from water you
+> would swim in.
+
+#### Culture & community — 8%
+
+| Criterion | Weight | Type / direction | Sources |
+|---|---|---|---|
+| `heritage_and_culture_density` | 60% | numeric, higher better | UNESCO, monument registers, Overpass museum/cinema counts **(C)** |
+| `expat_community_size` | 40% | numeric, higher better | Eurostat Urban Audit foreign-born **(R)** |
 
 > **`general_atmosphere`** — irreducibly prose, no countable proxy, **not currently weighted**.
 > Deferred: see §9.
 
-#### Governance & administration — 3%
+#### Governance & administration — 2%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `local_admin_ease` | 100% | numeric, higher better | LLM + search, manual |
 
-#### Family & education — 7%
+#### Family & education — 6%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
@@ -772,5 +830,10 @@ not only *what*.
 | Q45 | Housing split from economics | OECD and Mercer both treat it separately; price and quality are different questions |
 | Q46 | Governance folded into `admin`, renamed | Both concern how the state treats you; keeps the category count down |
 | Q47 | Both weight levels stay user-adjustable | OECD locks indicators because it serves the anonymous public; here the sole user chose every criterion |
+| Q48 | `nature` promoted to its own category, both phases | It was buried in culture at a 3.5% effective weight; nature is not culture, and it is the one category where small towns win on computable data |
+| Q49 | Distance criteria use a saturating scale | 5 km vs 15 km to the sea matters; 200 km vs 250 km does not |
+| Q50 | Country nature measures *diversity*, not presence | A large country can hold sea, mountains, lakes and forest at once; coexistence is what is worth screening |
+| Q51 | `CandidateProfile` gains a natural-setting section | Facts describe, criteria judge — "Calanques, 2 km" is context, "nature 8.7" is a score |
+| Q52 | Data sources are plug-ins behind a common interface | Adding a source must be one adapter plus config, never an edit to the acquisition core |
 | — | "Category" not "group" or "dimension" | Plainest word; "dimension" implies an axis in a space, which these are not |
 | — | `Candidate` replaces `Target` | "Target" also named a role in comparisons; the entity and the role needed separating |
