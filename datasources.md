@@ -14,8 +14,8 @@ Everything else is from published documentation and should be re-checked before 
    sources". It is in fact the closest existing product to Starnest — weighted multi-dimension
    country scoring, user-adjustable weights, confidence adjustment for sparse data. It is also
    *unusable as a primary source* for reasons in §2.3.
-2. **The country/city divide is the whole problem.** Phase 1 is served by excellent free
-   official APIs. Phase 2 is thin, and for small localities it collapses.
+2. **The country/city divide is the whole problem.** the country level is served by excellent free
+   official APIs. the city level is thin, and for small localities it collapses.
 3. **The fix is a source-selection principle, not more sources** — prefer *coordinate-bound*
    sources over *registry-bound* ones (§3). This is what makes Cassis tractable.
 4. **Two sources named in `reqs.md` are dead** and must be replaced (§6.1).
@@ -48,7 +48,7 @@ our coverage percentage solves. This is worth sitting with before building.
 
 | Starnest | WhereNext |
 |---|---|
-| Two-phase country → city pipeline | Countries and cities as separate flat lists |
+| Two-level country → city pipeline | Countries and cities as separate flat lists |
 | Full provenance per number: source, two dates, all competing values retained | Composite scores only, no per-indicator provenance |
 | Any locality, including a village of 7,000 | A fixed set of 380 cities |
 | Criteria personal to *this* household — tax vs Romania, flights to Romania, RO double-taxation treaty, naturalisation, children | Generic dimensions for a generic mover |
@@ -109,7 +109,7 @@ under the §6.6 priority mechanism.
 
 **Nobody occupies our exact position.** The market splits into cost calculators (Numbeo,
 Expatistan), lifestyle communities (Nomad List), visa-eligibility tools (whereTOemigrate), and
-institutional rankings (WhereNext). None combines a two-phase funnel, arbitrary localities,
+institutional rankings (WhereNext). None combines a two-level funnel, arbitrary localities,
 per-number provenance, and criteria personal to one household. That is a real gap — and,
 given `MVP is a personal iteration baseline`, a gap we're filling for two people rather than a
 market to enter.
@@ -137,7 +137,7 @@ anywhere on earth, at any settlement size.
 
 **Design consequence.** Wherever a criterion can be answered from coordinates, prefer that
 source — it degrades gracefully as a locality shrinks, whereas registry sources fail
-completely. Applied across the Phase 2 catalog, this converts a large part of the small-town
+completely. Applied across the the city level catalog, this converts a large part of the small-town
 coverage problem from "no data" into "data, at slightly coarser resolution".
 
 It also predicts *which* criteria will stay hard: anything requiring a human institution to
@@ -198,7 +198,7 @@ LLM + `web_search` path.
 
 ## 5. Criterion → source mapping
 
-### Phase 1 — country
+### the country level — country
 
 | Criterion | Primary | Secondary | Confidence |
 |---|---|---|---|
@@ -218,7 +218,7 @@ LLM + `web_search` path.
 | `naturalisation_pathway` | — | Manual / LLM | **Low** — legal text, no dataset |
 | `pension_portability` | EU coordination rules | Manual / LLM | **Low** |
 
-### Phase 2 — city
+### the city level — city
 
 **R** = registry-bound (fails below a population floor) · **C** = coordinate-bound (works anywhere)
 
@@ -248,7 +248,7 @@ LLM + `web_search` path.
 | `paediatric_healthcare_access` | **Overpass** + national | **C** | **Works** for access; quality does not |
 | `childcare_cost_availability` | Eurostat; national | **R** | Thin everywhere |
 
-### Eurostat Urban Audit — the key Phase 2 asset
+### Eurostat Urban Audit — the key the city level asset
 
 Worth its own note. **794 EU cities, plus 171 UK, 10 Swiss, 6 Norwegian, 1 Icelandic.**
 **300+ indicators** derived from 336 variables: demography, housing, health, labour market,
@@ -281,13 +281,13 @@ coverage percentage is not a nicety, it is the only honest way to consume this d
 **`local_openness_to_foreigners`** was added as a city-level criterion. Every source that
 measures it — MIPEX, Eurobarometer, InterNations — is **country-level only**. Three options:
 
-1. **Move it to Phase 1** as a country criterion, where its sources actually live.
+1. **Move it to the country level** as a country criterion, where its sources actually live.
 2. **Keep it city-level, populated with the country value**, clearly labelled as inherited —
    honest, but it then adds nothing to the city ranking beyond a constant.
 3. **Keep it city-level, LLM-sourced**, accepting weak evidence.
 
 **Recommendation: option 1.** Attitudes toward foreigners are largely national-policy and
-national-culture phenomena, and Phase 1 is where the data is.
+national-culture phenomena, and the country level is where the data is.
 
 ### 6.3 Criteria that will be LLM-or-nothing
 
@@ -295,7 +295,7 @@ national-culture phenomena, and Phase 1 is where the data is.
 `pension_portability` · `local_tech_market` · `major_employer_presence` ·
 `product_role_availability` · `local_admin_ease`
 
-Eight criteria across both phases with no structured source. This is the real scope of the
+Eight criteria across both levels with no structured source. This is the real scope of the
 deferred Q20 question — it was framed as being about *atmosphere*, but the harder cases are
 legal and labour-market facts that happen to have no API.
 

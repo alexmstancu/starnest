@@ -37,7 +37,7 @@ Romania alongside its raw value.
 
 ### 1.3 Scope of v1
 
-**v1 is Phase 1 only — countries — with the full feature set applied to them.** Everything in
+**v1 covers the country level only, with the full feature set applied to it.** Everything in
 this document is a requirement; this section says only what arrives first.
 
 **In v1:** pillar and criterion configuration with weights at both levels · thresholds and
@@ -47,15 +47,15 @@ normalisation, weight redistribution, coverage and confidence · elimination rep
 the ranking dashboard with per-criterion drill-down and full provenance · comparison of a
 focus country against comparators · external scores displayed alongside.
 
-**After v1:** the whole of **Phase 2** — cities, the city criteria catalog, city nomination,
+**After v1:** the whole of the **city level** — cities, the city criteria catalog, city nomination,
 and the LLM-plus-search acquisition path that city criteria depend on · prose-bound criteria
 (§9) · and the spec's own post-MVP list: personal annotations, gradient maps, favourites,
 saved criteria profiles, saved comparisons.
 
-> Phase 1 is the right first slice because it exercises nearly every load-bearing abstraction —
+> The country level is the right first slice: it exercises nearly every load-bearing abstraction —
 > `Candidate`, pillars and criteria as data, normalisation, redistribution, coverage,
 > confidence, filters, provenance, comparison — while needing no city nomination and almost no
-> LLM. Phase 2 then adds *sources and rows*, not new machinery, which is the test of whether
+> LLM. The city level then adds *sources and rows*, not new machinery, which is the test of whether
 > the design was right.
 
 ---
@@ -94,7 +94,7 @@ retired, because it also named a role in comparisons. Comparison roles are **foc
 | `parent` | For cities, the country Candidate. Null for countries. |
 | `nomination_source` | Which mechanism proposed it — `config_seed` \| `llm_proposal` \| `manual` \| `population_rank` |
 | `approval_state` | `proposed` \| `approved` \| `rejected`. LLM proposals begin as `proposed`. |
-| `bypassed_phase_1` | True when a city was added despite its country not qualifying (§5.4) |
+| `bypassed_screening` | True when a city was added despite its country not qualifying (§5.4) |
 | `status` | Derived: `qualified` \| `eliminated` \| `insufficient_data` |
 | `profile` | Factual attributes — §3.2 |
 
@@ -138,10 +138,10 @@ districts, that belongs in the notes on the relevant criterion, not in a third C
 ### 3.3 Pillar and Criterion
 
 **Criteria are exactly two levels deep.** Groups carry weights summing to 100% within a
-phase; criteria carry sub-weights summing to 100% within their pillar. The user may adjust
+level; criteria carry sub-weights summing to 100% within their pillar. The user may adjust
 both levels.
 
-**Pillar:** identifier, display name, phase, weight, description.
+**Pillar:** identifier, display name, level, weight, description.
 
 > **Pillar**, not "pillar", "group" or "dimension". These are not bins things get sorted
 > into — they are the load-bearing verticals of a life, and the word should carry that.
@@ -153,7 +153,7 @@ both levels.
 | Field | Notes |
 |---|---|
 | `pillar` | Its parent pillar |
-| `phase` | `1` (country) or `2` (city) |
+| `level` | `country` or `city` — the same axis as `Candidate.level` |
 | `weight` | Sub-weight within its pillar |
 | `type` | `numeric` \| `number_list` \| `label_list` \| `boolean` \| `text` |
 | `direction` | `lower_is_better` \| `higher_is_better` \| `ideal_band` |
@@ -252,7 +252,7 @@ visible**; resolution only decides which is active.
 
 A named yes/no gate, distinct from a criterion threshold (§5.2).
 
-Identifier, display name, phase, applicable candidates, `verdict` (`pass` \| `fail` \|
+Identifier, display name, level, applicable candidates, `verdict` (`pass` \| `fail` \|
 `unknown`), reason text, source and its two dates, and an optional override carrying its own
 reason and date.
 
@@ -263,28 +263,28 @@ travels with the candidate everywhere it appears.
 
 A persisted record of one acquisition pass.
 
-Timestamp, phase, scope (which candidates, which criteria), LLM call count, cost, and
+Timestamp, level, scope (which candidates, which criteria), LLM call count, cost, and
 per-candidate failures with their errors. Values link back to the Run that produced them,
 which is what makes selective retry (§6.4) and score-over-time comparison possible.
 
 ---
 
-## 4. Two-phase evaluation
+## 4. Two-level evaluation
 
-**Phase 1 — country.** Cheap screening across all candidate countries using structured
+**Country level.** Cheap screening across all candidate countries using structured
 sources. Countries below the qualification threshold do not have cities extracted.
 
-**Phase 2 — city.** Detailed evaluation of cities within qualified countries, using
+**City level.** Detailed evaluation of cities within qualified countries, using
 structured and LLM-assisted sources.
 
-Both phases run on the same machinery. Scoring, filtering, resolution and comparison are
-written once against `Candidate` and must not be duplicated per phase. What differs is the
-**data**: each phase has its own criteria catalog and its own weights, each summing to 100%
+Both levels run on the same machinery. Scoring, filtering, resolution and comparison are
+written once against `Candidate` and must not be duplicated per level. What differs is the
+**data**: each level has its own criteria catalog and its own weights, each summing to 100%
 independently of the other.
 
 **A city's score never inherits arithmetic from its country's score.** The country score
 appears alongside the city for context — so a strong city in a weak country is visible — but
-is never added into the city total. National factors are already represented by Phase 2's own
+is never added into the city total. National factors are already represented by city-level
 criteria; adding the country score would count them twice.
 
 ---
@@ -354,8 +354,8 @@ Eliminated candidates **remain visible**, with the reason for elimination shown,
 first but failed a single visa gate is worth seeing as exactly that — it tells you what a
 rule is costing you.
 
-A city may be added and evaluated even though its country failed Phase 1 or was never
-screened. Such a candidate is marked as having **bypassed** the country gate.
+A city may be added and evaluated even though its country failed the country screen or was never
+screened at all. Such a candidate is marked as having **bypassed** the country gate.
 
 ### 5.5 Currency
 
@@ -432,7 +432,7 @@ implementation wherever the level abstraction allows.
 
 ### 6.2 Triggering a fetch
 
-Fetching is explicit and scoped — by phase, by candidate, by criterion, or any combination.
+Fetching is explicit and scoped — by level, by candidate, by criterion, or any combination.
 Nothing re-fetches automatically as a side effect of any other action.
 
 ### 6.3 Cost control
@@ -500,8 +500,8 @@ level — and shifts the weight of several existing criteria.
 
 ## 7. Criteria catalog
 
-**Pillars are parallel across the two phases** — the same named concerns at both levels,
-each holding whichever criteria apply there. Weights remain fully independent per phase, each
+**Pillars are parallel across the two levels** — the same named concerns at both levels,
+each holding whichever criteria apply there. Weights remain fully independent per level, each
 summing to 100%. Both levels are user-adjustable: unlike the OECD Better Life Index, which
 locks indicator weights, the sole user here chose every criterion and understands what it means.
 
@@ -526,7 +526,7 @@ culture and statutory leave are national.
 exists. **C** marks a coordinate-bound source that works at any settlement size, **R** a
 registry-bound one with a population floor (`datasources.md` §3).
 
-### 7.1 Phase 1 — country
+### 7.1 Country level
 
 #### Economics — 15%
 
@@ -616,7 +616,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `parental_leave_policy` | 30% | numeric, higher better | OECD Family Database |
 | `child_benefit_policy` | 25% | numeric, higher better | OECD, national social-security bodies |
 
-### 7.2 Phase 2 — city
+### 7.2 City level
 
 #### Economics — 10%
 
@@ -735,7 +735,7 @@ everywhere; each tab owns one stage of the workflow and nests its detail views i
 
 - Application display name, read from configuration (§10)
 - **Active weight profile** selector
-- **Phase toggle** — country (1) or city (2)
+- **Level toggle** — country (1) or city (2)
 - Candidate counts: total, qualified, eliminated, insufficient data
 - Last run summary and a link to run history
 
@@ -754,7 +754,7 @@ everywhere; each tab owns one stage of the workflow and nests its detail views i
 
 ### 8.3 Tab 2 — Run
 
-- **Scope selector** — phase, which candidates, which criteria.
+- **Scope selector** — level, which candidates, which criteria.
 - **Dry-run estimate** — planned call count and cost range, with explicit confirmation.
 - **Budget cap** for this run.
 - **Live progress**, per candidate and per criterion.
@@ -766,7 +766,7 @@ everywhere; each tab owns one stage of the workflow and nests its detail views i
 The main results view.
 
 - **Ranking table** — candidates by total score, with coverage percentage and status. When
-  viewing cities, the country's Phase 1 score appears as a context column. A Δ-vs-Romania
+  viewing cities, the country's country score appears as a context column. A Δ-vs-Romania
   column is available on any criterion.
 - **Eliminated section** — always present, never hidden. Greyed rows showing the retained
   score, the elimination reason, and any override marker.
@@ -802,10 +802,10 @@ The main results view.
   to define, let alone measure. `local_tech_market` was redefined as a count rather than a
   rating. The administrative criteria moved to documented official sources (§6.9). What remains
   is `international_employer_presence`, `major_employer_presence` and `product_role_availability`,
-  all of which use **LLM proposal with user override, both values retained**. These are Phase 2
-  or LLM-dependent and therefore land after v1 (§1.3).
+  all of which use **LLM proposal with user override, both values retained**. These are city-level
+  or LLM-dependent, and therefore land after v1 (§1.3).
 - **Provisional values**, all to be revised after a first real run: every weight in §7, the
-  Phase 1 qualification threshold, the ~2000–3000 EUR/month household budget guideline, the
+  country-level qualification threshold, the ~2000–3000 EUR/month household budget guideline, the
   2000 EUR rent ceiling, `min_coverage`, and every `scale_params` and `threshold` marked TBD.
 - **Which criteria are `required`** (§5.3) — not yet assigned.
 - **MVP scope.** Not addressed anywhere in this document, by design.
@@ -839,20 +839,20 @@ not only *what*.
 |---|---|---|
 | Q1 | Two-level criteria | Preserves the spec's pillar weights exactly while keeping each bullet independently sourced and provenance-tracked |
 | Q2 | Exactly two levels | Implied by Q1; no deeper nesting in the model |
-| Q3 | Cross-phase concepts are separate criteria | The spec frames local safety as a different question from national safety, not the same one zoomed in |
+| Q3 | Cross-level concepts are separate criteria | The spec frames local safety as a different question from national safety, not the same one zoomed in |
 | Q4 | Direction per criterion, either mode | A single direction cannot express "warm but not too hot" |
 | Q5 | Normalisation per criterion, in config | Fixed bands keep a score stable over time; percentile suits criteria where only relative standing matters |
 | Q6 | Redistribute weight, show coverage | Zero-filling would bury exactly the small, under-documented towns that are wanted candidates |
 | Q7 | Coverage floor *and* `required` flags | They catch different failures: general sparsity versus a specific essential unknown |
 | Q8 | Scale 0–100, integer | Criterion inputs and totals share one range; whole numbers read faster than one-decimal fractions |
-| Q9 | Country score displayed, never added | National factors already appear in Phase 2 criteria; adding them again double-counts |
+| Q9 | Country score displayed, never added | National factors already appear in city-level criteria; adding them again double-counts |
 | Q10 | Filters and thresholds are two mechanisms, one report | Filters carry judgement, verdicts, sources and overrides that a threshold does not |
 | Q11+Q19 | Manual entry is a first-class source | Visa pathways and quotas have no fetcher; an early estimate must be supersedable, not deleted |
 | Q12 | Overrides permitted, audited | A manual judgement may later be revised; layering a decision beats rewriting the record |
 | Q13 | Eliminated candidates keep their score | Shows what a gate is costing you |
 | Q14 | Country list auto-seeded, prunable | Exclusions are configuration, not deletion |
 | Q15 | All four nomination mechanisms | Population ranking alone cannot reach a village of 7,000 |
-| Q16 | Phase 1 can be bypassed | Supports investigating somewhere you just heard about |
+| Q16 | The country screen can be bypassed | Supports investigating somewhere you just heard about |
 | Q17 | Source priority per criterion | Different sources are authoritative for different kinds of data |
 | Q18 | Per-criterion `max_age` | Rent ages in months, climate zones in decades |
 | Q20 | **Deferred** | See §9 |
@@ -866,23 +866,23 @@ not only *what*.
 | Q29 | Native and converted values stored | The published figure must stay auditable against its source |
 | Q30 | Romania is baseline and candidate | Staying put is a real option and deserves measuring |
 | Q31 | Factual attributes on the Candidate, referenceable | Stored once; scoring city size later needs no second fetch |
-| Q32 | Subdivisions descriptive only | A third tier would break the two-phase architecture |
+| Q32 | Subdivisions descriptive only | A third tier would break the two-level architecture |
 | Q33 | Catalog at name/type/direction/source/weight detail | Scale bands and thresholds can only be set sensibly after real data |
 | Q34 | Four tabs plus sidebar | Preserves the spec's shape; newer surfaces nest inside |
 | Q35 | Per-value confidence: display and source priority only | Coverage says how much data exists; confidence says what it is worth. Discounting the score would absorb uncertainty rather than disclose it |
 | Q36 | Confidence derived from source, age and geography, with override | Reuses `max_age` and `DataSource.kind`; no field anyone must remember to fill |
-| Q37 | `openness_to_foreigners` moved to Phase 1 | MIPEX, Eurobarometer and InterNations are country-level only |
+| Q37 | `openness_to_foreigners` moved to country level | MIPEX, Eurobarometer and InterNations are country-level only |
 | Q38 | Numbeo scraped first, API later if warranted | Personal, non-commercial use; `robots.txt` restricts only `/heavy_crawling.any`. Its coverage floor is ~150k population either way, so paying buys the same gap |
-| Q39 | Pillars are parallel across phases | One structure to learn; weight profiles stay legible across levels; fixes a pillar that bundled healthcare with bureaucracy |
+| Q39 | Pillars are parallel across levels | One structure to learn; weight profiles stay legible across levels; fixes a pillar that bundled healthcare with bureaucracy |
 | Q40 | Country-level education and family policy added | Children are in scope and national school system quality is not substitutable by local school counts |
-| Q41 | `english_proficiency` moved to Phase 1 | Same reasoning as `openness_to_foreigners` — EF EPI is country-level |
+| Q41 | `english_proficiency` moved to country level | Same reasoning as `openness_to_foreigners` — EF EPI is country-level |
 | Q42 | External scores displayed, never computed with | The IMDb model — show other indices as second opinions. Ingesting them would import their weights |
 | Q43 | Raw indicators become criteria; composites become ExternalScores | A general rule: the test is whether someone else already applied weights |
 | Q44 | Four benchmark gaps added | Work–life balance, subjective wellbeing, governance/rights, housing quality — each present in at least two of OECD, EIU, Mercer, Eurostat |
 | Q45 | Housing split from economics | OECD and Mercer both treat it separately; price and quality are different questions |
 | Q46 | Governance folded into `admin`, renamed | Both concern how the state treats you; keeps the pillar count down |
 | Q47 | Both weight levels stay user-adjustable | OECD locks indicators because it serves the anonymous public; here the sole user chose every criterion |
-| Q48 | `nature` promoted to its own pillar, both phases | It was buried in culture at a 3.5% effective weight; nature is not culture, and it is the one pillar where small towns win on computable data |
+| Q48 | `nature` promoted to its own pillar, both levels | It was buried in culture at a 3.5% effective weight; nature is not culture, and it is the one pillar where small towns win on computable data |
 | Q49 | Distance criteria use a saturating scale | 5 km vs 15 km to the sea matters; 200 km vs 250 km does not |
 | Q50 | Country nature measures *diversity*, not presence | A large country can hold sea, mountains, lakes and forest at once; coexistence is what is worth screening |
 | Q51 | `CandidateProfile` gains a natural-setting section | Facts describe, criteria judge — "Calanques, 2 km" is context, "nature 8.7" is a score |
@@ -891,7 +891,7 @@ not only *what*.
 | Q55 | `local_tech_market` redefined as a count | Market *breadth* is countable from job boards and registries; the 1–10 rating was a vibe |
 | Q56 | Anchors and breadth kept as separate criteria | One large employer and two hundred small ones are different risks; a single number hides which |
 | Q57 | Administrative criteria use official sources, one shared adapter | Naturalisation, residency, pensions and local admin are published procedures, not unknowables |
-| Q58 | v1 is Phase 1 only, full features | Exercises every load-bearing abstraction; Phase 2 then adds sources and rows, not machinery |
+| Q58 | v1 covers the country level only, full features | Exercises every load-bearing abstraction; the city level then adds sources and rows, not machinery |
 | Q59 | Country seed is EU member states initially | The full EU/EEA + UK + CH scope is the target, not the starting set |
 | Q60 | Adding a country is first-class, reusable, shared with adding a city | Same nomination → approval → profile → acquisition sequence at a different level |
 | Q53 | **Pillar**, not pillar, group or dimension | These are load-bearing verticals of a life, not retail bins. Precedent: Legatum Prosperity Index. "Dimension" implies an axis; "domain" collides with the domain model; "chapter" implies sequence where these coexist |

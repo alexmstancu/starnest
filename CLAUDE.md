@@ -37,22 +37,26 @@ Planned module layout:
 
 | Path | Responsibility |
 |---|---|
-| `config/` | Criteria, weights, thresholds as data — split Phase 1 (country) / Phase 2 (city) |
+| `config/` | Pillars, criteria, weights, thresholds as data — split by level (country / city) |
 | `acquisition/structured.py` | Deterministic fetch of quantifiable data (no LLM) |
 | `acquisition/qualitative.py` | Claude API + `web_search`, structured JSON out (score + summary + sources) |
 | `storage/db.py` | SQLite schema and access |
-| `scoring/engine.py` | Hard filters + weighted score, per phase |
+| `scoring/engine.py` | Hard filters + weighted score, per level |
 | `scoring/compare.py` | Focus candidate vs. N comparators: deltas, weighted contributions, templated synthesis |
 | `ui/app.py` | Streamlit app — 4 tabs: config, run, ranking dashboard, comparison |
 
-## Architecture: the two-phase pipeline
+## Architecture: the two-level pipeline
 
 The central structural idea. Evaluation is **not** uniform across all candidates:
 
-1. **Phase 1 — country level.** Cheap screening across ~30 countries using structured sources only, **no LLM calls**. Countries below a qualification threshold are excluded.
-2. **Phase 2 — city level.** Only for countries that survived Phase 1, ~5 cities each. Structured *and* qualitative (LLM + search) acquisition.
+1. **Country level.** Cheap screening across candidate countries using structured sources only, **no LLM calls**. Countries below a qualification threshold are excluded.
+2. **City level.** Only for countries that survived the country screen, ~5 cities each. Structured *and* qualitative (LLM + search) acquisition.
 
-Both phases share the same machinery: a **Candidate** is either a Country or a City — same base structure, different level, and exactly two levels (never a third). Scoring, filtering, resolution and comparison logic must be written once against `Candidate`, not duplicated per phase. *(The spec's word "Target" is retired — it also named a role in comparisons. Comparison roles are **focus** and **comparators**.)* What differs per phase is the *data*: each phase has its own criteria set and its own weights, and **weights sum to 100% within a phase, independently of the other phase**.
+**"Phase" is retired** — it named the same axis as `Candidate.level`. There is one concept: **level**, either `country` or `city`.
+
+Both levels share the same machinery: a **Candidate** is either a Country or a City — same base structure, exactly two levels (never a third). Scoring, filtering, resolution and comparison logic must be written once against `Candidate`, not duplicated per level. *(The spec's word "Target" is retired — it also named a role in comparisons. Comparison roles are **focus** and **comparators**.)* What differs per level is the *data*: each level has its own criteria catalog and its own weights, and **weights sum to 100% within a level, independently of the other**.
+
+Criteria are grouped into **Pillars** — the load-bearing verticals of a life (economics, housing, career, safety, health, climate, connectivity, nature, culture, governance, family). Pillar weights sum to 100% within a level; criterion weights sum to 100% within a pillar. Both levels are user-adjustable. Scores are **0–100 integers**.
 
 Hard filters are eligibility gates (yes/no), evaluated separately from the weighted score — a failed filter eliminates the candidate regardless of score.
 
@@ -87,7 +91,9 @@ Each criterion declares its type, and thresholds behave differently per type:
 
 ## Scope discipline
 
-MVP is: criteria configuration, the two-phase run, the ranking dashboard with per-criterion drill-down, and the comparison view.
+**v1 covers the country level only**, with the full feature set applied to it: pillar and criterion configuration, weight profiles, country nomination, acquisition runs, scoring with coverage and confidence, elimination reporting, the ranking dashboard with drill-down and provenance, and comparison. See `reqs.md` §1.3.
+
+**After v1:** the entire city level — city criteria, city nomination, and the LLM + `web_search` acquisition path.
 
 Explicitly **post-MVP — do not build without being asked**: personal annotations, color-gradient maps per property, favorites lists, saved criteria profiles, saved comparisons.
 
@@ -95,11 +101,11 @@ Explicitly **post-MVP — do not build without being asked**: personal annotatio
 
 - **All code, UI text, comments, and identifiers must be in English**, regardless of the language used in planning conversations with the user.
 - **The app is named Starnest — the code is not.** The name lives in a configuration file as a single display-name parameter, loaded at startup and used only for presentation (page title, UI headings, About text). It must never appear in package names, module names, class names, table names, config keys, or environment-variable prefixes. Renaming the app must be a one-line config change. This is the "nothing hardcoded" invariant applied to the product's own name. The project directory is now `starnest`, and the spec still says `relocation-app`. A directory name is presentation, not an identifier — do not let it pull package, module, or table names along with it.
-- Provisional by design: weights, the Phase 1 qualification threshold, and the ~2000–3000 EUR/month budget guideline are all placeholders pending a manual test. Never bake them into logic (see "nothing hardcoded").
+- Provisional by design: weights, the country-level qualification threshold, and the ~2000–3000 EUR/month budget guideline are all placeholders pending a manual test. Never bake them into logic (see "nothing hardcoded").
 
 ## Reference data sources
 
-Starting points for `acquisition/structured.py`: **WhereNext Global Relocation Index** (95 countries + ~130 cities, downloadable CSV/JSON — best fit for Phase 1), **Numbeo** (cost of living, safety, healthcare, pollution; countries and cities), **Teleport Cities** (maintenance status unverified — check before relying on it), **Nomads.com** (subscription, city-level only). See the spec appendix for URLs and caveats.
+Starting points for `acquisition/structured.py`: **WhereNext Global Relocation Index** (95 countries + ~130 cities, downloadable CSV/JSON — best fit for country-level screening), **Numbeo** (cost of living, safety, healthcare, pollution; countries and cities), **Teleport Cities** (maintenance status unverified — check before relying on it), **Nomads.com** (subscription, city-level only). See the spec appendix for URLs and caveats.
 
 ## Setup note
 
