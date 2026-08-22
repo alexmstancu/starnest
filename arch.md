@@ -148,6 +148,49 @@ history — the same source re-fetched later — differs by `retrieval_date` and
 child tables key on `(value_id, key)`, which is what admits keyed and series cardinality (§7)
 without further change.
 
+### 3.2a Reference tables
+
+The database is **normalised**. Anything that is a fixed, rarely-changing thing — a country, a
+criterion, a source, a unit — lives in its own small table with a stable identifier, and
+everything else stores that identifier rather than the name. These are commonly called
+**lookup tables** or **reference data**.
+
+The point is that a display name can be corrected, translated or re-styled without touching a
+single row that refers to it.
+
+| Table | Holds | Identifier |
+|---|---|---|
+| `candidate` | Countries and cities | `country.portugal`, `city.portugal.lisbon` |
+| `pillar` | The eleven pillars | `housing`, `nature` |
+| `criterion` | The criteria catalog, loaded from config | `city.rent_2br_centre` |
+| `data_source` | Sources, with kind and reliability tier | `eurostat`, `numbeo`, `manual` |
+| `value_type` | The ten archetypes, so values can point at one | `Monetary`, `Index` |
+| `unit` | Units a `Quantity` may carry | `celsius`, `km`, `mbps`, `hours_per_year` |
+| `currency` | Currencies a `Monetary` may carry | `EUR`, `GBP`, `CHF` |
+| `confidence_level` | The four grades | `absolute`, `high`, `medium`, `low` |
+| `eligibility_filter` | The named gates of `reqs.md` §7.3 | `uk_skilled_worker` |
+| `label_vocabulary` | Controlled vocabularies for `LabelSet` criteria | Köppen zone codes |
+| `criteria_settings` | Named settings records | `alex`, `remote_only` |
+| `run` | Acquisition runs | surrogate |
+
+**Two rules that keep this working:**
+
+**1. Identifiers never change; names do.** An identifier is assigned once and is permanent,
+even when the thing it names is renamed. Country names drift — Czechia, Türkiye, Eswatini — and
+when one does, `candidate.name` is updated and `candidate.id` is not. Every foreign key
+survives. The identifier may end up reading oddly; that is the correct trade, because the
+alternative is rewriting every row that points at it.
+
+**2. Identifiers are opaque to code and legible to humans.** They are readable so a person can
+scan a config file or a query result without a lookup. They are **not** to be parsed. Never
+write `id.startswith("country.")` to determine a level — the `level` column is the only source
+of truth for that, and deriving it from the identifier creates a second one that will
+eventually disagree. This is the same reason the pillar is deliberately absent from criterion
+identifiers (§2).
+
+> A readable identifier is a surrogate key that happens to be legible. It is not derived from
+> the name and must never be regenerated from it.
+
 ### 3.3 A shared parent with typed children
 
 Values share seven fields and differ in the rest by type. Rather than one table with nullable
