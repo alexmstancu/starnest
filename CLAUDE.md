@@ -4,24 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**There is no code yet.** The repository holds planning documents only: `reqs.md` (requirements, written) and `relocation-app-master-spec-v1.md` (the original spec, being retired). Git is initialised.
-
-**`reqs.md` is now authoritative for functional requirements and the ontology.** Read it first. The master spec remains only until Parts 1 and 3 have landed in config data and `arch.md`.
+**There is no code yet.** The repository holds planning documents only. **`reqs.md` is authoritative for requirements and the ontology — read it first.**
 
 That spec is the authoritative blueprint and should be read before any implementation work. This file summarizes the parts that constrain how code must be written; the spec holds the full criteria lists, weights, and rationale.
 
-## Planning pipeline
+## Planning documents
 
-Three documents get written, in order, before any code:
+| Document | Status |
+|---|---|
+| `reqs.md` | **Written.** Requirements and ontology. v1 scope in §1.3, glossary in Appendix A, decision log in Appendix B |
+| `datasources.md` | **Written.** Source analysis, market analysis, criterion→source mapping |
+| `arch.md` | **Partial.** Ontology and storage settled; stack still open |
+| `devplan.md` | Not started |
 
-1. `reqs.md` — requirements and ontology. **Written.** Scope of v1 is in §1.3; glossary in Appendix A; decision log in Appendix B
-2. `arch.md` — architecture. **Partial** — ontology and storage written; stack still open
-3. `devplan.md` — implementation tasks, sequencing, testing strategy
-
-The master spec is being refined into these and **will be deleted once its content has landed**:
-Part 2 (Functional Requirements) → `reqs.md` ✓; Part 3 (Technical Specification) → `arch.md` (in progress);
-Part 1 (Evaluation Protocol — criteria, weights, hard filters) → **config data, not prose**,
-per the "nothing hardcoded" invariant. Do not delete the spec before all three destinations exist.
+`relocation-app-master-spec-v1.md` has been **deleted**. Its content was audited against the
+successors first: Part 2 → `reqs.md`, Part 3 → `arch.md` §6, Appendix → `datasources.md`. It
+remains in git history at the initial commit.
 
 Consequently there are **no build, lint, test, or run commands** — nothing is scaffolded. Do not invent them. When scaffolding begins, add the real commands to this file.
 
