@@ -650,8 +650,8 @@ each holding whichever criteria apply there. Weights remain fully independent pe
 summing to 100%. Both levels are user-adjustable: unlike the OECD Better Life Index, which
 locks indicator weights, the sole user here chose every criterion and understands what it means.
 
-`connectivity` is city-only; `work-life balance` criteria are country-only, since working-hours
-culture and statutory leave are national.
+Every pillar now exists at both levels. `work-life balance` criteria sit only at country level,
+since working-hours culture and statutory leave are national law.
 
 | Pillar | Country | City |
 |---|---|---|
@@ -661,7 +661,7 @@ culture and statutory leave are national.
 | `safety` | ✓ | ✓ |
 | `health` | ✓ | ✓ |
 | `climate` | ✓ | ✓ |
-| `connectivity` | — | ✓ |
+| `connectivity` | ✓ | ✓ |
 | `nature` | ✓ | ✓ |
 | `culture` | ✓ | ✓ |
 | `governance` | ✓ | ✓ |
@@ -674,7 +674,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 ### 7.1 Country level
 
-#### Economics — 15%
+#### Economics — 14%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
@@ -682,7 +682,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `income_tax_effective` | 35% | **Ratio** — share of gross income | OECD Tax Database, national tax authorities |
 | `remote_work_tax_treaty` | 25% | **LabelSet** — treaty partners | OECD treaty database, manual |
 
-#### Housing — 11%
+#### Housing — 10%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
@@ -690,7 +690,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `housing_cost_overburden_rate` | 35% | **Ratio** — share of households | Eurostat `ilc_lvho07a` |
 | `overcrowding_rate` | 25% | **Ratio** — share of households | Eurostat `ilc_lvho05a` |
 
-#### Career & work — 15%
+#### Career & work — 14%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
@@ -717,20 +717,20 @@ registry-bound one with a population floor (`datasources.md` §3).
 > The two job counts appear at country level as well as city level. Since v1 covers only the
 > country level (§1.3), omitting them would leave the product-role scarcity unscreenable.
 
-#### Safety & stability — 13%
+#### Safety & stability — 12%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
 | `crime_safety_index_national` | 50% | **Index** — Numbeo 0–100 | UNODC homicide, Eurostat crime |
 | `political_economic_stability` | 50% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators |
 
-#### Health — 10%
+#### Health — 9%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
 | `healthcare_system_quality` | 100% | **Index** — WHO UHC 0–100 | WHO Global Health Observatory, OECD Health Statistics |
 
-#### Climate & environment — 8%
+#### Climate & environment — 7%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
@@ -738,6 +738,23 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `avg_annual_temperature` | 25% | **Quantity** — °C | Open-Meteo archive **(C)** |
 | `annual_sunshine_hours` | 25% | **Quantity** — hours/year | Open-Meteo, from radiation **(C)** |
 | `climate_trajectory_national` | 20% | **Index** — Copernicus composite risk | Copernicus CDS, IPCC |
+
+#### Connectivity — 8%
+
+| Criterion | Weight | Value type | Sources |
+|---|---|---|---|
+| `rail_network_quality` | 30% | **Index** — composite of high-speed and intercity coverage | Eurostat rail transport statistics, UIC, national operators |
+| `international_air_connectivity` | 25% | **Count** — international destinations served | Eurostat air transport, OpenFlights, airport authorities |
+| `broadband_coverage` | 25% | **Ratio** — share of households with high-speed or fibre access | Eurostat DESI, national regulators |
+| `road_network_quality` | 20% | **Quantity** — km of motorway per 1,000 km² | Eurostat road transport statistics |
+
+> Each pairs with a city criterion without duplicating it, on the `safety_national` /
+> `safety_local` pattern: national broadband coverage **screens**, while Ookla tiles report what
+> a given street actually gets; `international_air_connectivity` asks whether the country
+> connects to the world, while `flights_to_romania` asks whether you can get home from *this*
+> town; intercity rail is a different question from local trams. Rail matters most for the
+> stated goal of living without a car — `public_transport` covers moving *within* a city, and
+> nothing else covers reaching the rest of the country.
 
 #### Nature & landscape — 8%
 
@@ -753,7 +770,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 > combination is the thing worth screening for. `natural_diversity` measures coexistence
 > rather than presence, separating Austria and Spain from the Netherlands and Denmark.
 
-#### Culture & community — 7%
+#### Culture & community — 6%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
@@ -761,7 +778,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `openness_to_foreigners` | 35% | **Index** — MIPEX 0–100 | MIPEX, Eurobarometer, InterNations |
 | `english_proficiency` | 25% | **Index** — EF EPI 0–800 | EF English Proficiency Index |
 
-#### Governance & administration — 9%
+#### Governance & administration — 8%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
@@ -1057,6 +1074,7 @@ not only *what*.
 | Q50 | Country nature measures *diversity*, not presence | A large country can hold sea, mountains, lakes and forest at once; coexistence is what is worth screening |
 | Q51 | `CandidateFacts` gains a natural-setting section | Facts describe, criteria judge — "Calanques, 2 km" is context, "nature 8.7" is a score |
 | Q52 | Data sources are plug-ins behind a common interface | Adding a source must be one adapter plus config, never an edit to the acquisition core |
+| Q75 | `connectivity` added at country level | National infrastructure — intercity rail, motorways, international air, broadband coverage — is a country-level fact that nothing measured. Each criterion pairs with a city one rather than duplicating it |
 | Q73 | Validation has two layers: type-implicit and criterion-explicit | Non-negativity is not a `Monetary` rule — net income can be negative — so it is declared per criterion; a `Ratio` being 0–100 is inherent to the type |
 | Q74 | Validation failure is distinct from threshold failure | A threshold eliminates a candidate; a validation failure rejects an implausible value and flags the source. Conflating them lets a scraper bug eliminate a country |
 | Q70 | A semantic value type system replaces the shape-based `type` | Rent and temperature are both "numeric" and behave nothing alike; shape cannot distinguish currency conversion from unit conversion from index rescaling |
