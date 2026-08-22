@@ -1160,9 +1160,10 @@ The main results view.
   default with per-criterion overrides — but no actual ordering exists. It has to be decided by
   the administrator once concrete sources are connected; `datasources.md` supplies the
   ingredients but not the ranking.
-- **Cardinality** — whether a criterion may be `scalar`, `keyed` (rent by room count) or
-  `series` (a value per year), as a second axis orthogonal to value type. Discussed, not
-  decided; `arch.md` §6 carries the storage implication.
+- **Several numbers for one criterion**, in either of two distinct forms — a time series (the
+  same measurement across years) or a multi-value criterion (rent for one, two and three
+  bedrooms, all current at once). Neither is in v1. `arch.md` §3.3a explains why they need
+  different mechanisms and why neither requires a schema change later.
 - **MVP scope.** Not addressed anywhere in this document, by design.
 
 ---

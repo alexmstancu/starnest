@@ -216,6 +216,42 @@ This buys three things at once:
 - **Adding a type is one new child table**, which is consistent: adding a type is already a
   code change.
 
+### 3.3a Several numbers for one criterion — two different cases
+
+These look alike and are not, and they need different mechanisms.
+
+**Time series — the same measurement at different times.** GDP per person for 2020, 2021,
+2022. Only one is current; the rest are history. These differ by `reference_period`, so they
+are **separate `value` rows** — more rows in the table, which the schema already permits with
+no change. What is missing is only a *reducer*: a rule for using more than the freshest one,
+such as a three-year mean or a trend. **Not in v1.**
+
+**Multi-value — different measurements at the same time, all current.** Rent in Lisbon is
+about €1,100 for a one-bedroom, €1,410 for two, €1,900 for three. None of these is history;
+they coexist and together describe the criterion.
+
+**These cannot be separate `value` rows.** All three share the same candidate, criterion,
+source, reference period and retrieval date — identical on every column of the uniqueness
+constraint (§3.2). They must be **one `value` row with several typed child rows**,
+distinguished by the child table's `key`:
+
+```
+value           id 9001 · city.portugal.lisbon · city.rent_centre · numbeo · 2026-07 · …
+
+value_monetary  value_id | key   | amount | currency
+                9001     | 1br   | 1100   | EUR
+                9001     | 2br   | 1410   | EUR
+                9001     | 3br   | 1900   | EUR
+```
+
+Scoring would then need to pick one — which room count matters depends on `household_size`
+(`reqs.md` §1.4), making that choice a preference rather than a fact, so it would live in
+`CriteriaSettings`.
+
+**Neither is in v1.** The catalog currently has no multi-value criterion — rent is a single
+criterion fixed at two bedrooms. The `key` column exists so that adding one later is a
+migration of nothing: the column is already there and null for every scalar value.
+
 ### 3.4 `status`, and never discarding
 
 `value.status` is `active`, `superseded` or `rejected`. Nothing is deleted. A value that fails
@@ -369,11 +405,10 @@ calls per city, not millions.
   deciding question is whether geometry lives in the database (favouring PostGIS) or is
   computed in Python at acquisition time and stored as plain numbers (favouring SQLite).
   Everything above holds either way.
-- **Cardinality.** Whether a criterion may be `scalar`, `keyed` (rent by room count) or
-  `series` (a value per year), as a second axis orthogonal to value type. The `key` column in
-  the child tables above anticipates it. Discussed, not decided.
-- **Where the reducer lives** if cardinality is adopted — likely `CriteriaSettings`, since
-  *which* key you care about depends on your household.
+- **Reducers**, if and when either case in §3.3a arrives: for a time series, which rows scoring
+  uses (latest, three-year mean, trend); for a multi-value criterion, which key applies. Both
+  are preferences rather than facts, so both would live in `CriteriaSettings`. Neither is in v1
+  and neither requires a schema change to add.
 
 - **First implementation order.** The spec's suggestion, still sound: repo scaffolding, then the
   database schema, then structured acquisition as the first end-to-end sanity check. Sequencing
