@@ -326,7 +326,7 @@ labelled a mirror rather than an independent confirmation.
 
 ---
 
-## 8. Per-value confidence — proposed
+## 8. Per-value confidence — **decided**
 
 A `confidence` level on every stored value, distinct from the coverage percentage. Coverage
 answers *how much* of the weight is backed by data; confidence answers *how much that data is
@@ -376,9 +376,44 @@ Four positions, in increasing order of how much they change the numbers:
    mean — **this is what WhereNext does** (§2.1), and it is the option that contradicts our
    stated preference for disclosing uncertainty rather than absorbing it.
 
-Positions 1 and 2 are clearly compatible with the existing design. Position 3 is a genuine
-extension worth considering. Position 4 should probably be rejected on the same grounds we
-rejected WhereNext's approach.
+**Decided: positions 1 and 2.** Confidence is displayed everywhere and breaks ties in source
+priority; it does not touch the score arithmetic. Position 3 (confidence-weighted coverage) was
+considered and left out for now; position 4 is rejected on the same grounds as WhereNext's
+approach. Recorded in `reqs.md` §5.7.
+
+---
+
+## 9. Numbeo coverage — measured **[verified]**
+
+Tested 2026-08-22 against live pages, French cities by population:
+
+| City | Population | Numbeo |
+|---|---|---|
+| Lyon | ~520k | **55 price cells** |
+| Nice | ~340k | **55 price cells** |
+| Bordeaux | ~260k | **55 price cells** |
+| Grenoble | ~160k | **55 price cells** |
+| Annecy | ~130k | **empty** (11.8 KB template) |
+| Perpignan | ~120k | **empty** |
+| La Rochelle | ~75k | **empty** |
+| Cassis | ~7k | **empty** |
+
+**The practical floor is around 150,000 population** — and it is not really about population,
+it is about crowdsourced submission volume. Lisbon and Porto both return exactly 55
+`priceValue` cells; every city below the floor returns an identical empty template.
+
+**Consequences:**
+
+- **Scraping and the paid API buy the same data.** The subscription question is far smaller
+  than it appears: it would cover Lyon and Bordeaux and give nothing for Annecy, let alone
+  Cassis. **Decision: scrape first, revisit the API only if coverage above the floor proves
+  worth it.**
+- Where data exists, extraction is straightforward — server-rendered HTML, one stable table,
+  55 `priceValue` cells. `robots.txt` disallows only `/heavy_crawling.any`; the
+  `/cost-of-living/in/*` paths are not restricted. Crawl politely and cache aggressively.
+- **This promotes the coordinate-bound strategy (§3) from preferable to load-bearing.** For any
+  candidate under ~150k, Open-Meteo, Ookla, Overpass and OpenAQ are not a fallback — they are
+  the only city-level fact available.
 
 ---
 

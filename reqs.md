@@ -163,6 +163,7 @@ overwritten and never discarded.**
 | `fx_rate`, `fx_rate_date` | The rate used and when it was quoted |
 | `reference_date` | **What period the data describes** |
 | `retrieval_date` | **When the app fetched it** |
+| `confidence` | `absolute` \| `high` \| `medium` \| `low` — see §5.7. Derived, with a manual override retained alongside |
 | `quote` | Supporting text or summary, where applicable |
 | `citations` | Source URLs |
 | `run` | The Run that produced it |
@@ -299,6 +300,41 @@ stored data.** Score recalculation must never trigger a fetch. Re-fetching is al
 
 ---
 
+### 5.7 Per-value confidence
+
+Every stored value carries a **confidence** level, distinct from coverage. Coverage says *how
+much* of the active weight is backed by data; confidence says *what that data is worth*. A
+candidate can reach 100% coverage entirely on extrapolation, and coverage alone would not
+show it.
+
+| Level | Meaning | Typical origin |
+|---|---|---|
+| `absolute` | Definitionally true, not a measurement | ISO codes, coordinates, timezone, area |
+| `high` | Official statistic, directly measured, within `max_age` | Eurostat, World Bank, OECD, WHO, UNODC, Open-Meteo |
+| `medium` | A real measurement, degraded — stale, a proxy, coarser geography, or crowdsourced | Past-`max_age` official data; a regional average applied to a town; Numbeo |
+| `low` | Inferred rather than measured | LLM extrapolation, derivation from a related figure, rough manual estimate |
+
+Most `CandidateProfile` attributes are `absolute`; almost no `Value` ever is — the best a
+measurement achieves is `high`.
+
+**Confidence is derived, not typed.** It is computed from the source's reliability tier, then
+downgraded for age beyond `max_age`, for geography coarser than the candidate, and for values
+derived rather than directly reported. A manual override may be recorded and is **retained
+alongside** the derived value, like every other competing value in the system.
+
+**What confidence affects:**
+
+- **Display.** Shown beside every figure, and summarised per candidate — "64% coverage, of
+  which 20% high, 55% medium, 25% low".
+- **Source priority.** Higher confidence wins ties in the resolution order (§6.6), extending
+  the existing `max_age` promotion rule.
+
+**What it must not affect:** the score arithmetic. Low-confidence values are **not** discounted
+or shrunk toward the mean. Uncertainty is disclosed, never absorbed into the number — the same
+principle as §5.3.
+
+---
+
 ## 6. Data acquisition
 
 ### 6.1 Candidate nomination
@@ -369,7 +405,7 @@ left `TBD`: they can only be set sensibly once real data has been seen.
 
 Groups sum to 100%. Criterion weights sum to 100% within each group.
 
-#### FA. General economics — 25%
+#### FA. General economics — 24%
 
 | Criterion | Weight | Type / direction | Likely sources |
 |---|---|---|---|
@@ -377,25 +413,25 @@ Groups sum to 100%. Criterion weights sum to 100% within each group.
 | `income_tax_effective` | 35% | numeric %, lower better | National tax authority, OECD, Eurostat |
 | `remote_work_tax_treaty` | 25% | label_list, must contain RO treaty | OECD treaty database, national, manual |
 
-#### FB. Tech market — 20%
+#### FB. Tech market — 19%
 
 | Criterion | Weight | Type / direction | Likely sources |
 |---|---|---|---|
 | `tech_employment_share` | 50% | numeric, higher better | Eurostat, national statistics |
 | `international_employer_presence` | 50% | numeric, higher better | LLM + search, company registries |
 
-#### FC. Safety and stability — 20%
+#### FC. Safety and stability — 19%
 
 | Criterion | Weight | Type / direction | Likely sources |
 |---|---|---|---|
 | `crime_safety_index_national` | 50% | numeric, higher better | Numbeo, Eurostat crime statistics |
 | `political_economic_stability` | 50% | numeric, higher better | World Bank Governance Indicators, EIU |
 
-#### FD. Healthcare and bureaucracy — 15%
+#### FD. Healthcare and bureaucracy — 14%
 
 | Criterion | Weight | Type / direction | Likely sources |
 |---|---|---|---|
-| `healthcare_system_quality` | 60% | numeric, higher better | Euro Health Consumer Index, WHO, Numbeo |
+| `healthcare_system_quality` | 60% | numeric, higher better | WHO Global Health Observatory, OECD Health Statistics, Numbeo |
 | `residency_admin_ease` | 40% | numeric, higher better | LLM + search, manual |
 
 #### FE. Climate and environment — 10%
@@ -407,12 +443,23 @@ Groups sum to 100%. Criterion weights sum to 100% within each group.
 | `annual_sunshine_hours` | 25% | numeric, higher better | Copernicus, national meteorological services |
 | `climate_trajectory_national` | 20% | numeric, lower risk better | Copernicus, IPCC regional projections |
 
-#### FF. Long-term settlement — 10% *(new — open-ended horizon)*
+#### FF. Long-term settlement — 9% *(new — open-ended horizon)*
 
 | Criterion | Weight | Type / direction | Likely sources |
 |---|---|---|---|
 | `naturalisation_pathway` | 50% | numeric years, lower better; plus dual-citizenship permitted | National law, LLM + search, manual |
 | `pension_portability` | 50% | numeric, higher better | EU social-security coordination rules, manual |
+
+#### FG. Social openness — 5% *(moved from Phase 2)*
+
+| Criterion | Weight | Type / direction | Likely sources |
+|---|---|---|---|
+| `openness_to_foreigners` | 100% | numeric, higher better | MIPEX, Eurobarometer immigration attitudes, InterNations Ease of Settling In |
+
+> Moved here from Phase 2's CE group. Every source that measures attitudes to foreigners —
+> MIPEX, Eurobarometer, InterNations — is **country-level only**. Keeping it as a city
+> criterion would have meant a constant repeated across every city in a country, adding
+> nothing to the city ranking while implying a granularity the data does not have.
 
 ### 7.2 Phase 2 — city
 
@@ -461,15 +508,15 @@ subjective. Most of this group is countable.
 
 | Criterion | Weight | Type / direction | Likely sources |
 |---|---|---|---|
-| `heritage_and_culture_density` | 25% | numeric, higher better | UNESCO World Heritage list, national monument registers, museum and cinema counts |
-| `local_openness_to_foreigners` | 25% | numeric, higher better *(new)* | MIPEX, Eurobarometer immigration attitudes, InterNations Ease of Settling In |
-| `landscape_access` | 20% | numeric, higher better | Protected-area registries, coastline and elevation from `profile` |
-| `english_proficiency` | 15% | numeric, higher better | EF English Proficiency Index |
-| `expat_community_size` | 15% | numeric, higher better | National statistics, InterNations |
+| `heritage_and_culture_density` | 33% | numeric, higher better | UNESCO World Heritage list, national monument registers, OpenStreetMap museum and cinema counts |
+| `landscape_access` | 27% | numeric, higher better | Protected-area registries (WDPA), coastline and elevation from `profile` |
+| `english_proficiency` | 20% | numeric, higher better | EF English Proficiency Index *(country value applied to city)* |
+| `expat_community_size` | 20% | numeric, higher better | Eurostat Urban Audit foreign-born population, national statistics |
 
-> **`local_openness_to_foreigners` is distinct from `expat_community_size`.** A large expat
-> bubble can coexist with a closed local population. The first measures the locals; the second
-> measures the incomers.
+> **`local_openness_to_foreigners` has moved to Phase 1 as `openness_to_foreigners`** (§7.1,
+> group FG) — all of its sources are country-level. It remains distinct from
+> `expat_community_size`: a large expat bubble can coexist with a closed local population. The
+> first measures the locals, the second the incomers.
 >
 > **`general_atmosphere`** — irreducibly prose, no countable proxy. Deferred: see §9.
 
@@ -627,4 +674,8 @@ not only *what*.
 | Q32 | Subdivisions descriptive only | A third tier would break the two-phase architecture |
 | Q33 | Catalog at name/type/direction/source/weight detail | Scale bands and thresholds can only be set sensibly after real data |
 | Q34 | Four tabs plus sidebar | Preserves the spec's shape; newer surfaces nest inside |
+| Q35 | Per-value confidence: display and source priority only | Coverage says how much data exists; confidence says what it is worth. Discounting the score would absorb uncertainty rather than disclose it |
+| Q36 | Confidence derived from source, age and geography, with override | Reuses `max_age` and `DataSource.kind`; no field anyone must remember to fill |
+| Q37 | `openness_to_foreigners` moved to Phase 1 | MIPEX, Eurobarometer and InterNations are country-level only |
+| Q38 | Numbeo scraped first, API later if warranted | Personal, non-commercial use; `robots.txt` restricts only `/heavy_crawling.any`. Its coverage floor is ~150k population either way, so paying buys the same gap |
 | — | `Candidate` replaces `Target` | "Target" also named a role in comparisons; the entity and the role needed separating |
