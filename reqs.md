@@ -6,6 +6,10 @@ clarification pass. Supersedes the spec's functional requirements.
 **This document contains no MVP / post-MVP judgements.** Everything here is a requirement.
 Scoping is a separate pass, to be done once this document is agreed.
 
+> **Every term used here is defined in Appendix A — Glossary.** If a word looks like it is
+> doing specific work, it is, and the glossary says exactly what. Appendix B records each
+> decision with its rationale.
+
 ---
 
 ## 1. Purpose and scope
@@ -332,7 +336,7 @@ using different methods.
 | `value` | The published number |
 | `scale` | What the number means — `0-100`, `0-10`, `rank`, `index` |
 | `rank`, `rank_of` | Where the provider publishes a position rather than a score |
-| `reference_date`, `retrieval_date` | Same two-date rule as any value (§3.6) |
+| `reference_period`, `retrieval_date` | Same two-date rule as any value (§3.6) |
 | `methodology_url` | So the reader can see how it was built |
 | `notes` | Caveats — paywalled, discontinued, known quirks |
 
@@ -362,7 +366,7 @@ overwritten and never discarded.**
 | Field | Notes |
 |---|---|
 | `candidate`, `criterion`, `source` | What this measures and where it came from |
-| `reference_date` | **What period the data describes** |
+| `reference_period` | **What period the data describes** — a start and an end, not a point. "Average temperature 2025" is a year; "rent, July 2026" a month; an fx rate a single day. A point date cannot express which |
 | `retrieval_date` | **When the app fetched it** |
 | `confidence` | `absolute` \| `high` \| `medium` \| `low` — §5.7. Derived, with a manual override retained alongside |
 | `quote` | Supporting text or summary, where applicable |
@@ -474,8 +478,13 @@ The profile also declares **which way is good** per criterion: `lower_is_better`
 not a property of the criterion** (§3.4) — two profiles may score the same measured value in
 opposite directions.
 
-**Score scale: 0–100, integer, configurable.** Criterion scores and total scores share one
-range. No decimals — 86, not 8.6.
+**Score scale: 0–100, configurable.** Criterion scores and total scores share one range, and
+are **displayed as integers** — 86, not 86.4.
+
+**Rounding happens only at display.** All intermediate arithmetic — normalising each criterion,
+applying weights, redistributing weight for missing data — carries full precision. Rounding ~44
+criterion scores to integers before weighting would accumulate error into the total and could
+reorder candidates separated by less than a point.
 
 ### 5.2 Thresholds and filters — two mechanisms, one report
 
@@ -515,6 +524,12 @@ Two independent floors mark a candidate **insufficient data** rather than produc
 
 Redistribution is computed at scoring time from what data exists. **It must never be written
 back into the stored weights.**
+
+**Excluding a criterion is not the same as missing data.** An excluded criterion (`included:
+false`, §3.4) renormalises the remaining weights and **does not count against coverage** —
+nothing is missing, you decided it does not apply. Missing data redistributes weight *and*
+reduces coverage, because something you wanted is absent. Treating them alike would report a
+deliberately slimmed profile as poorly covered.
 
 ### 5.4 Elimination visibility
 
@@ -566,6 +581,11 @@ measurement achieves is `high`.
 downgraded for age beyond `max_age`, for geography coarser than the candidate, and for values
 derived rather than directly reported. A manual override may be recorded and is **retained
 alongside** the derived value, like every other competing value in the system.
+
+**Manual entry is the exception** and defaults to `medium`. It cannot be derived from a source
+tier, because the tier says nothing useful: a researched visa verdict read off an official page
+deserves `high`, while a rough rent estimate deserves `low`, and both are `source: manual`.
+Set it per value; the default is a deliberately unflattering middle.
 
 **What confidence affects:**
 
@@ -1070,7 +1090,130 @@ The main results view.
 
 ---
 
-## Appendix — decision log
+## Appendix A — Glossary
+
+Every term this document relies on, defined once. Where two words could mean the same thing,
+only one is used.
+
+### What is being evaluated
+
+**Candidate** — a place under evaluation: a country or a city. The scoring engine's word. The
+interface says "country" and "city"; `Candidate` is what makes the scoring, filtering and
+comparison logic writable once instead of twice.
+
+**Level** — `country` or `city`. Exactly two, never a third. Replaces the earlier word "phase",
+which named the same axis a second time.
+
+**CandidateFacts** — descriptive facts about a candidate: population, languages, elevation,
+nearest coast, religious composition. The equivalent of a Wikipedia infobox. **Never scored** —
+facts describe, criteria judge.
+
+**Nomination** — how a candidate enters the set: from the config seed list, an LLM proposal you
+approve, a manual add, or population ranking.
+
+**Bypass** — a city evaluated although its country failed the country screen or was never
+screened. Marked, never hidden.
+
+### The measuring apparatus
+
+**Pillar** — a load-bearing vertical of a life: economics, housing, career, safety, health,
+climate, connectivity, nature, culture, governance, family. Eleven at each level. Not a
+"category" — these are not bins things get sorted into.
+
+**Criterion** — one thing that gets measured, belonging to one pillar at one level. Defines
+*what* is measured; says nothing about what it is worth to you.
+
+**Value type** — the semantic type of a criterion's measurement: `Monetary`, `Quantity`,
+`Count`, `Ratio`, `Index`, `LabelSet`, `Composition`, `Boolean`, `AssignedScore`, `Text`. It
+determines what a value stores, which normalisation methods are legal, how it displays, and
+what a threshold means. Immutable — changing a criterion's type means creating a new criterion.
+
+**Value** — one measurement, of one criterion, for one candidate, from one source, fetched at
+one moment. Numbeo's Lisbon rent is one value; a manual estimate of Lisbon rent is a different
+value; Numbeo's Lisbon rent from three months ago is a third. Nothing is ever overwritten.
+
+**Active value** — where several sources hold a value for the same criterion and candidate, the
+one scoring actually uses. All the others remain stored and visible.
+
+**Source priority** — the configured ordering that decides which value is active. A standing
+editorial judgement per criterion: Numbeo outranks national statistics for city rent, despite
+being less reliable in general.
+
+**DataSource** — where values come from: `structured` (an API or dataset), `llm` (model plus
+web search), or `manual` (typed by you). Manual entry is a first-class source, ranked like any
+other.
+
+**Adapter** — the plug-in that fetches from one source. Declares which criteria it serves, at
+which levels, its rate limits, and whether it is a bulk download or a per-candidate call.
+Adding a source means writing one adapter, never editing the acquisition core.
+
+**Confidence** — how much one particular value is worth: `absolute`, `high`, `medium`, `low`.
+Derived from the source's tier, the value's age, its geographic fit, and whether it was
+reported or inferred. Distinct from source priority, which grades *sources*, not values.
+
+**Reference period / retrieval date** — the two dates every value carries, never merged. The
+reference period is what span the data describes; the retrieval date is when the app fetched it.
+
+**Validation** — a check that a value is *credible*. A rent of −500, or a ratio of 140%, is a
+data error. Failing validation rejects the value and flags the source. **Not** a threshold.
+
+### What it is worth to you
+
+**CriteriaSettings** — everything subjective, held apart from the criteria themselves: which
+criteria count, their weights, which direction is "good", ideal bands, scale anchors,
+thresholds. Named and switchable — `alex`, `partner`, `remote-only`, `local-employment`.
+
+**CriterionSetting** — one criterion's entry inside a CriteriaSettings record.
+
+**Weight** — how much a pillar or criterion contributes. Sums to 100 within a level and within
+a pillar. Moving one rebalances the others proportionally.
+
+**Lock** — pins a weight so rebalancing skips it. Makes "I have decided this one" explicit.
+
+**Direction** — which way is better: `lower_is_better`, `higher_is_better`, or `ideal_band`. A
+**preference**, not a fact — a large expat community is a soft landing to one person and a
+bubble to another.
+
+**Threshold** — an elimination line. A value that crosses it disqualifies the candidate. The
+value is real; you have decided it is unacceptable.
+
+### Results
+
+**Score** — 0–100. Full precision internally, integers only at display.
+
+**Coverage** — what percentage of a candidate's active weight is actually backed by data.
+Cassis at 64% coverage has a third of its criteria unmeasured.
+
+**Insufficient data** — a candidate below the coverage floor, or missing a `required`
+criterion. No total score is produced; per-criterion values still show.
+
+**EligibilityFilter** — a named yes/no gate that is not a criterion: a visa pathway, a quota,
+relocation timing. Carries a verdict, a reason, a source, and an optional audited override.
+
+**Elimination** — failing a threshold or a filter. Eliminated candidates stay visible, keep
+their computed score, and show the reason.
+
+**ExternalScore** — a published score or rank from an outside index (WhereNext, OECD Better
+Life Index, EIU, Mercer, Numbeo). Displayed **beside** the Starnest score, never fed into it —
+the way a film page shows Rotten Tomatoes next to its own rating.
+
+**Run** — one acquisition pass, persisted: when it ran, what it touched, what it cost, what
+failed. Values link back to the run that produced them, which is what makes selective retry
+possible.
+
+### Screens
+
+**Ranking** — candidates by total score, with coverage, status, and eliminated ones still
+listed.
+
+**Drill-down** — one criterion across every candidate: raw value, source, both dates.
+
+**Focus and comparators** — in a comparison, the candidate under examination and the ones it is
+measured against. Both are Candidates; these name their roles.
+
+---
+
+## Appendix B — decision log
 
 Answers from the clarification pass, with rationale. Recorded so future readers see *why*,
 not only *what*.
@@ -1148,6 +1291,10 @@ not only *what*.
 | Q57 | Administrative criteria use official sources, one shared adapter | Naturalisation, residency, pensions and local admin are published procedures, not unknowables |
 | Q58 | v1 covers the country level only, full features | Exercises every load-bearing abstraction; the city level then adds sources and rows, not machinery |
 | Q59 | Country seed is the full EU/EEA + UK + CH scope, 32 countries | EU-only would leave the named eligibility filters with no candidates to act on, shipping the mechanism untested — and the UK and Switzerland are genuine candidates whose absence would make the first ranking incomplete |
+| Q79 | Full precision internally, integers only at display | Rounding ~44 criterion scores before weighting accumulates error and can reorder candidates separated by less than a point |
+| Q80 | `reference_date` becomes `reference_period` | A year, a month and a day are all legitimate reference spans; a point date cannot say which |
+| Q81 | Manual entry defaults to `medium` confidence, always overridable | Source tier says nothing useful for manual values — a researched official verdict and a rough estimate are both `source: manual` |
+| Q82 | Excluded criteria renormalise weights but do not reduce coverage | Nothing is missing; you decided it does not apply |
 | Q77 | Five invented composites defined or demoted | `natural_diversity` gets an explicit six-condition count; `rail_network_quality` becomes the concrete `rail_network_density`; `climate_trajectory_national` becomes `projected_summer_heat_days` under a named scenario; the two `AssignedScore` criteria get a stated rubric. None may look sourced while resting on an undefined formula |
 | Q78 | Three criteria carrying two measurements each were split | `protected_area_access`, `local_climate` and `housing_quality` each mixed two units in one criterion, which no value type can express |
 | Q76 | Weights auto-rebalance proportionally, with a per-weight lock | Never leaves a profile invalid; locking makes "I have decided this one" explicit. If every other weight in a group is locked, the UI refuses the change and names the blocking locks |

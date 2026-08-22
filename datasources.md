@@ -214,7 +214,7 @@ LLM + `web_search` path.
 | `climate_zone` | Köppen classification dataset | — | **High** |
 | `avg_annual_temperature` | **Open-Meteo** archive | National met services | **High**, coordinate-bound |
 | `annual_sunshine_hours` | **Open-Meteo** (derive from radiation) | National met services | **High**, coordinate-bound |
-| `climate_trajectory_national` | Copernicus CDS projections | IPCC regional | Medium — needs a scenario choice |
+| `projected_summer_heat_days` | Copernicus CDS projections (SSP2-4.5) | IPCC regional | Medium — scenario is now named |
 | `naturalisation_pathway` | — | Manual / LLM | **Low** — legal text, no dataset |
 | `pension_portability` | EU coordination rules | Manual / LLM | **Low** |
 
@@ -233,7 +233,7 @@ LLM + `web_search` path.
 | `safety_local` | Eurostat Urban Audit; Numbeo | **R** | **Fails** — regional police data or LLM |
 | `healthcare_access_local` | **Overpass** (hospital POIs + distance) | **C** | **Works** — distance to nearest hospital is computable anywhere |
 | `air_quality` | **OpenAQ / EEA** (nearest station) | **C** | **Works**, with station-distance caveat |
-| `local_climate` | **Open-Meteo** | **C** | **Works** — full resolution |
+| `local_temperature`, `local_sunshine_hours` | **Open-Meteo** | **C** | **Works** — full spatial detail |
 | `internet_quality` | **Ookla Open Data** tiles | **C** | **Works** — 610 m tiles beat any city registry |
 | `public_transport` | **Overpass** (stops, routes) + Urban Audit | **C**+R | **Works** at reduced fidelity |
 | `flights_to_romania` | Manual / LLM; flight APIs | — | Works via `profile.nearest_airport` |
