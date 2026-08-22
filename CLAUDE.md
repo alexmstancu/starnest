@@ -14,12 +14,12 @@ That spec is the authoritative blueprint and should be read before any implement
 
 Three documents get written, in order, before any code:
 
-1. `reqs.md` — requirements and ontology. **Written.** Deliberately contains no MVP/post-MVP split; that is a separate pass
-2. `arch.md` — architecture; stack, storage, system structure
+1. `reqs.md` — requirements and ontology. **Written.** Scope of v1 is in §1.3; glossary in Appendix A; decision log in Appendix B
+2. `arch.md` — architecture. **Partial** — ontology and storage written; stack still open
 3. `devplan.md` — implementation tasks, sequencing, testing strategy
 
 The master spec is being refined into these and **will be deleted once its content has landed**:
-Part 2 (Functional Requirements) → `reqs.md`; Part 3 (Technical Specification) → `arch.md`;
+Part 2 (Functional Requirements) → `reqs.md` ✓; Part 3 (Technical Specification) → `arch.md` (in progress);
 Part 1 (Evaluation Protocol — criteria, weights, hard filters) → **config data, not prose**,
 per the "nothing hardcoded" invariant. Do not delete the spec before all three destinations exist.
 
