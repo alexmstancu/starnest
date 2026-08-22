@@ -112,24 +112,26 @@ protected area — name, designation and distance; terrain character.
 scored, ranked, or evaluated separately. Where safety or cost varies sharply between
 districts, that belongs in the notes on the relevant criterion, not in a third Candidate tier.
 
-### 3.3 Category and Criterion
+### 3.3 Pillar and Criterion
 
 **Criteria are exactly two levels deep.** Groups carry weights summing to 100% within a
-phase; criteria carry sub-weights summing to 100% within their category. The user may adjust
+phase; criteria carry sub-weights summing to 100% within their pillar. The user may adjust
 both levels.
 
-**Category:** identifier, display name, phase, weight, description.
+**Pillar:** identifier, display name, phase, weight, description.
 
-> "Category" rather than "group" or "dimension" — it is the plainest word for the thing,
-> and "dimension" implies an axis in a space, which these are not.
+> **Pillar**, not "pillar", "group" or "dimension". These are not bins things get sorted
+> into — they are the load-bearing verticals of a life, and the word should carry that.
+> "Dimension" implies an axis in a space; "pillar" belongs on a retail shelf. The Legatum
+> Prosperity Index uses pillars for the same construct.
 
 **Criterion:**
 
 | Field | Notes |
 |---|---|
-| `category` | Its parent category |
+| `pillar` | Its parent pillar |
 | `phase` | `1` (country) or `2` (city) |
-| `weight` | Sub-weight within its category |
+| `weight` | Sub-weight within its pillar |
 | `type` | `numeric` \| `number_list` \| `label_list` \| `boolean` \| `text` |
 | `direction` | `lower_is_better` \| `higher_is_better` \| `ideal_band` |
 | `ideal` | For `ideal_band`: the target range and falloff shape |
@@ -448,7 +450,7 @@ catalog will grow, and growth must stay a data-and-adapter change.
 ### 6.8 Children in scope
 
 The master spec never mentions children; this document does. Their presence adds the criteria
-in the `family` category at both levels (§7) — national school system quality, parental leave
+in the `family` pillar at both levels (§7) — national school system quality, parental leave
 and child benefits at country level; schooling options, paediatric access and childcare at city
 level — and shifts the weight of several existing criteria.
 
@@ -456,7 +458,7 @@ level — and shifts the weight of several existing criteria.
 
 ## 7. Criteria catalog
 
-**Categories are parallel across the two phases** — the same named concerns at both levels,
+**Pillars are parallel across the two phases** — the same named concerns at both levels,
 each holding whichever criteria apply there. Weights remain fully independent per phase, each
 summing to 100%. Both levels are user-adjustable: unlike the OECD Better Life Index, which
 locks indicator weights, the sole user here chose every criterion and understands what it means.
@@ -464,7 +466,7 @@ locks indicator weights, the sole user here chose every criterion and understand
 `connectivity` is city-only; `work-life balance` criteria are country-only, since working-hours
 culture and statutory leave are national.
 
-| Category | Country | City |
+| Pillar | Country | City |
 |---|---|---|
 | `economics` | ✓ | ✓ |
 | `housing` | ✓ | ✓ |
@@ -597,7 +599,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `major_employer_presence` | 20% | boolean, higher better | LLM + search |
 | `product_role_availability` | 20% | numeric, higher better | LLM + search, job boards |
 
-> Under a `remote-only` weight profile this category is down-weighted and `connectivity` up-weighted.
+> Under a `remote-only` weight profile this pillar is down-weighted and `connectivity` up-weighted.
 
 #### Safety & stability — 7%
 
@@ -631,7 +633,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 #### Nature & landscape — 12%
 
 All criteria are **coordinate-bound**: they compute for a village as readily as for a capital.
-This is the category where a small town can genuinely outscore a city, and where the data
+This is the pillar where a small town can genuinely outscore a city, and where the data
 exists to demonstrate it. Distances use a **saturating** scale — steep near zero, flat past the
 point where further distance stops mattering.
 
@@ -785,7 +787,7 @@ not only *what*.
 
 | # | Decision | Rationale |
 |---|---|---|
-| Q1 | Two-level criteria | Preserves the spec's category weights exactly while keeping each bullet independently sourced and provenance-tracked |
+| Q1 | Two-level criteria | Preserves the spec's pillar weights exactly while keeping each bullet independently sourced and provenance-tracked |
 | Q2 | Exactly two levels | Implied by Q1; no deeper nesting in the model |
 | Q3 | Cross-phase concepts are separate criteria | The spec frames local safety as a different question from national safety, not the same one zoomed in |
 | Q4 | Direction per criterion, either mode | A single direction cannot express "warm but not too hot" |
@@ -821,19 +823,19 @@ not only *what*.
 | Q36 | Confidence derived from source, age and geography, with override | Reuses `max_age` and `DataSource.kind`; no field anyone must remember to fill |
 | Q37 | `openness_to_foreigners` moved to Phase 1 | MIPEX, Eurobarometer and InterNations are country-level only |
 | Q38 | Numbeo scraped first, API later if warranted | Personal, non-commercial use; `robots.txt` restricts only `/heavy_crawling.any`. Its coverage floor is ~150k population either way, so paying buys the same gap |
-| Q39 | Categories are parallel across phases | One structure to learn; weight profiles stay legible across levels; fixes a category that bundled healthcare with bureaucracy |
+| Q39 | Pillars are parallel across phases | One structure to learn; weight profiles stay legible across levels; fixes a pillar that bundled healthcare with bureaucracy |
 | Q40 | Country-level education and family policy added | Children are in scope and national school system quality is not substitutable by local school counts |
 | Q41 | `english_proficiency` moved to Phase 1 | Same reasoning as `openness_to_foreigners` — EF EPI is country-level |
 | Q42 | External scores displayed, never computed with | The IMDb model — show other indices as second opinions. Ingesting them would import their weights |
 | Q43 | Raw indicators become criteria; composites become ExternalScores | A general rule: the test is whether someone else already applied weights |
 | Q44 | Four benchmark gaps added | Work–life balance, subjective wellbeing, governance/rights, housing quality — each present in at least two of OECD, EIU, Mercer, Eurostat |
 | Q45 | Housing split from economics | OECD and Mercer both treat it separately; price and quality are different questions |
-| Q46 | Governance folded into `admin`, renamed | Both concern how the state treats you; keeps the category count down |
+| Q46 | Governance folded into `admin`, renamed | Both concern how the state treats you; keeps the pillar count down |
 | Q47 | Both weight levels stay user-adjustable | OECD locks indicators because it serves the anonymous public; here the sole user chose every criterion |
-| Q48 | `nature` promoted to its own category, both phases | It was buried in culture at a 3.5% effective weight; nature is not culture, and it is the one category where small towns win on computable data |
+| Q48 | `nature` promoted to its own pillar, both phases | It was buried in culture at a 3.5% effective weight; nature is not culture, and it is the one pillar where small towns win on computable data |
 | Q49 | Distance criteria use a saturating scale | 5 km vs 15 km to the sea matters; 200 km vs 250 km does not |
 | Q50 | Country nature measures *diversity*, not presence | A large country can hold sea, mountains, lakes and forest at once; coexistence is what is worth screening |
 | Q51 | `CandidateProfile` gains a natural-setting section | Facts describe, criteria judge — "Calanques, 2 km" is context, "nature 8.7" is a score |
 | Q52 | Data sources are plug-ins behind a common interface | Adding a source must be one adapter plus config, never an edit to the acquisition core |
-| — | "Category" not "group" or "dimension" | Plainest word; "dimension" implies an axis in a space, which these are not |
+| Q53 | **Pillar**, not pillar, group or dimension | These are load-bearing verticals of a life, not retail bins. Precedent: Legatum Prosperity Index. "Dimension" implies an axis; "domain" collides with the domain model; "chapter" implies sequence where these coexist |
 | — | `Candidate` replaces `Target` | "Target" also named a role in comparisons; the entity and the role needed separating |

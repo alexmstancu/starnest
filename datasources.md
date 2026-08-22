@@ -432,7 +432,7 @@ it is about crowdsourced submission volume. Lisbon and Porto both return exactly
 
 ---
 
-## 10. Category benchmarks — how reputable indices structure this
+## 10. Pillar benchmarks — how reputable indices structure this
 
 Four established frameworks, chosen for methodological transparency and standing. Compared
 against the Starnest catalog (`reqs.md` §7) to find gaps.
@@ -442,11 +442,11 @@ against the Starnest catalog (`reqs.md` §7) to find gaps.
 | Index | Structure | Weighting | Notes |
 |---|---|---|---|
 | **OECD Better Life Index** | 11 dimensions, 24 indicators | **User-set at dimension level; indicator weights fixed and equal** | The closest structural precedent to Starnest. Users score each dimension 0–5, weight = score ÷ sum of scores |
-| **EIU Global Liveability Index** | 5 categories, 30 indicators | Fixed: Stability 25%, Culture & Environment 25%, Infrastructure 20%, Healthcare 20%, Education 10% | 173 cities. Indicators rated acceptable → unbearable, scored 1–100 |
-| **Mercer Quality of Living** | 10 categories, 39 factors | Not published | 450+ cities. The corporate relocation standard; largely paywalled |
+| **EIU Global Liveability Index** | 5 pillars, 30 indicators | Fixed: Stability 25%, Culture & Environment 25%, Infrastructure 20%, Healthcare 20%, Education 10% | 173 cities. Indicators rated acceptable → unbearable, scored 1–100 |
+| **Mercer Quality of Living** | 10 pillars, 39 factors | Not published | 450+ cities. The corporate relocation standard; largely paywalled |
 | **Eurostat Quality of Life** | 8+1 dimensions, sub-dimensions, indicators | None — a reporting framework, not an index | Official EU framework. Its data is directly fetchable |
 
-**Their categories, verbatim:**
+**Their pillars, verbatim:**
 
 - **OECD:** Housing · Income · Jobs · Community · Education · Environment · Civic Engagement ·
   Health · Life Satisfaction · Safety · Work–Life Balance
@@ -492,7 +492,7 @@ Netherlands and Greece — and it is invisible in the current catalog.
 hard number, collected by official statistical agencies on a standard 0–10 Cantril ladder.
 *Sources: Eurostat `ilc_pw01`, World Happiness Report.*
 
-**3. Governance and rights, as distinct from administrative ease.** Our `admin` category is
+**3. Governance and rights, as distinct from administrative ease.** Our `admin` pillar is
 procedural — how hard is it to register a residence or open a bank account. Three of the four
 references also cover **rule of law, corruption, press freedom, and discrimination**. For an
 open-ended move to a country where children may grow up, that is arguably weightier than queue
@@ -502,11 +502,11 @@ Reporters Without Borders Press Freedom Index, EU Justice Scoreboard.*
 
 ### 10.4 What the comparison confirms
 
-- **Category count.** EIU 5, Starnest 8/9, Eurostat 9, Mercer 10, OECD 11. We sit mid-range;
+- **Pillar count.** EIU 5, Starnest 8/9, Eurostat 9, Mercer 10, OECD 11. We sit mid-range;
   nothing suggests we are too coarse or too fine.
 - **Weight distribution.** EIU's spread is 25% down to 10%. Ours is 22% down to 4%. Comparable,
-  with no single category dominating.
-- **Two of our categories have no counterpart anywhere** — visa eligibility and naturalisation,
+  with no single pillar dominating.
+- **Two of our pillars have no counterpart anywhere** — visa eligibility and naturalisation,
   and connection to a specific home country. That is expected: these indices rank *places* for
   a generic reader, while Starnest evaluates *eligibility and fit* for one household. It is the
   clearest statement of what the app is actually for.
