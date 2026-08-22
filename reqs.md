@@ -658,9 +658,23 @@ timeline, fees — on an official national or municipal website. They were previ
 with the prose-bound criteria; that was a mistake of framing, not of measurement.
 
 They therefore share **one source adapter** (§6.7): fetch the official page, extract the
-documented requirements and timeline, and derive a difficulty score from them. Four criteria,
-one plug-in, and the extracted requirement list is retained as the supporting evidence behind
-the number.
+documented requirements and timeline, and derive a score from them. Four criteria, one
+plug-in, and the extracted requirement list is retained as the supporting evidence behind the
+number.
+
+**The rubric** — each criterion scores 0–100 from documented attributes, so the number is
+reproducible from the evidence rather than impressionistic:
+
+| Criterion | Scored from |
+|---|---|
+| `residency_admin_ease` | Number of separate agencies involved · in-person appointments required · statutory processing time · available in English · available online |
+| `local_admin_ease` | The same five attributes, at municipal level |
+| `naturalisation_pathway` | Years of residence required · language level demanded · civics test · **whether dual citizenship with Romania is permitted** |
+| `pension_portability` | Aggregation under EU Regulation 883/2004 · years to vest locally · existence of a bilateral totalisation agreement |
+
+> `pension_portability` will barely discriminate across EU and EEA states, where Regulation
+> 883/2004 applies uniformly. It earns its 5% only for the UK, where post-Brexit arrangements
+> differ. Worth revisiting after the first run.
 
 ### 6.8 Children in scope
 
@@ -765,13 +779,13 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `climate_zone` | 30% | **LabelSet** — Köppen codes | Köppen classification |
 | `avg_annual_temperature` | 25% | **Quantity** — °C | Open-Meteo archive **(C)** |
 | `annual_sunshine_hours` | 25% | **Quantity** — hours/year | Open-Meteo, from radiation **(C)** |
-| `climate_trajectory_national` | 20% | **Index** — Copernicus composite risk | Copernicus CDS, IPCC |
+| `projected_summer_heat_days` | 20% | **Quantity** — days above 35 °C projected for 2050, SSP2-4.5 | Copernicus CDS climate projections |
 
 #### Connectivity — 8%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `rail_network_quality` | 30% | **Index** — composite of high-speed and intercity coverage | Eurostat rail transport statistics, UIC, national operators |
+| `rail_network_density` | 30% | **Quantity** — km of line per 1,000 km² | Eurostat rail infrastructure statistics |
 | `international_air_connectivity` | 25% | **Count** — international destinations served | Eurostat air transport, OpenFlights, airport authorities |
 | `broadband_coverage` | 25% | **Ratio** — share of households with high-speed or fibre access | Eurostat DESI, national regulators |
 | `road_network_quality` | 20% | **Quantity** — km of motorway per 1,000 km² | Eurostat road transport statistics |
@@ -788,15 +802,20 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `natural_diversity` | 25% | **Count** — coexisting feature types | Derived — count of coexisting feature types (coast, high mountain, major lake, major river, forest, distinct biomes) |
+| `natural_diversity` | 25% | **Count** — 0–6, feature types present | **Derived**, see below |
 | `protected_land_share` | 25% | **Ratio** — share of territory | WDPA / Protected Planet, Eurostat |
 | `coastline_access` | 20% | **Quantity** — km coast per 1000 km² | Natural Earth, Eurostat — length relative to area |
 | `forest_cover` | 15% | **Ratio** — share of land area | FAO, Corine Land Cover |
 | `elevation_range` | 15% | **Quantity** — m | Copernicus DEM — relief variety |
 
 > A large country can host sea, high mountains, lakes and forest **simultaneously**, and that
-> combination is the thing worth screening for. `natural_diversity` measures coexistence
-> rather than presence, separating Austria and Spain from the Netherlands and Denmark.
+> combination is the thing worth screening for. `natural_diversity` measures coexistence rather
+> than presence, separating Austria and Spain from the Netherlands and Denmark.
+>
+> **Computed** as the count of these six conditions that hold, giving 0–6:
+> coastline length > 0 · terrain above 1,500 m · a lake larger than 100 km² · a river longer
+> than 500 km · forest cover above 20% · three or more distinct Köppen zones.
+> Each input is already fetched for another criterion or fact, so this adds no new source.
 
 #### Culture & community — 6%
 
@@ -813,9 +832,9 @@ registry-bound one with a population floor (`datasources.md` §3).
 | `rule_of_law` | 25% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators, V-Dem |
 | `naturalisation_pathway` | 25% | **Quantity** — years of residence | **Official administrative sources** — published requirements, steps, timeline and fees; difficulty derived. See §6.9 |
 | `control_of_corruption` | 20% | **Index** — World Bank WGI −2.5–2.5 | World Bank WGI, Transparency International |
-| `residency_admin_ease` | 15% | **AssignedScore** — 0–100, derived from procedure | **Official administrative sources**; World Bank B-READY where covered. See §6.9 |
+| `residency_admin_ease` | 15% | **AssignedScore** — 0–100, rubric in §6.9 | **Official administrative sources**; World Bank B-READY where covered |
 | `press_freedom` | 10% | **Index** — RSF 0–100 | Reporters Without Borders |
-| `pension_portability` | 5% | **AssignedScore** — 0–100, derived from rules | **Official administrative sources** — EU social-security coordination rules. See §6.9 |
+| `pension_portability` | 5% | **AssignedScore** — 0–100, rubric in §6.9 | **Official administrative sources** — EU social-security coordination rules |
 
 #### Family & education — 4%
 
@@ -840,7 +859,8 @@ registry-bound one with a population floor (`datasources.md` §3).
 |---|---|---|---|
 | `rent_2br_city_centre` | 45% | **Monetary** — EUR/month | Numbeo **(R)**, national listings, LLM |
 | `property_purchase_price_m2` | 35% | **Monetary** — EUR/m² | National land registries, Eurostat **(R)** |
-| `housing_quality` | 20% | **Ratio** — rooms per person, overcrowding | Eurostat Urban Audit rooms-per-person, overcrowding **(R)** |
+| `rooms_per_person` | 10% | **Quantity** — rooms | Eurostat Urban Audit **(R)** |
+| `overcrowding_rate_local` | 10% | **Ratio** — share of households overcrowded | Eurostat Urban Audit **(R)** |
 
 #### Career & work — 14%
 
@@ -881,7 +901,8 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `local_climate` | 55% | **Quantity** — °C, with sunshine hours | Open-Meteo **(C)** |
+| `local_temperature` | 30% | **Quantity** — °C | Open-Meteo **(C)** |
+| `local_sunshine_hours` | 25% | **Quantity** — hours/year | Open-Meteo **(C)** |
 | `air_quality` | 45% | **Quantity** — µg/m³ PM2.5 | OpenAQ, EEA nearest station **(C)** |
 
 #### Connectivity — 10%
@@ -906,7 +927,8 @@ point where further distance stops mattering.
 | `distance_to_mountains` | 15% | **Quantity** — km | Copernicus DEM, terrain above threshold **(C)** |
 | `hiking_trail_density` | 15% | **Quantity** — km of marked trail per 25 km radius | OSM Overpass marked hiking routes **(C)** |
 | `distance_to_inland_water` | 12% | **Quantity** — km | OSM lakes and rivers, size-filtered **(C)** |
-| `protected_area_access` | 12% | **Quantity** — km to nearest, area within radius | WDPA — distance and area within radius **(C)** |
+| `distance_to_protected_area` | 6% | **Quantity** — km | WDPA / Protected Planet **(C)** |
+| `protected_area_extent` | 6% | **Ratio** — share of land within a 50 km radius that is protected | WDPA / Protected Planet **(C)** |
 | `bathing_water_quality` | 10% | **Ratio** — share of beaches rated excellent | EEA Bathing Water Directive dataset |
 | `night_sky_brightness` | 10% | **Quantity** — mcd/m² | VIIRS, World Atlas of Artificial Night Sky Brightness **(C)** |
 | `forest_cover_local` | 8% | **Ratio** — share of land within radius | Corine Land Cover within radius **(C)** |
@@ -1126,6 +1148,8 @@ not only *what*.
 | Q57 | Administrative criteria use official sources, one shared adapter | Naturalisation, residency, pensions and local admin are published procedures, not unknowables |
 | Q58 | v1 covers the country level only, full features | Exercises every load-bearing abstraction; the city level then adds sources and rows, not machinery |
 | Q59 | Country seed is the full EU/EEA + UK + CH scope, 32 countries | EU-only would leave the named eligibility filters with no candidates to act on, shipping the mechanism untested — and the UK and Switzerland are genuine candidates whose absence would make the first ranking incomplete |
+| Q77 | Five invented composites defined or demoted | `natural_diversity` gets an explicit six-condition count; `rail_network_quality` becomes the concrete `rail_network_density`; `climate_trajectory_national` becomes `projected_summer_heat_days` under a named scenario; the two `AssignedScore` criteria get a stated rubric. None may look sourced while resting on an undefined formula |
+| Q78 | Three criteria carrying two measurements each were split | `protected_area_access`, `local_climate` and `housing_quality` each mixed two units in one criterion, which no value type can express |
 | Q76 | Weights auto-rebalance proportionally, with a per-weight lock | Never leaves a profile invalid; locking makes "I have decided this one" explicit. If every other weight in a group is locked, the UI refuses the change and names the blocking locks |
 | Q60 | Adding a country is first-class, reusable, shared with adding a city | Same nomination → approval → profile → acquisition sequence at a different level |
 | Q53 | **Pillar**, not pillar, group or dimension | These are load-bearing verticals of a life, not retail bins. Precedent: Legatum Prosperity Index. "Dimension" implies an axis; "domain" collides with the domain model; "chapter" implies sequence where these coexist |
