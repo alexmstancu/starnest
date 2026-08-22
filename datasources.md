@@ -123,7 +123,7 @@ This is the most useful distinction for `arch.md`.
 **Registry-bound sources** answer "what do you know about *this named place*?" They hold a
 fixed list of places and know nothing outside it.
 
-> Numbeo · Eurostat Urban Audit (~794 EU cities) · WhereNext (380 cities) · EF EPI · MIPEX
+> Numbeo, Eurostat Urban Audit (~794 EU cities), WhereNext (380 cities), EF EPI, MIPEX
 
 They have a **population floor**. Cassis (7,265) and Saint-Tropez (4,103) are below every one
 of them. For these sources, a small town isn't sparse — it is simply absent.
@@ -131,9 +131,9 @@ of them. For these sources, a small town isn't sparse — it is simply absent.
 **Coordinate-bound sources** answer "what is true at *this latitude and longitude*?" They work
 anywhere on earth, at any settlement size.
 
-> Open-Meteo (climate, 1–11 km grid) · Ookla Open Data (internet, ~610 m tiles) · OpenAQ and
-> EEA (air quality, nearest station) · OpenStreetMap Overpass (POIs) · elevation and coastline
-> datasets · GeoNames
+> Open-Meteo (climate, 1–11 km grid), Ookla Open Data (internet, ~610 m tiles), OpenAQ and
+> EEA (air quality, nearest station), OpenStreetMap Overpass (POIs), elevation and coastline
+> datasets, GeoNames
 
 **Design consequence.** Wherever a criterion can be answered from coordinates, prefer that
 source — it degrades gracefully as a locality shrinks, whereas registry sources fail
@@ -188,8 +188,8 @@ have surveyed the specific town — local bureaucracy, local job market, city-le
 
 ### Tier 4 — no API: scrape, manual, or LLM
 
-EF English Proficiency Index · MIPEX · Eurobarometer · InterNations · national tax authorities ·
-national land registries · immigration and naturalisation law · EU pension coordination rules
+EF English Proficiency Index, MIPEX, Eurobarometer, InterNations, national tax authorities,
+national land registries, immigration and naturalisation law, EU pension coordination rules
 
 These map onto the **manual entry as first-class source** decision (`reqs.md` §6.5) and the
 LLM + `web_search` path.
@@ -220,7 +220,7 @@ LLM + `web_search` path.
 
 ### the city level — city
 
-**R** = registry-bound (fails below a population floor) · **C** = coordinate-bound (works anywhere)
+**R** = registry-bound (fails below a population floor), **C** = coordinate-bound (works anywhere)
 
 | Criterion | Primary | Type | Small-town outlook |
 |---|---|---|---|
@@ -291,8 +291,8 @@ national-culture phenomena, and the country level is where the data is.
 
 ### 6.3 Criteria that will be LLM-or-nothing
 
-`international_employers` · `residency_admin_ease` · `naturalisation_pathway` ·
-`pension_portability` · `international_employers_local` · `local_admin_ease`
+`international_employers`, `residency_admin_ease`, `naturalisation_pathway`,
+`pension_portability`, `international_employers_local`, `local_admin_ease`
 
 Eight criteria across both levels with no structured source. This is the real scope of the
 deferred Q20 question — it was framed as being about *atmosphere*, but the harder cases are
@@ -447,15 +447,15 @@ against the Starnest catalog (`reqs.md` §7) to find gaps.
 
 **Their pillars, verbatim:**
 
-- **OECD:** Housing · Income · Jobs · Community · Education · Environment · Civic Engagement ·
-  Health · Life Satisfaction · Safety · Work–Life Balance
-- **EIU:** Stability · Healthcare · Culture & Environment · Education · Infrastructure
-- **Mercer:** Political & social environment · Economic environment · Socio-cultural
-  environment · Medical & health · Schools & education · Public services & transportation ·
-  Recreation · Consumer goods · Housing · Natural environment
-- **Eurostat:** Material living conditions · Productive/main activity · Health · Education ·
-  Leisure & social interactions · Economic & physical safety · Governance & basic rights ·
-  Natural & living environment · **+1** Overall experience of life
+- **OECD:** Housing, Income, Jobs, Community, Education, Environment, Civic Engagement,
+  Health, Life Satisfaction, Safety, Work–Life Balance
+- **EIU:** Stability, Healthcare, Culture & Environment, Education, Infrastructure
+- **Mercer:** Political & social environment, Economic environment, Socio-cultural
+  environment, Medical & health, Schools & education, Public services & transportation,
+  Recreation, Consumer goods, Housing, Natural environment
+- **Eurostat:** Material living conditions, Productive/main activity, Health, Education,
+  Leisure & social interactions, Economic & physical safety, Governance & basic rights,
+  Natural & living environment, **+1** Overall experience of life
 
 ### 10.2 Coverage against the Starnest catalog
 
@@ -573,25 +573,25 @@ not confirmed:
 
 ## Sources consulted
 
-WhereNext [index](https://getwherenext.com/data/global-relocation-index-2026) ·
-[alternatives](https://getwherenext.com/alternatives) ·
-[Numbeo comparison](https://getwherenext.com/blog/free-numbeo-alternative-cost-of-living) ·
-[Eurostat API](https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-introduction) ·
-[Eurostat Cities/Urban Audit](https://ec.europa.eu/eurostat/cache/metadata/en/urb_esms_fr.htm) ·
-[World Bank Indicators API](https://datahelpdesk.worldbank.org/knowledgebase/articles/889392-about-the-indicators-api-documentation) ·
-[IMF SDMX 3.0](https://apis.io/apis/imf/imf-sdmx-30-data-api/) ·
-[OECD API](https://www.oecd.org/en/data/insights/data-explainers/2024/09/api.html) ·
-[UNODC Data Portal](https://data.unodc.org/) ·
-[Open-Meteo](https://open-meteo.com/) ·
-[OpenAQ](https://docs.openaq.org/about/about) ·
-[EEA air quality](https://openair-project.github.io/euroaq/) ·
-[Ookla Open Data](https://github.com/teamookla/ookla-open-data) ·
-[Numbeo API](https://www.numbeo.com/common/api.jsp) ·
-[Google Places billing](https://developers.google.com/maps/documentation/places/web-service/usage-and-billing) ·
-[Doing Business discontinuation](https://www.worldbank.org/en/businessready/about-us) ·
-[Euro Health Consumer Index](https://en.wikipedia.org/wiki/Euro_Health_Consumer_Index) ·
-[OECD Better Life Index](https://en.wikipedia.org/wiki/OECD_Better_Life_Index) ·
-[EIU Global Liveability Index](https://en.wikipedia.org/wiki/Global_Liveability_Index) ·
-[Mercer Quality of Living 2024](https://www.mercer.com/en-ie/about/newsroom/2024-quality-of-living-city-ranking/) ·
-[Eurostat Quality of Life indicators](https://ec.europa.eu/eurostat/statistics-explained/index.php?title=Quality_of_life_indicators_-_measuring_quality_of_life) ·
+WhereNext [index](https://getwherenext.com/data/global-relocation-index-2026),
+[alternatives](https://getwherenext.com/alternatives),
+[Numbeo comparison](https://getwherenext.com/blog/free-numbeo-alternative-cost-of-living),
+[Eurostat API](https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-introduction),
+[Eurostat Cities/Urban Audit](https://ec.europa.eu/eurostat/cache/metadata/en/urb_esms_fr.htm),
+[World Bank Indicators API](https://datahelpdesk.worldbank.org/knowledgebase/articles/889392-about-the-indicators-api-documentation),
+[IMF SDMX 3.0](https://apis.io/apis/imf/imf-sdmx-30-data-api/),
+[OECD API](https://www.oecd.org/en/data/insights/data-explainers/2024/09/api.html),
+[UNODC Data Portal](https://data.unodc.org/),
+[Open-Meteo](https://open-meteo.com/),
+[OpenAQ](https://docs.openaq.org/about/about),
+[EEA air quality](https://openair-project.github.io/euroaq/),
+[Ookla Open Data](https://github.com/teamookla/ookla-open-data),
+[Numbeo API](https://www.numbeo.com/common/api.jsp),
+[Google Places billing](https://developers.google.com/maps/documentation/places/web-service/usage-and-billing),
+[Doing Business discontinuation](https://www.worldbank.org/en/businessready/about-us),
+[Euro Health Consumer Index](https://en.wikipedia.org/wiki/Euro_Health_Consumer_Index),
+[OECD Better Life Index](https://en.wikipedia.org/wiki/OECD_Better_Life_Index),
+[EIU Global Liveability Index](https://en.wikipedia.org/wiki/Global_Liveability_Index),
+[Mercer Quality of Living 2024](https://www.mercer.com/en-ie/about/newsroom/2024-quality-of-living-city-ranking/),
+[Eurostat Quality of Life indicators](https://ec.europa.eu/eurostat/statistics-explained/index.php?title=Quality_of_life_indicators_-_measuring_quality_of_life),
 [Numbeo indices explained](https://www.numbeo.com/quality-of-life/indices_explained.jsp)

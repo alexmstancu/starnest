@@ -29,7 +29,7 @@ A local, single-user decision-support app for a personal relocation search (EU/E
 
 ## Planned stack (from the spec — confirm before deviating)
 
-Python 3.12+ · Streamlit (UI) · SQLite (storage) · Anthropic API with the `web_search` tool (qualitative criteria) · direct HTTP fetch for structured data sources.
+Python 3.12+, Streamlit (UI), SQLite (storage), Anthropic API with the `web_search` tool (qualitative criteria), direct HTTP fetch for structured data sources.
 
 Planned module layout:
 

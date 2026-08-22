@@ -72,16 +72,22 @@ population-average income, which answers a different question.
 **v1 covers the country level only, with the full feature set applied to it.** Everything in
 this document is a requirement; this section says only what arrives first.
 
-**In v1:** pillar and criterion configuration with weights at both levels · thresholds and
-eligibility filters · criteria profiles · country nomination and the EU seed list · structured
-acquisition with runs, cost control and selective retry · scoring with per-criterion
-normalisation, weight redistribution, coverage and confidence · elimination reporting ·
-the ranking dashboard with per-criterion drill-down and full provenance · comparison of a
-focus country against comparators · external scores displayed alongside.
+**In v1:**
+
+- Pillar and criterion configuration, with weights at both levels
+- Thresholds and eligibility filters
+- Criteria settings records, switchable
+- Country nomination and the seed list
+- Structured acquisition, with runs, cost control and selective retry
+- Scoring: per-criterion normalisation, weight redistribution, coverage and confidence
+- Elimination reporting
+- The ranking dashboard, with per-criterion drill-down and full provenance
+- Comparison of a focus country against comparators
+- External scores displayed alongside
 
 **After v1:** the whole of the **city level** — cities, the city criteria catalog, city
-nomination, and the LLM-plus-search acquisition path that city criteria depend on · prose-bound
-criteria (§9) · and these, which carry requirements of their own rather than being bare names:
+nomination, and the LLM-plus-search acquisition path that city criteria depend on, prose-bound
+criteria (§9), and these, which carry requirements of their own rather than being bare names:
 
 | Feature | What it must do |
 |---|---|
@@ -441,9 +447,9 @@ ExternalScores.* Eurostat's life-satisfaction survey figure is a criterion; the 
 Report's weighted composite of six factors is an ExternalScore. The test is whether someone
 else has already applied weights to it.
 
-**Providers to carry:** WhereNext composite (country) · OECD Better Life Index (country) ·
-EIU Global Liveability (city) · Mercer Quality of Living rank (city) · Numbeo Quality of Life
-(both) · World Happiness Report (country).
+**Providers to carry:** WhereNext composite (country), OECD Better Life Index (country),
+EIU Global Liveability (city), Mercer Quality of Living rank (city), Numbeo Quality of Life
+(both), World Happiness Report (country).
 
 ### 3.6 Value
 
@@ -793,10 +799,10 @@ reproducible from the evidence rather than impressionistic:
 
 | Criterion | Scored from |
 |---|---|
-| `country.residency_admin_ease` | Number of separate agencies involved · in-person appointments required · statutory processing time · available in English · available online |
+| `country.residency_admin_ease` | Number of separate agencies involved, in-person appointments required, statutory processing time, available in English, available online |
 | `city.admin_ease` | The same five attributes, at municipal level |
-| `country.naturalisation_pathway` | Years of residence required · language level demanded · civics test · **whether dual citizenship with the home country is permitted** |
-| `country.pension_portability` | Aggregation under EU Regulation 883/2004 · years to vest locally · existence of a bilateral totalisation agreement |
+| `country.naturalisation_pathway` | Years of residence required, language level demanded, civics test, **whether dual citizenship with the home country is permitted** |
+| `country.pension_portability` | Aggregation under EU Regulation 883/2004, years to vest locally, existence of a bilateral totalisation agreement |
 
 > `country.pension_portability` will barely discriminate across EU and EEA states, where Regulation
 > 883/2004 applies uniformly. It earns its 5% only for the UK, where post-Brexit arrangements
@@ -947,8 +953,8 @@ registry-bound one with a population floor (`datasources.md` §3).
 > than presence, separating Austria and Spain from the Netherlands and Denmark.
 >
 > **Computed** as the count of these six conditions that hold, giving 0–6:
-> coastline length > 0 · terrain above 1,500 m · a lake larger than 100 km² · a river longer
-> than 500 km · forest cover above 20% · three or more distinct Köppen zones.
+> coastline length > 0, terrain above 1,500 m, a lake larger than 100 km², a river longer
+> than 500 km, forest cover above 20%, three or more distinct Köppen zones.
 > Each input is already fetched for another criterion or fact, so this adds no new source.
 
 #### Culture & community — 6%
@@ -984,14 +990,14 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `city.cost_of_living_monthly` | 60% | **Monetary** — EUR/month · multi-value, keyed by `household_size` | Numbeo **(R)**, LLM fallback |
+| `city.cost_of_living_monthly` | 60% | **Monetary** — EUR/month, multi-value, keyed by `household_size` | Numbeo **(R)**, LLM fallback |
 | `city.purchasing_power` | 40% | **Index** — Numbeo 0–100+ | Numbeo **(R)**, Eurostat Urban Audit **(R)** |
 
 #### Housing — 15%
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `city.rent_centre` | 45% | **Monetary** — EUR/month · multi-value, keyed by `bedroom_count` | Numbeo **(R)**, national listings, LLM |
+| `city.rent_centre` | 45% | **Monetary** — EUR/month, multi-value, keyed by `bedroom_count` | Numbeo **(R)**, national listings, LLM |
 | `city.property_purchase_price_m2` | 35% | **Monetary** — EUR/m² | National land registries, Eurostat **(R)** |
 | `city.rooms_per_person` | 10% | **Quantity** — rooms | Eurostat Urban Audit **(R)** |
 | `city.overcrowding_rate` | 10% | **Ratio** — share of households overcrowded | Eurostat Urban Audit **(R)** |

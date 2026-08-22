@@ -189,20 +189,20 @@ columns for every type's payload, or ten unrelated tables, the shape is a **pare
 typed child tables**:
 
 ```
-value              id · candidate · criterion · source · reference_period ·
-                   retrieval_date · confidence · run · status
+value              id, candidate, criterion, source, reference_period,
+                   retrieval_date, confidence, run, status
 
-value_monetary     value_id · key · amount · currency · amount_eur ·
-                   fx_rate · fx_rate_date
-value_quantity     value_id · key · magnitude · unit
-value_count        value_id · key · count · basis
-value_ratio        value_id · key · value · basis
-value_index        value_id · key · value · provider · scale_min · scale_max
-value_labelset     value_id · key · label
-value_composition  value_id · label · share
-value_boolean      value_id · key · value
-value_score        value_id · key · value · range_min · range_max · assigned_by · rationale
-value_text         value_id · body
+value_monetary     value_id, key, amount, currency, amount_eur,
+                   fx_rate, fx_rate_date
+value_quantity     value_id, key, magnitude, unit
+value_count        value_id, key, count, basis
+value_ratio        value_id, key, value, basis
+value_index        value_id, key, value, provider, scale_min, scale_max
+value_labelset     value_id, key, label
+value_composition  value_id, label, share
+value_boolean      value_id, key, value
+value_score        value_id, key, value, range_min, range_max, assigned_by, rationale
+value_text         value_id, body
 ```
 
 This buys three things at once:
@@ -236,7 +236,7 @@ constraint (§3.2). They must be **one `value` row with several typed child rows
 distinguished by the child table's `key`:
 
 ```
-value           id 9001 · city.portugal.lisbon · city.rent_centre · numbeo · 2026-07 · …
+value           id 9001, city.portugal.lisbon, city.rent_centre, numbeo, 2026-07, …
 
 value_monetary  value_id | key   | amount | currency
                 9001     | 1br   | 1100   | EUR
@@ -362,8 +362,8 @@ seeds 32 countries with ~44 criteria, and the database question is now genuinely
 
 ### 6.3 Proposed module layout
 
-`config/` · `acquisition/structured.py` · `acquisition/qualitative.py` · `storage/db.py` ·
-`scoring/engine.py` · `scoring/compare.py` · `ui/app.py`
+`config/`, `acquisition/structured.py`, `acquisition/qualitative.py`, `storage/db.py`,
+`scoring/engine.py`, `scoring/compare.py`, `ui/app.py`
 
 The spec's SQLite schema sketch — tables `countries`, `country_scores`, `cities`,
 `city_scores`, `config` — **predates the `Candidate` unification and must be re-derived, not
