@@ -63,7 +63,7 @@ these entities are modelled and stored; `devplan.md` must keep them extensible.
 
 A place under evaluation. **`Candidate` is the entity name** — the spec's word "Target" is
 retired, because it also named a role in comparisons. Comparison roles are **focus** and
-**comparators** (§7.8).
+**comparators** (§8.5).
 
 | Field | Notes |
 |---|---|
