@@ -176,8 +176,9 @@ criterion, same measured value, opposite direction.
 | `id`, `name`, `description` | What this measures |
 | `pillar` | Its parent pillar |
 | `level` | `country` or `city` — the same axis as `Candidate.level` |
-| `type` | `numeric` \| `number_list` \| `label_list` \| `boolean` \| `text` |
-| `unit` | Where applicable |
+| `value_type` | One of the ten types in §3.3a. Determines what a `Value` carries, how it normalises, how it displays, what thresholds mean, and what is validated |
+| `type_params` | Type-specific declaration — the unit for a `Quantity`, the provider bounds for an `Index`, the basis for a `Ratio` |
+| `valid_range`, `allowed_labels` | Criterion-explicit validation, beyond what the type already enforces — §3.3a |
 | `value_source` | Optional: a `CandidateFacts` attribute this criterion reads instead of being fetched |
 | `max_age` | How quickly this kind of data goes stale (§3.6). **Objective** — rent ages in months whoever is asking |
 | `source_priority` | Optional override of the global source order. **Objective** — an admin quality judgement; §2 says users do not connect sources |
@@ -186,6 +187,83 @@ criterion, same measured value, opposite direction.
 Criteria that describe the same concept at different levels are **separate criteria** with
 separate identifiers, sources and scales. `safety_national` and `safety_local` are unrelated
 records; the spec treats them as different questions, not one question at two zoom levels.
+
+### 3.3a The value type system
+
+Every criterion declares a **value type**. The type is semantic, not structural: rent and
+temperature are both numbers and behave nothing alike. The type determines four things —
+**what a `Value` stores**, **which normalisation methods are legal**, **how it displays**, and
+**what a threshold means**.
+
+| Type | A `Value` carries | Legal scales | Example criteria |
+|---|---|---|---|
+| `Monetary` | amount, currency, amount in EUR, fx rate, fx rate date | `fixed` | rent, cost of living, price/m², childcare cost |
+| `Quantity` | magnitude, unit (a dimension: °C, km, m, hours, Mbps, µg/m³, km², years, days) | `fixed`, `percentile` | temperature, distances, sunshine, internet speed, air quality, naturalisation years, statutory leave |
+| `Count` | integer, optional basis (per capita, per km²) | `fixed`, `percentile` | job counts, protected areas, subdivisions |
+| `Ratio` | value 0–100, and **what it is a share of** | `fixed`, `percentile`, `passthrough` | tech employment share, forest cover, overcrowding rate |
+| `Index` | value, **provider**, **scale minimum and maximum**, polarity | `passthrough` (rescaled from declared bounds), `percentile` | safety index, WGI stability, EF EPI, MIPEX, HDI |
+| `LabelSet` | list of labels, optional controlled vocabulary | none — scored by set membership or count | Köppen zone, international employers, tax treaties |
+| `Composition` | label → share pairs summing to 100 | none directly — must be reduced first | religious composition, ethnic composition |
+| `Boolean` | true / false | none — scored by mapping | dual citizenship permitted, coastal |
+| `AssignedScore` | value, range, **who assigned it** (llm / human), rationale | `passthrough` | LLM-scored qualitative criteria |
+| `Text` | prose, citations | none — never scored directly | supporting evidence |
+
+**Why this matters beyond tidiness:**
+
+- **Normalisation legality.** An `Index` arrives with provider-defined bounds — World Bank
+  governance indicators run −2.5 to 2.5, Numbeo indices 0–100 — so it rescales deterministically
+  and needs no user anchors. A `Monetary` does need anchors, because "expensive" is an opinion
+  (§3.4). Offering `fixed` uniformly would invite hand-set anchors for a scale that is already
+  known.
+- **Comparison safety.** A delta between two values is meaningful only if they share a type
+  **and** a unit or currency. That is the correctness condition for §8.5, and only the type
+  system can express it.
+- **Conversion.** `Monetary` converts through an fx rate with its own date; `Quantity` converts
+  through unit factors; `Index` rescales through declared bounds. Three different operations
+  that a single "numeric" type cannot distinguish.
+- **Reduction.** `Composition` cannot be scored as-is. A criterion reading one must first reduce
+  it to a number — largest-group share, or a diversity index — and the type system is what
+  forces that to be explicit rather than accidental.
+
+Adding a type is a developer change; adding a criterion **of an existing type** stays a pure
+data change.
+
+#### Validation
+
+The type system carries validation in two layers.
+
+**Type-implicit — always enforced, derived from the type itself:**
+
+| Type | Always true |
+|---|---|
+| `Monetary` | Carries a currency; amount is finite |
+| `Quantity` | Carries a unit belonging to the criterion's declared dimension |
+| `Count` | Non-negative integer |
+| `Ratio` | Within 0–100; declares what it is a share of |
+| `Index` | Within the declared `scale_min`–`scale_max`; names its provider |
+| `LabelSet` | Labels drawn from the controlled vocabulary, where one is declared |
+| `Composition` | Shares are non-negative and sum to 100 within tolerance |
+| `Boolean` | True or false only |
+| `AssignedScore` | Within the declared range; records who assigned it |
+
+**Criterion-explicit — declared per criterion, in `valid_range` or `allowed_labels`:**
+
+Non-negativity is **not** a `Monetary` type rule — net income after tax or a budget balance may
+legitimately be negative. Every monetary criterion in this catalog is a cost or a benefit, so
+each declares `> 0` for itself. Likewise `avg_annual_temperature` declares a plausible −20 to
+40 °C, while nothing about `Quantity` forbids negatives.
+
+> **Validation is not a threshold.** A **threshold** says the value is real and disqualifying —
+> eliminate the candidate (§5.2). **Validation** says the value is not credible — it is a data
+> error. Conflating them lets a scraper bug silently eliminate a country.
+
+**On a validation failure**, consistent with *resolution never discards data* (§3.6):
+
+- the value is **stored and marked rejected**, with the reason — never silently dropped;
+- it does **not** become the active value and does **not** count toward coverage (§5.3);
+- the `Run` records it as a failure for that candidate and criterion, so selective retry
+  (§6.4) can pick it up;
+- if a lower-priority source holds a valid value, that one becomes active instead.
 
 ### 3.4 CriteriaSettings and CriterionSetting
 
@@ -267,19 +345,37 @@ EIU Global Liveability (city) · Mercer Quality of Living rank (city) · Numbeo 
 A single measurement of one criterion for one candidate from one source. **Values are never
 overwritten and never discarded.**
 
+**Every `Value` carries these**, whatever its type:
+
 | Field | Notes |
 |---|---|
 | `candidate`, `criterion`, `source` | What this measures and where it came from |
-| `native_value` | Exactly as published, in the source's own unit and currency |
-| `native_currency` | Where applicable |
-| `converted_value` | EUR equivalent, used for scoring |
-| `fx_rate`, `fx_rate_date` | The rate used and when it was quoted |
 | `reference_date` | **What period the data describes** |
 | `retrieval_date` | **When the app fetched it** |
-| `confidence` | `absolute` \| `high` \| `medium` \| `low` — see §5.7. Derived, with a manual override retained alongside |
+| `confidence` | `absolute` \| `high` \| `medium` \| `low` — §5.7. Derived, with a manual override retained alongside |
 | `quote` | Supporting text or summary, where applicable |
 | `citations` | Source URLs |
 | `run` | The Run that produced it |
+
+**The rest depends on the criterion's `value_type`** (§3.3a). A monetary value carries a
+currency and an fx rate; a temperature carries a unit; a population carries neither. These are
+**not nullable columns on one row** — the payload is typed:
+
+| Type | Payload |
+|---|---|
+| `Monetary` | `amount`, `currency`, `amount_eur`, `fx_rate`, `fx_rate_date` |
+| `Quantity` | `magnitude`, `unit` |
+| `Count` | `count`, optional `basis` |
+| `Ratio` | `value`, `basis` |
+| `Index` | `value`, `provider`, `scale_min`, `scale_max` |
+| `LabelSet` | `labels[]` |
+| `Composition` | `shares[]` as label → percentage |
+| `Boolean` | `value` |
+| `AssignedScore` | `value`, `range`, `assigned_by`, `rationale` |
+| `Text` | `body` |
+
+> `arch.md` decides how this is stored — table per type, a typed payload column, or otherwise.
+> The requirement is only that **a value never carries fields its type has no meaning for**.
 
 **The two dates are distinct and must never be merged, conflated, or displayed as one.**
 
@@ -358,12 +454,13 @@ range. No decimals — 86, not 8.6.
 **Criterion thresholds** live in the active profile (§3.4); their semantics follow the
 criterion's `type`:
 
-| Type | Threshold semantics |
+| Value type | Threshold semantics |
 |---|---|
-| `numeric` | An acceptable range `[X, Y]` |
-| `number_list` | Applied to a declared aggregate of the series |
-| `label_list` | Must contain / must not contain given values |
-| `boolean` | Must equal |
+| `Monetary`, `Quantity`, `Count`, `Ratio`, `Index`, `AssignedScore` | An acceptable range `[X, Y]` in the type's own unit |
+| `LabelSet` | Must contain / must not contain given labels |
+| `Composition` | A minimum or maximum share for a named label |
+| `Boolean` | Must equal |
+| `Text` | No threshold |
 
 **EligibilityFilters** (§3.7) are named gates that are not properties of any criterion — visa
 pathways, quota availability, relocation timing. They carry judgement rather than
@@ -403,10 +500,14 @@ screened at all. Such a candidate is marked as having **bypassed** the country g
 
 ### 5.5 Currency
 
-Values are stored **native and converted**. The published figure is retained exactly as
-issued; a EUR equivalent is stored alongside it with the rate used and the rate's date.
-Scoring uses the converted value. Both are displayed, and the original remains auditable
-against its source.
+**`Monetary` values only** (§3.3a) are stored native and converted. The published figure is
+retained exactly as issued; a EUR equivalent is stored alongside it with the rate used and the
+rate's date. Scoring uses the converted value. Both are displayed, and the original remains
+auditable against its source.
+
+Other types convert differently or not at all: a `Quantity` converts through unit factors, an
+`Index` rescales from its declared bounds, and a `Count` converts not at all. Currency
+handling applies to exactly one type, which is why it does not live on every value.
 
 ### 5.6 Acquisition and scoring are separate
 
@@ -566,38 +667,39 @@ culture and statutory leave are national.
 | `governance` | ✓ | ✓ |
 | `family` | ✓ | ✓ |
 
-**All weights are provisional.** `scale_params` and `threshold` are left `TBD` until real data
-exists. **C** marks a coordinate-bound source that works at any settlement size, **R** a
+**All weights are provisional**, and live in `CriteriaSettings` (§3.4), not on the criteria —
+as do direction, thresholds and scale anchors. The **value type** (§3.3a) is a property of the
+criterion and appears here. **C** marks a coordinate-bound source that works at any settlement size, **R** a
 registry-bound one with a population floor (`datasources.md` §3).
 
 ### 7.1 Country level
 
 #### Economics — 15%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `cost_of_living_index_country` | 40% | numeric, lower better | Eurostat price level indices, World Bank ICP |
-| `income_tax_effective` | 35% | numeric %, lower better | OECD Tax Database, national tax authorities |
-| `remote_work_tax_treaty` | 25% | label_list, must contain RO treaty | OECD treaty database, manual |
+| `cost_of_living_index_country` | 40% | **Index** — Eurostat PLI, EU27 = 100 | Eurostat price level indices, World Bank ICP |
+| `income_tax_effective` | 35% | **Ratio** — share of gross income | OECD Tax Database, national tax authorities |
+| `remote_work_tax_treaty` | 25% | **LabelSet** — treaty partners | OECD treaty database, manual |
 
 #### Housing — 11%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `house_price_to_income_ratio` | 40% | numeric, lower better | Eurostat, OECD Affordable Housing Database |
-| `housing_cost_overburden_rate` | 35% | numeric %, lower better | Eurostat `ilc_lvho07a` |
-| `overcrowding_rate` | 25% | numeric %, lower better | Eurostat `ilc_lvho05a` |
+| `house_price_to_income_ratio` | 40% | **Ratio** — price ÷ annual income | Eurostat, OECD Affordable Housing Database |
+| `housing_cost_overburden_rate` | 35% | **Ratio** — share of households | Eurostat `ilc_lvho07a` |
+| `overcrowding_rate` | 25% | **Ratio** — share of households | Eurostat `ilc_lvho05a` |
 
 #### Career & work — 15%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `tech_software_jobs` | 22% | numeric count, higher better | Job-posting counts — **source unresolved, see `datasources.md` §11** |
-| `tech_product_jobs` | 22% | numeric count, higher better | Job-posting counts — same source |
-| `international_employers` | 18% | **label_list**, more/larger is better | LLM + search, company sites |
-| `average_working_hours` | 15% | numeric, **ideal_band** | OECD Employment Database, Eurostat `lfsa_ewhun2` |
-| `tech_employment_share` | 13% | numeric, higher better | Eurostat ICT/high-tech employment, ILO |
-| `statutory_paid_leave` | 10% | numeric days, higher better | OECD, EU Working Time Directive, national law |
+| `tech_software_jobs` | 22% | **Count** — open postings | Job-posting counts — **source unresolved, see `datasources.md` §11** |
+| `tech_product_jobs` | 22% | **Count** — open postings | Job-posting counts — same source |
+| `international_employers` | 18% | **LabelSet** — named firms | LLM + search, company sites |
+| `average_working_hours` | 15% | **Quantity** — hours/week | OECD Employment Database, Eurostat `lfsa_ewhun2` |
+| `tech_employment_share` | 13% | **Ratio** — share of workforce | Eurostat ICT/high-tech employment, ILO |
+| `statutory_paid_leave` | 10% | **Quantity** — days/year | OECD, EU Working Time Directive, national law |
 
 > **Four measures, four different questions** — they look redundant and are not:
 >
@@ -617,35 +719,35 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 #### Safety & stability — 13%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `crime_safety_index_national` | 50% | numeric, higher better | UNODC homicide, Eurostat crime |
-| `political_economic_stability` | 50% | numeric, higher better | World Bank Governance Indicators |
+| `crime_safety_index_national` | 50% | **Index** — Numbeo 0–100 | UNODC homicide, Eurostat crime |
+| `political_economic_stability` | 50% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators |
 
 #### Health — 10%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `healthcare_system_quality` | 100% | numeric, higher better | WHO Global Health Observatory, OECD Health Statistics |
+| `healthcare_system_quality` | 100% | **Index** — WHO UHC 0–100 | WHO Global Health Observatory, OECD Health Statistics |
 
 #### Climate & environment — 8%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `climate_zone` | 30% | label_list | Köppen classification |
-| `avg_annual_temperature` | 25% | numeric, **ideal_band** | Open-Meteo archive **(C)** |
-| `annual_sunshine_hours` | 25% | numeric, higher better | Open-Meteo, from radiation **(C)** |
-| `climate_trajectory_national` | 20% | numeric, lower risk better | Copernicus CDS, IPCC |
+| `climate_zone` | 30% | **LabelSet** — Köppen codes | Köppen classification |
+| `avg_annual_temperature` | 25% | **Quantity** — °C | Open-Meteo archive **(C)** |
+| `annual_sunshine_hours` | 25% | **Quantity** — hours/year | Open-Meteo, from radiation **(C)** |
+| `climate_trajectory_national` | 20% | **Index** — Copernicus composite risk | Copernicus CDS, IPCC |
 
 #### Nature & landscape — 8%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `natural_diversity` | 25% | numeric, higher better | Derived — count of coexisting feature types (coast, high mountain, major lake, major river, forest, distinct biomes) |
-| `protected_land_share` | 25% | numeric %, higher better | WDPA / Protected Planet, Eurostat |
-| `coastline_access` | 20% | numeric, higher better | Natural Earth, Eurostat — length relative to area |
-| `forest_cover` | 15% | numeric %, higher better | FAO, Corine Land Cover |
-| `elevation_range` | 15% | numeric m, higher better | Copernicus DEM — relief variety |
+| `natural_diversity` | 25% | **Count** — coexisting feature types | Derived — count of coexisting feature types (coast, high mountain, major lake, major river, forest, distinct biomes) |
+| `protected_land_share` | 25% | **Ratio** — share of territory | WDPA / Protected Planet, Eurostat |
+| `coastline_access` | 20% | **Quantity** — km coast per 1000 km² | Natural Earth, Eurostat — length relative to area |
+| `forest_cover` | 15% | **Ratio** — share of land area | FAO, Corine Land Cover |
+| `elevation_range` | 15% | **Quantity** — m | Copernicus DEM — relief variety |
 
 > A large country can host sea, high mountains, lakes and forest **simultaneously**, and that
 > combination is the thing worth screening for. `natural_diversity` measures coexistence
@@ -653,55 +755,55 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 #### Culture & community — 7%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `life_satisfaction` | 40% | numeric 0–10, higher better | Eurostat `ilc_pw01` *(survey figure, not the World Happiness composite — §3.5a)* |
-| `openness_to_foreigners` | 35% | numeric, higher better | MIPEX, Eurobarometer, InterNations |
-| `english_proficiency` | 25% | numeric, higher better | EF English Proficiency Index |
+| `life_satisfaction` | 40% | **Quantity** — Cantril ladder 0–10 | Eurostat `ilc_pw01` *(survey figure, not the World Happiness composite — §3.5a)* |
+| `openness_to_foreigners` | 35% | **Index** — MIPEX 0–100 | MIPEX, Eurobarometer, InterNations |
+| `english_proficiency` | 25% | **Index** — EF EPI 0–800 | EF English Proficiency Index |
 
 #### Governance & administration — 9%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `rule_of_law` | 25% | numeric, higher better | World Bank Governance Indicators, V-Dem |
-| `naturalisation_pathway` | 25% | numeric, lower difficulty better | **Official administrative sources** — published requirements, steps, timeline and fees; difficulty derived. See §6.9 |
-| `control_of_corruption` | 20% | numeric, higher better | World Bank WGI, Transparency International |
-| `residency_admin_ease` | 15% | numeric, higher better | **Official administrative sources**; World Bank B-READY where covered. See §6.9 |
-| `press_freedom` | 10% | numeric, higher better | Reporters Without Borders |
-| `pension_portability` | 5% | numeric, higher better | **Official administrative sources** — EU social-security coordination rules. See §6.9 |
+| `rule_of_law` | 25% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators, V-Dem |
+| `naturalisation_pathway` | 25% | **Quantity** — years of residence | **Official administrative sources** — published requirements, steps, timeline and fees; difficulty derived. See §6.9 |
+| `control_of_corruption` | 20% | **Index** — World Bank WGI −2.5–2.5 | World Bank WGI, Transparency International |
+| `residency_admin_ease` | 15% | **AssignedScore** — 0–100, derived from procedure | **Official administrative sources**; World Bank B-READY where covered. See §6.9 |
+| `press_freedom` | 10% | **Index** — RSF 0–100 | Reporters Without Borders |
+| `pension_portability` | 5% | **AssignedScore** — 0–100, derived from rules | **Official administrative sources** — EU social-security coordination rules. See §6.9 |
 
 #### Family & education — 4%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `school_system_quality` | 45% | numeric, higher better | OECD PISA, UNESCO |
-| `parental_leave_policy` | 30% | numeric, higher better | OECD Family Database |
-| `child_benefit_policy` | 25% | numeric, higher better | OECD, national social-security bodies |
+| `school_system_quality` | 45% | **Index** — OECD PISA mean score | OECD PISA, UNESCO |
+| `parental_leave_policy` | 30% | **Quantity** — weeks paid | OECD Family Database |
+| `child_benefit_policy` | 25% | **Monetary** — EUR/month per child | OECD, national social-security bodies |
 
 ### 7.2 City level
 
 #### Economics — 10%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `cost_of_living_2p_monthly` | 60% | numeric EUR/month, lower better | Numbeo **(R)**, LLM fallback |
-| `local_purchasing_power` | 40% | numeric, higher better | Numbeo **(R)**, Eurostat Urban Audit **(R)** |
+| `cost_of_living_2p_monthly` | 60% | **Monetary** — EUR/month | Numbeo **(R)**, LLM fallback |
+| `local_purchasing_power` | 40% | **Index** — Numbeo 0–100+ | Numbeo **(R)**, Eurostat Urban Audit **(R)** |
 
 #### Housing — 15%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `rent_2br_city_centre` | 45% | numeric EUR/month, lower better | Numbeo **(R)**, national listings, LLM |
-| `property_purchase_price_m2` | 35% | numeric EUR/m², lower better | National land registries, Eurostat **(R)** |
-| `housing_quality` | 20% | numeric, higher better | Eurostat Urban Audit rooms-per-person, overcrowding **(R)** |
+| `rent_2br_city_centre` | 45% | **Monetary** — EUR/month | Numbeo **(R)**, national listings, LLM |
+| `property_purchase_price_m2` | 35% | **Monetary** — EUR/m² | National land registries, Eurostat **(R)** |
+| `housing_quality` | 20% | **Ratio** — rooms per person, overcrowding | Eurostat Urban Audit rooms-per-person, overcrowding **(R)** |
 
 #### Career & work — 14%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `tech_software_jobs` | 35% | numeric count, higher better | Job-posting counts — **source unresolved, see `datasources.md` §11** |
-| `tech_product_jobs` | 35% | numeric count, higher better | Job-posting counts — same source |
-| `international_employers_local` | 30% | **label_list**, more/larger is better | LLM + search, company sites — named international employers with an office in *this* city |
+| `tech_software_jobs` | 35% | **Count** — open postings | Job-posting counts — **source unresolved, see `datasources.md` §11** |
+| `tech_product_jobs` | 35% | **Count** — open postings | Job-posting counts — same source |
+| `international_employers_local` | 30% | **LabelSet** — named firms with a local office | LLM + search, company sites — named international employers with an office in *this* city |
 
 > **Two counts, one shape.** `tech_software_jobs` and `tech_product_jobs` are deliberately
 > symmetric: the same query against the same source, differing only in role family. Product
@@ -719,32 +821,32 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 #### Safety & stability — 7%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `safety_local` | 100% | numeric, higher better | Eurostat Urban Audit **(R)**, Numbeo **(R)**, regional police |
+| `safety_local` | 100% | **Index** — Numbeo 0–100 | Eurostat Urban Audit **(R)**, Numbeo **(R)**, regional police |
 
 #### Health — 7%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `healthcare_access_local` | 60% | numeric, higher better | Overpass, distance to hospital **(C)** |
-| `paediatric_healthcare_access` | 40% | numeric, higher better | Overpass **(C)**, national health registries |
+| `healthcare_access_local` | 60% | **Quantity** — km to nearest hospital | Overpass, distance to hospital **(C)** |
+| `paediatric_healthcare_access` | 40% | **Quantity** — km to nearest paediatric facility | Overpass **(C)**, national health registries |
 
 #### Climate & environment — 9%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `local_climate` | 55% | numeric, **ideal_band** + sunshine | Open-Meteo **(C)** |
-| `air_quality` | 45% | numeric PM2.5, lower better | OpenAQ, EEA nearest station **(C)** |
+| `local_climate` | 55% | **Quantity** — °C, with sunshine hours | Open-Meteo **(C)** |
+| `air_quality` | 45% | **Quantity** — µg/m³ PM2.5 | OpenAQ, EEA nearest station **(C)** |
 
 #### Connectivity — 10%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `internet_quality` | 30% | numeric Mbps, higher better | Ookla Open Data, ~610 m tiles **(C)** |
-| `public_transport` | 25% | numeric, higher better | Overpass **(C)**, Urban Audit |
-| `flights_to_romania` | 25% | numeric, higher better | Flight APIs, manual, via `profile.nearest_airport` |
-| `proximity_to_hub` | 20% | numeric km, lower better | Computed from coordinates **(C)** |
+| `internet_quality` | 30% | **Quantity** — Mbps | Ookla Open Data, ~610 m tiles **(C)** |
+| `public_transport` | 25% | **Index** — Numbeo 0–100 | Overpass **(C)**, Urban Audit |
+| `flights_to_romania` | 25% | **Count** — direct routes per week | Flight APIs, manual, via `profile.nearest_airport` |
+| `proximity_to_hub` | 20% | **Quantity** — km | Computed from coordinates **(C)** |
 
 #### Nature & landscape — 12%
 
@@ -753,16 +855,16 @@ This is the pillar where a small town can genuinely outscore a city, and where t
 exists to demonstrate it. Distances use a **saturating** scale — steep near zero, flat past the
 point where further distance stops mattering.
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `distance_to_sea` | 18% | numeric km, lower better, **saturating** | OSM / Natural Earth coastline **(C)** |
-| `distance_to_mountains` | 15% | numeric km, lower better, **saturating** | Copernicus DEM, terrain above threshold **(C)** |
-| `hiking_trail_density` | 15% | numeric km per radius, higher better | OSM Overpass marked hiking routes **(C)** |
-| `distance_to_inland_water` | 12% | numeric km, lower better, **saturating** | OSM lakes and rivers, size-filtered **(C)** |
-| `protected_area_access` | 12% | numeric, higher better | WDPA — distance and area within radius **(C)** |
-| `bathing_water_quality` | 10% | numeric, higher better | EEA Bathing Water Directive dataset |
-| `night_sky_brightness` | 10% | numeric, lower better | VIIRS, World Atlas of Artificial Night Sky Brightness **(C)** |
-| `forest_cover_local` | 8% | numeric %, higher better | Corine Land Cover within radius **(C)** |
+| `distance_to_sea` | 18% | **Quantity** — km | OSM / Natural Earth coastline **(C)** |
+| `distance_to_mountains` | 15% | **Quantity** — km | Copernicus DEM, terrain above threshold **(C)** |
+| `hiking_trail_density` | 15% | **Quantity** — km of marked trail per 25 km radius | OSM Overpass marked hiking routes **(C)** |
+| `distance_to_inland_water` | 12% | **Quantity** — km | OSM lakes and rivers, size-filtered **(C)** |
+| `protected_area_access` | 12% | **Quantity** — km to nearest, area within radius | WDPA — distance and area within radius **(C)** |
+| `bathing_water_quality` | 10% | **Ratio** — share of beaches rated excellent | EEA Bathing Water Directive dataset |
+| `night_sky_brightness` | 10% | **Quantity** — mcd/m² | VIIRS, World Atlas of Artificial Night Sky Brightness **(C)** |
+| `forest_cover_local` | 8% | **Ratio** — share of land within radius | Corine Land Cover within radius **(C)** |
 
 > `hiking_trail_density` measures whether you can actually walk; `distance_to_mountains` alone
 > does not. `bathing_water_quality` separates 20 km from the sea from 20 km from water you
@@ -770,23 +872,23 @@ point where further distance stops mattering.
 
 #### Culture & community — 8%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `heritage_and_culture_density` | 60% | numeric, higher better | UNESCO, monument registers, Overpass museum/cinema counts **(C)** |
-| `expat_community_size` | 40% | numeric, higher better | Eurostat Urban Audit foreign-born **(R)** |
+| `heritage_and_culture_density` | 60% | **Count** — sites and venues within radius | UNESCO, monument registers, Overpass museum/cinema counts **(C)** |
+| `expat_community_size` | 40% | **Ratio** — foreign-born share of population | Eurostat Urban Audit foreign-born **(R)** |
 
 #### Governance & administration — 2%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `local_admin_ease` | 100% | numeric, higher better | **Official administrative sources** — municipal service pages. See §6.9 |
+| `local_admin_ease` | 100% | **AssignedScore** — 0–100, derived from procedure | **Official administrative sources** — municipal service pages. See §6.9 |
 
 #### Family & education — 6%
 
-| Criterion | Weight | Type / direction | Sources |
+| Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `schooling_options` | 60% | numeric, higher better | Overpass **(C)**, national education registries |
-| `childcare_cost_availability` | 40% | numeric, lower cost better | Eurostat **(R)**, national statistics |
+| `schooling_options` | 60% | **Count** — schools within radius | Overpass **(C)**, national education registries |
+| `childcare_cost_availability` | 40% | **Monetary** — EUR/month full-time | Eurostat **(R)**, national statistics |
 
 ---
 
@@ -955,6 +1057,11 @@ not only *what*.
 | Q50 | Country nature measures *diversity*, not presence | A large country can hold sea, mountains, lakes and forest at once; coexistence is what is worth screening |
 | Q51 | `CandidateFacts` gains a natural-setting section | Facts describe, criteria judge — "Calanques, 2 km" is context, "nature 8.7" is a score |
 | Q52 | Data sources are plug-ins behind a common interface | Adding a source must be one adapter plus config, never an edit to the acquisition core |
+| Q73 | Validation has two layers: type-implicit and criterion-explicit | Non-negativity is not a `Monetary` rule — net income can be negative — so it is declared per criterion; a `Ratio` being 0–100 is inherent to the type |
+| Q74 | Validation failure is distinct from threshold failure | A threshold eliminates a candidate; a validation failure rejects an implausible value and flags the source. Conflating them lets a scraper bug eliminate a country |
+| Q70 | A semantic value type system replaces the shape-based `type` | Rent and temperature are both "numeric" and behave nothing alike; shape cannot distinguish currency conversion from unit conversion from index rescaling |
+| Q71 | `Value` is common fields plus a typed payload | A population should not carry a null `fx_rate`. A value must never hold fields its type has no meaning for |
+| Q72 | The type constrains which normalisation methods are legal | An `Index` has provider-declared bounds and rescales deterministically; only `Monetary` genuinely needs user-set anchors |
 | Q67 | `CandidateProfile` → `CandidateFacts` | "Profile" implied an assessment; this is a Wikipedia-style infobox that asserts nothing. Also removes the collision with the settings entity |
 | Q68 | `CriteriaProfile` → `CriteriaSettings`, holding `CriterionSetting` entries | Unambiguously configuration rather than description |
 | Q69 | Facts extended with languages, religion and ethnic composition | Wikipedia-infobox parity; languages and social composition bear directly on whether a place is livable for a foreigner |
