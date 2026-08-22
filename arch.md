@@ -173,23 +173,14 @@ single row that refers to it.
 | `criteria_settings` | Named settings records | `alex`, `remote_only` |
 | `run` | Acquisition runs | surrogate |
 
-**Two rules that keep this working:**
-
-**1. Identifiers never change; names do.** An identifier is assigned once and is permanent,
-even when the thing it names is renamed. Country names drift — Czechia, Türkiye, Eswatini — and
-when one does, `candidate.name` is updated and `candidate.id` is not. Every foreign key
-survives. The identifier may end up reading oddly; that is the correct trade, because the
-alternative is rewriting every row that points at it.
-
-**2. Identifiers are opaque to code and legible to humans.** They are readable so a person can
-scan a config file or a query result without a lookup. They are **not** to be parsed. Never
-write `id.startswith("country.")` to determine a level — the `level` column is the only source
-of truth for that, and deriving it from the identifier creates a second one that will
-eventually disagree. This is the same reason the pillar is deliberately absent from criterion
-identifiers (§2).
+**The rule that makes this work: identifiers never change; names do.** An identifier is
+assigned once and is permanent, even when the thing it names is renamed. Country names drift —
+Czechia, Türkiye, Eswatini — and when one does, `candidate.name` is updated and `candidate.id`
+is not. Every foreign key survives. The identifier may end up reading oddly; that is the correct
+trade, because the alternative is rewriting every row that points at it.
 
 > A readable identifier is a surrogate key that happens to be legible. It is not derived from
-> the name and must never be regenerated from it.
+> the display name and is never regenerated from it.
 
 ### 3.3 A shared parent with typed children
 
