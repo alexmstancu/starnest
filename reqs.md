@@ -519,6 +519,12 @@ The profile also declares **which way is good** per criterion: `lower_is_better`
 not a property of the criterion** (§3.4) — two profiles may score the same measured value in
 opposite directions.
 
+**Band labels.** A criterion may declare labels against its scoring anchors, so a number
+displays as a word without ceasing to be a number. `country.economic_outlook` shows *growth*
+for 1.9% per year; `city.rent_2br_centre` could show *affordable* or *stretching*. The value
+stored is always the figure — bands are a reading of it, not a replacement for it, and they
+travel with the anchors in `CriteriaSettings` with a default on the criterion.
+
 **Score scale: 0–100, configurable.** Criterion scores and total scores share one range, and
 are **displayed as integers** — 86, not 86.4.
 
@@ -792,9 +798,17 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Value type | Sources |
 |---|---|---|---|
-| `country.cost_of_living_index` | 40% | **Index** — Eurostat PLI, EU27 = 100 | Eurostat price level indices, World Bank ICP |
-| `country.income_tax_effective` | 35% | **Ratio** — share of gross income | OECD Tax Database, national tax authorities |
-| `country.remote_work_tax_treaty` | 25% | **LabelSet** — treaty partners | OECD treaty database, manual |
+| `country.cost_of_living_index` | 35% | **Index** — Eurostat PLI, EU27 = 100 | Eurostat price level indices, World Bank ICP |
+| `country.income_tax_effective` | 30% | **Ratio** — share of gross income | OECD Tax Database, national tax authorities |
+| `country.remote_work_tax_treaty` | 20% | **LabelSet** — treaty partners | OECD treaty database, manual |
+| `country.economic_outlook` | 15% | **Quantity** — projected GDP growth, % per year | IMF *World Economic Outlook*, European Commission forecasts, World Bank Global Economic Prospects |
+
+> **We do not compute trends.** The IMF, the European Commission and the World Bank already
+> publish projections with far more analysis behind them than we could justify. This criterion
+> stores their number and reads it through **band labels** (§5.1) — under −2% *strong decline*,
+> −2 to 0 *decline*, 0 to 1.5% *stagnation*, 1.5 to 3% *growth*, above 3% *strong growth*.
+> Storing the figure rather than the band keeps the precision and the provenance; the band is
+> what you actually read.
 
 #### Housing — 10%
 
@@ -1156,6 +1170,12 @@ The main results view.
   country-level qualification threshold, the ~2000–3000 EUR/month household budget guideline, the
   2000 EUR rent ceiling, `min_coverage`, and every `scale_params` and `threshold` marked TBD.
 - **Which criteria are `required`** (§5.3) — not yet assigned.
+- **No type for genuinely ordinal data.** One value from an ordered list where the order
+  carries meaning — a credit rating (AAA, AA, A), or the EEA's bathing-water classes
+  (excellent, good, sufficient, poor). `LabelSet` is an unordered set of several labels;
+  `Index` requires a number. Nothing in the catalog needs it today —
+  `city.bathing_water_quality` is stored as the share rated excellent — so adding an `Ordinal`
+  type is deferred until something actually does.
 - **The global source priority order is not yet set.** §6.6 defines the mechanism — a global
   default with per-criterion overrides — but no actual ordering exists. It has to be decided by
   the administrator once concrete sources are connected; `datasources.md` supplies the
@@ -1400,6 +1420,9 @@ not only *what*.
 | Q57 | Administrative criteria use official sources, one shared adapter | Naturalisation, residency, pensions and local admin are published procedures, not unknowables |
 | Q58 | v1 covers the country level only, full features | Exercises every load-bearing abstraction; the city level then adds sources and rows, not machinery |
 | Q59 | Country seed is the full EU/EEA + UK + CH scope, 32 countries | EU-only would leave the named eligibility filters with no candidates to act on, shipping the mechanism untested — and the UK and Switzerland are genuine candidates whose absence would make the first ranking incomplete |
+| Q89 | `country.economic_outlook` added, storing IMF's projected growth figure | The IMF, EC and World Bank already publish projections with real analysis behind them; computing our own trend would be worse work duplicated |
+| Q90 | Band labels display a number as a word | Five outlook bands are a reading of a numeric scale, not a separate type. Storing the figure keeps precision and provenance |
+| Q91 | No `Ordinal` type yet | Genuinely ordered non-numeric data would need one, but nothing in the catalog does. Recorded as a gap rather than added speculatively |
 | Q87 | Criterion IDs are `<level>.<name>` | `tech_software_jobs` existed at both levels with one ID — either a collision or a Q3 violation. The level prefix makes IDs globally unique and retires the inconsistent `_local`/`_national` suffixes |
 | Q88 | The pillar is not in the ID | Pillar assignment may change and identity may not; encoding it would make every reorganisation a retire-and-recreate. Names do not run out, so growth needs no numbering |
 | Q83 | Eligibility filters enumerated as a catalog (§7.3) | §3.7 was the mechanism with no content. `two_role_feasibility` existed nowhere and cannot be replaced by a criterion — scored criteria only lower a total, and this must be able to eliminate |
