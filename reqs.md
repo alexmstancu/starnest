@@ -39,6 +39,26 @@ country, so "stay put" remains a measurable option rather than an assumption. It
 additionally the default comparison anchor: any criterion may display a delta against
 Romania alongside its raw value.
 
+### 1.4 Household parameters
+
+Several criteria are meaningless in the abstract and mean something only **relative to this
+household**. They are configuration, not candidate data:
+
+| Parameter | Meaning |
+|---|---|
+| `net_household_income` | Estimated monthly net income for the two of you, in EUR |
+| `household_size` | Adults and children — sets the relevant dwelling size |
+| `target_monthly_spend` | Guideline ceiling on total household spend. Provisionally 2,000–3,000 EUR/month |
+| `max_rent` | Rent ceiling. Provisionally 2,000 EUR/month |
+
+> **"Budget" means household money throughout this document.** The ceiling on what an
+> acquisition run may cost in API calls is the **spend cap** (§6.3) — a different word for a
+> deliberately different thing.
+
+Without these, `cost_of_living_2p_monthly` is an absolute figure that says nothing about whether
+*you* can afford to live there. `local_purchasing_power` and `house_price_to_income_ratio` use
+population-average income, which answers a different question.
+
 ### 1.3 Scope of v1
 
 **v1 covers the country level only, with the full feature set applied to it.** Everything in
@@ -51,10 +71,17 @@ normalisation, weight redistribution, coverage and confidence · elimination rep
 the ranking dashboard with per-criterion drill-down and full provenance · comparison of a
 focus country against comparators · external scores displayed alongside.
 
-**After v1:** the whole of the **city level** — cities, the city criteria catalog, city nomination,
-and the LLM-plus-search acquisition path that city criteria depend on · prose-bound criteria
-(§9) · and the spec's own post-MVP list: personal annotations, gradient maps, favourites,
-saved criteria profiles, saved comparisons.
+**After v1:** the whole of the **city level** — cities, the city criteria catalog, city
+nomination, and the LLM-plus-search acquisition path that city criteria depend on · prose-bound
+criteria (§9) · and these, which carry requirements of their own rather than being bare names:
+
+| Feature | What it must do |
+|---|---|
+| Personal annotations | Free notes on a candidate — impressions, whether you have visited |
+| Gradient maps | A map coloured by a chosen numeric criterion. **Generatable for any numeric criterion in the catalog**, never fixed to one — that generality is the feature |
+| Favourites | Marking a candidate. Separate lists per level |
+| Saved criteria settings | Already satisfied — `CriteriaSettings` (§3.4) is a standalone reusable object usable in any ranking or comparison, not tied to one candidate |
+| Saved comparisons | A focus candidate + comparators + a reference to the settings used, saved under a name. **Frozen at the values held when saved**, so editing the settings afterwards does not silently change it, with an explicit action to re-run against current settings. The one deliberate exception to §8.5's "comparisons are always live" |
 
 > The country level is the right first slice: it exercises nearly every load-bearing abstraction —
 > `Candidate`, pillars and criteria as data, normalisation, redistribution, coverage,
@@ -525,6 +552,16 @@ Two independent floors mark a candidate **insufficient data** rather than produc
 Redistribution is computed at scoring time from what data exists. **It must never be written
 back into the stored weights.**
 
+**Warnings are not eliminations.** Some rules flag a candidate without disqualifying it. Rent
+is the standing example: `rent_2br_city_centre` has its own threshold, but rent is *also* judged
+**relative to `target_monthly_spend`** (§1.4). Rent that consumes most of the household's total
+spend is flagged as a warning even when it clears its own threshold in isolation, because the
+two figures only mean anything read together.
+
+A warning shows on the candidate and in the drill-down. It never changes the score and never
+eliminates. Cross-criterion rules of this kind are declared in configuration alongside
+thresholds.
+
 **Excluding a criterion is not the same as missing data.** An excluded criterion (`included:
 false`, §3.4) renormalises the remaining weights and **does not count against coverage** —
 nothing is missing, you decided it does not apply. Missing data redistributes weight *and*
@@ -611,7 +648,8 @@ Four mechanisms, all active simultaneously:
 - **LLM proposal** — for a qualified country, propose localities matching the household
   profile. Proposals enter as `proposed` and require approval.
 - **Manual add** — type a name; it enters immediately as `approved`.
-- **Top N by population** — automatic from a population dataset.
+- **Top N by population** — automatic from a population dataset. **N defaults to 5** per
+  qualified country, configurable.
 
 The country list auto-seeds with the full geographic scope — **EU 27 + Iceland, Norway,
 Liechtenstein + United Kingdom + Switzerland**, 32 countries. Exclusions are stored as
@@ -631,7 +669,7 @@ Nothing re-fetches automatically as a side effect of any other action.
 ### 6.3 Cost control
 
 Before a run, display the **planned call count and an estimated cost**, and require
-confirmation. During a run, halt at a **configurable budget cap**, retaining everything
+confirmation. During a run, halt at a **configurable spend cap**, retaining everything
 completed so far.
 
 ### 6.4 Partial failure
@@ -896,13 +934,22 @@ registry-bound one with a population floor (`datasources.md` §3).
 > for one person and hostile for the other — and only counting both separately reveals it.
 > The **ratio between them** is worth displaying even though it is not itself a criterion.
 >
+> One anchor worth naming specifically: **a Microsoft or Azure office**, since Alex works there
+> now and an internal transfer is the lowest-friction relocation path available. It contributes
+> positively and never eliminates — a bonus, not a requirement.
+>
 > **Anchors versus counts.** `international_employers_local` is the city-level pair of
 > `international_employers` (§7.1) — the same question, city-resolved: which relocation-friendly,
 > English-working employers actually have an office *here*. A city with one big office and
 > nothing else is fragile; a city with two hundred small local firms is resilient but may never
 > sponsor a foreigner. The counts measure volume, the list measures who.
 
-> Under a `remote-only` criteria profile this pillar is down-weighted and `connectivity` up-weighted.
+> Under a `remote-only` criteria profile this pillar is down-weighted and `connectivity`
+> up-weighted. That is the mechanism, but it is worth stating what it means: **for a village,
+> this pillar is asking a different question.** Cassis has a local tech market of approximately
+> zero, so remote work is not one option among several — it is the premise. The criteria then
+> effectively measure whether the place supports working remotely, which is why a village can
+> score at all here rather than being eliminated by arithmetic.
 
 #### Safety & stability — 7%
 
@@ -979,6 +1026,31 @@ point where further distance stops mattering.
 
 ---
 
+### 7.3 Eligibility filter catalog
+
+The named gates of §3.7, as distinct from criterion thresholds. Each carries a verdict, a
+reason, a source and an optional audited override. **A candidate failing any of these is
+eliminated regardless of score** — and stays visible, with its score, showing why (§5.4).
+
+| Filter | Level | Passes when | Source |
+|---|---|---|---|
+| `eu_free_movement` | country | The candidate is an EU or EEA state. Automatic pass — Romanian citizenship carries free movement | Definitional, from `CandidateFacts` |
+| `uk_skilled_worker` | country | A realistic Skilled Worker route exists: sponsorship available in the local market, or the salary threshold met | Manual, LLM-assisted (§6.9) |
+| `ch_eu_efta_quota` | country | The annual Swiss EU/EFTA permit quota has capacity for this profile | Manual, LLM-assisted (§6.9) |
+| `two_role_feasibility` | **city** | The local market can plausibly support **two** tech roles — engineering *and* product | Derived from `tech_software_jobs` and `tech_product_jobs` against a configurable floor |
+| `relocation_window` | both | Relocation is feasible within the configured window, provisionally **12–18 months**, with no long-lead blocker such as a visa queue or a contract | Manual |
+
+> **`two_role_feasibility` is the one that cannot be replaced by a criterion.** A strong
+> national tech market does not mean a specific small city has room for two people, and product
+> roles are the scarcer half. Scored criteria can only lower a total; this is an eligibility
+> question, and it needs to be able to eliminate.
+>
+> **Only `eu_free_movement` is trivially satisfiable in v1**, and it passes automatically for 30
+> of the 32 seeded countries. The UK and Swiss filters are the reason the v1 seed was widened
+> beyond the EU (§6.1) — without them the mechanism would ship untested.
+
+---
+
 ## 8. User interface
 
 **Four tabs plus a persistent sidebar.** The sidebar carries controls that are relevant
@@ -1007,7 +1079,8 @@ everywhere; each tab owns one stage of the workflow and nests its detail views i
 - **Source priority.** The global default order, plus per-criterion overrides and `max_age`.
 - **Candidates.** The seed list, the LLM proposal approval queue, manual add, and pruning of
   auto-seeded countries.
-- **Settings.** Score scale, `min_coverage`, comparator limit, budget cap.
+- **Settings.** Score scale, `min_coverage`, comparator limit, run spend cap, and the
+  household parameters of §1.4.
 
 ### 8.3 Tab 2 — Run
 
@@ -1068,6 +1141,13 @@ The main results view.
   country-level qualification threshold, the ~2000–3000 EUR/month household budget guideline, the
   2000 EUR rent ceiling, `min_coverage`, and every `scale_params` and `threshold` marked TBD.
 - **Which criteria are `required`** (§5.3) — not yet assigned.
+- **The global source priority order is not yet set.** §6.6 defines the mechanism — a global
+  default with per-criterion overrides — but no actual ordering exists. It has to be decided by
+  the administrator once concrete sources are connected; `datasources.md` supplies the
+  ingredients but not the ranking.
+- **Cardinality** — whether a criterion may be `scalar`, `keyed` (rent by room count) or
+  `series` (a value per year), as a second axis orthogonal to value type. Discussed, not
+  decided; `arch.md` §6 carries the storage implication.
 - **MVP scope.** Not addressed anywhere in this document, by design.
 
 ---
@@ -1174,6 +1254,16 @@ a pillar. Moving one rebalances the others proportionally.
 **preference**, not a fact — a large expat community is a soft landing to one person and a
 bubble to another.
 
+**Warning** — a flag raised on a candidate without disqualifying it, typically by a rule
+spanning two criteria: rent read against total household spend. Never changes the score.
+
+**Spend cap** — the ceiling on what one acquisition run may cost in API calls. Distinct from
+household budget, which is what §1.4 means by money.
+
+**Household parameters** — net income, household size, target monthly spend, rent ceiling.
+Configuration about *you*, not about any candidate, without which cost criteria are absolute
+figures that say nothing about affordability.
+
 **Threshold** — an elimination line. A value that crosses it disqualifies the candidate. The
 value is real; you have decided it is unacceptable.
 
@@ -1240,7 +1330,7 @@ not only *what*.
 | Q18 | Per-criterion `max_age` | Rent ages in months, climate zones in decades |
 | Q20 | **Deferred** | See §9 |
 | Q21 | Runs are persisted objects | Gives cost, failures and retry somewhere to live, and enables score-over-time |
-| Q22 | Dry-run estimate plus budget cap | The estimate catches mistakes before they cost; the cap catches what the estimate got wrong |
+| Q22 | Dry-run estimate plus spend cap | The estimate catches mistakes before they cost; the cap catches what the estimate got wrong |
 | Q23 | Continue, record, retry selectively | Sparse coverage makes routine failure normal |
 | Q24 | Templated synthesis | Content is fully determined by the arithmetic; an LLM would only rephrase it, at cost and non-deterministically |
 | Q25 | Comparisons always live | Matches the confirmed live-recalculation requirement |
@@ -1291,6 +1381,10 @@ not only *what*.
 | Q57 | Administrative criteria use official sources, one shared adapter | Naturalisation, residency, pensions and local admin are published procedures, not unknowables |
 | Q58 | v1 covers the country level only, full features | Exercises every load-bearing abstraction; the city level then adds sources and rows, not machinery |
 | Q59 | Country seed is the full EU/EEA + UK + CH scope, 32 countries | EU-only would leave the named eligibility filters with no candidates to act on, shipping the mechanism untested — and the UK and Switzerland are genuine candidates whose absence would make the first ranking incomplete |
+| Q83 | Eligibility filters enumerated as a catalog (§7.3) | §3.7 was the mechanism with no content. `two_role_feasibility` existed nowhere and cannot be replaced by a criterion — scored criteria only lower a total, and this must be able to eliminate |
+| Q84 | Household parameters are configuration (§1.4) | Cost of living is meaningless in the abstract; it means something only against your own net income. Population-average purchasing power answers a different question |
+| Q85 | Warnings exist, distinct from eliminations | Rent judged against total household spend is a cross-criterion rule that should flag, not disqualify |
+| Q86 | The LLM run cap is the "spend cap"; "budget" means household money | Two different ceilings had taken the same word |
 | Q79 | Full precision internally, integers only at display | Rounding ~44 criterion scores before weighting accumulates error and can reorder candidates separated by less than a point |
 | Q80 | `reference_date` becomes `reference_period` | A year, a month and a day are all legitimate reference spans; a point date cannot say which |
 | Q81 | Manual entry defaults to `medium` confidence, always overridable | Source tier says nothing useful for manual values — a researched official verdict and a rough estimate are both `source: manual` |

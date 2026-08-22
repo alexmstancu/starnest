@@ -200,9 +200,81 @@ The acquisition layer must support both. A run mixes them.
 
 ---
 
-## 6. Open
+## 6. Carried from the master spec
 
-- **The stack.** Language, UI framework, and database engine are undecided. On the database:
+Preserved before the spec's deletion. These are its proposals, not settled decisions.
+
+### 6.1 Goal
+
+A **local, self-contained application** that runs the whole pipeline — acquisition,
+interpretation, scoring, ranking — with no manual intervention beyond configuring criteria and
+starting a run. The spec's phrase for the bar it must clear: **"zero copy-paste between chat
+and the app."**
+
+### 6.2 Proposed stack, and the alternative it rejected
+
+| Component | Proposed | Reason given |
+|---|---|---|
+| Language | Python 3.12+ | Fastest ecosystem for data + LLM SDK + UI |
+| UI | Streamlit | Weight sliders and a sortable table with minimal frontend code; runs locally, no deployment |
+| Storage | SQLite | Local file, no server, "sufficient at the scale of 15–40 cities" |
+| Qualitative | Anthropic API + `web_search` | Removes the need for a custom scraper; structured JSON with score and citations |
+| Structured | Direct fetch | Cheaper, more reliable, deterministic |
+
+**The rejected alternative, recorded because the reasoning still applies:** Alex's background is
+Go, and now C#/.NET. The spec chose Python for ecosystem reasons — pandas, requests, the LLM
+SDK, and Streamlit's interactivity for free. Go or C# remain feasible at the cost of building a
+separate frontend for the interactive parts.
+
+Both the SQLite choice and the "15–40 cities" premise predate the current design: v1 alone
+seeds 32 countries with ~44 criteria, and the database question is now genuinely open (§7).
+
+### 6.3 Proposed module layout
+
+`config/` · `acquisition/structured.py` · `acquisition/qualitative.py` · `storage/db.py` ·
+`scoring/engine.py` · `scoring/compare.py` · `ui/app.py`
+
+The spec's SQLite schema sketch — tables `countries`, `country_scores`, `cities`,
+`city_scores`, `config` — **predates the `Candidate` unification and must be re-derived, not
+copied.** Separate country and city tables would reintroduce exactly the duplication that
+`Candidate` exists to prevent.
+
+### 6.4 Data flow
+
+**Country level:** configure criteria → select countries → screen using structured sources only
+→ score → those below the qualification threshold do not have cities extracted.
+
+**City level:** for qualified countries, nominate cities → structured *and* qualitative
+acquisition, **run in parallel** → store → filter and score → ranking updates.
+
+**Comparison:** pick a focus candidate and comparators → delta table plus templated synthesis.
+
+### 6.5 Sizing, and why the two levels exist
+
+The figures that justify the architecture:
+
+- ~30 countries screened cheaply is expected to **eliminate 15–20 clearly unsuitable ones**
+  before any city work begins.
+- That takes deep city evaluation from ~100 candidates down to **~40–50**, without losing a
+  serious contender.
+- Running the full criteria set including LLM calls on all 100 directly would waste most of the
+  effort on cities that fail a cheap gate anyway.
+
+This is the whole argument for two levels rather than one uniform pass, and it is the reason the
+country level is v1.
+
+### 6.6 Setup
+
+The qualitative path needs a **dedicated Anthropic API key** from console.anthropic.com,
+separate from a Claude.ai subscription and billed per use. The spec's cost framing: a few dozen
+calls per city, not millions.
+
+---
+
+## 7. Open
+
+- **The stack.** Language, UI framework, and database engine are undecided; §6.2 records what
+  the spec proposed and why, as a starting point rather than a conclusion. On the database:
   SQLite's FTS5 and R-Tree are built in, so the full-text case needs no extension; the real
   deciding question is whether geometry lives in the database (favouring PostGIS) or is
   computed in Python at acquisition time and stored as plain numbers (favouring SQLite).
@@ -212,3 +284,7 @@ The acquisition layer must support both. A run mixes them.
   the child tables above anticipates it. Discussed, not decided.
 - **Where the reducer lives** if cardinality is adopted — likely `CriteriaSettings`, since
   *which* key you care about depends on your household.
+
+- **First implementation order.** The spec's suggestion, still sound: repo scaffolding, then the
+  database schema, then structured acquisition as the first end-to-end sanity check. Sequencing
+  belongs in `devplan.md`.

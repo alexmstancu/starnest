@@ -99,13 +99,13 @@ under the §6.6 priority mechanism.
 | Tool | Approach | Relevance |
 |---|---|---|
 | **Numbeo** | Crowdsourced, largest city coverage | Our best city-level cost source. API reportedly **$50–500/month** |
-| **Nomad List** | Community + data for nomads | City-level, subscription, remote-work oriented |
+| **Nomad List** / Nomads.com | Community + data for nomads — `nomads.com` | City-level, subscription, remote-work oriented |
 | **Expatistan** | Crowdsourced, pairwise city comparison | Narrow; comparison only |
 | **MoveHub** | Editorial guides + cost comparison | Content, not data |
 | **whereTOemigrate** | Cost + **visa eligibility against 2,500+ programmes** | The only one taking eligibility seriously — closest to our hard filters |
 | **AffordWhere** | Net salary after tax, official statistics, neighbourhood rent | Closest to our "official sources over crowdsourced" stance |
-| **Teleport Cities** | Open city data platform | Listed in the spec; **status unverified, treat as unreliable** |
-| **InterNations** | Annual expat survey | Country-level only; good for settling-in and openness |
+| **Teleport Cities** | Open city data platform — `teleport.org/top-cities/` | Listed in the spec; **status unverified, treat as unreliable** |
+| **InterNations** | Annual **Expat Insider** survey — qualitative expat perspective | Country-level only; good for settling-in and openness |
 
 **Nobody occupies our exact position.** The market splits into cost calculators (Numbeo,
 Expatistan), lifestyle communities (Nomad List), visa-eligibility tools (whereTOemigrate), and
