@@ -158,7 +158,7 @@ have surveyed the specific town — local bureaucracy, local job market, city-le
 | **EEA Air Quality** | European monitoring, current and historic Airbase | Download service API | Free, public |
 | **OpenStreetMap / Overpass** | Hospitals, schools, museums, transit stops, parks | Overpass QL | Free. **Coordinate-bound.** The free alternative to Google Places |
 | **Ookla Open Data** | Fixed and mobile speeds | Parquet/Shapefile via AWS | **Zoom-16 tiles ≈ 610 m.** Quarterly. **Coordinate-bound** |
-| **GeoNames** | Population, elevation, coordinates, timezone, admin hierarchy | REST + dumps, CC BY | Backbone for `CandidateProfile` |
+| **GeoNames** | Population, elevation, coordinates, timezone, admin hierarchy | REST + dumps, CC BY | Backbone for `CandidateFacts` |
 | **Wikidata** | Subdivisions, admin parents, heritage, arbitrary facts | SPARQL | Excellent for arrondissement-style subdivisions |
 | **UNESCO World Heritage** | Inscribed sites with coordinates | XML/CSV list | Feeds `heritage_and_culture_density` |
 | **WHO Global Health Observatory** | Health system indicators | REST (OData) | Replaces the dead EHCI (§6.1) |
@@ -341,7 +341,7 @@ nothing would say so.
 | **Medium** | Real measurement, but degraded — stale, a proxy, a coarser geography, or a national figure applied to a city | Past-`max_age` official data; regional average used for a town; crowdsourced Numbeo |
 | **Low** | Inferred rather than measured | LLM extrapolation, derivation from a related figure, rough manual estimate |
 
-Note that most `CandidateProfile` attributes are **Absolute**, while almost no `Value` ever is
+Note that most `CandidateFacts` attributes are **Absolute**, while almost no `Value` ever is
 — the best a measurement achieves is **High**. That asymmetry is itself informative and worth
 showing in the UI.
 

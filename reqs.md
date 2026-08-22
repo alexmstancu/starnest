@@ -101,9 +101,9 @@ retired, because it also named a role in comparisons. Comparison roles are **foc
 "City" means any locality regardless of size — a village of 4,000 is as valid a Candidate as
 a capital.
 
-### 3.2 CandidateProfile
+### 3.2 CandidateFacts
 
-Factual, descriptive attributes. **Never scored.** They exist to make a row legible and to
+Factual, descriptive attributes — the equivalent of a Wikipedia infobox. **Never scored.** They exist to make a row legible and to
 provide context when reading a score. They may, however, be referenced by a criterion as its
 value source, so a fact is stored once rather than fetched twice (§3.3, `value_source`).
 
@@ -111,14 +111,28 @@ Each attribute carries provenance on the same terms as any other value (§3.6), 
 resolution is simpler: an attribute normally has one authoritative source rather than
 competing ones.
 
-**Country attributes:** official name; ISO 3166 alpha-2 and alpha-3; population; area;
-capital; official language(s); currency; timezone(s); EU / EEA / Schengen / eurozone
-membership; administrative subdivision scheme; climate zones present.
+**Country facts.** Official name; ISO 3166 alpha-2 and alpha-3; capital; population; area;
+population density; **official language(s)** and **recognised regional or minority
+languages**; **religious composition**; **ethnic composition**; demonym; government type;
+currency; timezone(s); EU / EEA / Schengen / eurozone membership; administrative subdivision
+scheme; climate zones present; driving side; calling code; internet TLD. Context figures:
+GDP per capita (PPP), HDI, Gini coefficient.
 
-**City attributes:** name and common alternates; administrative parent chain (region,
-province, department); population, city proper and metropolitan; area; elevation minimum,
-maximum and mean; coordinates; timezone; coastal or landlocked; **subdivisions** — count and
-names, e.g. Paris's 20 arrondissements; nearest major airport and distance to it.
+**City facts.** Name and common alternates; administrative parent chain (region, province,
+department); population, city proper and metropolitan; population density; area; elevation
+minimum, maximum and mean; coordinates; timezone; **languages spoken locally** where these
+differ from the national picture; demonym; founded or historical note; coastal or landlocked;
+**subdivisions** — count and names, e.g. Paris's 20 arrondissements; nearest major airport and
+distance to it.
+
+*Sources: Wikidata, GeoNames, Eurostat, national censuses, CIA World Factbook, Pew Research
+for religious composition.*
+
+> **Some facts are compositions, not values.** Religious and ethnic breakdowns are
+> label-to-share distributions ("Catholic 79%, none 14%, other 7%") — a shape none of the
+> criterion types in §3.3 has. That is fine, because facts are never scored. But if a criterion
+> ever reads one through `value_source`, it must reduce the distribution to a single number
+> first — largest-group share, or a diversity index.
 
 **Natural setting (country):** bordering seas; coastline length; highest peak with name and
 elevation; principal mountain ranges; major rivers; largest lakes; national parks — count and
@@ -128,8 +142,9 @@ names; biomes or ecoregions present.
 name, distance, highest peak; nearest significant lake or river — name and distance; nearest
 protected area — name, designation and distance; terrain character.
 
-> These are **facts, not judgements**. "Calanques National Park, 2 km" belongs here; "nature
-> access 8.7" belongs in §7. Same split as population versus cost of living.
+> These are **facts, not judgements**. "Calanques National Park, 2 km" belongs here; a nature
+> score belongs in §7. The entity is named for exactly that reason — "profile" would imply an
+> assessment had been made, and this asserts nothing about whether a place is good.
 
 **Subdivisions are descriptive only.** They are listed as facts about a city and are never
 scored, ranked, or evaluated separately. Where safety or cost varies sharply between
@@ -151,7 +166,7 @@ both levels.
 **Criterion:**
 
 **A Criterion defines what is measured. It does not define what that measurement is worth to
-you** — that lives in a `CriteriaProfile` (§3.4). The separation matters because which way is
+you** — that lives in the active `CriteriaSettings` (§3.4). The separation matters because which way is
 "good" can be personal, not just how much a thing matters: one person wants a large expat
 community for a soft landing, another wants to avoid the expat bubble entirely. Same
 criterion, same measured value, opposite direction.
@@ -163,7 +178,7 @@ criterion, same measured value, opposite direction.
 | `level` | `country` or `city` — the same axis as `Candidate.level` |
 | `type` | `numeric` \| `number_list` \| `label_list` \| `boolean` \| `text` |
 | `unit` | Where applicable |
-| `value_source` | Optional: a `CandidateProfile` attribute this criterion reads instead of being fetched |
+| `value_source` | Optional: a `CandidateFacts` attribute this criterion reads instead of being fetched |
 | `max_age` | How quickly this kind of data goes stale (§3.6). **Objective** — rent ages in months whoever is asking |
 | `source_priority` | Optional override of the global source order. **Objective** — an admin quality judgement; §2 says users do not connect sources |
 | `default_*` | Shipped defaults for every preference field in §3.4, so a newly added criterion works immediately |
@@ -172,17 +187,17 @@ Criteria that describe the same concept at different levels are **separate crite
 separate identifiers, sources and scales. `safety_national` and `safety_local` are unrelated
 records; the spec treats them as different questions, not one question at two zoom levels.
 
-### 3.4 CriteriaProfile and CriterionPreference
+### 3.4 CriteriaSettings and CriterionSetting
 
-**A `CriteriaProfile` is everything subjective**, held apart from the criteria themselves. It
-is named and selectable at any moment, and one primitive serves two purposes:
+**A `CriteriaSettings` record holds everything subjective**, kept apart from the criteria
+themselves. It is named and selectable at any moment, and one primitive serves two purposes:
 
 - **Work-format scenarios** — `remote-only` versus `local-employment`. The difference decides
   whether a village is absurd or ideal, and it is not yet settled.
 - **Per-person profiles** — `alex`, `partner`. Not merely differing emphasis: the two of you
   may want *opposite directions* on the same criterion, and this is where that is expressed.
 
-A profile holds pillar weights per level, plus a **`CriterionPreference`** for each criterion:
+It holds pillar weights per level, plus a **`CriterionSetting`** for each criterion:
 
 | Field | Notes |
 |---|---|
@@ -195,8 +210,8 @@ A profile holds pillar weights per level, plus a **`CriterionPreference`** for e
 | `threshold` | Elimination threshold. Semantics depend on the criterion's `type` — §5.2 |
 | `required` | If true, a missing value makes the Candidate unscoreable — §5.3 |
 
-Anything unset falls back to the criterion's `default_*` value, so a profile need only record
-what it overrides.
+Anything unset falls back to the criterion's `default_*` value, so a settings record need only
+carry what it overrides.
 
 > **Why direction is a preference, not a fact.** `expat_community_size` is the clearest case —
 > a large expat community is a soft landing to one person and a bubble to avoid to another.
@@ -205,8 +220,9 @@ what it overrides.
 > to another. Fixing direction on the criterion would silently encode one person's taste as
 > objective truth.
 
-Switching profiles **recalculates from stored data with no re-fetch** (§5.6). Nothing about a
-profile touches acquisition: the measured values are shared, only their reading changes.
+Switching settings **recalculates from stored data with no re-fetch** (§5.6). Nothing in a
+`CriteriaSettings` touches acquisition: the measured values are shared, only their reading
+changes.
 
 ### 3.5 DataSource
 
@@ -319,7 +335,7 @@ criteria; adding the country score would count them twice.
 ### 5.1 Normalisation
 
 Criteria arrive in incompatible units — EUR per month, degrees, hours, indices, 1–10 scores.
-The active `CriteriaProfile` declares a scaling method **per criterion**, defaulting to the
+The active `CriteriaSettings` declares a scaling method **per criterion**, defaulting to the
 criterion's shipped default:
 
 - **`fixed`** (default) — anchor values map to the score range, linearly between. A
@@ -414,7 +430,7 @@ show it.
 | `medium` | A real measurement, degraded — stale, a proxy, coarser geography, or crowdsourced | Past-`max_age` official data; a regional average applied to a town; Numbeo |
 | `low` | Inferred rather than measured | LLM extrapolation, derivation from a related figure, rough manual estimate |
 
-Most `CandidateProfile` attributes are `absolute`; almost no `Value` ever is — the best a
+Most `CandidateFacts` attributes are `absolute`; almost no `Value` ever is — the best a
 measurement achieves is `high`.
 
 **Confidence is derived, not typed.** It is computed from the source's reliability tier, then
@@ -937,9 +953,12 @@ not only *what*.
 | Q48 | `nature` promoted to its own pillar, both levels | It was buried in culture at a 3.5% effective weight; nature is not culture, and it is the one pillar where small towns win on computable data |
 | Q49 | Distance criteria use a saturating scale | 5 km vs 15 km to the sea matters; 200 km vs 250 km does not |
 | Q50 | Country nature measures *diversity*, not presence | A large country can hold sea, mountains, lakes and forest at once; coexistence is what is worth screening |
-| Q51 | `CandidateProfile` gains a natural-setting section | Facts describe, criteria judge — "Calanques, 2 km" is context, "nature 8.7" is a score |
+| Q51 | `CandidateFacts` gains a natural-setting section | Facts describe, criteria judge — "Calanques, 2 km" is context, "nature 8.7" is a score |
 | Q52 | Data sources are plug-ins behind a common interface | Adding a source must be one adapter plus config, never an edit to the acquisition core |
-| Q64 | Criterion and CriteriaProfile are separate entities | A criterion defines what is measured; a profile defines what it is worth. Conflating them encodes one person's taste as objective truth |
+| Q67 | `CandidateProfile` → `CandidateFacts` | "Profile" implied an assessment; this is a Wikipedia-style infobox that asserts nothing. Also removes the collision with the settings entity |
+| Q68 | `CriteriaProfile` → `CriteriaSettings`, holding `CriterionSetting` entries | Unambiguously configuration rather than description |
+| Q69 | Facts extended with languages, religion and ethnic composition | Wikipedia-infobox parity; languages and social composition bear directly on whether a place is livable for a foreigner |
+| Q64 | Criterion and CriteriaSettings are separate entities | A criterion defines what is measured; a profile defines what it is worth. Conflating them encodes one person's taste as objective truth |
 | Q65 | `direction`, `ideal`, `scale`, `scale_params`, `threshold`, `required`, `included` are all per-profile | Which way is "good" can be personal — a large expat community is a soft landing or a bubble depending on who is asking |
 | Q66 | `max_age` and `source_priority` stay on the Criterion | Objective: rent ages in months whoever is asking, and source authority is an admin judgement, not a user preference |
 | Q62 | `international_employers` / `international_employers_local` as a matched pair | One concept at two levels, previously named as if it were two. Matches the `safety_national` / `safety_local` shape |
