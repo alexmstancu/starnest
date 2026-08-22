@@ -101,21 +101,24 @@ names, e.g. Paris's 20 arrondissements; nearest major airport and distance to it
 scored, ranked, or evaluated separately. Where safety or cost varies sharply between
 districts, that belongs in the notes on the relevant criterion, not in a third Candidate tier.
 
-### 3.3 CriterionGroup and Criterion
+### 3.3 Category and Criterion
 
 **Criteria are exactly two levels deep.** Groups carry weights summing to 100% within a
-phase; criteria carry sub-weights summing to 100% within their group. The user may adjust
+phase; criteria carry sub-weights summing to 100% within their category. The user may adjust
 both levels.
 
-**CriterionGroup:** identifier, display name, phase, weight, description.
+**Category:** identifier, display name, phase, weight, description.
+
+> "Category" rather than "group" or "dimension" — it is the plainest word for the thing,
+> and "dimension" implies an axis in a space, which these are not.
 
 **Criterion:**
 
 | Field | Notes |
 |---|---|
-| `group` | Its parent group |
+| `category` | Its parent category |
 | `phase` | `1` (country) or `2` (city) |
-| `weight` | Sub-weight within its group |
+| `weight` | Sub-weight within its category |
 | `type` | `numeric` \| `number_list` \| `label_list` \| `boolean` \| `text` |
 | `direction` | `lower_is_better` \| `higher_is_better` \| `ideal_band` |
 | `ideal` | For `ideal_band`: the target range and falloff shape |
@@ -390,149 +393,182 @@ promoted automatically. Rent ages in months; a climate zone ages in decades.
 ### 6.7 Children in scope
 
 The master spec never mentions children; this document does. Their presence adds the criteria
-in group CG (§7.7) — paediatric healthcare, schooling options and language of instruction,
-childcare cost and availability — and shifts the weight of several existing criteria.
+in the `family` category at both levels (§7) — national school system quality, parental leave
+and child benefits at country level; schooling options, paediatric access and childcare at city
+level — and shifts the weight of several existing criteria.
 
 ---
 
 ## 7. Criteria catalog
 
-Two independent catalogs. **All weights below are provisional**, to be revised after a first
-real run, per the spec's own note. `scale_params` and `threshold` values are deliberately
-left `TBD`: they can only be set sensibly once real data has been seen.
+**Categories are parallel across the two phases** — the same named concerns at both levels,
+each holding whichever criteria apply there. This gives one structure to learn, keeps weight
+profiles legible across phases, and lets a country and a city be read on the same named
+concern. **Weights remain fully independent per phase**, each summing to 100%.
+
+`connectivity` is city-only: internet, transit and flight connections have no meaningful
+country-level equivalent for this decision.
+
+| Category | Country | City |
+|---|---|---|
+| `economics` | ✓ | ✓ |
+| `career` | ✓ | ✓ |
+| `safety` | ✓ | ✓ |
+| `health` | ✓ | ✓ |
+| `climate` | ✓ | ✓ |
+| `connectivity` | — | ✓ |
+| `culture` | ✓ | ✓ |
+| `admin` | ✓ | ✓ |
+| `family` | ✓ | ✓ |
+
+**All weights below are provisional**, to be revised after a first real run. `scale_params`
+and `threshold` are deliberately left `TBD` — they can only be set sensibly once real data has
+been seen. Source columns reflect the analysis in `datasources.md`; **C** marks a
+coordinate-bound source that works at any settlement size, **R** a registry-bound one with a
+population floor.
 
 ### 7.1 Phase 1 — country
 
-Groups sum to 100%. Criterion weights sum to 100% within each group.
+Categories sum to 100%. Criterion weights sum to 100% within each category.
 
-#### FA. General economics — 24%
+#### Economics — 22%
 
-| Criterion | Weight | Type / direction | Likely sources |
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `cost_of_living_index_country` | 40% | numeric, lower better | WhereNext, Numbeo |
-| `income_tax_effective` | 35% | numeric %, lower better | National tax authority, OECD, Eurostat |
-| `remote_work_tax_treaty` | 25% | label_list, must contain RO treaty | OECD treaty database, national, manual |
+| `cost_of_living_index_country` | 40% | numeric, lower better | Eurostat price level indices, World Bank ICP |
+| `income_tax_effective` | 35% | numeric %, lower better | OECD Tax Database, national tax authorities |
+| `remote_work_tax_treaty` | 25% | label_list, must contain RO treaty | OECD treaty database, manual |
 
-#### FB. Tech market — 19%
+#### Career & work — 18%
 
-| Criterion | Weight | Type / direction | Likely sources |
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `tech_employment_share` | 50% | numeric, higher better | Eurostat, national statistics |
-| `international_employer_presence` | 50% | numeric, higher better | LLM + search, company registries |
+| `tech_employment_share` | 50% | numeric, higher better | Eurostat ICT/high-tech employment, ILO |
+| `international_employer_presence` | 50% | numeric, higher better | LLM + search *(no structured source)* |
 
-#### FC. Safety and stability — 19%
+#### Safety & stability — 17%
 
-| Criterion | Weight | Type / direction | Likely sources |
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `crime_safety_index_national` | 50% | numeric, higher better | Numbeo, Eurostat crime statistics |
-| `political_economic_stability` | 50% | numeric, higher better | World Bank Governance Indicators, EIU |
+| `crime_safety_index_national` | 50% | numeric, higher better | UNODC homicide, Eurostat crime |
+| `political_economic_stability` | 50% | numeric, higher better | World Bank Governance Indicators |
 
-#### FD. Healthcare and bureaucracy — 14%
+#### Health — 12%
 
-| Criterion | Weight | Type / direction | Likely sources |
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `healthcare_system_quality` | 60% | numeric, higher better | WHO Global Health Observatory, OECD Health Statistics, Numbeo |
-| `residency_admin_ease` | 40% | numeric, higher better | LLM + search, manual |
+| `healthcare_system_quality` | 100% | numeric, higher better | WHO Global Health Observatory, OECD Health Statistics |
 
-#### FE. Climate and environment — 10%
+#### Climate & environment — 10%
 
-| Criterion | Weight | Type / direction | Likely sources |
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `climate_zone` | 30% | label_list | Köppen classification |
-| `avg_annual_temperature` | 25% | numeric, **ideal_band** | Copernicus, national meteorological services |
-| `annual_sunshine_hours` | 25% | numeric, higher better | Copernicus, national meteorological services |
-| `climate_trajectory_national` | 20% | numeric, lower risk better | Copernicus, IPCC regional projections |
+| `avg_annual_temperature` | 25% | numeric, **ideal_band** | Open-Meteo archive **(C)** |
+| `annual_sunshine_hours` | 25% | numeric, higher better | Open-Meteo, derived from radiation **(C)** |
+| `climate_trajectory_national` | 20% | numeric, lower risk better | Copernicus CDS projections, IPCC |
 
-#### FF. Long-term settlement — 9% *(new — open-ended horizon)*
+#### Culture & community — 8%
 
-| Criterion | Weight | Type / direction | Likely sources |
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `naturalisation_pathway` | 50% | numeric years, lower better; plus dual-citizenship permitted | National law, LLM + search, manual |
-| `pension_portability` | 50% | numeric, higher better | EU social-security coordination rules, manual |
+| `openness_to_foreigners` | 60% | numeric, higher better | MIPEX, Eurobarometer, InterNations Ease of Settling In |
+| `english_proficiency` | 40% | numeric, higher better | EF English Proficiency Index |
 
-#### FG. Social openness — 5% *(moved from Phase 2)*
+> Both moved here from Phase 2. Every source measuring either is **country-level**, so keeping
+> them as city criteria meant a constant repeated across every city in a country — implying a
+> granularity the data does not have. EF publishes some city breakdowns for larger cities; a
+> city-level variant could be added later if that data proves usable.
 
-| Criterion | Weight | Type / direction | Likely sources |
+#### Admin & settlement — 8%
+
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `openness_to_foreigners` | 100% | numeric, higher better | MIPEX, Eurobarometer immigration attitudes, InterNations Ease of Settling In |
+| `naturalisation_pathway` | 40% | numeric years, lower better; dual citizenship permitted | National law, LLM + search, manual |
+| `residency_admin_ease` | 35% | numeric, higher better | World Bank B-READY where covered, LLM, manual |
+| `pension_portability` | 25% | numeric, higher better | EU social-security coordination rules, manual |
 
-> Moved here from Phase 2's CE group. Every source that measures attitudes to foreigners —
-> MIPEX, Eurobarometer, InterNations — is **country-level only**. Keeping it as a city
-> criterion would have meant a constant repeated across every city in a country, adding
-> nothing to the city ranking while implying a granularity the data does not have.
+#### Family & education — 5%
+
+| Criterion | Weight | Type / direction | Sources |
+|---|---|---|---|
+| `school_system_quality` | 45% | numeric, higher better | OECD PISA, UNESCO |
+| `parental_leave_policy` | 30% | numeric, higher better | OECD Family Database |
+| `child_benefit_policy` | 25% | numeric, higher better | OECD, national social-security bodies |
 
 ### 7.2 Phase 2 — city
 
-#### CA. Career and work — 20%
+#### Economics — 20%
 
-| Criterion | Weight | Type / direction | Likely sources |
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `local_tech_market` | 60% | numeric 1–10, higher better | LLM + search, LinkedIn, national statistics |
-| `major_employer_presence` | 20% | boolean / numeric, higher better | LLM + search, company sites |
+| `cost_of_living_2p_monthly` | 40% | numeric EUR/month, lower better | Numbeo **(R)**, LLM fallback |
+| `rent_2br_city_centre` | 35% | numeric EUR/month, lower better | Numbeo **(R)**, national listings, LLM |
+| `property_purchase_price_m2` | 25% | numeric EUR/m², lower better | National land registries, Eurostat **(R)** |
+
+#### Career & work — 17%
+
+| Criterion | Weight | Type / direction | Sources |
+|---|---|---|---|
+| `local_tech_market` | 60% | numeric 1–10, higher better | LLM + search |
+| `major_employer_presence` | 20% | boolean, higher better | LLM + search |
 | `product_role_availability` | 20% | numeric, higher better | LLM + search, job boards |
 
-> Under a `remote-only` weight profile this whole group is down-weighted and CD's internet
-> criterion up-weighted. That is what profiles are for — no separate "remote suitability"
-> criterion is needed.
+> Under a `remote-only` weight profile this whole category is down-weighted and `connectivity`
+> up-weighted. That is what profiles are for — no separate "remote suitability" criterion.
 
-#### CB. Local economics — 20%
+#### Safety & stability — 9%
 
-| Criterion | Weight | Type / direction | Likely sources |
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `cost_of_living_2p_monthly` | 40% | numeric EUR/month, lower better | Numbeo, LLM + search |
-| `rent_2br_city_centre` | 35% | numeric EUR/month, lower better | Numbeo, local listings, LLM |
-| `property_purchase_price_m2` | 25% | numeric EUR/m², lower better *(new)* | Numbeo, national land registries |
+| `safety_local` | 100% | numeric, higher better | Eurostat Urban Audit **(R)**, Numbeo **(R)**, regional police |
 
-#### CC. Local quality of life — 18%
+#### Health — 9%
 
-| Criterion | Weight | Type / direction | Likely sources |
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `safety_local` | 28% | numeric, higher better | Numbeo city index, local police statistics |
-| `healthcare_access_local` | 24% | numeric, higher better | Distance to hospital, national health registries |
-| `air_quality` | 24% | numeric PM2.5, lower better | European Environment Agency, WAQI |
-| `local_climate` | 24% | numeric, **ideal_band** + sunshine | Copernicus, meteorological services |
+| `healthcare_access_local` | 60% | numeric, higher better | OpenStreetMap Overpass, distance to hospital **(C)** |
+| `paediatric_healthcare_access` | 40% | numeric, higher better | Overpass **(C)**, national health registries |
 
-#### CD. Infrastructure and connectivity — 14%
+#### Climate & environment — 11%
 
-| Criterion | Weight | Type / direction | Likely sources |
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `internet_quality` | 30% | numeric Mbps, higher better | Ookla, M-Lab |
-| `public_transport` | 25% | numeric, higher better | Numbeo, local transit authorities |
-| `flights_to_romania` | 25% | numeric, higher better | Flight APIs, manual |
-| `proximity_to_hub` | 20% | numeric km, lower better | `profile.nearest_airport`, geodata |
+| `local_climate` | 55% | numeric, **ideal_band** + sunshine | Open-Meteo **(C)** |
+| `air_quality` | 45% | numeric PM2.5, lower better | OpenAQ, EEA nearest station **(C)** |
 
-#### CE. Culture, community and lifestyle — 15%
+#### Connectivity — 12%
 
-Decomposed by **which source type answers the criterion**, not by whether the topic feels
-subjective. Most of this group is countable.
-
-| Criterion | Weight | Type / direction | Likely sources |
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `heritage_and_culture_density` | 33% | numeric, higher better | UNESCO World Heritage list, national monument registers, OpenStreetMap museum and cinema counts |
-| `landscape_access` | 27% | numeric, higher better | Protected-area registries (WDPA), coastline and elevation from `profile` |
-| `english_proficiency` | 20% | numeric, higher better | EF English Proficiency Index *(country value applied to city)* |
-| `expat_community_size` | 20% | numeric, higher better | Eurostat Urban Audit foreign-born population, national statistics |
+| `internet_quality` | 30% | numeric Mbps, higher better | Ookla Open Data, ~610 m tiles **(C)** |
+| `public_transport` | 25% | numeric, higher better | Overpass stops and routes **(C)**, Urban Audit |
+| `flights_to_romania` | 25% | numeric, higher better | Flight APIs, manual, via `profile.nearest_airport` |
+| `proximity_to_hub` | 20% | numeric km, lower better | Computed from coordinates **(C)** |
 
-> **`local_openness_to_foreigners` has moved to Phase 1 as `openness_to_foreigners`** (§7.1,
-> group FG) — all of its sources are country-level. It remains distinct from
-> `expat_community_size`: a large expat bubble can coexist with a closed local population. The
-> first measures the locals, the second the incomers.
->
-> **`general_atmosphere`** — irreducibly prose, no countable proxy. Deferred: see §9.
+#### Culture & community — 11%
 
-#### CF. Local bureaucracy — 5%
+| Criterion | Weight | Type / direction | Sources |
+|---|---|---|---|
+| `heritage_and_culture_density` | 40% | numeric, higher better | UNESCO, national monument registers, Overpass museum/cinema counts **(C)** |
+| `landscape_access` | 35% | numeric, higher better | WDPA protected areas, coastline and elevation from `profile` **(C)** |
+| `expat_community_size` | 25% | numeric, higher better | Eurostat Urban Audit foreign-born **(R)**, national statistics |
 
-| Criterion | Weight | Type / direction | Likely sources |
+> **`general_atmosphere`** — irreducibly prose, no countable proxy, **not currently weighted**.
+> Deferred: see §9.
+
+#### Admin & settlement — 4%
+
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `local_admin_ease` | 100% | numeric, higher better | LLM + search, manual |
 
-#### CG. Family and schooling — 8% *(new — children in scope)*
+#### Family & education — 7%
 
-| Criterion | Weight | Type / direction | Likely sources |
+| Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `schooling_options` | 40% | numeric, higher better | National education registries, international-school directories |
-| `paediatric_healthcare_access` | 30% | numeric, higher better | National health registries, LLM + search |
-| `childcare_cost_availability` | 30% | numeric, lower cost better | Numbeo, national statistics |
+| `schooling_options` | 60% | numeric, higher better | Overpass **(C)**, national education registries, international-school directories |
+| `childcare_cost_availability` | 40% | numeric, lower cost better | Eurostat **(R)**, national statistics |
 
 ---
 
@@ -642,7 +678,7 @@ not only *what*.
 
 | # | Decision | Rationale |
 |---|---|---|
-| Q1 | Two-level criteria | Preserves the spec's group weights exactly while keeping each bullet independently sourced and provenance-tracked |
+| Q1 | Two-level criteria | Preserves the spec's category weights exactly while keeping each bullet independently sourced and provenance-tracked |
 | Q2 | Exactly two levels | Implied by Q1; no deeper nesting in the model |
 | Q3 | Cross-phase concepts are separate criteria | The spec frames local safety as a different question from national safety, not the same one zoomed in |
 | Q4 | Direction per criterion, either mode | A single direction cannot express "warm but not too hot" |
@@ -678,4 +714,8 @@ not only *what*.
 | Q36 | Confidence derived from source, age and geography, with override | Reuses `max_age` and `DataSource.kind`; no field anyone must remember to fill |
 | Q37 | `openness_to_foreigners` moved to Phase 1 | MIPEX, Eurobarometer and InterNations are country-level only |
 | Q38 | Numbeo scraped first, API later if warranted | Personal, non-commercial use; `robots.txt` restricts only `/heavy_crawling.any`. Its coverage floor is ~150k population either way, so paying buys the same gap |
+| Q39 | Categories are parallel across phases | One structure to learn; weight profiles stay legible across levels; fixes a category that bundled healthcare with bureaucracy |
+| Q40 | Country-level education and family policy added | Children are in scope and national school system quality is not substitutable by local school counts |
+| Q41 | `english_proficiency` moved to Phase 1 | Same reasoning as `openness_to_foreigners` — EF EPI is country-level |
+| — | "Category" not "group" or "dimension" | Plainest word; "dimension" implies an axis in a space, which these are not |
 | — | `Candidate` replaces `Target` | "Target" also named a role in comparisons; the entity and the role needed separating |

@@ -178,7 +178,7 @@ have surveyed the specific town — local bureaucracy, local job market, city-le
 
 | Source | Provides | Cost |
 |---|---|---|
-| **Numbeo** | City cost of living, rent, safety, healthcare, pollution indices | Reportedly **$50–500/month** |
+| **Numbeo** | City cost of living, rent, safety, healthcare, pollution indices | **$250/month for 200k requests.** No small tier — see §9.1 |
 | **Google Places** | POIs, ratings, opening hours | The pooled $200 monthly credit was **retired March 2025**. Now per-SKU free tiers — 10,000 Essentials, 5,000 Pro, 1,000 Enterprise, monthly, **no rollover, no pooling** |
 | **Flight data** (Amadeus etc.) | Routes, frequency, price | Free tiers exist, generally too thin for repeated use |
 
@@ -383,7 +383,22 @@ approach. Recorded in `reqs.md` §5.7.
 
 ---
 
-## 9. Numbeo coverage — measured **[verified]**
+## 9. Numbeo — coverage and pricing
+
+### 9.1 The pricing mismatch
+
+**$250/month buys 200,000 requests.** Realistic usage here is a few hundred requests for an
+initial load, then a refresh every few months — plausibly under 10,000 requests *per month*
+even being generous, because values are stored once and scoring never re-fetches (§5.6).
+
+That is roughly **5% of the tier being paid for**. The objection is not the money in the
+abstract, it is that there is no tier matching the shape of this usage; a ~$25 tier at 10k
+requests would be bought without hesitation. Absent that, the value is not there.
+
+**Decision: scrape, do not subscribe.** Personal, non-commercial use. Revisit only if usage
+ever justifies the tier, which on current projections it will not.
+
+### 9.2 Coverage — measured **[verified]**
 
 Tested 2026-08-22 against live pages, French cities by population:
 
