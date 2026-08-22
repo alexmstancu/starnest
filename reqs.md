@@ -23,7 +23,7 @@ them head to head, and explains every number it displays.
 | **Geography** | EU/EEA + United Kingdom + Switzerland |
 | **Horizon** | Open-ended. The chosen place may be home for life. Any requirement framed around a fixed number of years is wrong. |
 | **Household** | Two adults, both working in tech (engineering and product). **Children are in scope** — see §6.8. |
-| **Home country** | Romania. Both are Romanian (EU) citizens. |
+| **Home country** | Set in §1.4, currently Romania. Citizenship, currently Romanian and therefore EU, drives the free-movement filter |
 | **Deployment** | Runs locally in a browser. Single user, no authentication, no multi-tenancy. |
 
 ### 1.1 What the app is for
@@ -32,12 +32,12 @@ Turning an unmanageable question — *where should we live?* — into an inspect
 app's value is not the ranking; it is that every figure behind the ranking can be traced to a
 source, a date, and a method.
 
-### 1.2 Romania's dual role
+### 1.2 The home country's dual role
 
-Romania is **both a candidate and the baseline**. It is screened and scored like any other
-country, so "stay put" remains a measurable option rather than an assumption. It is
-additionally the default comparison anchor: any criterion may display a delta against
-Romania alongside its raw value.
+The **home country** (§1.4 — currently Romania) is **both a candidate and the baseline**. It is
+screened and scored like any other country, so "stay put" remains a measurable option rather
+than an assumption. It is additionally the default comparison anchor: any criterion may display
+a delta against home alongside its raw value.
 
 ### 1.4 Household parameters
 
@@ -50,6 +50,14 @@ household**. They are configuration, not candidate data:
 | `household_size` | Adults and children — sets the relevant dwelling size |
 | `target_monthly_spend` | Guideline ceiling on total household spend. Provisionally 2,000–3,000 EUR/month |
 | `max_rent` | Rent ceiling. Provisionally 2,000 EUR/month |
+| `home_country` | Where you live now. Currently `country.romania` |
+| `home_city` | The reference city for travel connections. Currently `city.romania.bucharest` |
+| `citizenship` | Which citizenships the household holds. Currently Romanian, therefore EU |
+
+> **The home country is a parameter, not a constant.** It is the comparison baseline, the
+> destination for flight connections, the other party to a tax treaty, and the country whose
+> dual-citizenship rules matter. Writing "Romania" into a criterion identifier or a filter would
+> be the same mistake as writing the application's name into a module — see §10.
 
 > **"Budget" means household money throughout this document.** The ceiling on what an
 > acquisition run may cost in API calls is the **spend cap** (§6.3) — a different word for a
@@ -787,7 +795,7 @@ reproducible from the evidence rather than impressionistic:
 |---|---|
 | `country.residency_admin_ease` | Number of separate agencies involved · in-person appointments required · statutory processing time · available in English · available online |
 | `city.admin_ease` | The same five attributes, at municipal level |
-| `country.naturalisation_pathway` | Years of residence required · language level demanded · civics test · **whether dual citizenship with Romania is permitted** |
+| `country.naturalisation_pathway` | Years of residence required · language level demanded · civics test · **whether dual citizenship with the home country is permitted** |
 | `country.pension_portability` | Aggregation under EU Regulation 883/2004 · years to vest locally · existence of a bilateral totalisation agreement |
 
 > `country.pension_portability` will barely discriminate across EU and EEA states, where Regulation
@@ -840,7 +848,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 |---|---|---|---|
 | `country.cost_of_living_index` | 35% | **Index** — Eurostat PLI, EU27 = 100 | Eurostat price level indices, World Bank ICP |
 | `country.income_tax_effective` | 30% | **Ratio** — share of gross income | OECD Tax Database, national tax authorities |
-| `country.remote_work_tax_treaty` | 20% | **LabelSet** — treaty partners | OECD treaty database, manual |
+| `country.remote_work_tax_treaty` | 20% | **LabelSet** — treaty partners; must include `home_country` | OECD treaty database, manual |
 | `country.economic_outlook` | 15% | **Quantity** — projected GDP growth, % per year | IMF *World Economic Outlook*, European Commission forecasts, World Bank Global Economic Prospects |
 
 > **We do not compute trends.** The IMF, the European Commission and the World Bank already
@@ -919,7 +927,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 > Each pairs with a city criterion without duplicating it, on the `safety_national` /
 > `city.safety` pattern: national broadband coverage **screens**, while Ookla tiles report what
 > a given street actually gets; `country.international_air_connectivity` asks whether the country
-> connects to the world, while `city.flights_to_romania` asks whether you can get home from *this*
+> connects to the world, while `city.flights_to_home` asks whether you can get home from *this*
 > town; intercity rail is a different question from local trams. Rail matters most for the
 > stated goal of living without a car — `city.public_transport` covers moving *within* a city, and
 > nothing else covers reaching the rest of the country.
@@ -1046,7 +1054,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 |---|---|---|---|
 | `city.internet_quality` | 30% | **Quantity** — Mbps | Ookla Open Data, ~610 m tiles **(C)** |
 | `city.public_transport` | 25% | **Index** — Numbeo 0–100 | Overpass **(C)**, Urban Audit |
-| `city.flights_to_romania` | 25% | **Count** — direct routes per week | Flight APIs, manual, via `profile.nearest_airport` |
+| `city.flights_to_home` | 25% | **Count** — direct routes per week to `home_city` (§1.4) | Flight APIs, manual, via `facts.nearest_airport` |
 | `city.proximity_to_hub` | 20% | **Quantity** — km | Computed from coordinates **(C)** |
 
 #### Nature & landscape — 12%
@@ -1102,7 +1110,7 @@ eliminated regardless of score** — and stays visible, with its score, showing 
 
 | Filter | Level | Passes when | Source |
 |---|---|---|---|
-| `eu_free_movement` | country | The candidate is an EU or EEA state. Automatic pass — Romanian citizenship carries free movement | Definitional, from `CandidateFacts` |
+| `eu_free_movement` | country | The candidate is an EU or EEA state, and the household's `citizenship` (§1.4) carries free movement there. Automatic pass while that citizenship is EU | Definitional, from `CandidateFacts` |
 | `uk_skilled_worker` | country | A realistic Skilled Worker route exists: sponsorship available in the local market, or the salary threshold met | Manual, LLM-assisted (§6.9) |
 | `ch_eu_efta_quota` | country | The annual Swiss EU/EFTA permit quota has capacity for this profile | Manual, LLM-assisted (§6.9) |
 | `two_role_feasibility` | **city** | The local market can plausibly support **two** tech roles — engineering *and* product | Derived from `city.tech_software_jobs` and `city.tech_product_jobs` against a configurable floor |
@@ -1164,7 +1172,7 @@ everywhere; each tab owns one stage of the workflow and nests its detail views i
 The main results view.
 
 - **Ranking table** — candidates by total score, with coverage percentage and status. When
-  viewing cities, the country's country score appears as a context column. A Δ-vs-Romania
+  viewing cities, the country's country score appears as a context column. A Δ-vs-home
   column is available on any criterion.
 - **Eliminated section** — always present, never hidden. Greyed rows showing the retained
   score, the elimination reason, and any override marker.
@@ -1339,7 +1347,8 @@ spanning two criteria: rent read against total household spend. Never changes th
 **Spend cap** — the ceiling on what one acquisition run may cost in API calls. Distinct from
 household budget, which is what §1.4 means by money.
 
-**Household parameters** — net income, household size, target monthly spend, rent ceiling.
+**Household parameters** — net income, household size, target monthly spend, rent ceiling,
+home country and city, citizenship.
 Configuration about *you*, not about any candidate, without which cost criteria are absolute
 figures that say nothing about affordability.
 
@@ -1467,6 +1476,8 @@ not only *what*.
 | Q57 | Administrative criteria use official sources, one shared adapter | Naturalisation, residency, pensions and local admin are published procedures, not unknowables |
 | Q58 | v1 covers the country level only, full features | Exercises every load-bearing abstraction; the city level then adds sources and rows, not machinery |
 | Q59 | Country seed is the full EU/EEA + UK + CH scope, 32 countries | EU-only would leave the named eligibility filters with no candidates to act on, shipping the mechanism untested — and the UK and Switzerland are genuine candidates whose absence would make the first ranking incomplete |
+| Q96 | The home country and city are parameters, not constants | "Romania" was written into a criterion identifier, a filter, a treaty rule and the comparison baseline. Hardcoding your own origin is the same mistake as hardcoding the application's name |
+| Q97 | `city.flights_to_romania` → `city.flights_to_home` | The destination is configuration; the criterion is "can we get back easily" |
 | Q92 | Multi-value criteria: one criterion, several keyed values (§3.3b) | Rent by bedroom count and cost of living by household size are all current at once, not history. Twelve criteria in the catalog could use this |
 | Q93 | Reduction happens at scoring, never when data is fetched | Reducing at fetch would make changing household size require re-fetching every city — violating §5.6 and costing money. It would also make simulation impossible: running with a three-bedroom needs that figure already stored |
 | Q94 | The key selection is a setting, defaulting from household parameters | Right without configuration, overridable to simulate, and two settings records may select different keys |
