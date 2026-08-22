@@ -35,6 +35,29 @@ country, so "stay put" remains a measurable option rather than an assumption. It
 additionally the default comparison anchor: any criterion may display a delta against
 Romania alongside its raw value.
 
+### 1.3 Scope of v1
+
+**v1 is Phase 1 only — countries — with the full feature set applied to them.** Everything in
+this document is a requirement; this section says only what arrives first.
+
+**In v1:** pillar and criterion configuration with weights at both levels · thresholds and
+eligibility filters · weight profiles · country nomination and the EU seed list · structured
+acquisition with runs, cost control and selective retry · scoring with per-criterion
+normalisation, weight redistribution, coverage and confidence · elimination reporting ·
+the ranking dashboard with per-criterion drill-down and full provenance · comparison of a
+focus country against comparators · external scores displayed alongside.
+
+**After v1:** the whole of **Phase 2** — cities, the city criteria catalog, city nomination,
+and the LLM-plus-search acquisition path that city criteria depend on · prose-bound criteria
+(§9) · and the spec's own post-MVP list: personal annotations, gradient maps, favourites,
+saved criteria profiles, saved comparisons.
+
+> Phase 1 is the right first slice because it exercises nearly every load-bearing abstraction —
+> `Candidate`, pillars and criteria as data, normalisation, redistribution, coverage,
+> confidence, filters, provenance, comparison — while needing no city nomination and almost no
+> LLM. Phase 2 then adds *sources and rows*, not new machinery, which is the test of whether
+> the design was right.
+
 ---
 
 ## 2. Roles
@@ -284,8 +307,8 @@ Each criterion also declares **which way is good**: `lower_is_better`, `higher_i
 `ideal_band` with a target range and falloff, for cases like temperature where both extremes
 are worse than the middle.
 
-**Score scale: 0–10, one decimal, configurable.** Criterion scores and total scores share one
-range.
+**Score scale: 0–100, integer, configurable.** Criterion scores and total scores share one
+range. No decimals — 86, not 8.6.
 
 ### 5.2 Thresholds and filters — two mechanisms, one report
 
@@ -397,8 +420,15 @@ Four mechanisms, all active simultaneously:
 - **Manual add** — type a name; it enters immediately as `approved`.
 - **Top N by population** — automatic from a population dataset.
 
-The country list auto-seeds from the geographic scope (all EU/EEA + UK + CH) and is prunable;
-exclusions are stored as configuration, not as deletions.
+The country list auto-seeds with the **EU member states** initially — not the full EU/EEA + UK
++ CH scope, which is the eventual target rather than the starting set. Exclusions are stored as
+configuration, not as deletions.
+
+**Adding a country must be first-class, reusable functionality**, not a one-off script: name
+the country, and its profile attributes and criterion values are acquired through the normal
+adapters. This shares its shape with adding a city — same nomination, approval, profile
+population and acquisition sequence at a different level — and the two should share
+implementation wherever the level abstraction allows.
 
 ### 6.2 Triggering a fetch
 
@@ -446,6 +476,18 @@ An adapter declares which criteria it can answer, at which levels, its reliabili
 (§5.7), its rate limits, and whether it is a bulk download or a per-candidate query
 (`datasources.md` §7). The same requirement applies to the criteria catalog itself: this
 catalog will grow, and growth must stay a data-and-adapter change.
+
+### 6.9 Administrative procedures are documented, not unknowable
+
+`naturalisation_pathway`, `residency_admin_ease`, `pension_portability` and `local_admin_ease`
+are not subjective. Each is a **published administrative procedure** — requirements, steps,
+timeline, fees — on an official national or municipal website. They were previously grouped
+with the prose-bound criteria; that was a mistake of framing, not of measurement.
+
+They therefore share **one source adapter** (§6.7): fetch the official page, extract the
+documented requirements and timeline, and derive a difficulty score from them. Four criteria,
+one plug-in, and the extracted requirement list is retained as the supporting evidence behind
+the number.
 
 ### 6.8 Children in scope
 
@@ -507,7 +549,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `tech_employment_share` | 30% | numeric, higher better | Eurostat ICT/high-tech employment, ILO |
-| `international_employer_presence` | 25% | numeric, higher better | LLM + search |
+| `international_employer_presence` | 25% | **label_list**, more/larger is better | LLM + search, company sites — a named list of major international tech employers operating in the country |
 | `average_working_hours` | 25% | numeric, **ideal_band** | OECD Employment Database, Eurostat `lfsa_ewhun2` |
 | `statutory_paid_leave` | 20% | numeric days, higher better | OECD, EU Working Time Directive, national law |
 
@@ -560,11 +602,11 @@ registry-bound one with a population floor (`datasources.md` §3).
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
 | `rule_of_law` | 25% | numeric, higher better | World Bank Governance Indicators, V-Dem |
-| `naturalisation_pathway` | 25% | numeric years, lower better | National law, LLM + search, manual |
+| `naturalisation_pathway` | 25% | numeric, lower difficulty better | **Official administrative sources** — published requirements, steps, timeline and fees; difficulty derived. See §6.9 |
 | `control_of_corruption` | 20% | numeric, higher better | World Bank WGI, Transparency International |
-| `residency_admin_ease` | 15% | numeric, higher better | World Bank B-READY where covered, LLM, manual |
+| `residency_admin_ease` | 15% | numeric, higher better | **Official administrative sources**; World Bank B-READY where covered. See §6.9 |
 | `press_freedom` | 10% | numeric, higher better | Reporters Without Borders |
-| `pension_portability` | 5% | numeric, higher better | EU coordination rules, manual |
+| `pension_portability` | 5% | numeric, higher better | **Official administrative sources** — EU social-security coordination rules. See §6.9 |
 
 #### Family & education — 4%
 
@@ -595,9 +637,19 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `local_tech_market` | 60% | numeric 1–10, higher better | LLM + search |
-| `major_employer_presence` | 20% | boolean, higher better | LLM + search |
-| `product_role_availability` | 20% | numeric, higher better | LLM + search, job boards |
+| `local_tech_market` | 45% | numeric count, higher better | Job-board and company-registry counts — **market breadth**, not a subjective rating |
+| `major_employer_presence` | 30% | **label_list**, more/larger is better | LLM + search, company sites — named employers with an office in *this* city |
+| `product_role_availability` | 25% | numeric count, higher better | Job boards — product-management roles specifically |
+
+> **Anchors versus breadth.** `major_employer_presence` names the large, stable, often
+> visa-sponsoring employers; `local_tech_market` counts how many employers exist at all. A city
+> with one big office and nothing else is fragile; a city with two hundred small firms and no
+> anchors is resilient but may never sponsor. Different risks, and one number would hide which
+> you face.
+>
+> `product_role_availability` is deliberately separate: product roles are a small fraction of
+> engineering roles in any market, and this criterion decides whether both people have options
+> or one is dependent on remote work.
 
 > Under a `remote-only` weight profile this pillar is down-weighted and `connectivity` up-weighted.
 
@@ -659,14 +711,11 @@ point where further distance stops mattering.
 | `heritage_and_culture_density` | 60% | numeric, higher better | UNESCO, monument registers, Overpass museum/cinema counts **(C)** |
 | `expat_community_size` | 40% | numeric, higher better | Eurostat Urban Audit foreign-born **(R)** |
 
-> **`general_atmosphere`** — irreducibly prose, no countable proxy, **not currently weighted**.
-> Deferred: see §9.
-
 #### Governance & administration — 2%
 
 | Criterion | Weight | Type / direction | Sources |
 |---|---|---|---|
-| `local_admin_ease` | 100% | numeric, higher better | LLM + search, manual |
+| `local_admin_ease` | 100% | numeric, higher better | **Official administrative sources** — municipal service pages. See §6.9 |
 
 #### Family & education — 6%
 
@@ -749,11 +798,12 @@ The main results view.
 
 ## 9. Open items
 
-- **How prose-bound qualitative criteria become numbers.** Deferred by decision, to be
-  discussed separately. Applies to `general_atmosphere` and any other criterion with no
-  countable proxy. The options are: an LLM-emitted 1–10 score; an LLM proposal the user may
-  override, retaining both; or prose with a manually assigned score. Related: whether such
-  criteria are worth carrying at all.
+- **Prose-bound criteria — largely resolved.** `general_atmosphere` is **dropped**: too vague
+  to define, let alone measure. `local_tech_market` was redefined as a count rather than a
+  rating. The administrative criteria moved to documented official sources (§6.9). What remains
+  is `international_employer_presence`, `major_employer_presence` and `product_role_availability`,
+  all of which use **LLM proposal with user override, both values retained**. These are Phase 2
+  or LLM-dependent and therefore land after v1 (§1.3).
 - **Provisional values**, all to be revised after a first real run: every weight in §7, the
   Phase 1 qualification threshold, the ~2000–3000 EUR/month household budget guideline, the
   2000 EUR rent ceiling, `min_coverage`, and every `scale_params` and `threshold` marked TBD.
@@ -794,7 +844,7 @@ not only *what*.
 | Q5 | Normalisation per criterion, in config | Fixed bands keep a score stable over time; percentile suits criteria where only relative standing matters |
 | Q6 | Redistribute weight, show coverage | Zero-filling would bury exactly the small, under-documented towns that are wanted candidates |
 | Q7 | Coverage floor *and* `required` flags | They catch different failures: general sparsity versus a specific essential unknown |
-| Q8 | Scale 0–10, one decimal | Criterion inputs and totals share one range |
+| Q8 | Scale 0–100, integer | Criterion inputs and totals share one range; whole numbers read faster than one-decimal fractions |
 | Q9 | Country score displayed, never added | National factors already appear in Phase 2 criteria; adding them again double-counts |
 | Q10 | Filters and thresholds are two mechanisms, one report | Filters carry judgement, verdicts, sources and overrides that a threshold does not |
 | Q11+Q19 | Manual entry is a first-class source | Visa pathways and quotas have no fetcher; an early estimate must be supersedable, not deleted |
@@ -837,5 +887,12 @@ not only *what*.
 | Q50 | Country nature measures *diversity*, not presence | A large country can hold sea, mountains, lakes and forest at once; coexistence is what is worth screening |
 | Q51 | `CandidateProfile` gains a natural-setting section | Facts describe, criteria judge — "Calanques, 2 km" is context, "nature 8.7" is a score |
 | Q52 | Data sources are plug-ins behind a common interface | Adding a source must be one adapter plus config, never an edit to the acquisition core |
+| Q54 | `general_atmosphere` dropped | Too vague to define or measure; no countable proxy and no clear meaning |
+| Q55 | `local_tech_market` redefined as a count | Market *breadth* is countable from job boards and registries; the 1–10 rating was a vibe |
+| Q56 | Anchors and breadth kept as separate criteria | One large employer and two hundred small ones are different risks; a single number hides which |
+| Q57 | Administrative criteria use official sources, one shared adapter | Naturalisation, residency, pensions and local admin are published procedures, not unknowables |
+| Q58 | v1 is Phase 1 only, full features | Exercises every load-bearing abstraction; Phase 2 then adds sources and rows, not machinery |
+| Q59 | Country seed is EU member states initially | The full EU/EEA + UK + CH scope is the target, not the starting set |
+| Q60 | Adding a country is first-class, reusable, shared with adding a city | Same nomination → approval → profile → acquisition sequence at a different level |
 | Q53 | **Pillar**, not pillar, group or dimension | These are load-bearing verticals of a life, not retail bins. Precedent: Legatum Prosperity Index. "Dimension" implies an axis; "domain" collides with the domain model; "chapter" implies sequence where these coexist |
 | — | `Candidate` replaces `Target` | "Target" also named a role in comparisons; the entity and the role needed separating |
