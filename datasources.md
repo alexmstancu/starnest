@@ -77,7 +77,7 @@ Testing the live API surfaced three issues:
 Also worth noting: their published methodology cites **World Bank Doing Business** for the
 career dimension. That product was discontinued in September 2021 (§6.1).
 
-### 2.3 Verdict on using WhereNext as a source
+### 2.3 Conclusion on using WhereNext as a source
 
 **Usable as a cross-check. Not usable as a primary source.** Three reasons:
 
@@ -135,7 +135,7 @@ anywhere on earth, at any settlement size.
 > EEA (air quality, nearest station), OpenStreetMap Overpass (POIs), elevation and coastline
 > datasets, GeoNames
 
-**Design consequence.** Wherever a criterion can be answered from coordinates, prefer that
+**Design consequence.** Wherever an attribute can be answered from coordinates, prefer that
 source — it degrades gracefully as a locality shrinks, whereas registry sources fail
 completely. Applied across the the city level catalog, this converts a large part of the small-town
 coverage problem from "no data" into "data, at slightly coarser resolution".
@@ -158,7 +158,7 @@ have surveyed the specific town — local bureaucracy, local job market, city-le
 | **EEA Air Quality** | European monitoring, current and historic Airbase | Download service API | Free, public |
 | **OpenStreetMap / Overpass** | Hospitals, schools, museums, transit stops, parks | Overpass QL | Free. **Coordinate-bound.** The free alternative to Google Places |
 | **Ookla Open Data** | Fixed and mobile speeds | Parquet/Shapefile via AWS | **Zoom-16 tiles ≈ 610 m.** Quarterly. **Coordinate-bound** |
-| **GeoNames** | Population, elevation, coordinates, timezone, admin hierarchy | REST + dumps, CC BY | Backbone for `CandidateFacts` |
+| **GeoNames** | Population, elevation, coordinates, timezone, admin hierarchy | REST + dumps, CC BY | Backbone for the descriptive attributes |
 | **Wikidata** | Subdivisions, admin parents, heritage, arbitrary facts | SPARQL | Excellent for arrondissement-style subdivisions |
 | **UNESCO World Heritage** | Inscribed sites with coordinates | XML/CSV list | Feeds `heritage_and_culture_density` |
 | **WHO Global Health Observatory** | Health system indicators | REST (OData) | Replaces the dead EHCI (§6.1) |
@@ -196,11 +196,11 @@ LLM + `web_search` path.
 
 ---
 
-## 5. Criterion → source mapping
+## 5. Attribute → source mapping
 
 ### the country level — country
 
-| Criterion | Primary | Secondary | Confidence |
+| Attribute | Primary | Secondary | Confidence |
 |---|---|---|---|
 | `cost_of_living_index_country` | Eurostat price level indices | World Bank ICP PPP; WhereNext `monthly_estimate_usd` | **High** |
 | `income_tax_effective` | **OECD Tax Database** | National tax authorities | **High** |
@@ -222,7 +222,7 @@ LLM + `web_search` path.
 
 **R** = registry-bound (fails below a population floor), **C** = coordinate-bound (works anywhere)
 
-| Criterion | Primary | Type | Small-town outlook |
+| Attribute | Primary | Type | Small-town outlook |
 |---|---|---|---|
 | `tech_software_jobs` | Job-posting counts **(source unresolved, §11)** | — | Poor; postings concentrate in large cities |
 | `international_employers_local` | LLM + search | — | Poor |
@@ -276,12 +276,12 @@ coverage percentage is not a nicety, it is the only honest way to consume this d
 - **Euro Health Consumer Index** — last published **2018**, discontinued. `reqs.md` cites it
   for `healthcare_system_quality`; replace with **WHO GHO** plus **OECD Health Statistics**.
 
-### 6.2 A criterion with no source at the required level
+### 6.2 An attribute with no source at the required level
 
-**`local_openness_to_foreigners`** was added as a city-level criterion. Every source that
+**`local_openness_to_foreigners`** was added as a city-level attribute. Every source that
 measures it — MIPEX, Eurobarometer, InterNations — is **country-level only**. Three options:
 
-1. **Move it to the country level** as a country criterion, where its sources actually live.
+1. **Move it to the country level** as a country attribute, where its sources actually live.
 2. **Keep it city-level, populated with the country value**, clearly labelled as inherited —
    honest, but it then adds nothing to the city ranking beyond a constant.
 3. **Keep it city-level, LLM-sourced**, accepting weak evidence.
@@ -308,7 +308,7 @@ labelled a mirror rather than an independent confirmation.
 
 ## 7. Recommendations for `arch.md`
 
-1. **Prefer coordinate-bound sources** wherever a criterion allows it. This is the single
+1. **Prefer coordinate-bound sources** wherever an attribute allows it. This is the single
    highest-leverage decision for small-locality coverage.
 2. **Do not ingest WhereNext composite scores.** Carry `monthly_estimate_usd` as a
    low-priority comparison value; take everything else from the upstream sources directly.
@@ -341,7 +341,7 @@ nothing would say so.
 | **Medium** | Real measurement, but degraded — stale, a proxy, a coarser geography, or a national figure applied to a city | Past-`max_age` official data; regional average used for a town; crowdsourced Numbeo |
 | **Low** | Inferred rather than measured | LLM extrapolation, derivation from a related figure, rough manual estimate |
 
-Note that most `CandidateFacts` attributes are **Absolute**, while almost no `Value` ever is
+Note that most descriptive attributes are **Absolute**, while almost no `Value` ever is
 — the best a measurement achieves is **High**. That asymmetry is itself informative and worth
 showing in the UI.
 
@@ -351,7 +351,7 @@ Confidence should be **computed** from what is already known, not typed in by ha
 
 ```
 source.reliability_tier            (official / crowdsourced / llm / manual)
-  ↓ downgrade if  value age > criterion.max_age
+  ↓ downgrade if  value age > attribute.max_age
   ↓ downgrade if  geography coarser than the candidate (national → city)
   ↓ downgrade if  derived rather than directly reported
   = confidence, with a manual override retained alongside
@@ -535,7 +535,7 @@ index = max(0, 100
 The coefficients are **not** weights. `housePriceToIncomeRatio` ranges roughly 2–30 while the
 other terms are 0–100 indices, so its coefficient of 1.0 contributes far less than it appears
 to, and nothing in the formula corrects for that. This is precisely the failure mode that the
-per-criterion normalisation decision (`reqs.md` §5.1) exists to prevent — a useful confirmation
+per-attribute normalisation decision (`reqs.md` §5.1) exists to prevent — a useful confirmation
 that the decision was the right one.
 
 ---
@@ -550,7 +550,7 @@ not confirmed:
 |---|---|
 | **Adzuna** | Documented self-serve API, free tier ~1,000 calls/month, with endpoints that return **vacancy counts by region and category** — exactly the query shape needed. Credibility is genuine: it is the **exclusive data partner to the UK Office for National Statistics**, powering the official real-time job vacancy index in the ONS "faster indicators" report from 36M+ adverts. ⚠️ **EU coverage unconfirmed.** The docs publish no country list; "16+ countries" is the only figure found, and the historical footprint skews UK/US/AU. **This must be verified before committing.** |
 | **EURES** | Official EU portal, 30+ countries. ❌ **Not usable for extraction** — terms explicitly forbid "screen scraping or any other automated or manual system to extract job vacancy data"; bulk download decommissioned October 2023; the only API is a reverse-engineered community spec with no stability guarantees. Its **published aggregate statistics** have download buttons and remain legitimate, but give vacancy totals, not tech-specific counts. |
-| **Eurostat job vacancy statistics** | Official, free, complete EU coverage. ⚠️ Sector-level at best — no split between software and product roles. Useful as a denominator or sanity check, not as the criterion value. |
+| **Eurostat job vacancy statistics** | Official, free, complete EU coverage. ⚠️ Sector-level at best — no split between software and product roles. Useful as a denominator or sanity check, not as the attribute value. |
 | **National public employment services** | Every EU state runs one, many with open APIs. ✓ Authoritative and complete per country. ⚠️ 27 different APIs, 27 schemas, 27 languages — the highest-fidelity and highest-effort option. Fits the plug-in model (`reqs.md` §6.7): one adapter per country, added incrementally. |
 | **LinkedIn / Indeed** | Best raw coverage. ❌ No usable free API; both actively block automated access. |
 
@@ -563,10 +563,10 @@ not confirmed:
    occupation classification, which would travel across languages and countries.
 3. **Absolute counts or per-capita?** Absolute measures whether enough openings exist at all;
    per-capita measures concentration. Absolute is probably right — three product roles in a
-   city is a hard constraint regardless of population — but it makes the criterion partly a
+   city is a hard constraint regardless of population — but it makes the attribute partly a
    proxy for city size.
 4. **Volatility.** Posting counts swing with hiring cycles, so a single-day snapshot is not
-   representative. This criterion wants a short `max_age` and ideally a rolling average rather
+   representative. This attribute wants a short `max_age` and ideally a rolling average rather
    than a point reading.
 
 ---

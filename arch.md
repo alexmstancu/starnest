@@ -16,7 +16,7 @@ places for a reason that is not stylistic.
 
 | | Archetypes | Instantiations |
 |---|---|---|
-| Examples | `Candidate`, `Value`, `Pillar`, `Criterion`, the ten value types | `country`, `city`, `economics`, `rent_2br`, `population` |
+| Examples | `Candidate`, `Attribute`, `Value`, `Pillar`, `Criterion`, `CriteriaSet`, `Evaluation`, `Household`, the ten value types | `country`, `city`, `economics`, `rent_centre`, `population` |
 | Live in | **Code** | **Config** (files or DB rows), loaded at startup |
 | Changed by | A developer, in a release | A config edit and a reload |
 | They are | The vocabulary | The sentences |
@@ -31,7 +31,7 @@ with all that implies) or a declaration kept manually in sync with the code that
 **Config references archetypes by name; it never defines one.**
 
 ```yaml
-criteria:
+attributes:
   - id: country.population
     level: country
     value_type: Count          # ← names an archetype implemented in code
@@ -55,32 +55,32 @@ This is what keeps the ontology from becoming a programming language nobody want
 
 ## 2. Immutability, and why migration is not a problem
 
-A criterion's **`id` and `value_type` are immutable together.** Changing a criterion's type
-means creating a new criterion and retiring the old one.
+A attribute's **`id` and `value_type` are immutable together.** Changing a attribute's type
+means creating a new attribute and retiring the old one.
 
 This dissolves what looks like the hardest problem with a config-driven ontology — what happens
-when a criterion changes from `Ratio` to `LabelSet`, and how do stored values convert?
+when a attribute changes from `Ratio` to `LabelSet`, and how do stored values convert?
 
 They do not convert, and they should not:
 
-- A criterion's type is part of its **identity**. "Forest cover as a `Ratio`" and "forest cover
-  as a `LabelSet` of biome names" are not one criterion modelled two ways; they are different
+- A attribute's type is part of its **identity**. "Forest cover as a `Ratio`" and "forest cover
+  as a `LabelSet` of biome names" are not one attribute modelled two ways; they are different
   questions. Changing the type means you decided to measure something else.
 - The stored values are **still true**. Forest cover really was 38% in 2024, whatever you now
   want to model. Discarding them would violate *no value is ever discarded*.
 
-So the old criterion is marked **retired**: it drops out of active scoring, its values remain
-as historical record, and the new criterion starts empty.
+So the old attribute is marked **retired**: it drops out of active scoring, its values remain
+as historical record, and the new attribute starts empty.
 
-Criterion IDs are `<level>.<name>` — `city.rent_2br_centre`. The level is in the ID because
-cross-level concepts are separate criteria; the pillar is not, precisely so that pillar
+Attribute IDs are `<level>.<name>` — `city.rent_centre`. The level is in the ID because
+cross-level concepts are separate attributes; the pillar is not, precisely so that pillar
 assignment stays mobile.
 
 **What may change freely**, because no stored value depends on it: name, description, pillar
 assignment, sources, source priority, `max_age`. Everything subjective — weight, direction,
-thresholds, anchors — was never on the criterion at all; it lives in `CriteriaSettings`.
+thresholds, anchors — was never on the attribute at all; it lives in `CriteriaSet`.
 
-**One edge case:** tightening `valid_range` must **re-validate stored values** and mark newly
+**One edge case:** tightening `allowed_range` must **re-validate stored values** and mark newly
 implausible ones rejected, rather than silently changing which value is active.
 
 ---
@@ -89,29 +89,29 @@ implausible ones rejected, rather than silently changing which value is active.
 
 ### 3.1 Narrow, not wide
 
-There is no `countries.population` column, and there must not be. If criteria were columns,
-adding a criterion would be a schema migration — which contradicts *adding a criterion is a
+There is no `countries.population` column, and there must not be. If attributes were columns,
+adding a attribute would be a schema migration — which contradicts *adding a attribute is a
 data change*.
 
-Storage is **narrow**: values are rows keyed by candidate, criterion and source. Adding a
-criterion inserts rows and never alters a table.
+Storage is **narrow**: values are rows keyed by candidate, attribute and source. Adding a
+attribute inserts rows and never alters a table.
 
 ### 3.2 Identifiers and keys
 
-**Criteria and candidates are rows, not just config entries.** The criteria catalog is loaded
-from config into a `criterion` table at boot (upsert by `id`), and candidates into a
+**Attributes and candidates are rows, not just config entries.** The attributes catalog is loaded
+from config into a `attribute` table at boot (upsert by `id`), and candidates into a
 `candidate` table. `value` then holds **real foreign keys**, not loose strings.
 
-This is what makes retirement work. When a criterion is retired (§2), its stored values must
-keep pointing at something. If criteria existed only in config, deleting an entry would orphan
+This is what makes retirement work. When a attribute is retired (§2), its stored values must
+keep pointing at something. If attributes existed only in config, deleting an entry would orphan
 every historical value. As a row with `status = retired`, the foreign key stays valid
-permanently while the criterion drops out of active scoring.
+permanently while the attribute drops out of active scoring.
 
 **Identifier schemes**, one readable convention across both halves of the key:
 
 | Entity | ID | Why |
 |---|---|---|
-| Criterion | `city.rent_2br_centre` | `<level>.<name>` — level is identity, pillar is not (`reqs.md` §3.3) |
+| Attribute | `city.rent_centre` | `<level>.<name>` — level is identity, pillar is not (`reqs.md` §3.3) |
 | Country | `country.portugal` | The name, lowercased, underscores for spaces — `country.united_kingdom` |
 | City | `city.portugal.lisbon` | Country-qualified — city names are not globally unique |
 
@@ -119,7 +119,7 @@ permanently while the criterion drops out of active scoring.
 `Portugal` in a URL path, GeoNames on a numeric ID. Each adapter maps our identifier to
 whatever its source expects — that translation is the adapter's whole job and must never leak
 into how we name things internally. ISO 3166 alpha-2 and alpha-3 are stored in
-`CandidateFacts`, where adapters read them.
+the attribute catalog, where adapters read them.
 
 > Country names do drift — Czechia, Türkiye, Eswatini — which is a genuine argument for codes.
 > But that argues for keeping the code as a **fact**, not for making an unreadable string the
@@ -127,20 +127,20 @@ into how we name things internally. ISO 3166 alpha-2 and alpha-3 are stored in
 > alternates as facts; the ID never changes afterwards, whatever the country later calls itself.
 
 **`value` uses a surrogate primary key.** The natural key is five columns —
-`(candidate_id, criterion_id, source_id, reference_period_start, retrieval_date)` — and
+`(candidate_id, attribute_id, source_id, reference_period_start, retrieval_date)` — and
 propagating that into ten child tables would mean fifty columns of duplication and joins on
 five conditions. Instead:
 
 ```
 value          id            surrogate PK
-               UNIQUE (candidate_id, criterion_id, source_id,
+               UNIQUE (candidate_id, attribute_id, source_id,
                        reference_period_start, retrieval_date)
 
 value_monetary value_id      FK → value.id
                PRIMARY KEY (value_id, key)
 ```
 
-A composite key therefore reads as `city.portugal.lisbon` × `city.rent_2br_centre` — both
+A composite key therefore reads as `city.portugal.lisbon` × `city.rent_centre` — both
 halves legible without a lookup.
 
 The UNIQUE constraint still prevents the same fetch being stored twice, while legitimate
@@ -151,7 +151,7 @@ without further change.
 ### 3.2a Reference tables
 
 The database is **normalised**. Anything that is a fixed, rarely-changing thing — a country, a
-criterion, a source, a unit — lives in its own small table with a stable identifier, and
+attribute, a source, a unit — lives in its own small table with a stable identifier, and
 everything else stores that identifier rather than the name. These are commonly called
 **lookup tables** or **reference data**.
 
@@ -162,15 +162,17 @@ single row that refers to it.
 |---|---|---|
 | `candidate` | Countries and cities | `country.portugal`, `city.portugal.lisbon` |
 | `pillar` | The eleven pillars | `housing`, `nature` |
-| `criterion` | The criteria catalog, loaded from config | `city.rent_2br_centre` |
+| `level` | The ordered levels | `country` (1), `city` (2) |
+| `attribute` | The attribute catalog, loaded from config | `city.rent_centre` |
 | `data_source` | Sources, with kind and reliability tier | `eurostat`, `numbeo`, `manual` |
 | `value_type` | The ten archetypes, so values can point at one | `Monetary`, `Index` |
 | `unit` | Units a `Quantity` may carry | `celsius`, `km`, `mbps`, `hours_per_year` |
 | `currency` | Currencies a `Monetary` may carry | `EUR`, `GBP`, `CHF` |
 | `confidence_level` | The four grades | `absolute`, `high`, `medium`, `low` |
-| `eligibility_filter` | The named gates of `reqs.md` §7.3 | `uk_skilled_worker` |
-| `label_vocabulary` | Controlled vocabularies for `LabelSet` criteria | Köppen zone codes |
-| `criteria_settings` | Named settings records | `alex`, `remote_only` |
+| `match_rule` | The named gates of `reqs.md` §7.3 | `uk_skilled_worker` |
+| `label_vocabulary` | Controlled vocabularies for `LabelSet` attributes | Köppen zone codes |
+| `criteria_set` | Named criteria sets | `alex`, `remote_only` |
+| `evaluation` | One criteria set run against one level | surrogate |
 | `run` | Acquisition runs | surrogate |
 
 **The rule that makes this work: identifiers never change; names do.** An identifier is
@@ -189,7 +191,7 @@ columns for every type's payload, or ten unrelated tables, the shape is a **pare
 typed child tables**:
 
 ```
-value              id, candidate, criterion, source, reference_period,
+value              id, candidate, attribute, source, reference_period,
                    retrieval_date, confidence, run, status
 
 value_monetary     value_id, key, amount, currency, amount_eur,
@@ -199,7 +201,7 @@ value_count        value_id, key, count, basis
 value_ratio        value_id, key, value, basis
 value_index        value_id, key, value, provider, scale_min, scale_max
 value_labelset     value_id, key, label
-value_composition  value_id, label, share
+value_sharecomp    value_id, label, share
 value_boolean      value_id, key, value
 value_score        value_id, key, value, range_min, range_max, assigned_by, rationale
 value_text         value_id, body
@@ -211,12 +213,12 @@ This buys three things at once:
   `CHECK (amount > 0)`. The database enforces the type-implicit validation rules from
   `reqs.md` §3.3a, rather than trusting application code to remember.
 - **The common path stays cheap.** The four operations the app performs most — every value for
-  a candidate, choosing the active value, computing coverage, the criterion drill-down — read
+  a candidate, choosing the active value, computing coverage, the attribute drill-down — read
   `value` alone and never touch a child table.
 - **Adding a type is one new child table**, which is consistent: adding a type is already a
   code change.
 
-### 3.3a Several numbers for one criterion — two different cases
+### 3.3a Several numbers for one attribute — two different cases
 
 These look alike and are not, and they need different mechanisms.
 
@@ -228,9 +230,9 @@ such as a three-year mean or a trend. **Not in v1.**
 
 **Multi-value — different measurements at the same time, all current.** Rent in Lisbon is
 about €1,100 for a one-bedroom, €1,410 for two, €1,900 for three. None of these is history;
-they coexist and together describe the criterion.
+they coexist and together describe the attribute.
 
-**These cannot be separate `value` rows.** All three share the same candidate, criterion,
+**These cannot be separate `value` rows.** All three share the same candidate, attribute,
 source, reference period and retrieval date — identical on every column of the uniqueness
 constraint (§3.2). They must be **one `value` row with several typed child rows**,
 distinguished by the child table's `key`:
@@ -246,7 +248,7 @@ value_monetary  value_id | key   | amount | currency
 
 Scoring would then need to pick one — which room count matters depends on `household_size`
 (`reqs.md` §1.4), making that choice a preference rather than a fact, so it would live in
-`CriteriaSettings`.
+`CriteriaSet`.
 
 **Multi-value is now in use** (`reqs.md` §3.3b): `city.rent_centre` is keyed by bedroom count
 and `city.cost_of_living_monthly` by household size. The `key` column carries it, and stays
@@ -261,13 +263,41 @@ already stored. Every key is written; the choice happens when the score is compu
 
 `value.status` is `active`, `superseded` or `rejected`. Nothing is deleted. A value that fails
 validation is stored with `rejected` and its reason; a value outranked by source priority is
-`superseded`. Exactly one value per (candidate, criterion) is `active`.
+`superseded`. Exactly one value per (candidate, attribute) is `active`.
 
 ### 3.5 Scale
 
-For v1 — 32 countries × ~44 country criteria × ~2 sources ≈ **2,800 rows**. With cities and
+For v1 — 32 countries × ~44 country attributes × ~2 sources ≈ **2,800 rows**. With cities and
 accumulated history, perhaps 50,000. Small enough that no storage decision here is driven by
 performance.
+
+---
+
+### 3.6 Two families of table, and the line between them
+
+The schema divides exactly as `reqs.md` §3.0 does, and the division is worth enforcing in the
+database rather than only in prose:
+
+| Objective — what is true | Subjective — what you make of it |
+|---|---|
+| `level`, `candidate`, `pillar`, `attribute` | `criteria_set`, `criterion` |
+| `value` and its typed children | `evaluation`, `candidate_result` |
+| `data_source`, `run`, `external_score` | `household` |
+| `match_rule`, `match_rule_result` | |
+
+**No table on the left ever carries a foreign key to one on the right.** Values do not know
+which criteria set is active; candidates do not store a score. That is what makes a
+re-evaluation pure arithmetic over stored rows, and it is why switching from `alex` to
+`partner` cannot trigger a fetch (`reqs.md` §5.6).
+
+`evaluation` and `candidate_result` are the tables that did not exist in the earlier draft,
+where score and match status sat on the candidate. Keeping several evaluations is a matter of
+retaining rows — they are cheap, and comparing two criteria sets over the same data becomes a
+query rather than a re-run.
+
+`household` is a single-row table. It is on the subjective side because it describes the asker,
+not any candidate, and because changing it changes criterion defaults and warnings without
+touching a single measured value.
 
 ---
 
@@ -276,8 +306,8 @@ performance.
 Implemented once, in one place, against `Candidate` — never per level. In order:
 
 1. Discard values with `status = rejected`.
-2. **Fresh beats stale** — older than the criterion's `max_age` drops below every fresh value.
-3. **Source priority** — the criterion's ordering, falling back to the global default.
+2. **Fresh beats stale** — older than the attribute's `max_age` drops below every fresh value.
+3. **Source priority** — the attribute's ordering, falling back to the global default.
 4. **Confidence** breaks ties within a priority rank.
 5. Most recently retrieved wins anything remaining.
 
@@ -299,24 +329,28 @@ reliability_tier: official
 rate_limit: none
 mode: per_candidate
 provides:
-  - criterion: country.population
+  - attribute: country.population
     level: country
     indicator: SP.POP.TOTL
     produces: Count
 ```
 
-**Both configs are cross-validated at boot.** Does criterion `country.population` exist? Does its
+**Both configs are cross-validated at boot.** Does attribute `country.population` exist? Does its
 declared `value_type` match what the adapter claims to produce? A mismatch is a **startup
 error**, not a corrupted value discovered months later. This is the highest-value property of
 the whole design and it costs almost nothing.
 
-A criterion gets its value by one of three bindings:
+An attribute gets its value by one of two bindings:
 
 | Binding | Declared where | Example |
 |---|---|---|
 | **Adapter fetch** | The adapter's `provides` block | World Bank `SP.POP.TOTL` → `country.population` |
-| **CandidateFacts** | `value_source` on the criterion | `value_source: facts.population` |
-| **Manual entry** | Typed by the user, ranked like any source | The UK visa verdict |
+| **Manual entry** | Typed by the user, ranked like any source | The UK visa match-rule result |
+
+> **There used to be a third**, letting an attribute borrow a value from a separate facts
+> entity. `reqs.md` §3.3 dissolved that entity: descriptive facts *are* attributes, so
+> `country.population` is fetched once by an adapter and read directly by whatever judges it.
+> One binding fewer, and one indirection that can no longer go stale.
 
 ### 5.1 Two fetch modes
 
@@ -324,7 +358,7 @@ Adapters declare `mode`, because the two behave nothing alike:
 
 - **`bulk`** — one download refreshes many candidates. UNODC, Ookla tiles, Köppen zones, WDPA.
   Scheduled, infrequent, cheap per candidate.
-- **`per_candidate`** — one call per candidate or criterion. Eurostat, World Bank, Open-Meteo,
+- **`per_candidate`** — one call per candidate or attribute. Eurostat, World Bank, Open-Meteo,
   the LLM path. Subject to rate limits and the budget cap.
 
 The acquisition layer must support both. A run mixes them.
@@ -338,7 +372,7 @@ Preserved before the spec's deletion. These are its proposals, not settled decis
 ### 6.1 Goal
 
 A **local, self-contained application** that runs the whole pipeline — acquisition,
-interpretation, scoring, ranking — with no manual intervention beyond configuring criteria and
+interpretation, scoring, ranking — with no manual intervention beyond configuring attributes and
 starting a run. The spec's phrase for the bar it must clear: **"zero copy-paste between chat
 and the app."**
 
@@ -348,7 +382,7 @@ and the app."**
 |---|---|---|
 | Language | Python 3.12+ | Fastest ecosystem for data + LLM SDK + UI |
 | UI | Streamlit | Weight sliders and a sortable table with minimal frontend code; runs locally, no deployment |
-| Storage | SQLite | Local file, no server, "sufficient at the scale of 15–40 cities" |
+| Storage | **PostgreSQL** | **Decided.** See below — supersedes the spec's SQLite proposal |
 | Qualitative | Anthropic API + `web_search` | Removes the need for a custom scraper; structured JSON with score and citations |
 | Structured | Direct fetch | Cheaper, more reliable, deterministic |
 
@@ -357,8 +391,20 @@ Go, and now C#/.NET. The spec chose Python for ecosystem reasons — pandas, req
 SDK, and Streamlit's interactivity for free. Go or C# remain feasible at the cost of building a
 separate frontend for the interactive parts.
 
-Both the SQLite choice and the "15–40 cities" premise predate the current design: v1 alone
-seeds 32 countries with ~44 criteria, and the database question is now genuinely open (§7).
+**Storage is PostgreSQL.** The spec proposed SQLite on a "15–40 cities" premise that no longer
+holds — v1 alone seeds 32 countries with ~44 attributes, before the city level exists at all. The
+choice is made on optionality rather than on present need. Data volume is not the argument —
+32 countries is trivial for any engine. The argument is **operational**: Postgres has native
+streaming replication, so read replicas and failover are available later without changing
+engines, and nothing in this document depends on running locally from a single file. That
+capability is unused today, and on a single-user local app it stays unused for some time; it
+is bought now because acquiring it later would mean a migration. Decided 2026-08-23.
+
+**The schema is versioned in git**, as migrations rather than as a hand-managed database.
+Seed and data-insertion scripts are versioned the same way. This matters more than the engine
+choice: it is what makes the database reproducible from the repository, so a dropped database
+is an inconvenience rather than a loss. Every schema change ships as a migration — no
+out-of-band edits to a live database.
 
 ### 6.3 Proposed module layout
 
@@ -372,7 +418,7 @@ copied.** Separate country and city tables would reintroduce exactly the duplica
 
 ### 6.4 Data flow
 
-**Country level:** configure criteria → select countries → screen using structured sources only
+**Country level:** configure attributes → select countries → screen using structured sources only
 → score → those below the qualification threshold do not have cities extracted.
 
 **City level:** for qualified countries, nominate cities → structured *and* qualitative
@@ -380,7 +426,7 @@ acquisition, **run in parallel** → store → filter and score → ranking upda
 
 **Comparison:** pick a focus candidate and comparators → delta table plus templated synthesis.
 
-### 6.5 Sizing, and why the two levels exist
+### 6.5 Sizing, and why the levels exist
 
 The figures that justify the architecture:
 
@@ -388,10 +434,10 @@ The figures that justify the architecture:
   before any city work begins.
 - That takes deep city evaluation from ~100 candidates down to **~40–50**, without losing a
   serious contender.
-- Running the full criteria set including LLM calls on all 100 directly would waste most of the
+- Running the full attributes set including LLM calls on all 100 directly would waste most of the
   effort on cities that fail a cheap gate anyway.
 
-This is the whole argument for two levels rather than one uniform pass, and it is the reason the
+This is the whole argument for evaluating in levels rather than one uniform pass, and it is the reason the
 country level is v1.
 
 ### 6.6 Setup
@@ -404,15 +450,14 @@ calls per city, not millions.
 
 ## 7. Open
 
-- **The stack.** Language, UI framework, and database engine are undecided; §6.2 records what
-  the spec proposed and why, as a starting point rather than a conclusion. On the database:
-  SQLite's FTS5 and R-Tree are built in, so the full-text case needs no extension; the real
-  deciding question is whether geometry lives in the database (favouring PostGIS) or is
-  computed in Python at acquisition time and stored as plain numbers (favouring SQLite).
-  Everything above holds either way.
+- **Language and UI framework** are still undecided; §6.2 records what the spec proposed and
+  why, as a starting point rather than a conclusion. **The database is settled: PostgreSQL**
+  (§6.2). Whether geometry lives in the database via PostGIS, or is computed at acquisition
+  time and stored as plain numbers, stays open — but it is now an extension question inside a
+  chosen engine, not an engine question.
 - **Reducers**, if and when either case in §3.3a arrives: for a time series, which rows scoring
-  uses (latest, three-year mean, trend); for a multi-value criterion, which key applies. Both
-  are preferences rather than facts, so both would live in `CriteriaSettings`. Neither is in v1
+  uses (latest, three-year mean, trend); for a multi-value attribute, which key applies. Both
+  are preferences rather than facts, so both would live in `CriteriaSet`. Neither is in v1
   and neither requires a schema change to add.
 
 - **First implementation order.** The spec's suggestion, still sound: repo scaffolding, then the
