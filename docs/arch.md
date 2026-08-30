@@ -561,38 +561,44 @@ nowhere in its dependency graph.
 
 ```mermaid
 flowchart TD
-    subgraph clients["clients — over HTTP, no shared code"]
-        ui["browser UI"]
-        tests["acceptance tests"]
+    subgraph clients["clients — HTTP and JSON only, no shared code"]
+        browser["ui/<br/>React + TypeScript"]
+        acceptance["backend/tests/acceptance/<br/>pytest, over HTTP"]
+        e2e["ui/e2e/<br/>Playwright"]
         future["CLI, mobile, …"]
     end
 
-    api["api/ — REST"]
+    api["api/ — the REST surface, and the presenter<br/>parses, calls one use case, serialises"]
 
-    subgraph policy["policy — no technology anywhere"]
+    subgraph policy["policy — no framework, no SQL, no HTTP"]
         comparison["comparison/"]
         evaluation["evaluation/"]
         data_acquisition["data_acquisition/"]
         criteria["criteria/"]
         household["household/"]
         data["data/"]
-        candidates["candidates/"]
+        candidates["candidates/<br/><i>imports nothing;<br/>everything may import it</i>"]
     end
 
-    subgraph plugins["plugins"]
+    subgraph plugins["plugins — implement what policy declares"]
         data_sources["data_sources/"]
         storage["storage/"]
     end
 
-    ui --> api
-    tests --> api
+    main["main.py — the composition root<br/>the only place that names a concrete type"]
+
+    browser --> api
+    acceptance --> api
+    e2e --> browser
     future --> api
 
-    api --> evaluation
     api --> comparison
+    api --> evaluation
     api --> data_acquisition
     api --> criteria
     api --> household
+    api --> data
+    api --> candidates
 
     comparison --> evaluation
     comparison --> data
@@ -604,12 +610,17 @@ flowchart TD
     criteria --> household
     data --> candidates
     household --> candidates
-    comparison --> candidates
 
-    data_sources -.implements.-> data_acquisition
-    storage -.implements.-> data
-    storage -.implements.-> criteria
-    storage -.implements.-> evaluation
+    data_sources -. "SourceAdapter, CostMeter" .-> data_acquisition
+    data_sources -. FxRateProvider .-> data
+    storage -. "ValueStore, CatalogStore" .-> data
+    storage -. RunStore .-> data_acquisition
+    storage -. CriteriaStore .-> criteria
+    storage -. HouseholdStore .-> household
+    storage -. EvaluationStore .-> evaluation
+
+    main -. constructs .-> plugins
+    main -. mounts .-> api
 ```
 
 > **`api/` is the presenter.** Clean architecture inverts the output boundary so a use case never
@@ -665,11 +676,12 @@ inner module ever names a concrete implementation.
 | `CostMeter` | `data_acquisition` | `data_sources/llm` | What a planned call will cost, and what a completed one did |
 | `ValueStore` | `data` | `storage` | Read active values for candidates and attributes; append new values; never update |
 | `CatalogStore` | `data` | `storage` | Read attributes, pillars, levels, sources, breakdown schemes |
-| `FxRateProvider` | `data` | `sources` | The rate for a currency pair on a date, with its source |
+| `FxRateProvider` | `data` | `data_sources` | The rate for a currency pair on a date, with its source |
 | `Clock` | `data` | runtime | Now — so `max_age` and staleness are testable without waiting |
 | `CriteriaStore` | `criteria` | `storage` | Read and write criteria sets and their criteria |
 | `HouseholdStore` | `household` | `storage` | Read and write the single household record |
 | `EvaluationStore` | `evaluation` | `storage` | Persist a saved evaluation with its snapshot and per-attribute detail |
+| `RunStore` | `data_acquisition` | `storage` | Create a run with its planned scope; append values and failures per item; read status, cost and failures back |
 
 **One store interface per module that needs one, never one per table.** A module receives only
 the operations it actually calls, so `comparison` cannot accidentally write a value and
