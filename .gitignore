@@ -1,0 +1,54 @@
+# --- Secrets and local configuration ------------------------------------------
+# .env holds the database password and the Anthropic API key. It must never be committed.
+# The pattern deliberately ignores every .env variant and then re-includes only the example,
+# so a new file like .env.production or .env.local is ignored by default rather than by
+# someone remembering to add it.
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+secrets/
+
+# --- Python -------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# --- Tests and coverage -------------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.ruff_cache/
+.import_linter_cache/
+
+# --- Node / the interface -----------------------------------------------------
+node_modules/
+ui/dist/
+ui/coverage/
+ui/test-results/
+ui/playwright-report/
+ui/.vite/
+ui/tsconfig.tsbuildinfo
+npm-debug.log*
+
+# --- Operations ---------------------------------------------------------------
+# Database dumps. These contain real data, including manually entered values that cannot be
+# re-fetched (arch.md 9.5) -- they are backed up, not versioned.
+backups/
+*.dump
+
+# --- Editors and OS -----------------------------------------------------------
+.DS_Store
+.idea/
+*.swp
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

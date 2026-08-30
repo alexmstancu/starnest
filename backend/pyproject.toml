@@ -1,0 +1,201 @@
+[project]
+name = "starnest"
+version = "0.1.0"
+description = "Decision support for a relocation search: scores and ranks candidate locations against weighted criteria, and explains every number it shows."
+requires-python = ">=3.12"
+
+# Every dependency the MVP needs is declared here up front. An agent that finds it needs one
+# that is missing stops and asks rather than adding it (devplan.md 0.6) -- concurrent edits to
+# this file are the collision the rule exists to prevent.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "httpx>=0.28",
+    "psycopg[binary,pool]>=3.2",
+    "aiosql>=13.0",
+    "yoyo-migrations>=9.0",
+    "anthropic>=0.45",
+    "selectolax>=0.3.27",
+]
+
+[project.scripts]
+# The composition root (arch.md 6.8). One function that knows every concrete type.
+serve = "starnest.main:run"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "pytest-cov>=6.0",
+    "coverage[toml]>=7.6",
+    "ruff>=0.9",
+    "import-linter>=2.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/starnest"]
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+# Coverage is deliberately NOT in addopts. A bare `pytest` stays fast during development;
+# `just coverage` and `just check` are what enforce the bar.
+addopts = "-q --strict-markers"
+markers = [
+    "storage: needs a real PostgreSQL. The schema constraints are the behaviour under test (arch.md 6.7)",
+    "acceptance: speaks HTTP to a live backend",
+    "live: calls a real third-party source. Never run in the normal suite -- a failure here means the source was slow, not that we broke",
+]
+
+
+# ---------------------------------------------------------------------------
+# Coverage -- the bar is 75% lines AND branches for the MVP
+# ---------------------------------------------------------------------------
+#
+# 75% is a floor on the code, not a ceiling on the testing. The target is 100% coverage of
+# features and functionality; this number only catches whole regions of code that nobody
+# exercised at all. A module can sit at 90% lines and still have an untested requirement.
+
+[tool.coverage.run]
+source = ["src/starnest"]
+branch = true
+parallel = true
+relative_files = true
+omit = [
+    "*/__main__.py",
+]
+
+[tool.coverage.paths]
+# So coverage collected inside a container and outside it combine into one report.
+source = ["src/starnest", "*/src/starnest"]
+
+[tool.coverage.report]
+fail_under = 75
+show_missing = true
+skip_covered = false
+precision = 1
+exclude_also = [
+    # Seam interfaces (arch.md 6.3) are signatures, not behaviour. Counting an abstract
+    # method body as an uncovered line measures nothing.
+    "@(abc\\.)?abstractmethod",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "class .*\\(Protocol\\):",
+    "if __name__ == .__main__.:",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+title = "Coverage"
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+
+# ---------------------------------------------------------------------------
+# Lint and format
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # import sorting
+    "N",         # pep8-naming
+    "UP",        # pyupgrade
+    "B",         # bugbear
+    "A",         # shadowing builtins
+    "C4",        # comprehensions
+    "SIM",       # simplify
+    "PTH",       # use pathlib
+    "RUF",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+
+# ---------------------------------------------------------------------------
+# Boundaries -- arch.md 6.2, as four contracts a build can fail on
+# ---------------------------------------------------------------------------
+#
+# T0.2 must prove these FAIL before trusting them to pass: write a deliberately illegal
+# import, watch it be rejected, then delete it. A linter that is silently misconfigured
+# passes everything.
+
+[tool.importlinter]
+root_package = "starnest"
+
+[[tool.importlinter.contracts]]
+name = "1. No policy module imports a plugin or the API"
+type = "forbidden"
+source_modules = [
+    "starnest.candidates",
+    "starnest.data",
+    "starnest.household",
+    "starnest.criteria",
+    "starnest.data_acquisition",
+    "starnest.evaluation",
+    "starnest.comparison",
+]
+forbidden_modules = [
+    "starnest.api",
+    "starnest.data_sources",
+    "starnest.storage",
+]
+
+[[tool.importlinter.contracts]]
+name = "2. The dependency graph is layered, and the layering is exhaustive"
+type = "layers"
+layers = [
+    "starnest.comparison",
+    "starnest.evaluation",
+    "starnest.criteria",
+    "starnest.data_acquisition",
+    "starnest.household",
+    "starnest.data",
+    "starnest.candidates",
+]
+
+[[tool.importlinter.contracts]]
+name = "3. data/ may not import criteria/, household/ or evaluation/ -- the ontology's central invariant"
+type = "forbidden"
+source_modules = ["starnest.data"]
+forbidden_modules = [
+    "starnest.criteria",
+    "starnest.household",
+    "starnest.evaluation",
+]
+
+[[tool.importlinter.contracts]]
+name = "4. candidates/ imports nothing -- the stable core"
+type = "forbidden"
+source_modules = ["starnest.candidates"]
+forbidden_modules = [
+    "starnest.data",
+    "starnest.household",
+    "starnest.criteria",
+    "starnest.data_acquisition",
+    "starnest.evaluation",
+    "starnest.comparison",
+    "starnest.api",
+    "starnest.data_sources",
+    "starnest.storage",
+]

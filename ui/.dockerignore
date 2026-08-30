@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+.vite/
+
+# e2e specs drive the built app from outside; they are never served from it.
+e2e/
+
+.env
+.env.*

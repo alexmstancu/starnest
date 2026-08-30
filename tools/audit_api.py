@@ -14,8 +14,8 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC = ROOT / "openapi.yaml"
-REQS = ROOT / "reqs.md"
+SPEC = ROOT / "docs" / "openapi.yaml"
+REQS = ROOT / "docs" / "reqs.md"
 
 # Entities the API covers under another name, or deliberately does not expose.
 # Each needs a reason, so that "not covered" is always a decision rather than an oversight.

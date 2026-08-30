@@ -16,7 +16,7 @@ import re
 import sys
 from pathlib import Path
 
-DOC = Path(__file__).resolve().parent.parent / "reqs.md"
+DOC = Path(__file__).resolve().parent.parent / "docs" / "reqs.md"
 
 # Documented deliberately outside the diagram: payloads of the typed child tables
 # that arch.md 3.3 describes, and identifiers that name attributes or retired terms.

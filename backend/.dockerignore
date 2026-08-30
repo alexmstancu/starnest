@@ -1,0 +1,16 @@
+# The build context is backend/. Keep it to what the image actually needs.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+tests/
+*.egg-info/
+
+# Never let a secret into a build context. Even unused, it lands in the layer cache.
+.env
+.env.*

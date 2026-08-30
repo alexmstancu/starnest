@@ -3,9 +3,16 @@
 Refined from `relocation-app-master-spec-v1.md` (Part 3), and from the ontology discussion that
 followed `reqs.md`. Terms used here are defined in `reqs.md` Appendix A.
 
-**Status: partial.** This document currently covers the ontology only. The stack — language,
-UI framework, database engine — is deliberately still open (§11). The ontology is settled
-independently because none of it changes based on that choice.
+**Status: complete for the MVP.** Ontology, storage, module architecture, runtime flows, the
+interface and operations are all settled, and **the stack is decided** (§10.2). What remains
+open is listed in §11 and blocks nothing.
+
+> **This is the MVP architecture — the country level** (`reqs.md` §1.3). It is deliberately
+> built so the city level adds *sources and rows* rather than machinery, but it has not yet had
+> to prove that. **A second pass revises this document before post-MVP work begins**, because
+> the city level makes the LLM-plus-search acquisition path load-bearing where the MVP exercises
+> it for a single attribute. `devplan.md` covers the MVP only; a second development plan is
+> written against the revised architecture. See `devplan.md` §8.
 
 ---
 
@@ -612,9 +619,14 @@ flowchart TD
 > a presenter interface per use case — the multiplicity lives in *clients of the contract*, not in
 > implementors of an in-process interface. One representation, many consumers.
 
-> **The package is not named after the application.** `Starnest` is a display string in the
-> settings, never an identifier (`reqs.md` §10). The top-level package takes a neutral domain
-> name; renaming the product must not touch a single import.
+> **The top-level package is `starnest`, and that is the only identifier the name touches.**
+> Decided 2026-08-30, revising this section's original requirement of a neutral package name.
+> The cost is accepted with eyes open: a rename now means one `git mv` and a find-and-replace
+> over import lines — mechanical, and a tool does it correctly. What the rule still forbids is
+> the part a rename *cannot* find mechanically: **no class name, table name, config key,
+> environment-variable prefix or comment carries the product name.** `starnest.evaluation.normalisation`
+> is fine; `class StarnestNormaliser` is not. The display string stays a single settings
+> parameter (`reqs.md` §10).
 
 ### 6.2 The dependency rule, as something a build can check
 
@@ -725,6 +737,15 @@ so they are not silently re-litigated:
   quietly becomes coupled.
 - **No dependency-injection framework.** The composition root is a function (§6.7).
 - **No repository per entity.** See §6.3.
+- **No caching layer.** No Redis, no in-process memoisation, no cache headers on
+  `GET /rankings`. **The expensive thing is already cached by the design:** values are fetched
+  once and stored, and score recalculation never re-fetches (`reqs.md` §5.6) — the `value`
+  table *is* the cache, and a durable, inspectable, provenance-carrying one. What remains is
+  two queries and pure arithmetic over 32 candidates (§7.2). A cache would add an invalidation
+  problem to something already fast, and invalidation is precisely where it would break the
+  product's promise: a weight changes, the cache does not notice, and the screen shows a stale
+  ranking that looks entirely plausible. **Revisit on a measurement, not an intuition** — the
+  city level is the natural moment. Decided 2026-08-30.
 
 ### 6.7 Testing seams
 
@@ -1096,6 +1117,16 @@ of them — but they are settled, and `devplan.md` sequences against them.
 > in `.sql` files under `storage/queries/`, not in Python strings, so nothing rewrites the
 > `DISTINCT ON` active-value view and a query can be pasted into `psql` exactly as written. The
 > psycopg3 async adapter is registered under `apsycopg` rather than anything guessable.
+
+> **Two drivers name psycopg3 differently, and neither name is guessable.** `aiosql` registers
+> its async psycopg3 adapter as **`apsycopg`**. `yoyo` names its driver in the URL *scheme*:
+> a plain `postgresql://` resolves to yoyo's **psycopg2** backend, which is not installed and
+> never will be — psycopg3 is **`postgresql+psycopg://`**. The application keeps `DATABASE_URL`
+> in the standard libpq form, because that is what psycopg3 itself expects, and the translation
+> to yoyo's form happens at the three places that invoke it (the `Makefile`, the compose
+> `migrate` service, and the test fixture) rather than in a second environment variable that
+> could drift out of step. Both were found by running the tools, not by reading their
+> documentation.
 
 #### The contract now runs code-first, and that is a reversal
 

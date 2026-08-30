@@ -4,50 +4,104 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**There is no code yet.** The repository holds planning documents only. **`reqs.md` is authoritative for requirements and the ontology — read it first.**
+**Scaffolded, but the domain is not built yet.** The toolchain, the boundaries, the coverage bar, the three containers and the test harness all exist and are verified working. Every module under `backend/src/starnest/` is still empty. **`docs/reqs.md` is authoritative for requirements and the ontology — read it first.**
 
-That spec is the authoritative blueprint and should be read before any implementation work. This file summarizes the parts that constrain how code must be written; the spec holds the full criteria lists, weights, and rationale.
+## Layout
+
+```
+backend/      Python. The API and every domain rule
+  src/starnest/   the ten modules of arch.md §6.1
+  migrations/     yoyo, plain .sql — schema AND catalog
+  tests/          unit, storage, acceptance
+ui/    TypeScript. A client of the contract, over HTTP only
+  src/  e2e/      React; Playwright specs owned by the master agent
+docs/         reqs.md, arch.md, datasources.md, devplan.md, openapi.yaml
+tools/        the two structural audits
+compose.yaml  three containers: database, backend, ui
+Makefile      every command the project has
+```
+
+**`backend/` and `ui/` are peers that share no code** — not even DTO definitions (`arch.md` §6.1). There is deliberately no top-level `src/` containing both. The only file they share is `docs/openapi.yaml`: the backend generates it, the interface generates its client from it.
 
 ## Planning documents
 
 | Document | Status |
 |---|---|
-| `reqs.md` | **Written.** Requirements and ontology. v1 scope in §1.3, glossary in Appendix A, decision log in Appendix B |
-| `datasources.md` | **Written.** Source analysis, market analysis, criterion→source mapping |
-| `arch.md` | **Written.** Ontology, storage, module architecture, runtime flows, the interface, operations. Backend language and interface framework still open (§11) |
-| `openapi.yaml` | **Written.** The REST contract — 31 paths, 48 schemas. Backend and interface are both written against it |
-| `devplan.md` | Not started |
+| `docs/reqs.md` | **Written.** Requirements and ontology. v1 scope in §1.3, glossary in Appendix A, decision log in Appendix B |
+| `docs/datasources.md` | **Written.** Source analysis, market analysis, criterion→source mapping |
+| `docs/arch.md` | **Written, MVP scope.** Ontology, storage, module architecture, runtime flows, the interface, operations. Stack decided (§10.2). **Revised before post-MVP work** |
+| `docs/openapi.yaml` | **Written.** The REST contract — 31 paths, 48 schemas. Backend and interface are both written against it |
+| `docs/devplan.md` | **Written, MVP scope only.** Delivery model, 8 phases, 4 e2e gates, agent decomposition. Blocking decisions in §7; the MVP boundary and what follows it in §8. **Post-MVP gets a revised `arch.md` and a second `devplan.md`, not an extension of this one** |
 
-`relocation-app-master-spec-v1.md` has been **deleted**. Its content was audited against the
-successors first: Part 2 → `reqs.md`, Part 3 → `arch.md` §6, Appendix → `datasources.md`. It
-remains in git history at the initial commit.
+**Read `docs/devplan.md` §0 before doing implementation work** — the stop rule, the definition of done per task, and which files an agent may not edit.
 
-Consequently there are **no build, lint, test, or run commands** — nothing is scaffolded. Do not invent them. When scaffolding begins, add the real commands to this file.
+`relocation-app-master-spec-v1.md` has been **deleted**. Its content was audited against the successors first: Part 2 → `reqs.md`, Part 3 → `arch.md` §6, Appendix → `datasources.md`. It remains in git history at the initial commit.
 
-**One command does exist:**
+## Commands
+
+`make` on its own lists them all. The ones that matter:
+
+| Command | Does |
+|---|---|
+| `make env` | Create `.env` from `.env.example` |
+| `make up` / `make down` | PostgreSQL only, for running backend and UI from the command line |
+| `make test` | Fast unit tests, no coverage |
+| `make coverage` / `make coverage-open` | Full suite with coverage; **fails below 75%**. HTML at `backend/htmlcov/` |
+| `make boundaries` | `import-linter` — `arch.md` §6.2 as something a build fails on |
+| `make audit` | The two structural audits below |
+| **`make check`** | **lint + boundaries + coverage + audits. This is the gate** |
+| `make migrate` | Backs up first, then applies migrations. **Never automatic** (`arch.md` §7.4) |
+| `make ui-coverage` / `make e2e` | Interface coverage (75% bar); Playwright |
+| `make docker-build` / `docker-up` / `docker-migrate` / `docker-down` | The three containers |
+
+**The two audits** are the ones that predate the code:
 
 ```
-uv run python tools/audit_ontology.py
-uv run --with pyyaml python tools/audit_api.py
+uv run --no-project python tools/audit_ontology.py
+uv run --no-project --with pyyaml python tools/audit_api.py
 ```
 
-The first checks the ontology's structural invariants — the two diagrams against each other, the diagrams against the prose documenting them, and the catalog's weights. The second checks `openapi.yaml`: that every `$ref` resolves, that **every ontology entity is reachable through the API** (with a named exemption for each covered under another name), and that no key has a null value — the fault that is valid YAML but crashes consumers.
+The first checks the ontology's structural invariants — the two diagrams against each other, the diagrams against the prose documenting them, and the catalog's weights. The second checks `docs/openapi.yaml`: that every `$ref` resolves, that **every ontology entity is reachable through the API** (with a named exemption for each covered under another name), and that no key has a null value — the fault that is valid YAML but crashes consumers.
 
 **Run both after any change to `reqs.md` §3, either diagram, the catalog, or the spec.** Exit code 0 means every invariant holds. Both read only and never edit.
+
+## Test coverage
+
+**75% of lines and 75% of branches, both sides**, configured in `backend/pyproject.toml` and `ui/vite.config.ts`. Below the bar the command fails.
+
+**It is a floor on the code, not a ceiling on the testing.** The target is full coverage of features and functionality; the percentage catches only one failure mode — a region of code nobody ran at all. "Coverage is green" is never the argument that a task is tested. Always cover the sad path: errors, edges, empty and missing input.
+
+## Configuration and secrets
+
+**Nothing is configured in code.** Two kinds, kept apart (`arch.md` §7.5):
+
+| | Technical | Domain |
+|---|---|---|
+| What | Connection string, API key, ports, log level | Attributes, weights, thresholds, sources |
+| Where | **`.env`**, read only by the composition root | **Database rows**, shipped as migrations |
+| In git? | **Never** — `.env.example` documents the shape with placeholders | Yes, as migrations |
+
+**`.gitignore` ignores every `.env*` and re-includes only `.env.example`**, so a new variant is ignored by default rather than by someone remembering. **Never commit an API key.** The Anthropic key is read once at startup, held by the LLM adapter, and reaches no log, no database row and no error message — `Environment.__repr__` redacts it, and a test asserts that.
+
+**No environment variable is prefixed with the product name** — `DATABASE_URL`, `ANTHROPIC_API_KEY`, `LOG_LEVEL`. `APP_DISPLAY_NAME=Starnest` is the one place the name appears, as a value.
+
+## Caching — deliberately none
+
+**No caching layer in the MVP**, decided 2026-08-30. Not an oversight: the expensive thing is already cached by the design. Values are fetched once and stored, and score recalculation never re-fetches (`reqs.md` §5.6) — **the `value` table is the cache**. What remains is two queries and pure arithmetic over 32 candidates. Adding a cache would add an invalidation problem to something already fast, and a stale ranking that looks plausible is the exact failure this application exists to prevent. Revisit only on a measurement, not an intuition.
 
 ## What this project is
 
 A local, single-user decision-support app for a personal relocation search (EU/EEA + UK + Switzerland, 3–5 year horizon — illustrative only; the move may be permanent). It scores and ranks candidate locations against a weighted, user-configurable criteria set, and explains every number it shows.
 
-## Planned stack (from the spec — confirm before deviating)
+## The stack — decided, not proposed
 
-**Decided** (`arch.md` §10.2). Backend: **Python 3.12+**, **FastAPI + Pydantic v2**, **asyncio + httpx**, **psycopg3** async with **aiosql** (queries live in `.sql` files, driver name `apsycopg`), **yoyo-migrations** (plain `.sql`, explicit `uv run yoyo apply`), **ruff**, **pytest**, **import-linter** enforcing §6.2. Interface: **React + TypeScript**, client generated from `openapi.yaml`. Storage: **PostgreSQL**. LLM: the official Anthropic Python SDK with the `web_search` tool.
+**Decided** (`arch.md` §10.2). Backend: **Python 3.12+**, **FastAPI + Pydantic v2**, **asyncio + httpx**, **psycopg3** async with **aiosql** (queries live in `.sql` files, driver name `apsycopg`), **yoyo-migrations** (plain `.sql`, explicit `make migrate`), **ruff**, **pytest**, **import-linter** enforcing §6.2. Interface: **React + TypeScript** under `ui/`, built with Vite, tested with Vitest and Playwright, client generated from `docs/openapi.yaml`. Storage: **PostgreSQL**. LLM: the official Anthropic Python SDK with the `web_search` tool.
 
 **Everything is managed by `uv`** — `uv add`, `uv add --dev`, `uv run`. Never `pip`, never the system Python.
 
-**The contract runs code-first.** `openapi.yaml` was hand-written as the design, but FastAPI now generates it; a test asserts the designed paths and operation IDs still exist so a refactor cannot silently drop an endpoint.
+**The contract runs code-first.** `docs/openapi.yaml` was hand-written as the design, but FastAPI now generates it; a test asserts the designed paths and operation IDs still exist so a refactor cannot silently drop an endpoint.
 
-Module layout (`arch.md` §6.1) — **named after the domain, not technical roles**:
+Module layout, all under `backend/src/starnest/` (`arch.md` §6.1) — **named after the domain, not technical roles**:
 
 | Path | Responsibility |
 |---|---|
@@ -132,7 +186,7 @@ Explicitly **post-MVP — do not build without being asked**: personal annotatio
 ## Conventions
 
 - **All code, UI text, comments, and identifiers must be in English**, regardless of the language used in planning conversations with the user.
-- **The app is named Starnest — the code is not.** The name lives in a configuration file as a single display-name parameter, loaded at startup and used only for presentation (page title, UI headings, About text). It must never appear in package names, module names, class names, table names, config keys, or environment-variable prefixes. Renaming the app must be a one-line config change. This is the "nothing hardcoded" invariant applied to the product's own name. The project directory is now `starnest`, and the spec still says `relocation-app`. A directory name is presentation, not an identifier — do not let it pull package, module, or table names along with it.
+- **The app is named Starnest, and the code borrows the name exactly once.** The **top-level Python package is `starnest`** (`src/starnest/`) — decided 2026-08-30. That is the only place the product name is an identifier. It must never appear in **class names, table names, config keys, environment-variable prefixes, or comments**: `StarnestNormaliser` and a `starnest_value` table are the actual failure this rule exists to prevent, because those are the occurrences a rename cannot mechanically find. A rename means one `git mv` plus a find-and-replace over import lines, and nothing else. The display name itself stays a single config parameter, loaded at startup and used only for presentation (page title, UI headings, About text). This is the "nothing hardcoded" invariant applied to the product's own name.
 - Provisional by design: weights, the country-level qualification threshold, and the ~2000–3000 EUR/month budget guideline are all placeholders pending a manual test. Never bake them into logic (see "nothing hardcoded").
 
 ## Reference data sources
