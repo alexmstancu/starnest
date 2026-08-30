@@ -408,6 +408,7 @@ erDiagram
         bigint id PK
         text criteria_set FK
         text attribute FK
+        text value_type FK
         text breakdown_option FK
         bool is_scored
         numeric weight
@@ -483,6 +484,7 @@ erDiagram
     PILLAR ||--o{ ATTRIBUTE : groups
     VALUE_TYPE ||--o{ ATTRIBUTE : types
     VALUE_TYPE ||--o{ VALUE : "shapes"
+    VALUE_TYPE ||--o{ CRITERION : "shapes"
     BREAKDOWN_SCHEME ||--o{ BREAKDOWN_OPTION : enumerates
     BREAKDOWN_SCHEME ||--o{ ATTRIBUTE : "breaks down"
     ATTRIBUTE ||--o| ATTRIBUTE_ALLOWED_RANGE : validates
@@ -614,6 +616,7 @@ erDiagram
 | `CRITERIA_SET \|\|--o{ PILLAR_WEIGHT` | Pillar weights belong to a set, not to the pillar | `alex` and `partner` weight `career` differently over the same eleven pillars |
 | `PILLAR \|\|--o{ PILLAR_WEIGHT` | The other half | |
 | `CRITERIA_SET \|\|--o{ CRITERION` | A set is its criteria | |
+| `VALUE_TYPE \|\|--o{ CRITERION` | The criterion restates the attribute's type | The same mechanism as on `VALUE`: it makes `(attribute, value_type)` a composite key here too, so each threshold child can pin its own type and a `LabelSet` attribute cannot be given a numeric range |
 | `ATTRIBUTE \|\|--o{ CRITERION` | A criterion judges exactly one attribute | The central relation of the model. Many criteria may judge one attribute — one per set — and an attribute with **no** criterion is descriptive and never scored (§3.3) |
 | `BREAKDOWN_OPTION \|\|--o{ CRITERION` | Which option this criterion scores | A *preference*: two bedrooms today, three tomorrow, recalculated with no re-fetch |
 | `CRITERION \|\|--o{ CRITERION_SCALE_ANCHOR` | The `fixed` scale's anchor points | Was `scale_params` JSON. As rows, "500 EUR → 100, 2500 EUR → 0" is inspectable and checkable |
@@ -916,6 +919,7 @@ and it is the only place a preference may live.
 |---|---|
 | `criteria_set` | The set this criterion belongs to |
 | `attribute` | The attribute this rule judges. Exactly one |
+| `value_type` | The attribute's declared type, restated for the same reason a value restates it (§3.6) — it makes the link to the attribute a composite key, so the threshold child must match the type |
 | `is_scored` | Whether this criterion counts toward the score at all |
 | `weight` | Sub-weight within its attribute's pillar |
 | `weight_locked` | Pins the weight against proportional rebalancing |
@@ -938,7 +942,7 @@ in shape:
 | `criterion_threshold_share` | A label with a minimum or maximum share | `ShareComposition` |
 
 **Exactly one threshold kind may apply**, decided by the attribute's value type — a constraint
-the database checks. Both were single JSON columns in an earlier draft; that hid the shape from
+the database checks, through the same composite key that governs values (§3.6, `arch.md` §3.3b). Both were single JSON columns in an earlier draft; that hid the shape from
 every query and moved validation back into application code.
 
 > **`is_scored` and `blocks_if_missing` answer different questions**, and their earlier names —
