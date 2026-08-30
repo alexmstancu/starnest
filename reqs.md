@@ -270,14 +270,14 @@ erDiagram
         text attribute FK
         text data_source FK
         text variant_key FK
-        bigint acquisition_run FK
+        bigint data_acquisition_run FK
         date reference_period_start
         date reference_period_end
         date retrieval_date
         text confidence
         text status
     }
-    ACQUISITION_RUN {
+    DATA_ACQUISITION_RUN {
         bigint id PK
         timestamp started_at
         timestamp finished_at
@@ -286,8 +286,8 @@ erDiagram
         int llm_call_count
         numeric cost_eur
     }
-    ACQUISITION_FAILURE {
-        bigint acquisition_run FK
+    DATA_ACQUISITION_FAILURE {
+        bigint data_acquisition_run FK
         text candidate FK
         text attribute FK
         text error
@@ -427,10 +427,10 @@ erDiagram
     CANDIDATE ||--o{ VALUE : "measured by"
     DATA_SOURCE ||--o{ VALUE : produces
     VARIANT_KEY ||--o{ VALUE : "distinguishes"
-    ACQUISITION_RUN ||--o{ VALUE : produced
-    ACQUISITION_RUN ||--o{ ACQUISITION_FAILURE : recorded
-    CANDIDATE ||--o{ ACQUISITION_FAILURE : "failed for"
-    ATTRIBUTE ||--o{ ACQUISITION_FAILURE : "failed on"
+    DATA_ACQUISITION_RUN ||--o{ VALUE : produced
+    DATA_ACQUISITION_RUN ||--o{ DATA_ACQUISITION_FAILURE : recorded
+    CANDIDATE ||--o{ DATA_ACQUISITION_FAILURE : "failed for"
+    ATTRIBUTE ||--o{ DATA_ACQUISITION_FAILURE : "failed on"
     MATCH_RULE ||--o{ MATCH_RULE_RESULT : "evaluated as"
     CANDIDATE ||--o{ MATCH_RULE_RESULT : "gated by"
     DATA_SOURCE ||--o{ MATCH_RULE_RESULT : evidences
@@ -499,7 +499,7 @@ erDiagram
 | `CANDIDATE \|\|--o{ VALUE` | A value is about one place | |
 | `DATA_SOURCE \|\|--o{ VALUE` | Records who said it | Provenance is mandatory (§10), and priority needs the source to choose an active value |
 | `VARIANT_KEY \|\|--o{ VALUE` | Which variant this figure is | Null for ordinary attributes. This is what lets all three rents be stored at once, so changing household size needs no re-fetch (§3.3b) |
-| `ACQUISITION_RUN \|\|--o{ VALUE` | Which run produced it | Makes selective retry and "what changed since last run" possible |
+| `DATA_ACQUISITION_RUN \|\|--o{ VALUE` | Which run produced it | Makes selective retry and "what changed since last run" possible |
 
 > **Together these four foreign keys are the natural key of a value**: candidate, attribute,
 > data source, variant, plus the reference period. The same figure from a second source is a
@@ -509,9 +509,9 @@ erDiagram
 
 | Relation | What it does | Why it exists |
 |---|---|---|
-| `ACQUISITION_RUN \|\|--o{ ACQUISITION_FAILURE` | Failures attach to their run | A run continues past failures (§6.4); they must be recorded, not raised |
-| `CANDIDATE \|\|--o{ ACQUISITION_FAILURE` | Which place failed | |
-| `ATTRIBUTE \|\|--o{ ACQUISITION_FAILURE` | Which attribute failed | Together with the candidate, this is exactly the retry unit — retry what failed, nothing else |
+| `DATA_ACQUISITION_RUN \|\|--o{ DATA_ACQUISITION_FAILURE` | Failures attach to their run | A run continues past failures (§6.4); they must be recorded, not raised |
+| `CANDIDATE \|\|--o{ DATA_ACQUISITION_FAILURE` | Which place failed | |
+| `ATTRIBUTE \|\|--o{ DATA_ACQUISITION_FAILURE` | Which attribute failed | Together with the candidate, this is exactly the retry unit — retry what failed, nothing else |
 
 **Gates**
 
@@ -797,7 +797,7 @@ each declares `> 0` for itself. Likewise `country.avg_annual_temperature` declar
 
 - the value is **stored and marked rejected**, with the reason — never silently dropped;
 - it does **not** become the active value and does **not** count toward coverage (§5.3);
-- the `AcquisitionRun` records it as a failure for that candidate and attribute, so selective retry
+- the `DataAcquisitionRun` records it as a failure for that candidate and attribute, so selective retry
   (§6.4) can pick it up;
 - if a lower-priority source holds a valid value, that one becomes active instead.
 
@@ -1019,7 +1019,7 @@ overwritten and never discarded.**
 | `confidence` | `absolute` \| `high` \| `medium` \| `low` — §5.7. Derived, with a manual override retained alongside |
 | `quote` | Supporting text or summary, where applicable |
 | `citations` | Source URLs |
-| `acquisition_run` | The run that produced it (§3.8) |
+| `data_acquisition_run` | The run that produced it (§3.8) |
 
 **The rest depends on the attribute's `value_type`** (§3.3a). A monetary value carries a
 currency and an fx rate; a temperature carries a unit; a population carries neither. These are
@@ -1083,7 +1083,7 @@ answer the same question and report the same three outcomes. There is no separat
 **Overrides are permitted and audited.** An overridden rule attaches a visible marker that
 travels with the candidate everywhere it appears.
 
-### 3.8 AcquisitionRun
+### 3.8 DataAcquisitionRun
 
 **One programmatic pass that fetches data from sources and writes `Value` rows.** Nothing else
 is a run — the word was ambiguous and is now narrow:
@@ -2086,7 +2086,7 @@ wondering whether a second concept is hiding behind the second word.
 | **Adapter** | The plug-in that fetches from one source. Declares which attributes it serves, at which levels, its rate limits, and whether it is a bulk download or a per-candidate call. Adding a source means writing one adapter, never editing the acquisition core |
 | **Manual entry** | A value typed by hand rather than fetched. Permitted only where an attribute declares `manual_entry` (§6.5), ranked **last** in priority, and always superseded automatically once a real source appears. Match rules are manual by nature and are not governed by this restriction |
 | **Source priority** | The configured ordering deciding which value is active. A standing editorial judgement per attribute: Numbeo outranks national statistics for city rent, despite being less reliable in general |
-| **Run** | One acquisition pass, persisted: when it ran, what it touched, what it cost, what failed. Values link back to the run that produced them, which is what makes selective retry possible |
+| **DataAcquisitionRun** | One programmatic fetch that writes values: when it ran, what it touched, what it cost, what failed. **Not** a user session, **not** a scoring pass — that is an Evaluation, which touches no source — and **not** a single LLM call. Values link back to the run that produced them, which is what makes selective retry possible |
 | **Spend cap** | The ceiling on what one acquisition run may cost in API calls. Distinct from household money, which is what §3.9 means by budget |
 
 ### What it is worth to you
@@ -2283,10 +2283,11 @@ Recorded from a front-to-back read of this document.
 | Q119 | The `household_size` variant vocabulary renamed `occupancy` | It collided with the Household entity's own fields once Household became an entity |
 | Q120 | The diagram's foreign keys are **named after the table they point at** | `VALUE.data_source`, never `VALUE.source`. Self-references take a role prefix: `CANDIDATE.parent_candidate` |
 | Q121 | **No JSON columns anywhere.** Thresholds, scale anchors, source-priority overrides, citizenships and allowed labels are all tables | A schema whose contents the database cannot check is a schema in name only. Thresholds follow the same typed-children pattern as `Value` |
-| Q122 | `Run` → **`AcquisitionRun`**, with failures as rows | "Run" could have meant a user session, a scoring pass or one LLM call. It is exactly one thing: a programmatic fetch that writes values. Scoring is an `Evaluation` and costs nothing |
+| Q122 | `Run` → **`DataAcquisitionRun`**, with failures as rows | "Run" could have meant a user session, a scoring pass or one LLM call. It is exactly one thing: a programmatic fetch that writes values. Scoring is an `Evaluation` and costs nothing |
 | Q123 | `EXTERNAL_SCORE.provider` becomes a foreign key to `DATA_SOURCE` | Providers are sources; Numbeo is both. One row means one reliability tier and one place to record a paywall |
 | Q124 | `parent_not_matching` moves from Candidate to CandidateResult | Whether the parent matched depends on the criteria set, so the same city would need two values at once |
 | Q125 | `CRITERIA_SET_MATCH_RULE` added | Whether a visa route exists is objective; whether you treat its absence as disqualifying is yours. Gives match rules the same objective/subjective split attributes have |
 | Q126 | `included` → `is_scored`, `required` → `blocks_if_missing` | The old names sounded alike while meaning different things — relevance versus a floor on evidence |
 | Q127 | `direction` → `goal`, values `minimise` \| `maximise` \| `target_range` | A target range is not a direction; the old name never covered its own third case |
 | Q128 | Coverage stays on CandidateResult; completeness is derived and not stored | They are different questions. Coverage is weighted and set-dependent; completeness is a `COUNT` over values, and storing it would be a cache with no invalidation rule |
+| Q129 | `AcquisitionRun` → **`DataAcquisitionRun`**, and its failure table with it | "Acquisition" alone did not say what was acquired. The prefix makes the table self-describing next to `Evaluation`, the other thing that runs |
