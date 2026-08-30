@@ -38,7 +38,7 @@ Planned module layout:
 | `config/` | Pillars, criteria, weights, thresholds as data — split by level (country / city) |
 | `acquisition/structured.py` | Deterministic fetch of quantifiable data (no LLM) |
 | `acquisition/qualitative.py` | Claude API + `web_search`, structured JSON out (score + summary + sources) |
-| `storage/db.py` | PostgreSQL schema and access; schema and seed scripts versioned as migrations in git. **No JSON columns** — anything list- or object-shaped is its own table, and foreign keys are named after the table they point at |
+| `storage/db.py` | PostgreSQL schema and access; schema and seed scripts versioned as migrations in git. **No JSON columns** — anything list- or object-shaped is its own table; foreign keys are named after the table they point at; **field names spell themselves out** — no single abstract word unless it is an FK or a glossary term (`reqs.md` §3.0) |
 | `scoring/engine.py` | Hard filters + weighted score, per level |
 | `scoring/compare.py` | Focus candidate vs. N comparators: deltas, weighted contributions, templated synthesis |
 | `ui/app.py` | Streamlit app — 4 tabs: config, run, ranking dashboard, comparison |

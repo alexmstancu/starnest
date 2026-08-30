@@ -104,7 +104,7 @@ from config into a `attribute` table at boot (upsert by `id`), and candidates in
 
 This is what makes retirement work. When a attribute is retired (§2), its stored values must
 keep pointing at something. If attributes existed only in config, deleting an entry would orphan
-every historical value. As a row with `status = retired`, the foreign key stays valid
+every historical value. As a row with `lifecycle_status = retired`, the foreign key stays valid
 permanently while the attribute drops out of active scoring.
 
 **Identifier schemes**, one readable convention across both halves of the key:
@@ -127,13 +127,13 @@ the attribute catalog, where adapters read them.
 > alternates as facts; the ID never changes afterwards, whatever the country later calls itself.
 
 **`value` uses a surrogate primary key.** The natural key is five columns —
-`(candidate_id, attribute_id, source_id, reference_period_start, retrieval_date)` — and
+`(candidate, attribute, data_source, variant_key, reference_period_start, retrieval_date)` — and
 propagating that into ten child tables would mean fifty columns of duplication and joins on
 five conditions. Instead:
 
 ```
 value          id            surrogate PK
-               UNIQUE (candidate_id, attribute_id, source_id,
+               UNIQUE (candidate, attribute, data_source, variant_key,
                        reference_period_start, retrieval_date)
 
 value_monetary value_id      FK → value.id
@@ -173,7 +173,7 @@ single row that refers to it.
 | `label_vocabulary` | Controlled vocabularies for `LabelSet` attributes | Köppen zone codes |
 | `criteria_set` | Named criteria sets | `alex`, `remote_only` |
 | `evaluation` | One criteria set run against one level | surrogate |
-| `run` | Acquisition runs | surrogate |
+| `data_acquisition_run` | Data acquisition runs | surrogate |
 
 **The rule that makes this work: identifiers never change; names do.** An identifier is
 assigned once and is permanent, even when the thing it names is renamed. Country names drift —
@@ -191,8 +191,10 @@ columns for every type's payload, or ten unrelated tables, the shape is a **pare
 typed child tables**:
 
 ```
-value              id, candidate, attribute, source, reference_period,
-                   retrieval_date, confidence, run, status
+value              id, candidate, attribute, data_source, variant_key,
+                   reference_period_start, reference_period_end,
+                   retrieval_date, confidence_level, usage_status,
+                   data_acquisition_run
 
 value_monetary     value_id, key, amount, currency, amount_eur,
                    fx_rate, fx_rate_date
@@ -259,9 +261,9 @@ and stored only the selected one would make changing household size require re-f
 city — and would make simulation impossible, since asking for a three-bedroom needs that figure
 already stored. Every key is written; the choice happens when the score is computed.
 
-### 3.4 `status`, and never discarding
+### 3.4 `usage_status`, and never discarding
 
-`value.status` is `active`, `superseded` or `rejected`. Nothing is deleted. A value that fails
+`value.usage_status` is `active`, `superseded` or `rejected`. Nothing is deleted. A value that fails
 validation is stored with `rejected` and its reason; a value outranked by source priority is
 `superseded`. Exactly one value per (candidate, attribute) is `active`.
 
@@ -305,7 +307,7 @@ touching a single measured value.
 
 Implemented once, in one place, against `Candidate` — never per level. In order:
 
-1. Discard values with `status = rejected`.
+1. Discard values with `usage_status = rejected`.
 2. **Fresh beats stale** — older than the attribute's `max_age` drops below every fresh value.
 3. **Source priority** — the attribute's ordering, falling back to the global default.
 4. **Confidence** breaks ties within a priority rank.

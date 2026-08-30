@@ -200,6 +200,14 @@ every candidate belongs to **exactly one** level.
 - **A foreign key is named after the table it points at.** `VALUE.data_source`, not
   `VALUE.source`. Where a table points at itself, the role is prefixed:
   `CANDIDATE.parent_candidate`.
+- **A field name must say what it holds, in the reader's language.** Two or three words are
+  preferred over one, and a name that needs a footnote is renamed instead of footnoted.
+  A **single abstract word is not acceptable**: `falloff`, `mode`, `scale`, `status` and `kind`
+  were all in an earlier draft and are now `zero_score_below`, `containment_rule`,
+  `normalisation_method`, `usage_status` and `source_kind`. A single word is allowed in exactly
+  two cases — a **foreign key named after its table** (`attribute`, `candidate`, `pillar`), and
+  a **term defined in the glossary** (`score`, `coverage`, `weight`, `goal`, `rank`). Anything
+  else spells itself out.
 - **There are no JSON columns.** Anything that would be an object or a list is its own table —
   thresholds, scale anchors, source-priority overrides, citizenships, allowed labels. The point
   of a schema is that the database can check it; a JSON blob moves the checking back into
@@ -214,7 +222,7 @@ keep the shape legible.
 erDiagram
     LEVEL {
         text id PK
-        int ordinal
+        int depth_order
     }
     VALUE_TYPE {
         text id PK
@@ -260,7 +268,7 @@ erDiagram
     }
     DATA_SOURCE {
         text id PK
-        text kind
+        text source_kind
         int default_priority
         text reliability_tier
     }
@@ -274,15 +282,15 @@ erDiagram
         date reference_period_start
         date reference_period_end
         date retrieval_date
-        text confidence
-        text status
+        text confidence_level
+        text usage_status
     }
     DATA_ACQUISITION_RUN {
         bigint id PK
         timestamp started_at
         timestamp finished_at
         text triggered_by
-        text status
+        text run_status
         int llm_call_count
         numeric cost_eur
     }
@@ -290,7 +298,7 @@ erDiagram
         bigint data_acquisition_run FK
         text candidate FK
         text attribute FK
-        text error
+        text error_message
     }
     MATCH_RULE {
         text id PK
@@ -300,7 +308,7 @@ erDiagram
         text match_rule FK
         text candidate FK
         text data_source FK
-        text result
+        text match_result
         text reason
         text override_reason
         date override_date
@@ -309,9 +317,9 @@ erDiagram
         bigint id PK
         text candidate FK
         text data_source FK
-        numeric value
-        text scale
-        int rank
+        numeric published_value
+        text published_scale
+        int published_rank
         date reference_period_start
         date retrieval_date
         text methodology_url
@@ -338,7 +346,7 @@ erDiagram
         text criteria_set FK
         text pillar FK
         numeric weight
-        bool locked
+        bool weight_locked
     }
     CRITERION {
         bigint id PK
@@ -347,12 +355,13 @@ erDiagram
         text variant_key FK
         bool is_scored
         numeric weight
-        bool locked
+        bool weight_locked
         text goal
-        numeric ideal_min
-        numeric ideal_max
-        numeric falloff
-        text scale
+        numeric target_range_min
+        numeric target_range_max
+        numeric zero_score_below
+        numeric zero_score_above
+        text normalisation_method
         text reducer_mode
         bool blocks_if_missing
     }
@@ -369,7 +378,7 @@ erDiagram
     CRITERION_THRESHOLD_LABEL {
         bigint criterion FK
         text label
-        text mode
+        text containment_rule
     }
     CRITERION_THRESHOLD_BOOLEAN {
         bigint criterion FK
@@ -406,7 +415,7 @@ erDiagram
         bigint candidate_result FK
         bigint criterion FK
         text match_rule FK
-        text detail
+        text reason_detail
     }
 
     LEVEL ||--o{ CANDIDATE : classifies
@@ -853,10 +862,11 @@ and it is the only place a preference may live.
 | `attribute` | The attribute this rule judges. Exactly one |
 | `is_scored` | Whether this criterion counts toward the score at all |
 | `weight` | Sub-weight within its attribute's pillar |
-| `locked` | Pins the weight against proportional rebalancing |
+| `weight_locked` | Pins the weight against proportional rebalancing |
 | `goal` | `minimise` \| `maximise` \| `target_range` — **personal**, see below |
-| `ideal_min`, `ideal_max`, `falloff` | For `target_range`: the band and how sharply score decays outside it. One person's ideal temperature is not another's |
-| `scale` | `fixed` (default) \| `percentile` \| `as_is` |
+| `target_range_min`, `target_range_max` | For `goal: target_range`: the band that scores 100. One person's ideal temperature is not another's |
+| `zero_score_below`, `zero_score_above` | Where the score reaches 0 outside that band, **in the attribute's own unit**. Linear between the band edge and this point |
+| `normalisation_method` | `fixed` (default) \| `percentile` \| `as_is` — §5.1 |
 | `reducer_mode`, `variant_key` | For multi-value attributes (§3.3b): `select` one variant — named in `variant_key` — or `aggregate` across all of them. Defaults from the household; override it to simulate |
 | `blocks_if_missing` | If true, a missing value makes the candidate unscoreable — §5.3 |
 
@@ -1178,8 +1188,15 @@ one in the shipped default set:
   standing is meaningful.
 - **`as_is`** — the value is already on the score scale.
 
-The criterion also declares its **`goal`**: `minimise`, `maximise`, or `target_range` with a
-band and a falloff. This is a **preference, not a property of the
+The criterion also declares its **`goal`**: `minimise`, `maximise`, or `target_range`.
+
+> **A target range is four numbers, all in the attribute's own unit** — not a band plus an
+> abstract decay rate. `country.avg_annual_temperature` might carry
+> `target_range_min: 18`, `target_range_max: 26`, `zero_score_below: 5`,
+> `zero_score_above: 38`: everything between 18 and 26 °C scores 100, the score falls linearly
+> to 0 by 5 °C and by 38 °C, and every figure is a temperature you can sanity-check by eye.
+> This is the same idea as `criterion_scale_anchor` — a value mapped to a score — rather than a
+> second mechanism. This is a **preference, not a property of the
 attribute** (§3.4) — two criteria sets may score the same measured value in opposite directions.
 
 **Band labels.** A criterion may declare labels against its scoring anchors, so a number
