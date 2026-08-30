@@ -91,6 +91,7 @@ than being bare names:
 
 | Feature | What it must do |
 |---|---|
+| `relocation_window` | The match rule asking whether the move can be **completed** within the time available — not how long you stay. A candidate fails if a long-lead blocker (a visa queue, a quota wait, a notice period, a school year) pushes the earliest feasible arrival beyond the configured window. Deferred because free movement makes it vacuous for 30 of the 32 seeded countries, and the UK and Swiss cases are already caught by their own rules; its unique value is capturing *your* constraints rather than the destination's |
 | Nomination and approval | How a candidate enters other than from the seed list: LLM proposal, manual add, top-N by population, and the `proposed → approved / rejected` state that implies (§6.1). v1 seeds from configuration and needs none of it |
 | Personal annotations | Free notes on a candidate — impressions, whether you have visited |
 | Gradient maps | A map coloured by a chosen numeric attribute. **Generatable for any numeric attribute in the catalog**, never fixed to one — that generality is the feature |
@@ -275,6 +276,8 @@ erDiagram
     PILLAR {
         text id PK
         text level FK
+        text name
+        text description
     }
     ATTRIBUTE {
         text id PK
@@ -310,6 +313,7 @@ erDiagram
     }
     DATA_SOURCE {
         text id PK
+        text name
         text source_kind
         int default_priority
         text reliability_tier
@@ -350,6 +354,7 @@ erDiagram
     MATCH_RULE {
         text id PK
         text level FK
+        text name
     }
     MATCH_RULE_RESULT {
         text match_rule FK
@@ -703,8 +708,8 @@ collision happened to be noticed.
 not. Encoding the pillar would make every reorganisation a retire-and-recreate. Growth within a
 pillar needs no numbering scheme — names do not run out.
 
-*(Match rules, §7.3, keep unprefixed identifiers: they are a separate five-item namespace with
-no collisions, and `relocation_window` applies at both levels, so the scheme would not fit.)*
+*(Match rules, §7.3, keep unprefixed identifiers: they are a separate, small namespace with no
+collisions with the attribute catalog.)*
 
 | Field | Notes |
 |---|---|
@@ -1139,8 +1144,8 @@ visible** — this rule only decides which is active.
 ### 3.7 MatchRule
 
 A named yes/no gate attached to no attribute, distinct from a criterion's `matching_threshold`
-(§5.2). Visa pathways, quota availability, relocation timing: things that decide eligibility
-but are not measurements of the place.
+(§5.2). Visa pathways, quota availability, two-role feasibility: things that decide
+eligibility but are not measurements of the place.
 
 **The rule** is the gate itself, declared once:
 
@@ -1305,7 +1310,7 @@ semantics follow the attribute's value type:
 | `Text` | No matching threshold |
 
 **MatchRules** (§3.7) are named gates attached to no attribute — visa pathways, quota
-availability, relocation timing. They carry judgement rather than measurement, and are
+availability, two-role feasibility. They carry judgement rather than measurement, and are
 typically sourced manually or with LLM assistance.
 
 Both mechanisms produce the same outcome, and **both feed a single "why does this not match"
@@ -1490,7 +1495,7 @@ source answers them today:
 | `country.international_employers` | LLM-proposed, explicitly user-overridable, both values retained |
 
 **Match rules are different and are manual by nature.** The UK Skilled Worker pathway, the Swiss
-EU/EFTA quota, `two_role_feasibility` and `relocation_window` (§7.3) are judgements, not
+EU/EFTA quota and `two_role_feasibility` (§7.3) are judgements, not
 measurements; no fetcher exists or should. The `manual_entry` restriction governs **attributes**
 only.
 
@@ -1947,7 +1952,6 @@ not matching regardless of score** — and stays visible, with its score, showin
 | `uk_skilled_worker` | country | A realistic Skilled Worker route exists: sponsorship available in the local market, or the salary threshold met | Manual, LLM-assisted (§6.9) |
 | `ch_eu_efta_quota` | country | The annual Swiss EU/EFTA permit quota has capacity for this household | Manual, LLM-assisted (§6.9) |
 | `two_role_feasibility` | **city** | The local market can plausibly support **two** tech roles — engineering *and* product | **Manual** for now — you judge each city. Becomes derived from `city.tech_software_jobs` and `city.tech_product_jobs` against a configurable floor once those have a source (§9) |
-| `relocation_window` | both | **The move can actually be completed within the time you have.** Not how long you stay — how long it takes to get there. A candidate fails if a long-lead blocker (a visa queue, a quota wait, a notice period, a school year) pushes the earliest feasible arrival beyond the configured window. Provisionally **12–18 months** | Manual |
 
 > **`two_role_feasibility` is the one that cannot be replaced by a criterion.** A strong
 > national tech market does not mean a specific small city has room for two people, and product
@@ -1989,9 +1993,10 @@ insufficient data with that attribute named.
 > missing would mark every country insufficient-data on day one. Revisit once the source is
 > settled.
 
-> These are a **first selection, for review.** They live in the shipped default criteria set
-> like every other criterion, so changing one is a config edit, and a different criteria set may
-> require an entirely different list.
+> **Agreed 2026-08-30.** They live in the shipped default criteria set like every other
+> criterion, so changing one is a config edit, and a different criteria set may require an
+> entirely different list. Worth revisiting once a real run shows which attributes actually come
+> back empty.
 
 ---
 
@@ -2093,11 +2098,11 @@ The main results view.
   adapter simply has no values, which §5.3 already handles.
 - **Provisional values**, all to be revised after a first real run: every weight in §7, the
   country match threshold, the ~2000–3000 EUR/month household budget guideline, the
-  2000 EUR rent ceiling, the 60% `min_coverage` floor, the 12–18 month `relocation_window`,
-  and every `scale_params` and `matching_threshold` marked TBD.
-- **The `blocks_if_missing` selection is a first pass** (§7.4) — seven country attributes, 36.1% of the
-  score, chosen on plausibility rather than on observed coverage. Revisit after a real run;
-  `career` deliberately has none until its source question is settled.
+  2000 EUR rent ceiling, the 60% `min_coverage` floor, and every `scale_params` and
+  `matching_threshold` marked TBD.
+- **The `blocks_if_missing` selection is agreed but unvalidated** (§7.4) — seven country
+  attributes, 36.1% of the score, chosen on plausibility rather than on observed coverage.
+  Revisit after a real run; `career` deliberately has none until its source question is settled.
 - **No type for genuinely ordinal data.** One value from an ordered list where the order
   carries meaning — a credit rating (AAA, AA, A), or the EEA's bathing-water classes
   (excellent, good, sufficient, poor). `LabelSet` is an unordered set of several labels;
@@ -2203,7 +2208,7 @@ wondering whether a second concept is hiding behind the second word.
 |---|---|
 | **Match** | The single vocabulary for whether a candidate satisfies your rules. A candidate is `matching`, `not_matching`, or `insufficient_data`. **No other word is used for this** — not qualified, not eliminated, not screened, not passed |
 | **Matching threshold** | A criterion's line past which a candidate does not match. The value is real; you have decided it is unacceptable |
-| **MatchRule** | A named yes/no gate attached to no attribute: a visa pathway, a quota, relocation timing. Carries a result, a reason, a source, and an optional audited override. The other mechanism that produces a non-match |
+| **MatchRule** | A named yes/no gate attached to no attribute: a visa pathway, a quota, whether a market can support two roles. Carries a result, a reason, a source, and an optional audited override. The other mechanism that produces a non-match |
 | **`parent_not_matching`** | A candidate evaluated although its parent does not match — a city worth looking at in a country that failed. Flagged in exactly those words, never hidden |
 | **Warning** | A flag raised without ruling a candidate out, typically by a rule spanning two attributes: rent read against total household spend. Never changes the score |
 | **Evaluation** | One criteria set run against the candidates at one level, producing a ranking. **Score, coverage, match status and rank belong to an evaluation, not to the candidate** — they change when you switch criteria sets, and none of them is a property of the place |
@@ -2393,4 +2398,8 @@ Recorded from a front-to-back read of this document.
 | Q133 | **The model is drawn twice — an overview and the complete diagram** — and stays in **Mermaid** | Five partitioned views were tried and rejected: hand-maintained partitions are a manual denormalisation of one model, and the split silently dropped a relation. Two levels are trivially checkable. Mermaid is the only format GitHub renders natively in Markdown; D2 has better layout and Structurizr generates C4 views from one model, but both add a build step and committed images. Revisit if the ontology outgrows two views or `arch.md` adopts C4 |
 | Q134 | **Attribute type parameters are typed child tables**, and value citations are their own table | The last two places a JSON column had survived in the prose. Type parameters follow the same pattern `Value` already uses; `value_citation` is where an LLM-sourced value records the pages it actually read (§6.10) |
 | Q135 | `MatchRule` and its result are documented as two field tables, not one paragraph | The paragraph conflated the gate with its per-candidate answer, which are different tables on different sides of the objective/subjective line |
+| Q136 | `relocation_window` deferred to post-MVP | Free movement makes it vacuous for 30 of the 32 seeded countries, and the UK and Swiss cases are already caught by their own rules. Its unique value — capturing the household's own constraints rather than the destination's — does not justify carrying a fifth gate through v1 |
+| Q137 | The `blocks_if_missing` selection of §7.4 is agreed | Seven country attributes, 36.1% of the score. Unvalidated until a real run shows what actually comes back empty |
+| Q138 | `goal` confirmed over `direction` | Values `minimise`, `maximise`, `target_range`. A target range is not a direction |
+| Q139 | **Requirements are frozen enough to begin architecture.** They will be revised as building reveals what is wrong with them | No specification is ever final; the cost of another pass now exceeds the cost of correcting it against real code |
 

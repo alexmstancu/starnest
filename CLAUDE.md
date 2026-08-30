@@ -23,6 +23,14 @@ remains in git history at the initial commit.
 
 Consequently there are **no build, lint, test, or run commands** — nothing is scaffolded. Do not invent them. When scaffolding begins, add the real commands to this file.
 
+**One command does exist:**
+
+```
+uv run python tools/audit_ontology.py
+```
+
+It checks the ontology's structural invariants — the two diagrams against each other, the diagrams against the prose that documents them, and the criteria catalog's weights. **Run it after any change to `reqs.md` §3, either diagram, or the catalog.** Exit code 0 means every invariant holds. It reads only and never edits.
+
 ## What this project is
 
 A local, single-user decision-support app for a personal relocation search (EU/EEA + UK + Switzerland, 3–5 year horizon — illustrative only; the move may be permanent). It scores and ranks candidate locations against a weighted, user-configurable criteria set, and explains every number it shows.
