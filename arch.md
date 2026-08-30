@@ -1072,20 +1072,54 @@ interpretation, scoring, ranking — with no manual intervention beyond configur
 starting a run. The spec's phrase for the bar it must clear: **"zero copy-paste between chat
 and the app."**
 
-### 10.2 Proposed stack, and the alternative it rejected
+### 10.2 The stack
 
-| Component | Proposed | Reason given |
+**Decided 2026-08-30.** Every choice below is a plugin in the sense of §6 — policy names none
+of them — but they are settled, and `devplan.md` sequences against them.
+
+| Layer | Choice | Why |
 |---|---|---|
-| Language | Python 3.12+ | Fastest ecosystem for data + LLM SDK + UI |
-| UI | Streamlit | Weight sliders and a sortable table with minimal frontend code; runs locally, no deployment |
-| Storage | **PostgreSQL** | **Decided.** See below — supersedes the spec's SQLite proposal |
-| Qualitative | Anthropic API + `web_search` | Removes the need for a custom scraper; structured JSON with score and citations |
-| Structured | Direct fetch | Cheaper, more reliable, deterministic |
+| Backend language | **Python 3.12+** | Chosen partly to learn it, and it is strongest exactly where the hardest work is: scraping messy pages, parsing SDMX and CSV, and the reference Anthropic SDK |
+| Toolchain | **uv** | Python itself and every dependency. Nothing touches the system Python, and a fresh checkout resolves to the same versions |
+| API framework | **FastAPI + Pydantic v2** | Emits OpenAPI 3.1, matching the contract's version |
+| Concurrency | **asyncio + httpx** | `asyncio.Semaphore` per source *is* the per-source bound of §7.1, expressed directly |
+| Database driver | **psycopg3**, async | The modern successor to psycopg2, with first-class async and better type adaptation |
+| Queries | **aiosql**, driver name `apsycopg` | Every query is a named block in a `.sql` file — reviewable as SQL, diffable as SQL, and runnable in `psql` unchanged while debugging |
+| Migrations | **yoyo-migrations** | Plain `.sql` files, explicit `apply` / `rollback`, applied versions recorded in a table so §9.2's "is the schema behind?" is one query |
+| Lint and format | **ruff** | One tool for both |
+| Tests | **pytest** | With a real PostgreSQL for `storage/` (§6.7) |
+| Boundaries | **import-linter** | §6.2's rules as a contract file that fails the build |
+| Interface | **React + TypeScript** | Its client generated from `openapi.yaml`; a data-dense dashboard is what React is for |
+| Scraping | **selectolax** | Fast, and forgiving of the malformed HTML real sources serve |
 
-**The rejected alternative, recorded because the reasoning still applies:** Alex's background is
-Go, and now C#/.NET. The spec chose Python for ecosystem reasons — pandas, requests, the LLM
-SDK, and Streamlit's interactivity for free. Go or C# remain feasible at the cost of building a
-separate frontend for the interactive parts.
+> **`aiosql` is what makes "storage/ is the only module that writes SQL" literal.** The SQL lives
+> in `.sql` files under `storage/queries/`, not in Python strings, so nothing rewrites the
+> `DISTINCT ON` active-value view and a query can be pasted into `psql` exactly as written. The
+> psycopg3 async adapter is registered under `apsycopg` rather than anything guessable.
+
+#### The contract now runs code-first, and that is a reversal
+
+`openapi.yaml` was written first, by hand, as the agreed contract (§6.4). With FastAPI it becomes
+**generated from the code and committed** — the routes and Pydantic models are the source, and
+the file is their output.
+
+**What this costs, stated plainly:** the spec is no longer something both sides agree before
+either is written. It becomes a description of what the backend currently is. On a solo project
+that is a small loss, because there is no second team waiting on it, and writing Pydantic models
+by hand is markedly more pleasant than fighting generated ones.
+
+**What guards against silent erosion:** one test asserts that the designed surface still exists —
+the paths and operation IDs of the hand-written spec. A refactor that quietly drops an endpoint
+fails it. Full equality is not asserted, because a body shape improving is not a regression.
+
+#### The alternatives, recorded because the reasoning survives
+
+Go was the closest fit to the architecture: `sqlc` for typed SQL, compiler-enforced acyclic
+imports, and a convention of declaring interfaces where they are consumed, which is §6.3
+exactly. C#/.NET was the closest fit to existing fluency, with compile-time project boundaries.
+Both were passed over deliberately in favour of learning Python — a reason about the author
+rather than the software, which is a legitimate one for a project with no deadline and one
+maintainer.
 
 **Storage is PostgreSQL.** The spec proposed SQLite on a "15–40 cities" premise that no longer
 holds — v1 alone seeds 32 countries with ~44 attributes, before the city level exists at all. The
@@ -1200,14 +1234,11 @@ queryable.
 
 ## 11. Open
 
-- **Backend language and interface framework** are still undecided, and they are now **two
-  independent decisions** rather than one: the backend serves REST, the interface consumes it, and
-  they share no code (§6.1). §10.2 records what the spec proposed, as a starting point rather than
-  a conclusion — though **Streamlit is effectively excluded** by that split, since its value was
-  precisely that UI and logic live in one process. **The database is settled: PostgreSQL**
-  (§10.2). Whether geometry lives in the database via PostGIS, or is computed at data acquisition
-  time and stored as plain numbers, stays open — but it is now an extension question inside a
-  chosen engine, not an engine question.
+- **PostGIS, or geometry computed at fetch time.** Whether distances to coast, mountains and
+  protected areas are queried spatially in the database or computed once by the adapter and stored
+  as plain `Quantity` values. Nothing today needs a spatial query, so the plain-numbers answer is
+  the likely one — decidable when the first geographic adapter is written. **The stack is
+  otherwise settled** (§10.2).
 - **Time-series reducers.** Which rows scoring uses when an attribute has several reference
   periods — latest, a three-year mean, a trend. A preference rather than a fact, so it belongs
   in `CriteriaSet`. **Not in v1**, and it needs no schema change: the rows are already separate
@@ -1220,10 +1251,8 @@ queryable.
   other attributes** rather than a formula in config — which keeps §1.3's guardrail intact and
   gives a derived value provenance, confidence and a reference period like any other.
 
-- **The REST contract is written** — `openapi.yaml`, versioned alongside the schema. What
-  remains open there is small: whether request bodies get stricter validation than the schema
-  expresses, and how the interface's generated client is produced, both of which follow from the
-  language choice.
+- **The interface's component library.** React is settled; whether the tables, sliders and charts
+  come from a component kit or are assembled directly is not. It affects no backend decision.
 - **First implementation order.** The spec's suggestion, still sound: repo scaffolding, then the
   database schema, then structured data acquisition as the first end-to-end sanity check. Sequencing
   belongs in `devplan.md`.

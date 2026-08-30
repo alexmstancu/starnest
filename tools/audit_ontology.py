@@ -195,7 +195,10 @@ def main() -> int:
     audit.check("every table row has the same column count as its header", bad_rows)
 
     sections = set(re.findall(r"^#{2,4} (\d+(?:\.\d+[a-z]?)?)", text, re.M))
-    references = set(re.findall(r"(?<!datasources\.md )(?<!arch\.md )§(\d+\.\d+[a-z]?)", text))
+    # A reference to another document's section is not ours to resolve. Both the bare and
+    # the backticked forms occur — `arch.md` §10.2 as well as arch.md §10.2.
+    foreign = r"(?<!datasources\.md )(?<!arch\.md )(?<!datasources\.md` )(?<!arch\.md` )"
+    references = set(re.findall(foreign + r"§(\d+\.\d+[a-z]?)", text))
     audit.check("every cross-reference points at a section that exists",
                 {f"§{r}" for r in references - sections})
 

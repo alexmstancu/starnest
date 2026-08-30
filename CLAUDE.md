@@ -41,7 +41,11 @@ A local, single-user decision-support app for a personal relocation search (EU/E
 
 ## Planned stack (from the spec — confirm before deviating)
 
-Backend language and interface framework are **undecided and independent** (`arch.md` §11) — the backend serves REST and the interface consumes it. Streamlit is effectively excluded, since its value was UI and logic in one process. **PostgreSQL (storage — decided, `arch.md` §10.2)**, Anthropic API with the `web_search` tool (qualitative criteria), direct HTTP fetch for structured data sources.
+**Decided** (`arch.md` §10.2). Backend: **Python 3.12+**, **FastAPI + Pydantic v2**, **asyncio + httpx**, **psycopg3** async with **aiosql** (queries live in `.sql` files, driver name `apsycopg`), **yoyo-migrations** (plain `.sql`, explicit `uv run yoyo apply`), **ruff**, **pytest**, **import-linter** enforcing §6.2. Interface: **React + TypeScript**, client generated from `openapi.yaml`. Storage: **PostgreSQL**. LLM: the official Anthropic Python SDK with the `web_search` tool.
+
+**Everything is managed by `uv`** — `uv add`, `uv add --dev`, `uv run`. Never `pip`, never the system Python.
+
+**The contract runs code-first.** `openapi.yaml` was hand-written as the design, but FastAPI now generates it; a test asserts the designed paths and operation IDs still exist so a refactor cannot silently drop an endpoint.
 
 Module layout (`arch.md` §6.1) — **named after the domain, not technical roles**:
 
