@@ -1,0 +1,4 @@
+-- Remove the seeded countries. A country with values, results or an evaluation behind it is
+-- held by a foreign key, and this fails rather than cascading (arch.md 7.4).
+
+DELETE FROM candidate WHERE id IN ('country.austria', 'country.belgium', 'country.bulgaria', 'country.croatia', 'country.cyprus', 'country.czechia', 'country.denmark', 'country.estonia', 'country.finland', 'country.france', 'country.germany', 'country.greece', 'country.hungary', 'country.ireland', 'country.italy', 'country.latvia', 'country.lithuania', 'country.luxembourg', 'country.malta', 'country.netherlands', 'country.poland', 'country.portugal', 'country.romania', 'country.slovakia', 'country.slovenia', 'country.spain', 'country.sweden', 'country.iceland', 'country.norway', 'country.liechtenstein', 'country.united_kingdom', 'country.switzerland');
