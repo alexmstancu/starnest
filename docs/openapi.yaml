@@ -378,7 +378,7 @@ paths:
               type: object
               required: [weight]
               properties:
-                weight: { type: number, minimum: 0, maximum: 1 }
+                weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. Weights sum to 100 within a pillar, and pillar weights sum to 100 within a level." }
                 weight_locked: { type: boolean }
       responses:
         "200":
@@ -1019,7 +1019,7 @@ components:
     SettingsInput:
       type: object
       properties:
-        min_coverage: { type: number, minimum: 0, maximum: 1 }
+        min_coverage: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. Below this a candidate is insufficient_data rather than scored." }
         score_scale_max: { type: integer }
         comparator_limit: { type: integer, minimum: 1 }
         run_spend_cap_eur: { type: number, minimum: 0 }
@@ -1031,7 +1031,7 @@ components:
       description: Only the fields present are changed.
       properties:
         is_scored: { type: boolean }
-        weight: { type: number, minimum: 0, maximum: 1 }
+        weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. Weights sum to 100 within a pillar, and pillar weights sum to 100 within a level." }
         weight_locked: { type: boolean }
         goal: { type: string, enum: [minimise, maximise, target_range] }
         target_range_min: { type: [number, "null"] }
@@ -1091,7 +1091,7 @@ components:
       required: [pillar, weight, weight_locked]
       properties:
         pillar: { type: string }
-        weight: { type: number }
+        weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. Pillar weights sum to 100 within a level." }
         weight_locked: { type: boolean }
 
     CriteriaSetSummary:
@@ -1234,7 +1234,7 @@ components:
         name: { type: string }
         rank: { type: [integer, "null"], description: Null when the candidate does not match. }
         score: { type: [integer, "null"], minimum: 0, maximum: 100, description: Null only when insufficient data. }
-        coverage: { type: number, minimum: 0, maximum: 1 }
+        coverage: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. The share of active weight actually backed by data." }
         coverage_by_confidence:
           type: object
           description: >-
@@ -1278,8 +1278,8 @@ components:
         attribute: { type: string }
         pillar: { type: string }
         normalised_score: { type: [integer, "null"], description: Null when no value was available. }
-        weight: { type: number, description: Weight within the pillar as configured. }
-        effective_weight: { type: number, description: After redistribution for missing data. }
+        weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. Weight within the pillar as configured." }
+        effective_weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. After redistribution for missing data." }
         contribution: { type: number }
         value: { $ref: "#/components/schemas/Value" }
         alternative_values:

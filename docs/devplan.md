@@ -335,6 +335,24 @@ operation ID that `openapi.yaml` designed. This is the guard that made code-firs
 backend, the sidebar shows the active criteria set and the candidate counts, the Configure tab
 renders the pillar tree, and the on-screen total reads 100%.
 
+### Deriving the scale anchors — a step that belongs to Gate A
+
+**26 of the 41 country criteria normalise `fixed`, and no anchors ship** (`reqs.md` §7.1
+tabulates none). Only 13 can score today. Decided 2026-08-30 (`reqs.md` Q188): anchors are
+**derived from real figures and reviewed**, never invented, and Gate A is the first moment that
+becomes possible.
+
+After the Eurostat run lands, and before the ranking is declared meaningful:
+
+1. Compute each `fixed` attribute's **observed range across the 32 countries** — minimum,
+   maximum, median.
+2. Propose anchor pairs from those ranges, as a table Alex reviews.
+3. Seed the approved anchors as a catalog migration like any other.
+
+**Do not skip to step 3.** A band that looks reasonable in the abstract is usually wrong against
+real figures, which is why every weight and threshold in `reqs.md` §7 is marked provisional. The
+ranking before this step is real but thin, and coverage says so.
+
 ### What Gate A is really testing
 
 Coverage will be roughly **20%**, because seven attributes out of 41 have values. **That is the
