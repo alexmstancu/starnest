@@ -939,7 +939,8 @@ every query and moved validation back into application code.
 > `blocks_if_missing: true` means *if this is scored but absent, do not produce a total at all*.
 > One is an opinion about relevance, the other is a floor on evidence (§5.3).
 
-**A `CriteriaSet` is a named collection of criteria**, plus the pillar weights for each level.
+**A `CriteriaSet` is a named collection of criteria**, plus the pillar weights for each level
+(`pillar_weight`, one row per pillar).
 It is selectable at any moment, and one primitive serves two purposes:
 
 - **Work-format scenarios** — `local-employment` (the v1 default, §1.3) versus `remote-only`
@@ -994,7 +995,8 @@ ranking.** It is the word this document uses for that operation, and for its res
 |---|---|
 | `criteria_set`, `level` | What was run, against which level |
 | `computed_at` | When |
-| per candidate | `score`, `rank`, `coverage`, `match_status` (`matching` \| `not_matching` \| `insufficient_data`), `parent_not_matching`, and the reasons behind a non-match |
+| per candidate | A `candidate_result` row: `score`, `rank`, `coverage`, `match_status` (`matching` \| `not_matching` \| `insufficient_data`), `parent_not_matching` |
+| per non-match | A `non_match_reason` row per rule not met, naming either the criterion or the match rule |
 
 **This entity exists to answer a question the earlier model got wrong: which facts about a
 candidate depend on whose criteria you used?**
@@ -1147,7 +1149,7 @@ but are not measurements of the place.
 | `id`, `name` | Identifier and display name |
 | `level` | Which level it applies at |
 
-**The result** is one rule's answer for one candidate:
+**The result** (`match_rule_result`) is one rule's answer for one candidate:
 
 | Field | Notes |
 |---|---|
@@ -1188,8 +1190,8 @@ is a run — the word was ambiguous and is now narrow:
 | `llm_call_count`, `cost_eur` | What it spent. Zero for a run touching only structured sources |
 | scope | Which candidates and which attributes it was asked to cover |
 
-**Failures are rows, not a blob.** Each records the run, the candidate, the attribute and the
-error, which is exactly the unit selective retry needs: retry what failed, nothing else (§6.4).
+**Failures are rows, not a blob.** Each `data_acquisition_failure` records the run, the
+candidate, the attribute and the error, which is exactly the unit selective retry needs: retry what failed, nothing else (§6.4).
 
 Values link back to the run that produced them, which is what makes retry and
 "what changed since last run" possible.
@@ -2236,7 +2238,7 @@ and appear nowhere else.
 | Bypassed screening | `parent_not_matching` | Says what is true rather than what was skipped |
 | Key domain, variants | Breakdown scheme, breakdown option | `key_domain` said neither what a key was nor what a domain was; `variants` never said variant *of what* |
 | Passthrough | `as_is` | Described a pipe, not a scaling method |
-| Ideal band | `ideal_range` | "Band" has too many other readings |
+| Ideal band, `ideal_range` | `target_range` | "Band" has too many other readings, and a target range is not a direction — see `direction` below |
 | Natural setting | Natural landscape | Collided with "criteria setting" |
 | Composition | `ShareComposition` | The percentage nature was not visible in the name |
 | Budget (for run cost) | Spend cap | Collided with household money |
