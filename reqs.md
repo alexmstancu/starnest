@@ -282,6 +282,8 @@ erDiagram
         text level FK
         text value_type FK
         text breakdown_scheme FK
+        text name
+        text description
         interval max_age
         bool manual_entry
     }
@@ -324,6 +326,11 @@ erDiagram
         date retrieval_date
         text confidence_level
         text usage_status
+        text quote
+    }
+    VALUE_CITATION {
+        bigint value FK
+        text url
     }
     DATA_ACQUISITION_RUN {
         bigint id PK
@@ -360,9 +367,12 @@ erDiagram
         numeric published_value
         text published_scale
         int published_rank
+        int published_rank_of
         date reference_period_start
+        date reference_period_end
         date retrieval_date
         text methodology_url
+        text caveats
     }
     HOUSEHOLD {
         int id PK
@@ -477,6 +487,7 @@ erDiagram
     DATA_SOURCE ||--o{ VALUE : produces
     BREAKDOWN_OPTION ||--o{ VALUE : "distinguishes"
     DATA_ACQUISITION_RUN ||--o{ VALUE : produced
+    VALUE ||--o{ VALUE_CITATION : "evidenced by"
     DATA_ACQUISITION_RUN ||--o{ DATA_ACQUISITION_FAILURE : recorded
     CANDIDATE ||--o{ DATA_ACQUISITION_FAILURE : "failed for"
     ATTRIBUTE ||--o{ DATA_ACQUISITION_FAILURE : "failed on"
@@ -542,6 +553,7 @@ erDiagram
 | `CANDIDATE \|\|--o{ VALUE` | A value is about one place | |
 | `DATA_SOURCE \|\|--o{ VALUE` | Records who said it | Provenance is mandatory (§10), and priority needs the source to choose an active value |
 | `BREAKDOWN_OPTION \|\|--o{ VALUE` | Which case this figure describes | Null for ordinary attributes. This is what lets all three rents be stored at once, so changing household size needs no re-fetch (§3.3b) |
+| `VALUE \|\|--o{ VALUE_CITATION` | The URLs behind the figure | A list, therefore a table. This is where an LLM-sourced value records the pages it actually read (§6.10) |
 | `DATA_ACQUISITION_RUN \|\|--o{ VALUE` | Which run produced it | Makes selective retry and "what changed since last run" possible |
 
 > **Together these four foreign keys are the natural key of a value**: candidate, attribute,
@@ -701,10 +713,10 @@ no collisions, and `relocation_window` applies at both levels, so the scheme wou
 | `pillar` | Its vertical. **Null for attributes that ship with no criterion** — see below |
 | `level` | The level it applies at — the same axis as `Candidate.level` |
 | `value_type` | One of the ten types in §3.3a. Determines what a `Value` carries, how it normalises, how it displays, what a matching threshold means, and what is validated |
-| `type_params` | Type-specific declaration — the unit for a `Quantity`, the provider bounds for an `Index`, the basis for a `Ratio` |
-| `allowed_range`, `allowed_labels` | Per-attribute validation, beyond what the type already enforces — §3.3a |
+| type parameters | Type-specific declaration — the unit for a `Quantity`, the provider bounds for an `Index`, the basis for a `Ratio`. **Typed child tables**, one per value type, following the pattern `Value` uses (`arch.md` §3.3) — never a JSON column |
+| allowed range, allowed labels | Per-attribute validation beyond what the type enforces — §3.3a. Child tables `attribute_allowed_range` and `attribute_allowed_label` |
 | `max_age` | How quickly this kind of data goes stale (§3.6). **Objective** — rent ages in months whoever is asking |
-| `source_priority_override` | Optional replacement for the global source order (§6.6). **Objective** — an admin quality judgement; §2 says users do not connect sources |
+| source priority override | Optional replacement for the global source order (§6.6). Child table `attribute_source_priority`, one row per source with its rank. **Objective** — an admin quality judgement; §2 says users do not connect sources |
 | `breakdown_scheme` | Optional. If set, this attribute is **broken down** and holds several values at once, one per option — §3.3b |
 | `manual_entry` | Whether a value for this attribute may be typed by hand. **Defaults to forbidden** — §6.5 |
 
@@ -894,6 +906,7 @@ and it is the only place a preference may live.
 
 | Field | Notes |
 |---|---|
+| `criteria_set` | The set this criterion belongs to |
 | `attribute` | The attribute this rule judges. Exactly one |
 | `is_scored` | Whether this criterion counts toward the score at all |
 | `weight` | Sub-weight within its attribute's pillar |
@@ -1012,8 +1025,18 @@ impossible to express. An evaluation is cheap — it is pure arithmetic over sto
 
 ### 3.5 DataSource
 
-Identifier, display name, `kind` (`structured` \| `llm` \| `manual`), and default priority
-rank. Manual entry is a source like any other (§6.5).
+Where values come from. Manual entry is a source like any other (§6.5), and so is the LLM
+(§6.10).
+
+| Field | Notes |
+|---|---|
+| `id`, `name` | Identifier and display name |
+| `source_kind` | `structured` \| `llm` \| `manual` |
+| `default_priority` | Rank in the global source order (§6.6), which any attribute may override |
+| `reliability_tier` | The tier confidence is derived from (§5.7) |
+
+A `DataSource` also publishes `ExternalScore` rows (§3.5a), which is why providers such as
+WhereNext and Mercer are rows in this table rather than names in a text column.
 
 ### 3.5a ExternalScore
 
@@ -1025,12 +1048,12 @@ using different methods.
 | Field | Notes |
 |---|---|
 | `candidate`, `data_source` | What it is about, and who published it. The provider is a **foreign key to `DATA_SOURCE`**, not a name — Numbeo supplies both values and a composite, and one row for it means one reliability tier and one place to record a paywall |
-| `value` | The published number |
-| `scale` | What the number means — `0-100`, `0-10`, `rank`, `index` |
-| `rank`, `rank_of` | Where the provider publishes a position rather than a score |
-| `reference_period`, `retrieval_date` | Same two-date rule as any value (§3.6) |
+| `published_value` | The published number |
+| `published_scale` | What the number means — `0-100`, `0-10`, `rank`, `index` |
+| `published_rank`, `published_rank_of` | Where the provider publishes a position rather than a score — 12th of 95 |
+| `reference_period_start`, `reference_period_end`, `retrieval_date` | Same date rules as any value (§3.6) |
 | `methodology_url` | So the reader can see how it was built |
-| `notes` | Caveats — paywalled, discontinued, known quirks |
+| `caveats` | Paywalled, discontinued, known quirks |
 
 **Hard rule: an `ExternalScore` must never enter the weighted calculation.** It is a second
 opinion, not an input. Ingesting one would import that provider's weights and normalisation,
@@ -1061,9 +1084,10 @@ overwritten and never discarded.**
 | `reference_period_start`, `reference_period_end` | **What period the data describes** — two dates, not one. "Average temperature 2025" is a year; "rent, July 2026" a month; an fx rate a single day, where start and end are equal. A single point date could not express which of the three it was, so the pair is stored and both are displayed |
 | `breakdown_option` | Which case this figure describes, for a broken-down attribute (§3.3b). Null otherwise |
 | `retrieval_date` | **When the app fetched it** |
-| `confidence` | `absolute` \| `high` \| `medium` \| `low` — §5.7. Derived, with a manual override retained alongside |
+| `confidence_level` | `absolute` \| `high` \| `medium` \| `low` — §5.7. Derived, with a manual override retained alongside |
 | `quote` | Supporting text or summary, where applicable |
-| `citations` | Source URLs |
+| `usage_status` | `active` \| `superseded` \| `rejected` — which value scoring uses, and why the others are kept |
+| citations | Source URLs. Child table `value_citation`, one row per URL — a list, therefore a table |
 | `data_acquisition_run` | The run that produced it (§3.8) |
 
 **The rest depends on the attribute's `value_type`** (§3.3a). A monetary value carries a
@@ -1116,9 +1140,26 @@ A named yes/no gate attached to no attribute, distinct from a criterion's `match
 (§5.2). Visa pathways, quota availability, relocation timing: things that decide eligibility
 but are not measurements of the place.
 
-Identifier, display name, level, applicable candidates, `result` (`matching` \|
-`not_matching` \| `unknown`), reason text, source and its two dates, and an optional override
-carrying its own reason and date.
+**The rule** is the gate itself, declared once:
+
+| Field | Notes |
+|---|---|
+| `id`, `name` | Identifier and display name |
+| `level` | Which level it applies at |
+
+**The result** is one rule's answer for one candidate:
+
+| Field | Notes |
+|---|---|
+| `match_rule`, `candidate` | Which gate, which place |
+| `match_result` | `matching` \| `not_matching` \| `unknown` |
+| `reason` | Why, in words |
+| `data_source` | Where the judgement came from — usually `manual` or `llm` (§6.10) |
+| `override_reason`, `override_date` | Set when the result is overridden |
+
+**Whether a rule is enforced is not stored here.** That belongs to a criteria set
+(`criteria_set_match_rule`, §3.4): the existence of a visa route is a fact, but treating its
+absence as disqualifying is a preference.
 
 **Both mechanisms speak one vocabulary.** A criterion's `matching_threshold` and a `MatchRule`
 are different mechanisms — one reads a measured value, the other carries a judgement — but they
@@ -1143,7 +1184,7 @@ is a run — the word was ambiguous and is now narrow:
 |---|---|
 | `started_at`, `finished_at` | Wall-clock bounds |
 | `triggered_by` | Who or what started it — for now always a person pressing Run |
-| `status` | `running` \| `completed` \| `halted_on_spend_cap` \| `failed` |
+| `run_status` | `running` \| `completed` \| `halted_on_spend_cap` \| `failed` |
 | `llm_call_count`, `cost_eur` | What it spent. Zero for a run touching only structured sources |
 | scope | Which candidates and which attributes it was asked to cover |
 
@@ -1165,9 +1206,9 @@ configured when the application is opened** — several attributes are meaningle
 | `number_children` | How many children under 18. Sets dwelling size, cost basket, and whether the `family` pillar is scored against a real need |
 | `target_monthly_spend` | Guideline ceiling on total household spend. Provisionally 2,000–3,000 EUR/month |
 | `max_rent` | Rent ceiling. Provisionally 2,000 EUR/month |
-| `home_country` | Where you live now. Currently `country.romania` |
-| `home_city` | The reference city for travel connections. Currently `city.romania.bucharest` |
-| `citizenship` | Which citizenships the household holds. Currently Romanian, therefore EU |
+| `home_country_candidate` | Where you live now — a foreign key to a Candidate, currently `country.romania` |
+| `home_city_candidate` | The reference city for travel connections. Currently `city.romania.bucharest` |
+| citizenship | Which citizenships the household holds — child table `household_citizenship`, one row per country. Currently Romanian, therefore EU |
 
 It is an entity rather than a scattering of settings because it is **read from three different
 places**, and a change to it must reach all three at once:
@@ -2345,3 +2386,9 @@ Recorded from a front-to-back read of this document.
 | Q128 | Coverage stays on CandidateResult; completeness is derived and not stored | They are different questions. Coverage is weighted and set-dependent; completeness is a `COUNT` over values, and storing it would be a cache with no invalidation rule |
 | Q129 | `AcquisitionRun` → **`DataAcquisitionRun`**, and its failure table with it | "Acquisition" alone did not say what was acquired. The prefix makes the table self-describing next to `Evaluation`, the other thing that runs |
 | Q130 | `VARIANT_VOCABULARY` / `VARIANT_KEY` → **`BREAKDOWN_SCHEME` / `BREAKDOWN_OPTION`** | "Variant" never said variant of what, and "key" repeated the fault that sank `key_domain`. "Broken down by" is the phrase Eurostat and the OECD already use for the same idea, so the schema now reads like the sources the adapters fetch from |
+| Q131 | **`falloff` removed**, replaced by `target_range_min/max` plus `zero_score_below/above` | It was a decay rate in no stated unit. The replacement says the same thing as four numbers in the attribute's own unit, reusing the anchor idea instead of adding a second mechanism |
+| Q132 | **A field name spells itself out.** A single abstract word is not acceptable unless it is a foreign key named after its table, or a glossary term | `falloff`, `mode`, `scale`, `status` and `kind` all forced the reader to carry a definition the schema could have stated. Renamed to `zero_score_below`, `containment_rule`, `normalisation_method`, `usage_status`, `source_kind` |
+| Q133 | **The model is drawn twice — an overview and the complete diagram** — and stays in **Mermaid** | Five partitioned views were tried and rejected: hand-maintained partitions are a manual denormalisation of one model, and the split silently dropped a relation. Two levels are trivially checkable. Mermaid is the only format GitHub renders natively in Markdown; D2 has better layout and Structurizr generates C4 views from one model, but both add a build step and committed images. Revisit if the ontology outgrows two views or `arch.md` adopts C4 |
+| Q134 | **Attribute type parameters are typed child tables**, and value citations are their own table | The last two places a JSON column had survived in the prose. Type parameters follow the same pattern `Value` already uses; `value_citation` is where an LLM-sourced value records the pages it actually read (§6.10) |
+| Q135 | `MatchRule` and its result are documented as two field tables, not one paragraph | The paragraph conflated the gate with its per-candidate answer, which are different tables on different sides of the objective/subjective line |
+
