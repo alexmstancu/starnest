@@ -264,13 +264,16 @@ erDiagram
     LEVEL {
         text id PK
         int depth_order
+        text parent_level FK
     }
     VALUE_TYPE {
         text id PK
     }
     CANDIDATE {
         text id PK
+        text name
         text level FK
+        text parent_level FK
         text parent_candidate FK
     }
     PILLAR {
@@ -310,6 +313,13 @@ erDiagram
     BREAKDOWN_OPTION {
         text id PK
         text breakdown_scheme FK
+    }
+    FX_RATE {
+        text base_currency
+        text quote_currency
+        date rate_date
+        numeric rate
+        text data_source FK
     }
     DATA_SOURCE {
         text id PK
@@ -482,6 +492,14 @@ erDiagram
         text normalisation_method
         bool blocks_if_missing
     }
+    CANDIDATE_ATTRIBUTE_SCORE {
+        bigint candidate_result FK
+        text attribute FK
+        bigint used_value FK
+        int normalised_score
+        numeric effective_weight
+        numeric contribution
+    }
     NON_MATCH_REASON {
         bigint candidate_result FK
         bigint criterion FK
@@ -497,6 +515,7 @@ erDiagram
     }
 
     LEVEL ||--o{ CANDIDATE : classifies
+    LEVEL ||--o{ LEVEL : "nests under"
     LEVEL ||--o{ PILLAR : scopes
     LEVEL ||--o{ ATTRIBUTE : scopes
     LEVEL ||--o{ MATCH_RULE : scopes
@@ -515,6 +534,7 @@ erDiagram
     ATTRIBUTE ||--o{ VALUE : "realised as"
     CANDIDATE ||--o{ VALUE : "measured by"
     DATA_SOURCE ||--o{ VALUE : produces
+    DATA_SOURCE ||--o{ FX_RATE : publishes
     BREAKDOWN_OPTION ||--o{ VALUE : "distinguishes"
     DATA_ACQUISITION_RUN ||--o{ VALUE : produced
     VALUE ||--o{ VALUE_CITATION : "evidenced by"
@@ -547,6 +567,9 @@ erDiagram
     PILLAR ||--o{ EVALUATION_CRITERION : "grouped in"
     EVALUATION ||--o{ CANDIDATE_RESULT : yields
     CANDIDATE ||--o{ CANDIDATE_RESULT : "scored in"
+    CANDIDATE_RESULT ||--o{ CANDIDATE_ATTRIBUTE_SCORE : "broken down by"
+    ATTRIBUTE ||--o{ CANDIDATE_ATTRIBUTE_SCORE : "scored in"
+    VALUE ||--o{ CANDIDATE_ATTRIBUTE_SCORE : "was used for"
     CANDIDATE_RESULT ||--o{ NON_MATCH_REASON : explained
     CRITERION ||--o{ NON_MATCH_REASON : "reason from"
     MATCH_RULE ||--o{ NON_MATCH_REASON : "reason from"
@@ -563,6 +586,7 @@ erDiagram
 | `LEVEL \|\|--o{ ATTRIBUTE` | Attributes are declared per level | `country.safety` and `city.safety` are different questions with different sources |
 | `LEVEL \|\|--o{ MATCH_RULE` | Gates are declared per level | A visa is national; `two_role_feasibility` is local |
 | `LEVEL \|\|--o{ EVALUATION` | An evaluation runs at one level | Comparisons never mix levels (§8.5); this enforces it in the schema |
+| `LEVEL \|\|--o{ LEVEL` | Which level nests under which | `city` nests under `country`; `country` under nothing. Combined with the pair `(level, parent_level)` on a candidate, this makes a city parented to a city **impossible to insert** rather than merely wrong |
 | `CANDIDATE \|\|--o{ CANDIDATE` | A city points at its country | Gives the parent chain that `parent_not_matching` and the context column depend on |
 
 **The attribute catalog**
@@ -585,6 +609,7 @@ erDiagram
 | `ATTRIBUTE \|\|--o{ VALUE` | A value measures one attribute | The value's type, unit and validation all come from here. The key is **composite** — `(attribute, value_type)` — so the database refuses a value whose payload shape contradicts what the attribute declared |
 | `VALUE_TYPE \|\|--o{ VALUE` | The value restates its own type | Denormalised on purpose: it is what lets the composite key above be checked, and what pins each typed child table to the right parent |
 | `CANDIDATE \|\|--o{ VALUE` | A value is about one place | |
+| `DATA_SOURCE \|\|--o{ FX_RATE` | Who published the exchange rate | The rate was the one number in the system without a source. It is also shared: one rate per currency pair per day, so two values converted hours apart use the same figure |
 | `DATA_SOURCE \|\|--o{ VALUE` | Records who said it | Provenance is mandatory (§10), and priority needs the source to choose an active value |
 | `BREAKDOWN_OPTION \|\|--o{ VALUE` | Which case this figure describes | Null for ordinary attributes. This is what lets all three rents be stored at once, so changing household size needs no re-fetch (§3.3b) |
 | `VALUE \|\|--o{ VALUE_CITATION` | The URLs behind the figure | A list, therefore a table. This is where an LLM-sourced value records the pages it actually read (§6.10) |
@@ -663,6 +688,9 @@ erDiagram
 | `PILLAR \|\|--o{ EVALUATION_CRITERION` | Its pillar and that pillar's weight at the time | Pillar weights are as editable as criterion weights, so both are frozen |
 | `EVALUATION \|\|--o{ CANDIDATE_RESULT` | One row per candidate per evaluation | |
 | `CANDIDATE \|\|--o{ CANDIDATE_RESULT` | The place being scored | Keeping the result here rather than on the candidate is what makes "how do these two sets rank the same countries?" a query instead of a re-run |
+| `CANDIDATE_RESULT \|\|--o{ CANDIDATE_ATTRIBUTE_SCORE` | The per-attribute detail behind the total | Stored, not recomputed. The criteria snapshot freezes the weights but not the *code* that applies them; storing the results makes a saved evaluation read identically however the scoring engine later changes |
+| `ATTRIBUTE \|\|--o{ CANDIDATE_ATTRIBUTE_SCORE` | Which attribute each row scores | |
+| `VALUE \|\|--o{ CANDIDATE_ATTRIBUTE_SCORE` | Exactly which measurement was used | Closes the provenance chain: from a total score, to one attribute's contribution, to the single value behind it, to its source and dates |
 | `CANDIDATE_RESULT \|\|--o{ NON_MATCH_REASON` | Why it did not match | A list, therefore a table. Both mechanisms feed one surface (§5.2) |
 | `CRITERION \|\|--o{ NON_MATCH_REASON` | A threshold was crossed | Exactly one of the two is set on each row |
 | `MATCH_RULE \|\|--o{ NON_MATCH_REASON` | A gate failed | |
@@ -674,7 +702,9 @@ A place under evaluation.
 | Field | Notes |
 |---|---|
 | `id` | `<level>.<name>` — `country.portugal`, `city.portugal.lisbon`. Globally unique and **immutable** |
+| `name` | The short display label — "Portugal", "Lisbon". Structural, so a ranking row needs no join. The **official** name and local alternates remain descriptive attributes (§3.3), sourced and dated like any other fact |
 | `level` | A reference to a `Level` record — **not a hardcoded pair**, see below |
+| `parent_level` | The level the parent must be at, taken from `LEVEL.parent_level` |
 | `parent_candidate` | The containing candidate. Null at the top level |
 
 "City" means any locality regardless of size — a village of 4,000 is as valid a Candidate as a
@@ -690,6 +720,11 @@ overwriting another's.
 > it here. Whether Portugal matches depends on the criteria set; under `alex` it may match and
 > under `partner` it may not, so the same city would need two different values of the flag at
 > once. It belongs to the result, not the candidate.
+
+> **The hierarchy is enforced, not assumed.** `LEVEL` records which level nests under which, and
+> a candidate carries the pair `(level, parent_level)`. A city recorded as the parent of another
+> city is refused on insert rather than discovered later — which matters because candidates are
+> seeded by migration, where such a mistake is easy and silent.
 
 **Levels are ordered records, not an enum.** The application ships with two — `country`
 (ordinal 1) and `city` (ordinal 2) — and v1 uses only the first. The requirement is **not** that
@@ -1058,6 +1093,27 @@ candidate depend on whose criteria you used?**
 >
 > The floor in §5.3 is on coverage, not completeness: a candidate can be 90% complete and still
 > fall below the floor if the missing tenth is what you weighted most.
+
+**An evaluation is written only when you keep one.** Adjusting a weight recalculates in memory
+and instantly (§5.6); nothing is stored. An `Evaluation` row appears when you deliberately save a
+result — so every one that exists is one you wanted, and the history is meaningful rather than a
+trail of near-identical snapshots from an afternoon of moving sliders.
+
+**Each saved evaluation stores its per-attribute detail**, one `candidate_attribute_score` row
+per candidate and attribute: the value used, its normalised score, its effective weight after
+redistribution, and its contribution to the total.
+
+> **Why store what could be recomputed.** The criteria snapshot freezes the weights and the
+> anchors — but not the *code* that applies them. Correct a rounding error in normalisation next
+> year and every past evaluation would silently re-derive different numbers while still presenting
+> itself as March's result. Storing the outcome ends that. It also closes the provenance chain:
+> from a total, to one attribute's contribution, to the exact value behind it, to that value's
+> source and dates.
+>
+> The cost is about 1,300 rows per saved country-level evaluation — half the size of the entire
+> `value` table, but trivial in absolute terms precisely *because* evaluations are deliberate.
+> Persisting one per recalculation would have made this ruinous, which is why the two decisions
+> belong together.
 
 **An evaluation freezes the criteria it used.** A `CriteriaSet` stays editable — that is the
 point of saving one and returning to it — but an evaluation must not change underneath you. Each
@@ -1467,8 +1523,14 @@ those words — the city itself may match perfectly well, and that distinction i
 ### 5.5 Currency
 
 **`Monetary` values only** (§3.3a) are stored native and converted. The published figure is
-retained exactly as issued; a EUR equivalent is stored alongside it with the rate used and the
-rate's date. Scoring uses the converted value. Both are displayed, and the original remains
+retained exactly as issued; a EUR equivalent is stored alongside it, referencing the **exchange
+rate that was used** — a row in its own right, carrying the currency pair, the date, the rate and
+**the source that published it**.
+
+> **The rate is data, not an implementation detail.** Storing it per value would leave the one
+> number in the system without provenance, and would let two values converted hours apart on the
+> same day carry different rates — making a cost comparison quietly wrong. One rate per pair per
+> day, sourced and dated, keeps every conversion internally consistent and auditable. Scoring uses the converted value. Both are displayed, and the original remains
 auditable against its source.
 
 Other types convert differently or not at all: a `Quantity` converts through unit factors, an
@@ -1543,8 +1605,17 @@ Four mechanisms, designed to coexist:
   matching country, configurable.
 
 The country list auto-seeds with the full geographic scope — **EU 27 + Iceland, Norway,
-Liechtenstein + United Kingdom + Switzerland**, 32 countries. Exclusions are stored as
-configuration, not as deletions.
+Liechtenstein + United Kingdom + Switzerland**, 32 countries.
+
+**Pruning a seeded country is not a deletion.** It is the `not_manually_excluded` match rule
+(§7.3), recorded per candidate with a reason and a date. This costs no new structure and gets
+three things for free: the candidate keeps its score and stays visible in the non-matching
+section, the reason travels with it, and **whether the exclusion applies is a property of the
+criteria set** — you may rule out a country that Partner still wants scored.
+
+> **Ruling a place out is a preference, not a fact about the place.** A flag on the candidate
+> would assert that nobody could consider it, which is a judgement wearing a fact's clothing, and
+> would sit on the objective side of a line the model otherwise holds strictly (§3.0).
 
 **Adding a country must be first-class, reusable functionality**, not a one-off script: name
 the country, and both its descriptive and its measured attribute values are acquired through
@@ -2061,6 +2132,7 @@ not matching regardless of score** — and stays visible, with its score, showin
 | `eu_free_movement` | country | The candidate is an EU or EEA state, and the household's `citizenship` (§3.9) carries free movement there. Automatic while that citizenship is EU | Definitional, from the descriptive attributes (§3.3) |
 | `uk_skilled_worker` | country | A realistic Skilled Worker route exists: sponsorship available in the local market, or the salary threshold met | Manual, LLM-assisted (§6.9) |
 | `ch_eu_efta_quota` | country | The annual Swiss EU/EFTA permit quota has capacity for this household | Manual, LLM-assisted (§6.9) |
+| `not_manually_excluded` | both | You have not ruled this candidate out by hand. The seeded country list is broad by design (§6.1), and pruning it is a **preference**: `alex` may enforce this rule while `partner` does not, and the excluded candidate stays visible with its score and your stated reason | Manual |
 | `two_role_feasibility` | **city** | The local market can plausibly support **two** tech roles — engineering *and* product | **Manual** for now — you judge each city. Becomes derived from `city.tech_software_jobs` and `city.tech_product_jobs` against a configurable floor once those have a source (§9) |
 
 > **`two_role_feasibility` is the one that cannot be replaced by a criterion.** A strong
@@ -2523,4 +2595,10 @@ Recorded from a front-to-back read of this document.
 | Q148 | Three integrity constraints added: one-of on `NonMatchReason`, singleton checks on `Household` and `Settings`, derived supersession for `ExternalScore` | Each closes a way for the database to hold a state no code expects |
 | Q149 | **The catalog is data in the database, not config files** | A file and a table holding the same rows are two stores that drift, with no link between them and no way for either to win in every code path. One store gives referential integrity for free, puts catalog changes under the same audit as every other table, and makes them transactional. Git remains the history, through migration scripts |
 | Q150 | **Auditing is PostgreSQL's own statement log**, not an audit table we maintain | `log_statement = 'mod'` records every statement that changes state, with no schema, no triggers and nothing to keep in sync. It logs statements rather than row states, which is enough because the three changes that could silently alter a result are each covered by something stronger: the catalog by migrations in git, a past ranking's criteria by the evaluation snapshot, and measurements by the value table never being overwritten. `'mod'` rather than `'all'` so reads do not bury writes |
+| Q151 | `Candidate` gains a `name` for display; official and alternate names stay descriptive attributes | The most common query in the application should not need a join to learn that `country.portugal` is called Portugal. The sourced official form remains an attribute with provenance |
+| Q152 | **Excluding a candidate is the `not_manually_excluded` match rule**, not a flag | Ruling a place out is a preference, so it belongs on the subjective side. As a match rule it costs no new structure and inherits visibility, a reason, dates, and per-criteria-set enforcement — Partner can still score a country you have ruled out |
+| Q153 | The level hierarchy is enforced by `LEVEL.parent_level` plus a composite key on the candidate | A city parented to a city becomes impossible to insert. Candidates are seeded by migration, where that mistake is easy and silent |
+| Q154 | **Exchange rates are a first-class table**, sourced and dated | Otherwise the rate is the only number in the system without provenance, and two values converted hours apart on the same day carry different rates, making a cost comparison quietly wrong |
+| Q155 | **An evaluation is written only when deliberately kept** | Adjusting a weight recalculates in memory; nothing is stored. Persisting every recalculation would write hundreds of near-identical snapshots from one afternoon of tuning, and bury the few that matter |
+| Q156 | Each saved evaluation **stores its per-attribute scores** | The criteria snapshot freezes the weights but not the code that applies them; a later fix to normalisation would silently rewrite history. ~1,300 rows per saved evaluation, which is affordable precisely because Q155 makes evaluations deliberate |
 
