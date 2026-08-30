@@ -19,7 +19,7 @@ Everything else is from published documentation and should be re-checked before 
 3. **The fix is a source-selection principle, not more sources** — prefer *coordinate-bound*
    sources over *registry-bound* ones (§3). This is what makes Cassis tractable.
 4. **Two sources named in `reqs.md` are dead** and must be replaced (§6.1).
-5. **One criterion has no city-level source at all** — `local_openness_to_foreigners` (§6.2).
+5. **One attribute has no city-level source at all** — `country.openness_to_foreigners` (§6.2).
 
 ---
 
@@ -51,7 +51,7 @@ our coverage percentage solves. This is worth sitting with before building.
 | Two-level country → city pipeline | Countries and cities as separate flat lists |
 | Full provenance per number: source, two dates, all competing values retained | Composite scores only, no per-indicator provenance |
 | Any locality, including a village of 7,000 | A fixed set of 380 cities |
-| Criteria personal to *this* household — tax vs Romania, flights to Romania, RO double-taxation treaty, naturalisation, children | Generic dimensions for a generic mover |
+| Attributes personal to *this* household — tax vs Romania, flights to Romania, RO double-taxation treaty, naturalisation, children | Generic dimensions for a generic mover |
 | Head-to-head comparison with weighted-contribution deltas | Ranking only |
 | Multi-source active-value selection with configurable priority | Single blended figure |
 | Named weight profiles per person and per work-format scenario | One weight set per session |
@@ -83,7 +83,7 @@ career dimension. That product was discontinued in September 2021 (§6.1).
 
 1. **It returns pre-normalised scores, not raw values.** `cost: 47` is WhereNext's number
    after WhereNext's weighting. Ingesting it imports their weights — a direct violation of
-   *nothing hardcoded* and of "the criteria are yours".
+   *nothing hardcoded* and of "the attributes are yours".
 2. **No provenance.** Every value would enter our store with one source ("WhereNext"), one
    date, and no reference period — breaking the two-dates invariant and the
    full-provenance rule.
@@ -110,7 +110,7 @@ under the §6.6 priority mechanism.
 **Nobody occupies our exact position.** The market splits into cost calculators (Numbeo,
 Expatistan), lifestyle communities (Nomad List), visa-eligibility tools (whereTOemigrate), and
 institutional rankings (WhereNext). None combines a two-level funnel, arbitrary localities,
-per-number provenance, and criteria personal to one household. That is a real gap — and,
+per-number provenance, and attributes personal to one household. That is a real gap — and,
 given `MVP is a personal iteration baseline`, a gap we're filling for two people rather than a
 market to enter.
 
@@ -140,7 +140,7 @@ source — it degrades gracefully as a locality shrinks, whereas registry source
 completely. Applied across the the city level catalog, this converts a large part of the small-town
 coverage problem from "no data" into "data, at slightly coarser resolution".
 
-It also predicts *which* criteria will stay hard: anything requiring a human institution to
+It also predicts *which* attributes will stay hard: anything requiring a human institution to
 have surveyed the specific town — local bureaucracy, local job market, city-level attitudes.
 
 ---
@@ -160,7 +160,7 @@ have surveyed the specific town — local bureaucracy, local job market, city-le
 | **Ookla Open Data** | Fixed and mobile speeds | Parquet/Shapefile via AWS | **Zoom-16 tiles ≈ 610 m.** Quarterly. **Coordinate-bound** |
 | **GeoNames** | Population, elevation, coordinates, timezone, admin hierarchy | REST + dumps, CC BY | Backbone for the descriptive attributes |
 | **Wikidata** | Subdivisions, admin parents, heritage, arbitrary facts | SPARQL | Excellent for arrondissement-style subdivisions |
-| **UNESCO World Heritage** | Inscribed sites with coordinates | XML/CSV list | Feeds `heritage_and_culture_density` |
+| **UNESCO World Heritage** | Inscribed sites with coordinates | XML/CSV list | Feeds `city.heritage_and_culture_density` |
 | **WHO Global Health Observatory** | Health system indicators | REST (OData) | Replaces the dead EHCI (§6.1) |
 | **UNdata** | Aggregator across UN agencies — demography, education, environment | Web + downloads | Convenient, but **largely a mirror** of upstream agencies — see §6.4 |
 | **UNODC** | Homicide, violent crime, prisons, justice | **Portal download** (ZIP: CSV + JSON metadata) | **Not a REST API** — expect a scheduled download, not a live call |
@@ -202,21 +202,21 @@ LLM + `web_search` path.
 
 | Attribute | Primary | Secondary | Confidence |
 |---|---|---|---|
-| `cost_of_living_index_country` | Eurostat price level indices | World Bank ICP PPP; WhereNext `monthly_estimate_usd` | **High** |
-| `income_tax_effective` | **OECD Tax Database** | National tax authorities | **High** |
-| `remote_work_tax_treaty` | OECD treaty database | Manual / LLM | Medium — treaty text needs interpretation |
-| `tech_employment_share` | Eurostat (ICT/high-tech employment) | ILO | **High** |
+| `country.cost_of_living_index` | Eurostat price level indices | World Bank ICP PPP; WhereNext `monthly_estimate_usd` | **High** |
+| `country.income_tax_effective` | **OECD Tax Database** | National tax authorities | **High** |
+| `country.remote_work_tax_treaty` | OECD treaty database | Manual / LLM | Medium — treaty text needs interpretation |
+| `country.tech_employment_share` | Eurostat (ICT/high-tech employment) | ILO | **High** |
 | `international_employers` | — | LLM + search | **Low** — no structured source |
-| `crime_safety_index_national` | UNODC homicide | World Bank `VC.IHR.PSRC.P5`; Eurostat crime | **High** (note: WB mirrors UNODC — not independent) |
-| `political_economic_stability` | World Bank Governance Indicators | — | **High** |
-| `healthcare_system_quality` | **WHO GHO** + OECD Health Statistics | Numbeo healthcare index | **High** (EHCI is dead — §6.1) |
-| `residency_admin_ease` | — | LLM / manual | **Low** (Doing Business is dead — §6.1) |
-| `climate_zone` | Köppen classification dataset | — | **High** |
-| `avg_annual_temperature` | **Open-Meteo** archive | National met services | **High**, coordinate-bound |
-| `annual_sunshine_hours` | **Open-Meteo** (derive from radiation) | National met services | **High**, coordinate-bound |
-| `projected_summer_heat_days` | Copernicus CDS projections (SSP2-4.5) | IPCC regional | Medium — scenario is now named |
-| `naturalisation_pathway` | — | Manual / LLM | **Low** — legal text, no dataset |
-| `pension_portability` | EU coordination rules | Manual / LLM | **Low** |
+| `country.crime_safety_index` | UNODC homicide | World Bank `VC.IHR.PSRC.P5`; Eurostat crime | **High** (note: WB mirrors UNODC — not independent) |
+| `country.political_economic_stability` | World Bank Governance Indicators | — | **High** |
+| `country.healthcare_system_quality` | **WHO GHO** + OECD Health Statistics | Numbeo healthcare index | **High** (EHCI is dead — §6.1) |
+| `country.residency_admin_ease` | — | LLM / manual | **Low** (Doing Business is dead — §6.1) |
+| `country.climate_zone` | Köppen classification dataset | — | **High** |
+| `country.avg_annual_temperature` | **Open-Meteo** archive | National met services | **High**, coordinate-bound |
+| `country.annual_sunshine_hours` | **Open-Meteo** (derive from radiation) | National met services | **High**, coordinate-bound |
+| `country.projected_summer_heat_days` | Copernicus CDS projections (SSP2-4.5) | IPCC regional | Medium — scenario is now named |
+| `country.naturalisation_pathway` | — | Manual / LLM | **Low** — legal text, no dataset |
+| `country.pension_portability` | EU coordination rules | Manual / LLM | **Low** |
 
 ### the city level — city
 
@@ -225,28 +225,28 @@ LLM + `web_search` path.
 | Attribute | Primary | Type | Small-town outlook |
 |---|---|---|---|
 | `tech_software_jobs` | Job-posting counts **(source unresolved, §11)** | — | Poor; postings concentrate in large cities |
-| `international_employers_local` | LLM + search | — | Poor |
+| `city.international_employers` | LLM + search | — | Poor |
 | `tech_product_jobs` | Job-posting counts **(source unresolved, §11)** | — | Poor; product roles are scarce everywhere |
-| `cost_of_living_2p_monthly` | Numbeo | **R** | **Fails** — fall back to regional figure + LLM |
-| `rent_2br_city_centre` | Numbeo; national listing sites | **R** | **Fails** — LLM + local listings |
-| `property_purchase_price_m2` | National land registries; Eurostat | **R** | Partial — regional averages exist |
-| `safety_local` | Eurostat Urban Audit; Numbeo | **R** | **Fails** — regional police data or LLM |
-| `healthcare_access_local` | **Overpass** (hospital POIs + distance) | **C** | **Works** — distance to nearest hospital is computable anywhere |
-| `air_quality` | **OpenAQ / EEA** (nearest station) | **C** | **Works**, with station-distance caveat |
-| `local_temperature`, `local_sunshine_hours` | **Open-Meteo** | **C** | **Works** — full spatial detail |
-| `internet_quality` | **Ookla Open Data** tiles | **C** | **Works** — 610 m tiles beat any city registry |
-| `public_transport` | **Overpass** (stops, routes) + Urban Audit | **C**+R | **Works** at reduced fidelity |
-| `flights_to_romania` | Manual / LLM; flight APIs | — | Works via `profile.nearest_airport` |
-| `proximity_to_hub` | Computed from coordinates | **C** | **Works** — pure geometry |
-| `heritage_and_culture_density` | **UNESCO + Overpass + Wikidata** | **C** | **Works** — count monuments, museums, cinemas by radius |
-| `local_openness_to_foreigners` | MIPEX, Eurobarometer, InterNations | **country only** | **Gap — see §6.2** |
-| `landscape_access` | WDPA, coastline, elevation | **C** | **Works** |
-| `english_proficiency` | EF EPI | **country only** | Country value applied to city |
-| `expat_community_size` | **Eurostat Urban Audit** (foreign-born) | **R** | Fails for small towns; national fallback |
-| `local_admin_ease` | LLM / manual | — | Poor |
-| `schooling_options` | **Overpass** + national registries | **C**+R | **Works** for counts; quality needs registries |
-| `paediatric_healthcare_access` | **Overpass** + national | **C** | **Works** for access; quality does not |
-| `childcare_cost_availability` | Eurostat; national | **R** | Thin everywhere |
+| `city.cost_of_living_monthly` | Numbeo | **R** | **Fails** — fall back to regional figure + LLM |
+| `city.rent_centre` | Numbeo; national listing sites | **R** | **Fails** — LLM + local listings |
+| `city.property_purchase_price_m2` | National land registries; Eurostat | **R** | Partial — regional averages exist |
+| `city.safety` | Eurostat Urban Audit; Numbeo | **R** | **Fails** — regional police data or LLM |
+| `city.healthcare_access` | **Overpass** (hospital POIs + distance) | **C** | **Works** — distance to nearest hospital is computable anywhere |
+| `city.air_quality` | **OpenAQ / EEA** (nearest station) | **C** | **Works**, with station-distance caveat |
+| `city.temperature`, `city.sunshine_hours` | **Open-Meteo** | **C** | **Works** — full spatial detail |
+| `city.internet_quality` | **Ookla Open Data** tiles | **C** | **Works** — 610 m tiles beat any city registry |
+| `city.public_transport` | **Overpass** (stops, routes) + Urban Audit | **C**+R | **Works** at reduced fidelity |
+| `city.flights_to_home` | Manual / LLM; flight APIs | — | Works via `profile.nearest_airport` |
+| `city.proximity_to_hub` | Computed from coordinates | **C** | **Works** — pure geometry |
+| `city.heritage_and_culture_density` | **UNESCO + Overpass + Wikidata** | **C** | **Works** — count monuments, museums, cinemas by radius |
+| `country.openness_to_foreigners` | MIPEX, Eurobarometer, InterNations | **country only** | **Gap — see §6.2** |
+| the `city.distance_to_*` family | WDPA, coastline, elevation | **C** | **Works** |
+| `country.english_proficiency` | EF EPI | **country only** | Country value applied to city |
+| `city.expat_community_size` | **Eurostat Urban Audit** (foreign-born) | **R** | Fails for small towns; national fallback |
+| `city.admin_ease` | LLM / manual | — | Poor |
+| `city.schooling_options` | **Overpass** + national registries | **C**+R | **Works** for counts; quality needs registries |
+| `city.paediatric_healthcare_access` | **Overpass** + national | **C** | **Works** for access; quality does not |
+| `city.childcare_cost_availability` | Eurostat; national | **R** | Thin everywhere |
 
 ### Eurostat Urban Audit — the key the city level asset
 
@@ -271,14 +271,14 @@ coverage percentage is not a nicety, it is the only honest way to consume this d
 
 - **World Bank Doing Business** — discontinued **September 2021** after data irregularities and
   ethics breaches. Successor **B-READY** launched October 2024 covering only 50 countries,
-  planned to reach 180 by 2026. `reqs.md` cites Doing Business for `residency_admin_ease`;
+  planned to reach 180 by 2026. `reqs.md` cites Doing Business for `country.residency_admin_ease`;
   replace with B-READY where coverage allows, otherwise manual/LLM.
 - **Euro Health Consumer Index** — last published **2018**, discontinued. `reqs.md` cites it
-  for `healthcare_system_quality`; replace with **WHO GHO** plus **OECD Health Statistics**.
+  for `country.healthcare_system_quality`; replace with **WHO GHO** plus **OECD Health Statistics**.
 
 ### 6.2 An attribute with no source at the required level
 
-**`local_openness_to_foreigners`** was added as a city-level attribute. Every source that
+**`country.openness_to_foreigners`** was added as a city-level attribute. Every source that
 measures it — MIPEX, Eurobarometer, InterNations — is **country-level only**. Three options:
 
 1. **Move it to the country level** as a country attribute, where its sources actually live.
@@ -289,12 +289,12 @@ measures it — MIPEX, Eurobarometer, InterNations — is **country-level only**
 **Recommendation: option 1.** Attitudes toward foreigners are largely national-policy and
 national-culture phenomena, and the country level is where the data is.
 
-### 6.3 Criteria that will be LLM-or-nothing
+### 6.3 Attributes that will be LLM-or-nothing
 
-`international_employers`, `residency_admin_ease`, `naturalisation_pathway`,
-`pension_portability`, `international_employers_local`, `local_admin_ease`
+`international_employers`, `country.residency_admin_ease`, `country.naturalisation_pathway`,
+`country.pension_portability`, `city.international_employers`, `city.admin_ease`
 
-Eight criteria across both levels with no structured source. This is the real scope of the
+Eight attributes across both levels with no structured source. This is the real scope of the
 deferred Q20 question — it was framed as being about *atmosphere*, but the harder cases are
 legal and labour-market facts that happen to have no API.
 
@@ -313,7 +313,7 @@ labelled a mirror rather than an independent confirmation.
 2. **Do not ingest WhereNext composite scores.** Carry `monthly_estimate_usd` as a
    low-priority comparison value; take everything else from the upstream sources directly.
 3. **Budget for Numbeo.** It is the only serious city-level cost source, and its absence is
-   felt across four criteria. Reportedly $50–500/month — a real decision, not a default.
+   felt across four attributes. Reportedly $50–500/month — a real decision, not a default.
 4. **Skip Google Places.** Overpass covers every POI need for free and works for villages.
 5. **Two fetch modes, not one.** UNODC, Ookla and Köppen are bulk downloads on a slow cadence;
    Eurostat, World Bank and Open-Meteo are live per-candidate queries. The acquisition layer
@@ -495,7 +495,7 @@ hard number, collected by official statistical agencies on a standard 0–10 Can
 procedural — how hard is it to register a residence or open a bank account. Three of the four
 references also cover **rule of law, corruption, press freedom, and discrimination**. For an
 open-ended move to a country where children may grow up, that is arguably weightier than queue
-length, and it is currently only implicit inside `political_economic_stability`.
+length, and it is currently only implicit inside `country.political_economic_stability`.
 *Sources: World Bank Governance Indicators (rule of law, control of corruption), V-Dem,
 Reporters Without Borders Press Freedom Index, EU Justice Scoreboard.*
 
@@ -542,7 +542,7 @@ that the decision was the right one.
 
 ## 11. Job-posting counts — source unresolved
 
-Two criteria at both levels (`tech_software_jobs`, `tech_product_jobs`) need counts of open
+Two attributes at both levels (`tech_software_jobs`, `tech_product_jobs`) need counts of open
 roles by role family and location. **No source is settled.** Candidates, with what is and is
 not confirmed:
 
