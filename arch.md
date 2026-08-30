@@ -668,7 +668,11 @@ persistence.
 ### 6.4 The REST surface
 
 Resources, not remote procedure calls, **all under `/v1`** (§7.6). The shape follows the
-ontology, which is why it reads as the domain rather than as a list of screens:
+ontology, which is why it reads as the domain rather than as a list of screens.
+
+> **`openapi.yaml` is the contract.** This table is the map; the specification is the territory —
+> 31 paths, 38 operations, 48 schemas, request and response bodies included. Backend and
+> interface are both written against it, and the acceptance suite exercises it.
 
 | Resource | Operations | Notes |
 |---|---|---|
@@ -1216,10 +1220,10 @@ queryable.
   other attributes** rather than a formula in config — which keeps §1.3's guardrail intact and
   gives a derived value provenance, confidence and a reference period like any other.
 
-- **The REST contract's detail.** §6.4 fixes the resources and §7.6 the conventions — versioning,
-  the error shape, where pagination applies. The **request and response bodies** are open, and
-  are the first thing `devplan.md` will need to pin down, since both the backend and the
-  interface are written against them.
+- **The REST contract is written** — `openapi.yaml`, versioned alongside the schema. What
+  remains open there is small: whether request bodies get stricter validation than the schema
+  expresses, and how the interface's generated client is produced, both of which follow from the
+  language choice.
 - **First implementation order.** The spec's suggestion, still sound: repo scaffolding, then the
   database schema, then structured data acquisition as the first end-to-end sanity check. Sequencing
   belongs in `devplan.md`.

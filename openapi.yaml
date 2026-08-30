@@ -1,0 +1,1233 @@
+openapi: 3.1.0
+
+info:
+  title: Relocation decision-support API
+  version: "1.0.0"
+  description: |
+    The backend contract. Every consumer speaks it: the browser interface, the acceptance
+    suite, and anything added later. See `arch.md` §6.4 for the resource design and §7.6 for
+    the conventions below.
+
+    **Conventions**
+
+    - All paths are under `/v1`. Versioned from the first request because the contract has
+      consumers other than the interface.
+    - **Bodies carry data, never presentation.** Numbers are numbers, dates are dates, money
+      is an amount plus a currency code. No pre-formatted strings, no locale, no symbols.
+    - **Every measurement carries its provenance**: source, both dates, confidence. This is not
+      optional decoration — it is what the product exists to provide.
+    - **Two distinct dates**, never merged: `reference_period` is the span the data describes;
+      `retrieval_date` is when it was fetched.
+    - **Scores are integers 0–100. Coverage is a ratio 0–1.** Different scales because they are
+      different things: a score is defined on a range, coverage is a share.
+    - Errors share one shape and are distinguished by a stable machine-readable `code`.
+    - No authentication. The service binds to localhost (`reqs.md` §10).
+
+servers:
+  - url: http://localhost:8000/v1
+
+tags:
+  - name: household
+  - name: catalog
+    description: Read-only. Changed by migration; there is deliberately no admin interface.
+  - name: candidates
+  - name: values
+  - name: criteria
+  - name: rules
+  - name: data acquisition
+  - name: evaluation
+
+paths:
+
+  /household:
+    get:
+      tags: [household]
+      summary: The household record
+      operationId: getHousehold
+      responses:
+        "200": { $ref: "#/components/responses/Household" }
+    put:
+      tags: [household]
+      operationId: replaceHousehold
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/HouseholdInput" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Household" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /settings:
+    get:
+      tags: [household]
+      operationId: getSettings
+      responses:
+        "200": { $ref: "#/components/responses/Settings" }
+    put:
+      tags: [household]
+      operationId: replaceSettings
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SettingsInput" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Settings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /levels:
+    get:
+      tags: [catalog]
+      summary: The ordered levels, and which nests under which
+      operationId: listLevels
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Level" } }
+          description: OK
+
+  /pillars:
+    get:
+      tags: [catalog]
+      operationId: listPillars
+      parameters: [ { $ref: "#/components/parameters/LevelFilter" } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Pillar" } }
+
+  /attributes:
+    get:
+      tags: [catalog]
+      summary: The attribute catalog
+      description: |
+        Attributes with `pillar: null` are descriptive: nothing scores them, and they exist to
+        make a candidate legible (`reqs.md` §3.3).
+      operationId: listAttributes
+      parameters:
+        - { $ref: "#/components/parameters/LevelFilter" }
+        - name: pillar
+          in: query
+          schema: { type: string }
+        - name: scorable_only
+          in: query
+          description: Exclude descriptive attributes.
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Attribute" } }
+
+  /attributes/{attributeId}:
+    get:
+      tags: [catalog]
+      operationId: getAttribute
+      parameters: [ { $ref: "#/components/parameters/AttributeId" } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Attribute" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /data-sources:
+    get:
+      tags: [catalog]
+      operationId: listDataSources
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/DataSource" } }
+
+  /candidates:
+    get:
+      tags: [candidates]
+      operationId: listCandidates
+      parameters:
+        - { $ref: "#/components/parameters/LevelFilter" }
+        - name: parent
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Candidate" } }
+
+  /candidates/{candidateId}:
+    get:
+      tags: [candidates]
+      summary: A candidate with its descriptive attributes
+      operationId: getCandidate
+      parameters: [ { $ref: "#/components/parameters/CandidateId" } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/CandidateDetail" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /values:
+    get:
+      tags: [values]
+      summary: Stored values, with full provenance
+      description: |
+        Returns the active value per attribute by default. `include_superseded` returns every
+        value from every source, which is what the drill-down shows — nothing is ever discarded
+        (`reqs.md` §3.6).
+      operationId: listValues
+      parameters:
+        - { name: candidate, in: query, schema: { type: string } }
+        - { name: attribute, in: query, schema: { type: string } }
+        - name: include_superseded
+          in: query
+          schema: { type: boolean, default: false }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Offset" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Value" } }
+                  total: { type: integer }
+
+  /criteria-sets:
+    get:
+      tags: [criteria]
+      operationId: listCriteriaSets
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/CriteriaSetSummary" } }
+    post:
+      tags: [criteria]
+      operationId: createCriteriaSet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name]
+              properties:
+                id: { type: string, examples: ["partner"] }
+                name: { type: string }
+      responses:
+        "201": { $ref: "#/components/responses/CriteriaSet" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /criteria-sets/{criteriaSetId}:
+    get:
+      tags: [criteria]
+      operationId: getCriteriaSet
+      parameters: [ { $ref: "#/components/parameters/CriteriaSetId" } ]
+      responses:
+        "200": { $ref: "#/components/responses/CriteriaSet" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [criteria]
+      operationId: renameCriteriaSet
+      parameters: [ { $ref: "#/components/parameters/CriteriaSetId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { name: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/CriteriaSet" }
+    delete:
+      tags: [criteria]
+      operationId: deleteCriteriaSet
+      parameters: [ { $ref: "#/components/parameters/CriteriaSetId" } ]
+      responses:
+        "204": { description: Deleted }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /criteria-sets/{criteriaSetId}/duplicate:
+    post:
+      tags: [criteria]
+      summary: Copy a criteria set
+      description: The safe way to experiment — a drag edits a set in place (`reqs.md` Q168).
+      operationId: duplicateCriteriaSet
+      parameters: [ { $ref: "#/components/parameters/CriteriaSetId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name]
+              properties:
+                id: { type: string }
+                name: { type: string }
+      responses:
+        "201": { $ref: "#/components/responses/CriteriaSet" }
+
+  /criteria-sets/{criteriaSetId}/criteria/{attributeId}:
+    patch:
+      tags: [criteria]
+      summary: Adjust one criterion
+      description: |
+        Changing `weight` **rebalances the unlocked siblings within the pillar**, honouring locks,
+        so the pillar always sums to 1. The response returns every criterion in that pillar with
+        its new weight — the client sends one number and is told what the others became
+        (`arch.md` §8.3).
+      operationId: updateCriterion
+      parameters:
+        - { $ref: "#/components/parameters/CriteriaSetId" }
+        - { $ref: "#/components/parameters/AttributeId" }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "#/components/schemas/CriterionInput" } }
+      responses:
+        "200":
+          description: The affected pillar, rebalanced
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pillar, criteria]
+                properties:
+                  pillar: { type: string }
+                  criteria: { type: array, items: { $ref: "#/components/schemas/Criterion" } }
+        "409":
+          description: |
+            The change cannot be absorbed — every other weight in the pillar is locked.
+            `code: weights_all_locked`, with the blocking locks in `details`.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+
+  /criteria-sets/{criteriaSetId}/pillar-weights/{pillarId}:
+    put:
+      tags: [criteria]
+      operationId: updatePillarWeight
+      parameters:
+        - { $ref: "#/components/parameters/CriteriaSetId" }
+        - { name: pillarId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [weight]
+              properties:
+                weight: { type: number, minimum: 0, maximum: 1 }
+                weight_locked: { type: boolean }
+      responses:
+        "200":
+          description: All pillar weights for the level, rebalanced
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/PillarWeight" } }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /criteria-sets/{criteriaSetId}/match-rules/{matchRuleId}:
+    put:
+      tags: [criteria]
+      summary: Whether this set enforces a gate
+      operationId: setMatchRuleEnforcement
+      parameters:
+        - { $ref: "#/components/parameters/CriteriaSetId" }
+        - { name: matchRuleId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [is_enforced]
+              properties: { is_enforced: { type: boolean } }
+      responses:
+        "204": { description: Updated }
+
+  /criteria-sets/{criteriaSetId}/compound-rules/{compoundRuleId}:
+    put:
+      tags: [criteria]
+      summary: Whether this set applies a compound rule
+      operationId: setCompoundRuleApplication
+      parameters:
+        - { $ref: "#/components/parameters/CriteriaSetId" }
+        - { name: compoundRuleId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [is_applied]
+              properties: { is_applied: { type: boolean } }
+      responses:
+        "204": { description: Updated }
+
+  /match-rules:
+    get:
+      tags: [rules]
+      operationId: listMatchRules
+      parameters: [ { $ref: "#/components/parameters/LevelFilter" } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/MatchRule" } }
+
+  /match-rule-results:
+    get:
+      tags: [rules]
+      operationId: listMatchRuleResults
+      parameters:
+        - { name: candidate, in: query, schema: { type: string } }
+        - { name: match_rule, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/MatchRuleResult" } }
+
+  /match-rule-results/{matchRuleId}/{candidateId}:
+    put:
+      tags: [rules]
+      summary: Record or override a gate's answer
+      description: |
+        Also how a candidate is ruled out by hand — the `not_manually_excluded` rule with a
+        reason (`reqs.md` Q152). An override is audited and travels with the candidate.
+      operationId: putMatchRuleResult
+      parameters:
+        - { name: matchRuleId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/CandidateId" }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "#/components/schemas/MatchRuleResultInput" } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/MatchRuleResult" } }
+
+  /compound-rules:
+    get:
+      tags: [rules]
+      operationId: listCompoundRules
+      parameters: [ { $ref: "#/components/parameters/LevelFilter" } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/CompoundRule" } }
+
+  /data-acquisition-runs:
+    get:
+      tags: [data acquisition]
+      operationId: listRuns
+      parameters:
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Offset" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Run" } }
+                  total: { type: integer }
+    post:
+      tags: [data acquisition]
+      summary: Start a run
+      description: Returns immediately; the work happens in the background. Poll the run.
+      operationId: startRun
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "#/components/schemas/RunScope" } }
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Run" } }
+
+  /data-acquisition-runs/plan:
+    post:
+      tags: [data acquisition]
+      summary: Estimate a run without executing it
+      description: |
+        The dry run of `reqs.md` §6.3 — planned work and estimated cost, for confirmation before
+        anything is fetched or spent. Has no side effects despite being a POST, because the
+        scope is a body rather than a query.
+      operationId: planRun
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "#/components/schemas/RunScope" } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/RunPlan" } }
+
+  /data-acquisition-runs/{runId}:
+    get:
+      tags: [data acquisition]
+      summary: A run, with live progress
+      operationId: getRun
+      parameters: [ { name: runId, in: path, required: true, schema: { type: integer } } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/RunDetail" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /data-acquisition-runs/{runId}/retry:
+    post:
+      tags: [data acquisition]
+      summary: Retry only what failed
+      description: Creates a **new** run whose scope is exactly the failures of this one.
+      operationId: retryRun
+      parameters: [ { name: runId, in: path, required: true, schema: { type: integer } } ]
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Run" } }
+
+  /rankings:
+    get:
+      tags: [evaluation]
+      summary: Compute a ranking
+      description: |
+        **Computes and returns; stores nothing.** This is how "adjusting a weight recalculates
+        instantly" works over HTTP (`reqs.md` §5.6, Q155). To keep a result, `POST /evaluations`.
+      operationId: getRanking
+      parameters:
+        - { name: criteria_set, in: query, required: true, schema: { type: string } }
+        - { name: level, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Ranking" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /evaluations:
+    get:
+      tags: [evaluation]
+      operationId: listEvaluations
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/EvaluationSummary" } }
+    post:
+      tags: [evaluation]
+      summary: Keep a ranking
+      description: |
+        Persists the ranking **with a frozen copy of the criteria used** and the per-attribute
+        detail behind every score, so it reads the same later however the criteria set or the
+        scoring code change (`reqs.md` §3.4a, Q156).
+      operationId: saveEvaluation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [criteria_set, level]
+              properties:
+                criteria_set: { type: string }
+                level: { type: string }
+                note: { type: string, description: Why this one was kept }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/EvaluationSummary" } }
+
+  /evaluations/{evaluationId}:
+    get:
+      tags: [evaluation]
+      operationId: getEvaluation
+      parameters: [ { $ref: "#/components/parameters/EvaluationId" } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Ranking" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /evaluations/{evaluationId}/candidates/{candidateId}:
+    get:
+      tags: [evaluation]
+      summary: Why this candidate scored what it scored
+      description: |
+        The drill-down. Every attribute's normalised score, its effective weight after
+        redistribution, its contribution, and **the exact value used**, with that value's source
+        and dates. This is the provenance chain end to end.
+      operationId: getCandidateScoreDetail
+      parameters:
+        - { $ref: "#/components/parameters/EvaluationId" }
+        - { $ref: "#/components/parameters/CandidateId" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/CandidateScoreDetail" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /comparisons:
+    get:
+      tags: [evaluation]
+      summary: A focus candidate against comparators
+      description: Levels are never mixed. The comparator limit comes from settings.
+      operationId: getComparison
+      parameters:
+        - { name: criteria_set, in: query, required: true, schema: { type: string } }
+        - { name: level, in: query, required: true, schema: { type: string } }
+        - { name: focus, in: query, required: true, schema: { type: string } }
+        - name: comparators
+          in: query
+          required: true
+          schema: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Comparison" } }
+        "409":
+          description: Levels mixed, or more comparators than the configured limit.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+
+  /external-scores:
+    get:
+      tags: [values]
+      summary: Published scores from outside indices
+      description: |
+        Displayed **beside** the score, never fed into it (`reqs.md` §3.5a).
+      operationId: listExternalScores
+      parameters: [ { name: candidate, in: query, schema: { type: string } } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ExternalScore" } }
+
+components:
+
+  parameters:
+    LevelFilter: { name: level, in: query, schema: { type: string }, description: "`country` or `city`" }
+    AttributeId: { name: attributeId, in: path, required: true, schema: { type: string }, description: "e.g. `country.cost_of_living_index`" }
+    CandidateId: { name: candidateId, in: path, required: true, schema: { type: string }, description: "e.g. `country.portugal`" }
+    CriteriaSetId: { name: criteriaSetId, in: path, required: true, schema: { type: string } }
+    EvaluationId: { name: evaluationId, in: path, required: true, schema: { type: integer } }
+    Limit: { name: limit, in: query, schema: { type: integer, default: 100, maximum: 1000 } }
+    Offset: { name: offset, in: query, schema: { type: integer, default: 0 } }
+
+  responses:
+    Household:
+      description: OK
+      content: { application/json: { schema: { $ref: "#/components/schemas/Household" } } }
+    Settings:
+      description: OK
+      content: { application/json: { schema: { $ref: "#/components/schemas/Settings" } } }
+    CriteriaSet:
+      description: OK
+      content: { application/json: { schema: { $ref: "#/components/schemas/CriteriaSet" } } }
+    BadRequest:
+      description: Malformed request.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: No such resource.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Conflict:
+      description: A domain invariant would be violated.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  schemas:
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, description: Stable and machine-readable. Branch on this, never on the message. }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+      examples:
+        - { code: weights_all_locked, message: "Every other weight in this pillar is locked.", details: { locked: ["country.income_tax_effective"] } }
+
+    ReferencePeriod:
+      type: object
+      description: The span the data describes. Start equals end for a single day.
+      required: [start, end]
+      properties:
+        start: { type: string, format: date }
+        end: { type: string, format: date }
+
+    FxRate:
+      type: object
+      required: [rate, rate_date, data_source]
+      properties:
+        rate: { type: number }
+        rate_date: { type: string, format: date }
+        data_source: { type: string }
+
+    Level:
+      type: object
+      required: [id, depth_order]
+      properties:
+        id: { type: string }
+        depth_order: { type: integer }
+        parent_level: { type: [string, "null"] }
+
+    Pillar:
+      type: object
+      required: [id, name, level]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        level: { type: string }
+
+    ValueTypeName:
+      type: string
+      enum: [Monetary, Quantity, Count, Ratio, Index, LabelSet, ShareComposition, Boolean, AssignedScore, Text]
+
+    Attribute:
+      type: object
+      required: [id, name, level, value_type]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        level: { type: string }
+        pillar: { type: [string, "null"], description: "Null for descriptive attributes, which are never scored." }
+        value_type: { $ref: "#/components/schemas/ValueTypeName" }
+        unit: { type: [string, "null"] }
+        max_age_days: { type: [integer, "null"] }
+        manual_entry: { type: boolean }
+        breakdown_scheme: { type: [string, "null"] }
+        breakdown_options: { type: array, items: { type: string } }
+
+    DataSource:
+      type: object
+      required: [id, name, source_kind, default_priority, reliability_tier]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        source_kind: { type: string, enum: [structured, llm, manual] }
+        default_priority: { type: integer }
+        reliability_tier: { type: string }
+
+    Candidate:
+      type: object
+      required: [id, name, level]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        level: { type: string }
+        parent_candidate: { type: [string, "null"] }
+
+    CandidateDetail:
+      allOf:
+        - $ref: "#/components/schemas/Candidate"
+        - type: object
+          properties:
+            descriptive_values:
+              type: array
+              description: Attributes with no criterion — population, timezone, coastline.
+              items: { $ref: "#/components/schemas/Value" }
+
+    MonetaryPayload:
+      type: object
+      required: [amount, currency, amount_eur]
+      properties:
+        amount: { type: number }
+        currency: { type: string, description: ISO 4217 }
+        amount_eur: { type: number }
+        fx_rate: { $ref: "#/components/schemas/FxRate" }
+    QuantityPayload:
+      type: object
+      required: [magnitude, unit]
+      properties: { magnitude: { type: number }, unit: { type: string } }
+    CountPayload:
+      type: object
+      required: [count]
+      properties: { count: { type: integer }, basis: { type: [string, "null"] } }
+    RatioPayload:
+      type: object
+      required: [value]
+      properties: { value: { type: number }, basis: { type: [string, "null"] } }
+    IndexPayload:
+      type: object
+      required: [value, provider, scale_min, scale_max]
+      properties:
+        value: { type: number }
+        provider: { type: string }
+        scale_min: { type: number }
+        scale_max: { type: number }
+    LabelSetPayload:
+      type: object
+      required: [labels]
+      properties: { labels: { type: array, items: { type: string } } }
+    ShareCompositionPayload:
+      type: object
+      required: [shares]
+      properties:
+        shares:
+          type: array
+          items:
+            type: object
+            required: [label, share]
+            properties: { label: { type: string }, share: { type: number } }
+    BooleanPayload:
+      type: object
+      required: [value]
+      properties: { value: { type: boolean } }
+    AssignedScorePayload:
+      type: object
+      required: [value, range_min, range_max, assigned_by]
+      properties:
+        value: { type: number }
+        range_min: { type: number }
+        range_max: { type: number }
+        assigned_by: { type: string, enum: [llm, human] }
+        rationale: { type: string }
+    TextPayload:
+      type: object
+      required: [body]
+      properties: { body: { type: string } }
+
+    Value:
+      type: object
+      description: |
+        One measurement, with its provenance. `value_type` selects which variant `payload` holds.
+      required: [id, candidate, attribute, value_type, payload, data_source, reference_period, retrieval_date, confidence_level, is_active]
+      properties:
+        id: { type: integer }
+        candidate: { type: string }
+        attribute: { type: string }
+        breakdown_option: { type: [string, "null"] }
+        value_type: { $ref: "#/components/schemas/ValueTypeName" }
+        payload:
+          oneOf:
+            - $ref: "#/components/schemas/MonetaryPayload"
+            - $ref: "#/components/schemas/QuantityPayload"
+            - $ref: "#/components/schemas/CountPayload"
+            - $ref: "#/components/schemas/RatioPayload"
+            - $ref: "#/components/schemas/IndexPayload"
+            - $ref: "#/components/schemas/LabelSetPayload"
+            - $ref: "#/components/schemas/ShareCompositionPayload"
+            - $ref: "#/components/schemas/BooleanPayload"
+            - $ref: "#/components/schemas/AssignedScorePayload"
+            - $ref: "#/components/schemas/TextPayload"
+        data_source: { type: string }
+        reference_period: { $ref: "#/components/schemas/ReferencePeriod" }
+        retrieval_date: { type: string, format: date }
+        confidence_level: { type: string, enum: [absolute, high, medium, low] }
+        is_active: { type: boolean, description: Derived, not stored — the value scoring would use. }
+        rejection_reason: { type: [string, "null"] }
+        quote: { type: [string, "null"] }
+        citations: { type: array, items: { type: string, format: uri } }
+        data_acquisition_run: { type: [integer, "null"] }
+
+    HouseholdInput:
+      type: object
+      required: [net_income, number_adults, number_children, home_country_candidate]
+      properties:
+        net_income: { type: number }
+        number_adults: { type: integer, minimum: 1 }
+        number_children: { type: integer, minimum: 0, description: Under 18. }
+        target_monthly_spend: { type: number }
+        max_rent: { type: number }
+        home_country_candidate: { type: string }
+        home_city_candidate: { type: [string, "null"] }
+        citizenships: { type: array, items: { type: string, description: Candidate ids of countries. } }
+    Household:
+      allOf: [ { $ref: "#/components/schemas/HouseholdInput" } ]
+
+    SettingsInput:
+      type: object
+      properties:
+        min_coverage: { type: number, minimum: 0, maximum: 1 }
+        score_scale_max: { type: integer }
+        comparator_limit: { type: integer, minimum: 1 }
+        run_spend_cap_eur: { type: number, minimum: 0 }
+    Settings:
+      allOf: [ { $ref: "#/components/schemas/SettingsInput" } ]
+
+    CriterionInput:
+      type: object
+      description: Only the fields present are changed.
+      properties:
+        is_scored: { type: boolean }
+        weight: { type: number, minimum: 0, maximum: 1 }
+        weight_locked: { type: boolean }
+        goal: { type: string, enum: [minimise, maximise, target_range] }
+        target_range_min: { type: [number, "null"] }
+        target_range_max: { type: [number, "null"] }
+        zero_score_below: { type: [number, "null"] }
+        zero_score_above: { type: [number, "null"] }
+        normalisation_method: { type: string, enum: [fixed, percentile, as_is] }
+        blocks_if_missing: { type: boolean }
+        breakdown_option: { type: [string, "null"] }
+        reducer_mode: { type: [string, "null"], enum: [select, aggregate, null] }
+        scale_anchors:
+          type: array
+          items:
+            type: object
+            required: [input_value, score]
+            properties: { input_value: { type: number }, score: { type: integer } }
+        matching_threshold:
+          description: Shape depends on the attribute's value type. Null clears it.
+          oneOf:
+            - type: "null"
+            - type: object
+              properties: { min_value: { type: [number, "null"] }, max_value: { type: [number, "null"] } }
+            - type: object
+              properties:
+                labels:
+                  type: array
+                  items:
+                    type: object
+                    required: [label, containment_rule]
+                    properties:
+                      label: { type: string }
+                      containment_rule: { type: string, enum: [must_contain, must_not_contain] }
+            - type: object
+              properties: { required_value: { type: boolean } }
+
+    Criterion:
+      allOf:
+        - $ref: "#/components/schemas/CriterionInput"
+        - type: object
+          required: [attribute, pillar]
+          properties:
+            attribute: { type: string }
+            pillar: { type: string }
+
+    PillarWeight:
+      type: object
+      required: [pillar, weight, weight_locked]
+      properties:
+        pillar: { type: string }
+        weight: { type: number }
+        weight_locked: { type: boolean }
+
+    CriteriaSetSummary:
+      type: object
+      required: [id, name]
+      properties: { id: { type: string }, name: { type: string } }
+
+    CriteriaSet:
+      allOf:
+        - $ref: "#/components/schemas/CriteriaSetSummary"
+        - type: object
+          properties:
+            pillar_weights: { type: array, items: { $ref: "#/components/schemas/PillarWeight" } }
+            criteria: { type: array, items: { $ref: "#/components/schemas/Criterion" } }
+            enforced_match_rules: { type: array, items: { type: string } }
+            applied_compound_rules: { type: array, items: { type: string } }
+
+    MatchRule:
+      type: object
+      required: [id, name, level]
+      properties: { id: { type: string }, name: { type: string }, level: { type: string } }
+
+    MatchRuleResultInput:
+      type: object
+      required: [match_result]
+      properties:
+        match_result: { type: string, enum: [matching, not_matching, unknown] }
+        reason: { type: string }
+        data_source: { type: string, default: manual }
+        reference_period: { $ref: "#/components/schemas/ReferencePeriod" }
+        retrieval_date: { type: string, format: date }
+        override_reason: { type: [string, "null"] }
+
+    MatchRuleResult:
+      allOf:
+        - $ref: "#/components/schemas/MatchRuleResultInput"
+        - type: object
+          required: [match_rule, candidate]
+          properties:
+            match_rule: { type: string }
+            candidate: { type: string }
+            override_date: { type: [string, "null"], format: date }
+
+    CompoundRule:
+      type: object
+      required: [id, name, level, shape, outcome, inputs]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        level: { type: string }
+        shape: { type: string, enum: [ShareOfHouseholdField, SumBelowFloor, RatioBetweenAttributes] }
+        outcome: { type: string, enum: [warning, not_matching] }
+        threshold_min: { type: [number, "null"] }
+        threshold_max: { type: [number, "null"] }
+        inputs:
+          type: array
+          description: In order. Each is an attribute or a household field.
+          items:
+            type: object
+            properties:
+              input_order: { type: integer }
+              attribute: { type: [string, "null"] }
+              household_field: { type: [string, "null"] }
+
+    RunScope:
+      type: object
+      required: [level]
+      properties:
+        level: { type: string }
+        candidates: { type: [array, "null"], items: { type: string }, description: Null means every candidate at the level. }
+        attributes: { type: [array, "null"], items: { type: string }, description: Null means every attribute at the level. }
+
+    RunPlan:
+      type: object
+      required: [items_total, llm_call_count, estimated_cost_eur]
+      properties:
+        items_total: { type: integer }
+        llm_call_count: { type: integer }
+        estimated_cost_eur: { type: number }
+        by_source:
+          type: array
+          items:
+            type: object
+            properties: { data_source: { type: string }, items: { type: integer } }
+
+    Run:
+      type: object
+      required: [id, run_status, started_at]
+      properties:
+        id: { type: integer }
+        run_status: { type: string, enum: [running, completed, halted_on_spend_cap, failed] }
+        triggered_by: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+        llm_call_count: { type: integer }
+        cost_eur: { type: number }
+
+    RunDetail:
+      allOf:
+        - $ref: "#/components/schemas/Run"
+        - type: object
+          properties:
+            scope: { $ref: "#/components/schemas/RunScope" }
+            progress:
+              type: object
+              properties:
+                items_total: { type: integer }
+                items_completed: { type: integer }
+                items_failed: { type: integer }
+            failures:
+              type: array
+              items:
+                type: object
+                required: [candidate, attribute, error_message]
+                properties:
+                  candidate: { type: string }
+                  attribute: { type: string }
+                  error_message: { type: string }
+
+    Warning:
+      type: object
+      required: [compound_rule, detail]
+      properties: { compound_rule: { type: string }, detail: { type: string } }
+
+    NonMatchReason:
+      type: object
+      description: Exactly one of criterion, match_rule or compound_rule is set.
+      required: [reason_detail]
+      properties:
+        criterion: { type: [string, "null"], description: The attribute whose matching threshold was crossed. }
+        match_rule: { type: [string, "null"] }
+        compound_rule: { type: [string, "null"] }
+        reason_detail: { type: string }
+
+    CandidateResult:
+      type: object
+      required: [candidate, name, score, coverage, match_status]
+      properties:
+        candidate: { type: string }
+        name: { type: string }
+        rank: { type: [integer, "null"], description: Null when the candidate does not match. }
+        score: { type: [integer, "null"], minimum: 0, maximum: 100, description: Null only when insufficient data. }
+        coverage: { type: number, minimum: 0, maximum: 1 }
+        match_status: { type: string, enum: [matching, not_matching, insufficient_data] }
+        parent_not_matching: { type: boolean }
+        warnings: { type: array, items: { $ref: "#/components/schemas/Warning" } }
+        non_match_reasons: { type: array, items: { $ref: "#/components/schemas/NonMatchReason" } }
+        parent_score: { type: [integer, "null"], description: The country's score, shown beside a city for context. Never added in. }
+
+    Ranking:
+      type: object
+      required: [criteria_set, level, computed_at, candidates]
+      properties:
+        evaluation: { type: [integer, "null"], description: Set when this is a saved evaluation rather than a live computation. }
+        criteria_set: { type: string }
+        level: { type: string }
+        computed_at: { type: string, format: date-time }
+        candidates: { type: array, items: { $ref: "#/components/schemas/CandidateResult" } }
+
+    EvaluationSummary:
+      type: object
+      required: [id, criteria_set, level, computed_at]
+      properties:
+        id: { type: integer }
+        criteria_set: { type: string }
+        level: { type: string }
+        computed_at: { type: string, format: date-time }
+        note: { type: [string, "null"] }
+
+    AttributeScore:
+      type: object
+      required: [attribute, pillar, normalised_score, effective_weight, contribution]
+      properties:
+        attribute: { type: string }
+        pillar: { type: string }
+        normalised_score: { type: [integer, "null"], description: Null when no value was available. }
+        weight: { type: number, description: Weight within the pillar as configured. }
+        effective_weight: { type: number, description: After redistribution for missing data. }
+        contribution: { type: number }
+        value: { $ref: "#/components/schemas/Value" }
+        alternative_values:
+          type: array
+          description: Every other stored value for this attribute — superseded, rejected, from other sources.
+          items: { $ref: "#/components/schemas/Value" }
+
+    CandidateScoreDetail:
+      allOf:
+        - $ref: "#/components/schemas/CandidateResult"
+        - type: object
+          properties:
+            attribute_scores: { type: array, items: { $ref: "#/components/schemas/AttributeScore" } }
+
+    ComparisonAttributeRow:
+      type: object
+      required: [attribute, focus]
+      properties:
+        attribute: { type: string }
+        pillar: { type: string }
+        focus:
+          type: object
+          properties:
+            value: { $ref: "#/components/schemas/Value" }
+            normalised_score: { type: [integer, "null"] }
+        comparators:
+          type: array
+          items:
+            type: object
+            properties:
+              candidate: { type: string }
+              value: { $ref: "#/components/schemas/Value" }
+              normalised_score: { type: [integer, "null"] }
+              delta: { type: [number, "null"], description: Focus minus comparator, in the attribute's own unit. }
+              weighted_contribution: { type: [number, "null"], description: What the delta is worth. Drives the synthesis. }
+
+    Comparison:
+      type: object
+      required: [criteria_set, level, focus, comparators, attributes]
+      properties:
+        criteria_set: { type: string }
+        level: { type: string }
+        focus: { $ref: "#/components/schemas/CandidateResult" }
+        comparators: { type: array, items: { $ref: "#/components/schemas/CandidateResult" } }
+        attributes: { type: array, items: { $ref: "#/components/schemas/ComparisonAttributeRow" } }
+        synthesis:
+          type: array
+          description: Templated from weighted contributions, never model-written. Deterministic.
+          items:
+            type: object
+            properties:
+              comparator: { type: string }
+              score_delta: { type: integer }
+              advantages: { type: array, items: { type: string } }
+              disadvantages: { type: array, items: { type: string } }
+
+    ExternalScore:
+      type: object
+      required: [candidate, data_source, published_scale]
+      properties:
+        candidate: { type: string }
+        data_source: { type: string }
+        published_value: { type: [number, "null"] }
+        published_scale: { type: string }
+        published_rank: { type: [integer, "null"] }
+        published_rank_of: { type: [integer, "null"] }
+        reference_period: { $ref: "#/components/schemas/ReferencePeriod" }
+        retrieval_date: { type: string, format: date }
+        methodology_url: { type: [string, "null"], format: uri }
+        caveats: { type: [string, "null"] }
