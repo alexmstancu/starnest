@@ -47,7 +47,7 @@ Module layout (`arch.md` §6.1) — **named after the domain, not technical role
 | `data/` | Attribute, Value, the ten value types, sources, provenance, confidence, the active-value rule |
 | `household/` | The household record |
 | `criteria/` | CriteriaSet, Criterion, thresholds, weight rebalancing |
-| `acquisition/` | Runs, spend cap, retry, the `SourceAdapter` contract |
+| `data_acquisition/` | Runs, spend cap, retry, the `SourceAdapter` contract |
 | `evaluation/` | Normalisation, redistribution, coverage, matching, ranking, snapshots |
 | `comparison/` | Focus vs comparators, deltas, synthesis |
 | `api/` | The REST surface. **This is the presenter** — use cases return DTOs, `api/` serialises them |
@@ -62,7 +62,7 @@ Module layout (`arch.md` §6.1) — **named after the domain, not technical role
 The central structural idea. Evaluation is **not** uniform across all candidates:
 
 1. **Country level.** Cheap screening across candidate countries using structured sources only, **no LLM calls**. Countries below a qualification threshold are excluded.
-2. **City level.** Only for countries that survived the country screen, ~5 cities each. Structured *and* qualitative (LLM + search) acquisition.
+2. **City level.** Only for countries that survived the country screen, ~5 cities each. Structured *and* qualitative (LLM + search) data acquisition.
 
 **"Phase" is retired** — it named the same axis as `Candidate.level`. There is one concept: **level**, either `country` or `city`.
 
@@ -87,7 +87,7 @@ Attributes are grouped into **Pillars** — the load-bearing verticals of a life
 These are cross-cutting rules from the spec. Violating one silently breaks the product's purpose, so treat them as non-negotiable unless the user changes them explicitly.
 
 - **Nothing hardcoded.** The attribute catalog, pillars, default weights, default matching thresholds, and inclusion/exclusion rules are **rows in database tables**, seeded and changed by migrations versioned in git — never config files (`arch.md` §1.2). One store, so nothing can drift; catalog changes get referential integrity, the same audit trail as every other table, and transactions. Adding an attribute must be a data change, not a logic change. No literal attribute names or weights in application code.
-- **Acquisition and scoring are separate operations.** Adjusting a weight or threshold recalculates the score instantly from already-stored data. Score recalculation must **never** trigger a re-fetch. Re-fetching is explicit, per candidate and/or per attribute.
+- **Data acquisition and scoring are separate operations.** Adjusting a weight or threshold recalculates the score instantly from already-stored data. Score recalculation must **never** trigger a re-fetch. Re-fetching is explicit, per candidate and/or per attribute.
 - **Raw data is stored separately from computed scores**, with timestamps. This is what makes the previous invariant possible at ~100 cities.
 - **Multi-source, non-destructive active-value selection.** The same attribute may have different values from different sources. A configurable **source priority** decides which value is *active* for the score, but every value from every source stays stored and visible. Selecting an active value never discards data.
 - **Two distinct dates per stored value**, never merged or conflated: the **reference date** (what period the data point describes) and the **retrieval date** (when the app fetched it). Both must be displayable together.
@@ -115,9 +115,9 @@ The type determines what a `Value` stores, which normalisation methods are legal
 
 ## Scope discipline
 
-**v1 covers the country level only**, with the full feature set applied to it: pillar and criterion configuration, weight profiles, country nomination, acquisition runs, scoring with coverage and confidence, elimination reporting, the ranking dashboard with drill-down and provenance, and comparison. See `reqs.md` §1.3.
+**v1 covers the country level only**, with the full feature set applied to it: pillar and criterion configuration, weight profiles, country nomination, data acquisition runs, scoring with coverage and confidence, elimination reporting, the ranking dashboard with drill-down and provenance, and comparison. See `reqs.md` §1.3.
 
-**After v1:** the entire city level — city criteria, city nomination, and the LLM + `web_search` acquisition path.
+**After v1:** the entire city level — city criteria, city nomination, and the LLM + `web_search` data acquisition path.
 
 Explicitly **post-MVP — do not build without being asked**: personal annotations, color-gradient maps per property, favorites lists, saved criteria profiles, saved comparisons.
 
@@ -129,8 +129,8 @@ Explicitly **post-MVP — do not build without being asked**: personal annotatio
 
 ## Reference data sources
 
-Starting points for `acquisition/structured.py`: **WhereNext Global Relocation Index** (95 countries + ~130 cities, downloadable CSV/JSON — best fit for country-level screening), **Numbeo** (cost of living, safety, healthcare, pollution; countries and cities), **Teleport Cities** (maintenance status unverified — check before relying on it), **Nomads.com** (subscription, city-level only). See the spec appendix for URLs and caveats.
+Starting points for the structured adapters in `data_sources/`: **WhereNext Global Relocation Index** (95 countries + ~130 cities, downloadable CSV/JSON — best fit for country-level screening), **Numbeo** (cost of living, safety, healthcare, pollution; countries and cities), **Teleport Cities** (maintenance status unverified — check before relying on it), **Nomads.com** (subscription, city-level only). See the spec appendix for URLs and caveats.
 
 ## Setup note
 
-The qualitative acquisition path requires a dedicated Anthropic API key from console.anthropic.com — billed per usage, separate from a Claude.ai subscription.
+The qualitative data acquisition path requires a dedicated Anthropic API key from console.anthropic.com — billed per usage, separate from a Claude.ai subscription.

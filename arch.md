@@ -464,7 +464,7 @@ Adapters declare `mode`, because the two behave nothing alike:
 - **`per_candidate`** — one call per candidate or attribute. Eurostat, World Bank, Open-Meteo,
   the LLM path. Subject to rate limits and the budget cap.
 
-The acquisition layer must support both. A run mixes them.
+The data acquisition layer must support both. A run mixes them.
 
 ---
 
@@ -488,14 +488,14 @@ rather than the part of the problem it belongs to.
 | `data/` | Attribute, Value, the ten value types and their operations, DataSource, FxRate, breakdown schemes, provenance, confidence, the active-value rule | `candidates` |
 | `household/` | The household record and what reads from it | `candidates` |
 | `criteria/` | CriteriaSet, Criterion, matching thresholds, scale anchors, weight rebalancing with locks, which match rules a set enforces | `candidates`, `data`, `household` |
-| `acquisition/` | DataAcquisitionRun, run planning and estimation, the spend cap, partial failure and selective retry, the `SourceAdapter` contract | `candidates`, `data` |
+| `data_acquisition/` | DataAcquisitionRun, run planning and estimation, the spend cap, partial failure and selective retry, the `SourceAdapter` contract | `candidates`, `data` |
 | `evaluation/` | Normalisation, weight redistribution, coverage, matching, ranking, the Evaluation snapshot and its per-attribute detail | `candidates`, `data`, `household`, `criteria` |
 | `comparison/` | Focus and comparators, deltas, weighted contribution, the templated synthesis | `candidates`, `data`, `evaluation` |
 
 | Outside the policy core | Contains | Depends on |
 |---|---|---|
 | `api/` | The REST surface: routing, request parsing, DTO-to-JSON serialisation, status codes, error shapes | every use case it exposes |
-| `data_sources/` | One adapter per data source — Eurostat, Numbeo, the LLM path, manual entry | `acquisition`, `data` |
+| `data_sources/` | One adapter per data source — Eurostat, Numbeo, the LLM path, manual entry | `data_acquisition`, `data` |
 | `storage/` | The schema, its migrations, all SQL, and the store implementations | every module whose store interface it implements |
 
 **The user interface is not in this list.** It is a **separate client**, built and deployed on its
@@ -515,7 +515,7 @@ flowchart TD
     subgraph policy["policy — no technology anywhere"]
         comparison["comparison/"]
         evaluation["evaluation/"]
-        acquisition["acquisition/"]
+        data_acquisition["data_acquisition/"]
         criteria["criteria/"]
         household["household/"]
         data["data/"]
@@ -533,7 +533,7 @@ flowchart TD
 
     api --> evaluation
     api --> comparison
-    api --> acquisition
+    api --> data_acquisition
     api --> criteria
     api --> household
 
@@ -542,14 +542,14 @@ flowchart TD
     evaluation --> criteria
     evaluation --> household
     evaluation --> data
-    acquisition --> data
+    data_acquisition --> data
     criteria --> data
     criteria --> household
     data --> candidates
     household --> candidates
     comparison --> candidates
 
-    data_sources -.implements.-> acquisition
+    data_sources -.implements.-> data_acquisition
     storage -.implements.-> data
     storage -.implements.-> criteria
     storage -.implements.-> evaluation
@@ -599,8 +599,8 @@ inner module ever names a concrete implementation.
 
 | Interface | Declared in | Implemented in | Contract |
 |---|---|---|---|
-| `SourceAdapter` | `acquisition` | `data_sources/*` | Which attributes it can answer, at which levels, in bulk or per candidate; fetch and return values with their provenance |
-| `CostMeter` | `acquisition` | `data_sources/llm` | What a planned call will cost, and what a completed one did |
+| `SourceAdapter` | `data_acquisition` | `data_sources/*` | Which attributes it can answer, at which levels, in bulk or per candidate; fetch and return values with their provenance |
+| `CostMeter` | `data_acquisition` | `data_sources/llm` | What a planned call will cost, and what a completed one did |
 | `ValueStore` | `data` | `storage` | Read active values for candidates and attributes; append new values; never update |
 | `CatalogStore` | `data` | `storage` | Read attributes, pillars, levels, sources, breakdown schemes |
 | `FxRateProvider` | `data` | `sources` | The rate for a currency pair on a date, with its source |
@@ -611,7 +611,7 @@ inner module ever names a concrete implementation.
 
 **One store interface per module that needs one, never one per table.** A module receives only
 the operations it actually calls, so `comparison` cannot accidentally write a value and
-`evaluation` cannot accidentally start an acquisition run. Interface Segregation applied to
+`evaluation` cannot accidentally start a data acquisition run. Interface Segregation applied to
 persistence.
 
 ### 6.4 The REST surface
@@ -625,9 +625,9 @@ the domain rather than as a list of screens:
 | `/candidates` | list, read, create | Nomination is post-MVP; v1 seeds by migration |
 | `/attributes`, `/pillars`, `/levels`, `/data-sources` | list, read | **Read-only.** The catalog is changed by migration (§1.2), and there is deliberately no admin interface (`reqs.md` §2) |
 | `/criteria-sets`, `/criteria-sets/{id}/criteria` | full CRUD | Where weights, goals and thresholds are edited |
-| `/values` | list, filtered by candidate and attribute | Read-only over HTTP; values are written by acquisition, never by a client |
-| `/acquisition-runs` | create, read, list | `POST` starts one; `GET` polls its status, cost and failures |
-| `/acquisition-runs/{id}/retry` | create | Retries only what failed |
+| `/values` | list, filtered by candidate and attribute | Read-only over HTTP; values are written by data acquisition, never by a client |
+| `/data-acquisition-runs` | create, read, list | `POST` starts one; `GET` polls its status, cost and failures |
+| `/data-acquisition-runs/{id}/retry` | create | Retries only what failed |
 | `/rankings` | read, parameterised by criteria set and level | **Computes and returns; stores nothing.** This is how "moving a weight recalculates instantly" works over HTTP |
 | `/evaluations` | create, read, list | `POST` is the deliberate act of keeping a ranking, with its snapshot |
 | `/comparisons` | read, parameterised by focus and comparators | |
@@ -638,7 +638,7 @@ the domain rather than as a list of screens:
 > than a note — a slider drag is a `GET`, and nothing accumulates.
 
 > **Progress needs no streaming.** A run is a resource with a status, so a client polls
-> `GET /acquisition-runs/{id}`. Live progress falls out of the run record already being
+> `GET /data-acquisition-runs/{id}`. Live progress falls out of the run record already being
 > persisted, and no callback interface, socket or server-sent-event channel is required.
 
 ### 6.5 Use cases behind the surface
@@ -707,7 +707,7 @@ Preserved before the spec's deletion. These are its proposals, not settled decis
 
 ### 7.1 Goal
 
-A **local, self-contained application** that runs the whole pipeline — acquisition,
+A **local, self-contained application** that runs the whole pipeline — data acquisition,
 interpretation, scoring, ranking — with no manual intervention beyond configuring attributes and
 starting a run. The spec's phrase for the bar it must clear: **"zero copy-paste between chat
 and the app."**
@@ -747,8 +747,8 @@ out-of-band edits to a live database.
 The spec proposed `config/`, `acquisition/structured.py`, `acquisition/qualitative.py`,
 `storage/db.py`, `scoring/engine.py`, `scoring/compare.py`, `ui/app.py`.
 
-**§6.1 replaces it.** That layout named files after their technical role and split acquisition by
-*source kind* rather than by what acquisition means, which would have made "add a source" a
+**§6.1 replaces it.** That layout named files after their technical role and split data acquisition by
+*source kind* rather than by what data acquisition means, which would have made "add a source" a
 change to the core rather than a new plugin. `config/` has no place at all now that the catalog
 is data in the database (§1.2).
 
@@ -763,7 +763,7 @@ copied.** Separate country and city tables would reintroduce exactly the duplica
 → score → those below the qualification threshold do not have cities extracted.
 
 **City level:** for qualified countries, nominate cities → structured *and* qualitative
-acquisition, **run in parallel** → store → filter and score → ranking updates.
+data acquisition, **run in parallel** → store → filter and score → ranking updates.
 
 **Comparison:** pick a focus candidate and comparators → delta table plus templated synthesis.
 
@@ -845,7 +845,7 @@ queryable.
   they share no code (§6.1). §7.2 records what the spec proposed, as a starting point rather than
   a conclusion — though **Streamlit is effectively excluded** by that split, since its value was
   precisely that UI and logic live in one process. **The database is settled: PostgreSQL**
-  (§7.2). Whether geometry lives in the database via PostGIS, or is computed at acquisition
+  (§7.2). Whether geometry lives in the database via PostGIS, or is computed at data acquisition
   time and stored as plain numbers, stays open — but it is now an extension question inside a
   chosen engine, not an engine question.
 - **Time-series reducers.** Which rows scoring uses when an attribute has several reference
@@ -863,5 +863,5 @@ queryable.
 - **The REST contract's detail.** §6.4 fixes the resources and what each means; the request and
   response shapes, error format, and whether it is strictly REST or RPC-flavoured are open.
 - **First implementation order.** The spec's suggestion, still sound: repo scaffolding, then the
-  database schema, then structured acquisition as the first end-to-end sanity check. Sequencing
+  database schema, then structured data acquisition as the first end-to-end sanity check. Sequencing
   belongs in `devplan.md`.

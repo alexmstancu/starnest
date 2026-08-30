@@ -54,7 +54,7 @@ this document is a requirement; this section says only what arrives first.
 - Criteria sets: weights, directions, scales, matching thresholds — switchable
 - Match rules
 - The country seed list
-- Structured acquisition, with runs, cost control and selective retry
+- Structured data acquisition, with runs, cost control and selective retry
 - Evaluation: per-attribute normalisation, weight redistribution, coverage and confidence
 - Non-match reporting, with reasons
 - The ranking dashboard, with per-attribute drill-down and full provenance
@@ -84,7 +84,7 @@ machinery, which is precisely why it can wait: it is a different opinion about t
 (§3.4), not a different application.
 
 **After v1:** the whole of the **city level** — cities, the city attribute catalog, city
-nomination, and the LLM-plus-search acquisition path the city attributes depend on; the pillar
+nomination, and the LLM-plus-search data acquisition path the city attributes depend on; the pillar
 expansions flagged in §7 (health, seasonal climate, crime detail, rent outside the centre); the
 remaining prose-bound attributes (§9); and these, which carry requirements of their own rather
 than being bare names:
@@ -120,7 +120,7 @@ country is the comparison baseline, and the number of adults and children decide
 figure is even the right one to look at.
 
 > **"Budget" means household money throughout this document.** The ceiling on what an
-> acquisition run may cost in API calls is the **spend cap** (§6.3) — a different word for a
+> data acquisition run may cost in API calls is the **spend cap** (§6.3) — a different word for a
 > deliberately different thing.
 
 Without these, `city.cost_of_living_monthly` is an absolute figure that says nothing about whether
@@ -252,7 +252,7 @@ erDiagram
 > `CRITERIA_SET`, `EVALUATION` and `CANDIDATE_RESULT` are **what you make of it**. Every arrow
 > between the two halves runs from world to judgement — a criterion reads an attribute, an
 > evaluation reads values. **None runs back.** No value knows which criteria set is active; no
-> candidate stores a score. That absence is what §5.6 means by keeping acquisition and scoring
+> candidate stores a score. That absence is what §5.6 means by keeping data acquisition and scoring
 > separate, and it is why switching from `alex` to `partner` can never trigger a fetch.
 
 #### The complete model
@@ -619,7 +619,7 @@ erDiagram
 > data source, breakdown option, plus the reference period. The same figure from a second source is a
 > second row, never an overwrite (§3.6).
 
-**Acquisition**
+**Data acquisition**
 
 | Relation | What it does | Why it exists |
 |---|---|---|
@@ -1058,7 +1058,7 @@ explicit: you pin what you have decided and let the rest move.
 > `goal` — minimise, maximise, or hit a range — covers all three without straining.
 
 Switching criteria sets **recalculates from stored data with no re-fetch** (§5.6). Nothing in a
-criteria set touches acquisition: the measured values are shared, only their reading changes.
+criteria set touches data acquisition: the measured values are shared, only their reading changes.
 
 ### 3.4a Evaluation
 
@@ -1384,7 +1384,7 @@ like `Household`, and edited in the Settings tab (§8.2).
 | `min_coverage` | The floor below which a candidate is insufficient-data rather than scored (§5.3). Provisionally 60 |
 | `score_scale_max` | The top of the score range. Provisionally 100 |
 | `comparator_limit` | How many comparators one comparison may hold (§8.5). Provisionally 5 |
-| `run_spend_cap_eur` | The ceiling on what one acquisition run may cost (§6.3) |
+| `run_spend_cap_eur` | The ceiling on what one data acquisition run may cost (§6.3) |
 
 > **These are typed columns rather than a key/value table.** A `setting_key`/`setting_value`
 > pair would make every one of them text, so nothing could check that `min_coverage` is a
@@ -1537,7 +1537,7 @@ Other types convert differently or not at all: a `Quantity` converts through uni
 `Index` rescales from its declared bounds, and a `Count` converts not at all. Currency
 handling applies to exactly one type, which is why it does not live on every value.
 
-### 5.6 Acquisition and scoring are separate
+### 5.6 Data acquisition and scoring are separate
 
 **Adjusting a weight, matching threshold, criterion selection or `CriteriaSet` recalculates instantly from
 stored data.** Score recalculation must never trigger a fetch. Re-fetching is always explicit
@@ -1620,7 +1620,7 @@ criteria set** — you may rule out a country that Partner still wants scored.
 **Adding a country must be first-class, reusable functionality**, not a one-off script: name
 the country, and both its descriptive and its measured attribute values are acquired through
 the normal adapters. This shares its shape with adding a city — the same nomination then
-acquisition sequence at a different level — and the two should share implementation wherever
+data acquisition sequence at a different level — and the two should share implementation wherever
 the level abstraction allows.
 
 ### 6.2 Triggering a fetch
@@ -1706,7 +1706,7 @@ promoted automatically. Rent ages in months; a climate zone ages in decades.
 
 Every data source is a **plug-in behind a common interface**, not a branch inside a fetcher.
 Adding a source must mean writing one new adapter and registering it in configuration — never
-editing the acquisition core, the scoring engine, or any existing adapter.
+editing the data acquisition core, the scoring engine, or any existing adapter.
 
 An adapter declares which criteria it can answer, at which levels, its reliability tier
 (§5.7), its rate limits, and whether it is a bulk download or a per-candidate query
@@ -2310,7 +2310,7 @@ The main results view.
   source priorities, candidate seed lists and inclusion rules all live in data loaded at
   startup. Adding a criterion is a data change, not a logic change. No literal criterion name
   or weight appears in application code.
-- **Acquisition and scoring are separate operations** (§5.6).
+- **Data acquisition and scoring are separate operations** (§5.6).
 - **Raw values are stored separately from computed scores**, with timestamps.
 - **No value is ever discarded** (§3.6).
 - **Two distinct dates per value**, never conflated (§3.6).
@@ -2366,11 +2366,11 @@ wondering whether a second concept is hiding behind the second word.
 | Term | Definition |
 |---|---|
 | **DataSource** | Where values come from: `structured` (an API or dataset), `llm` (model plus web search), or `manual` (typed by you). Manual entry is first-class and ranked like any other |
-| **Adapter** | The plug-in that fetches from one source. Declares which attributes it serves, at which levels, its rate limits, and whether it is a bulk download or a per-candidate call. Adding a source means writing one adapter, never editing the acquisition core |
+| **Adapter** | The plug-in that fetches from one source. Declares which attributes it serves, at which levels, its rate limits, and whether it is a bulk download or a per-candidate call. Adding a source means writing one adapter, never editing the data acquisition core |
 | **Manual entry** | A value typed by hand rather than fetched. Permitted only where an attribute declares `manual_entry` (§6.5), ranked **last** in priority, and always superseded automatically once a real source appears. Match rules are manual by nature and are not governed by this restriction |
 | **Source priority** | The configured ordering deciding which value is active. A standing editorial judgement per attribute: Numbeo outranks national statistics for city rent, despite being less reliable in general |
 | **DataAcquisitionRun** | One programmatic fetch that writes values: when it ran, what it touched, what it cost, what failed. **Not** a user session, **not** a scoring pass — that is an Evaluation, which touches no source — and **not** a single LLM call. Values link back to the run that produced them, which is what makes selective retry possible |
-| **Spend cap** | The ceiling on what one acquisition run may cost in API calls. Distinct from household money, which is what §3.9 means by budget |
+| **Spend cap** | The ceiling on what one data acquisition run may cost in API calls. Distinct from household money, which is what §3.9 means by budget |
 
 ### What it is worth to you
 
@@ -2488,7 +2488,7 @@ not only *what*.
 | Q49 | Distance criteria use a saturating scale | 5 km vs 15 km to the sea matters; 200 km vs 250 km does not |
 | Q50 | Country nature measures *diversity*, not presence | A large country can hold sea, mountains, lakes and forest at once; coexistence is what is worth screening |
 | Q51 | Descriptive attributes gain a natural-landscape section | Descriptions inform, criteria judge — "Calanques, 2 km" is context, "nature 8.7" is a score |
-| Q52 | Data sources are plug-ins behind a common interface | Adding a source must be one adapter plus config, never an edit to the acquisition core |
+| Q52 | Data sources are plug-ins behind a common interface | Adding a source must be one adapter plus config, never an edit to the data acquisition core |
 | Q75 | `connectivity` added at country level | National infrastructure — intercity rail, motorways, international air, broadband coverage — is a country-level fact that nothing measured. Each criterion pairs with a city one rather than duplicating it |
 | Q73 | Validation has two layers: type-implicit and criterion-explicit | Non-negativity is not a `Monetary` rule — net income can be negative — so it is declared per criterion; a `Ratio` being 0–100 is inherent to the type |
 | Q74 | Validation failure is distinct from a matching-threshold failure | A matching threshold makes a candidate not match; a validation failure rejects an implausible value and flags the source. Conflating them lets a scraper bug rule out a country |
@@ -2532,7 +2532,7 @@ not only *what*.
 | Q77 | Five invented composites defined or demoted | `country.natural_diversity` gets an explicit six-condition count; `rail_network_quality` becomes the concrete `country.rail_network_density`; `climate_trajectory_national` becomes `country.projected_summer_heat_days` under a named scenario; the two `AssignedScore` criteria get a stated rubric. None may look sourced while resting on an undefined formula |
 | Q78 | Three attributes carrying two measurements each were split | `protected_area_access`, `local_climate` and `housing_quality` each mixed two units in one criterion, which no value type can express |
 | Q76 | Weights auto-rebalance proportionally, with a per-weight lock | Never leaves a criteria set invalid; locking makes "I have decided this one" explicit. If every other weight in a group is locked, the UI refuses the change and names the blocking locks |
-| Q60 | Adding a country is first-class, reusable, shared with adding a city | Same nomination → attribute population → acquisition sequence at a different level |
+| Q60 | Adding a country is first-class, reusable, shared with adding a city | Same nomination → attribute population → data acquisition sequence at a different level |
 | Q53 | **Pillar**, not pillar, group or dimension | These are load-bearing verticals of a life, not retail bins. Precedent: Legatum Prosperity Index. "Dimension" implies an axis; "domain" collides with the domain model; "chapter" implies sequence where these coexist |
 | — | `Candidate` replaces `Target` | "Target" also named a role in comparisons; the entity and the role needed separating |
 
@@ -2605,5 +2605,5 @@ Recorded from a front-to-back read of this document.
 | Q158 | **`api/` is the presenter**; there is no output boundary per use case | The inversion clean architecture asks for is real and the REST layer performs it: use cases return DTOs, `api/` turns them into a representation. The multiplicity lives in clients of the contract, not in implementors of an in-process interface |
 | Q159 | Backend and interface **share no code**, not even DTO definitions | A shared type is a dependency HTTP was supposed to remove, and it is how a decoupled interface quietly becomes coupled |
 | Q160 | `GET /rankings` computes and returns; `POST /evaluations` persists | Two resources expressing Q155: a slider drag is a read that stores nothing, and keeping a result is a deliberate write |
-| Q161 | Acquisition progress is polled from the run resource, not streamed | The run is already persisted with its status, cost and failures, so live progress needs no callback interface, socket or event channel |
+| Q161 | Data acquisition progress is polled from the run resource, not streamed | The run is already persisted with its status, cost and failures, so live progress needs no callback interface, socket or event channel |
 
