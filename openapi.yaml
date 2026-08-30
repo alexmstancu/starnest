@@ -721,7 +721,7 @@ components:
       type: object
       required: [code, message]
       properties:
-        code: { type: string, description: Stable and machine-readable. Branch on this, never on the message. }
+        code: { type: string, description: "Stable and machine-readable. Branch on this, never on the message." }
         message: { type: string }
         details: { type: object, additionalProperties: true }
       examples:
@@ -896,7 +896,7 @@ components:
         reference_period: { $ref: "#/components/schemas/ReferencePeriod" }
         retrieval_date: { type: string, format: date }
         confidence_level: { type: string, enum: [absolute, high, medium, low] }
-        is_active: { type: boolean, description: Derived, not stored — the value scoring would use. }
+        is_active: { type: boolean, description: "Derived, not stored — the value scoring would use." }
         rejection_reason: { type: [string, "null"] }
         quote: { type: [string, "null"] }
         citations: { type: array, items: { type: string, format: uri } }
@@ -942,7 +942,7 @@ components:
         normalisation_method: { type: string, enum: [fixed, percentile, as_is] }
         blocks_if_missing: { type: boolean }
         breakdown_option: { type: [string, "null"] }
-        reducer_mode: { type: [string, "null"], enum: [select, aggregate, null] }
+        reducer_mode: { type: string, enum: [select, aggregate], description: "Omit when the attribute has no breakdown." }
         scale_anchors:
           type: array
           items:
@@ -1130,7 +1130,7 @@ components:
         parent_not_matching: { type: boolean }
         warnings: { type: array, items: { $ref: "#/components/schemas/Warning" } }
         non_match_reasons: { type: array, items: { $ref: "#/components/schemas/NonMatchReason" } }
-        parent_score: { type: [integer, "null"], description: The country's score, shown beside a city for context. Never added in. }
+        parent_score: { type: [integer, "null"], description: "The country's score, shown beside a city for context. Never added in." }
 
     Ranking:
       type: object
@@ -1194,7 +1194,7 @@ components:
               candidate: { type: string }
               value: { $ref: "#/components/schemas/Value" }
               normalised_score: { type: [integer, "null"] }
-              delta: { type: [number, "null"], description: Focus minus comparator, in the attribute's own unit. }
+              delta: { type: [number, "null"], description: "Focus minus comparator, in the attribute's own unit." }
               weighted_contribution: { type: [number, "null"], description: What the delta is worth. Drives the synthesis. }
 
     Comparison:
