@@ -127,13 +127,13 @@ the attribute catalog, where adapters read them.
 > alternates as facts; the ID never changes afterwards, whatever the country later calls itself.
 
 **`value` uses a surrogate primary key.** The natural key is five columns —
-`(candidate, attribute, data_source, variant_key, reference_period_start, retrieval_date)` — and
+`(candidate, attribute, data_source, breakdown_option, reference_period_start, retrieval_date)` — and
 propagating that into ten child tables would mean fifty columns of duplication and joins on
 five conditions. Instead:
 
 ```
 value          id            surrogate PK
-               UNIQUE (candidate, attribute, data_source, variant_key,
+               UNIQUE (candidate, attribute, data_source, breakdown_option,
                        reference_period_start, retrieval_date)
 
 value_monetary value_id      FK → value.id
@@ -191,7 +191,7 @@ columns for every type's payload, or ten unrelated tables, the shape is a **pare
 typed child tables**:
 
 ```
-value              id, candidate, attribute, data_source, variant_key,
+value              id, candidate, attribute, data_source, breakdown_option,
                    reference_period_start, reference_period_end,
                    retrieval_date, confidence_level, usage_status,
                    data_acquisition_run

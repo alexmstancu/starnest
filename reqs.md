@@ -85,7 +85,7 @@ machinery, which is precisely why it can wait: it is a different opinion about t
 
 **After v1:** the whole of the **city level** — cities, the city attribute catalog, city
 nomination, and the LLM-plus-search acquisition path the city attributes depend on; the pillar
-expansions flagged in §7 (health, seasonal climate, crime breakdown, rent variants); the
+expansions flagged in §7 (health, seasonal climate, crime detail, rent outside the centre); the
 remaining prose-bound attributes (§9); and these, which carry requirements of their own rather
 than being bare names:
 
@@ -241,7 +241,7 @@ erDiagram
         text pillar FK
         text level FK
         text value_type FK
-        text variant_vocabulary FK
+        text breakdown_scheme FK
         interval max_age
         bool manual_entry
     }
@@ -259,12 +259,12 @@ erDiagram
         text data_source FK
         int rank
     }
-    VARIANT_VOCABULARY {
+    BREAKDOWN_SCHEME {
         text id PK
     }
-    VARIANT_KEY {
+    BREAKDOWN_OPTION {
         text id PK
-        text variant_vocabulary FK
+        text breakdown_scheme FK
     }
     DATA_SOURCE {
         text id PK
@@ -277,7 +277,7 @@ erDiagram
         text candidate FK
         text attribute FK
         text data_source FK
-        text variant_key FK
+        text breakdown_option FK
         bigint data_acquisition_run FK
         date reference_period_start
         date reference_period_end
@@ -352,7 +352,7 @@ erDiagram
         bigint id PK
         text criteria_set FK
         text attribute FK
-        text variant_key FK
+        text breakdown_option FK
         bool is_scored
         numeric weight
         bool weight_locked
@@ -426,8 +426,8 @@ erDiagram
     CANDIDATE ||--o{ CANDIDATE : "parent of"
     PILLAR ||--o{ ATTRIBUTE : groups
     VALUE_TYPE ||--o{ ATTRIBUTE : types
-    VARIANT_VOCABULARY ||--o{ VARIANT_KEY : enumerates
-    VARIANT_VOCABULARY ||--o{ ATTRIBUTE : "supplies variants to"
+    BREAKDOWN_SCHEME ||--o{ BREAKDOWN_OPTION : enumerates
+    BREAKDOWN_SCHEME ||--o{ ATTRIBUTE : "breaks down"
     ATTRIBUTE ||--o| ATTRIBUTE_ALLOWED_RANGE : validates
     ATTRIBUTE ||--o{ ATTRIBUTE_ALLOWED_LABEL : validates
     ATTRIBUTE ||--o{ ATTRIBUTE_SOURCE_PRIORITY : overrides
@@ -435,7 +435,7 @@ erDiagram
     ATTRIBUTE ||--o{ VALUE : "realised as"
     CANDIDATE ||--o{ VALUE : "measured by"
     DATA_SOURCE ||--o{ VALUE : produces
-    VARIANT_KEY ||--o{ VALUE : "distinguishes"
+    BREAKDOWN_OPTION ||--o{ VALUE : "distinguishes"
     DATA_ACQUISITION_RUN ||--o{ VALUE : produced
     DATA_ACQUISITION_RUN ||--o{ DATA_ACQUISITION_FAILURE : recorded
     CANDIDATE ||--o{ DATA_ACQUISITION_FAILURE : "failed for"
@@ -452,7 +452,7 @@ erDiagram
     PILLAR ||--o{ PILLAR_WEIGHT : "weighted by"
     CRITERIA_SET ||--o{ CRITERION : contains
     ATTRIBUTE ||--o{ CRITERION : "judged by"
-    VARIANT_KEY ||--o{ CRITERION : "selected by"
+    BREAKDOWN_OPTION ||--o{ CRITERION : "selected by"
     CRITERION ||--o{ CRITERION_SCALE_ANCHOR : "scaled by"
     CRITERION ||--o| CRITERION_THRESHOLD_RANGE : "bounded by"
     CRITERION ||--o{ CRITERION_THRESHOLD_LABEL : "bounded by"
@@ -493,8 +493,8 @@ erDiagram
 |---|---|---|
 | `PILLAR \|\|--o{ ATTRIBUTE` | Each attribute sits in one vertical | Weights normalise within a pillar; the pillar is where that grouping lives |
 | `VALUE_TYPE \|\|--o{ ATTRIBUTE` | Declares the semantic type | Determines the legal scales, the threshold shape, and what a value stores (§3.3a) |
-| `VARIANT_VOCABULARY \|\|--o{ VARIANT_KEY` | Enumerates `one_bedroom`, `two_bedroom`, … | A controlled vocabulary, so a typo cannot invent a variant |
-| `VARIANT_VOCABULARY \|\|--o{ ATTRIBUTE` | Marks an attribute as multi-valued | Optional: most attributes point at nothing and hold one value |
+| `BREAKDOWN_SCHEME \|\|--o{ BREAKDOWN_OPTION` | Enumerates `one_bedroom`, `two_bedroom`, … | A controlled vocabulary, so a typo cannot invent an option |
+| `BREAKDOWN_SCHEME \|\|--o{ ATTRIBUTE` | Declares what an attribute is broken down by | Optional: most attributes point at nothing and hold one value |
 | `ATTRIBUTE \|\|--o\| ATTRIBUTE_ALLOWED_RANGE` | Per-attribute numeric validation | Rent declares `> 0`; temperature allows negatives. At most one row per attribute |
 | `ATTRIBUTE \|\|--o{ ATTRIBUTE_ALLOWED_LABEL` | Per-attribute vocabulary validation | A `LabelSet` may only carry labels declared here |
 | `ATTRIBUTE \|\|--o{ ATTRIBUTE_SOURCE_PRIORITY` | Overrides the global source order | Numbeo outranks Eurostat on rent; the reverse holds elsewhere (§6.6) |
@@ -507,11 +507,11 @@ erDiagram
 | `ATTRIBUTE \|\|--o{ VALUE` | A value measures one attribute | The value's type, unit and validation all come from here |
 | `CANDIDATE \|\|--o{ VALUE` | A value is about one place | |
 | `DATA_SOURCE \|\|--o{ VALUE` | Records who said it | Provenance is mandatory (§10), and priority needs the source to choose an active value |
-| `VARIANT_KEY \|\|--o{ VALUE` | Which variant this figure is | Null for ordinary attributes. This is what lets all three rents be stored at once, so changing household size needs no re-fetch (§3.3b) |
+| `BREAKDOWN_OPTION \|\|--o{ VALUE` | Which case this figure describes | Null for ordinary attributes. This is what lets all three rents be stored at once, so changing household size needs no re-fetch (§3.3b) |
 | `DATA_ACQUISITION_RUN \|\|--o{ VALUE` | Which run produced it | Makes selective retry and "what changed since last run" possible |
 
 > **Together these four foreign keys are the natural key of a value**: candidate, attribute,
-> data source, variant, plus the reference period. The same figure from a second source is a
+> data source, breakdown option, plus the reference period. The same figure from a second source is a
 > second row, never an overwrite (§3.6).
 
 **Acquisition**
@@ -549,7 +549,7 @@ erDiagram
 
 > **The household has no link to criteria, and that is deliberate.** An earlier draft drew one,
 > labelled "supplies defaults to". It was wrong: no foreign key exists. The household is a
-> single row the engine *reads* when choosing a default variant or raising a rent warning. A
+> single row the engine *reads* when choosing a default breakdown option or raising a rent warning. A
 > relation would have implied a stored dependency that does not exist and would have to be
 > maintained.
 
@@ -561,7 +561,7 @@ erDiagram
 | `PILLAR \|\|--o{ PILLAR_WEIGHT` | The other half | |
 | `CRITERIA_SET \|\|--o{ CRITERION` | A set is its criteria | |
 | `ATTRIBUTE \|\|--o{ CRITERION` | A criterion judges exactly one attribute | The central relation of the model. Many criteria may judge one attribute — one per set — and an attribute with **no** criterion is descriptive and never scored (§3.3) |
-| `VARIANT_KEY \|\|--o{ CRITERION` | Which variant this criterion scores | A *preference*: two bedrooms today, three tomorrow, recalculated with no re-fetch |
+| `BREAKDOWN_OPTION \|\|--o{ CRITERION` | Which option this criterion scores | A *preference*: two bedrooms today, three tomorrow, recalculated with no re-fetch |
 | `CRITERION \|\|--o{ CRITERION_SCALE_ANCHOR` | The `fixed` scale's anchor points | Was `scale_params` JSON. As rows, "500 EUR → 100, 2500 EUR → 0" is inspectable and checkable |
 | `CRITERION \|\|--o\| CRITERION_THRESHOLD_RANGE` | Numeric matching threshold | Was `matching_threshold` JSON. Four typed children replace it, mirroring how `VALUE` is typed |
 | `CRITERION \|\|--o{ CRITERION_THRESHOLD_LABEL` | Must-contain / must-not-contain | Many rows, one per label |
@@ -671,7 +671,7 @@ no collisions, and `relocation_window` applies at both levels, so the scheme wou
 | `allowed_range`, `allowed_labels` | Per-attribute validation, beyond what the type already enforces — §3.3a |
 | `max_age` | How quickly this kind of data goes stale (§3.6). **Objective** — rent ages in months whoever is asking |
 | `source_priority_override` | Optional replacement for the global source order (§6.6). **Objective** — an admin quality judgement; §2 says users do not connect sources |
-| `variants` | Optional. If set, this attribute holds **several values at once**, one per key — §3.3b |
+| `breakdown_scheme` | Optional. If set, this attribute is **broken down** and holds several values at once, one per option — §3.3b |
 | `manual_entry` | Whether a value for this attribute may be typed by hand. **Defaults to forbidden** — §6.5 |
 
 Attributes describing the same concept at different levels are **separate attributes** with
@@ -814,26 +814,27 @@ each declares `> 0` for itself. Likewise `country.avg_annual_temperature` declar
 
 Some attributes are not one number. Rent in Lisbon is roughly €1,100 for a one-bedroom flat,
 €1,410 for a two-bedroom and €1,900 for a three-bedroom — none of these is history, they are all
-current, and together they describe the attribute. Such an attribute declares **`variants`**:
-the controlled vocabulary its keys come from.
+current, and together they describe the attribute. Such an attribute declares a
+**`breakdown_scheme`**: the controlled vocabulary its options come from.
 
-> **The field is called `variants` because that is what they are** — the several forms one
-> attribute legitimately takes at the same moment. It was previously `key_domain`, which said
-> neither what a key was nor what a domain was.
+> **"Broken down by" is the phrase Eurostat and the OECD already use** for exactly this —
+> population broken down by age group, rent broken down by dwelling size. Naming it the same way
+> means the schema reads like the sources the adapters fetch from. The scheme is *what it is
+> broken down by* (`bedroom_count`); an option is *one case* within it (`two_bedroom`).
 
-| Attribute | `variants` | Variant keys |
+| Attribute | `breakdown_scheme` | Breakdown options |
 |---|---|---|
 | `city.rent_centre` | `bedroom_count` | `one_bedroom`, `two_bedroom`, `three_bedroom`, `four_plus_bedroom` |
 | `city.cost_of_living_monthly` | `occupancy` | `one_person`, `two_people`, `three_people`, `four_plus_people` |
 
-Variant vocabularies are controlled and live in reference tables like everything else.
+Breakdown schemes are controlled vocabularies and live in reference tables like everything else.
 
 **Scoring needs one number, so a reducer picks it.** Two kinds:
 
-- **`select`** — one variant applies to you. Rent, cost of living, childcare by age band. The
+- **`select`** — one option applies to you. Rent, cost of living, childcare by age band. The
   default reads the household parameters of §3.9, so a two-person household selects
   `two_bedroom` with nothing configured.
-- **`aggregate`** — no single variant applies and the shape across all of them is what matters.
+- **`aggregate`** — no single option applies and the shape across all of them is what matters.
   Monthly temperature would be the example: you do not pick a month, you ask how many fall in a
   comfortable range. *(No criterion uses this yet.)*
 
@@ -849,8 +850,8 @@ already stored. Two criteria sets may disagree: one selecting `two_bedroom` and 
 > Worse, it would make the simulation impossible: asking for a three-bedroom needs that figure
 > already stored.
 >
-> It is also why a variant must never be baked into an identifier. An attribute named for one
-> bedroom count would freeze a preference into an identity.
+> It is also why a breakdown option must never be baked into an identifier. An attribute named
+> for one bedroom count would freeze a preference into an identity.
 
 ### 3.4 CriteriaSet and Criterion
 
@@ -867,7 +868,7 @@ and it is the only place a preference may live.
 | `target_range_min`, `target_range_max` | For `goal: target_range`: the band that scores 100. One person's ideal temperature is not another's |
 | `zero_score_below`, `zero_score_above` | Where the score reaches 0 outside that band, **in the attribute's own unit**. Linear between the band edge and this point |
 | `normalisation_method` | `fixed` (default) \| `percentile` \| `as_is` — §5.1 |
-| `reducer_mode`, `variant_key` | For multi-value attributes (§3.3b): `select` one variant — named in `variant_key` — or `aggregate` across all of them. Defaults from the household; override it to simulate |
+| `reducer_mode`, `breakdown_option` | For a broken-down attribute (§3.3b): `select` one option — named in `breakdown_option` — or `aggregate` across all of them. Defaults from the household; override it to simulate |
 | `blocks_if_missing` | If true, a missing value makes the candidate unscoreable — §5.3 |
 
 **The scale anchors and the matching threshold are child rows, not columns**, because both vary
@@ -1024,7 +1025,7 @@ overwritten and never discarded.**
 |---|---|
 | `candidate`, `attribute`, `data_source` | What this measures and where it came from |
 | `reference_period_start`, `reference_period_end` | **What period the data describes** — two dates, not one. "Average temperature 2025" is a year; "rent, July 2026" a month; an fx rate a single day, where start and end are equal. A single point date could not express which of the three it was, so the pair is stored and both are displayed |
-| `variant_key` | Which variant this figure is, for a multi-value attribute (§3.3b). Null otherwise |
+| `breakdown_option` | Which case this figure describes, for a broken-down attribute (§3.3b). Null otherwise |
 | `retrieval_date` | **When the app fetched it** |
 | `confidence` | `absolute` \| `high` \| `medium` \| `low` — §5.7. Derived, with a manual override retained alongside |
 | `quote` | Supporting text or summary, where applicable |
@@ -1138,7 +1139,7 @@ It is an entity rather than a scattering of settings because it is **read from t
 places**, and a change to it must reach all three at once:
 
 - **Criterion defaults** — `number_adults` plus `number_children` picks the default rent
-  variant and cost basket (§3.3b).
+  breakdown option and cost basket (§3.3b).
 - **Cross-attribute warnings** — rent read against `target_monthly_spend` (§5.3).
 - **Match rules and comparison** — `citizenship` decides free movement, `home_country` is the
   comparison baseline and the other party to a tax treaty, `home_city` is the destination for
@@ -1950,7 +1951,7 @@ everywhere; each tab owns one stage of the workflow and nests its detail views i
   auto-seeded countries.
 - **Household.** The parameters of §3.9 — income, size, target spend, rent ceiling, home
   country and city, citizenship. **Prompted first on a fresh installation**, because several
-  attributes mean nothing without them and the defaults for rent variants and cost baskets are
+  attributes mean nothing without them and the defaults for rent breakdowns and cost baskets are
   read from here.
 - **Settings.** Score scale, `min_coverage`, comparator limit and run spend cap.
 
@@ -2035,7 +2036,7 @@ The main results view.
   different mechanisms and why neither requires a schema change later.
 - **Post-v1 pillar expansions**, stated in place in §7 rather than here: health beyond a single
   index, seasonal climate with precipitation and humidity, crime decomposed from the perception
-  index, and the rent variants. Each needs source research before it can be specified.
+  index, and rent outside the centre. Each needs source research before it can be specified.
 
 ---
 
@@ -2090,7 +2091,8 @@ wondering whether a second concept is hiding behind the second word.
 | **Value type** | The semantic type of an attribute's measurement: `Monetary`, `Quantity`, `Count`, `Ratio`, `Index`, `LabelSet`, `ShareComposition`, `Boolean`, `AssignedScore`, `Text`. Determines what a value stores, which normalisations are legal, how it displays, and what a matching threshold means. Immutable — changing it means creating a new attribute |
 | **Value** | One measurement: of one attribute, for one candidate, from one source, fetched at one moment. Numbeo's Lisbon rent is one value; a manual estimate is another; Numbeo's figure from three months ago is a third. Nothing is ever overwritten |
 | **Active value** | Where several sources hold a value for the same attribute and candidate, the one scoring actually uses. All the others stay stored and visible |
-| **Variants** | The controlled vocabulary of forms one attribute takes at the same moment: `one_bedroom`, `two_bedroom`, `three_bedroom`. Vocabularies in use: `bedroom_count`, `occupancy`, `season`. Not history — all current at once |
+| **Breakdown scheme** | What an attribute is broken down by, when it holds several values at once: `bedroom_count`, `occupancy`, `season`. The phrase Eurostat and the OECD use for the same idea |
+| **Breakdown option** | One case within a scheme — `two_bedroom`. Every value of a broken-down attribute carries one. Not history: all options are current at the same moment |
 | **Reference period / retrieval date** | The two dates every value carries, **never merged**. The reference period is what span the data describes; the retrieval date is when the app fetched it |
 | **Confidence** | What one particular value is worth: `absolute`, `high`, `medium`, `low`. Derived from the source's tier, the value's age, its geographic fit, and whether it was reported or inferred. Grades *values*; source priority grades *sources* |
 | **Validation** | A check that a value is *credible*. A rent of −500, or a ratio of 140%, is a data error. Failing validation rejects the value and flags the source. **Not** a matching threshold |
@@ -2116,7 +2118,7 @@ wondering whether a second concept is hiding behind the second word.
 | **Lock** | Pins a weight so rebalancing skips it. Makes "I have decided this one" explicit |
 | **Goal** | What you want from an attribute: `minimise`, `maximise`, or `target_range`. A **preference, not a fact** — a large expat community is a soft landing to one person and a bubble to another. Named `goal` rather than `direction` because a target range is not a direction |
 | **`is_scored` / `blocks_if_missing`** | Two different questions on a criterion. `is_scored: false` means you decided it does not apply — weight is redistributed, coverage unaffected. `blocks_if_missing: true` means that if it *is* scored and absent, no total is produced at all |
-| **Reducer** | How a multi-value attribute becomes one number: `select` one variant, or `aggregate` across them. A setting — change it and the ranking recalculates with no re-fetch, which is what makes simulation possible |
+| **Reducer** | How a broken-down attribute becomes one number: `select` one option, or `aggregate` across them. A setting — change it and the ranking recalculates with no re-fetch, which is what makes simulation possible |
 
 ### Matching, and what comes out
 
@@ -2157,7 +2159,7 @@ and appear nowhere else.
 | Qualified, eliminated, screened, passed, failed, verdict | Matching, not matching | Six words for one binary |
 | Eligibility filter | MatchRule | Third word for the same gate |
 | Bypassed screening | `parent_not_matching` | Says what is true rather than what was skipped |
-| Key domain | Variants | Said neither what a key was nor what a domain was |
+| Key domain, variants | Breakdown scheme, breakdown option | `key_domain` said neither what a key was nor what a domain was; `variants` never said variant *of what* |
 | Passthrough | `as_is` | Described a pipe, not a scaling method |
 | Ideal band | `ideal_range` | "Band" has too many other readings |
 | Natural setting | Natural landscape | Collided with "criteria setting" |
@@ -2287,7 +2289,7 @@ Recorded from a front-to-back read of this document.
 | Q106 | **No authentication or authorisation, ever** | One household, running locally. Any requirement presuming a second user is out of scope by construction |
 | Q107 | **Nomination and approval deferred to post-MVP** | v1 seeds countries from configuration and needs neither field. They add ways in without changing what happens after |
 | Q108 | Geography is a configuration list, not an assumption | Extending beyond Europe must mean seeding countries and connecting sources, never changing the model |
-| Q109 | Renames: `variants`, `as_is`, `ideal_range`, `allowed_range`, `ShareComposition`, natural landscape, `source_priority_override` | Each old name described a mechanism, an unrelated thing, or nothing at all. Listed with their reasons in Appendix A |
+| Q109 | Renames: `as_is`, `ideal_range`, `allowed_range`, `ShareComposition`, natural landscape, `source_priority_override` | Each old name described a mechanism, an unrelated thing, or nothing at all. Listed with their reasons in Appendix A |
 | Q110 | An ontology diagram ships in §3.0 | The relations carry as much of the design as the field lists, and prose cannot show that nothing on the subjective side is ever written back to the objective side |
 | Q111 | **Local employment is the v1 working assumption**; `remote-only` is a post-MVP criteria set | It decides whether a village is absurd or ideal, and the whole `career` pillar and `two_role_feasibility` hang on it. Remote needs no new attributes — only a re-weighting — so it costs nothing to defer |
 | Q112 | `international_employers` stays an `AssignedScore`, with the employer list retained as evidence | The list is the provenance; the number is reproducible from it and overridable |
@@ -2297,7 +2299,7 @@ Recorded from a front-to-back read of this document.
 | Q116 | Household carries `net_income`, `number_adults`, `number_children` | A single `size` could not express what the `family` pillar needs — children under 18 specifically |
 | Q117 | `min_coverage` provisionally **60%** | A working floor, to be revisited once real coverage is known |
 | Q118 | `blocks_if_missing` assigned to seven country attributes, 36.1% of the score (§7.4) | Sparse by design; every flag is a way to drop out on a data gap rather than on merit. `career` gets none while its source is unresolved |
-| Q119 | The `household_size` variant vocabulary renamed `occupancy` | It collided with the Household entity's own fields once Household became an entity |
+| Q119 | The `household_size` breakdown scheme renamed `occupancy` | It collided with the Household entity's own fields once Household became an entity |
 | Q120 | The diagram's foreign keys are **named after the table they point at** | `VALUE.data_source`, never `VALUE.source`. Self-references take a role prefix: `CANDIDATE.parent_candidate` |
 | Q121 | **No JSON columns anywhere.** Thresholds, scale anchors, source-priority overrides, citizenships and allowed labels are all tables | A schema whose contents the database cannot check is a schema in name only. Thresholds follow the same typed-children pattern as `Value` |
 | Q122 | `Run` → **`DataAcquisitionRun`**, with failures as rows | "Run" could have meant a user session, a scoring pass or one LLM call. It is exactly one thing: a programmatic fetch that writes values. Scoring is an `Evaluation` and costs nothing |
@@ -2308,3 +2310,4 @@ Recorded from a front-to-back read of this document.
 | Q127 | `direction` → `goal`, values `minimise` \| `maximise` \| `target_range` | A target range is not a direction; the old name never covered its own third case |
 | Q128 | Coverage stays on CandidateResult; completeness is derived and not stored | They are different questions. Coverage is weighted and set-dependent; completeness is a `COUNT` over values, and storing it would be a cache with no invalidation rule |
 | Q129 | `AcquisitionRun` → **`DataAcquisitionRun`**, and its failure table with it | "Acquisition" alone did not say what was acquired. The prefix makes the table self-describing next to `Evaluation`, the other thing that runs |
+| Q130 | `VARIANT_VOCABULARY` / `VARIANT_KEY` → **`BREAKDOWN_SCHEME` / `BREAKDOWN_OPTION`** | "Variant" never said variant of what, and "key" repeated the fault that sank `key_domain`. "Broken down by" is the phrase Eurostat and the OECD already use for the same idea, so the schema now reads like the sources the adapters fetch from |
