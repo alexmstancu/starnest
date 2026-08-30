@@ -55,15 +55,15 @@ This is what keeps the ontology from becoming a programming language nobody want
 
 ## 2. Immutability, and why migration is not a problem
 
-A attribute's **`id` and `value_type` are immutable together.** Changing a attribute's type
+An attribute's **`id` and `value_type` are immutable together.** Changing an attribute's type
 means creating a new attribute and retiring the old one.
 
 This dissolves what looks like the hardest problem with a config-driven ontology — what happens
-when a attribute changes from `Ratio` to `LabelSet`, and how do stored values convert?
+when an attribute changes from `Ratio` to `LabelSet`, and how do stored values convert?
 
 They do not convert, and they should not:
 
-- A attribute's type is part of its **identity**. "Forest cover as a `Ratio`" and "forest cover
+- An attribute's type is part of its **identity**. "Forest cover as a `Ratio`" and "forest cover
   as a `LabelSet` of biome names" are not one attribute modelled two ways; they are different
   questions. Changing the type means you decided to measure something else.
 - The stored values are **still true**. Forest cover really was 38% in 2024, whatever you now
@@ -90,7 +90,7 @@ implausible ones rejected, rather than silently changing which value is active.
 ### 3.1 Narrow, not wide
 
 There is no `countries.population` column, and there must not be. If attributes were columns,
-adding a attribute would be a schema migration — which contradicts *adding a attribute is a
+adding an attribute would be a schema migration — which contradicts *adding an attribute is a
 data change*.
 
 Storage is **narrow**: values are rows keyed by candidate, attribute and source. Adding a
@@ -102,7 +102,7 @@ attribute inserts rows and never alters a table.
 from config into a `attribute` table at boot (upsert by `id`), and candidates into a
 `candidate` table. `value` then holds **real foreign keys**, not loose strings.
 
-This is what makes retirement work. When a attribute is retired (§2), its stored values must
+This is what makes retirement work. When an attribute is retired (§2), its stored values must
 keep pointing at something. If attributes existed only in config, deleting an entry would orphan
 every historical value. As a row with `lifecycle_status = retired`, the foreign key stays valid
 permanently while the attribute drops out of active scoring.
@@ -126,27 +126,28 @@ the attribute catalog, where adapters read them.
 > identity. Where a name is contested, pick one canonical form for the ID and record the
 > alternates as facts; the ID never changes afterwards, whatever the country later calls itself.
 
-**`value` uses a surrogate primary key.** The natural key is five columns —
-`(candidate, attribute, data_source, breakdown_option, reference_period_start, retrieval_date)` — and
-propagating that into ten child tables would mean fifty columns of duplication and joins on
-five conditions. Instead:
+**`value` uses a surrogate primary key.** The natural key is six columns —
+`(candidate, attribute, data_source, breakdown_option, reference_period_start, retrieval_date)` —
+and propagating that into ten child tables would mean sixty columns of duplication and joins on
+six conditions. Instead:
 
 ```
 value          id            surrogate PK
                UNIQUE (candidate, attribute, data_source, breakdown_option,
                        reference_period_start, retrieval_date)
 
-value_monetary value_id      FK → value.id
-               PRIMARY KEY (value_id, key)
+value_monetary value_id      PRIMARY KEY, FK → value.id
 ```
+
+Exactly one payload row per value — see §3.3b for why, and for what enforces it.
 
 A composite key therefore reads as `city.portugal.lisbon` × `city.rent_centre` — both
 halves legible without a lookup.
 
 The UNIQUE constraint still prevents the same fetch being stored twice, while legitimate
-history — the same source re-fetched later — differs by `retrieval_date` and is preserved. The
-child tables key on `(value_id, key)`, which is what admits keyed and series cardinality (§7)
-without further change.
+history — the same source re-fetched later — differs by `retrieval_date` and is preserved.
+Because `breakdown_option` is one of the six columns, the three Lisbon rents are three distinct
+rows rather than a collision.
 
 ### 3.2a Reference tables
 
@@ -191,22 +192,23 @@ columns for every type's payload, or ten unrelated tables, the shape is a **pare
 typed child tables**:
 
 ```
-value              id, candidate, attribute, data_source, breakdown_option,
-                   reference_period_start, reference_period_end,
-                   retrieval_date, confidence_level, usage_status,
-                   data_acquisition_run
+value              id, candidate, attribute, value_type, data_source,
+                   breakdown_option, reference_period_start,
+                   reference_period_end, retrieval_date,
+                   confidence_level, usage_status, data_acquisition_run
 
-value_monetary     value_id, key, amount, currency, amount_eur,
+value_monetary     value_id, value_type, amount, currency, amount_eur,
                    fx_rate, fx_rate_date
-value_quantity     value_id, key, magnitude, unit
-value_count        value_id, key, count, basis
-value_ratio        value_id, key, value, basis
-value_index        value_id, key, value, provider, scale_min, scale_max
-value_labelset     value_id, key, label
-value_sharecomp    value_id, label, share
-value_boolean      value_id, key, value
-value_score        value_id, key, value, range_min, range_max, assigned_by, rationale
-value_text         value_id, body
+value_quantity     value_id, value_type, magnitude, unit
+value_count        value_id, value_type, count, basis
+value_ratio        value_id, value_type, value, basis
+value_index        value_id, value_type, value, provider, scale_min, scale_max
+value_labelset     value_id, value_type, label
+value_sharecomp    value_id, value_type, label, share
+value_boolean      value_id, value_type, value
+value_score        value_id, value_type, value, range_min, range_max,
+                   assigned_by, rationale
+value_text         value_id, value_type, body
 ```
 
 This buys three things at once:
@@ -222,44 +224,88 @@ This buys three things at once:
 
 ### 3.3a Several numbers for one attribute — two different cases
 
-These look alike and are not, and they need different mechanisms.
+These look alike and are not.
 
-**Time series — the same measurement at different times.** GDP per person for 2020, 2021,
-2022. Only one is current; the rest are history. These differ by `reference_period`, so they
-are **separate `value` rows** — more rows in the table, which the schema already permits with
-no change. What is missing is only a *reducer*: a rule for using more than the freshest one,
+**Time series — the same measurement at different times.** GDP per person for 2020, 2021, 2022.
+Only one is current; the rest are history. They differ by `reference_period_start`, which is
+already part of the uniqueness constraint, so they are **separate `value` rows** and need no
+schema change. What is missing is only a *reducer*: a rule for using more than the freshest one,
 such as a three-year mean or a trend. **Not in v1.**
 
-**Multi-value — different measurements at the same time, all current.** Rent in Lisbon is
-about €1,100 for a one-bedroom, €1,410 for two, €1,900 for three. None of these is history;
-they coexist and together describe the attribute.
+**Multi-value — different measurements at the same time, all current.** Rent in Lisbon is about
+€1,100 for a one-bedroom, €1,410 for two, €1,900 for three. None is history; they coexist and
+together describe the attribute (`reqs.md` §3.3b).
 
-**These cannot be separate `value` rows.** All three share the same candidate, attribute,
-source, reference period and retrieval date — identical on every column of the uniqueness
-constraint (§3.2). They must be **one `value` row with several typed child rows**,
-distinguished by the child table's `key`:
+**These are also separate `value` rows**, distinguished by `breakdown_option`:
 
 ```
-value           id 9001, city.portugal.lisbon, city.rent_centre, numbeo, 2026-07, …
+value  9001 | city.portugal.lisbon | city.rent_centre | one_bedroom   | numbeo | 2026-07
+value  9002 | city.portugal.lisbon | city.rent_centre | two_bedroom   | numbeo | 2026-07
+value  9003 | city.portugal.lisbon | city.rent_centre | three_bedroom | numbeo | 2026-07
 
-value_monetary  value_id | key   | amount | currency
-                9001     | 1br   | 1100   | EUR
-                9001     | 2br   | 1410   | EUR
-                9001     | 3br   | 1900   | EUR
+value_monetary  9001 | 1100 EUR
+value_monetary  9002 | 1410 EUR
+value_monetary  9003 | 1900 EUR
 ```
 
-Scoring would then need to pick one — which room count matters depends on `household_size`
-(`reqs.md` §1.4), making that choice a preference rather than a fact, so it would live in
-`CriteriaSet`.
-
-**Multi-value is now in use** (`reqs.md` §3.3b): `city.rent_centre` is keyed by bedroom count
-and `city.cost_of_living_monthly` by household size. The `key` column carries it, and stays
-null for every scalar value.
+> **An earlier draft of this section put all three in one `value` row** with a `key` column on
+> the child table. That was written before `breakdown_option` joined the uniqueness constraint,
+> when three separate rows would have collided. It is superseded, and separate rows are better
+> for a reason beyond avoiding the collision: **confidence, freshness and supersession are
+> properties of one figure, not of three.** Numbeo may hold two hundred submissions for a
+> two-bedroom and five for a four-bedroom — genuinely different confidence. Sharing one row
+> would force one `confidence_level`, one `reference_period` and one `usage_status` across all
+> of them, and would stop a fresher two-bedroom figure superseding on its own.
+>
+> It also makes **exactly one payload row per value** true, which §3.3b depends on.
 
 The reducer runs **at scoring time, never at fetch**. An adapter that fetched all three rents
 and stored only the selected one would make changing household size require re-fetching every
-city — and would make simulation impossible, since asking for a three-bedroom needs that figure
-already stored. Every key is written; the choice happens when the score is computed.
+city, and would make simulation impossible. Every option is written; the choice happens when the
+score is computed.
+
+### 3.3b The database enforces that a payload matches its attribute's type
+
+Nothing so far stops a value for `city.rent_centre` — declared `Monetary` — from carrying a
+`value_count` payload instead. Both rows would be individually valid, and no constraint would
+connect them.
+
+**The damage would be a plausible wrong answer rather than a crash.** Zurich's rent stored as a
+count is the bare number 2900, with no currency, so the EUR conversion never runs. The ranking
+then compares 2900 against Lisbon's 1410 and reports a gap that is simply wrong — with every
+provenance field correctly filled in and nothing looking broken.
+
+Three constraints close it, and they need no triggers:
+
+```sql
+-- 1. the catalog's declaration becomes referenceable
+ALTER TABLE attribute      ADD UNIQUE (id, value_type);
+
+-- 2. a value must agree with its attribute
+ALTER TABLE value          ADD FOREIGN KEY (attribute, value_type)
+                               REFERENCES attribute (id, value_type);
+ALTER TABLE value          ADD UNIQUE (id, value_type);
+
+-- 3. a payload may only attach to a value of its own type
+ALTER TABLE value_monetary ADD CONSTRAINT is_monetary
+                               CHECK (value_type = 'Monetary');
+ALTER TABLE value_monetary ADD FOREIGN KEY (value_id, value_type)
+                               REFERENCES value (id, value_type);
+```
+
+The chain reads: **the catalog says `Monetary` → the value must say `Monetary` → only the
+monetary payload can attach → and its primary key on `value_id` makes it the only one.** A bad
+insert fails at insertion, naming the constraint, rather than surfacing as a wrong number weeks
+later.
+
+`value.value_type` is **denormalised on purpose**. It duplicates what the attribute already
+declares, and that duplication is the whole mechanism: a two-column foreign key needs both
+columns present on the referring row. Since attribute type is immutable (§2), the copy can never
+drift.
+
+**The same pattern applies to criteria.** A `CRITERION` carries the attribute's `value_type` the
+same way, and each threshold child table pins its own — so a `LabelSet` attribute cannot be
+given a numeric range, and exactly one threshold kind can exist.
 
 ### 3.4 `usage_status`, and never discarding
 
@@ -450,6 +496,12 @@ calls per city, not millions.
 
 ---
 
+> **Decisions with their rationale live in `reqs.md` Appendix B**, which is the project's single
+> decision log — architecture entries included, most recently Q140–Q142. This document explains
+> the design; the log records why each call was made and what it superseded.
+
+---
+
 ## 7. Open
 
 - **Language and UI framework** are still undecided; §6.2 records what the spec proposed and
@@ -457,10 +509,17 @@ calls per city, not millions.
   (§6.2). Whether geometry lives in the database via PostGIS, or is computed at acquisition
   time and stored as plain numbers, stays open — but it is now an extension question inside a
   chosen engine, not an engine question.
-- **Reducers**, if and when either case in §3.3a arrives: for a time series, which rows scoring
-  uses (latest, three-year mean, trend); for a multi-value attribute, which key applies. Both
-  are preferences rather than facts, so both would live in `CriteriaSet`. Neither is in v1
-  and neither requires a schema change to add.
+- **Time-series reducers.** Which rows scoring uses when an attribute has several reference
+  periods — latest, a three-year mean, a trend. A preference rather than a fact, so it belongs
+  in `CriteriaSet`. **Not in v1**, and it needs no schema change: the rows are already separate
+  (§3.3a).
+
+  *(The multi-value reducer is **not** open — it is in v1. `CRITERION.reducer_mode` plus
+  `CRITERION.breakdown_option` select which rent applies, `reqs.md` §3.4.)*
+- **Derived attributes**, deferred to post-MVP. `two_role_feasibility` and
+  `country.natural_diversity` both want one. When built, a derivation is an **adapter that reads
+  other attributes** rather than a formula in config — which keeps §1.1's guardrail intact and
+  gives a derived value provenance, confidence and a reference period like any other.
 
 - **First implementation order.** The spec's suggestion, still sound: repo scaffolding, then the
   database schema, then structured acquisition as the first end-to-end sanity check. Sequencing

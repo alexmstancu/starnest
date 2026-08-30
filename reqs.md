@@ -322,6 +322,7 @@ erDiagram
         bigint id PK
         text candidate FK
         text attribute FK
+        text value_type FK
         text data_source FK
         text breakdown_option FK
         bigint data_acquisition_run FK
@@ -481,6 +482,7 @@ erDiagram
     CANDIDATE ||--o{ CANDIDATE : "parent of"
     PILLAR ||--o{ ATTRIBUTE : groups
     VALUE_TYPE ||--o{ ATTRIBUTE : types
+    VALUE_TYPE ||--o{ VALUE : "shapes"
     BREAKDOWN_SCHEME ||--o{ BREAKDOWN_OPTION : enumerates
     BREAKDOWN_SCHEME ||--o{ ATTRIBUTE : "breaks down"
     ATTRIBUTE ||--o| ATTRIBUTE_ALLOWED_RANGE : validates
@@ -554,7 +556,8 @@ erDiagram
 
 | Relation | What it does | Why it exists |
 |---|---|---|
-| `ATTRIBUTE \|\|--o{ VALUE` | A value measures one attribute | The value's type, unit and validation all come from here |
+| `ATTRIBUTE \|\|--o{ VALUE` | A value measures one attribute | The value's type, unit and validation all come from here. The key is **composite** — `(attribute, value_type)` — so the database refuses a value whose payload shape contradicts what the attribute declared |
+| `VALUE_TYPE \|\|--o{ VALUE` | The value restates its own type | Denormalised on purpose: it is what lets the composite key above be checked, and what pins each typed child table to the right parent |
 | `CANDIDATE \|\|--o{ VALUE` | A value is about one place | |
 | `DATA_SOURCE \|\|--o{ VALUE` | Records who said it | Provenance is mandatory (§10), and priority needs the source to choose an active value |
 | `BREAKDOWN_OPTION \|\|--o{ VALUE` | Which case this figure describes | Null for ordinary attributes. This is what lets all three rents be stored at once, so changing household size needs no re-fetch (§3.3b) |
@@ -1088,6 +1091,7 @@ overwritten and never discarded.**
 | Field | Notes |
 |---|---|
 | `candidate`, `attribute`, `data_source` | What this measures and where it came from |
+| `value_type` | The attribute's declared type, **restated here**. Redundant by design: it makes `(attribute, value_type)` a composite foreign key, so a value can never carry a payload of the wrong shape — see below |
 | `reference_period_start`, `reference_period_end` | **What period the data describes** — two dates, not one. "Average temperature 2025" is a year; "rent, July 2026" a month; an fx rate a single day, where start and end are equal. A single point date could not express which of the three it was, so the pair is stored and both are displayed |
 | `breakdown_option` | Which case this figure describes, for a broken-down attribute (§3.3b). Null otherwise |
 | `retrieval_date` | **When the app fetched it** |
@@ -1114,8 +1118,22 @@ currency and an fx rate; a temperature carries a unit; a population carries neit
 | `AssignedScore` | `value`, `range`, `assigned_by`, `rationale` |
 | `Text` | `body` |
 
-> `arch.md` decides how this is stored — table per type, a typed payload column, or otherwise.
-> The requirement is only that **a value never carries fields its type has no meaning for**.
+> `arch.md` decides how this is stored. The requirement is that **a value never carries fields
+> its type has no meaning for**, and that this is enforced **by the database rather than by
+> application code**.
+>
+> **Why the type is stored twice.** The attribute already declares it, so repeating it on the
+> value looks redundant — and it is, deliberately. It is what allows the link to the attribute
+> to be a two-column foreign key, `(attribute, value_type)`. The catalog holds exactly one row
+> for `city.rent_centre` and it says `Monetary`, so a value claiming
+> `(city.rent_centre, Count)` matches nothing and is rejected on insert. Each typed payload
+> table then pins its own type, so only the monetary payload can attach to a monetary value.
+>
+> **What this prevents is a plausible wrong answer, not a crash.** Zurich's rent written as a
+> `Count` would be the bare number 2900, with no currency, so the conversion to EUR would never
+> run. The ranking would then compare 2900 against Lisbon's 1410 and report a gap that is simply
+> wrong — with every provenance field correctly filled in, and nothing looking broken. That is
+> the failure §10 forbids, and it is worth a redundant column to make it impossible.
 
 **The two dates are distinct and must never be merged, conflated, or displayed as one.**
 
@@ -2402,4 +2420,7 @@ Recorded from a front-to-back read of this document.
 | Q137 | The `blocks_if_missing` selection of §7.4 is agreed | Seven country attributes, 36.1% of the score. Unvalidated until a real run shows what actually comes back empty |
 | Q138 | `goal` confirmed over `direction` | Values `minimise`, `maximise`, `target_range`. A target range is not a direction |
 | Q139 | **Requirements are frozen enough to begin architecture.** They will be revised as building reveals what is wrong with them | No specification is ever final; the cost of another pass now exceeds the cost of correcting it against real code |
+| Q140 | **`value_type` is stored on the value and is part of its key** | `(attribute, value_type)` becomes a composite foreign key into the catalog, and each typed payload table pins its own type. The database then refuses a payload whose shape contradicts the attribute's declared type. Without it, a rent stored as a bare count loses its currency, skips EUR conversion, and produces a wrong ranking with complete-looking provenance |
+| Q141 | Attribute names are data; the **schema itself is fixed** | Configurable column names would forfeit exactly what JSON forfeits — a database cannot check what it cannot name — in exchange for discounting a rename that happens twice in a project's life. Display labels stay configurable, as the application name is |
+| Q142 | **Derived attributes deferred to post-MVP** | `two_role_feasibility` and `country.natural_diversity` both want one. When built, a derivation is an adapter that reads other attributes rather than a formula in config, so a derived value keeps provenance, confidence and a reference period like any other |
 
