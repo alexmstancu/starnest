@@ -35,8 +35,6 @@ Makefile      every command the project has
 
 **Read `docs/devplan.md` §0 before doing implementation work** — the stop rule, the definition of done per task, and which files an agent may not edit.
 
-`relocation-app-master-spec-v1.md` has been **deleted**. Its content was audited against the successors first: Part 2 → `reqs.md`, Part 3 → `arch.md` §6, Appendix → `datasources.md`. It remains in git history at the initial commit.
-
 ## Commands
 
 `make` on its own lists them all. The ones that matter:
@@ -63,7 +61,7 @@ uv run --no-project --with pyyaml python tools/audit_api.py
 
 The first checks the ontology's structural invariants — the two diagrams against each other, the diagrams against the prose documenting them, and the catalog's weights. The second checks `docs/openapi.yaml`: that every `$ref` resolves, that **every ontology entity is reachable through the API** (with a named exemption for each covered under another name), and that no key has a null value — the fault that is valid YAML but crashes consumers.
 
-**Run both after any change to `reqs.md` §3, either diagram, the catalog, or the spec.** Exit code 0 means every invariant holds. Both read only and never edit.
+**Run both after any change to `reqs.md` §3, either diagram, the catalog, or the contract.** Exit code 0 means every invariant holds. Both read only and never edit.
 
 ## Test coverage
 
@@ -146,7 +144,7 @@ Attributes are grouped into **Pillars** — the load-bearing verticals of a life
 
 ## Design invariants
 
-These are cross-cutting rules from the spec. Violating one silently breaks the product's purpose, so treat them as non-negotiable unless the user changes them explicitly.
+These are cross-cutting rules from `docs/reqs.md`. Violating one silently breaks the product's purpose, so treat them as non-negotiable unless the user changes them explicitly.
 
 - **Nothing hardcoded.** The attribute catalog, pillars, default weights, default matching thresholds, and inclusion/exclusion rules are **rows in database tables**, seeded and changed by migrations versioned in git — never config files (`arch.md` §1.2). One store, so nothing can drift; catalog changes get referential integrity, the same audit trail as every other table, and transactions. Adding an attribute must be a data change, not a logic change. No literal attribute names or weights in application code.
 - **Data acquisition and scoring are separate operations.** Adjusting a weight or threshold recalculates the score instantly from already-stored data. Score recalculation must **never** trigger a re-fetch. Re-fetching is explicit, per candidate and/or per attribute.
@@ -191,7 +189,7 @@ Explicitly **post-MVP — do not build without being asked**: personal annotatio
 
 ## Reference data sources
 
-Starting points for the structured adapters in `data_sources/`: **WhereNext Global Relocation Index** (95 countries + ~130 cities, downloadable CSV/JSON — best fit for country-level screening), **Numbeo** (cost of living, safety, healthcare, pollution; countries and cities), **Teleport Cities** (maintenance status unverified — check before relying on it), **Nomads.com** (subscription, city-level only). See the spec appendix for URLs and caveats.
+Starting points for the structured adapters in `data_sources/`: **WhereNext Global Relocation Index** (95 countries + ~130 cities, downloadable CSV/JSON — best fit for country-level screening), **Numbeo** (cost of living, safety, healthcare, pollution; countries and cities), **Teleport Cities** (maintenance status unverified — check before relying on it), **Nomads.com** (subscription, city-level only). See `docs/datasources.md` for URLs and caveats.
 
 ## Setup note
 

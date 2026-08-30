@@ -10,7 +10,7 @@ Everything else is from published documentation and should be re-checked before 
 
 ## 1. Headline findings
 
-1. **WhereNext is a competitor, not a data source.** The spec listed it under "reference
+1. **WhereNext is a competitor, not a data source.** It was once listed under "reference
    sources". It is in fact the closest existing product to Starnest — weighted multi-dimension
    country scoring, user-adjustable weights, confidence adjustment for sparse data. It is also
    *unusable as a primary source* for reasons in §2.3.
@@ -104,7 +104,7 @@ under the §6.6 priority mechanism.
 | **MoveHub** | Editorial guides + cost comparison | Content, not data |
 | **whereTOemigrate** | Cost + **visa eligibility against 2,500+ programmes** | The only one taking eligibility seriously — closest to our hard filters |
 | **AffordWhere** | Net salary after tax, official statistics, neighbourhood rent | Closest to our "official sources over crowdsourced" stance |
-| **Teleport Cities** | Open city data platform — `teleport.org/top-cities/` | Listed in the spec; **status unverified, treat as unreliable** |
+| **Teleport Cities** | Open city data platform — `teleport.org/top-cities/` | **Status unverified, treat as unreliable** |
 | **InterNations** | Annual **Expat Insider** survey — qualitative expat perspective | Country-level only; good for settling-in and openness |
 
 **Nobody occupies our exact position.** The market splits into cost calculators (Numbeo,

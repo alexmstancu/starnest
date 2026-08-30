@@ -1,7 +1,6 @@
 # Architecture — Starnest
 
-Refined from `relocation-app-master-spec-v1.md` (Part 3), and from the ontology discussion that
-followed `reqs.md`. Terms used here are defined in `reqs.md` Appendix A.
+The architecture of Starnest. Terms used here are defined in `reqs.md` Appendix A.
 
 **Status: complete for the MVP.** Ontology, storage, module architecture, runtime flows, the
 interface and operations are all settled, and **the stack is decided** (§10.2). What remains
@@ -1082,16 +1081,16 @@ instant in a timezone. Confusing the two is the standard PostgreSQL mistake, and
 
 ---
 
-## 10. Carried from the master spec
+## 10. Foundations
 
-Preserved before the spec's deletion. These are its proposals, not settled decisions.
+The goal, the stack, the data flow, the sizing that justifies the two levels, and the auditing
+mechanism. §10.2 is decided; §10.3 records a layout that was rejected, and why.
 
 ### 10.1 Goal
 
 A **local, self-contained application** that runs the whole pipeline — data acquisition,
 interpretation, scoring, ranking — with no manual intervention beyond configuring attributes and
-starting a run. The spec's phrase for the bar it must clear: **"zero copy-paste between chat
-and the app."**
+starting a run. The bar it must clear: **"zero copy-paste between chat and the app."**
 
 ### 10.2 The stack
 
@@ -1134,13 +1133,13 @@ of them — but they are settled, and `devplan.md` sequences against them.
 **generated from the code and committed** — the routes and Pydantic models are the source, and
 the file is their output.
 
-**What this costs, stated plainly:** the spec is no longer something both sides agree before
+**What this costs, stated plainly:** the contract is no longer something both sides agree before
 either is written. It becomes a description of what the backend currently is. On a solo project
 that is a small loss, because there is no second team waiting on it, and writing Pydantic models
 by hand is markedly more pleasant than fighting generated ones.
 
 **What guards against silent erosion:** one test asserts that the designed surface still exists —
-the paths and operation IDs of the hand-written spec. A refactor that quietly drops an endpoint
+the paths and operation IDs of the hand-written contract. A refactor that quietly drops an endpoint
 fails it. Full equality is not asserted, because a body shape improving is not a regression.
 
 #### The alternatives, recorded because the reasoning survives
@@ -1152,7 +1151,7 @@ Both were passed over deliberately in favour of learning Python — a reason abo
 rather than the software, which is a legitimate one for a project with no deadline and one
 maintainer.
 
-**Storage is PostgreSQL.** The spec proposed SQLite on a "15–40 cities" premise that no longer
+**Storage is PostgreSQL.** SQLite was the earlier plan, on a "15–40 cities" premise that no longer
 holds — v1 alone seeds 32 countries with ~44 attributes, before the city level exists at all. The
 choice is made on optionality rather than on present need. Data volume is not the argument —
 32 countries is trivial for any engine. The argument is **operational**: Postgres has native
@@ -1167,9 +1166,9 @@ choice: it is what makes the database reproducible from the repository, so a dro
 is an inconvenience rather than a loss. Every schema change ships as a migration — no
 out-of-band edits to a live database.
 
-### 10.3 Proposed module layout — superseded by §6.1
+### 10.3 A module layout that was rejected, and why
 
-The spec proposed `config/`, `acquisition/structured.py`, `acquisition/qualitative.py`,
+An earlier layout proposed `config/`, `acquisition/structured.py`, `acquisition/qualitative.py`,
 `storage/db.py`, `scoring/engine.py`, `scoring/compare.py`, `ui/app.py`.
 
 **§6.1 replaces it.** That layout named files after their technical role and split data acquisition by
@@ -1177,7 +1176,7 @@ The spec proposed `config/`, `acquisition/structured.py`, `acquisition/qualitati
 change to the core rather than a new plugin. `config/` has no place at all now that the catalog
 is data in the database (§1.2).
 
-The spec's SQLite schema sketch — tables `countries`, `country_scores`, `cities`,
+An earlier SQLite schema sketch — tables `countries`, `country_scores`, `cities`,
 `city_scores`, `config` — **predates the `Candidate` unification and must be re-derived, not
 copied.** Separate country and city tables would reintroduce exactly the duplication that
 `Candidate` exists to prevent.
@@ -1209,8 +1208,8 @@ country level is v1.
 ### 10.6 Setup
 
 The qualitative path needs a **dedicated Anthropic API key** from console.anthropic.com,
-separate from a Claude.ai subscription and billed per use. The spec's cost framing: a few dozen
-calls per city, not millions.
+separate from a Claude.ai subscription and billed per use. The cost is a few dozen calls per
+city, not millions.
 
 ### 10.7 Auditing is the database's own statement log
 
@@ -1284,6 +1283,5 @@ queryable.
 
 - **The interface's component library.** React is settled; whether the tables, sliders and charts
   come from a component kit or are assembled directly is not. It affects no backend decision.
-- **First implementation order.** The spec's suggestion, still sound: repo scaffolding, then the
-  database schema, then structured data acquisition as the first end-to-end sanity check. Sequencing
-  belongs in `devplan.md`.
+- **First implementation order** — repo scaffolding, then the database schema, then structured
+  data acquisition as the first end-to-end sanity check. Sequencing belongs in `devplan.md`.

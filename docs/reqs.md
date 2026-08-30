@@ -1,7 +1,6 @@
 # Requirements — Starnest
 
-Version 1. Refined from `relocation-app-master-spec-v1.md` (Part 2), extended by a
-clarification pass. Supersedes the spec's functional requirements.
+Version 1. The requirements and the ontology, and the authority for both.
 
 **Everything here is a requirement.** §1.3 records *sequencing* — what arrives in v1 and what
 follows — and nothing else. A feature marked post-MVP is deferred, never rejected: it is
@@ -1813,7 +1812,7 @@ catalog will grow, and growth must stay a data-and-adapter change.
 
 ### 6.8 Children in scope
 
-The master spec never mentions children; this document does. Their presence adds the criteria
+Children are in scope. Their presence adds the criteria
 in the `family` pillar at both levels (§7) — national school system quality, parental leave
 and child benefits at country level; schooling options, paediatric access and childcare at city
 level — and shifts the weight of several existing criteria.
@@ -2560,9 +2559,9 @@ not only *what*.
 
 | # | Decision | Rationale |
 |---|---|---|
-| Q1 | Two-level criteria | Preserves the spec's pillar weights exactly while keeping each bullet independently sourced and provenance-tracked |
+| Q1 | Two-level criteria | Pillar weights stay intact while each bullet remains independently sourced and provenance-tracked |
 | Q2 | Exactly two levels | Implied by Q1; no deeper nesting in the model |
-| Q3 | Cross-level concepts are separate criteria | The spec frames local safety as a different question from national safety, not the same one zoomed in |
+| Q3 | Cross-level concepts are separate criteria | Local safety is a different question from national safety, not the same one zoomed in |
 | Q4 | `goal` per criterion, three modes | Minimise and maximise alone cannot express "warm but not too hot" |
 | Q5 | Normalisation per criterion, in config | Fixed bands keep a score stable over time; percentile suits criteria where only relative standing matters |
 | Q6 | Redistribute weight, show coverage | Zero-filling would bury exactly the small, under-documented towns that are wanted candidates |
@@ -2591,7 +2590,7 @@ not only *what*.
 | Q31 | Factual attributes on the Candidate, referenceable | Stored once; scoring city size later needs no second fetch |
 | Q32 | Subdivisions descriptive only | A third tier would break the two-level architecture |
 | Q33 | Catalog at name/type/direction/source/weight detail | Scale bands and thresholds can only be set sensibly after real data |
-| Q34 | Four tabs plus sidebar | Preserves the spec's shape; newer surfaces nest inside |
+| Q34 | Four tabs plus sidebar | One tab per stage of the workflow; newer surfaces nest inside |
 | Q35 | Per-value confidence: display and source priority only | Coverage says how much data exists; confidence says what it is worth. Discounting the score would absorb uncertainty rather than disclose it |
 | Q36 | Confidence derived from source, age and geography, with override | Reuses `max_age` and `DataSource.kind`; no field anyone must remember to fill |
 | Q37 | `country.openness_to_foreigners` moved to country level | MIPEX, Eurobarometer and InterNations are country-level only |
@@ -2743,7 +2742,7 @@ Recorded from a front-to-back read of this document.
 | Q175 | **asyncio, not threads** | `asyncio.Semaphore` per source is the per-source concurrency bound of `arch.md` §7.1 expressed directly, and it is one model for the API and the fetching |
 | Q176 | **yoyo-migrations**, plain `.sql`, explicit command | The file that is written is the file that runs. Alembic would wrap that SQL in Python for the sake of autogeneration it cannot perform without an ORM; dbmate would sit outside `uv` |
 | Q177 | **The contract becomes code-first**, reversing Q157–159 | FastAPI generates `openapi.yaml` rather than following it. The loss is small with one maintainer and no second team waiting; a test asserting the designed paths and operation IDs still exist prevents silent erosion |
-| Q178 | **React + TypeScript for the interface**, its client generated from the spec | A data-dense dashboard of tables, sliders and provenance panels is what React is for, and generating the client keeps the contract load-bearing |
+| Q178 | **React + TypeScript for the interface**, its client generated from the contract | A data-dense dashboard of tables, sliders and provenance panels is what React is for, and generating the client keeps the contract load-bearing |
 | Q179 | **The top-level package is `starnest`**, reversing `arch.md` §6.1's neutral-name requirement | A rename now means one `git mv` and a find-and-replace over import lines — mechanical, and a tool does it correctly. What the rule still forbids is what a rename *cannot* find mechanically: no class name, table name, config key, environment-variable prefix or comment carries the product name |
 | Q180 | **`backend/` and `ui/` are top-level peers.** No shared `src/` | They share no code, not even DTO definitions (`arch.md` §6.6). Two sibling projects with separate toolchains make that a fact rather than a convention people remember. `docs/openapi.yaml` sits with the documents because it is the contract *between* them — the backend generates it but does not own it |
 | Q181 | **Coverage bar: 75% of lines and branches**, both sides | A floor on the code, not a ceiling on the testing — the target is full coverage of features. The number catches only whole regions nobody ran. Set at 75 rather than higher because a bar high enough to require tests written for the report rather than the behaviour produces exactly those tests, and they are worse than none because they look like protection |
