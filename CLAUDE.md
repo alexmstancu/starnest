@@ -37,7 +37,7 @@ A local, single-user decision-support app for a personal relocation search (EU/E
 
 ## Planned stack (from the spec — confirm before deviating)
 
-Backend language and interface framework are **undecided and independent** (`arch.md` §9) — the backend serves REST and the interface consumes it. Streamlit is effectively excluded, since its value was UI and logic in one process. **PostgreSQL (storage — decided, `arch.md` §8.2)**, Anthropic API with the `web_search` tool (qualitative criteria), direct HTTP fetch for structured data sources.
+Backend language and interface framework are **undecided and independent** (`arch.md` §11) — the backend serves REST and the interface consumes it. Streamlit is effectively excluded, since its value was UI and logic in one process. **PostgreSQL (storage — decided, `arch.md` §10.2)**, Anthropic API with the `web_search` tool (qualitative criteria), direct HTTP fetch for structured data sources.
 
 Module layout (`arch.md` §6.1) — **named after the domain, not technical roles**:
 

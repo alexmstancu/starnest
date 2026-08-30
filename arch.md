@@ -4,7 +4,7 @@ Refined from `relocation-app-master-spec-v1.md` (Part 3), and from the ontology 
 followed `reqs.md`. Terms used here are defined in `reqs.md` Appendix A.
 
 **Status: partial.** This document currently covers the ontology only. The stack — language,
-UI framework, database engine — is deliberately still open (§9). The ontology is settled
+UI framework, database engine — is deliberately still open (§11). The ontology is settled
 independently because none of it changes based on that choice.
 
 ---
@@ -470,6 +470,53 @@ Adapters declare `mode`, because the two behave nothing alike:
 
 The data acquisition layer must support both. A run mixes them.
 
+### 5.2 What an adapter does inside, and why the core never asks
+
+Three kinds exist, and **the data acquisition core cannot tell them apart**:
+
+| Adapter | Inside |
+|---|---|
+| Eurostat, World Bank, OECD | HTTP, then JSON or SDMX parsing |
+| Numbeo | HTTP, then **HTML parsing** — the page structure is the adapter's private business |
+| The LLM path | Prompt construction, tool use, structured-output parsing, citation extraction |
+
+All three implement `SourceAdapter`. Scraping is not a special case; it is one adapter's parsing
+strategy, and it belongs behind the same interface as everything else. The moment the core
+branches on what kind of source it is calling, the plugin boundary has stopped working.
+
+**The LLM adapter fits the same contract**, which is why the contract carries citations and cost
+for every adapter rather than only for that one. Most return an empty citation list and zero
+cost; the interface does not bend for the exception.
+
+### 5.3 Timeouts, retries, and three different kinds of not-getting-a-value
+
+Each adapter declares a **timeout** alongside its rate limit. Beyond that, the distinction that
+matters is *why* nothing came back, because the three cases deserve different treatment:
+
+| Case | Example | Treatment |
+|---|---|---|
+| **Transport failure** | Timeout, connection reset, `503` | Retried inside the adapter, with bounded exponential backoff. If it still fails, the item is recorded as a run failure and is retryable later |
+| **Parse failure** | The page changed shape; a field is missing | **Not** retried — repeating it produces the same result. Recorded as a run failure with the response kept, because this is a bug in the adapter, not a bad day for the source |
+| **Absence** | Numbeo has no data for a town of 7,000 | **Not a failure at all.** The source answered; the answer is that it does not know. Nothing is written, and coverage falls (`reqs.md` §5.3), which is exactly the disclosure that was wanted |
+
+> **Confusing absence with failure would be the expensive mistake.** Small localities are sparsely
+> covered by design (`datasources.md` §3), so treating "no data" as an error would fill every run
+> with failures, make retry meaningless, and hide the real ones.
+
+### 5.4 Bulk downloads are kept, not just parsed
+
+A bulk adapter fetches one artefact — a CSV of 95 countries, a Köppen zone file — and fans it out
+to many values. **The artefact is stored**, in a run-scoped directory, with a row recording its
+source, URL, retrieval timestamp, checksum and path.
+
+This costs a few megabytes and buys the ability to answer the question that actually gets asked
+six months later: *is this figure wrong because the source said so, or because we parsed it
+wrong?* Without the original, that is unanswerable and the parser bug is unfixable.
+
+The artefact table is an **implementation record, not a domain concept** — it does not appear in
+the ontology of `reqs.md`, because nothing in the domain refers to it. It exists so that
+provenance can be checked rather than trusted.
+
 ---
 
 ## 6. Application architecture
@@ -874,18 +921,154 @@ and never written to the database, the statement log, or an error message.
 
 ---
 
-## 8. Carried from the master spec
+## 8. The interface
+
+A **separate client** over HTTP, built and deployed on its own, sharing no code with the backend
+(§6.1). Its architecture is deliberately thin, and one rule does most of the work.
+
+### 8.1 The interface holds no domain logic
+
+**It renders what the API returns and nothing else.** No scoring, no weight rebalancing
+arithmetic, no coverage calculation, no matching, no threshold evaluation. Every number it shows
+was computed by `evaluation/` and travelled over the wire.
+
+> **This is the rule that keeps the split honest.** The moment the client computes a score "just
+> for responsiveness", the scoring engine exists twice, in two languages, and the two drift. The
+> place that divergence would be least visible is exactly the place it would happen — a ranking
+> that looks plausible either way.
+
+What the client legitimately owns: routing between screens, form state, what is selected, what is
+expanded, sort order within a rendered table, and how a number is formatted for display.
+
+### 8.2 Screens
+
+The four tabs of `reqs.md` §8, each a route, plus the persistent sidebar:
+
+| Route | Reads | Writes |
+|---|---|---|
+| `/configure` | criteria sets, attributes, pillars, match rules, compound rules, household, settings | criteria sets and their criteria, household, settings, match-rule overrides |
+| `/run` | data acquisition runs and their failures | starts runs, retries failures |
+| `/rank` | rankings, candidate detail, values with provenance, external scores | saves evaluations |
+| `/compare` | comparisons | — |
+
+### 8.3 Adjusting a weight, end to end
+
+The interaction the whole product turns on, and the one that HTTP makes least obvious:
+
+```
+drag slider
+   │  (client shows the dragged value immediately — that is form state, not a score)
+   ├─ 100ms quiet
+   ├─ PATCH /v1/criteria-sets/{id}/criteria/{attribute}   { weight }
+   │     server rebalances the unlocked weights, honouring locks
+   │     -> the updated criteria set
+   └─ GET /v1/rankings?criteria_set={id}&level=country
+         -> the new ranking
+```
+
+**Rebalancing is domain logic and stays on the server**, because it depends on which weights are
+locked and must never leave a set summing to anything but 100 (`reqs.md` §3.4). The client sends
+one weight and is told what the others became.
+
+**A drag edits the criteria set directly.** There is no draft state: `duplicate` exists precisely
+so that experimenting on a copy is the safe path, and it is one click. Adding an unsaved-changes
+concept would mean a second representation of every criteria set and a merge question at the end
+of it.
+
+**Debounced, not per-frame.** Both calls are local — two database queries and pure arithmetic —
+so a short quiet period reads as continuous. The alternative was recomputing in the client, which
+§8.1 exists to prevent.
+
+### 8.4 Long operations
+
+A data acquisition run is the only one. The client `POST`s, receives a run id, and polls
+`GET /v1/data-acquisition-runs/{id}` while the run is live — status, items completed, cost so far,
+failures as they accumulate. No socket, no streaming, no callback: the run record already holds
+everything the screen shows (§6.4).
+
+---
+
+## 9. Operations
+
+### 9.1 Running it locally
+
+Three processes: **PostgreSQL**, the **backend**, the **interface**. The database is the only one
+that needs infrastructure, so it is defined in a compose file and everything else runs from the
+command line. One documented command brings the database up; the application refuses to start
+against a schema it does not recognise (§7.4).
+
+### 9.2 Startup sequence
+
+Deterministic, and it fails loudly rather than degrading:
+
+1. Read the environment — connection string, API key, port (§7.5).
+2. Connect, and **compare the schema version**. Behind ⇒ refuse to start, naming the gap.
+3. Build the adapter registry and **validate every declaration against the catalog** — attributes
+   that exist, value types that agree (§5). A mismatch is a startup error.
+4. **Sweep abandoned runs** — anything left `running` becomes `failed` (§7.1).
+5. Mount the API and serve.
+
+Steps 2 and 3 are the ones worth having: both catch, at boot, a class of problem that would
+otherwise appear hours later as a corrupted value or a failed run.
+
+### 9.3 Indexes that earn their place
+
+Four queries dominate, and each needs one:
+
+| Query | Index |
+|---|---|
+| The active value, per candidate and attribute | `value (candidate, attribute, breakdown_option, retrieval_date DESC)` — the ordering the view scans |
+| Everything known about one candidate, for the detail screen | `value (candidate)` |
+| What a run produced or failed on | `value (data_acquisition_run)`, `data_acquisition_failure (data_acquisition_run)` |
+| A saved evaluation's per-attribute detail | `candidate_attribute_score (candidate_result)` |
+
+At the size in §3.5 none of this is performance-critical; they are here so the shape of the hot
+path is deliberate rather than discovered.
+
+### 9.4 Logging
+
+Application logging, distinct from the database's statement log (§10.7):
+
+| Logged | Why |
+|---|---|
+| Run lifecycle — started, item completed, halted, finished | The narrative behind a run record |
+| Adapter failures, with the URL and the response | The only way a parse failure is diagnosable (§5.3) |
+| Spend accumulation as it approaches the cap | So a halt is never a surprise |
+| Startup decisions — schema version, adapters registered, runs swept | The boot log answers "why did it refuse to start" |
+
+**Never logged:** the API key, and no full response body — the artefact store already keeps those
+that matter (§5.4).
+
+### 9.5 Backup
+
+`pg_dump` in custom format to a local directory, **before every migration** and on a schedule.
+
+The reasoning is specific rather than generic: structured values could be re-fetched slowly,
+LLM-sourced values would cost money again, and **manually entered values — visa verdicts, quota
+research, exclusion reasons — cannot be re-fetched at all.** They exist in one place. That is what
+is being protected.
+
+### 9.6 Time
+
+`timestamptz` for every moment the system records — run timestamps, retrieval dates, evaluation
+timestamps. Plain `date` for reference periods, which describe a span in the world rather than an
+instant in a timezone. Confusing the two is the standard PostgreSQL mistake, and the two-date rule
+(`reqs.md` §3.6) makes it more likely here than usual.
+
+---
+
+## 10. Carried from the master spec
 
 Preserved before the spec's deletion. These are its proposals, not settled decisions.
 
-### 8.1 Goal
+### 10.1 Goal
 
 A **local, self-contained application** that runs the whole pipeline — data acquisition,
 interpretation, scoring, ranking — with no manual intervention beyond configuring attributes and
 starting a run. The spec's phrase for the bar it must clear: **"zero copy-paste between chat
 and the app."**
 
-### 8.2 Proposed stack, and the alternative it rejected
+### 10.2 Proposed stack, and the alternative it rejected
 
 | Component | Proposed | Reason given |
 |---|---|---|
@@ -915,7 +1098,7 @@ choice: it is what makes the database reproducible from the repository, so a dro
 is an inconvenience rather than a loss. Every schema change ships as a migration — no
 out-of-band edits to a live database.
 
-### 8.3 Proposed module layout — superseded by §6.1
+### 10.3 Proposed module layout — superseded by §6.1
 
 The spec proposed `config/`, `acquisition/structured.py`, `acquisition/qualitative.py`,
 `storage/db.py`, `scoring/engine.py`, `scoring/compare.py`, `ui/app.py`.
@@ -930,7 +1113,7 @@ The spec's SQLite schema sketch — tables `countries`, `country_scores`, `citie
 copied.** Separate country and city tables would reintroduce exactly the duplication that
 `Candidate` exists to prevent.
 
-### 8.4 Data flow
+### 10.4 Data flow
 
 **Country level:** configure attributes → select countries → screen using structured sources only
 → score → those below the qualification threshold do not have cities extracted.
@@ -940,7 +1123,7 @@ data acquisition, **run in parallel** → store → filter and score → ranking
 
 **Comparison:** pick a focus candidate and comparators → delta table plus templated synthesis.
 
-### 8.5 Sizing, and why the levels exist
+### 10.5 Sizing, and why the levels exist
 
 The figures that justify the architecture:
 
@@ -954,13 +1137,13 @@ The figures that justify the architecture:
 This is the whole argument for evaluating in levels rather than one uniform pass, and it is the reason the
 country level is v1.
 
-### 8.6 Setup
+### 10.6 Setup
 
 The qualitative path needs a **dedicated Anthropic API key** from console.anthropic.com,
 separate from a Claude.ai subscription and billed per use. The spec's cost framing: a few dozen
 calls per city, not millions.
 
-### 8.7 Auditing is the database's own statement log
+### 10.7 Auditing is the database's own statement log
 
 **No audit tables, no triggers, no changelog of ours.** PostgreSQL's built-in statement logging
 records what happened; the application adds nothing.
@@ -1011,14 +1194,14 @@ queryable.
 
 ---
 
-## 9. Open
+## 11. Open
 
 - **Backend language and interface framework** are still undecided, and they are now **two
   independent decisions** rather than one: the backend serves REST, the interface consumes it, and
-  they share no code (§6.1). §8.2 records what the spec proposed, as a starting point rather than
+  they share no code (§6.1). §10.2 records what the spec proposed, as a starting point rather than
   a conclusion — though **Streamlit is effectively excluded** by that split, since its value was
   precisely that UI and logic live in one process. **The database is settled: PostgreSQL**
-  (§8.2). Whether geometry lives in the database via PostGIS, or is computed at data acquisition
+  (§10.2). Whether geometry lives in the database via PostGIS, or is computed at data acquisition
   time and stored as plain numbers, stays open — but it is now an extension question inside a
   chosen engine, not an engine question.
 - **Time-series reducers.** Which rows scoring uses when an attribute has several reference
