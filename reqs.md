@@ -181,7 +181,7 @@ is displayed and never scored. Attach a criterion to it and city size becomes sc
 new fetch, no new table, and no migration. There is no separate facts entity, and there never
 needed to be one.
 
-#### How to read the diagram
+#### How to read the diagrams
 
 Every line is a foreign key. The symbol at each end says how many rows may sit on that side:
 
@@ -218,14 +218,55 @@ Composite natural keys (a criterion is one attribute within one criteria set) ar
 and for attribute type parameters follow the pattern in `arch.md` §3.3 and are omitted here to
 keep the shape legible.
 
+**The model is shown as five diagrams, not one.** Thirty-one tables in a single picture is
+unreadable whatever the layout engine does. An overview establishes the shape; four detail
+views then take one area each, and **each is followed immediately by a table explaining every
+relation it contains**. Every table and every relation appears in exactly one detail view.
+
+In a detail view, an entity drawn **without its field list is context** — it belongs to another
+view and is shown only so the relation has somewhere to land.
+
+#### Overview — the shape of the model
+
+```mermaid
+erDiagram
+    LEVEL ||--o{ CANDIDATE : classifies
+    LEVEL ||--o{ ATTRIBUTE : scopes
+    PILLAR ||--o{ ATTRIBUTE : groups
+    ATTRIBUTE ||--o{ VALUE : "realised as"
+    CANDIDATE ||--o{ VALUE : "measured by"
+    DATA_SOURCE ||--o{ VALUE : produces
+    DATA_ACQUISITION_RUN ||--o{ VALUE : produced
+    CANDIDATE ||--o{ MATCH_RULE_RESULT : "gated by"
+    MATCH_RULE ||--o{ MATCH_RULE_RESULT : "evaluated as"
+    HOUSEHOLD }o--|| CANDIDATE : "lives in"
+    ATTRIBUTE ||--o{ CRITERION : "judged by"
+    CRITERIA_SET ||--o{ CRITERION : contains
+    CRITERIA_SET ||--o{ CRITERIA_SET_MATCH_RULE : enforces
+    MATCH_RULE ||--o{ CRITERIA_SET_MATCH_RULE : "enforced in"
+    CRITERIA_SET ||--o{ EVALUATION : "run as"
+    EVALUATION ||--o{ CANDIDATE_RESULT : yields
+    CANDIDATE ||--o{ CANDIDATE_RESULT : "scored in"
+```
+
+> **The one structural rule the whole model exists to protect.** `ATTRIBUTE`, `VALUE`,
+> `MATCH_RULE_RESULT` and everything feeding them are **the world as it is**. `CRITERION`,
+> `CRITERIA_SET`, `EVALUATION` and `CANDIDATE_RESULT` are **what you make of it**. Every arrow
+> between the two halves runs from world to judgement — a criterion reads an attribute, an
+> evaluation reads values. **None runs back.** No value knows which criteria set is active; no
+> candidate stores a score. That absence is what §5.6 means by keeping acquisition and scoring
+> separate, and it is why switching from `alex` to `partner` can never trigger a fetch.
+
+#### View 1 — Places, and what can be known about them
+
+The catalog: what exists, what may be measured, in what unit, and from which source first.
+Nothing here has been measured yet.
+
 ```mermaid
 erDiagram
     LEVEL {
         text id PK
         int depth_order
-    }
-    VALUE_TYPE {
-        text id PK
     }
     CANDIDATE {
         text id PK
@@ -235,6 +276,16 @@ erDiagram
     PILLAR {
         text id PK
         text level FK
+    }
+    VALUE_TYPE {
+        text id PK
+    }
+    BREAKDOWN_SCHEME {
+        text id PK
+    }
+    BREAKDOWN_OPTION {
+        text id PK
+        text breakdown_scheme FK
     }
     ATTRIBUTE {
         text id PK
@@ -259,18 +310,62 @@ erDiagram
         text data_source FK
         int rank
     }
-    BREAKDOWN_SCHEME {
-        text id PK
-    }
-    BREAKDOWN_OPTION {
-        text id PK
-        text breakdown_scheme FK
-    }
     DATA_SOURCE {
         text id PK
         text source_kind
         int default_priority
         text reliability_tier
+    }
+
+    LEVEL ||--o{ CANDIDATE : classifies
+    LEVEL ||--o{ PILLAR : scopes
+    LEVEL ||--o{ ATTRIBUTE : scopes
+    CANDIDATE ||--o{ CANDIDATE : "parent of"
+    PILLAR ||--o{ ATTRIBUTE : groups
+    VALUE_TYPE ||--o{ ATTRIBUTE : types
+    BREAKDOWN_SCHEME ||--o{ BREAKDOWN_OPTION : enumerates
+    BREAKDOWN_SCHEME ||--o{ ATTRIBUTE : "breaks down"
+    ATTRIBUTE ||--o| ATTRIBUTE_ALLOWED_RANGE : validates
+    ATTRIBUTE ||--o{ ATTRIBUTE_ALLOWED_LABEL : validates
+    ATTRIBUTE ||--o{ ATTRIBUTE_SOURCE_PRIORITY : overrides
+    DATA_SOURCE ||--o{ ATTRIBUTE_SOURCE_PRIORITY : "is ranked in"
+```
+
+| Relation | What it does | Why it exists |
+|---|---|---|
+| `LEVEL \|\|--o{ CANDIDATE` | Every candidate is a country or a city | Levels are rows, not an enum, so a third one is a config change (§3.1) |
+| `LEVEL \|\|--o{ PILLAR` | Pillars are declared per level | Weights sum to 100% *within* a level, so the two sets must be separable |
+| `LEVEL \|\|--o{ ATTRIBUTE` | Attributes are declared per level | `country.safety` and `city.safety` are different questions with different sources |
+| `CANDIDATE \|\|--o{ CANDIDATE` | A city points at its country | Gives the parent chain that `parent_not_matching` and the context column depend on |
+| `PILLAR \|\|--o{ ATTRIBUTE` | Each attribute sits in one vertical | Weights normalise within a pillar; the pillar is where that grouping lives |
+| `VALUE_TYPE \|\|--o{ ATTRIBUTE` | Declares the semantic type | Determines the legal scales, the threshold shape, and what a value stores (§3.3a) |
+| `BREAKDOWN_SCHEME \|\|--o{ BREAKDOWN_OPTION` | Enumerates `one_bedroom`, `two_bedroom`, … | A controlled vocabulary, so a typo cannot invent an option |
+| `BREAKDOWN_SCHEME \|\|--o{ ATTRIBUTE` | Declares what an attribute is broken down by | Optional: most attributes point at nothing and hold one value |
+| `ATTRIBUTE \|\|--o\| ATTRIBUTE_ALLOWED_RANGE` | Per-attribute numeric validation | Rent declares `> 0`; temperature allows negatives. At most one row per attribute |
+| `ATTRIBUTE \|\|--o{ ATTRIBUTE_ALLOWED_LABEL` | Per-attribute vocabulary validation | A `LabelSet` may only carry labels declared here |
+| `ATTRIBUTE \|\|--o{ ATTRIBUTE_SOURCE_PRIORITY` | Overrides the global source order | Numbeo outranks Eurostat on rent; the reverse holds elsewhere (§6.6) |
+| `DATA_SOURCE \|\|--o{ ATTRIBUTE_SOURCE_PRIORITY` | The other half of that override | A table, not a JSON list, so "which attributes prefer this source?" is a query |
+
+#### View 2 — Measurement, acquisition and gates
+
+What was actually found out about each place, and the run that found it.
+
+```mermaid
+erDiagram
+    CANDIDATE {
+        text id PK
+    }
+    ATTRIBUTE {
+        text id PK
+    }
+    DATA_SOURCE {
+        text id PK
+    }
+    BREAKDOWN_OPTION {
+        text id PK
+    }
+    LEVEL {
+        text id PK
     }
     VALUE {
         bigint id PK
@@ -323,6 +418,65 @@ erDiagram
         date reference_period_start
         date retrieval_date
         text methodology_url
+    }
+
+    ATTRIBUTE ||--o{ VALUE : "realised as"
+    CANDIDATE ||--o{ VALUE : "measured by"
+    DATA_SOURCE ||--o{ VALUE : produces
+    BREAKDOWN_OPTION ||--o{ VALUE : distinguishes
+    DATA_ACQUISITION_RUN ||--o{ VALUE : produced
+    DATA_ACQUISITION_RUN ||--o{ DATA_ACQUISITION_FAILURE : recorded
+    CANDIDATE ||--o{ DATA_ACQUISITION_FAILURE : "failed for"
+    ATTRIBUTE ||--o{ DATA_ACQUISITION_FAILURE : "failed on"
+    LEVEL ||--o{ MATCH_RULE : scopes
+    MATCH_RULE ||--o{ MATCH_RULE_RESULT : "evaluated as"
+    CANDIDATE ||--o{ MATCH_RULE_RESULT : "gated by"
+    DATA_SOURCE ||--o{ MATCH_RULE_RESULT : evidences
+    CANDIDATE ||--o{ EXTERNAL_SCORE : "rated by"
+    DATA_SOURCE ||--o{ EXTERNAL_SCORE : publishes
+```
+
+| Relation | What it does | Why it exists |
+|---|---|---|
+| `ATTRIBUTE \|\|--o{ VALUE` | A value measures one attribute | The value's type, unit and validation all come from here |
+| `CANDIDATE \|\|--o{ VALUE` | A value is about one place | |
+| `DATA_SOURCE \|\|--o{ VALUE` | Records who said it | Provenance is mandatory (§10), and priority needs the source to choose an active value |
+| `BREAKDOWN_OPTION \|\|--o{ VALUE` | Which case this figure describes | Null for ordinary attributes. Lets all three rents be stored at once, so changing household size needs no re-fetch (§3.3b) |
+| `DATA_ACQUISITION_RUN \|\|--o{ VALUE` | Which run produced it | Makes selective retry and "what changed since last run" possible |
+| `DATA_ACQUISITION_RUN \|\|--o{ DATA_ACQUISITION_FAILURE` | Failures attach to their run | A run continues past failures (§6.4); they must be recorded, not raised |
+| `CANDIDATE \|\|--o{ DATA_ACQUISITION_FAILURE` | Which place failed | |
+| `ATTRIBUTE \|\|--o{ DATA_ACQUISITION_FAILURE` | Which attribute failed | With the candidate, this is exactly the retry unit — retry what failed, nothing else |
+| `LEVEL \|\|--o{ MATCH_RULE` | Gates are declared per level | A visa is national; `two_role_feasibility` is local |
+| `MATCH_RULE \|\|--o{ MATCH_RULE_RESULT` | One gate, many candidates | |
+| `CANDIDATE \|\|--o{ MATCH_RULE_RESULT` | One candidate, many gates | The result is a **fact about the world** — whether a visa route exists — so it sits on the objective side, like a value |
+| `DATA_SOURCE \|\|--o{ MATCH_RULE_RESULT` | Where the judgement came from | Usually `manual` or `llm`; a gate needs provenance as much as a number does |
+| `CANDIDATE \|\|--o{ EXTERNAL_SCORE` | Published scores about a place | |
+| `DATA_SOURCE \|\|--o{ EXTERNAL_SCORE` | Who published it | Providers *are* sources — Numbeo supplies both values and a composite. One table means one reliability tier and one place to record a paywall |
+
+> **Together, four foreign keys plus the reference period are the natural key of a value**:
+> candidate, attribute, data source, breakdown option. The same figure from a second source is a
+> second row, never an overwrite (§3.6).
+
+#### View 3 — What you make of it: household and criteria sets
+
+Everything subjective. Nothing here is a fact about any place.
+
+```mermaid
+erDiagram
+    CANDIDATE {
+        text id PK
+    }
+    ATTRIBUTE {
+        text id PK
+    }
+    PILLAR {
+        text id PK
+    }
+    MATCH_RULE {
+        text id PK
+    }
+    BREAKDOWN_OPTION {
+        text id PK
     }
     HOUSEHOLD {
         int id PK
@@ -395,6 +549,73 @@ erDiagram
         text match_rule FK
         bool is_enforced
     }
+
+    HOUSEHOLD }o--|| CANDIDATE : "lives in"
+    HOUSEHOLD ||--o{ HOUSEHOLD_CITIZENSHIP : holds
+    CANDIDATE ||--o{ HOUSEHOLD_CITIZENSHIP : "granted by"
+    CRITERIA_SET ||--o{ PILLAR_WEIGHT : assigns
+    PILLAR ||--o{ PILLAR_WEIGHT : "weighted by"
+    CRITERIA_SET ||--o{ CRITERION : contains
+    ATTRIBUTE ||--o{ CRITERION : "judged by"
+    BREAKDOWN_OPTION ||--o{ CRITERION : "selected by"
+    CRITERION ||--o{ CRITERION_SCALE_ANCHOR : "scaled by"
+    CRITERION ||--o| CRITERION_THRESHOLD_RANGE : "bounded by"
+    CRITERION ||--o{ CRITERION_THRESHOLD_LABEL : "bounded by"
+    CRITERION ||--o| CRITERION_THRESHOLD_BOOLEAN : "bounded by"
+    CRITERION ||--o{ CRITERION_THRESHOLD_SHARE : "bounded by"
+    CRITERIA_SET ||--o{ CRITERIA_SET_MATCH_RULE : enforces
+    MATCH_RULE ||--o{ CRITERIA_SET_MATCH_RULE : "enforced in"
+```
+
+| Relation | What it does | Why it exists |
+|---|---|---|
+| `HOUSEHOLD }o--\|\| CANDIDATE` | `home_country_candidate` and `home_city_candidate` | The home country is **also a candidate** (§1.2) — scored like any other, so "stay put" stays measurable. A foreign key, not a text field, which is what makes the Δ-vs-home column a join |
+| `HOUSEHOLD \|\|--o{ HOUSEHOLD_CITIZENSHIP` | Which citizenships you hold | A list, therefore a table |
+| `CANDIDATE \|\|--o{ HOUSEHOLD_CITIZENSHIP` | Citizenship of a country | Lets `eu_free_movement` be evaluated by a join rather than by parsing a string |
+| `CRITERIA_SET \|\|--o{ PILLAR_WEIGHT` | Pillar weights belong to a set, not to the pillar | `alex` and `partner` weight `career` differently over the same eleven pillars |
+| `PILLAR \|\|--o{ PILLAR_WEIGHT` | The other half | |
+| `CRITERIA_SET \|\|--o{ CRITERION` | A set is its criteria | |
+| `ATTRIBUTE \|\|--o{ CRITERION` | A criterion judges exactly one attribute | The central relation of the model. Many criteria may judge one attribute — one per set — and an attribute with **no** criterion is descriptive and never scored (§3.3) |
+| `BREAKDOWN_OPTION \|\|--o{ CRITERION` | Which option this criterion scores | A *preference*: two bedrooms today, three tomorrow, recalculated with no re-fetch |
+| `CRITERION \|\|--o{ CRITERION_SCALE_ANCHOR` | The `fixed` method's anchor points | As rows, "500 EUR → 100, 2500 EUR → 0" is inspectable and checkable |
+| `CRITERION \|\|--o\| CRITERION_THRESHOLD_RANGE` | Numeric matching threshold | Four typed children replace what would otherwise be one JSON column, mirroring how `VALUE` is typed |
+| `CRITERION \|\|--o{ CRITERION_THRESHOLD_LABEL` | Must-contain / must-not-contain | Many rows, one per label |
+| `CRITERION \|\|--o\| CRITERION_THRESHOLD_BOOLEAN` | Must equal | |
+| `CRITERION \|\|--o{ CRITERION_THRESHOLD_SHARE` | Min or max share of a named label | For `ShareComposition` |
+| `CRITERIA_SET \|\|--o{ CRITERIA_SET_MATCH_RULE` | A set chooses which gates it enforces | Whether a UK visa route exists is objective; whether its absence disqualifies is yours. A `remote-only` set need not enforce `two_role_feasibility` at all |
+| `MATCH_RULE \|\|--o{ CRITERIA_SET_MATCH_RULE` | The other half | Gives gates the same split attributes have: `ATTRIBUTE : CRITERION` is exactly `MATCH_RULE : CRITERIA_SET_MATCH_RULE` |
+
+> **Exactly one threshold child may exist for a criterion**, and which one is decided by the
+> attribute's value type. That is a constraint the database can check, and precisely what a JSON
+> column would have hidden.
+
+> **The household has no link to criteria, and that is deliberate.** An earlier draft drew one,
+> labelled "supplies defaults to". It was wrong: no foreign key exists. The household is a
+> single row the engine *reads* when choosing a default breakdown option or raising a rent
+> warning. A relation would have implied a stored dependency that does not exist.
+
+#### View 4 — Evaluation and results
+
+Running one criteria set over the candidates at one level. Pure arithmetic over rows already
+stored — it fetches nothing and costs nothing.
+
+```mermaid
+erDiagram
+    LEVEL {
+        text id PK
+    }
+    CANDIDATE {
+        text id PK
+    }
+    CRITERIA_SET {
+        text id PK
+    }
+    CRITERION {
+        bigint id PK
+    }
+    MATCH_RULE {
+        text id PK
+    }
     EVALUATION {
         bigint id PK
         text criteria_set FK
@@ -418,49 +639,8 @@ erDiagram
         text reason_detail
     }
 
-    LEVEL ||--o{ CANDIDATE : classifies
-    LEVEL ||--o{ PILLAR : scopes
-    LEVEL ||--o{ ATTRIBUTE : scopes
-    LEVEL ||--o{ MATCH_RULE : scopes
-    LEVEL ||--o{ EVALUATION : "is evaluated at"
-    CANDIDATE ||--o{ CANDIDATE : "parent of"
-    PILLAR ||--o{ ATTRIBUTE : groups
-    VALUE_TYPE ||--o{ ATTRIBUTE : types
-    BREAKDOWN_SCHEME ||--o{ BREAKDOWN_OPTION : enumerates
-    BREAKDOWN_SCHEME ||--o{ ATTRIBUTE : "breaks down"
-    ATTRIBUTE ||--o| ATTRIBUTE_ALLOWED_RANGE : validates
-    ATTRIBUTE ||--o{ ATTRIBUTE_ALLOWED_LABEL : validates
-    ATTRIBUTE ||--o{ ATTRIBUTE_SOURCE_PRIORITY : overrides
-    DATA_SOURCE ||--o{ ATTRIBUTE_SOURCE_PRIORITY : "is ranked in"
-    ATTRIBUTE ||--o{ VALUE : "realised as"
-    CANDIDATE ||--o{ VALUE : "measured by"
-    DATA_SOURCE ||--o{ VALUE : produces
-    BREAKDOWN_OPTION ||--o{ VALUE : "distinguishes"
-    DATA_ACQUISITION_RUN ||--o{ VALUE : produced
-    DATA_ACQUISITION_RUN ||--o{ DATA_ACQUISITION_FAILURE : recorded
-    CANDIDATE ||--o{ DATA_ACQUISITION_FAILURE : "failed for"
-    ATTRIBUTE ||--o{ DATA_ACQUISITION_FAILURE : "failed on"
-    MATCH_RULE ||--o{ MATCH_RULE_RESULT : "evaluated as"
-    CANDIDATE ||--o{ MATCH_RULE_RESULT : "gated by"
-    DATA_SOURCE ||--o{ MATCH_RULE_RESULT : evidences
-    CANDIDATE ||--o{ EXTERNAL_SCORE : "rated by"
-    DATA_SOURCE ||--o{ EXTERNAL_SCORE : publishes
-    HOUSEHOLD }o--|| CANDIDATE : "lives in"
-    HOUSEHOLD ||--o{ HOUSEHOLD_CITIZENSHIP : holds
-    CANDIDATE ||--o{ HOUSEHOLD_CITIZENSHIP : "granted by"
-    CRITERIA_SET ||--o{ PILLAR_WEIGHT : assigns
-    PILLAR ||--o{ PILLAR_WEIGHT : "weighted by"
-    CRITERIA_SET ||--o{ CRITERION : contains
-    ATTRIBUTE ||--o{ CRITERION : "judged by"
-    BREAKDOWN_OPTION ||--o{ CRITERION : "selected by"
-    CRITERION ||--o{ CRITERION_SCALE_ANCHOR : "scaled by"
-    CRITERION ||--o| CRITERION_THRESHOLD_RANGE : "bounded by"
-    CRITERION ||--o{ CRITERION_THRESHOLD_LABEL : "bounded by"
-    CRITERION ||--o| CRITERION_THRESHOLD_BOOLEAN : "bounded by"
-    CRITERION ||--o{ CRITERION_THRESHOLD_SHARE : "bounded by"
-    CRITERIA_SET ||--o{ CRITERIA_SET_MATCH_RULE : enforces
-    MATCH_RULE ||--o{ CRITERIA_SET_MATCH_RULE : "enforced in"
     CRITERIA_SET ||--o{ EVALUATION : "run as"
+    LEVEL ||--o{ EVALUATION : "is evaluated at"
     EVALUATION ||--o{ CANDIDATE_RESULT : yields
     CANDIDATE ||--o{ CANDIDATE_RESULT : "scored in"
     CANDIDATE_RESULT ||--o{ NON_MATCH_REASON : explained
@@ -468,119 +648,14 @@ erDiagram
     MATCH_RULE ||--o{ NON_MATCH_REASON : "reason from"
 ```
 
-> **The one structural rule the diagram exists to show.** Read it top to bottom: everything
-> above `HOUSEHOLD` is the world as it is, everything from `HOUSEHOLD` down is what you make of
-> it. **No arrow runs upward.** No value knows which criteria set is active; no candidate stores
-> a score. That absence is what §5.6 means by keeping acquisition and scoring separate, and it
-> is why switching from `alex` to `partner` can never trigger a fetch.
-
-#### Every relation, and why it exists
-
-**Levels and places**
-
-| Relation | What it does | Why it exists |
-|---|---|---|
-| `LEVEL \|\|--o{ CANDIDATE` | Every candidate is a country or a city | Levels are rows, not an enum, so a third one is a config change (§3.1) |
-| `LEVEL \|\|--o{ PILLAR` | Pillars are declared per level | Weights sum to 100% *within* a level, so the two sets must be separable |
-| `LEVEL \|\|--o{ ATTRIBUTE` | Attributes are declared per level | `country.safety` and `city.safety` are different questions with different sources |
-| `LEVEL \|\|--o{ MATCH_RULE` | Gates are declared per level | A visa is national; `two_role_feasibility` is local |
-| `LEVEL \|\|--o{ EVALUATION` | An evaluation runs at one level | Comparisons never mix levels (§8.5); this enforces it in the schema |
-| `CANDIDATE \|\|--o{ CANDIDATE` | A city points at its country | Gives the parent chain that `parent_not_matching` and the context column depend on |
-
-**The attribute catalog**
-
-| Relation | What it does | Why it exists |
-|---|---|---|
-| `PILLAR \|\|--o{ ATTRIBUTE` | Each attribute sits in one vertical | Weights normalise within a pillar; the pillar is where that grouping lives |
-| `VALUE_TYPE \|\|--o{ ATTRIBUTE` | Declares the semantic type | Determines the legal scales, the threshold shape, and what a value stores (§3.3a) |
-| `BREAKDOWN_SCHEME \|\|--o{ BREAKDOWN_OPTION` | Enumerates `one_bedroom`, `two_bedroom`, … | A controlled vocabulary, so a typo cannot invent an option |
-| `BREAKDOWN_SCHEME \|\|--o{ ATTRIBUTE` | Declares what an attribute is broken down by | Optional: most attributes point at nothing and hold one value |
-| `ATTRIBUTE \|\|--o\| ATTRIBUTE_ALLOWED_RANGE` | Per-attribute numeric validation | Rent declares `> 0`; temperature allows negatives. At most one row per attribute |
-| `ATTRIBUTE \|\|--o{ ATTRIBUTE_ALLOWED_LABEL` | Per-attribute vocabulary validation | A `LabelSet` may only carry labels declared here |
-| `ATTRIBUTE \|\|--o{ ATTRIBUTE_SOURCE_PRIORITY` | Overrides the global source order | Numbeo outranks Eurostat on rent; the reverse holds elsewhere (§6.6) |
-| `DATA_SOURCE \|\|--o{ ATTRIBUTE_SOURCE_PRIORITY` | The other half of that override | The junction is a table, not a JSON list, so "which attributes prefer this source?" is a query |
-
-**Measurements**
-
-| Relation | What it does | Why it exists |
-|---|---|---|
-| `ATTRIBUTE \|\|--o{ VALUE` | A value measures one attribute | The value's type, unit and validation all come from here |
-| `CANDIDATE \|\|--o{ VALUE` | A value is about one place | |
-| `DATA_SOURCE \|\|--o{ VALUE` | Records who said it | Provenance is mandatory (§10), and priority needs the source to choose an active value |
-| `BREAKDOWN_OPTION \|\|--o{ VALUE` | Which case this figure describes | Null for ordinary attributes. This is what lets all three rents be stored at once, so changing household size needs no re-fetch (§3.3b) |
-| `DATA_ACQUISITION_RUN \|\|--o{ VALUE` | Which run produced it | Makes selective retry and "what changed since last run" possible |
-
-> **Together these four foreign keys are the natural key of a value**: candidate, attribute,
-> data source, breakdown option, plus the reference period. The same figure from a second source is a
-> second row, never an overwrite (§3.6).
-
-**Acquisition**
-
-| Relation | What it does | Why it exists |
-|---|---|---|
-| `DATA_ACQUISITION_RUN \|\|--o{ DATA_ACQUISITION_FAILURE` | Failures attach to their run | A run continues past failures (§6.4); they must be recorded, not raised |
-| `CANDIDATE \|\|--o{ DATA_ACQUISITION_FAILURE` | Which place failed | |
-| `ATTRIBUTE \|\|--o{ DATA_ACQUISITION_FAILURE` | Which attribute failed | Together with the candidate, this is exactly the retry unit — retry what failed, nothing else |
-
-**Gates**
-
-| Relation | What it does | Why it exists |
-|---|---|---|
-| `MATCH_RULE \|\|--o{ MATCH_RULE_RESULT` | One rule, many candidates | |
-| `CANDIDATE \|\|--o{ MATCH_RULE_RESULT` | One candidate, many rules | The result is a **fact about the world** — whether a visa route exists — so it lives on the objective side, like a value |
-| `DATA_SOURCE \|\|--o{ MATCH_RULE_RESULT` | Where the judgement came from | Usually `manual` or `llm`; a gate needs provenance as much as a number does |
-| `CRITERIA_SET \|\|--o{ CRITERIA_SET_MATCH_RULE` | A criteria set chooses which gates it enforces | **This is the relation that was missing.** Whether a UK visa route exists is objective; whether you treat its absence as disqualifying is yours. A `remote-only` set may not enforce `two_role_feasibility` at all |
-| `MATCH_RULE \|\|--o{ CRITERIA_SET_MATCH_RULE` | The other half | Gives match rules the same objective/subjective split attributes already have: `ATTRIBUTE : CRITERION` is exactly `MATCH_RULE : CRITERIA_SET_MATCH_RULE` |
-
-**Outside opinions**
-
-| Relation | What it does | Why it exists |
-|---|---|---|
-| `CANDIDATE \|\|--o{ EXTERNAL_SCORE` | Published scores about a place | |
-| `DATA_SOURCE \|\|--o{ EXTERNAL_SCORE` | Who published it | Providers *are* sources — Numbeo supplies both values and a composite. One table for both means one reliability tier and one place to record a paywall or a discontinuation |
-
-**The household**
-
-| Relation | What it does | Why it exists |
-|---|---|---|
-| `HOUSEHOLD }o--\|\| CANDIDATE` | `home_country_candidate` and `home_city_candidate` | The home country is **also a candidate** (§1.2) — scored like any other, so "stay put" stays measurable. It is a foreign key, not a text field, which is what makes the Δ-vs-home column a join |
-| `HOUSEHOLD \|\|--o{ HOUSEHOLD_CITIZENSHIP` | Which citizenships you hold | A list, therefore a table |
-| `CANDIDATE \|\|--o{ HOUSEHOLD_CITIZENSHIP` | Citizenship of a country | Lets `eu_free_movement` be evaluated by a join rather than by parsing a string |
-
-> **The household has no link to criteria, and that is deliberate.** An earlier draft drew one,
-> labelled "supplies defaults to". It was wrong: no foreign key exists. The household is a
-> single row the engine *reads* when choosing a default breakdown option or raising a rent warning. A
-> relation would have implied a stored dependency that does not exist and would have to be
-> maintained.
-
-**Criteria sets**
-
-| Relation | What it does | Why it exists |
-|---|---|---|
-| `CRITERIA_SET \|\|--o{ PILLAR_WEIGHT` | Pillar weights belong to a set, not to the pillar | `alex` and `partner` weight `career` differently over the same eleven pillars |
-| `PILLAR \|\|--o{ PILLAR_WEIGHT` | The other half | |
-| `CRITERIA_SET \|\|--o{ CRITERION` | A set is its criteria | |
-| `ATTRIBUTE \|\|--o{ CRITERION` | A criterion judges exactly one attribute | The central relation of the model. Many criteria may judge one attribute — one per set — and an attribute with **no** criterion is descriptive and never scored (§3.3) |
-| `BREAKDOWN_OPTION \|\|--o{ CRITERION` | Which option this criterion scores | A *preference*: two bedrooms today, three tomorrow, recalculated with no re-fetch |
-| `CRITERION \|\|--o{ CRITERION_SCALE_ANCHOR` | The `fixed` scale's anchor points | Was `scale_params` JSON. As rows, "500 EUR → 100, 2500 EUR → 0" is inspectable and checkable |
-| `CRITERION \|\|--o\| CRITERION_THRESHOLD_RANGE` | Numeric matching threshold | Was `matching_threshold` JSON. Four typed children replace it, mirroring how `VALUE` is typed |
-| `CRITERION \|\|--o{ CRITERION_THRESHOLD_LABEL` | Must-contain / must-not-contain | Many rows, one per label |
-| `CRITERION \|\|--o\| CRITERION_THRESHOLD_BOOLEAN` | Must equal | |
-| `CRITERION \|\|--o{ CRITERION_THRESHOLD_SHARE` | Min or max share of a named label | For `ShareComposition` |
-
-> **Exactly one threshold child may exist for a criterion, and which one is decided by the
-> attribute's value type.** That is a constraint the database can check, and it is precisely
-> what a JSON column would have hidden.
-
-**Evaluation and results**
-
 | Relation | What it does | Why it exists |
 |---|---|---|
 | `CRITERIA_SET \|\|--o{ EVALUATION` | An evaluation applies one set | |
+| `LEVEL \|\|--o{ EVALUATION` | An evaluation runs at one level | Comparisons never mix levels (§8.5); this enforces it in the schema |
 | `EVALUATION \|\|--o{ CANDIDATE_RESULT` | One row per candidate per evaluation | |
-| `CANDIDATE \|\|--o{ CANDIDATE_RESULT` | The place being scored | Keeping the result here rather than on the candidate is what makes "how do these two sets rank the same countries?" a query instead of a re-run |
+| `CANDIDATE \|\|--o{ CANDIDATE_RESULT` | The place being scored | Keeping the result here rather than on the candidate makes "how do these two sets rank the same countries?" a query instead of a re-run |
 | `CANDIDATE_RESULT \|\|--o{ NON_MATCH_REASON` | Why it did not match | A list, therefore a table. Both mechanisms feed one surface (§5.2) |
-| `CRITERION \|\|--o{ NON_MATCH_REASON` | A threshold was crossed | Exactly one of the two is set on each row |
+| `CRITERION \|\|--o{ NON_MATCH_REASON` | A matching threshold was crossed | Exactly one of the two is set on each row |
 | `MATCH_RULE \|\|--o{ NON_MATCH_REASON` | A gate failed | |
 
 ### 3.1 Candidate
