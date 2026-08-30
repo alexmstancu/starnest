@@ -495,7 +495,7 @@ rather than the part of the problem it belongs to.
 | Outside the policy core | Contains | Depends on |
 |---|---|---|
 | `api/` | The REST surface: routing, request parsing, DTO-to-JSON serialisation, status codes, error shapes | every use case it exposes |
-| `sources/` | One adapter per data source — Eurostat, Numbeo, the LLM path, manual entry | `acquisition`, `data` |
+| `data_sources/` | One adapter per data source — Eurostat, Numbeo, the LLM path, manual entry | `acquisition`, `data` |
 | `storage/` | The schema, its migrations, all SQL, and the store implementations | every module whose store interface it implements |
 
 **The user interface is not in this list.** It is a **separate client**, built and deployed on its
@@ -523,7 +523,7 @@ flowchart TD
     end
 
     subgraph plugins["plugins"]
-        sources["sources/"]
+        data_sources["data_sources/"]
         storage["storage/"]
     end
 
@@ -549,7 +549,7 @@ flowchart TD
     household --> candidates
     comparison --> candidates
 
-    sources -.implements.-> acquisition
+    data_sources -.implements.-> acquisition
     storage -.implements.-> data
     storage -.implements.-> criteria
     storage -.implements.-> evaluation
@@ -573,7 +573,7 @@ arrow of dependency runs opposite to the arrow of control.
 
 Four rules, each mechanically checkable by an import linter:
 
-1. **No policy module imports `api/`, `sources/` or `storage/`.** Concrete implementations are
+1. **No policy module imports `api/`, `data_sources/` or `storage/`.** Concrete implementations are
    supplied at startup (§6.7).
 2. **The import table in §6.1 is exhaustive.** An import not listed there is a violation, not a
    judgement call. The list is a directed acyclic graph; a cycle is always a bug, and the fix is
@@ -599,8 +599,8 @@ inner module ever names a concrete implementation.
 
 | Interface | Declared in | Implemented in | Contract |
 |---|---|---|---|
-| `SourceAdapter` | `acquisition` | `sources/*` | Which attributes it can answer, at which levels, in bulk or per candidate; fetch and return values with their provenance |
-| `CostMeter` | `acquisition` | `sources/llm` | What a planned call will cost, and what a completed one did |
+| `SourceAdapter` | `acquisition` | `data_sources/*` | Which attributes it can answer, at which levels, in bulk or per candidate; fetch and return values with their provenance |
+| `CostMeter` | `acquisition` | `data_sources/llm` | What a planned call will cost, and what a completed one did |
 | `ValueStore` | `data` | `storage` | Read active values for candidates and attributes; append new values; never update |
 | `CatalogStore` | `data` | `storage` | Read attributes, pillars, levels, sources, breakdown schemes |
 | `FxRateProvider` | `data` | `sources` | The rate for a currency pair on a date, with its source |

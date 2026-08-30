@@ -51,7 +51,7 @@ Module layout (`arch.md` §6.1) — **named after the domain, not technical role
 | `evaluation/` | Normalisation, redistribution, coverage, matching, ranking, snapshots |
 | `comparison/` | Focus vs comparators, deltas, synthesis |
 | `api/` | The REST surface. **This is the presenter** — use cases return DTOs, `api/` serialises them |
-| `sources/`, `storage/` | **Plugins.** Implement interfaces the policy modules declare; no policy lives here |
+| `data_sources/`, `storage/` | **Plugins.** Implement interfaces the policy modules declare; no policy lives here |
 
 **The interface is a separate client, not a layer.** It reaches the backend only over HTTP, shares no code with it — not even DTO definitions — and appears nowhere in its dependency graph. The acceptance suite is another client of the same contract, which is what makes the API a real boundary rather than an intention.
 
