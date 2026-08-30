@@ -37,19 +37,25 @@ A local, single-user decision-support app for a personal relocation search (EU/E
 
 ## Planned stack (from the spec — confirm before deviating)
 
-Python 3.12+, Streamlit (UI), **PostgreSQL (storage — decided, see `arch.md` §6.2)**, Anthropic API with the `web_search` tool (qualitative criteria), direct HTTP fetch for structured data sources.
+Backend language and interface framework are **undecided and independent** (`arch.md` §8) — the backend serves REST and the interface consumes it. Streamlit is effectively excluded, since its value was UI and logic in one process. **PostgreSQL (storage — decided, `arch.md` §7.2)**, Anthropic API with the `web_search` tool (qualitative criteria), direct HTTP fetch for structured data sources.
 
-Planned module layout:
+Module layout (`arch.md` §6.1) — **named after the domain, not technical roles**:
 
 | Path | Responsibility |
 |---|---|
-| `config/` | Pillars, criteria, weights, thresholds as data — split by level (country / city) |
-| `acquisition/structured.py` | Deterministic fetch of quantifiable data (no LLM) |
-| `acquisition/qualitative.py` | Claude API + `web_search`, structured JSON out (score + summary + sources) |
-| `storage/db.py` | PostgreSQL schema and access; schema and seed scripts versioned as migrations in git. **No JSON columns** — anything list- or object-shaped is its own table; foreign keys are named after the table they point at; **field names spell themselves out** — no single abstract word unless it is an FK or a glossary term (`reqs.md` §3.0) |
-| `scoring/engine.py` | Hard filters + weighted score, per level |
-| `scoring/compare.py` | Focus candidate vs. N comparators: deltas, weighted contributions, templated synthesis |
-| `ui/app.py` | Streamlit app — 4 tabs: config, run, ranking dashboard, comparison |
+| `candidates/` | Candidate, Level, the nesting rule. Imports nothing |
+| `data/` | Attribute, Value, the ten value types, sources, provenance, confidence, the active-value rule |
+| `household/` | The household record |
+| `criteria/` | CriteriaSet, Criterion, thresholds, weight rebalancing |
+| `acquisition/` | Runs, spend cap, retry, the `SourceAdapter` contract |
+| `evaluation/` | Normalisation, redistribution, coverage, matching, ranking, snapshots |
+| `comparison/` | Focus vs comparators, deltas, synthesis |
+| `api/` | The REST surface. **This is the presenter** — use cases return DTOs, `api/` serialises them |
+| `sources/`, `storage/` | **Plugins.** Implement interfaces the policy modules declare; no policy lives here |
+
+**The interface is a separate client, not a layer.** It reaches the backend only over HTTP, shares no code with it — not even DTO definitions — and appears nowhere in its dependency graph. The acceptance suite is another client of the same contract, which is what makes the API a real boundary rather than an intention.
+
+**The dependency rule is enforceable, not aspirational:** no policy module may import a plugin, the import table in `arch.md` §6.1 is exhaustive, and **`data/` may never import `criteria/`, `household/` or `evaluation/`** — that last one is the objective/subjective invariant expressed as imports.
 
 ## Architecture: the two-level pipeline
 

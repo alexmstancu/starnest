@@ -4,7 +4,7 @@ Refined from `relocation-app-master-spec-v1.md` (Part 3), and from the ontology 
 followed `reqs.md`. Terms used here are defined in `reqs.md` Appendix A.
 
 **Status: partial.** This document currently covers the ontology only. The stack — language,
-UI framework, database engine — is deliberately still open (§6). The ontology is settled
+UI framework, database engine — is deliberately still open (§8). The ontology is settled
 independently because none of it changes based on that choice.
 
 ---
@@ -468,18 +468,251 @@ The acquisition layer must support both. A run mixes them.
 
 ---
 
-## 6. Carried from the master spec
+## 6. Application architecture
+
+**A backend that exposes a REST API, and clients that consume it.** The backend is a monolith —
+one deployable, one database, no independent scaling story — but "monolith" describes deployment,
+not structure. The boundaries below exist so that technology decisions stay deferred, policy is
+testable without a database or a browser, and **the interface is not privileged over any other
+consumer**.
+
+The top-level structure names what the system is about, not how it is built. There are no
+`controllers/`, `services/` or `models/` directories, because those name a file's technical role
+rather than the part of the problem it belongs to.
+
+### 6.1 Seven policy modules, an API, and two plugin areas
+
+| Module | Owns | May import |
+|---|---|---|
+| `candidates/` | Candidate, Level, the nesting rule, identifier conventions | — nothing |
+| `data/` | Attribute, Value, the ten value types and their operations, DataSource, FxRate, breakdown schemes, provenance, confidence, the active-value rule | `candidates` |
+| `household/` | The household record and what reads from it | `candidates` |
+| `criteria/` | CriteriaSet, Criterion, matching thresholds, scale anchors, weight rebalancing with locks, which match rules a set enforces | `candidates`, `data`, `household` |
+| `acquisition/` | DataAcquisitionRun, run planning and estimation, the spend cap, partial failure and selective retry, the `SourceAdapter` contract | `candidates`, `data` |
+| `evaluation/` | Normalisation, weight redistribution, coverage, matching, ranking, the Evaluation snapshot and its per-attribute detail | `candidates`, `data`, `household`, `criteria` |
+| `comparison/` | Focus and comparators, deltas, weighted contribution, the templated synthesis | `candidates`, `data`, `evaluation` |
+
+| Outside the policy core | Contains | Depends on |
+|---|---|---|
+| `api/` | The REST surface: routing, request parsing, DTO-to-JSON serialisation, status codes, error shapes | every use case it exposes |
+| `sources/` | One adapter per data source — Eurostat, Numbeo, the LLM path, manual entry | `acquisition`, `data` |
+| `storage/` | The schema, its migrations, all SQL, and the store implementations | every module whose store interface it implements |
+
+**The user interface is not in this list.** It is a **separate client**, built and deployed on its
+own, that reaches the backend only over HTTP. It imports nothing from the backend and appears
+nowhere in its dependency graph.
+
+```mermaid
+flowchart TD
+    subgraph clients["clients — over HTTP, no shared code"]
+        ui["browser UI"]
+        tests["acceptance tests"]
+        future["CLI, mobile, …"]
+    end
+
+    api["api/ — REST"]
+
+    subgraph policy["policy — no technology anywhere"]
+        comparison["comparison/"]
+        evaluation["evaluation/"]
+        acquisition["acquisition/"]
+        criteria["criteria/"]
+        household["household/"]
+        data["data/"]
+        candidates["candidates/"]
+    end
+
+    subgraph plugins["plugins"]
+        sources["sources/"]
+        storage["storage/"]
+    end
+
+    ui --> api
+    tests --> api
+    future --> api
+
+    api --> evaluation
+    api --> comparison
+    api --> acquisition
+    api --> criteria
+    api --> household
+
+    comparison --> evaluation
+    comparison --> data
+    evaluation --> criteria
+    evaluation --> household
+    evaluation --> data
+    acquisition --> data
+    criteria --> data
+    criteria --> household
+    data --> candidates
+    household --> candidates
+    comparison --> candidates
+
+    sources -.implements.-> acquisition
+    storage -.implements.-> data
+    storage -.implements.-> criteria
+    storage -.implements.-> evaluation
+```
+
+> **`api/` is the presenter.** Clean architecture inverts the output boundary so a use case never
+> knows how its result is displayed. That inversion is real here, and the REST layer performs it:
+> use cases return DTOs, and `api/` turns them into a representation. What it does **not** need is
+> a presenter interface per use case — the multiplicity lives in *clients of the contract*, not in
+> implementors of an in-process interface. One representation, many consumers.
+
+> **The package is not named after the application.** `Starnest` is a display string in the
+> settings, never an identifier (`reqs.md` §10). The top-level package takes a neutral domain
+> name; renaming the product must not touch a single import.
+
+### 6.2 The dependency rule, as something a build can check
+
+**Dependencies point inward. Control flows outward.** A client calls `api/`, which calls a use
+case, which calls a store — but every interface is declared by the module that *needs* it, so the
+arrow of dependency runs opposite to the arrow of control.
+
+Four rules, each mechanically checkable by an import linter:
+
+1. **No policy module imports `api/`, `sources/` or `storage/`.** Concrete implementations are
+   supplied at startup (§6.7).
+2. **The import table in §6.1 is exhaustive.** An import not listed there is a violation, not a
+   judgement call. The list is a directed acyclic graph; a cycle is always a bug, and the fix is
+   to extract the shared piece into a module both may import.
+3. **`data/` may not import `criteria/`, `household/` or `evaluation/`.**
+4. **No backend module imports anything from the interface**, and the interface imports nothing
+   from the backend. The only contract between them is HTTP and JSON.
+
+> **Rule 3 is the ontology's central invariant, expressed as imports.** `reqs.md` §3.0 says no
+> arrow runs from the subjective side back to the objective side — no value knows which criteria
+> set is active, no candidate stores a score. As long as `data` cannot *import* `criteria`, that
+> property cannot be violated even by accident. It stops being a convention people remember and
+> becomes something the build refuses to compile.
+
+**`candidates/` imports nothing and everything imports it.** That is what a stable core should
+look like: the most-depended-upon module is also the least likely to change, which satisfies the
+Stable Dependencies Principle rather than merely respecting it.
+
+### 6.3 The seams
+
+Inner modules declare the capability they need as an interface. Outer modules implement it. No
+inner module ever names a concrete implementation.
+
+| Interface | Declared in | Implemented in | Contract |
+|---|---|---|---|
+| `SourceAdapter` | `acquisition` | `sources/*` | Which attributes it can answer, at which levels, in bulk or per candidate; fetch and return values with their provenance |
+| `CostMeter` | `acquisition` | `sources/llm` | What a planned call will cost, and what a completed one did |
+| `ValueStore` | `data` | `storage` | Read active values for candidates and attributes; append new values; never update |
+| `CatalogStore` | `data` | `storage` | Read attributes, pillars, levels, sources, breakdown schemes |
+| `FxRateProvider` | `data` | `sources` | The rate for a currency pair on a date, with its source |
+| `Clock` | `data` | runtime | Now — so `max_age` and staleness are testable without waiting |
+| `CriteriaStore` | `criteria` | `storage` | Read and write criteria sets and their criteria |
+| `HouseholdStore` | `household` | `storage` | Read and write the single household record |
+| `EvaluationStore` | `evaluation` | `storage` | Persist a saved evaluation with its snapshot and per-attribute detail |
+
+**One store interface per module that needs one, never one per table.** A module receives only
+the operations it actually calls, so `comparison` cannot accidentally write a value and
+`evaluation` cannot accidentally start an acquisition run. Interface Segregation applied to
+persistence.
+
+### 6.4 The REST surface
+
+Resources, not remote procedure calls. The shape follows the ontology, which is why it reads as
+the domain rather than as a list of screens:
+
+| Resource | Operations | Notes |
+|---|---|---|
+| `/household`, `/settings` | read, update | Singletons |
+| `/candidates` | list, read, create | Nomination is post-MVP; v1 seeds by migration |
+| `/attributes`, `/pillars`, `/levels`, `/data-sources` | list, read | **Read-only.** The catalog is changed by migration (§1.2), and there is deliberately no admin interface (`reqs.md` §2) |
+| `/criteria-sets`, `/criteria-sets/{id}/criteria` | full CRUD | Where weights, goals and thresholds are edited |
+| `/values` | list, filtered by candidate and attribute | Read-only over HTTP; values are written by acquisition, never by a client |
+| `/acquisition-runs` | create, read, list | `POST` starts one; `GET` polls its status, cost and failures |
+| `/acquisition-runs/{id}/retry` | create | Retries only what failed |
+| `/rankings` | read, parameterised by criteria set and level | **Computes and returns; stores nothing.** This is how "moving a weight recalculates instantly" works over HTTP |
+| `/evaluations` | create, read, list | `POST` is the deliberate act of keeping a ranking, with its snapshot |
+| `/comparisons` | read, parameterised by focus and comparators | |
+| `/match-rule-results` | read, update | Update is how an override, or a manual exclusion, is recorded |
+
+> **Two resources express one decision.** `GET /rankings` computes without writing;
+> `POST /evaluations` persists. Keeping them separate is what makes `reqs.md` Q155 real rather
+> than a note — a slider drag is a `GET`, and nothing accumulates.
+
+> **Progress needs no streaming.** A run is a resource with a status, so a client polls
+> `GET /acquisition-runs/{id}`. Live progress falls out of the run record already being
+> persisted, and no callback interface, socket or server-sent-event channel is required.
+
+### 6.5 Use cases behind the surface
+
+Each does one thing, has one reason to change, and returns a plain data structure. They are named
+for what they accomplish, not for what they touch: `RankCandidates`, `SaveEvaluation`,
+`CompareCandidates`, `ExplainCandidateScore`, `PlanAcquisition`, `RunAcquisition`,
+`RetryFailedItems`, `AdjustWeight`, `SetMatchingThreshold`, `ChooseEnforcedMatchRules`,
+`EditHousehold`, `ExcludeCandidate`.
+
+A use case is not a route handler. `api/` parses and validates the request, calls one use case,
+and serialises the result; the use case knows nothing about HTTP, status codes or JSON.
+
+### 6.6 What is deliberately not abstracted
+
+Every abstraction has a carrying cost. These were considered and rejected, with reasons recorded
+so they are not silently re-litigated:
+
+- **No presenter interface per use case.** `api/` is the presenter, and it serves every use case
+  (§6.1). A per-use-case output boundary would add an interface with exactly one implementor for
+  each, on top of a boundary that already exists.
+- **No portability across database engines.** The design leans on `DISTINCT ON` for the
+  active-value view, composite foreign keys for type agreement, `num_nonnulls` for the one-of
+  constraint, and `INTERVAL` for `max_age`. An abstraction preserving engine choice would have to
+  target the common subset, forfeiting the capabilities the engine was chosen for. **`storage/`
+  is a plugin so that policy stays clean, not so that PostgreSQL is swappable.**
+- **No shared code between backend and interface.** Not even DTO definitions. A shared type would
+  be a dependency that HTTP is supposed to have removed, and it is how a "decoupled" interface
+  quietly becomes coupled.
+- **No dependency-injection framework.** The composition root is a function (§6.7).
+- **No repository per entity.** See §6.3.
+
+### 6.7 Testing seams
+
+The boundaries above are what make each of these possible without the layer beneath it:
+
+| What | How | Why it works |
+|---|---|---|
+| Normalisation, redistribution, coverage, matching | Table-driven tests over plain inputs | Pure functions of a value and a criterion — no store, no clock, no network |
+| Use cases | In-memory fakes of the store interfaces | A fake implementing `ValueStore` is a dictionary; the use case cannot tell |
+| Staleness and `max_age` | A fake `Clock` | Otherwise a test for "this value is stale" would wait months |
+| Source adapters | Recorded fixtures of real responses | Live APIs are slow, flaky, rate-limited, and change underneath you |
+| `storage/` | A **real** PostgreSQL instance | The schema carries the type-agreement constraints, the one-of checks and the singleton checks. Testing those against a fake proves nothing — the constraints *are* the behaviour under test |
+| **The whole backend** | **An acceptance suite that speaks HTTP** | The same contract the interface uses, exercised end to end with no browser. This is the consumer that makes the API a boundary rather than an intention |
+
+### 6.8 The composition root
+
+**One function, run at startup, that knows every concrete type.** It opens the database
+connection, constructs the stores, registers the source adapters, builds the use cases with those
+dependencies, mounts them behind `api/`, and starts the server. Nothing else in the system names a
+concrete implementation.
+
+It is also the only place that reads the environment — connection strings, the API key, the log
+level. Configuration in the technical sense (how to reach things) stays here; configuration in the
+domain sense (attributes, weights, thresholds) is data in the database (§1.2), and the two are
+never confused.
+
+Swapping the LLM provider, adding a source, or replacing the interface entirely is an edit to this
+function plus one new directory. No policy module changes.
+
+---
+
+## 7. Carried from the master spec
 
 Preserved before the spec's deletion. These are its proposals, not settled decisions.
 
-### 6.1 Goal
+### 7.1 Goal
 
 A **local, self-contained application** that runs the whole pipeline — acquisition,
 interpretation, scoring, ranking — with no manual intervention beyond configuring attributes and
 starting a run. The spec's phrase for the bar it must clear: **"zero copy-paste between chat
 and the app."**
 
-### 6.2 Proposed stack, and the alternative it rejected
+### 7.2 Proposed stack, and the alternative it rejected
 
 | Component | Proposed | Reason given |
 |---|---|---|
@@ -509,17 +742,22 @@ choice: it is what makes the database reproducible from the repository, so a dro
 is an inconvenience rather than a loss. Every schema change ships as a migration — no
 out-of-band edits to a live database.
 
-### 6.3 Proposed module layout
+### 7.3 Proposed module layout — superseded by §6.1
 
-`config/`, `acquisition/structured.py`, `acquisition/qualitative.py`, `storage/db.py`,
-`scoring/engine.py`, `scoring/compare.py`, `ui/app.py`
+The spec proposed `config/`, `acquisition/structured.py`, `acquisition/qualitative.py`,
+`storage/db.py`, `scoring/engine.py`, `scoring/compare.py`, `ui/app.py`.
+
+**§6.1 replaces it.** That layout named files after their technical role and split acquisition by
+*source kind* rather than by what acquisition means, which would have made "add a source" a
+change to the core rather than a new plugin. `config/` has no place at all now that the catalog
+is data in the database (§1.2).
 
 The spec's SQLite schema sketch — tables `countries`, `country_scores`, `cities`,
 `city_scores`, `config` — **predates the `Candidate` unification and must be re-derived, not
 copied.** Separate country and city tables would reintroduce exactly the duplication that
 `Candidate` exists to prevent.
 
-### 6.4 Data flow
+### 7.4 Data flow
 
 **Country level:** configure attributes → select countries → screen using structured sources only
 → score → those below the qualification threshold do not have cities extracted.
@@ -529,7 +767,7 @@ acquisition, **run in parallel** → store → filter and score → ranking upda
 
 **Comparison:** pick a focus candidate and comparators → delta table plus templated synthesis.
 
-### 6.5 Sizing, and why the levels exist
+### 7.5 Sizing, and why the levels exist
 
 The figures that justify the architecture:
 
@@ -543,13 +781,13 @@ The figures that justify the architecture:
 This is the whole argument for evaluating in levels rather than one uniform pass, and it is the reason the
 country level is v1.
 
-### 6.6 Setup
+### 7.6 Setup
 
 The qualitative path needs a **dedicated Anthropic API key** from console.anthropic.com,
 separate from a Claude.ai subscription and billed per use. The spec's cost framing: a few dozen
 calls per city, not millions.
 
-### 6.7 Auditing is the database's own statement log
+### 7.7 Auditing is the database's own statement log
 
 **No audit tables, no triggers, no changelog of ours.** PostgreSQL's built-in statement logging
 records what happened; the application adds nothing.
@@ -600,11 +838,14 @@ queryable.
 
 ---
 
-## 7. Open
+## 8. Open
 
-- **Language and UI framework** are still undecided; §6.2 records what the spec proposed and
-  why, as a starting point rather than a conclusion. **The database is settled: PostgreSQL**
-  (§6.2). Whether geometry lives in the database via PostGIS, or is computed at acquisition
+- **Backend language and interface framework** are still undecided, and they are now **two
+  independent decisions** rather than one: the backend serves REST, the interface consumes it, and
+  they share no code (§6.1). §7.2 records what the spec proposed, as a starting point rather than
+  a conclusion — though **Streamlit is effectively excluded** by that split, since its value was
+  precisely that UI and logic live in one process. **The database is settled: PostgreSQL**
+  (§7.2). Whether geometry lives in the database via PostGIS, or is computed at acquisition
   time and stored as plain numbers, stays open — but it is now an extension question inside a
   chosen engine, not an engine question.
 - **Time-series reducers.** Which rows scoring uses when an attribute has several reference
@@ -619,6 +860,8 @@ queryable.
   other attributes** rather than a formula in config — which keeps §1.1's guardrail intact and
   gives a derived value provenance, confidence and a reference period like any other.
 
+- **The REST contract's detail.** §6.4 fixes the resources and what each means; the request and
+  response shapes, error format, and whether it is strictly REST or RPC-flavoured are open.
 - **First implementation order.** The spec's suggestion, still sound: repo scaffolding, then the
   database schema, then structured acquisition as the first end-to-end sanity check. Sequencing
   belongs in `devplan.md`.
