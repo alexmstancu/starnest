@@ -4,7 +4,7 @@ Refined from `relocation-app-master-spec-v1.md` (Part 3), and from the ontology 
 followed `reqs.md`. Terms used here are defined in `reqs.md` Appendix A.
 
 **Status: partial.** This document currently covers the ontology only. The stack — language,
-UI framework, database engine — is deliberately still open (§8). The ontology is settled
+UI framework, database engine — is deliberately still open (§9). The ontology is settled
 independently because none of it changes based on that choice.
 
 ---
@@ -620,8 +620,8 @@ persistence.
 
 ### 6.4 The REST surface
 
-Resources, not remote procedure calls. The shape follows the ontology, which is why it reads as
-the domain rather than as a list of screens:
+Resources, not remote procedure calls, **all under `/v1`** (§7.6). The shape follows the
+ontology, which is why it reads as the domain rather than as a list of screens:
 
 | Resource | Operations | Notes |
 |---|---|---|
@@ -705,18 +705,187 @@ function plus one new directory. No policy module changes.
 
 ---
 
-## 7. Carried from the master spec
+## 7. How it runs
+
+### 7.1 A data acquisition run, start to finish
+
+**Starting one.** `POST /v1/data-acquisition-runs` with a scope — a level, a set of candidates, a
+set of attributes — creates the run row with `run_status: running`, returns its id immediately,
+and hands the work to a background thread. The client polls the run resource for progress
+(§6.4).
+
+**Planning.** The scope expands into **work items**. Each adapter declares which attributes it
+answers, at which levels, and in which mode (§5.1):
+
+- A **per-candidate** adapter yields one item per candidate and attribute.
+- A **bulk** adapter yields one item per download, which fans out to many values when it lands.
+
+Which adapters are asked follows one rule: **every structured adapter that can answer is asked;
+the LLM is asked only where none can, or where all of them failed.** Multi-source is the point —
+competing values are how the active-value rule has anything to choose between (§4) — but the LLM
+is a fallback and never a shortcut (`reqs.md` §6.10), so it is scheduled last and only for the
+gaps that remain.
+
+**Estimating, before anything runs.** `PlanAcquisition` produces the same work items without
+executing them, counts the LLM calls among them, and asks the `CostMeter` what they would cost.
+That is the dry-run figure the user confirms (`reqs.md` §6.3).
+
+**Executing, in parallel.** Work items run concurrently against a bounded pool. Concurrency is
+bounded **per source**, from the rate limit each adapter declares, so a slow or strict source
+throttles only itself. Ordering within a source is not significant; ordering *between* sources is,
+only in that LLM items are scheduled after the structured ones they might replace.
+
+**Committing, one item at a time.** Each item is its own transaction:
+
+```
+BEGIN
+  either  insert value + its typed payload row
+  or      insert data_acquisition_failure (run, candidate, attribute, error)
+COMMIT
+```
+
+Nothing accumulates in memory waiting for the run to finish, so a crash, a halt or a failed
+adapter costs only the item in flight. Selective retry then knows exactly what is missing without
+comparing anything.
+
+**Validation happens on the way in** (`reqs.md` §3.3a). A value that fails is still written, with
+its `rejection_reason` set; it never becomes active and never counts toward coverage. This is not
+an error — it is a recorded observation about a source.
+
+**Halting on the spend cap.** The `CostMeter` accumulates as items complete. When it crosses the
+cap, the scheduler stops issuing new work, lets in-flight items finish and commit, and marks the
+run `halted_on_spend_cap`. Everything already written stays.
+
+**Failing.** A run continues past individual failures — for sparse sources they are routine, and
+aborting would discard good work (`reqs.md` §6.4). `POST /v1/data-acquisition-runs/{id}/retry`
+creates a **new run** whose scope is exactly the failures of the referenced one.
+
+**Crashing.** Runs left `running` when the process died are marked `failed` by a sweep at
+startup. Values they wrote are untouched, and retrying is the same operation as any other retry —
+which is only true because commits are per item.
+
+> **A separate worker process is not needed yet, and the design does not preclude one.** Run
+> state lives entirely in the database, not in the thread, so moving execution to its own process
+> later means changing who reads the run row — not how a run is represented.
+
+### 7.2 Computing a ranking
+
+`GET /v1/rankings?criteria_set=…&level=…` **computes and returns; it writes nothing** (`reqs.md`
+Q155). In order:
+
+1. **Load the criteria set** — its criteria, pillar weights, applied compound rules and enforced
+   match rules. One read.
+2. **Load the active values** for those candidates and attributes, through the active-value view
+   (§4). One read. Everything after this point is in memory.
+3. **Reduce breakdowns.** Where an attribute has several options, the criterion names the one to
+   score (`reqs.md` §3.3b). All options were fetched; the choice happens here, which is what makes
+   changing household size instant.
+4. **Normalise** each value against its criterion — `fixed` against its anchors, `percentile`
+   against the candidate set, `as_is` unchanged.
+5. **Redistribute weight** for attributes with no value, proportionally across those that have
+   one, and compute **coverage** as the share of active weight actually backed by data.
+6. **Total**, at full precision. Rounding happens only at display (`reqs.md` §5.1).
+7. **Decide eligibility** — see below.
+8. **Raise warnings** from compound rules whose outcome is `warning`.
+9. **Rank** what remains, keeping non-matching candidates visible with their scores.
+
+**Eligibility is decided independently of scoreability, and first.** A candidate fails to match
+if an enforced match rule says so, if a compound rule with outcome `not_matching` fires, or if a
+criterion's matching threshold is crossed by a value that exists. It is `insufficient_data` if
+coverage is below the floor or a `blocks_if_missing` criterion has no value.
+
+> **A candidate can be both, and the model reports the decisive one: `not_matching`.** A visa gate
+> that fails is definite regardless of how much data was gathered, whereas insufficient data is a
+> statement about the *score*, not about eligibility. Scoring runs for every candidate either way,
+> because `reqs.md` §5.4 requires a non-matching candidate to keep and display its score.
+
+**Two properties worth naming.** The whole computation is **two queries and pure arithmetic**, so
+it is fast enough to run on every slider movement. And every step is a pure function of its
+inputs, so each is table-testable without a database (§6.7).
+
+### 7.3 Errors, and where each is caught
+
+Three layers, each with a job the others cannot do. **A check is not duplicated across layers
+unless the error message is worth the duplication.**
+
+| Layer | Catches | Example |
+|---|---|---|
+| `api/` | Malformed requests | Missing field, unparseable id, unknown query parameter → `400` |
+| Policy modules | Domain invariants | Weights that would not sum to 100; a rebalance blocked because every other weight is locked; a threshold shape that contradicts the attribute's value type |
+| The database | Everything structural | Type agreement, one-of on non-match reasons, singletons, foreign keys, allowed ranges (§3.3b) |
+
+**The database is authoritative.** A domain check exists where a good message is worth producing
+*before* the constraint fires — "you cannot raise this weight, these four are locked" reads better
+than a check-constraint violation. Where no such message is needed, the constraint stands alone.
+
+**Errors are exceptions, never return codes.** Calling code stays free of status checks. `api/`
+holds the single place that maps exception types to HTTP statuses, so no policy module knows what
+a `409` is.
+
+**A rejected value is not an error.** Validation failure on the way in is a recorded fact about a
+source (§7.1) — stored, visible, and excluded from scoring. Raising it as an error would abort a
+run over a bad row, which §6.4 forbids.
+
+### 7.4 Migrations and seed data
+
+Everything that defines the system ships as a migration, versioned in git: the schema, and the
+catalog that lives in it (§1.2).
+
+| Kind | Contains |
+|---|---|
+| **Structural** | Tables, constraints, indexes, views |
+| **Catalog** | Levels, pillars, attributes and their type parameters, data sources, breakdown schemes, compound rules, match rules, the shipped default criteria set |
+
+**Catalog migrations upsert by identifier**, so re-running one is safe and a partially applied
+sequence can be repeated. **No migration deletes a catalog row that has values behind it** — an
+attribute leaving the catalog is marked retired (§2), and a foreign key makes the alternative
+impossible.
+
+**Migrations run by an explicit command, never automatically at startup.** A process that
+migrates when it boots will one day migrate when you did not intend it to. The application
+instead **refuses to start if the schema version is behind**, naming the gap.
+
+### 7.5 Configuration and secrets
+
+Two kinds of configuration, deliberately kept apart:
+
+| | Technical | Domain |
+|---|---|---|
+| What | Connection string, API key, port, log level | Attributes, weights, thresholds, sources |
+| Where | Environment variables | Database rows (§1.2) |
+| Read by | The composition root, and nothing else (§6.8) | Policy modules, through their stores |
+| In git? | **Never** | Yes, as migrations |
+
+The Anthropic API key is the only secret. It is read once at startup, held by the LLM adapter,
+and never written to the database, the statement log, or an error message.
+
+### 7.6 REST conventions
+
+- **Versioned from the first request**: `/v1/…`. The contract has consumers other than the
+  interface (§6.1), and adding a version prefix afterwards is a breaking change to all of them.
+- **One error shape**, everywhere: a stable machine-readable `code`, a human-readable `message`,
+  and optional `details` naming the offending field. Clients branch on `code`, never on prose.
+- **No authentication** (`reqs.md` §10). The service binds to localhost; that is the whole
+  security model, and it is stated rather than assumed.
+- **Pagination only where lists grow**: values, data acquisition runs, evaluations. Candidates,
+  attributes and pillars are bounded by the catalog and are returned whole.
+- **`POST` is not idempotent**, and for one user that is acceptable — starting two runs by
+  double-clicking produces two runs, both visible, either cancellable.
+
+---
+
+## 8. Carried from the master spec
 
 Preserved before the spec's deletion. These are its proposals, not settled decisions.
 
-### 7.1 Goal
+### 8.1 Goal
 
 A **local, self-contained application** that runs the whole pipeline — data acquisition,
 interpretation, scoring, ranking — with no manual intervention beyond configuring attributes and
 starting a run. The spec's phrase for the bar it must clear: **"zero copy-paste between chat
 and the app."**
 
-### 7.2 Proposed stack, and the alternative it rejected
+### 8.2 Proposed stack, and the alternative it rejected
 
 | Component | Proposed | Reason given |
 |---|---|---|
@@ -746,7 +915,7 @@ choice: it is what makes the database reproducible from the repository, so a dro
 is an inconvenience rather than a loss. Every schema change ships as a migration — no
 out-of-band edits to a live database.
 
-### 7.3 Proposed module layout — superseded by §6.1
+### 8.3 Proposed module layout — superseded by §6.1
 
 The spec proposed `config/`, `acquisition/structured.py`, `acquisition/qualitative.py`,
 `storage/db.py`, `scoring/engine.py`, `scoring/compare.py`, `ui/app.py`.
@@ -761,7 +930,7 @@ The spec's SQLite schema sketch — tables `countries`, `country_scores`, `citie
 copied.** Separate country and city tables would reintroduce exactly the duplication that
 `Candidate` exists to prevent.
 
-### 7.4 Data flow
+### 8.4 Data flow
 
 **Country level:** configure attributes → select countries → screen using structured sources only
 → score → those below the qualification threshold do not have cities extracted.
@@ -771,7 +940,7 @@ data acquisition, **run in parallel** → store → filter and score → ranking
 
 **Comparison:** pick a focus candidate and comparators → delta table plus templated synthesis.
 
-### 7.5 Sizing, and why the levels exist
+### 8.5 Sizing, and why the levels exist
 
 The figures that justify the architecture:
 
@@ -785,13 +954,13 @@ The figures that justify the architecture:
 This is the whole argument for evaluating in levels rather than one uniform pass, and it is the reason the
 country level is v1.
 
-### 7.6 Setup
+### 8.6 Setup
 
 The qualitative path needs a **dedicated Anthropic API key** from console.anthropic.com,
 separate from a Claude.ai subscription and billed per use. The spec's cost framing: a few dozen
 calls per city, not millions.
 
-### 7.7 Auditing is the database's own statement log
+### 8.7 Auditing is the database's own statement log
 
 **No audit tables, no triggers, no changelog of ours.** PostgreSQL's built-in statement logging
 records what happened; the application adds nothing.
@@ -842,14 +1011,14 @@ queryable.
 
 ---
 
-## 8. Open
+## 9. Open
 
 - **Backend language and interface framework** are still undecided, and they are now **two
   independent decisions** rather than one: the backend serves REST, the interface consumes it, and
-  they share no code (§6.1). §7.2 records what the spec proposed, as a starting point rather than
+  they share no code (§6.1). §8.2 records what the spec proposed, as a starting point rather than
   a conclusion — though **Streamlit is effectively excluded** by that split, since its value was
   precisely that UI and logic live in one process. **The database is settled: PostgreSQL**
-  (§7.2). Whether geometry lives in the database via PostGIS, or is computed at data acquisition
+  (§8.2). Whether geometry lives in the database via PostGIS, or is computed at data acquisition
   time and stored as plain numbers, stays open — but it is now an extension question inside a
   chosen engine, not an engine question.
 - **Time-series reducers.** Which rows scoring uses when an attribute has several reference
@@ -861,11 +1030,13 @@ queryable.
   `CRITERION.breakdown_option` select which rent applies, `reqs.md` §3.4.)*
 - **Derived attributes**, deferred to post-MVP. `two_role_feasibility` and
   `country.natural_diversity` both want one. When built, a derivation is an **adapter that reads
-  other attributes** rather than a formula in config — which keeps §1.1's guardrail intact and
+  other attributes** rather than a formula in config — which keeps §1.3's guardrail intact and
   gives a derived value provenance, confidence and a reference period like any other.
 
-- **The REST contract's detail.** §6.4 fixes the resources and what each means; the request and
-  response shapes, error format, and whether it is strictly REST or RPC-flavoured are open.
+- **The REST contract's detail.** §6.4 fixes the resources and §7.6 the conventions — versioning,
+  the error shape, where pagination applies. The **request and response bodies** are open, and
+  are the first thing `devplan.md` will need to pin down, since both the backend and the
+  interface are written against them.
 - **First implementation order.** The spec's suggestion, still sound: repo scaffolding, then the
   database schema, then structured data acquisition as the first end-to-end sanity check. Sequencing
   belongs in `devplan.md`.
