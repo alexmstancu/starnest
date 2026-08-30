@@ -221,6 +221,32 @@ paths:
                   items: { type: array, items: { $ref: "#/components/schemas/Value" } }
                   total: { type: integer }
 
+  /values/manual:
+    post:
+      tags: [values]
+      summary: Enter a value by hand
+      description: |
+        Manual entry is a real source, ranked last, and **permitted only where the attribute
+        declares it** (`reqs.md` §6.5). It is how a figure with no adapter gets recorded, and how
+        an early estimate is captured so a real dataset can supersede it later without deleting
+        anything.
+
+        Rejected with `409 manual_entry_not_permitted` when the attribute does not allow it.
+      operationId: enterValueManually
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "#/components/schemas/ManualValueInput" } }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Value" } }
+        "409":
+          description: The attribute does not permit manual entry, or the value failed validation.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+
   /criteria-sets:
     get:
       tags: [criteria]
@@ -641,6 +667,29 @@ paths:
             application/json: { schema: { $ref: "#/components/schemas/CandidateScoreDetail" } }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /evaluations/{evaluationId}/criteria:
+    get:
+      tags: [evaluation]
+      summary: The criteria this evaluation was computed with
+      description: |
+        The frozen snapshot (`reqs.md` §3.4a). The criteria set it names stays editable, so this
+        is the only record of what the weights actually were when the ranking was produced — and
+        which attributes were in scope, which is what keeps its coverage figure meaningful.
+      operationId: getEvaluationCriteria
+      parameters: [ { $ref: "#/components/parameters/EvaluationId" } ]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pillar_weights, criteria]
+                properties:
+                  pillar_weights: { type: array, items: { $ref: "#/components/schemas/PillarWeight" } }
+                  criteria: { type: array, items: { $ref: "#/components/schemas/Criterion" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /comparisons:
     get:
       tags: [evaluation]
@@ -776,9 +825,28 @@ components:
         value_type: { $ref: "#/components/schemas/ValueTypeName" }
         unit: { type: [string, "null"] }
         max_age_days: { type: [integer, "null"] }
-        manual_entry: { type: boolean }
+        manual_entry: { type: boolean, description: "Whether a value may be typed by hand for this attribute." }
         breakdown_scheme: { type: [string, "null"] }
         breakdown_options: { type: array, items: { type: string } }
+        allowed_range:
+          description: "Per-attribute validation beyond what the value type enforces. Null when none is declared."
+          oneOf:
+            - type: "null"
+            - type: object
+              properties:
+                min_value: { type: [number, "null"] }
+                max_value: { type: [number, "null"] }
+        allowed_labels:
+          type: array
+          description: "The controlled vocabulary a LabelSet may draw from. Empty when unconstrained."
+          items: { type: string }
+        effective_source_priority:
+          type: array
+          description: >-
+            The order sources are consulted for this attribute, highest first: the
+            attribute's own overrides, then every other source in the global order beneath
+            them. Resolved on the server so no client reimplements the rule.
+          items: { type: string }
 
     DataSource:
       type: object
@@ -902,6 +970,37 @@ components:
         citations: { type: array, items: { type: string, format: uri } }
         data_acquisition_run: { type: [integer, "null"] }
 
+    ManualValueInput:
+      type: object
+      description: "The source is implicitly `manual`; it cannot be set to anything else here."
+      required: [candidate, attribute, payload, reference_period, retrieval_date]
+      properties:
+        candidate: { type: string }
+        attribute: { type: string }
+        breakdown_option: { type: [string, "null"] }
+        payload:
+          description: "Must match the attribute's declared value type, or the request is rejected."
+          oneOf:
+            - $ref: "#/components/schemas/MonetaryPayload"
+            - $ref: "#/components/schemas/QuantityPayload"
+            - $ref: "#/components/schemas/CountPayload"
+            - $ref: "#/components/schemas/RatioPayload"
+            - $ref: "#/components/schemas/IndexPayload"
+            - $ref: "#/components/schemas/LabelSetPayload"
+            - $ref: "#/components/schemas/ShareCompositionPayload"
+            - $ref: "#/components/schemas/BooleanPayload"
+            - $ref: "#/components/schemas/AssignedScorePayload"
+            - $ref: "#/components/schemas/TextPayload"
+        reference_period: { $ref: "#/components/schemas/ReferencePeriod" }
+        retrieval_date: { type: string, format: date }
+        confidence_level:
+          type: string
+          enum: [absolute, high, medium, low]
+          default: medium
+          description: "Defaults to a deliberately unflattering middle; a source tier says nothing useful about a typed value (`reqs.md` §5.7)."
+        quote: { type: [string, "null"], description: "Where this came from, in words." }
+        citations: { type: array, items: { type: string, format: uri } }
+
     HouseholdInput:
       type: object
       required: [net_income, number_adults, number_children, home_country_candidate]
@@ -945,10 +1044,14 @@ components:
         reducer_mode: { type: string, enum: [select, aggregate], description: "Omit when the attribute has no breakdown." }
         scale_anchors:
           type: array
+          description: "For the `fixed` method. A label lets a number display as a word without ceasing to be a number (`reqs.md` §5.1)."
           items:
             type: object
             required: [input_value, score]
-            properties: { input_value: { type: number }, score: { type: integer } }
+            properties:
+              input_value: { type: number }
+              score: { type: integer }
+              label: { type: [string, "null"], description: "e.g. affordable, stretching" }
         matching_threshold:
           description: Shape depends on the attribute's value type. Null clears it.
           oneOf:
@@ -967,6 +1070,12 @@ components:
                       containment_rule: { type: string, enum: [must_contain, must_not_contain] }
             - type: object
               properties: { required_value: { type: boolean } }
+            - type: object
+              description: "For ShareComposition: a bound on one named label's share."
+              properties:
+                label: { type: string }
+                min_share: { type: [number, "null"] }
+                max_share: { type: [number, "null"] }
 
     Criterion:
       allOf:
@@ -1126,6 +1235,16 @@ components:
         rank: { type: [integer, "null"], description: Null when the candidate does not match. }
         score: { type: [integer, "null"], minimum: 0, maximum: 100, description: Null only when insufficient data. }
         coverage: { type: number, minimum: 0, maximum: 1 }
+        coverage_by_confidence:
+          type: object
+          description: >-
+            How the covered weight splits by confidence (`reqs.md` §5.7). Coverage alone cannot
+            show that a candidate reached 100% entirely on extrapolation; this can.
+          properties:
+            absolute: { type: number }
+            high: { type: number }
+            medium: { type: number }
+            low: { type: number }
         match_status: { type: string, enum: [matching, not_matching, insufficient_data] }
         parent_not_matching: { type: boolean }
         warnings: { type: array, items: { $ref: "#/components/schemas/Warning" } }

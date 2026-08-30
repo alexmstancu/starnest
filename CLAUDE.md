@@ -28,9 +28,12 @@ Consequently there are **no build, lint, test, or run commands** — nothing is 
 
 ```
 uv run python tools/audit_ontology.py
+uv run --with pyyaml python tools/audit_api.py
 ```
 
-It checks the ontology's structural invariants — the two diagrams against each other, the diagrams against the prose that documents them, and the criteria catalog's weights. **Run it after any change to `reqs.md` §3, either diagram, or the catalog.** Exit code 0 means every invariant holds. It reads only and never edits.
+The first checks the ontology's structural invariants — the two diagrams against each other, the diagrams against the prose documenting them, and the catalog's weights. The second checks `openapi.yaml`: that every `$ref` resolves, that **every ontology entity is reachable through the API** (with a named exemption for each covered under another name), and that no key has a null value — the fault that is valid YAML but crashes consumers.
+
+**Run both after any change to `reqs.md` §3, either diagram, the catalog, or the spec.** Exit code 0 means every invariant holds. Both read only and never edit.
 
 ## What this project is
 
