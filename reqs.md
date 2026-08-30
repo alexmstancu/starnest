@@ -49,6 +49,7 @@ this document is a requirement; this section says only what arrives first.
 **In v1:**
 
 - The household record, configured first
+- **Local employment as the working assumption** — see below
 - The country attribute catalog, with pillars
 - Criteria sets: weights, directions, scales, matching thresholds — switchable
 - Match rules
@@ -59,6 +60,28 @@ this document is a requirement; this section says only what arrives first.
 - The ranking dashboard, with per-attribute drill-down and full provenance
 - Comparison of a focus country against comparators
 - External scores displayed alongside
+
+**The v1 working assumption is local employment**, not remote work. Both of you find roles in
+the destination. This is not a scoping cut so much as a statement of what the default criteria
+set optimises for, and it has consequences worth seeing plainly:
+
+- The `career` pillar is load-bearing at both levels — 14% of the country score.
+- `two_role_feasibility` (§7.3) is the gate that matters most: a place must plausibly support
+  **two** tech roles, and product roles are the scarcer half.
+- Small localities are penalised in a way they would not be under remote work, because the
+  local market has to be real.
+
+> **The risk this exposes, stated rather than buried.** The two heaviest attributes in the
+> career pillar — `tech_software_jobs` and `tech_product_jobs`, 44% of it between them — have no
+> confirmed source (§9). Local employment is therefore the v1 assumption whose evidence base is
+> weakest. §5.3's redistribution handles it correctly (the weight moves to attributes that do
+> have data, and coverage falls to disclose it), but a country ranked on a hollow career pillar
+> should be read with that in mind.
+
+A **`remote-only` criteria set is post-MVP** — the same 74 attributes, re-weighted, with
+`connectivity` raised and `career` largely excluded. It needs no new attributes and no new
+machinery, which is precisely why it can wait: it is a different opinion about the same data
+(§3.4), not a different application.
 
 **After v1:** the whole of the **city level** — cities, the city attribute catalog, city
 nomination, and the LLM-plus-search acquisition path the city attributes depend on; the pillar
@@ -92,8 +115,8 @@ configured** when the application is opened.
 
 They form a single entity, **`Household`**, whose fields are listed once in **§3.9**. They are
 named here because a reader meets their effects long before reaching the ontology: the home
-country is the comparison baseline, and `size` decides which rent figure is even the right one
-to look at.
+country is the comparison baseline, and the number of adults and children decides which rent
+figure is even the right one to look at.
 
 > **"Budget" means household money throughout this document.** The ceiling on what an
 > acquisition run may cost in API calls is the **spend cap** (§6.3) — a different word for a
@@ -369,6 +392,7 @@ no collisions, and `relocation_window` applies at both levels, so the scheme wou
 | `max_age` | How quickly this kind of data goes stale (§3.6). **Objective** — rent ages in months whoever is asking |
 | `source_priority_override` | Optional replacement for the global source order (§6.6). **Objective** — an admin quality judgement; §2 says users do not connect sources |
 | `variants` | Optional. If set, this attribute holds **several values at once**, one per key — §3.3b |
+| `manual_entry` | Whether a value for this attribute may be typed by hand. **Defaults to forbidden** — §6.5 |
 
 Attributes describing the same concept at different levels are **separate attributes** with
 separate identifiers, sources and scales. `country.safety` and `city.safety` are unrelated
@@ -520,7 +544,7 @@ the controlled vocabulary its keys come from.
 | Attribute | `variants` | Variant keys |
 |---|---|---|
 | `city.rent_centre` | `bedroom_count` | `one_bedroom`, `two_bedroom`, `three_bedroom`, `four_plus_bedroom` |
-| `city.cost_of_living_monthly` | `household_size` | `one_person`, `two_people`, `three_people`, `four_plus_people` |
+| `city.cost_of_living_monthly` | `occupancy` | `one_person`, `two_people`, `three_people`, `four_plus_people` |
 
 Variant vocabularies are controlled and live in reference tables like everything else.
 
@@ -569,8 +593,8 @@ and it is the only place a preference may live.
 **A `CriteriaSet` is a named collection of criteria**, plus the pillar weights for each level.
 It is selectable at any moment, and one primitive serves two purposes:
 
-- **Work-format scenarios** — `remote-only` versus `local-employment`. The difference decides
-  whether a village is absurd or ideal, and it is not yet settled.
+- **Work-format scenarios** — `local-employment` (the v1 default, §1.3) versus `remote-only`
+  (post-MVP). The difference decides whether a village is absurd or ideal.
 - **Per-person sets** — `alex`, `partner`. Not merely differing emphasis: the two of you may
   want *opposite directions* on the same attribute, and this is where that is expressed.
 
@@ -766,7 +790,8 @@ configured when the application is opened** — several attributes are meaningle
 | Field | Meaning |
 |---|---|
 | `net_income` | Estimated monthly net income for the household, in EUR |
-| `size` | Adults and children — sets the relevant dwelling size and cost basket |
+| `number_adults` | How many adults. Currently 2 |
+| `number_children` | How many children under 18. Sets dwelling size, cost basket, and whether the `family` pillar is scored against a real need |
 | `target_monthly_spend` | Guideline ceiling on total household spend. Provisionally 2,000–3,000 EUR/month |
 | `max_rent` | Rent ceiling. Provisionally 2,000 EUR/month |
 | `home_country` | Where you live now. Currently `country.romania` |
@@ -776,7 +801,8 @@ configured when the application is opened** — several attributes are meaningle
 It is an entity rather than a scattering of settings because it is **read from three different
 places**, and a change to it must reach all three at once:
 
-- **Criterion defaults** — `size` picks the default rent variant and cost basket (§3.3b).
+- **Criterion defaults** — `number_adults` plus `number_children` picks the default rent
+  variant and cost basket (§3.3b).
 - **Cross-attribute warnings** — rent read against `target_monthly_spend` (§5.3).
 - **Match rules and comparison** — `citizenship` decides free movement, `home_country` is the
   comparison baseline and the other party to a tax treaty, `home_city` is the destination for
@@ -878,6 +904,7 @@ a low score.
 Two independent floors mark a candidate **insufficient data** rather than producing a total:
 
 - **`min_coverage`** — a configurable percentage of active weight that must be backed by data.
+  **Provisionally 60%**, to be revisited once a real run shows what coverage actually looks like.
 - **`required` criteria** — any criterion may be flagged required; a missing value on one
   makes the candidate unscoreable regardless of overall coverage.
 
@@ -1017,19 +1044,53 @@ failure normal; aborting a whole run on one bad response is not viable.
 
 ### 6.5 Manual entry
 
-Manual entry is a **first-class source**. Any attribute value or match-rule result may be typed,
-carrying source, reference date, retrieval date and a free-text note, and ranked in the
-priority order like any other source — so an early estimate can later be superseded by a real
-dataset without being deleted.
+Manual entry is a real source, carrying source, reference date, retrieval date and a free-text
+note, and ranked in the priority order like any other — so an early estimate can later be
+superseded by a real dataset without being deleted.
 
-This is how the UK Skilled Worker pathway, the Swiss EU/EFTA quota and the relocation-timing
-judgement acquire their values; no fetcher exists for them.
+**It is not permitted everywhere.** Values come from data sources; typing one by hand is the
+exception, and an attribute must **declare** that it allows this (`manual_entry`, §3.3). The
+default is forbidden, and the interface offers no way to type a value for an attribute that has
+not declared it.
+
+> **Why restrict it at all.** An open manual-entry field is the fastest route to exactly the
+> failure §10 forbids: a plausible number with no measurement behind it, indistinguishable in
+> the ranking from a real one. Confidence grading discloses the weakness but does not prevent
+> it. Making the permission explicit means a hand-typed value can only appear where someone
+> decided, in configuration, that no automated source exists.
+
+**The subset that allows it, at country level** — four attributes, each because no automated
+source answers them today:
+
+| Attribute | Why |
+|---|---|
+| `country.tech_software_jobs`, `country.tech_product_jobs` | Source unresolved (§9) |
+| `country.remote_work_tax_treaty` | Treaty lists are published but not offered as a queryable dataset |
+| `country.international_employers` | LLM-proposed, explicitly user-overridable, both values retained |
+
+**Match rules are different and are manual by nature.** The UK Skilled Worker pathway, the Swiss
+EU/EFTA quota, `two_role_feasibility` and `relocation_window` (§7.3) are judgements, not
+measurements; no fetcher exists or should. The `manual_entry` restriction governs **attributes**
+only.
 
 ### 6.6 Source priority
 
-A **global default priority order** applies everywhere. **Any attribute may override it** — a
-national statistics office should outrank Numbeo on income tax, while Numbeo should outrank
-it on rent.
+**The global default order**, highest priority first:
+
+1. **Official international statistics** — Eurostat, OECD, World Bank, IMF, WHO, UNODC
+2. **National authorities** — statistics offices, tax authorities, regulators, land registries
+3. **Crowdsourced datasets** — Numbeo and equivalents
+4. **LLM with web search** (§6.10)
+5. **Manual entry**, where the attribute permits it (§6.5)
+
+**Any attribute may override it** — a national tax authority should outrank Eurostat on
+effective income tax, while Numbeo should outrank both on city rent, which no official source
+publishes at that granularity.
+
+> **Manual ranks last deliberately.** A typed value is a placeholder for a source that does not
+> exist yet; the moment one does, it should win automatically, and the manual figure should
+> remain stored and visible as the superseded estimate it always was (§3.6). This is the
+> opposite of treating manual entry as authoritative because a human typed it.
 
 Each attribute declares a **`max_age`**. Past that age, the next source in priority order is
 promoted automatically. Rent ages in months; a climate zone ages in decades.
@@ -1306,7 +1367,7 @@ registry-bound one with a population floor (`datasources.md` §3).
 
 | Attribute | Weight | Value type | Sources |
 |---|---|---|---|
-| `city.cost_of_living_monthly` | 60% | **Monetary** — EUR/month, multi-value, keyed by `household_size` | Numbeo **(R)**, LLM fallback |
+| `city.cost_of_living_monthly` | 60% | **Monetary** — EUR/month, multi-value, keyed by `occupancy` | Numbeo **(R)**, LLM fallback |
 | `city.purchasing_power` | 40% | **Index** — Numbeo 0–100+ | Numbeo **(R)**, Eurostat Urban Audit **(R)** |
 
 #### Housing — 15%
@@ -1464,8 +1525,8 @@ not matching regardless of score** — and stays visible, with its score, showin
 | `eu_free_movement` | country | The candidate is an EU or EEA state, and the household's `citizenship` (§3.9) carries free movement there. Automatic while that citizenship is EU | Definitional, from the descriptive attributes (§3.3) |
 | `uk_skilled_worker` | country | A realistic Skilled Worker route exists: sponsorship available in the local market, or the salary threshold met | Manual, LLM-assisted (§6.9) |
 | `ch_eu_efta_quota` | country | The annual Swiss EU/EFTA permit quota has capacity for this household | Manual, LLM-assisted (§6.9) |
-| `two_role_feasibility` | **city** | The local market can plausibly support **two** tech roles — engineering *and* product | Derived from `city.tech_software_jobs` and `city.tech_product_jobs` against a configurable floor |
-| `relocation_window` | both | Relocation is feasible within the configured window, provisionally **12–18 months**, with no long-lead blocker such as a visa queue or a contract | Manual |
+| `two_role_feasibility` | **city** | The local market can plausibly support **two** tech roles — engineering *and* product | **Manual** for now — you judge each city. Becomes derived from `city.tech_software_jobs` and `city.tech_product_jobs` against a configurable floor once those have a source (§9) |
+| `relocation_window` | both | **The move can actually be completed within the time you have.** Not how long you stay — how long it takes to get there. A candidate fails if a long-lead blocker (a visa queue, a quota wait, a notice period, a school year) pushes the earliest feasible arrival beyond the configured window. Provisionally **12–18 months** | Manual |
 
 > **`two_role_feasibility` is the one that cannot be replaced by a criterion.** A strong
 > national tech market does not mean a specific small city has room for two people, and product
@@ -1475,6 +1536,41 @@ not matching regardless of score** — and stays visible, with its score, showin
 > **Only `eu_free_movement` is trivially satisfiable in v1**, and it passes automatically for 30
 > of the 32 seeded countries. The UK and Swiss filters are the reason the v1 seed was widened
 > beyond the EU (§6.1) — without them the mechanism would ship untested.
+
+
+### 7.4 Required attributes in the default criteria set
+
+`required` (§5.3) is a criterion flag: a missing value on one makes the candidate
+**insufficient data** rather than producing a total, regardless of overall coverage. It is
+deliberately sparse — every flag is a way for a candidate to drop out on a data gap rather than
+on merit.
+
+**Seven at country level**, chosen on two conditions together: the score means little without
+them, *and* the source covers all 32 seeded countries, so a gap signals a broken fetch rather
+than a genuinely undocumented place.
+
+| Attribute | Share of the country score | Why |
+|---|---|---|
+| `country.cost_of_living_index` | 4.9% | Affordability is the question the app exists to answer |
+| `country.income_tax_effective` | 4.2% | Net income is unknowable without it |
+| `country.house_price_to_income_ratio` | 4.0% | The housing pillar's anchor |
+| `country.crime_safety_index` | 6.0% | Half the safety pillar |
+| `country.political_economic_stability` | 6.0% | The other half; WGI covers every country, so absence means failure |
+| `country.healthcare_system_quality` | 9.0% | The **entire** health pillar — missing it means health silently contributes nothing |
+| `country.rule_of_law` | 2.0% | Governance anchor, and complete in WGI |
+
+Together **36.1% of the country score**. A candidate missing any one of them is reported as
+insufficient data with that attribute named.
+
+> **Nothing in the `career` pillar is required, deliberately** — even though §1.3 makes local
+> employment the v1 assumption and career therefore matters. Its two heaviest attributes have no
+> confirmed source (§9), and flagging an attribute as required when you already expect it to be
+> missing would mark every country insufficient-data on day one. Revisit once the source is
+> settled.
+
+> These are a **first selection, for review.** They live in the shipped default criteria set
+> like every other criterion, so changing one is a config edit, and a different criteria set may
+> require an entirely different list.
 
 ---
 
@@ -1570,25 +1666,26 @@ The main results view.
   proposal with user override, both values retained**.
 - **Job-posting source unresolved.** The `tech_software_jobs` and `tech_product_jobs`
   attributes, at both levels, have a settled shape but no confirmed source. See
-  `datasources.md` §11 — the blocking question is EU country coverage. Attributes whose source
-  is still open do not affect the model: an attribute with no adapter simply has no values, and
-  §5.3 already covers that.
+  `datasources.md` §11 — the blocking question is EU country coverage. **The attributes stay in
+  the catalog**, permitting manual entry (§6.5); `two_role_feasibility` is **manual until they
+  have a source**, rather than being derived from values that do not exist. An attribute with no
+  adapter simply has no values, which §5.3 already handles.
 - **Provisional values**, all to be revised after a first real run: every weight in §7, the
   country match threshold, the ~2000–3000 EUR/month household budget guideline, the
-  2000 EUR rent ceiling, `min_coverage`, and every `scale_params` and `matching_threshold`
-  marked TBD.
-- **Which criteria carry `required`** (§5.3) — not yet assigned in the shipped default
-  criteria set.
+  2000 EUR rent ceiling, the 60% `min_coverage` floor, the 12–18 month `relocation_window`,
+  and every `scale_params` and `matching_threshold` marked TBD.
+- **The `required` selection is a first pass** (§7.4) — seven country attributes, 36.1% of the
+  score, chosen on plausibility rather than on observed coverage. Revisit after a real run;
+  `career` deliberately has none until its source question is settled.
 - **No type for genuinely ordinal data.** One value from an ordered list where the order
   carries meaning — a credit rating (AAA, AA, A), or the EEA's bathing-water classes
   (excellent, good, sufficient, poor). `LabelSet` is an unordered set of several labels;
   `Index` requires a number. Nothing in the catalog needs it today —
   `city.bathing_water_quality` is stored as the share rated excellent — so adding an `Ordinal`
   type is deferred until something actually does.
-- **The global source priority order is not yet set.** §6.6 defines the mechanism — a global
-  default with per-attribute overrides — but no actual ordering exists. It has to be decided by
-  the administrator once concrete sources are connected; `datasources.md` supplies the
-  ingredients but not the ranking.
+- **Per-attribute source priority overrides are not yet enumerated.** The global order is set
+  (§6.6) and two overrides are named there as examples. The full list can only be written as
+  concrete adapters are connected; `datasources.md` supplies the ingredients.
 - **Several numbers for one attribute**, in either of two distinct forms — a time series (the
   same measurement across years) or a multi-value attribute (rent for one, two and three
   bedrooms, all current at once). Neither is in v1. `arch.md` §3.3a explains why they need
@@ -1650,7 +1747,7 @@ wondering whether a second concept is hiding behind the second word.
 | **Value type** | The semantic type of an attribute's measurement: `Monetary`, `Quantity`, `Count`, `Ratio`, `Index`, `LabelSet`, `ShareComposition`, `Boolean`, `AssignedScore`, `Text`. Determines what a value stores, which normalisations are legal, how it displays, and what a matching threshold means. Immutable — changing it means creating a new attribute |
 | **Value** | One measurement: of one attribute, for one candidate, from one source, fetched at one moment. Numbeo's Lisbon rent is one value; a manual estimate is another; Numbeo's figure from three months ago is a third. Nothing is ever overwritten |
 | **Active value** | Where several sources hold a value for the same attribute and candidate, the one scoring actually uses. All the others stay stored and visible |
-| **Variants** | The controlled vocabulary of forms one attribute takes at the same moment: `one_bedroom`, `two_bedroom`, `three_bedroom`. Not history — all current at once |
+| **Variants** | The controlled vocabulary of forms one attribute takes at the same moment: `one_bedroom`, `two_bedroom`, `three_bedroom`. Vocabularies in use: `bedroom_count`, `occupancy`, `season`. Not history — all current at once |
 | **Reference period / retrieval date** | The two dates every value carries, **never merged**. The reference period is what span the data describes; the retrieval date is when the app fetched it |
 | **Confidence** | What one particular value is worth: `absolute`, `high`, `medium`, `low`. Derived from the source's tier, the value's age, its geographic fit, and whether it was reported or inferred. Grades *values*; source priority grades *sources* |
 | **Validation** | A check that a value is *credible*. A rent of −500, or a ratio of 140%, is a data error. Failing validation rejects the value and flags the source. **Not** a matching threshold |
@@ -1661,6 +1758,7 @@ wondering whether a second concept is hiding behind the second word.
 |---|---|
 | **DataSource** | Where values come from: `structured` (an API or dataset), `llm` (model plus web search), or `manual` (typed by you). Manual entry is first-class and ranked like any other |
 | **Adapter** | The plug-in that fetches from one source. Declares which attributes it serves, at which levels, its rate limits, and whether it is a bulk download or a per-candidate call. Adding a source means writing one adapter, never editing the acquisition core |
+| **Manual entry** | A value typed by hand rather than fetched. Permitted only where an attribute declares `manual_entry` (§6.5), ranked **last** in priority, and always superseded automatically once a real source appears. Match rules are manual by nature and are not governed by this restriction |
 | **Source priority** | The configured ordering deciding which value is active. A standing editorial judgement per attribute: Numbeo outranks national statistics for city rent, despite being less reliable in general |
 | **Run** | One acquisition pass, persisted: when it ran, what it touched, what it cost, what failed. Values link back to the run that produced them, which is what makes selective retry possible |
 | **Spend cap** | The ceiling on what one acquisition run may cost in API calls. Distinct from household money, which is what §3.9 means by budget |
@@ -1847,3 +1945,12 @@ Recorded from a front-to-back read of this document.
 | Q108 | Geography is a configuration list, not an assumption | Extending beyond Europe must mean seeding countries and connecting sources, never changing the model |
 | Q109 | Renames: `variants`, `as_is`, `ideal_range`, `allowed_range`, `ShareComposition`, natural landscape, `source_priority_override` | Each old name described a mechanism, an unrelated thing, or nothing at all. Listed with their reasons in Appendix A |
 | Q110 | An ontology diagram ships in §3.0 | The relations carry as much of the design as the field lists, and prose cannot show that nothing on the subjective side is ever written back to the objective side |
+| Q111 | **Local employment is the v1 working assumption**; `remote-only` is a post-MVP criteria set | It decides whether a village is absurd or ideal, and the whole `career` pillar and `two_role_feasibility` hang on it. Remote needs no new attributes — only a re-weighting — so it costs nothing to defer |
+| Q112 | `international_employers` stays an `AssignedScore`, with the employer list retained as evidence | The list is the provenance; the number is reproducible from it and overridable |
+| Q113 | `two_role_feasibility` is **manual** until the job-posting source exists | Deriving a gate from attributes that have no values would silently pass every city |
+| Q114 | **Global source priority: official international → national authority → crowdsourced → LLM → manual** | Manual ranks last because a typed value is a placeholder for a source that does not exist yet; when one appears it should win automatically |
+| Q115 | **Manual entry requires per-attribute permission**, defaulting to forbidden | An open manual field is the fastest route to a plausible number with no measurement behind it, indistinguishable in the ranking from a real one. Four country attributes permit it. Match rules are judgements and are exempt |
+| Q116 | Household carries `net_income`, `number_adults`, `number_children` | A single `size` could not express what the `family` pillar needs — children under 18 specifically |
+| Q117 | `min_coverage` provisionally **60%** | A working floor, to be revisited once real coverage is known |
+| Q118 | `required` assigned to seven country attributes, 36.1% of the score (§7.4) | Sparse by design; every flag is a way to drop out on a data gap rather than on merit. `career` gets none while its source is unresolved |
+| Q119 | The `household_size` variant vocabulary renamed `occupancy` | It collided with the Household entity's own fields once Household became an entity |
