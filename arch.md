@@ -16,10 +16,14 @@ places for a reason that is not stylistic.
 
 | | Archetypes | Instantiations |
 |---|---|---|
-| Examples | `Candidate`, `Attribute`, `Value`, `Pillar`, `Criterion`, `CriteriaSet`, `Evaluation`, `Household`, the ten value types | `country`, `city`, `economics`, `rent_centre`, `population` |
+| Examples | `Candidate`, `Attribute`, `Value`, `Pillar`, `Criterion`, `CriteriaSet`, `Evaluation`, `Household`, the ten value types, the **rule shapes** | `country`, `city`, `economics`, `rent_centre`, `population`, `rent_vs_spend` |
 | Live in | **Code** | **Database tables**, seeded and changed by migrations |
 | Changed by | A developer, in a release | A data migration, versioned in git |
 | They are | The vocabulary | The sentences |
+
+The **rule shapes** of `reqs.md` §3.7a are archetypes for the same reason: `ShareOfHouseholdField`
+performs a comparison, and `rent_vs_spend` is one instantiation of it — inputs and a threshold,
+stored as data.
 
 **Why archetypes cannot be config.** An archetype like `Monetary` does not merely declare
 fields — it declares *operations*. `Monetary` converts through an fx rate. `Quantity` converts
@@ -489,7 +493,7 @@ rather than the part of the problem it belongs to.
 | `household/` | The household record and what reads from it | `candidates` |
 | `criteria/` | CriteriaSet, Criterion, matching thresholds, scale anchors, weight rebalancing with locks, which match rules a set enforces | `candidates`, `data`, `household` |
 | `data_acquisition/` | DataAcquisitionRun, run planning and estimation, the spend cap, partial failure and selective retry, the `SourceAdapter` contract | `candidates`, `data` |
-| `evaluation/` | Normalisation, weight redistribution, coverage, matching, ranking, the Evaluation snapshot and its per-attribute detail | `candidates`, `data`, `household`, `criteria` |
+| `evaluation/` | Normalisation, weight redistribution, coverage, matching, ranking, the compound rule shapes and their evaluation, the Evaluation snapshot and its per-attribute detail | `candidates`, `data`, `household`, `criteria` |
 | `comparison/` | Focus and comparators, deltas, weighted contribution, the templated synthesis | `candidates`, `data`, `evaluation` |
 
 | Outside the policy core | Contains | Depends on |

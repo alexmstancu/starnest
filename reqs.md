@@ -52,7 +52,7 @@ this document is a requirement; this section says only what arrives first.
 - **Local employment as the working assumption** — see below
 - The country attribute catalog, with pillars
 - Criteria sets: weights, directions, scales, matching thresholds — switchable
-- Match rules
+- Match rules, and the two country-level compound rules of §7.4
 - The country seed list
 - Structured data acquisition, with runs, cost control and selective retry
 - Evaluation: per-attribute normalisation, weight redistribution, coverage and confidence
@@ -504,7 +504,36 @@ erDiagram
         bigint candidate_result FK
         bigint criterion FK
         text match_rule FK
+        text compound_rule FK
         text reason_detail
+    }
+    HOUSEHOLD_FIELD {
+        text id PK
+    }
+    COMPOUND_RULE {
+        text id PK
+        text name
+        text level FK
+        text shape
+        text outcome
+        numeric threshold_min
+        numeric threshold_max
+    }
+    COMPOUND_RULE_INPUT {
+        text compound_rule FK
+        int input_order
+        text attribute FK
+        text household_field FK
+    }
+    CRITERIA_SET_COMPOUND_RULE {
+        text criteria_set FK
+        text compound_rule FK
+        bool is_applied
+    }
+    CANDIDATE_WARNING {
+        bigint candidate_result FK
+        text compound_rule FK
+        text detail
     }
     SETTINGS {
         int id PK
@@ -559,6 +588,15 @@ erDiagram
     CRITERION ||--o{ CRITERION_THRESHOLD_LABEL : "bounded by"
     CRITERION ||--o| CRITERION_THRESHOLD_BOOLEAN : "bounded by"
     CRITERION ||--o{ CRITERION_THRESHOLD_SHARE : "bounded by"
+    LEVEL ||--o{ COMPOUND_RULE : scopes
+    COMPOUND_RULE ||--o{ COMPOUND_RULE_INPUT : reads
+    ATTRIBUTE ||--o{ COMPOUND_RULE_INPUT : "read by"
+    HOUSEHOLD_FIELD ||--o{ COMPOUND_RULE_INPUT : "read by"
+    CRITERIA_SET ||--o{ CRITERIA_SET_COMPOUND_RULE : applies
+    COMPOUND_RULE ||--o{ CRITERIA_SET_COMPOUND_RULE : "applied in"
+    CANDIDATE_RESULT ||--o{ CANDIDATE_WARNING : flagged
+    COMPOUND_RULE ||--o{ CANDIDATE_WARNING : raised
+    COMPOUND_RULE ||--o{ NON_MATCH_REASON : "reason from"
     CRITERIA_SET ||--o{ CRITERIA_SET_MATCH_RULE : enforces
     MATCH_RULE ||--o{ CRITERIA_SET_MATCH_RULE : "enforced in"
     CRITERIA_SET ||--o{ EVALUATION : "run as"
@@ -634,6 +672,15 @@ erDiagram
 | `MATCH_RULE \|\|--o{ MATCH_RULE_RESULT` | One rule, many candidates | |
 | `CANDIDATE \|\|--o{ MATCH_RULE_RESULT` | One candidate, many rules | The result is a **fact about the world** — whether a visa route exists — so it lives on the objective side, like a value |
 | `DATA_SOURCE \|\|--o{ MATCH_RULE_RESULT` | Where the judgement came from | Usually `manual` or `llm`; a gate needs provenance as much as a number does |
+| `LEVEL \|\|--o{ COMPOUND_RULE` | Compound rules are declared per level | Like attributes and match rules |
+| `COMPOUND_RULE \|\|--o{ COMPOUND_RULE_INPUT` | What the rule reads, in order | Order matters: a ratio of A to B is not a ratio of B to A |
+| `ATTRIBUTE \|\|--o{ COMPOUND_RULE_INPUT` | An input that is a measured attribute | May be an attribute of the **parent** candidate — a city rule may read a country attribute |
+| `HOUSEHOLD_FIELD \|\|--o{ COMPOUND_RULE_INPUT` | An input that is a household number | A controlled vocabulary, so a rule cannot name a household field that does not exist |
+| `CRITERIA_SET \|\|--o{ CRITERIA_SET_COMPOUND_RULE` | Which compound rules a set applies | Whether rent-against-spend concerns you is a preference, exactly as with match rules |
+| `COMPOUND_RULE \|\|--o{ CRITERIA_SET_COMPOUND_RULE` | The other half | |
+| `CANDIDATE_RESULT \|\|--o{ CANDIDATE_WARNING` | Warnings raised for this candidate | Stored with the evaluation for the same reason its scores are: a saved result must not change |
+| `COMPOUND_RULE \|\|--o{ CANDIDATE_WARNING` | Which rule raised it | |
+| `COMPOUND_RULE \|\|--o{ NON_MATCH_REASON` | A compound rule whose outcome is a non-match | The third of three ways a candidate can fail to match; exactly one is set per row |
 | `CRITERIA_SET \|\|--o{ CRITERIA_SET_MATCH_RULE` | A criteria set chooses which gates it enforces | **This is the relation that was missing.** Whether a UK visa route exists is objective; whether you treat its absence as disqualifying is yours. A `remote-only` set may not enforce `two_role_feasibility` at all |
 | `MATCH_RULE \|\|--o{ CRITERIA_SET_MATCH_RULE` | The other half | Gives match rules the same objective/subjective split attributes already have: `ATTRIBUTE : CRITERION` is exactly `MATCH_RULE : CRITERIA_SET_MATCH_RULE` |
 
@@ -1308,6 +1355,52 @@ eligibility but are not measurements of the place.
 (`criteria_set_match_rule`, §3.4): the existence of a visa route is a fact, but treating its
 absence as disqualifying is a preference.
 
+### 3.7a CompoundRule
+
+**A rule over more than one input.** Some things are only visible when two figures are read
+together, and no criterion can express them, because a criterion judges exactly one attribute.
+
+Rent is the standing example. Lisbon at €1,410 may clear a €2,000 ceiling comfortably — but if
+the household's total target spend is €2,500, that rent consumes 56% of everything, and nothing
+else in the model would say so.
+
+| Field | Notes |
+|---|---|
+| `id`, `name`, `level` | Identifier, display label, and which level it applies at |
+| `shape` | Which **rule shape** performs the comparison — see below |
+| `outcome` | `warning` \| `not_matching` |
+| `threshold_min`, `threshold_max` | The shape's numeric parameters. Which are required depends on the shape, and a constraint enforces it |
+| inputs | `compound_rule_input` rows, **in order**: each names either an attribute or a household field |
+
+**The comparison is code; the rule is data.** This is the archetype and instantiation split
+(`arch.md` §1) applied to rules. A handful of **shapes** are implemented in code because they
+carry behaviour; each rule is a row naming a shape, its inputs and its thresholds.
+
+| Shape | Reads | Fires when |
+|---|---|---|
+| `ShareOfHouseholdField` | one attribute, one household field | the attribute exceeds `threshold_max` as a share of the field |
+| `SumBelowFloor` | several attributes | their sum falls below `threshold_min` |
+| `RatioBetweenAttributes` | two attributes, in order | their ratio falls outside `threshold_min`–`threshold_max` |
+
+> **Why the comparison itself is not stored.** Columns for an operator and an aggregation would
+> be a small expression language, which §3.0's guardrail exists to prevent — and the first rule
+> needing an "or" breaks the grammar. Naming a shape keeps every stored value a parameter and
+> never an instruction. Adding a rule of a known shape is a row; adding a new kind of comparison
+> is code, which it genuinely is.
+
+**Inputs may cross levels.** A city rule may read an attribute of its parent country — a large
+expat community inside a country with low openness to foreigners is worth flagging, and neither
+figure says it alone.
+
+**The outcome is a parameter, and that unifies two things.** With `outcome: warning` the rule
+flags without ruling anything out and never touches the score (§5.3). With
+`outcome: not_matching` it is a computed gate. `two_role_feasibility` — two job counts against a
+floor — is exactly that, and belongs here rather than in §3.7 once its attributes have a source;
+§3.7 keeps the rules that carry a judgement with nothing to compute.
+
+**Which rules a criteria set applies is a preference**, held in `criteria_set_compound_rule`, on
+the same footing as match-rule enforcement. You may want the rent warning while Partner does not.
+
 **Both mechanisms speak one vocabulary.** A criterion's `matching_threshold` and a `MatchRule`
 are different mechanisms — one reads a measured value, the other carries a judgement — but they
 answer the same question and report the same three outcomes. There is no separate "verdict",
@@ -1501,8 +1594,13 @@ spend is flagged as a warning even when it clears its own matching threshold in 
 two figures only mean anything read together.
 
 A warning shows on the candidate and in the drill-down. It never changes the score and never
-makes a candidate not match. Cross-criterion rules of this kind are declared in configuration
-alongside matching thresholds.
+makes a candidate not match. Each one raised is stored as a `candidate_warning` row against the
+evaluation's result, for the same reason the per-attribute scores are (§3.4a): a saved result
+must read the same later.
+
+Rules of this kind are **compound rules** (§3.7a) — a named shape, its inputs and its
+thresholds. Which of them a criteria set applies is a preference, so a warning you find useful
+need not appear for someone else.
 
 **Excluding a criterion is not the same as missing data.** An excluded criterion (`included:
 false`, §3.4) renormalises the remaining weights and **does not count against coverage** —
@@ -2145,7 +2243,28 @@ not matching regardless of score** — and stays visible, with its score, showin
 > beyond the EU (§6.1) — without them the mechanism would ship untested.
 
 
-### 7.4 Required attributes in the default criteria set
+### 7.4 Compound rule catalog
+
+The rules of §3.7a. Each names a shape, its inputs in order, and its thresholds; the shape
+supplies the comparison.
+
+| Rule | Level | Shape | Reads | Fires when | Outcome |
+|---|---|---|---|---|---|
+| `mild_now_brutal_later` | country | `RatioBetweenAttributes` | `country.avg_annual_temperature`, `country.projected_summer_heat_days` | A comfortable annual mean hides a projected summer that is not. **Thresholds TBD** | warning |
+| `cheap_but_taxed` | country | `RatioBetweenAttributes` | `country.cost_of_living_index`, `country.income_tax_effective` | Low prices are offset by an effective tax rate that removes the advantage. **Thresholds TBD** | warning |
+| `rent_vs_spend` | city | `ShareOfHouseholdField` | `city.rent_centre`, `household.target_monthly_spend` | Rent consumes more than `threshold_max` of total household spend. Provisionally 0.40 | warning |
+| `cost_of_living_vs_income` | city | `ShareOfHouseholdField` | `city.cost_of_living_monthly`, `household.net_income` | Total living costs consume more than `threshold_max` of net income. Provisionally 0.60 | warning |
+| `expat_bubble` | city | `RatioBetweenAttributes` | `city.expat_community_size`, `country.openness_to_foreigners` | A large expat community sits inside a country with low openness — **an input from the parent country**. **Thresholds TBD** | warning |
+| `two_role_feasibility` | city | `SumBelowFloor` | `city.tech_software_jobs`, `city.tech_product_jobs` | The two counts together fall below a floor. **Stays a manual match rule (§7.3) until those attributes have a source** (§9) | not matching |
+
+**Two are in v1** — `mild_now_brutal_later` and `cheap_but_taxed` — because v1 is country-level
+and those are the only country-level rules. They are also the point: two instances are what will
+show whether the three shapes are right, and zero would not.
+
+> **Every threshold here is provisional**, like every weight in §7.1. A ratio that reads well in
+> the abstract usually turns out wrong against real figures, and these have not met any yet.
+
+### 7.5 Required attributes in the default criteria set
 
 `blocks_if_missing` (§5.3) is a criterion flag: a missing value on one makes the candidate
 **insufficient data** rather than producing a total, regardless of overall coverage. It is
@@ -2282,7 +2401,7 @@ The main results view.
   country match threshold, the ~2000–3000 EUR/month household budget guideline, the
   2000 EUR rent ceiling, the 60% `min_coverage` floor, and every `scale_params` and
   `matching_threshold` marked TBD.
-- **The `blocks_if_missing` selection is agreed but unvalidated** (§7.4) — seven country
+- **The `blocks_if_missing` selection is agreed but unvalidated** (§7.5) — seven country
   attributes, 36.1% of the score, chosen on plausibility rather than on observed coverage.
   Revisit after a real run; `career` deliberately has none until its source question is settled.
 - **No type for genuinely ordinal data.** One value from an ordered list where the order
@@ -2392,7 +2511,9 @@ wondering whether a second concept is hiding behind the second word.
 | **Matching threshold** | A criterion's line past which a candidate does not match. The value is real; you have decided it is unacceptable |
 | **MatchRule** | A named yes/no gate attached to no attribute: a visa pathway, a quota, whether a market can support two roles. Carries a result, a reason, a source, and an optional audited override. The other mechanism that produces a non-match |
 | **`parent_not_matching`** | A candidate evaluated although its parent does not match — a city worth looking at in a country that failed. Flagged in exactly those words, never hidden |
-| **Warning** | A flag raised without ruling a candidate out, typically by a rule spanning two attributes: rent read against total household spend. Never changes the score |
+| **CompoundRule** | A rule over more than one input — attributes, household fields, or an attribute of the parent country. Names a **shape** implemented in code, its inputs in order, and its thresholds. Its outcome is either a warning or a non-match, which is what lets one mechanism cover a rent alarm and a computed gate |
+| **Rule shape** | The comparison a compound rule performs, implemented in code because it is behaviour: `ShareOfHouseholdField`, `SumBelowFloor`, `RatioBetweenAttributes`. Adding a rule of a known shape is data; adding a shape is a release |
+| **Warning** | A compound rule outcome that flags a candidate without ruling it out — rent read against total household spend. Never changes the score, and stored with the evaluation that raised it |
 | **Evaluation** | One criteria set run against the candidates at one level, producing a ranking. **Score, coverage, match status and rank belong to an evaluation, not to the candidate** — they change when you switch criteria sets, and none of them is a property of the place |
 | **Score** | 0–100. Full precision internally, integers only at display |
 | **Coverage** | What percentage of a candidate's active weight is actually backed by data. Cassis at 64% coverage has a third of its criteria unmeasured |
@@ -2606,4 +2727,9 @@ Recorded from a front-to-back read of this document.
 | Q159 | Backend and interface **share no code**, not even DTO definitions | A shared type is a dependency HTTP was supposed to remove, and it is how a decoupled interface quietly becomes coupled |
 | Q160 | `GET /rankings` computes and returns; `POST /evaluations` persists | Two resources expressing Q155: a slider drag is a read that stores nothing, and keeping a result is a deliberate write |
 | Q161 | Data acquisition progress is polled from the run resource, not streamed | The run is already persisted with its status, cost and failures, so live progress needs no callback interface, socket or event channel |
+| Q162 | **`CompoundRule`: rules over more than one input**, with shapes in code and instances in data | A criterion judges exactly one attribute, so nothing could express rent read against total spend. Six such rules already exist or are foreseeable, and `two_role_feasibility` was one all along wearing a match rule's clothing |
+| Q163 | The comparison is a **named shape**, never stored | Operator and aggregation columns would be a small expression language, which the §3.0 guardrail exists to prevent. A shape name plus thresholds keeps every stored value a parameter and never an instruction |
+| Q164 | **The outcome is a parameter** — `warning` or `not_matching` | One mechanism covers a computed alarm and a computed gate. `MatchRule` is left meaning what it says: a judgement about the world with nothing to compute |
+| Q165 | Compound rule inputs may **cross levels** | A city rule reading its parent country's openness is the clearest case; the parent chain already exists to support it |
+| Q166 | Two country-level compound rules ship in v1 | v1 is country-only, and two real instances are what will show whether the three shapes are right. Zero would not |
 
