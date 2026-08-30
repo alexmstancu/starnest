@@ -277,7 +277,6 @@ erDiagram
     }
     PILLAR {
         text id PK
-        text level FK
         text name
         text description
     }
@@ -352,8 +351,17 @@ erDiagram
         timestamp finished_at
         text triggered_by
         text run_status
+        text level FK
         int llm_call_count
         numeric cost_eur
+    }
+    DATA_ACQUISITION_RUN_CANDIDATE {
+        bigint data_acquisition_run FK
+        text candidate FK
+    }
+    DATA_ACQUISITION_RUN_ATTRIBUTE {
+        bigint data_acquisition_run FK
+        text attribute FK
     }
     DATA_ACQUISITION_FAILURE {
         bigint data_acquisition_run FK
@@ -413,6 +421,7 @@ erDiagram
     PILLAR_WEIGHT {
         text criteria_set FK
         text pillar FK
+        text level FK
         numeric weight
         bool weight_locked
     }
@@ -544,7 +553,8 @@ erDiagram
 
     LEVEL ||--o{ CANDIDATE : classifies
     LEVEL ||--o{ LEVEL : "nests under"
-    LEVEL ||--o{ PILLAR : scopes
+    LEVEL ||--o{ PILLAR_WEIGHT : scopes
+    LEVEL ||--o{ DATA_ACQUISITION_RUN : scopes
     LEVEL ||--o{ ATTRIBUTE : scopes
     LEVEL ||--o{ MATCH_RULE : scopes
     LEVEL ||--o{ EVALUATION : "is evaluated at"
@@ -567,6 +577,10 @@ erDiagram
     DATA_ACQUISITION_RUN ||--o{ VALUE : produced
     VALUE ||--o{ VALUE_CITATION : "evidenced by"
     DATA_ACQUISITION_RUN ||--o{ DATA_ACQUISITION_FAILURE : recorded
+    DATA_ACQUISITION_RUN ||--o{ DATA_ACQUISITION_RUN_CANDIDATE : planned
+    CANDIDATE ||--o{ DATA_ACQUISITION_RUN_CANDIDATE : "is planned in"
+    DATA_ACQUISITION_RUN ||--o{ DATA_ACQUISITION_RUN_ATTRIBUTE : planned
+    ATTRIBUTE ||--o{ DATA_ACQUISITION_RUN_ATTRIBUTE : "is planned in"
     CANDIDATE ||--o{ DATA_ACQUISITION_FAILURE : "failed for"
     ATTRIBUTE ||--o{ DATA_ACQUISITION_FAILURE : "failed on"
     MATCH_RULE ||--o{ MATCH_RULE_RESULT : "evaluated as"
@@ -619,7 +633,8 @@ erDiagram
 | Relation | What it does | Why it exists |
 |---|---|---|
 | `LEVEL \|\|--o{ CANDIDATE` | Every candidate is a country or a city | Levels are rows, not an enum, so a third one is a config change (§3.1) |
-| `LEVEL \|\|--o{ PILLAR` | Pillars are declared per level | Weights sum to 100% *within* a level, so the two sets must be separable |
+| `LEVEL \|\|--o{ PILLAR_WEIGHT` | A pillar's weight is declared per level | The pillar itself is level-agnostic (§3.2). `housing` is one concern; what it is *worth* differs by level, and weights sum to 100% within a level |
+| `LEVEL \|\|--o{ DATA_ACQUISITION_RUN` | A run addresses one level | Part of the run's planned scope (§3.8) |
 | `LEVEL \|\|--o{ ATTRIBUTE` | Attributes are declared per level | `country.safety` and `city.safety` are different questions with different sources |
 | `LEVEL \|\|--o{ MATCH_RULE` | Gates are declared per level | A visa is national; `two_role_feasibility` is local |
 | `LEVEL \|\|--o{ EVALUATION` | An evaluation runs at one level | Comparisons never mix levels (§8.5); this enforces it in the schema |
@@ -661,6 +676,10 @@ erDiagram
 | Relation | What it does | Why it exists |
 |---|---|---|
 | `DATA_ACQUISITION_RUN \|\|--o{ DATA_ACQUISITION_FAILURE` | Failures attach to their run | A run continues past failures (§6.4); they must be recorded, not raised |
+| `DATA_ACQUISITION_RUN \|\|--o{ DATA_ACQUISITION_RUN_CANDIDATE` | Which candidates the run *planned* to cover | Planned, not achieved: selective retry needs the intent, and a run that failed entirely would otherwise report no scope at all |
+| `CANDIDATE \|\|--o{ DATA_ACQUISITION_RUN_CANDIDATE` | The other half | |
+| `DATA_ACQUISITION_RUN \|\|--o{ DATA_ACQUISITION_RUN_ATTRIBUTE` | Which attributes the run planned to fetch | Together with the candidates and the level, this is the whole scope — normalised rather than a JSON column (§3.0) |
+| `ATTRIBUTE \|\|--o{ DATA_ACQUISITION_RUN_ATTRIBUTE` | The other half | |
 | `CANDIDATE \|\|--o{ DATA_ACQUISITION_FAILURE` | Which place failed | |
 | `ATTRIBUTE \|\|--o{ DATA_ACQUISITION_FAILURE` | Which attribute failed | Together with the candidate, this is exactly the retry unit — retry what failed, nothing else |
 
@@ -791,9 +810,10 @@ proposal, a manual add, population ranking — and any approval state that impli
 ### 3.2 Pillar
 
 A load-bearing vertical of a life: `economics`, `housing`, `career`, `safety`, `health`,
-`climate`, `connectivity`, `nature`, `culture`, `governance`, `family`. Eleven at each level.
+`climate`, `connectivity`, `nature`, `culture`, `governance`, `family`. The same eleven apply
+at every level.
 
-Identifier, display name, level, description.
+Identifier, display name, description.
 
 > **Pillar is the only word this document uses for the concept.** Competing products call the
 > same construct a dimension (WhereNext), a category, a topic, or a domain. Those names appear
@@ -804,6 +824,14 @@ Identifier, display name, level, description.
 
 Weights attach to pillars, but a pillar's weight is a property of a **criteria set** (§3.4),
 not of the pillar itself. The pillar merely says which vertical a thing belongs to.
+
+> **A pillar carries no level, and that is the point.** `housing` is one concern, asked at
+> whatever scale you are looking; only what it is *worth* differs, and a weight is already a
+> property of a criteria set rather than of the pillar. So the level sits on
+> `PILLAR_WEIGHT` — one row for housing at country level, another for housing at city level,
+> against the same single pillar row. Making the pillar itself level-scoped would mean eleven
+> duplicated names and descriptions per level, free to drift apart, and would have made
+> `city.housing` unrepresentable at all. Decided 2026-08-30 (Appendix B, Q187).
 
 ### 3.3 Attribute
 
@@ -1425,7 +1453,16 @@ is a run — the word was ambiguous and is now narrow:
 | `triggered_by` | Who or what started it — for now always a person pressing Run |
 | `run_status` | `running` \| `completed` \| `halted_on_spend_cap` \| `failed` |
 | `llm_call_count`, `cost_eur` | What it spent. Zero for a run touching only structured sources |
-| scope | Which candidates and which attributes it was asked to cover |
+| `level` | The level the run addresses. Part of its scope |
+
+**The scope is structure, not a note.** A run records the level it addressed, plus the
+candidates and attributes it was asked to cover, as
+`data_acquisition_run_candidate` and `data_acquisition_run_attribute` rows.
+
+> **It records what was *planned*, not what was achieved.** Selective retry and the dry-run
+> estimate (§6.3) both need the intent. Deriving the scope from the values a run wrote would
+> report an empty scope for a run that failed entirely — precisely the case where knowing what
+> it was meant to do matters most. A JSON column was the alternative and is ruled out by §3.0.
 
 **Failures are rows, not a blob.** Each `data_acquisition_failure` records the run, the
 candidate, the attribute and the error, which is exactly the unit selective retry needs: retry what failed, nothing else (§6.4).

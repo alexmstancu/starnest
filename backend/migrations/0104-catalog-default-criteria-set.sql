@@ -12,19 +12,21 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
 -- The section headings of 7.1. Eleven weights, summing to 100 within the country level and
 -- independently of any other level. Nothing is locked: a lock is something you decide, and
 -- shipping one would pin a provisional number against the rebalancing meant to move it.
-INSERT INTO pillar_weight (criteria_set, pillar, weight) VALUES
-    ('local_employment', 'economics', 14),
-    ('local_employment', 'housing', 10),
-    ('local_employment', 'career', 14),
-    ('local_employment', 'safety', 12),
-    ('local_employment', 'health', 9),
-    ('local_employment', 'climate', 7),
-    ('local_employment', 'connectivity', 8),
-    ('local_employment', 'nature', 8),
-    ('local_employment', 'culture', 6),
-    ('local_employment', 'governance', 8),
-    ('local_employment', 'family', 4)
-ON CONFLICT (criteria_set, pillar) DO UPDATE SET weight = EXCLUDED.weight;
+-- Country-level pillar weights. The level is carried here rather than on the pillar
+-- (reqs.md Q187): the city level will add eleven more rows against the same eleven pillars.
+INSERT INTO pillar_weight (criteria_set, pillar, level, weight) VALUES
+    ('local_employment', 'economics', 'country', 14),
+    ('local_employment', 'housing', 'country', 10),
+    ('local_employment', 'career', 'country', 14),
+    ('local_employment', 'safety', 'country', 12),
+    ('local_employment', 'health', 'country', 9),
+    ('local_employment', 'climate', 'country', 7),
+    ('local_employment', 'connectivity', 'country', 8),
+    ('local_employment', 'nature', 'country', 8),
+    ('local_employment', 'culture', 'country', 6),
+    ('local_employment', 'governance', 'country', 8),
+    ('local_employment', 'family', 'country', 4)
+ON CONFLICT (criteria_set, pillar, level) DO UPDATE SET weight = EXCLUDED.weight;
 
 -- One criterion per attribute, weighted within its pillar to 100.
 --

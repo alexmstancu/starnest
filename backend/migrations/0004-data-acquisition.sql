@@ -10,6 +10,8 @@ CREATE TABLE data_acquisition_run (
     run_status     text        NOT NULL,
     llm_call_count integer     NOT NULL DEFAULT 0,
     cost_eur       numeric     NOT NULL DEFAULT 0,
+    -- Part of the run's planned scope (reqs.md Q186). A run addresses one level.
+    level          text        NOT NULL REFERENCES level (id),
 
     CONSTRAINT data_acquisition_run_status_is_known
         CHECK (run_status IN ('running', 'completed', 'halted_on_spend_cap', 'failed')),
@@ -21,6 +23,27 @@ CREATE TABLE data_acquisition_run (
 
 COMMENT ON COLUMN data_acquisition_run.started_at IS
     'timestamptz: a moment the system records, not a period in the world (arch.md 9.6).';
+
+-- The run's PLANNED scope, normalised rather than stored as JSON (reqs.md 3.0, Q186).
+--
+-- Planned, not achieved: selective retry and the dry-run estimate both need to know what was
+-- meant to happen. Deriving the scope from the values a run wrote would report an empty scope
+-- for a run that failed entirely -- exactly the case where the scope matters most.
+CREATE TABLE data_acquisition_run_candidate (
+    data_acquisition_run bigint NOT NULL REFERENCES data_acquisition_run (id),
+    candidate            text   NOT NULL REFERENCES candidate (id),
+
+    CONSTRAINT data_acquisition_run_candidate_pkey
+        PRIMARY KEY (data_acquisition_run, candidate)
+);
+
+CREATE TABLE data_acquisition_run_attribute (
+    data_acquisition_run bigint NOT NULL REFERENCES data_acquisition_run (id),
+    attribute            text   NOT NULL REFERENCES attribute (id),
+
+    CONSTRAINT data_acquisition_run_attribute_pkey
+        PRIMARY KEY (data_acquisition_run, attribute)
+);
 
 -- Failures are rows, not a blob. A run continues past a failure (reqs.md 6.4), and the
 -- (candidate, attribute) pair is exactly the unit selective retry needs.

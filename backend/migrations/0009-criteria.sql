@@ -18,15 +18,21 @@ CREATE TABLE criteria_set (
 COMMENT ON TABLE criteria_set IS
     'A named collection of criteria plus its pillar weights. Work-format scenarios and per-person sets are the same primitive (reqs.md 3.4).';
 
+-- The level lives here rather than on the pillar (reqs.md Q187), because a criteria set
+-- holds one opinion about `housing` at country level and a different one at city level.
+-- Weights sum to 100 within a level, independently of the other (reqs.md 7).
 CREATE TABLE pillar_weight (
     criteria_set  text    NOT NULL REFERENCES criteria_set (id),
     pillar        text    NOT NULL REFERENCES pillar (id),
+    level         text    NOT NULL REFERENCES level (id),
     weight        numeric NOT NULL,
     -- A locked weight holds its value and is excluded from proportional rebalancing.
     weight_locked boolean NOT NULL DEFAULT false,
 
-    CONSTRAINT pillar_weight_pkey PRIMARY KEY (criteria_set, pillar),
-    CONSTRAINT pillar_weight_is_not_negative CHECK (weight >= 0)
+    CONSTRAINT pillar_weight_pkey PRIMARY KEY (criteria_set, pillar, level),
+    -- Percentages, 0-100 (reqs.md Q185). Not a sum check: rebalancing passes through
+    -- intermediate states, and the sum is a domain invariant enforced in criteria/.
+    CONSTRAINT pillar_weight_is_a_percentage CHECK (weight >= 0 AND weight <= 100)
 );
 
 COMMENT ON TABLE pillar_weight IS
@@ -71,7 +77,10 @@ CREATE TABLE criterion (
         CHECK (normalisation_method IN ('fixed', 'percentile', 'as_is')),
     CONSTRAINT criterion_reducer_mode_is_known
         CHECK (reducer_mode IS NULL OR reducer_mode IN ('select', 'aggregate')),
-    CONSTRAINT criterion_weight_is_not_negative CHECK (weight >= 0),
+    -- Percentages, 0-100 (reqs.md Q185). Not a sum check: rebalancing passes through
+    -- intermediate states, and "sums to 100 within a pillar" is a domain invariant that
+    -- criteria/ enforces where it can produce a message worth reading.
+    CONSTRAINT criterion_weight_is_a_percentage CHECK (weight >= 0 AND weight <= 100),
     CONSTRAINT criterion_target_range_is_ordered
         CHECK (target_range_min IS NULL OR target_range_max IS NULL
                OR target_range_min <= target_range_max),

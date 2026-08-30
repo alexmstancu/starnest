@@ -5,21 +5,24 @@
 -- depends: 0100-catalog-reference-data
 
 -- Pillar identifiers are unprefixed (arch.md 3.2a). The name is the section heading of 7.1.
-INSERT INTO pillar (id, level, name) VALUES
-    ('economics', 'country', 'Economics'),
-    ('housing', 'country', 'Housing'),
-    ('career', 'country', 'Career & work'),
-    ('safety', 'country', 'Safety & stability'),
-    ('health', 'country', 'Health'),
-    ('climate', 'country', 'Climate & environment'),
-    ('connectivity', 'country', 'Connectivity'),
-    ('nature', 'country', 'Nature & landscape'),
-    ('culture', 'country', 'Culture & community'),
-    ('governance', 'country', 'Governance & administration'),
-    ('family', 'country', 'Family & education')
+--
+-- These eleven serve BOTH levels (reqs.md Q187) -- the same named concerns, differing only in
+-- what they are worth, which is why no level appears here. The city level adds no pillar rows,
+-- only city pillar_weight rows.
+INSERT INTO pillar (id, name) VALUES
+    ('economics', 'Economics'),
+    ('housing', 'Housing'),
+    ('career', 'Career & work'),
+    ('safety', 'Safety & stability'),
+    ('health', 'Health'),
+    ('climate', 'Climate & environment'),
+    ('connectivity', 'Connectivity'),
+    ('nature', 'Nature & landscape'),
+    ('culture', 'Culture & community'),
+    ('governance', 'Governance & administration'),
+    ('family', 'Family & education')
 ON CONFLICT (id) DO UPDATE SET
-    level = EXCLUDED.level,
-    name  = EXCLUDED.name;
+    name = EXCLUDED.name;
 
 -- The 41 country attributes. max_age is NULL throughout: reqs.md 6.6 says every attribute
 -- declares one and gives none, and inventing a staleness horizon would be the same fabrication

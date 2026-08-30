@@ -4,18 +4,17 @@
 -- inserts rows and never alters a table.
 -- depends: 0002-candidates
 
+-- A pillar carries no level (reqs.md Q187). reqs.md 7 calls pillars "the same named
+-- concerns at both levels": `housing` is one concept whose WEIGHT differs by level, not two
+-- pillars that happen to share a name. The level therefore lives on pillar_weight (0009).
 CREATE TABLE pillar (
     id          text PRIMARY KEY,
-    level       text NOT NULL REFERENCES level (id),
     name        text NOT NULL,
-    description text,
-
-    -- Referenceable so an attribute can be checked to sit in a pillar of its own level.
-    CONSTRAINT pillar_level_key UNIQUE (id, level)
+    description text
 );
 
 COMMENT ON TABLE pillar IS
-    'A load-bearing vertical of a life. Eleven at each level. A pillar says which vertical a thing belongs to; its weight is a property of a criteria set, not of the pillar (reqs.md 3.2).';
+    'A load-bearing vertical of a life. The same eleven concerns apply at every level; only their weights differ, and a weight is a property of a criteria set, not of the pillar (reqs.md 3.2, 7).';
 
 CREATE TABLE attribute (
     id               text PRIMARY KEY,
@@ -37,8 +36,8 @@ CREATE TABLE attribute (
     -- type-agreement chain of arch.md 3.3b.
     CONSTRAINT attribute_type_key UNIQUE (id, value_type),
 
-    CONSTRAINT attribute_pillar_is_at_same_level
-        FOREIGN KEY (pillar, level) REFERENCES pillar (id, level),
+    CONSTRAINT attribute_pillar_exists
+        FOREIGN KEY (pillar) REFERENCES pillar (id),
     CONSTRAINT attribute_lifecycle_status_is_known
         CHECK (lifecycle_status IN ('active', 'retired')),
     CONSTRAINT attribute_max_age_is_positive

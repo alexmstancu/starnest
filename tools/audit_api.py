@@ -31,6 +31,8 @@ COVERED_ELSEWHERE = {
     "CRITERION_THRESHOLD_RANGE": "CriterionInput.matching_threshold variant",
     "CRITERION_THRESHOLD_SHARE": "CriterionInput.matching_threshold variant",
     "DATA_ACQUISITION_FAILURE": "RunDetail.failures",
+    "DATA_ACQUISITION_RUN_ATTRIBUTE": "RunScope.attributes, inside RunDetail.scope",
+    "DATA_ACQUISITION_RUN_CANDIDATE": "RunScope.candidates, inside RunDetail.scope",
     "EVALUATION_CRITERION": "GET /evaluations/{id}/criteria",
     "HOUSEHOLD_CITIZENSHIP": "HouseholdInput.citizenships",
     "VALUE_CITATION": "Value.citations",
