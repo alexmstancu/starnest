@@ -14,7 +14,7 @@ That spec is the authoritative blueprint and should be read before any implement
 |---|---|
 | `reqs.md` | **Written.** Requirements and ontology. v1 scope in §1.3, glossary in Appendix A, decision log in Appendix B |
 | `datasources.md` | **Written.** Source analysis, market analysis, criterion→source mapping |
-| `arch.md` | **Partial.** Ontology and storage settled; stack still open |
+| `arch.md` | **Written.** Ontology, storage, module architecture, runtime flows, the interface, operations. Backend language and interface framework still open (§11) |
 | `openapi.yaml` | **Written.** The REST contract — 31 paths, 48 schemas. Backend and interface are both written against it |
 | `devplan.md` | Not started |
 
