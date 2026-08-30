@@ -549,10 +549,53 @@ The qualitative path needs a **dedicated Anthropic API key** from console.anthro
 separate from a Claude.ai subscription and billed per use. The spec's cost framing: a few dozen
 calls per city, not millions.
 
+### 6.7 Auditing is the database's own statement log
+
+**No audit tables, no triggers, no changelog of ours.** PostgreSQL's built-in statement logging
+records what happened; the application adds nothing.
+
+```
+log_statement = 'mod'          # every INSERT, UPDATE, DELETE and DDL
+log_line_prefix = '%m [%p] %u@%d '
+log_min_duration_statement = 500ms
+```
+
+**`mod` rather than `all`.** `all` includes every SELECT, and a UI that re-queries on each slider
+movement would bury the handful of statements that changed something under thousands that read
+something. `mod` logs exactly the statements that alter state. Switch to `all` temporarily when
+debugging a read path.
+
+**What this gives:** a timestamped, chronological record of every statement that changed
+anything, in the server log.
+
+**What it does not give**, stated plainly so it is not assumed later:
+
+- **Row states, only statements.** `UPDATE attribute SET max_age = '3 months' WHERE pillar =
+  'housing'` is logged verbatim; which rows it matched, and what their values were before, is
+  not. Reconstructing a past state means replaying the log, not querying it.
+- **A queryable history.** It is a text file. Grep, not SQL, and no joins to the data it
+  describes.
+
+**Why that is sufficient here**, given three properties the design already has:
+
+| What could change | What records it |
+|---|---|
+| The catalog — attributes, pillars, sources, thresholds | **Migrations in git.** The catalog is data changed by migration (§1.2), so its history is the repository's history, with a message per change |
+| The criteria used in a past ranking | **The evaluation snapshot** (`reqs.md` §3.4a) — frozen at the moment it ran, unaffected by later edits |
+| A measurement | **Nothing overwrites a value.** The `value` table is its own history |
+| Everything else — settings, household, ad-hoc edits | The statement log |
+
+The statement log is therefore the backstop for the residue, not the primary mechanism. The
+things whose change would silently alter a result are each covered by something stronger and
+queryable.
+
+> If a queryable history is ever wanted, `pgaudit` adds structure without application code, and a
+> trigger-based changelog on the ten mutable tables remains available. Neither is needed to start.
+
 ---
 
 > **Decisions with their rationale live in `reqs.md` Appendix B**, which is the project's single
-> decision log — architecture entries included, most recently Q140–Q142. This document explains
+> decision log — architecture entries included, most recently Q140–Q150. This document explains
 > the design; the log records why each call was made and what it superseded.
 
 ---
