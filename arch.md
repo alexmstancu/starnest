@@ -17,8 +17,8 @@ places for a reason that is not stylistic.
 | | Archetypes | Instantiations |
 |---|---|---|
 | Examples | `Candidate`, `Attribute`, `Value`, `Pillar`, `Criterion`, `CriteriaSet`, `Evaluation`, `Household`, the ten value types | `country`, `city`, `economics`, `rent_centre`, `population` |
-| Live in | **Code** | **Config** (files or DB rows), loaded at startup |
-| Changed by | A developer, in a release | A config edit and a reload |
+| Live in | **Code** | **Database tables**, seeded and changed by migrations |
+| Changed by | A developer, in a release | A data migration, versioned in git |
 | They are | The vocabulary | The sentences |
 
 **Why archetypes cannot be config.** An archetype like `Monetary` does not merely declare
@@ -28,28 +28,61 @@ algorithms. Expressing them in config would require either an expression languag
 with all that implies) or a declaration kept manually in sync with the code that implements it
 (drift, silently). So behaviour stays in code.
 
-**Config references archetypes by name; it never defines one.**
+**Instantiations reference archetypes by name; they never define one.**
 
-```yaml
-attributes:
-  - id: country.population
-    level: country
-    value_type: Count          # ← names an archetype implemented in code
-    unit: people
-    max_age: 24 months
-    sources: [worldbank, eurostat]
+```sql
+INSERT INTO attribute (id, level, pillar, value_type, max_age)
+VALUES ('country.population', 'country', NULL, 'Count', INTERVAL '24 months');
 ```
 
-At startup the app resolves `Count` against its registry of implemented types. **A config
-naming a type that does not exist is a boot failure**, not a surprise at fetch time.
+`value_type` is a foreign key into the `value_type` reference table, which the application
+populates from its registry of implemented types at startup. **An attribute naming a type that
+is not implemented cannot be inserted** — the database refuses it, rather than the application
+discovering it at fetch time.
 
-### 1.1 The guardrail
+### 1.2 The catalog is data in the database, not a config file
 
-**Config declares data, never behaviour.** No expressions, no formulas, no conditionals in
-YAML. The moment a config file needs an `if`, that is code trying to escape into a text file,
-and the answer is a new archetype rather than a more expressive config format.
+The attribute catalog, pillars, data sources, breakdown schemes, levels and the shipped default
+criteria set are **rows in ordinary tables**, seeded and modified by migrations that live in git
+alongside the schema.
+
+**Why not YAML or JSON files.** A config file and a database table holding the same rows are two
+stores with no link between them. Either can be edited independently, they drift, and the
+application has to decide which wins — a decision that has to be right in every code path
+forever. Removing an attribute from a file cannot delete its stored values (nothing is ever
+discarded), so the file stops describing what actually exists. The whole class of problem
+disappears if there is one store.
+
+Keeping the catalog in the database buys three things a file cannot:
+
+- **Referential integrity.** An attribute's `value_type`, `pillar` and `level` are foreign keys.
+  A typo is rejected on insert. A pillar cannot be removed while attributes reference it. With a
+  file, all of this is a startup validation pass that has to be written and maintained.
+- **One audit trail, the same one.** A change to the catalog is a change to a table, visible to
+  whatever row-level auditing covers every other table. A config edit that silently changed which
+  values are active — shortening `max_age` — would otherwise leave no trace in the database at
+  all, which is untenable for a tool whose premise is that every number is traceable.
+- **Transactions.** Adding a pillar and the six attributes that belong to it either all happens
+  or none of it does.
+
+**What is not lost:** git remains the history of catalog changes, because catalog changes ship
+as migration scripts. The readability of a YAML diff is traded for a SQL diff, which is a smaller
+loss than it sounds and comes with the integrity above.
+
+**Retirement, not deletion.** An attribute that should no longer be scored is marked retired
+(§2). Its values remain. There is no operation that deletes a catalog row with values behind
+it, and a foreign key enforces that.
+
+### 1.3 The guardrail
+
+**Instantiations declare data, never behaviour.** No expressions, no formulas, no conditionals in
+YAML. The moment the catalog needs an `if`, that is code trying to escape into a data row, and the
+answer is a new archetype rather than a more expressive schema.
 
 This is what keeps the ontology from becoming a programming language nobody wants to maintain.
+
+The rule survives the move into the database unchanged: a table column may hold a unit, a rank
+or a threshold, and never an expression to be evaluated.
 
 ---
 
@@ -98,12 +131,11 @@ attribute inserts rows and never alters a table.
 
 ### 3.2 Identifiers and keys
 
-**Attributes and candidates are rows, not just config entries.** The attributes catalog is loaded
-from config into a `attribute` table at boot (upsert by `id`), and candidates into a
-`candidate` table. `value` then holds **real foreign keys**, not loose strings.
+**Attributes and candidates are rows** (§1.2), so `value` holds **real foreign keys**, not loose
+strings.
 
 This is what makes retirement work. When an attribute is retired (§2), its stored values must
-keep pointing at something. If attributes existed only in config, deleting an entry would orphan
+keep pointing at something. If attributes lived only in a file, removing an entry would orphan
 every historical value. As a row with `lifecycle_status = retired`, the foreign key stays valid
 permanently while the attribute drops out of active scoring.
 
@@ -164,7 +196,7 @@ single row that refers to it.
 | `candidate` | Countries and cities | `country.portugal`, `city.portugal.lisbon` |
 | `pillar` | The eleven pillars | `housing`, `nature` |
 | `level` | The ordered levels | `country` (1), `city` (2) |
-| `attribute` | The attribute catalog, loaded from config | `city.rent_centre` |
+| `attribute` | The attribute catalog, seeded by migration | `city.rent_centre` |
 | `data_source` | Sources, with kind and reliability tier | `eurostat`, `numbeo`, `manual` |
 | `value_type` | The ten archetypes, so values can point at one | `Monetary`, `Index` |
 | `unit` | Units a `Quantity` may carry | `celsius`, `km`, `mbps`, `hours_per_year` |
@@ -195,7 +227,7 @@ typed child tables**:
 value              id, candidate, attribute, value_type, data_source,
                    breakdown_option, reference_period_start,
                    reference_period_end, retrieval_date,
-                   confidence_level, usage_status, data_acquisition_run
+                   confidence_level, rejection_reason, data_acquisition_run
 
 value_monetary     value_id, value_type, amount, currency, amount_eur,
                    fx_rate, fx_rate_date
@@ -254,7 +286,7 @@ value_monetary  9003 | 1900 EUR
 > for a reason beyond avoiding the collision: **confidence, freshness and supersession are
 > properties of one figure, not of three.** Numbeo may hold two hundred submissions for a
 > two-bedroom and five for a four-bedroom — genuinely different confidence. Sharing one row
-> would force one `confidence_level`, one `reference_period` and one `usage_status` across all
+> would force one `confidence_level`, one `reference_period` and one rejection state across all
 > of them, and would stop a fresher two-bedroom figure superseding on its own.
 >
 > It also makes **exactly one payload row per value** true, which §3.3b depends on.
@@ -307,11 +339,19 @@ drift.
 same way, and each threshold child table pins its own — so a `LabelSet` attribute cannot be
 given a numeric range, and exactly one threshold kind can exist.
 
-### 3.4 `usage_status`, and never discarding
+### 3.4 Never discarding, and why only rejection is stored
 
-`value.usage_status` is `active`, `superseded` or `rejected`. Nothing is deleted. A value that fails
-validation is stored with `rejected` and its reason; a value outranked by source priority is
-`superseded`. Exactly one value per (candidate, attribute) is `active`.
+Nothing is deleted. A value that fails validation is stored with its `rejection_reason` and never
+becomes active.
+
+**Being active is not stored.** It is computed on read (§4), because it is a *comparison between*
+values rather than a fact about one: it changes when a fresher value arrives, when `max_age` is
+shortened, or when source priority is edited. A stored flag would be a cache of that comparison
+with no owner responsible for refreshing it, and a stale `active` does not fail loudly — it
+scores the wrong number with correct-looking provenance.
+
+Rejection is the opposite: a fact about one value, decided once at insert, never changing because
+another value appeared. So it is stored.
 
 ### 3.5 Scale
 
@@ -351,16 +391,27 @@ touching a single measured value.
 
 ## 4. Choosing the active value
 
-Implemented once, in one place, against `Candidate` — never per level. In order:
+**A database view, not a column.** Implemented once, in one place, against `Candidate` — never
+per level. In order:
 
-1. Discard values with `usage_status = rejected`.
+1. Discard values with a `rejection_reason`.
 2. **Fresh beats stale** — older than the attribute's `max_age` drops below every fresh value.
-3. **Source priority** — the attribute's ordering, falling back to the global default.
+3. **Source priority** — the attribute's override first, then every other source in the global
+   order beneath it (`reqs.md` §6.6).
 4. **Confidence** breaks ties within a priority rank.
 5. Most recently retrieved wins anything remaining.
 
-Steps 1, 2, 4 and 5 depend on the individual value and are evaluated at runtime. Only step 3 is
-declared in config. This is why source priority and confidence are both needed and neither
+```sql
+CREATE VIEW active_value AS
+SELECT DISTINCT ON (candidate, attribute, breakdown_option) *
+FROM   value_with_rank                 -- value joined to attribute and source rank
+WHERE  rejection_reason IS NULL
+ORDER  BY candidate, attribute, breakdown_option,
+          is_fresh DESC, source_rank, confidence_rank, retrieval_date DESC;
+```
+
+Every input is read at query time, so the answer follows a new value, a shortened `max_age` or a
+re-ranked source with nothing to invalidate. This is why source priority and confidence are both needed and neither
 subsumes the other: priority encodes standing domain knowledge (*Numbeo beats national
 statistics for city rent*), confidence grades one particular number.
 
@@ -383,10 +434,14 @@ provides:
     produces: Count
 ```
 
-**Both configs are cross-validated at boot.** Does attribute `country.population` exist? Does its
-declared `value_type` match what the adapter claims to produce? A mismatch is a **startup
-error**, not a corrupted value discovered months later. This is the highest-value property of
-the whole design and it costs almost nothing.
+**The adapter declaration is validated at boot against the catalog.** Does attribute
+`country.population` exist? Does its `value_type` match what the adapter claims to produce? A
+mismatch is a **startup error**, not a corrupted value discovered months later.
+
+Since the catalog is a table (§1.2), the first half of that check is a foreign key the database
+already enforces — an adapter registration naming an attribute that does not exist cannot be
+stored. Only the type agreement needs code, and §3.3b makes even that a constraint once a value
+is written.
 
 An attribute gets its value by one of two bindings:
 

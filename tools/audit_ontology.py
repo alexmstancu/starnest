@@ -103,8 +103,10 @@ def main() -> int:
     print("\n=== the complete model is internally consistent ===")
     audit.check("every relation endpoint is declared",
                 {e for a, _, c, _ in relations for e in (a, c)} - set(entities))
-    audit.check("no entity is declared but unrelated",
-                set(entities) - {e for a, _, c, _ in relations for e in (a, c)})
+    # Singletons hold application-wide configuration and legitimately reference nothing.
+    SINGLETONS = {"SETTINGS"}
+    audit.check("no entity is declared but unrelated, except documented singletons",
+                set(entities) - {e for a, _, c, _ in relations for e in (a, c)} - SINGLETONS)
 
     undirected = pairs | {(c, a) for a, c in pairs}
     unbacked, fk_pairs = [], set()

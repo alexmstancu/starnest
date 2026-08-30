@@ -330,7 +330,7 @@ erDiagram
         date reference_period_end
         date retrieval_date
         text confidence_level
-        text usage_status
+        text rejection_reason
         text quote
     }
     VALUE_CITATION {
@@ -363,6 +363,9 @@ erDiagram
         text data_source FK
         text match_result
         text reason
+        date reference_period_start
+        date reference_period_end
+        date retrieval_date
         text override_reason
         date override_date
     }
@@ -468,11 +471,29 @@ erDiagram
         bool parent_not_matching
         int rank
     }
+    EVALUATION_CRITERION {
+        bigint evaluation FK
+        text attribute FK
+        text pillar FK
+        bool is_scored
+        numeric weight
+        numeric pillar_weight
+        text goal
+        text normalisation_method
+        bool blocks_if_missing
+    }
     NON_MATCH_REASON {
         bigint candidate_result FK
         bigint criterion FK
         text match_rule FK
         text reason_detail
+    }
+    SETTINGS {
+        int id PK
+        numeric min_coverage
+        int score_scale_max
+        int comparator_limit
+        numeric run_spend_cap_eur
     }
 
     LEVEL ||--o{ CANDIDATE : classifies
@@ -521,6 +542,9 @@ erDiagram
     CRITERIA_SET ||--o{ CRITERIA_SET_MATCH_RULE : enforces
     MATCH_RULE ||--o{ CRITERIA_SET_MATCH_RULE : "enforced in"
     CRITERIA_SET ||--o{ EVALUATION : "run as"
+    EVALUATION ||--o{ EVALUATION_CRITERION : "froze"
+    ATTRIBUTE ||--o{ EVALUATION_CRITERION : "weighted in"
+    PILLAR ||--o{ EVALUATION_CRITERION : "grouped in"
     EVALUATION ||--o{ CANDIDATE_RESULT : yields
     CANDIDATE ||--o{ CANDIDATE_RESULT : "scored in"
     CANDIDATE_RESULT ||--o{ NON_MATCH_REASON : explained
@@ -634,6 +658,9 @@ erDiagram
 | Relation | What it does | Why it exists |
 |---|---|---|
 | `CRITERIA_SET \|\|--o{ EVALUATION` | An evaluation applies one set | |
+| `EVALUATION \|\|--o{ EVALUATION_CRITERION` | A frozen copy of the criteria the evaluation used | A criteria set stays editable; an evaluation must not change under you. The snapshot also records **which attributes were in scope**, so a coverage figure from March still means what it meant in March after the catalog grows |
+| `ATTRIBUTE \|\|--o{ EVALUATION_CRITERION` | Which attribute each frozen criterion judged | |
+| `PILLAR \|\|--o{ EVALUATION_CRITERION` | Its pillar and that pillar's weight at the time | Pillar weights are as editable as criterion weights, so both are frozen |
 | `EVALUATION \|\|--o{ CANDIDATE_RESULT` | One row per candidate per evaluation | |
 | `CANDIDATE \|\|--o{ CANDIDATE_RESULT` | The place being scored | Keeping the result here rather than on the candidate is what makes "how do these two sets rank the same countries?" a query instead of a re-run |
 | `CANDIDATE_RESULT \|\|--o{ NON_MATCH_REASON` | Why it did not match | A list, therefore a table. Both mechanisms feed one surface (§5.2) |
@@ -1032,6 +1059,17 @@ candidate depend on whose criteria you used?**
 > The floor in §5.3 is on coverage, not completeness: a candidate can be 90% complete and still
 > fall below the floor if the missing tenth is what you weighted most.
 
+**An evaluation freezes the criteria it used.** A `CriteriaSet` stays editable — that is the
+point of saving one and returning to it — but an evaluation must not change underneath you. Each
+carries an `evaluation_criterion` row per criterion: the attribute, its pillar, whether it was
+scored, its weight, its pillar's weight, its goal and normalisation method.
+
+That snapshot also settles a subtler problem. **Coverage is a share of active weight, so it is
+only meaningful against the catalog it was computed from.** Add six attributes next month and an
+old evaluation's "71% coverage" would silently mean something else. Because the snapshot records
+which criteria were in scope, the figure keeps its meaning, and two evaluations can be compared
+without checking whether the catalog moved between them.
+
 Storing `score` or `match_status` on the Candidate would mean one criteria set's answer silently
 overwriting another's, and would make "compare how these two criteria sets rank the same countries"
 impossible to express. An evaluation is cheap — it is pure arithmetic over stored values (§5.6)
@@ -1069,6 +1107,10 @@ using different methods.
 | `methodology_url` | So the reader can see how it was built |
 | `caveats` | Paywalled, discontinued, known quirks |
 
+**Which published figure is current is derived, not stored** — the most recent per candidate and
+provider, on the same principle as the active value (§3.6). Numbeo republishes annually; older
+editions are retained and shown as history rather than deleted or silently replaced.
+
 **Hard rule: an `ExternalScore` must never enter the weighted calculation.** It is a second
 opinion, not an input. Ingesting one would import that provider's weights and normalisation,
 contradicting *nothing hardcoded* and the principle that the criteria are the user's.
@@ -1100,8 +1142,8 @@ overwritten and never discarded.**
 | `breakdown_option` | Which case this figure describes, for a broken-down attribute (§3.3b). Null otherwise |
 | `retrieval_date` | **When the app fetched it** |
 | `confidence_level` | `absolute` \| `high` \| `medium` \| `low` — §5.7. Derived, with a manual override retained alongside |
+| `rejection_reason` | Set when the value failed validation (§3.3a); null otherwise. **The only lifecycle state stored on a value** — see below |
 | `quote` | Supporting text or summary, where applicable |
-| `usage_status` | `active` \| `superseded` \| `rejected` — which value scoring uses, and why the others are kept |
 | citations | Source URLs. Child table `value_citation`, one row per URL — a list, therefore a table |
 | `data_acquisition_run` | The run that produced it (§3.8) |
 
@@ -1152,9 +1194,22 @@ order:
 4. **Confidence** breaks ties within the same priority (§5.7).
 5. Most recently retrieved wins any remaining tie.
 
-Steps 1, 2, 4 and 5 are evaluated at runtime, because they depend on the individual value.
-Step 3 is declared in configuration. **Every value from every source remains stored and
-visible** — this rule only decides which is active.
+**Being active is computed, never stored.** The rule above is evaluated when values are read,
+so a new value arriving, or a change to `max_age` or to source priority, changes the answer
+immediately and everywhere. There is no status column to keep in step.
+
+> **Why this matters more than it looks.** An earlier draft stored `usage_status` as
+> `active | superseded | rejected`. That is a cached decision, and it had no stated owner: nobody
+> was responsible for recomputing it when a fresher value arrived or when `max_age` was
+> shortened. A stale `active` flag does not fail loudly — it silently scores the wrong number
+> with correct-looking provenance. Deriving it removes the entire failure class.
+
+**Rejection is different and is stored**, in `rejection_reason`, because a validation failure is
+a *fact about that value* rather than a comparison with others (§3.3a). A rejected value never
+becomes active and never counts toward coverage; it stays visible with its reason.
+
+**Every value from every source remains stored and visible** — this rule only decides which is
+read.
 
 > **Source priority and confidence answer different questions and neither replaces the other.**
 > Priority is a standing editorial judgement about *which source to believe for this
@@ -1184,7 +1239,14 @@ eligibility but are not measurements of the place.
 | `match_result` | `matching` \| `not_matching` \| `unknown` |
 | `reason` | Why, in words |
 | `data_source` | Where the judgement came from — usually `manual` or `llm` (§6.10) |
+| `reference_period_start`, `reference_period_end` | What period the judgement holds for. A Swiss quota is annual; a visa route holds until the rules change |
+| `retrieval_date` | When it was last checked |
 | `override_reason`, `override_date` | Set when the result is overridden |
+
+> **A gate ages like any other finding.** §10's two-date rule has no exceptions: a UK Skilled
+> Worker verdict researched in 2026 and still displayed in 2028 is worse than no verdict, because
+> it looks current. The reference period lets the interface mark an expired judgement and prompt
+> a re-check, and it is why an annual quota can be stated as the annual fact it is.
 
 **Whether a rule is enforced is not stored here.** That belongs to a criteria set
 (`criteria_set_match_rule`, §3.4): the existence of a visa route is a fact, but treating its
@@ -1255,6 +1317,23 @@ places**, and a change to it must reach all three at once:
 > different citizenship should need no code change.
 
 §1.4 introduces these from the user's point of view; this is the entity behind them.
+
+### 3.10 Settings
+
+Application-wide values that are neither about a place nor about the household. A single row,
+like `Household`, and edited in the Settings tab (§8.2).
+
+| Field | Notes |
+|---|---|
+| `min_coverage` | The floor below which a candidate is insufficient-data rather than scored (§5.3). Provisionally 60 |
+| `score_scale_max` | The top of the score range. Provisionally 100 |
+| `comparator_limit` | How many comparators one comparison may hold (§8.5). Provisionally 5 |
+| `run_spend_cap_eur` | The ceiling on what one acquisition run may cost (§6.3) |
+
+> **These are typed columns rather than a key/value table.** A `setting_key`/`setting_value`
+> pair would make every one of them text, so nothing could check that `min_coverage` is a
+> percentage or that `comparator_limit` is a positive integer — the same objection as JSON
+> columns (§3.0). Adding a setting is a one-column migration, and settings are added rarely.
 
 ---
 
@@ -1534,6 +1613,15 @@ only.
 **Any attribute may override it** — a national tax authority should outrank Eurostat on
 effective income tax, while Numbeo should outrank both on city rent, which no official source
 publishes at that granularity.
+
+**An override is partial, and resolves this way:** the sources it names take the order it gives
+them, and **every other source keeps its global order beneath them**. So an override for
+`city.rent_centre` of `[numbeo, national_statistics]` yields
+`numbeo > national_statistics > eurostat > llm > manual`.
+
+> This keeps an override a short statement about the sources you actually have an opinion on,
+> and means connecting a new adapter never requires revisiting existing overrides — the new
+> source simply enters at its global rank, below anything explicitly promoted.
 
 > **Manual ranks last deliberately.** A typed value is a placeholder for a source that does not
 > exist yet; the moment one does, it should win automatically, and the manual figure should
@@ -2427,4 +2515,11 @@ Recorded from a front-to-back read of this document.
 | Q140 | **`value_type` is stored on the value and is part of its key** | `(attribute, value_type)` becomes a composite foreign key into the catalog, and each typed payload table pins its own type. The database then refuses a payload whose shape contradicts the attribute's declared type. Without it, a rent stored as a bare count loses its currency, skips EUR conversion, and produces a wrong ranking with complete-looking provenance |
 | Q141 | Attribute names are data; the **schema itself is fixed** | Configurable column names would forfeit exactly what JSON forfeits — a database cannot check what it cannot name — in exchange for discounting a rename that happens twice in a project's life. Display labels stay configurable, as the application name is |
 | Q142 | **Derived attributes deferred to post-MVP** | `two_role_feasibility` and `country.natural_diversity` both want one. When built, a derivation is an adapter that reads other attributes rather than a formula in config, so a derived value keeps provenance, confidence and a reference period like any other |
+| Q143 | **The active value is derived, never stored.** Only `rejection_reason` persists | Being active is a comparison between values — it changes when a fresher one arrives or `max_age` moves. A stored flag is a cache with no owner, and a stale `active` does not fail loudly; it scores the wrong number with correct-looking provenance. Rejection is a fact about one value, so it is stored |
+| Q144 | `MatchRuleResult` carries both dates, like any value | §10 has no exceptions. A visa verdict researched in 2026 and shown in 2028 is worse than none, because it looks current. The reference period also lets an annual quota be stated as the annual fact it is |
+| Q145 | **An evaluation freezes the criteria it used** | A criteria set stays editable, which is the point of saving one; an evaluation must not change underneath you. The snapshot also records which attributes were in scope, so a coverage figure keeps its meaning after the catalog grows |
+| Q146 | Application settings live in a **single-row `Settings` table** | Typed columns the database can check. A key/value table would make `min_coverage` and `comparator_limit` both text, which is the JSON objection in row form |
+| Q147 | **A source-priority override is partial**: listed sources first, then the rest in global order | Keeps an override a short statement about the sources you have an opinion on, and means connecting a new adapter never requires revisiting existing overrides |
+| Q148 | Three integrity constraints added: one-of on `NonMatchReason`, singleton checks on `Household` and `Settings`, derived supersession for `ExternalScore` | Each closes a way for the database to hold a state no code expects |
+| Q149 | **The catalog is data in the database, not config files** | A file and a table holding the same rows are two stores that drift, with no link between them and no way for either to win in every code path. One store gives referential integrity for free, puts catalog changes under the same audit as every other table, and makes them transactional. Git remains the history, through migration scripts |
 
