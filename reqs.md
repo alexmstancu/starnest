@@ -163,7 +163,7 @@ Keeping these apart is what makes everything else in this document work:
   timezone. **Objective.** The same for everyone who asks.
 - **A `Value`** is what that attribute actually *is*: for one candidate, from one source, on one
   date. Lisbon's two-bedroom rent, per Numbeo, in July 2026.
-- **A `Criterion`** is a rule *you* impose — *this attribute*, in *this direction*, against
+- **A `Criterion`** is a rule *you* impose — *this attribute*, toward *this goal*, against
   *this limit*, worth *this much*. **Subjective.** Yours, and legitimately different from
   another person's.
 
@@ -181,132 +181,398 @@ is displayed and never scored. Attach a criterion to it and city size becomes sc
 new fetch, no new table, and no migration. There is no separate facts entity, and there never
 needed to be one.
 
+#### How to read the diagram
+
+Every line is a foreign key. The symbol at each end says how many rows may sit on that side:
+
+| Symbol | At that end there is | Read as |
+|---|---|---|
+| `||` | exactly one | mandatory, single |
+| `o|` | zero or one | optional, single |
+| `}o` | zero or more | optional, many |
+| `}|` | one or more | mandatory, many |
+
+So `LEVEL ||--o{ CANDIDATE` reads: **one** level classifies **zero or more** candidates, and
+every candidate belongs to **exactly one** level.
+
+**Two naming rules hold throughout**, and they are what make the diagram readable without a key:
+
+- **A foreign key is named after the table it points at.** `VALUE.data_source`, not
+  `VALUE.source`. Where a table points at itself, the role is prefixed:
+  `CANDIDATE.parent_candidate`.
+- **There are no JSON columns.** Anything that would be an object or a list is its own table —
+  thresholds, scale anchors, source-priority overrides, citizenships, allowed labels. The point
+  of a schema is that the database can check it; a JSON blob moves the checking back into
+  application code and hides it from every query.
+
+Composite natural keys (a criterion is one attribute within one criteria set) are enforced as
+`UNIQUE` constraints over a surrogate `id`, per `arch.md` §3.2. Typed child tables for `VALUE`
+and for attribute type parameters follow the pattern in `arch.md` §3.3 and are omitted here to
+keep the shape legible.
+
 ```mermaid
 erDiagram
-    HOUSEHOLD {
-        money net_income
-        int   size
-        money target_monthly_spend
-        money max_rent
-        id    home_country
-        id    home_city
-        list  citizenship
-    }
     LEVEL {
-        id   id PK
-        int  ordinal
+        text id PK
+        int ordinal
+    }
+    VALUE_TYPE {
+        text id PK
     }
     CANDIDATE {
-        id   id PK
-        id   level FK
-        id   parent FK
-        bool parent_not_matching
+        text id PK
+        text level FK
+        text parent_candidate FK
     }
     PILLAR {
-        id id PK
-        id level FK
+        text id PK
+        text level FK
     }
     ATTRIBUTE {
-        id   id PK
-        id   pillar FK
-        enum value_type
-        json type_params
-        dur  max_age
-        list variants
-        list source_priority_override
+        text id PK
+        text pillar FK
+        text level FK
+        text value_type FK
+        text variant_vocabulary FK
+        interval max_age
+        bool manual_entry
+    }
+    ATTRIBUTE_ALLOWED_RANGE {
+        text attribute FK
+        numeric min_value
+        numeric max_value
+    }
+    ATTRIBUTE_ALLOWED_LABEL {
+        text attribute FK
+        text label
+    }
+    ATTRIBUTE_SOURCE_PRIORITY {
+        text attribute FK
+        text data_source FK
+        int rank
+    }
+    VARIANT_VOCABULARY {
+        text id PK
+    }
+    VARIANT_KEY {
+        text id PK
+        text variant_vocabulary FK
+    }
+    DATA_SOURCE {
+        text id PK
+        text kind
+        int default_priority
+        text reliability_tier
     }
     VALUE {
-        id    candidate FK
-        id    attribute FK
-        id    source FK
-        range reference_period
-        date  retrieval_date
-        enum  confidence
-        enum  status
-        id    run FK
+        bigint id PK
+        text candidate FK
+        text attribute FK
+        text data_source FK
+        text variant_key FK
+        bigint acquisition_run FK
+        date reference_period_start
+        date reference_period_end
+        date retrieval_date
+        text confidence
+        text status
     }
-    CRITERIASET {
-        id     id PK
-        string name
+    ACQUISITION_RUN {
+        bigint id PK
+        timestamp started_at
+        timestamp finished_at
+        text triggered_by
+        text status
+        int llm_call_count
+        numeric cost_eur
     }
-    CRITERION {
-        id   criteria_set FK
-        id   attribute FK
-        bool included
-        pct  weight
-        enum direction
-        json matching_threshold
-        enum scale
-        json scale_params
-        bool required
-        json reducer
+    ACQUISITION_FAILURE {
+        bigint acquisition_run FK
+        text candidate FK
+        text attribute FK
+        text error
     }
-    EVALUATION {
-        id   id PK
-        id   criteria_set FK
-        id   level FK
-        date computed_at
+    MATCH_RULE {
+        text id PK
+        text level FK
     }
-    CANDIDATE_RESULT {
-        id   evaluation FK
-        id   candidate FK
-        int  score
-        pct  coverage
-        enum match_status
-        list reasons
-    }
-    MATCHRULE {
-        id id PK
-        id level FK
-    }
-    MATCHRULE_RESULT {
-        id   rule FK
-        id   candidate FK
-        enum result
+    MATCH_RULE_RESULT {
+        text match_rule FK
+        text candidate FK
+        text data_source FK
+        text result
         text reason
         text override_reason
+        date override_date
     }
-    DATASOURCE {
-        id   id PK
-        enum kind
-        int  default_priority
-        enum reliability_tier
+    EXTERNAL_SCORE {
+        bigint id PK
+        text candidate FK
+        text data_source FK
+        numeric value
+        text scale
+        int rank
+        date reference_period_start
+        date retrieval_date
+        text methodology_url
     }
-    RUN {
-        id    id PK
-        int   call_count
-        money cost
+    HOUSEHOLD {
+        int id PK
+        text home_country_candidate FK
+        text home_city_candidate FK
+        numeric net_income
+        int number_adults
+        int number_children
+        numeric target_monthly_spend
+        numeric max_rent
     }
-    EXTERNALSCORE {
-        id     candidate FK
-        string provider
-        string value
+    HOUSEHOLD_CITIZENSHIP {
+        int household FK
+        text candidate FK
+    }
+    CRITERIA_SET {
+        text id PK
+        text name
+    }
+    PILLAR_WEIGHT {
+        text criteria_set FK
+        text pillar FK
+        numeric weight
+        bool locked
+    }
+    CRITERION {
+        bigint id PK
+        text criteria_set FK
+        text attribute FK
+        text variant_key FK
+        bool is_scored
+        numeric weight
+        bool locked
+        text goal
+        numeric ideal_min
+        numeric ideal_max
+        numeric falloff
+        text scale
+        text reducer_mode
+        bool blocks_if_missing
+    }
+    CRITERION_SCALE_ANCHOR {
+        bigint criterion FK
+        numeric input_value
+        int score
+    }
+    CRITERION_THRESHOLD_RANGE {
+        bigint criterion FK
+        numeric min_value
+        numeric max_value
+    }
+    CRITERION_THRESHOLD_LABEL {
+        bigint criterion FK
+        text label
+        text mode
+    }
+    CRITERION_THRESHOLD_BOOLEAN {
+        bigint criterion FK
+        bool required_value
+    }
+    CRITERION_THRESHOLD_SHARE {
+        bigint criterion FK
+        text label
+        numeric min_share
+        numeric max_share
+    }
+    CRITERIA_SET_MATCH_RULE {
+        text criteria_set FK
+        text match_rule FK
+        bool is_enforced
+    }
+    EVALUATION {
+        bigint id PK
+        text criteria_set FK
+        text level FK
+        timestamp computed_at
+    }
+    CANDIDATE_RESULT {
+        bigint id PK
+        bigint evaluation FK
+        text candidate FK
+        int score
+        numeric coverage
+        text match_status
+        bool parent_not_matching
+        int rank
+    }
+    NON_MATCH_REASON {
+        bigint candidate_result FK
+        bigint criterion FK
+        text match_rule FK
+        text detail
     }
 
-    LEVEL       ||--o{ CANDIDATE : classifies
-    LEVEL       ||--o{ PILLAR : scopes
-    CANDIDATE   ||--o{ CANDIDATE : "parent of"
-    PILLAR      ||--o{ ATTRIBUTE : groups
-    ATTRIBUTE   ||--o{ VALUE : "realised as"
-    CANDIDATE   ||--o{ VALUE : "measured by"
-    DATASOURCE  ||--o{ VALUE : produces
-    RUN         ||--o{ VALUE : produced
-    CRITERIASET ||--o{ CRITERION : contains
-    ATTRIBUTE   ||--o{ CRITERION : "judged by"
-    HOUSEHOLD   ||--o{ CRITERION : "supplies defaults to"
-    CRITERIASET ||--o{ EVALUATION : "run as"
-    EVALUATION  ||--o{ CANDIDATE_RESULT : yields
-    CANDIDATE   ||--o{ CANDIDATE_RESULT : "scored in"
-    MATCHRULE   ||--o{ MATCHRULE_RESULT : "evaluated as"
-    CANDIDATE   ||--o{ MATCHRULE_RESULT : "gated by"
-    CANDIDATE   ||--o{ EXTERNALSCORE : "rated by"
+    LEVEL ||--o{ CANDIDATE : classifies
+    LEVEL ||--o{ PILLAR : scopes
+    LEVEL ||--o{ ATTRIBUTE : scopes
+    LEVEL ||--o{ MATCH_RULE : scopes
+    LEVEL ||--o{ EVALUATION : "is evaluated at"
+    CANDIDATE ||--o{ CANDIDATE : "parent of"
+    PILLAR ||--o{ ATTRIBUTE : groups
+    VALUE_TYPE ||--o{ ATTRIBUTE : types
+    VARIANT_VOCABULARY ||--o{ VARIANT_KEY : enumerates
+    VARIANT_VOCABULARY ||--o{ ATTRIBUTE : "supplies variants to"
+    ATTRIBUTE ||--o| ATTRIBUTE_ALLOWED_RANGE : validates
+    ATTRIBUTE ||--o{ ATTRIBUTE_ALLOWED_LABEL : validates
+    ATTRIBUTE ||--o{ ATTRIBUTE_SOURCE_PRIORITY : overrides
+    DATA_SOURCE ||--o{ ATTRIBUTE_SOURCE_PRIORITY : "is ranked in"
+    ATTRIBUTE ||--o{ VALUE : "realised as"
+    CANDIDATE ||--o{ VALUE : "measured by"
+    DATA_SOURCE ||--o{ VALUE : produces
+    VARIANT_KEY ||--o{ VALUE : "distinguishes"
+    ACQUISITION_RUN ||--o{ VALUE : produced
+    ACQUISITION_RUN ||--o{ ACQUISITION_FAILURE : recorded
+    CANDIDATE ||--o{ ACQUISITION_FAILURE : "failed for"
+    ATTRIBUTE ||--o{ ACQUISITION_FAILURE : "failed on"
+    MATCH_RULE ||--o{ MATCH_RULE_RESULT : "evaluated as"
+    CANDIDATE ||--o{ MATCH_RULE_RESULT : "gated by"
+    DATA_SOURCE ||--o{ MATCH_RULE_RESULT : evidences
+    CANDIDATE ||--o{ EXTERNAL_SCORE : "rated by"
+    DATA_SOURCE ||--o{ EXTERNAL_SCORE : publishes
+    HOUSEHOLD }o--|| CANDIDATE : "lives in"
+    HOUSEHOLD ||--o{ HOUSEHOLD_CITIZENSHIP : holds
+    CANDIDATE ||--o{ HOUSEHOLD_CITIZENSHIP : "granted by"
+    CRITERIA_SET ||--o{ PILLAR_WEIGHT : assigns
+    PILLAR ||--o{ PILLAR_WEIGHT : "weighted by"
+    CRITERIA_SET ||--o{ CRITERION : contains
+    ATTRIBUTE ||--o{ CRITERION : "judged by"
+    VARIANT_KEY ||--o{ CRITERION : "selected by"
+    CRITERION ||--o{ CRITERION_SCALE_ANCHOR : "scaled by"
+    CRITERION ||--o| CRITERION_THRESHOLD_RANGE : "bounded by"
+    CRITERION ||--o{ CRITERION_THRESHOLD_LABEL : "bounded by"
+    CRITERION ||--o| CRITERION_THRESHOLD_BOOLEAN : "bounded by"
+    CRITERION ||--o{ CRITERION_THRESHOLD_SHARE : "bounded by"
+    CRITERIA_SET ||--o{ CRITERIA_SET_MATCH_RULE : enforces
+    MATCH_RULE ||--o{ CRITERIA_SET_MATCH_RULE : "enforced in"
+    CRITERIA_SET ||--o{ EVALUATION : "run as"
+    EVALUATION ||--o{ CANDIDATE_RESULT : yields
+    CANDIDATE ||--o{ CANDIDATE_RESULT : "scored in"
+    CANDIDATE_RESULT ||--o{ NON_MATCH_REASON : explained
+    CRITERION ||--o{ NON_MATCH_REASON : "reason from"
+    MATCH_RULE ||--o{ NON_MATCH_REASON : "reason from"
 ```
 
-> **How to read the diagram.** The left column is the world as it is — levels, candidates,
-> pillars, attributes, values, sources, runs. The right is what you make of it — criteria sets,
-> criteria, evaluations, results. **Nothing on the right is ever written back into the left.**
-> That single line is what §5.6 means by keeping acquisition and scoring separate, and it is
-> visible here as the absence of an arrow.
+> **The one structural rule the diagram exists to show.** Read it top to bottom: everything
+> above `HOUSEHOLD` is the world as it is, everything from `HOUSEHOLD` down is what you make of
+> it. **No arrow runs upward.** No value knows which criteria set is active; no candidate stores
+> a score. That absence is what §5.6 means by keeping acquisition and scoring separate, and it
+> is why switching from `alex` to `partner` can never trigger a fetch.
+
+#### Every relation, and why it exists
+
+**Levels and places**
+
+| Relation | What it does | Why it exists |
+|---|---|---|
+| `LEVEL ||--o{ CANDIDATE` | Every candidate is a country or a city | Levels are rows, not an enum, so a third one is a config change (§3.1) |
+| `LEVEL ||--o{ PILLAR` | Pillars are declared per level | Weights sum to 100% *within* a level, so the two sets must be separable |
+| `LEVEL ||--o{ ATTRIBUTE` | Attributes are declared per level | `country.safety` and `city.safety` are different questions with different sources |
+| `LEVEL ||--o{ MATCH_RULE` | Gates are declared per level | A visa is national; `two_role_feasibility` is local |
+| `LEVEL ||--o{ EVALUATION` | An evaluation runs at one level | Comparisons never mix levels (§8.5); this enforces it in the schema |
+| `CANDIDATE ||--o{ CANDIDATE` | A city points at its country | Gives the parent chain that `parent_not_matching` and the context column depend on |
+
+**The attribute catalog**
+
+| Relation | What it does | Why it exists |
+|---|---|---|
+| `PILLAR ||--o{ ATTRIBUTE` | Each attribute sits in one vertical | Weights normalise within a pillar; the pillar is where that grouping lives |
+| `VALUE_TYPE ||--o{ ATTRIBUTE` | Declares the semantic type | Determines the legal scales, the threshold shape, and what a value stores (§3.3a) |
+| `VARIANT_VOCABULARY ||--o{ VARIANT_KEY` | Enumerates `one_bedroom`, `two_bedroom`, … | A controlled vocabulary, so a typo cannot invent a variant |
+| `VARIANT_VOCABULARY ||--o{ ATTRIBUTE` | Marks an attribute as multi-valued | Optional: most attributes point at nothing and hold one value |
+| `ATTRIBUTE ||--o| ATTRIBUTE_ALLOWED_RANGE` | Per-attribute numeric validation | Rent declares `> 0`; temperature allows negatives. At most one row per attribute |
+| `ATTRIBUTE ||--o{ ATTRIBUTE_ALLOWED_LABEL` | Per-attribute vocabulary validation | A `LabelSet` may only carry labels declared here |
+| `ATTRIBUTE ||--o{ ATTRIBUTE_SOURCE_PRIORITY` | Overrides the global source order | Numbeo outranks Eurostat on rent; the reverse holds elsewhere (§6.6) |
+| `DATA_SOURCE ||--o{ ATTRIBUTE_SOURCE_PRIORITY` | The other half of that override | The junction is a table, not a JSON list, so "which attributes prefer this source?" is a query |
+
+**Measurements**
+
+| Relation | What it does | Why it exists |
+|---|---|---|
+| `ATTRIBUTE ||--o{ VALUE` | A value measures one attribute | The value's type, unit and validation all come from here |
+| `CANDIDATE ||--o{ VALUE` | A value is about one place | |
+| `DATA_SOURCE ||--o{ VALUE` | Records who said it | Provenance is mandatory (§10), and priority needs the source to choose an active value |
+| `VARIANT_KEY ||--o{ VALUE` | Which variant this figure is | Null for ordinary attributes. This is what lets all three rents be stored at once, so changing household size needs no re-fetch (§3.3b) |
+| `ACQUISITION_RUN ||--o{ VALUE` | Which run produced it | Makes selective retry and "what changed since last run" possible |
+
+> **Together these four foreign keys are the natural key of a value**: candidate, attribute,
+> data source, variant, plus the reference period. The same figure from a second source is a
+> second row, never an overwrite (§3.6).
+
+**Acquisition**
+
+| Relation | What it does | Why it exists |
+|---|---|---|
+| `ACQUISITION_RUN ||--o{ ACQUISITION_FAILURE` | Failures attach to their run | A run continues past failures (§6.4); they must be recorded, not raised |
+| `CANDIDATE ||--o{ ACQUISITION_FAILURE` | Which place failed | |
+| `ATTRIBUTE ||--o{ ACQUISITION_FAILURE` | Which attribute failed | Together with the candidate, this is exactly the retry unit — retry what failed, nothing else |
+
+**Gates**
+
+| Relation | What it does | Why it exists |
+|---|---|---|
+| `MATCH_RULE ||--o{ MATCH_RULE_RESULT` | One rule, many candidates | |
+| `CANDIDATE ||--o{ MATCH_RULE_RESULT` | One candidate, many rules | The result is a **fact about the world** — whether a visa route exists — so it lives on the objective side, like a value |
+| `DATA_SOURCE ||--o{ MATCH_RULE_RESULT` | Where the judgement came from | Usually `manual` or `llm`; a gate needs provenance as much as a number does |
+| `CRITERIA_SET ||--o{ CRITERIA_SET_MATCH_RULE` | A criteria set chooses which gates it enforces | **This is the relation that was missing.** Whether a UK visa route exists is objective; whether you treat its absence as disqualifying is yours. A `remote-only` set may not enforce `two_role_feasibility` at all |
+| `MATCH_RULE ||--o{ CRITERIA_SET_MATCH_RULE` | The other half | Gives match rules the same objective/subjective split attributes already have: `ATTRIBUTE : CRITERION` is exactly `MATCH_RULE : CRITERIA_SET_MATCH_RULE` |
+
+**Outside opinions**
+
+| Relation | What it does | Why it exists |
+|---|---|---|
+| `CANDIDATE ||--o{ EXTERNAL_SCORE` | Published scores about a place | |
+| `DATA_SOURCE ||--o{ EXTERNAL_SCORE` | Who published it | Providers *are* sources — Numbeo supplies both values and a composite. One table for both means one reliability tier and one place to record a paywall or a discontinuation |
+
+**The household**
+
+| Relation | What it does | Why it exists |
+|---|---|---|
+| `HOUSEHOLD }o--|| CANDIDATE` | `home_country_candidate` and `home_city_candidate` | The home country is **also a candidate** (§1.2) — scored like any other, so "stay put" stays measurable. It is a foreign key, not a text field, which is what makes the Δ-vs-home column a join |
+| `HOUSEHOLD ||--o{ HOUSEHOLD_CITIZENSHIP` | Which citizenships you hold | A list, therefore a table |
+| `CANDIDATE ||--o{ HOUSEHOLD_CITIZENSHIP` | Citizenship of a country | Lets `eu_free_movement` be evaluated by a join rather than by parsing a string |
+
+> **The household has no link to criteria, and that is deliberate.** An earlier draft drew one,
+> labelled "supplies defaults to". It was wrong: no foreign key exists. The household is a
+> single row the engine *reads* when choosing a default variant or raising a rent warning. A
+> relation would have implied a stored dependency that does not exist and would have to be
+> maintained.
+
+**Criteria sets**
+
+| Relation | What it does | Why it exists |
+|---|---|---|
+| `CRITERIA_SET ||--o{ PILLAR_WEIGHT` | Pillar weights belong to a set, not to the pillar | `alex` and `partner` weight `career` differently over the same eleven pillars |
+| `PILLAR ||--o{ PILLAR_WEIGHT` | The other half | |
+| `CRITERIA_SET ||--o{ CRITERION` | A set is its criteria | |
+| `ATTRIBUTE ||--o{ CRITERION` | A criterion judges exactly one attribute | The central relation of the model. Many criteria may judge one attribute — one per set — and an attribute with **no** criterion is descriptive and never scored (§3.3) |
+| `VARIANT_KEY ||--o{ CRITERION` | Which variant this criterion scores | A *preference*: two bedrooms today, three tomorrow, recalculated with no re-fetch |
+| `CRITERION ||--o{ CRITERION_SCALE_ANCHOR` | The `fixed` scale's anchor points | Was `scale_params` JSON. As rows, "500 EUR → 100, 2500 EUR → 0" is inspectable and checkable |
+| `CRITERION ||--o| CRITERION_THRESHOLD_RANGE` | Numeric matching threshold | Was `matching_threshold` JSON. Four typed children replace it, mirroring how `VALUE` is typed |
+| `CRITERION ||--o{ CRITERION_THRESHOLD_LABEL` | Must-contain / must-not-contain | Many rows, one per label |
+| `CRITERION ||--o| CRITERION_THRESHOLD_BOOLEAN` | Must equal | |
+| `CRITERION ||--o{ CRITERION_THRESHOLD_SHARE` | Min or max share of a named label | For `ShareComposition` |
+
+> **Exactly one threshold child may exist for a criterion, and which one is decided by the
+> attribute's value type.** That is a constraint the database can check, and it is precisely
+> what a JSON column would have hidden.
+
+**Evaluation and results**
+
+| Relation | What it does | Why it exists |
+|---|---|---|
+| `CRITERIA_SET ||--o{ EVALUATION` | An evaluation applies one set | |
+| `EVALUATION ||--o{ CANDIDATE_RESULT` | One row per candidate per evaluation | |
+| `CANDIDATE ||--o{ CANDIDATE_RESULT` | The place being scored | Keeping the result here rather than on the candidate is what makes "how do these two sets rank the same countries?" a query instead of a re-run |
+| `CANDIDATE_RESULT ||--o{ NON_MATCH_REASON` | Why it did not match | A list, therefore a table. Both mechanisms feed one surface (§5.2) |
+| `CRITERION ||--o{ NON_MATCH_REASON` | A threshold was crossed | Exactly one of the two is set on each row |
+| `MATCH_RULE ||--o{ NON_MATCH_REASON` | A gate failed | |
 
 ### 3.1 Candidate
 
@@ -316,16 +582,21 @@ A place under evaluation.
 |---|---|
 | `id` | `<level>.<name>` — `country.portugal`, `city.portugal.lisbon`. Globally unique and **immutable** |
 | `level` | A reference to a `Level` record — **not a hardcoded pair**, see below |
-| `parent` | The containing candidate. Null at the top level |
-| `parent_not_matching` | True when this candidate is evaluated although its parent does not match (§5.4) |
+| `parent_candidate` | The containing candidate. Null at the top level |
 
 "City" means any locality regardless of size — a village of 4,000 is as valid a Candidate as a
 capital.
 
 **Everything else a candidate carries lives elsewhere, deliberately.** What is known about it
-is a set of `Value` rows against attributes (§3.3). What it *scores*, and whether it matches,
-belongs to an `Evaluation` (§3.4a) — because both depend on which criteria set was used, and
-storing them on the Candidate would mean one criteria set's answer silently overwriting another's.
+is a set of `Value` rows against attributes (§3.3). What it *scores*, whether it matches, and
+whether its parent matched all belong to an `Evaluation` (§3.4a) — every one of them depends on
+which criteria set was used, and storing them here would mean one set's answer silently
+overwriting another's.
+
+> **`parent_not_matching` is not a property of the place either**, though an earlier draft put
+> it here. Whether Portugal matches depends on the criteria set; under `alex` it may match and
+> under `partner` it may not, so the same city would need two different values of the flag at
+> once. It belongs to the result, not the candidate.
 
 **Levels are ordered records, not an enum.** The application ships with two — `country`
 (ordinal 1) and `city` (ordinal 2) — and v1 uses only the first. The requirement is **not** that
@@ -526,7 +797,7 @@ each declares `> 0` for itself. Likewise `country.avg_annual_temperature` declar
 
 - the value is **stored and marked rejected**, with the reason — never silently dropped;
 - it does **not** become the active value and does **not** count toward coverage (§5.3);
-- the `Run` records it as a failure for that candidate and attribute, so selective retry
+- the `AcquisitionRun` records it as a failure for that candidate and attribute, so selective retry
   (§6.4) can pick it up;
 - if a lower-priority source holds a valid value, that one becomes active instead.
 
@@ -580,15 +851,35 @@ and it is the only place a preference may live.
 | Field | Notes |
 |---|---|
 | `attribute` | The attribute this rule judges. Exactly one |
-| `included` | Whether this criterion counts toward the score at all |
+| `is_scored` | Whether this criterion counts toward the score at all |
 | `weight` | Sub-weight within its attribute's pillar |
-| `direction` | `lower_is_better` \| `higher_is_better` \| `ideal_range` — **personal**, see below |
-| `ideal` | For `ideal_range`: the target range and falloff. One person's ideal temperature is not another's |
+| `locked` | Pins the weight against proportional rebalancing |
+| `goal` | `minimise` \| `maximise` \| `target_range` — **personal**, see below |
+| `ideal_min`, `ideal_max`, `falloff` | For `target_range`: the band and how sharply score decays outside it. One person's ideal temperature is not another's |
 | `scale` | `fixed` (default) \| `percentile` \| `as_is` |
-| `scale_params` | For `fixed`: the anchor values, e.g. 500 EUR → 100, 2500 EUR → 0. **What counts as expensive is an opinion** — a larger budget draws the line elsewhere |
-| `matching_threshold` | The line past which the candidate does not match. Semantics depend on the attribute's value type — §5.2 |
-| `required` | If true, a missing value makes the candidate unscoreable — §5.3 |
-| `reducer` | For multi-value attributes (§3.3b): which variant to use, or how to aggregate. Defaults from the household parameters; override it to simulate |
+| `reducer_mode`, `variant_key` | For multi-value attributes (§3.3b): `select` one variant — named in `variant_key` — or `aggregate` across all of them. Defaults from the household; override it to simulate |
+| `blocks_if_missing` | If true, a missing value makes the candidate unscoreable — §5.3 |
+
+**The scale anchors and the matching threshold are child rows, not columns**, because both vary
+in shape:
+
+| Table | Holds | For |
+|---|---|---|
+| `criterion_scale_anchor` | An input value and the score it maps to | The `fixed` scale — "500 EUR → 100, 2500 EUR → 0" |
+| `criterion_threshold_range` | `min_value`, `max_value` | `Monetary`, `Quantity`, `Count`, `Ratio`, `Index`, `AssignedScore` |
+| `criterion_threshold_label` | A label and `must_contain` / `must_not_contain` | `LabelSet` |
+| `criterion_threshold_boolean` | The required value | `Boolean` |
+| `criterion_threshold_share` | A label with a minimum or maximum share | `ShareComposition` |
+
+**Exactly one threshold kind may apply**, decided by the attribute's value type — a constraint
+the database checks. Both were single JSON columns in an earlier draft; that hid the shape from
+every query and moved validation back into application code.
+
+> **`is_scored` and `blocks_if_missing` answer different questions**, and their earlier names —
+> `included` and `required` — sounded close enough to be confused. `is_scored: false` means *you
+> decided this does not apply*, so its weight is redistributed and **coverage is unaffected**.
+> `blocks_if_missing: true` means *if this is scored but absent, do not produce a total at all*.
+> One is an opinion about relevance, the other is a floor on evidence (§5.3).
 
 **A `CriteriaSet` is a named collection of criteria**, plus the pillar weights for each level.
 It is selectable at any moment, and one primitive serves two purposes:
@@ -622,12 +913,16 @@ explicit: you pin what you have decided and let the rest move.
 > nowhere for a change to be absorbed. The interface must refuse the adjustment and say which
 > locks block it, rather than silently breaking the sum or ignoring the drag.
 
-> **Why direction is a preference, not a fact.** `city.expat_community_size` is the clearest
-> case — a large expat community is a soft landing to one person and a bubble to avoid to
-> another. `country.avg_annual_temperature` is another: the ideal range is whatever *you* find
-> pleasant. `city.heritage_and_culture_density` a third — museums and festivals to one reader,
-> tourist crowds to another. Fixing direction on the attribute would silently encode one
-> person's taste as objective truth.
+> **Why `goal` is a preference, not a fact.** `city.expat_community_size` is the clearest case —
+> a large expat community is a soft landing to one person and a bubble to avoid to another.
+> `country.avg_annual_temperature` is another: the ideal range is whatever *you* find pleasant.
+> `city.heritage_and_culture_density` a third — museums and festivals to one reader, tourist
+> crowds to another. Fixing this on the attribute would silently encode one person's taste as
+> objective truth.
+>
+> The field was called `direction` while its values were `lower_is_better` and
+> `higher_is_better`. That name never covered the third case: a target range is not a direction.
+> `goal` — minimise, maximise, or hit a range — covers all three without straining.
 
 Switching criteria sets **recalculates from stored data with no re-fetch** (§5.6). Nothing in a
 criteria set touches acquisition: the measured values are shared, only their reading changes.
@@ -641,16 +936,29 @@ ranking.** It is the word this document uses for that operation, and for its res
 |---|---|
 | `criteria_set`, `level` | What was run, against which level |
 | `computed_at` | When |
-| per candidate | `score`, `coverage`, `match_status` (`matching` \| `not_matching` \| `insufficient_data`), and the reasons behind a non-match |
+| per candidate | `score`, `rank`, `coverage`, `match_status` (`matching` \| `not_matching` \| `insufficient_data`), `parent_not_matching`, and the reasons behind a non-match |
 
 **This entity exists to answer a question the earlier model got wrong: which facts about a
 candidate depend on whose criteria you used?**
 
 - **Independent of any criteria set** — the candidate's identity, level, parent, and every
   attribute value ever fetched for it. Lisbon's rent is Lisbon's rent.
-- **Belonging to an evaluation** — score, coverage, match status, rank, and why it did not
-  match. All four change the moment you switch from `alex` to `partner`, and none of them is a
-  property of the place.
+- **Belonging to an evaluation** — score, rank, coverage, match status, `parent_not_matching`,
+  and why it did not match. Every one changes the moment you switch from `alex` to `partner`,
+  and none is a property of the place.
+
+> **Coverage is evaluation-scoped, and this is worth being precise about**, because two
+> different things could reasonably be called coverage:
+>
+> - **Coverage** (§5.3) is *the share of **active weight** backed by data*. It depends on which
+>   criteria are scored and how they are weighted, so it belongs to the result. Excluding a
+>   criterion changes it; so does moving a weight.
+> - **Completeness** — how many of a candidate's attributes have any value at all — is
+>   independent of every criteria set. It is **derived from the `VALUE` rows and not stored**,
+>   because storing a number that is a `COUNT` away would be a cache with no invalidation rule.
+>
+> The floor in §5.3 is on coverage, not completeness: a candidate can be 90% complete and still
+> fall below the floor if the missing tenth is what you weighted most.
 
 Storing `score` or `match_status` on the Candidate would mean one criteria set's answer silently
 overwriting another's, and would make "compare how these two criteria sets rank the same countries"
@@ -671,7 +979,7 @@ using different methods.
 
 | Field | Notes |
 |---|---|
-| `candidate`, `provider` | Who published it, about what |
+| `candidate`, `data_source` | What it is about, and who published it. The provider is a **foreign key to `DATA_SOURCE`**, not a name — Numbeo supplies both values and a composite, and one row for it means one reliability tier and one place to record a paywall |
 | `value` | The published number |
 | `scale` | What the number means — `0-100`, `0-10`, `rank`, `index` |
 | `rank`, `rank_of` | Where the provider publishes a position rather than a score |
@@ -704,13 +1012,14 @@ overwritten and never discarded.**
 
 | Field | Notes |
 |---|---|
-| `candidate`, `attribute`, `source` | What this measures and where it came from |
-| `reference_period` | **What period the data describes** — a start and an end, not a point. "Average temperature 2025" is a year; "rent, July 2026" a month; an fx rate a single day. A point date cannot express which |
+| `candidate`, `attribute`, `data_source` | What this measures and where it came from |
+| `reference_period_start`, `reference_period_end` | **What period the data describes** — two dates, not one. "Average temperature 2025" is a year; "rent, July 2026" a month; an fx rate a single day, where start and end are equal. A single point date could not express which of the three it was, so the pair is stored and both are displayed |
+| `variant_key` | Which variant this figure is, for a multi-value attribute (§3.3b). Null otherwise |
 | `retrieval_date` | **When the app fetched it** |
 | `confidence` | `absolute` \| `high` \| `medium` \| `low` — §5.7. Derived, with a manual override retained alongside |
 | `quote` | Supporting text or summary, where applicable |
 | `citations` | Source URLs |
-| `run` | The Run that produced it |
+| `acquisition_run` | The run that produced it (§3.8) |
 
 **The rest depends on the attribute's `value_type`** (§3.3a). A monetary value carries a
 currency and an fx rate; a temperature carries a unit; a population carries neither. These are
@@ -774,13 +1083,30 @@ answer the same question and report the same three outcomes. There is no separat
 **Overrides are permitted and audited.** An overridden rule attaches a visible marker that
 travels with the candidate everywhere it appears.
 
-### 3.8 Run
+### 3.8 AcquisitionRun
 
-A persisted record of one acquisition pass.
+**One programmatic pass that fetches data from sources and writes `Value` rows.** Nothing else
+is a run — the word was ambiguous and is now narrow:
 
-Timestamp, level, scope (which candidates, which criteria), LLM call count, cost, and
-per-candidate failures with their errors. Values link back to the Run that produced them,
-which is what makes selective retry (§6.4) and score-over-time comparison possible.
+| It **is** | It is **not** |
+|---|---|
+| A batch fetch over a set of candidates and attributes, through adapters | A user session or anything a user "does" |
+| Possibly including LLM calls, as one source among several (§6.10) | An `Evaluation` (§3.4a) — scoring is pure arithmetic over stored rows, costs nothing, and touches no source |
+| The unit of cost, progress and retry | A single LLM call. One run may make hundreds, or none at all |
+
+| Field | Notes |
+|---|---|
+| `started_at`, `finished_at` | Wall-clock bounds |
+| `triggered_by` | Who or what started it — for now always a person pressing Run |
+| `status` | `running` \| `completed` \| `halted_on_spend_cap` \| `failed` |
+| `llm_call_count`, `cost_eur` | What it spent. Zero for a run touching only structured sources |
+| scope | Which candidates and which attributes it was asked to cover |
+
+**Failures are rows, not a blob.** Each records the run, the candidate, the attribute and the
+error, which is exactly the unit selective retry needs: retry what failed, nothing else (§6.4).
+
+Values link back to the run that produced them, which is what makes retry and
+"what changed since last run" possible.
 
 ### 3.9 Household
 
@@ -852,8 +1178,8 @@ one in the shipped default set:
   standing is meaningful.
 - **`as_is`** — the value is already on the score scale.
 
-The criterion also declares **which way is good**: `lower_is_better`, `higher_is_better`, or
-`ideal_range` with a target range and falloff. This is a **preference, not a property of the
+The criterion also declares its **`goal`**: `minimise`, `maximise`, or `target_range` with a
+band and a falloff. This is a **preference, not a property of the
 attribute** (§3.4) — two criteria sets may score the same measured value in opposite directions.
 
 **Band labels.** A criterion may declare labels against its scoring anchors, so a number
@@ -905,8 +1231,8 @@ Two independent floors mark a candidate **insufficient data** rather than produc
 
 - **`min_coverage`** — a configurable percentage of active weight that must be backed by data.
   **Provisionally 60%**, to be revisited once a real run shows what coverage actually looks like.
-- **`required` criteria** — any criterion may be flagged required; a missing value on one
-  makes the candidate unscoreable regardless of overall coverage.
+- **`blocks_if_missing`** — any criterion may carry it; a missing value on one makes the
+  candidate unscoreable regardless of overall coverage. §7.4 lists the seven that do.
 
 Redistribution is computed at scoring time from what data exists. **It must never be written
 back into the stored weights.**
@@ -1540,7 +1866,7 @@ not matching regardless of score** — and stays visible, with its score, showin
 
 ### 7.4 Required attributes in the default criteria set
 
-`required` (§5.3) is a criterion flag: a missing value on one makes the candidate
+`blocks_if_missing` (§5.3) is a criterion flag: a missing value on one makes the candidate
 **insufficient data** rather than producing a total, regardless of overall coverage. It is
 deliberately sparse — every flag is a way for a candidate to drop out on a data gap rather than
 on merit.
@@ -1595,7 +1921,7 @@ everywhere; each tab owns one stage of the workflow and nests its detail views i
   scoring; an excluded criterion renormalises the remaining weights and does **not** count
   against coverage, unlike missing data (§5.3).
 - **Criteria sets.** Create, duplicate, rename, switch. Each holds inclusion, weights,
-  directions, ideal ranges, scales and matching thresholds. Compare two sets' evaluations side
+  goals, ideal ranges, scales and matching thresholds. Compare two sets' evaluations side
   by side, highlighting where they diverge most — including where they disagree on direction.
   This comparison is why score and match status belong to an `Evaluation` (§3.4a) and not to the
   candidate.
@@ -1674,7 +2000,7 @@ The main results view.
   country match threshold, the ~2000–3000 EUR/month household budget guideline, the
   2000 EUR rent ceiling, the 60% `min_coverage` floor, the 12–18 month `relocation_window`,
   and every `scale_params` and `matching_threshold` marked TBD.
-- **The `required` selection is a first pass** (§7.4) — seven country attributes, 36.1% of the
+- **The `blocks_if_missing` selection is a first pass** (§7.4) — seven country attributes, 36.1% of the
   score, chosen on plausibility rather than on observed coverage. Revisit after a real run;
   `career` deliberately has none until its source question is settled.
 - **No type for genuinely ordinal data.** One value from an ordered list where the order
@@ -1771,7 +2097,8 @@ wondering whether a second concept is hiding behind the second word.
 | **CriteriaSet** | A named collection of criteria plus the pillar weights: `alex`, `partner`, `remote-only`, `local-employment`. The application ships one default; others inherit from it for anything they do not override |
 | **Weight** | How much a pillar or criterion contributes. Sums to 100 within a level and within a pillar. Moving one rebalances the others proportionally |
 | **Lock** | Pins a weight so rebalancing skips it. Makes "I have decided this one" explicit |
-| **Direction** | Which way is better: `lower_is_better`, `higher_is_better`, or `ideal_range`. A **preference, not a fact** — a large expat community is a soft landing to one person and a bubble to another |
+| **Goal** | What you want from an attribute: `minimise`, `maximise`, or `target_range`. A **preference, not a fact** — a large expat community is a soft landing to one person and a bubble to another. Named `goal` rather than `direction` because a target range is not a direction |
+| **`is_scored` / `blocks_if_missing`** | Two different questions on a criterion. `is_scored: false` means you decided it does not apply — weight is redistributed, coverage unaffected. `blocks_if_missing: true` means that if it *is* scored and absent, no total is produced at all |
 | **Reducer** | How a multi-value attribute becomes one number: `select` one variant, or `aggregate` across them. A setting — change it and the ranking recalculates with no re-fetch, which is what makes simulation possible |
 
 ### Matching, and what comes out
@@ -1786,7 +2113,7 @@ wondering whether a second concept is hiding behind the second word.
 | **Evaluation** | One criteria set run against the candidates at one level, producing a ranking. **Score, coverage, match status and rank belong to an evaluation, not to the candidate** — they change when you switch criteria sets, and none of them is a property of the place |
 | **Score** | 0–100. Full precision internally, integers only at display |
 | **Coverage** | What percentage of a candidate's active weight is actually backed by data. Cassis at 64% coverage has a third of its criteria unmeasured |
-| **Insufficient data** | A candidate below the coverage floor, or missing a `required` criterion. No total is produced; per-attribute values still show |
+| **Insufficient data** | A candidate below the coverage floor, or missing a `blocks_if_missing` criterion. No total is produced; per-attribute values still show |
 | **ExternalScore** | A published score or rank from an outside index (WhereNext, OECD Better Life Index, EIU, Mercer, Numbeo). Displayed **beside** the Starnest score, never fed into it — the way a film page shows Rotten Tomatoes next to its own rating |
 
 ### Screens
@@ -1832,10 +2159,10 @@ not only *what*.
 | Q1 | Two-level criteria | Preserves the spec's pillar weights exactly while keeping each bullet independently sourced and provenance-tracked |
 | Q2 | Exactly two levels | Implied by Q1; no deeper nesting in the model |
 | Q3 | Cross-level concepts are separate criteria | The spec frames local safety as a different question from national safety, not the same one zoomed in |
-| Q4 | Direction per criterion, either mode | A single direction cannot express "warm but not too hot" |
+| Q4 | `goal` per criterion, three modes | Minimise and maximise alone cannot express "warm but not too hot" |
 | Q5 | Normalisation per criterion, in config | Fixed bands keep a score stable over time; percentile suits criteria where only relative standing matters |
 | Q6 | Redistribute weight, show coverage | Zero-filling would bury exactly the small, under-documented towns that are wanted candidates |
-| Q7 | Coverage floor *and* `required` flags | They catch different failures: general sparsity versus a specific essential unknown |
+| Q7 | Coverage floor *and* `blocks_if_missing` flags | They catch different failures: general sparsity versus a specific essential unknown |
 | Q8 | Scale 0–100, integer | Criterion inputs and totals share one range; whole numbers read faster than one-decimal fractions |
 | Q9 | Country score displayed, never added | National factors already appear in city-level criteria; adding them again double-counts |
 | Q10 | Filters and thresholds are two mechanisms, one report | Filters carry judgement, results, sources and overrides that a threshold does not |
@@ -1889,7 +2216,7 @@ not only *what*.
 | Q68 | `CriteriaProfile` retired | Ambiguous between description and configuration. Superseded by Q98 |
 | Q69 | Facts extended with languages, religion and ethnic composition | Wikipedia-infobox parity; languages and social composition bear directly on whether a place is livable for a foreigner |
 | Q64 | What is measured and what it is worth are separate entities | Conflating them encodes one person's taste as objective truth. The split was right; the names were wrong until Q98 |
-| Q65 | `direction`, `ideal`, `scale`, `scale_params`, `matching_threshold`, `required`, `included` all live on the criterion | Which way is "good" can be personal — a large expat community is a soft landing or a bubble depending on who is asking |
+| Q65 | `goal`, the ideal band, scale, anchors, thresholds, `blocks_if_missing` and `is_scored` all live on the criterion | Which way is "good" can be personal — a large expat community is a soft landing or a bubble depending on who is asking |
 | Q66 | `max_age` and `source_priority_override` sit on the Attribute | Objective: rent ages in months whoever is asking, and source authority is an admin judgement, not a user preference |
 | Q62 | `country.international_employers` / `city.international_employers` as a matched pair | One concept at two levels, previously named as if it were two. Matches the `safety_national` / `city.safety` shape |
 | Q63 | `country.tech_employment_share` kept at low weight | Stock, not flow — and the only tech-market criterion with a confirmed source, so it absorbs the counts' weight if that source fails |
@@ -1952,5 +2279,14 @@ Recorded from a front-to-back read of this document.
 | Q115 | **Manual entry requires per-attribute permission**, defaulting to forbidden | An open manual field is the fastest route to a plausible number with no measurement behind it, indistinguishable in the ranking from a real one. Four country attributes permit it. Match rules are judgements and are exempt |
 | Q116 | Household carries `net_income`, `number_adults`, `number_children` | A single `size` could not express what the `family` pillar needs — children under 18 specifically |
 | Q117 | `min_coverage` provisionally **60%** | A working floor, to be revisited once real coverage is known |
-| Q118 | `required` assigned to seven country attributes, 36.1% of the score (§7.4) | Sparse by design; every flag is a way to drop out on a data gap rather than on merit. `career` gets none while its source is unresolved |
+| Q118 | `blocks_if_missing` assigned to seven country attributes, 36.1% of the score (§7.4) | Sparse by design; every flag is a way to drop out on a data gap rather than on merit. `career` gets none while its source is unresolved |
 | Q119 | The `household_size` variant vocabulary renamed `occupancy` | It collided with the Household entity's own fields once Household became an entity |
+| Q120 | The diagram's foreign keys are **named after the table they point at** | `VALUE.data_source`, never `VALUE.source`. Self-references take a role prefix: `CANDIDATE.parent_candidate` |
+| Q121 | **No JSON columns anywhere.** Thresholds, scale anchors, source-priority overrides, citizenships and allowed labels are all tables | A schema whose contents the database cannot check is a schema in name only. Thresholds follow the same typed-children pattern as `Value` |
+| Q122 | `Run` → **`AcquisitionRun`**, with failures as rows | "Run" could have meant a user session, a scoring pass or one LLM call. It is exactly one thing: a programmatic fetch that writes values. Scoring is an `Evaluation` and costs nothing |
+| Q123 | `EXTERNAL_SCORE.provider` becomes a foreign key to `DATA_SOURCE` | Providers are sources; Numbeo is both. One row means one reliability tier and one place to record a paywall |
+| Q124 | `parent_not_matching` moves from Candidate to CandidateResult | Whether the parent matched depends on the criteria set, so the same city would need two values at once |
+| Q125 | `CRITERIA_SET_MATCH_RULE` added | Whether a visa route exists is objective; whether you treat its absence as disqualifying is yours. Gives match rules the same objective/subjective split attributes have |
+| Q126 | `included` → `is_scored`, `required` → `blocks_if_missing` | The old names sounded alike while meaning different things — relevance versus a floor on evidence |
+| Q127 | `direction` → `goal`, values `minimise` \| `maximise` \| `target_range` | A target range is not a direction; the old name never covered its own third case |
+| Q128 | Coverage stays on CandidateResult; completeness is derived and not stored | They are different questions. Coverage is weighted and set-dependent; completeness is a `COUNT` over values, and storing it would be a cache with no invalidation rule |

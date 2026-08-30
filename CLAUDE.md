@@ -38,7 +38,7 @@ Planned module layout:
 | `config/` | Pillars, criteria, weights, thresholds as data — split by level (country / city) |
 | `acquisition/structured.py` | Deterministic fetch of quantifiable data (no LLM) |
 | `acquisition/qualitative.py` | Claude API + `web_search`, structured JSON out (score + summary + sources) |
-| `storage/db.py` | PostgreSQL schema and access; schema and seed scripts versioned as migrations in git |
+| `storage/db.py` | PostgreSQL schema and access; schema and seed scripts versioned as migrations in git. **No JSON columns** — anything list- or object-shaped is its own table, and foreign keys are named after the table they point at |
 | `scoring/engine.py` | Hard filters + weighted score, per level |
 | `scoring/compare.py` | Focus candidate vs. N comparators: deltas, weighted contributions, templated synthesis |
 | `ui/app.py` | Streamlit app — 4 tabs: config, run, ranking dashboard, comparison |
@@ -60,8 +60,8 @@ Read `reqs.md` §3.0 before touching the model. The whole design turns on keepin
 
 - **Attribute** — something knowable about a place (rent, population, homicide rate). **Objective.** Belongs to a Pillar, declares its value type, sources and `max_age`. An attribute with no criterion attached is descriptive and never scored — there is no separate facts entity.
 - **Value** — what that attribute is, for one candidate, from one source, on one date.
-- **Criterion** — the rule *you* impose on one attribute: direction, `matching_threshold`, weight. **Subjective.** Lives in a **CriteriaSet** (`alex`, `partner`, `remote-only`), never on the attribute.
-- **Evaluation** — one CriteriaSet run against the candidates at one level. **Score, coverage, match status and rank belong here, not to the Candidate** — they change when the criteria set changes.
+- **Criterion** — the rule *you* impose on one attribute: `goal` (`minimise`/`maximise`/`target_range`), matching threshold, weight. **Subjective.** Lives in a **CriteriaSet** (`alex`, `partner`, `remote-only`), never on the attribute. `is_scored` says whether it counts; `blocks_if_missing` says whether its absence makes the candidate unscoreable.
+- **Evaluation** — one CriteriaSet run against the candidates at one level. **Score, coverage, match status, rank and `parent_not_matching` belong here, not to the Candidate** — they change when the criteria set changes.
 - **Household** — the single record describing the user: income, size, target spend, home country and city, citizenship. Configured first.
 
 Attributes are grouped into **Pillars** — the load-bearing verticals of a life (economics, housing, career, safety, health, climate, connectivity, nature, culture, governance, family). Pillar weights sum to 100% within a level; criterion weights sum to 100% within a pillar. Scores are **0–100 integers**.
