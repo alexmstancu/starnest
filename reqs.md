@@ -187,10 +187,10 @@ Every line is a foreign key. The symbol at each end says how many rows may sit o
 
 | Symbol | At that end there is | Read as |
 |---|---|---|
-| `||` | exactly one | mandatory, single |
-| `o|` | zero or one | optional, single |
+| `\|\|` | exactly one | mandatory, single |
+| `o\|` | zero or one | optional, single |
 | `}o` | zero or more | optional, many |
-| `}|` | one or more | mandatory, many |
+| `}\|` | one or more | mandatory, many |
 
 So `LEVEL ||--o{ CANDIDATE` reads: **one** level classifies **zero or more** candidates, and
 every candidate belongs to **exactly one** level.
@@ -471,35 +471,35 @@ erDiagram
 
 | Relation | What it does | Why it exists |
 |---|---|---|
-| `LEVEL ||--o{ CANDIDATE` | Every candidate is a country or a city | Levels are rows, not an enum, so a third one is a config change (§3.1) |
-| `LEVEL ||--o{ PILLAR` | Pillars are declared per level | Weights sum to 100% *within* a level, so the two sets must be separable |
-| `LEVEL ||--o{ ATTRIBUTE` | Attributes are declared per level | `country.safety` and `city.safety` are different questions with different sources |
-| `LEVEL ||--o{ MATCH_RULE` | Gates are declared per level | A visa is national; `two_role_feasibility` is local |
-| `LEVEL ||--o{ EVALUATION` | An evaluation runs at one level | Comparisons never mix levels (§8.5); this enforces it in the schema |
-| `CANDIDATE ||--o{ CANDIDATE` | A city points at its country | Gives the parent chain that `parent_not_matching` and the context column depend on |
+| `LEVEL \|\|--o{ CANDIDATE` | Every candidate is a country or a city | Levels are rows, not an enum, so a third one is a config change (§3.1) |
+| `LEVEL \|\|--o{ PILLAR` | Pillars are declared per level | Weights sum to 100% *within* a level, so the two sets must be separable |
+| `LEVEL \|\|--o{ ATTRIBUTE` | Attributes are declared per level | `country.safety` and `city.safety` are different questions with different sources |
+| `LEVEL \|\|--o{ MATCH_RULE` | Gates are declared per level | A visa is national; `two_role_feasibility` is local |
+| `LEVEL \|\|--o{ EVALUATION` | An evaluation runs at one level | Comparisons never mix levels (§8.5); this enforces it in the schema |
+| `CANDIDATE \|\|--o{ CANDIDATE` | A city points at its country | Gives the parent chain that `parent_not_matching` and the context column depend on |
 
 **The attribute catalog**
 
 | Relation | What it does | Why it exists |
 |---|---|---|
-| `PILLAR ||--o{ ATTRIBUTE` | Each attribute sits in one vertical | Weights normalise within a pillar; the pillar is where that grouping lives |
-| `VALUE_TYPE ||--o{ ATTRIBUTE` | Declares the semantic type | Determines the legal scales, the threshold shape, and what a value stores (§3.3a) |
-| `VARIANT_VOCABULARY ||--o{ VARIANT_KEY` | Enumerates `one_bedroom`, `two_bedroom`, … | A controlled vocabulary, so a typo cannot invent a variant |
-| `VARIANT_VOCABULARY ||--o{ ATTRIBUTE` | Marks an attribute as multi-valued | Optional: most attributes point at nothing and hold one value |
-| `ATTRIBUTE ||--o| ATTRIBUTE_ALLOWED_RANGE` | Per-attribute numeric validation | Rent declares `> 0`; temperature allows negatives. At most one row per attribute |
-| `ATTRIBUTE ||--o{ ATTRIBUTE_ALLOWED_LABEL` | Per-attribute vocabulary validation | A `LabelSet` may only carry labels declared here |
-| `ATTRIBUTE ||--o{ ATTRIBUTE_SOURCE_PRIORITY` | Overrides the global source order | Numbeo outranks Eurostat on rent; the reverse holds elsewhere (§6.6) |
-| `DATA_SOURCE ||--o{ ATTRIBUTE_SOURCE_PRIORITY` | The other half of that override | The junction is a table, not a JSON list, so "which attributes prefer this source?" is a query |
+| `PILLAR \|\|--o{ ATTRIBUTE` | Each attribute sits in one vertical | Weights normalise within a pillar; the pillar is where that grouping lives |
+| `VALUE_TYPE \|\|--o{ ATTRIBUTE` | Declares the semantic type | Determines the legal scales, the threshold shape, and what a value stores (§3.3a) |
+| `VARIANT_VOCABULARY \|\|--o{ VARIANT_KEY` | Enumerates `one_bedroom`, `two_bedroom`, … | A controlled vocabulary, so a typo cannot invent a variant |
+| `VARIANT_VOCABULARY \|\|--o{ ATTRIBUTE` | Marks an attribute as multi-valued | Optional: most attributes point at nothing and hold one value |
+| `ATTRIBUTE \|\|--o\| ATTRIBUTE_ALLOWED_RANGE` | Per-attribute numeric validation | Rent declares `> 0`; temperature allows negatives. At most one row per attribute |
+| `ATTRIBUTE \|\|--o{ ATTRIBUTE_ALLOWED_LABEL` | Per-attribute vocabulary validation | A `LabelSet` may only carry labels declared here |
+| `ATTRIBUTE \|\|--o{ ATTRIBUTE_SOURCE_PRIORITY` | Overrides the global source order | Numbeo outranks Eurostat on rent; the reverse holds elsewhere (§6.6) |
+| `DATA_SOURCE \|\|--o{ ATTRIBUTE_SOURCE_PRIORITY` | The other half of that override | The junction is a table, not a JSON list, so "which attributes prefer this source?" is a query |
 
 **Measurements**
 
 | Relation | What it does | Why it exists |
 |---|---|---|
-| `ATTRIBUTE ||--o{ VALUE` | A value measures one attribute | The value's type, unit and validation all come from here |
-| `CANDIDATE ||--o{ VALUE` | A value is about one place | |
-| `DATA_SOURCE ||--o{ VALUE` | Records who said it | Provenance is mandatory (§10), and priority needs the source to choose an active value |
-| `VARIANT_KEY ||--o{ VALUE` | Which variant this figure is | Null for ordinary attributes. This is what lets all three rents be stored at once, so changing household size needs no re-fetch (§3.3b) |
-| `ACQUISITION_RUN ||--o{ VALUE` | Which run produced it | Makes selective retry and "what changed since last run" possible |
+| `ATTRIBUTE \|\|--o{ VALUE` | A value measures one attribute | The value's type, unit and validation all come from here |
+| `CANDIDATE \|\|--o{ VALUE` | A value is about one place | |
+| `DATA_SOURCE \|\|--o{ VALUE` | Records who said it | Provenance is mandatory (§10), and priority needs the source to choose an active value |
+| `VARIANT_KEY \|\|--o{ VALUE` | Which variant this figure is | Null for ordinary attributes. This is what lets all three rents be stored at once, so changing household size needs no re-fetch (§3.3b) |
+| `ACQUISITION_RUN \|\|--o{ VALUE` | Which run produced it | Makes selective retry and "what changed since last run" possible |
 
 > **Together these four foreign keys are the natural key of a value**: candidate, attribute,
 > data source, variant, plus the reference period. The same figure from a second source is a
@@ -509,34 +509,34 @@ erDiagram
 
 | Relation | What it does | Why it exists |
 |---|---|---|
-| `ACQUISITION_RUN ||--o{ ACQUISITION_FAILURE` | Failures attach to their run | A run continues past failures (§6.4); they must be recorded, not raised |
-| `CANDIDATE ||--o{ ACQUISITION_FAILURE` | Which place failed | |
-| `ATTRIBUTE ||--o{ ACQUISITION_FAILURE` | Which attribute failed | Together with the candidate, this is exactly the retry unit — retry what failed, nothing else |
+| `ACQUISITION_RUN \|\|--o{ ACQUISITION_FAILURE` | Failures attach to their run | A run continues past failures (§6.4); they must be recorded, not raised |
+| `CANDIDATE \|\|--o{ ACQUISITION_FAILURE` | Which place failed | |
+| `ATTRIBUTE \|\|--o{ ACQUISITION_FAILURE` | Which attribute failed | Together with the candidate, this is exactly the retry unit — retry what failed, nothing else |
 
 **Gates**
 
 | Relation | What it does | Why it exists |
 |---|---|---|
-| `MATCH_RULE ||--o{ MATCH_RULE_RESULT` | One rule, many candidates | |
-| `CANDIDATE ||--o{ MATCH_RULE_RESULT` | One candidate, many rules | The result is a **fact about the world** — whether a visa route exists — so it lives on the objective side, like a value |
-| `DATA_SOURCE ||--o{ MATCH_RULE_RESULT` | Where the judgement came from | Usually `manual` or `llm`; a gate needs provenance as much as a number does |
-| `CRITERIA_SET ||--o{ CRITERIA_SET_MATCH_RULE` | A criteria set chooses which gates it enforces | **This is the relation that was missing.** Whether a UK visa route exists is objective; whether you treat its absence as disqualifying is yours. A `remote-only` set may not enforce `two_role_feasibility` at all |
-| `MATCH_RULE ||--o{ CRITERIA_SET_MATCH_RULE` | The other half | Gives match rules the same objective/subjective split attributes already have: `ATTRIBUTE : CRITERION` is exactly `MATCH_RULE : CRITERIA_SET_MATCH_RULE` |
+| `MATCH_RULE \|\|--o{ MATCH_RULE_RESULT` | One rule, many candidates | |
+| `CANDIDATE \|\|--o{ MATCH_RULE_RESULT` | One candidate, many rules | The result is a **fact about the world** — whether a visa route exists — so it lives on the objective side, like a value |
+| `DATA_SOURCE \|\|--o{ MATCH_RULE_RESULT` | Where the judgement came from | Usually `manual` or `llm`; a gate needs provenance as much as a number does |
+| `CRITERIA_SET \|\|--o{ CRITERIA_SET_MATCH_RULE` | A criteria set chooses which gates it enforces | **This is the relation that was missing.** Whether a UK visa route exists is objective; whether you treat its absence as disqualifying is yours. A `remote-only` set may not enforce `two_role_feasibility` at all |
+| `MATCH_RULE \|\|--o{ CRITERIA_SET_MATCH_RULE` | The other half | Gives match rules the same objective/subjective split attributes already have: `ATTRIBUTE : CRITERION` is exactly `MATCH_RULE : CRITERIA_SET_MATCH_RULE` |
 
 **Outside opinions**
 
 | Relation | What it does | Why it exists |
 |---|---|---|
-| `CANDIDATE ||--o{ EXTERNAL_SCORE` | Published scores about a place | |
-| `DATA_SOURCE ||--o{ EXTERNAL_SCORE` | Who published it | Providers *are* sources — Numbeo supplies both values and a composite. One table for both means one reliability tier and one place to record a paywall or a discontinuation |
+| `CANDIDATE \|\|--o{ EXTERNAL_SCORE` | Published scores about a place | |
+| `DATA_SOURCE \|\|--o{ EXTERNAL_SCORE` | Who published it | Providers *are* sources — Numbeo supplies both values and a composite. One table for both means one reliability tier and one place to record a paywall or a discontinuation |
 
 **The household**
 
 | Relation | What it does | Why it exists |
 |---|---|---|
-| `HOUSEHOLD }o--|| CANDIDATE` | `home_country_candidate` and `home_city_candidate` | The home country is **also a candidate** (§1.2) — scored like any other, so "stay put" stays measurable. It is a foreign key, not a text field, which is what makes the Δ-vs-home column a join |
-| `HOUSEHOLD ||--o{ HOUSEHOLD_CITIZENSHIP` | Which citizenships you hold | A list, therefore a table |
-| `CANDIDATE ||--o{ HOUSEHOLD_CITIZENSHIP` | Citizenship of a country | Lets `eu_free_movement` be evaluated by a join rather than by parsing a string |
+| `HOUSEHOLD }o--\|\| CANDIDATE` | `home_country_candidate` and `home_city_candidate` | The home country is **also a candidate** (§1.2) — scored like any other, so "stay put" stays measurable. It is a foreign key, not a text field, which is what makes the Δ-vs-home column a join |
+| `HOUSEHOLD \|\|--o{ HOUSEHOLD_CITIZENSHIP` | Which citizenships you hold | A list, therefore a table |
+| `CANDIDATE \|\|--o{ HOUSEHOLD_CITIZENSHIP` | Citizenship of a country | Lets `eu_free_movement` be evaluated by a join rather than by parsing a string |
 
 > **The household has no link to criteria, and that is deliberate.** An earlier draft drew one,
 > labelled "supplies defaults to". It was wrong: no foreign key exists. The household is a
@@ -548,16 +548,16 @@ erDiagram
 
 | Relation | What it does | Why it exists |
 |---|---|---|
-| `CRITERIA_SET ||--o{ PILLAR_WEIGHT` | Pillar weights belong to a set, not to the pillar | `alex` and `partner` weight `career` differently over the same eleven pillars |
-| `PILLAR ||--o{ PILLAR_WEIGHT` | The other half | |
-| `CRITERIA_SET ||--o{ CRITERION` | A set is its criteria | |
-| `ATTRIBUTE ||--o{ CRITERION` | A criterion judges exactly one attribute | The central relation of the model. Many criteria may judge one attribute — one per set — and an attribute with **no** criterion is descriptive and never scored (§3.3) |
-| `VARIANT_KEY ||--o{ CRITERION` | Which variant this criterion scores | A *preference*: two bedrooms today, three tomorrow, recalculated with no re-fetch |
-| `CRITERION ||--o{ CRITERION_SCALE_ANCHOR` | The `fixed` scale's anchor points | Was `scale_params` JSON. As rows, "500 EUR → 100, 2500 EUR → 0" is inspectable and checkable |
-| `CRITERION ||--o| CRITERION_THRESHOLD_RANGE` | Numeric matching threshold | Was `matching_threshold` JSON. Four typed children replace it, mirroring how `VALUE` is typed |
-| `CRITERION ||--o{ CRITERION_THRESHOLD_LABEL` | Must-contain / must-not-contain | Many rows, one per label |
-| `CRITERION ||--o| CRITERION_THRESHOLD_BOOLEAN` | Must equal | |
-| `CRITERION ||--o{ CRITERION_THRESHOLD_SHARE` | Min or max share of a named label | For `ShareComposition` |
+| `CRITERIA_SET \|\|--o{ PILLAR_WEIGHT` | Pillar weights belong to a set, not to the pillar | `alex` and `partner` weight `career` differently over the same eleven pillars |
+| `PILLAR \|\|--o{ PILLAR_WEIGHT` | The other half | |
+| `CRITERIA_SET \|\|--o{ CRITERION` | A set is its criteria | |
+| `ATTRIBUTE \|\|--o{ CRITERION` | A criterion judges exactly one attribute | The central relation of the model. Many criteria may judge one attribute — one per set — and an attribute with **no** criterion is descriptive and never scored (§3.3) |
+| `VARIANT_KEY \|\|--o{ CRITERION` | Which variant this criterion scores | A *preference*: two bedrooms today, three tomorrow, recalculated with no re-fetch |
+| `CRITERION \|\|--o{ CRITERION_SCALE_ANCHOR` | The `fixed` scale's anchor points | Was `scale_params` JSON. As rows, "500 EUR → 100, 2500 EUR → 0" is inspectable and checkable |
+| `CRITERION \|\|--o\| CRITERION_THRESHOLD_RANGE` | Numeric matching threshold | Was `matching_threshold` JSON. Four typed children replace it, mirroring how `VALUE` is typed |
+| `CRITERION \|\|--o{ CRITERION_THRESHOLD_LABEL` | Must-contain / must-not-contain | Many rows, one per label |
+| `CRITERION \|\|--o\| CRITERION_THRESHOLD_BOOLEAN` | Must equal | |
+| `CRITERION \|\|--o{ CRITERION_THRESHOLD_SHARE` | Min or max share of a named label | For `ShareComposition` |
 
 > **Exactly one threshold child may exist for a criterion, and which one is decided by the
 > attribute's value type.** That is a constraint the database can check, and it is precisely
@@ -567,12 +567,12 @@ erDiagram
 
 | Relation | What it does | Why it exists |
 |---|---|---|
-| `CRITERIA_SET ||--o{ EVALUATION` | An evaluation applies one set | |
-| `EVALUATION ||--o{ CANDIDATE_RESULT` | One row per candidate per evaluation | |
-| `CANDIDATE ||--o{ CANDIDATE_RESULT` | The place being scored | Keeping the result here rather than on the candidate is what makes "how do these two sets rank the same countries?" a query instead of a re-run |
-| `CANDIDATE_RESULT ||--o{ NON_MATCH_REASON` | Why it did not match | A list, therefore a table. Both mechanisms feed one surface (§5.2) |
-| `CRITERION ||--o{ NON_MATCH_REASON` | A threshold was crossed | Exactly one of the two is set on each row |
-| `MATCH_RULE ||--o{ NON_MATCH_REASON` | A gate failed | |
+| `CRITERIA_SET \|\|--o{ EVALUATION` | An evaluation applies one set | |
+| `EVALUATION \|\|--o{ CANDIDATE_RESULT` | One row per candidate per evaluation | |
+| `CANDIDATE \|\|--o{ CANDIDATE_RESULT` | The place being scored | Keeping the result here rather than on the candidate is what makes "how do these two sets rank the same countries?" a query instead of a re-run |
+| `CANDIDATE_RESULT \|\|--o{ NON_MATCH_REASON` | Why it did not match | A list, therefore a table. Both mechanisms feed one surface (§5.2) |
+| `CRITERION \|\|--o{ NON_MATCH_REASON` | A threshold was crossed | Exactly one of the two is set on each row |
+| `MATCH_RULE \|\|--o{ NON_MATCH_REASON` | A gate failed | |
 
 ### 3.1 Candidate
 
