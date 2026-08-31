@@ -35,11 +35,26 @@ CREATE TABLE value (
         FOREIGN KEY (attribute, value_type) REFERENCES attribute (id, value_type),
     CONSTRAINT value_type_key UNIQUE (id, value_type),
 
-    -- The natural key. The same source re-fetched later differs by retrieval_date and is
-    -- preserved; the three Lisbon rents differ by breakdown_option and are three rows.
-    CONSTRAINT value_natural_key UNIQUE (
+    -- The natural key. The three Lisbon rents differ by breakdown_option and are three rows.
+    --
+    -- BOTH reference dates are in the key, not just the start. A monthly figure for January
+    -- and an annual figure for the same year share a start date and differ only in where the
+    -- period ends; with only the start in the key the second one would be rejected as a
+    -- duplicate of the first, which is a real collision and not a hypothetical one.
+    --
+    -- retrieval_date stays in the key deliberately. reqs.md 3.6 preserves re-fetches, so a
+    -- second fetch of the same period must be a stored observation rather than a constraint
+    -- violation. The consequence -- that two fetches seconds apart are two rows -- is
+    -- application policy (data_acquisition/ decides when a re-fetch is worth making), not a
+    -- fault in the schema.
+    -- NULLS NOT DISTINCT is load-bearing, not decoration. `breakdown_option` is NULL for most
+    -- values -- only multi-value attributes like rent carry one -- and PostgreSQL's default
+    -- treats every NULL as distinct from every other. Without this clause two byte-identical
+    -- rows insert happily, and the constraint quietly guarantees nothing for the common case.
+    -- Requires PostgreSQL 15 or later; the compose file pins 17.
+    CONSTRAINT value_natural_key UNIQUE NULLS NOT DISTINCT (
         candidate, attribute, data_source, breakdown_option,
-        reference_period_start, retrieval_date
+        reference_period_start, reference_period_end, retrieval_date
     ),
 
     CONSTRAINT value_reference_period_is_ordered

@@ -868,6 +868,14 @@ export interface components {
             attribute: string;
             pillar: string;
         };
+        /** @description A criterion as it stood when an evaluation ran, not as it stands now. The criteria set it was copied from stays editable, so this is the only record of the interpretation that produced the scores (reqs.md 3.4a, Q193). */
+        EvaluationCriterion: components["schemas"]["Criterion"] & {
+            /** @description The anchors frozen at the moment the evaluation ran. */
+            scale_anchors?: {
+                input_value?: number;
+                score?: number;
+            }[];
+        };
         PillarWeight: {
             pillar: string;
             /** @description Percentage, 0-100. Pillar weights sum to 100 within a level. */
@@ -903,7 +911,9 @@ export interface components {
         MatchRuleResult: components["schemas"]["MatchRuleResultInput"] & {
             match_rule: string;
             candidate: string;
-            /** Format: date */
+            /** @description The pages this verdict was read from. A gate decided by manual or LLM-assisted research carries the same obligation to show its sources that a value does (reqs.md 3.7, 6.9). */
+            citations?: string[];
+            /** Format: date-time */
             override_date?: string | null;
         };
         CompoundRule: {
@@ -1594,7 +1604,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         pillar: string;
-                        criteria: components["schemas"]["Criterion"][];
+                        criteria: components["schemas"]["EvaluationCriterion"][];
                     };
                 };
             };

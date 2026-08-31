@@ -497,7 +497,13 @@ erDiagram
         numeric weight
         numeric pillar_weight
         text goal
+        numeric target_range_min
+        numeric target_range_max
+        numeric zero_score_below
+        numeric zero_score_above
         text normalisation_method
+        text breakdown_option
+        text reducer_mode
         bool blocks_if_missing
     }
     CANDIDATE_ATTRIBUTE_SCORE {
@@ -529,9 +535,29 @@ erDiagram
     }
     COMPOUND_RULE_INPUT {
         text compound_rule FK
+        text shape
         int input_order
         text attribute FK
         text household_field FK
+    }
+    COMPOUND_RULE_CONDITION {
+        text compound_rule FK
+        text shape
+        int ordinal
+        text attribute FK
+        numeric threshold_min
+        numeric threshold_max
+    }
+    MATCH_RULE_RESULT_CITATION {
+        text match_rule FK
+        text candidate FK
+        text url
+    }
+    EVALUATION_SCALE_ANCHOR {
+        bigint evaluation FK
+        text attribute FK
+        numeric input_value
+        int score
     }
     CRITERIA_SET_COMPOUND_RULE {
         text criteria_set FK
@@ -586,6 +612,12 @@ erDiagram
     MATCH_RULE ||--o{ MATCH_RULE_RESULT : "evaluated as"
     CANDIDATE ||--o{ MATCH_RULE_RESULT : "gated by"
     DATA_SOURCE ||--o{ MATCH_RULE_RESULT : evidences
+    MATCH_RULE ||--o{ MATCH_RULE_RESULT_CITATION : cited
+    CANDIDATE ||--o{ MATCH_RULE_RESULT_CITATION : cited
+    COMPOUND_RULE ||--o{ COMPOUND_RULE_CONDITION : tests
+    ATTRIBUTE ||--o{ COMPOUND_RULE_CONDITION : "is tested by"
+    EVALUATION ||--o{ EVALUATION_SCALE_ANCHOR : freezes
+    ATTRIBUTE ||--o{ EVALUATION_SCALE_ANCHOR : "is anchored by"
     CANDIDATE ||--o{ EXTERNAL_SCORE : "rated by"
     DATA_SOURCE ||--o{ EXTERNAL_SCORE : publishes
     HOUSEHOLD }o--|| CANDIDATE : "lives in"
@@ -689,6 +721,12 @@ erDiagram
 |---|---|---|
 | `MATCH_RULE \|\|--o{ MATCH_RULE_RESULT` | One rule, many candidates | |
 | `CANDIDATE \|\|--o{ MATCH_RULE_RESULT` | One candidate, many rules | The result is a **fact about the world** — whether a visa route exists — so it lives on the objective side, like a value |
+| `MATCH_RULE \|\|--o{ MATCH_RULE_RESULT_CITATION` | The pages a gate's verdict was read from | A `MATCH_RULE_RESULT` is decided by manual or LLM-assisted research (section 6.9), which must show its sources exactly as a value does. The citation's key is the pair `(match_rule, candidate)` — the result's own key — so the diagram shows both halves rather than one line to the result |
+| `CANDIDATE \|\|--o{ MATCH_RULE_RESULT_CITATION` | The other half of that pair | |
+| `COMPOUND_RULE \|\|--o{ COMPOUND_RULE_CONDITION` | The conditions an `AllConditionsHold` rule ANDs | Each names one attribute and its own band, in that attribute's own unit (section 3.7a). A rule carries conditions or inputs, never both |
+| `ATTRIBUTE \|\|--o{ COMPOUND_RULE_CONDITION` | The other half | |
+| `EVALUATION \|\|--o{ EVALUATION_SCALE_ANCHOR` | The anchors frozen at the moment the evaluation ran | Without them a saved evaluation shows scores its own drill-down can no longer reproduce, once the anchors are revised (Q188, Q193). Keyed on the evaluation and attribute rather than a criterion, because the criterion it was copied from stays editable and may since have been deleted |
+| `ATTRIBUTE \|\|--o{ EVALUATION_SCALE_ANCHOR` | The other half | |
 | `DATA_SOURCE \|\|--o{ MATCH_RULE_RESULT` | Where the judgement came from | Usually `manual` or `llm`; a gate needs provenance as much as a number does |
 | `LEVEL \|\|--o{ COMPOUND_RULE` | Compound rules are declared per level | Like attributes and match rules |
 | `COMPOUND_RULE \|\|--o{ COMPOUND_RULE_INPUT` | What the rule reads, in order | Order matters: a ratio of A to B is not a ratio of B to A |
@@ -1153,6 +1191,16 @@ criteria set touches data acquisition: the measured values are shared, only thei
 **An `Evaluation` is one criteria set run against the candidates at one level, producing a
 ranking.** It is the word this document uses for that operation, and for its result.
 
+> **What a saved evaluation freezes, and why it is more than the weights.**
+> `candidate_attribute_score.used_value` already pins the exact measurement each score came
+> from, and values are immutable, so the *evidence* side needs nothing further. The
+> *interpretation* side does: `evaluation_criterion` carries the goal, the target range, the
+> reducer and the breakdown option, and `evaluation_scale_anchor` carries the anchors as they
+> stood. Q188 guarantees the anchors will be revised at least once, after the first real run.
+> Without this, every evaluation saved before that revision would display a score its own
+> drill-down could no longer account for — and accounting for every number it shows is what
+> this application is for.
+
 | Field | Notes |
 |---|---|
 | `criteria_set`, `level` | What was run, against which level |
@@ -1395,6 +1443,12 @@ eligibility but are not measurements of the place.
 **Whether a rule is enforced is not stored here.** That belongs to a criteria set
 (`criteria_set_match_rule`, section 3.4): the existence of a visa route is a fact, but treating its
 absence as disqualifying is a preference.
+
+> **A gate shows its sources, like any other finding.** `uk_skilled_worker` and
+> `ch_eu_efta_quota` are decided by reading official pages (section 6.9), sometimes with LLM
+> assistance (section 6.10). Those pages are stored as `match_rule_result_citation` rows — the
+> same obligation `value_citation` places on a measurement. A verdict whose reasoning cannot be
+> retraced is an opinion, and this application does not display opinions as findings.
 
 ### 3.7a CompoundRule
 
@@ -2842,4 +2896,7 @@ Recorded from a front-to-back read of this document.
 | Q194 | **Gate A asserts insufficient data first, then a ranking** | The gate previously asserted a ranking that `blocks_if_missing` makes impossible — five of the seven required attributes have no adapter until P4. Asserting both outcomes tests more than the original did: that the block fires and names what it lacks, and separately that redistribution and coverage work |
 | Q195 | **Liechtenstein and the UK are filled from fallback sources, visibly** | Eurostat does not survey Liechtenstein's prices and drops several UK series post-Brexit, so Gate B would fail for a true reason. A Swiss figure standing in for Liechtenstein is stored as a Swiss-sourced value at `low` confidence, never as a Liechtenstein measurement. A proxy is acceptable; a proxy that hides is fabrication with the paperwork filled in |
 | Q196 | The value natural key gains `reference_period_end`; `retrieval_date` stays | A monthly and an annual figure sharing a January start would otherwise collide. Removing `retrieval_date` was the reviewer's suggestion and would break a requirement — re-fetches must be preserved, so a second fetch of the same period must be a stored observation rather than a constraint violation |
+| Q197 | **`value_natural_key` is `UNIQUE NULLS NOT DISTINCT`** | Without it the constraint guaranteed nothing for the common case. `breakdown_option` is NULL for every value that is not a multi-value attribute, and PostgreSQL treats each NULL as distinct, so two byte-identical rows inserted happily — proven, not theorised. The master agent's own test had asserted only that the constraint *existed*, which is the failure mode this project keeps warning about applied to its own work; it now inserts twice and expects to be refused |
+| Q198 | A rule stores **conditions or inputs, never both**, enforced by composite key | `AllConditionsHold` carries a band per attribute; `SumBelowFloor` and `ShareOfHouseholdField` compare what their inputs produce together and have no per-input bound to store. `compound_rule` gained `UNIQUE (id, shape)` and each child pins the shapes it may serve — the same trick that keeps a monetary payload off a count value (`arch.md` 3.3b), rather than a convention someone must remember |
+| Q199 | **A match rule result carries citations**; a frozen evaluation criterion is its own schema | A gate decided by reading official pages owes the same evidence a measurement does. And `GET /evaluations/{id}/criteria` returned the *live* `Criterion` shape while claiming to be the only record of what the weights were — now `EvaluationCriterion`, carrying the frozen anchors |
 

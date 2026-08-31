@@ -358,7 +358,7 @@ paths:
                 required: [pillar, criteria]
                 properties:
                   pillar: { type: string }
-                  criteria: { type: array, items: { $ref: "#/components/schemas/Criterion" } }
+                  criteria: { type: array, items: { $ref: "#/components/schemas/EvaluationCriterion" } }
         "409":
           description: |
             The change cannot be absorbed — every other weight in the pillar is locked.
@@ -1088,6 +1088,24 @@ components:
             attribute: { type: string }
             pillar: { type: string }
 
+    EvaluationCriterion:
+      description: >-
+        A criterion as it stood when an evaluation ran, not as it stands now. The criteria set
+        it was copied from stays editable, so this is the only record of the interpretation
+        that produced the scores (reqs.md 3.4a, Q193).
+      allOf:
+        - $ref: "#/components/schemas/Criterion"
+        - type: object
+          properties:
+            scale_anchors:
+              type: array
+              description: The anchors frozen at the moment the evaluation ran.
+              items:
+                type: object
+                properties:
+                  input_value: { type: number }
+                  score: { type: integer, minimum: 0, maximum: 100 }
+
     PillarWeight:
       type: object
       required: [pillar, weight, weight_locked]
@@ -1135,7 +1153,14 @@ components:
           properties:
             match_rule: { type: string }
             candidate: { type: string }
-            override_date: { type: [string, "null"], format: date }
+            citations:
+              type: array
+              description: >-
+                The pages this verdict was read from. A gate decided by manual or LLM-assisted
+                research carries the same obligation to show its sources that a value does
+                (reqs.md 3.7, 6.9).
+              items: { type: string, format: uri }
+            override_date: { type: [string, "null"], format: date-time }
 
     CompoundRule:
       type: object

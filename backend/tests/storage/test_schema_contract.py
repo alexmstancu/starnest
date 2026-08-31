@@ -221,22 +221,57 @@ def test_instants_and_reference_periods_are_different_types(
     assert columns.get("reference_period_end") == "date"
 
 
-def test_the_same_fetch_cannot_be_stored_twice(connection: psycopg.Connection) -> None:
-    """arch.md 3.2. The natural key is six columns, and `breakdown_option` is one of them —
-    which is what makes the three Lisbon rents three rows rather than a collision."""
-    uniques = connection.execute(
-        "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
-        "WHERE conrelid = 'value'::regclass AND contype = 'u'"
-    ).fetchall()
+VALUE_COLUMNS = """
+    candidate, attribute, value_type, data_source,
+    reference_period_start, reference_period_end, retrieval_date, confidence_level
+"""
+A_VALUE = """
+    ('country.portugal', %s, %s, %s, date '2025-01-01', date '2025-12-31',
+     timestamptz '2026-08-31 10:00:00+00', 'high')
+"""
 
-    natural_key = [
-        "candidate",
-        "attribute",
-        "data_source",
-        "breakdown_option",
-        "reference_period_start",
-        "retrieval_date",
-    ]
-    assert any(all(column in row[0] for column in natural_key) for row in uniques), (
-        f"value needs UNIQUE on the six-column natural key; found {uniques}"
+
+def _a_seeded_attribute(connection: psycopg.Connection) -> tuple[str, str, str]:
+    attribute, value_type = connection.execute(
+        "SELECT id, value_type FROM attribute WHERE id = 'country.rule_of_law'"
+    ).fetchone()
+    source = connection.execute("SELECT id FROM data_source LIMIT 1").fetchone()[0]
+    return attribute, value_type, source
+
+
+def test_the_same_fetch_cannot_be_stored_twice(connection: psycopg.Connection) -> None:
+    """arch.md 3.2, and this test asserts the constraint BITES rather than merely exists.
+
+    An earlier version of this test checked only that a UNIQUE constraint was declared over
+    the right columns. It passed against a schema that permitted byte-identical duplicates:
+    `breakdown_option` is NULL for most values, and PostgreSQL's default treats every NULL as
+    distinct from every other, so the constraint guaranteed nothing for the common case.
+    `NULLS NOT DISTINCT` closes it. A test that a constraint is declared is not a test that it
+    works, which is the whole reason this one inserts.
+    """
+    parameters = _a_seeded_attribute(connection)
+    insert = f"INSERT INTO value ({VALUE_COLUMNS}) VALUES {A_VALUE}"
+
+    connection.execute(insert, parameters)
+
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        connection.execute(insert, parameters)
+
+
+def test_a_later_re_fetch_of_the_same_period_is_still_stored(
+    connection: psycopg.Connection,
+) -> None:
+    """The other half, and the reason `retrieval_date` stays in the key.
+
+    reqs.md 3.6 never discards: asking the same source again next month is a second
+    observation, not a duplicate. A key that rejected it would force the application to
+    overwrite, which is the one thing values must never do.
+    """
+    parameters = _a_seeded_attribute(connection)
+    connection.execute(f"INSERT INTO value ({VALUE_COLUMNS}) VALUES {A_VALUE}", parameters)
+    connection.execute(
+        f"INSERT INTO value ({VALUE_COLUMNS}) VALUES {A_VALUE.replace('10:00:00', '11:00:00')}",
+        parameters,
     )
+
+    assert connection.execute("SELECT count(*) FROM value").fetchone()[0] == 2
