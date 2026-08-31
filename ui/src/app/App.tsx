@@ -7,7 +7,7 @@ import { SelectionProvider } from "../shell/SelectionContext";
 import { DEFAULT_ROUTE, ROUTES, findRouteByPath } from "./routes";
 
 /**
- * The shell: a persistent sidebar beside one of four routes (`reqs.md` §8).
+ * The shell: a persistent sidebar beside one of four routes (`reqs.md` 8).
  *
  * The routes are generated from the one route table, so a tab cannot exist in the navigation
  * without existing in the router. Each currently renders a placeholder; P6 replaces the

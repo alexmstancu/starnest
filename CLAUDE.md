@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 backend/      Python. The API and every domain rule
-  src/starnest/   the ten modules of arch.md §6.1
+  src/starnest/   the ten modules of arch.md 6.1
   migrations/     yoyo, plain .sql — schema AND catalog
   tests/          unit, storage, acceptance
 ui/    TypeScript. A client of the contract, over HTTP only
@@ -21,19 +21,19 @@ compose.yaml  three containers: database, backend, ui
 Makefile      every command the project has
 ```
 
-**`backend/` and `ui/` are peers that share no code** — not even DTO definitions (`arch.md` §6.1). There is deliberately no top-level `src/` containing both. The only file they share is `docs/openapi.yaml`: the backend generates it, the interface generates its client from it.
+**`backend/` and `ui/` are peers that share no code** — not even DTO definitions (`arch.md` 6.1). There is deliberately no top-level `src/` containing both. The only file they share is `docs/openapi.yaml`: the backend generates it, the interface generates its client from it.
 
 ## Planning documents
 
 | Document | Status |
 |---|---|
-| `docs/reqs.md` | **Written.** Requirements and ontology. v1 scope in §1.3, glossary in Appendix A, decision log in Appendix B |
+| `docs/reqs.md` | **Written.** Requirements and ontology. v1 scope in section 1.3, glossary in Appendix A, decision log in Appendix B |
 | `docs/datasources.md` | **Written.** Source analysis, market analysis, criterion→source mapping |
-| `docs/arch.md` | **Written, MVP scope.** Ontology, storage, module architecture, runtime flows, the interface, operations. Stack decided (§10.2). **Revised before post-MVP work** |
+| `docs/arch.md` | **Written, MVP scope.** Ontology, storage, module architecture, runtime flows, the interface, operations. Stack decided (section 10.2). **Revised before post-MVP work** |
 | `docs/openapi.yaml` | **Written.** The REST contract — 31 paths, 48 schemas. Backend and interface are both written against it |
-| `docs/devplan.md` | **Written, MVP scope only.** Delivery model, 8 phases, 4 e2e gates, agent decomposition. Blocking decisions in §7; the MVP boundary and what follows it in §8. **Post-MVP gets a revised `arch.md` and a second `devplan.md`, not an extension of this one** |
+| `docs/devplan.md` | **Written, MVP scope only.** Delivery model, 8 phases, 4 e2e gates, agent decomposition. Blocking decisions in section 7; the MVP boundary and what follows it in section 8. **Post-MVP gets a revised `arch.md` and a second `devplan.md`, not an extension of this one** |
 
-**Read `docs/devplan.md` §0 before doing implementation work** — the stop rule, the definition of done per task, and which files an agent may not edit.
+**Read `docs/devplan.md` 0 before doing implementation work** — the stop rule, the definition of done per task, and which files an agent may not edit.
 
 ## Commands
 
@@ -45,10 +45,10 @@ Makefile      every command the project has
 | `make up` / `make down` | PostgreSQL only, for running backend and UI from the command line |
 | `make test` | Fast unit tests, no coverage |
 | `make coverage` / `make coverage-open` | Full suite with coverage; **fails below 75%**. HTML at `backend/htmlcov/` |
-| `make boundaries` | `import-linter` — `arch.md` §6.2 as something a build fails on |
+| `make boundaries` | `import-linter` — `arch.md` 6.2 as something a build fails on |
 | `make audit` | The two structural audits below |
 | **`make check`** | **lint + boundaries + coverage + audits. This is the gate** |
-| `make migrate` | Backs up first, then applies migrations. **Never automatic** (`arch.md` §7.4) |
+| `make migrate` | Backs up first, then applies migrations. **Never automatic** (`arch.md` 7.4) |
 | `make ui-coverage` / `make e2e` | Interface coverage (75% bar); Playwright |
 | `make docker-build` / `docker-up` / `docker-migrate` / `docker-down` | The three containers |
 
@@ -61,7 +61,7 @@ uv run --no-project --with pyyaml python tools/audit_api.py
 
 The first checks the ontology's structural invariants — the two diagrams against each other, the diagrams against the prose documenting them, and the catalog's weights. The second checks `docs/openapi.yaml`: that every `$ref` resolves, that **every ontology entity is reachable through the API** (with a named exemption for each covered under another name), and that no key has a null value — the fault that is valid YAML but crashes consumers.
 
-**Run both after any change to `reqs.md` §3, either diagram, the catalog, or the contract.** Exit code 0 means every invariant holds. Both read only and never edit.
+**Run both after any change to `reqs.md` 3, either diagram, the catalog, or the contract.** Exit code 0 means every invariant holds. Both read only and never edit.
 
 ## Test coverage
 
@@ -71,7 +71,7 @@ The first checks the ontology's structural invariants — the two diagrams again
 
 ## Configuration and secrets
 
-**Nothing is configured in code.** Two kinds, kept apart (`arch.md` §7.5):
+**Nothing is configured in code.** Two kinds, kept apart (`arch.md` 7.5):
 
 | | Technical | Domain |
 |---|---|---|
@@ -85,7 +85,7 @@ The first checks the ontology's structural invariants — the two diagrams again
 
 ## Caching — deliberately none
 
-**No caching layer in the MVP**, decided 2026-08-30. Not an oversight: the expensive thing is already cached by the design. Values are fetched once and stored, and score recalculation never re-fetches (`reqs.md` §5.6) — **the `value` table is the cache**. What remains is two queries and pure arithmetic over 32 candidates. Adding a cache would add an invalidation problem to something already fast, and a stale ranking that looks plausible is the exact failure this application exists to prevent. Revisit only on a measurement, not an intuition.
+**No caching layer in the MVP**, decided 2026-08-30. Not an oversight: the expensive thing is already cached by the design. Values are fetched once and stored, and score recalculation never re-fetches (`reqs.md` 5.6) — **the `value` table is the cache**. What remains is two queries and pure arithmetic over 32 candidates. Adding a cache would add an invalidation problem to something already fast, and a stale ranking that looks plausible is the exact failure this application exists to prevent. Revisit only on a measurement, not an intuition.
 
 ## What this project is
 
@@ -93,13 +93,13 @@ A local, single-user decision-support app for a personal relocation search (EU/E
 
 ## The stack — decided, not proposed
 
-**Decided** (`arch.md` §10.2). Backend: **Python 3.12+**, **FastAPI + Pydantic v2**, **asyncio + httpx**, **psycopg3** async with **aiosql** (queries live in `.sql` files, driver name `apsycopg`), **yoyo-migrations** (plain `.sql`, explicit `make migrate`), **ruff**, **pytest**, **import-linter** enforcing §6.2. Interface: **React + TypeScript** under `ui/`, built with Vite, tested with Vitest and Playwright, client generated from `docs/openapi.yaml`. Storage: **PostgreSQL**. LLM: the official Anthropic Python SDK with the `web_search` tool.
+**Decided** (`arch.md` 10.2). Backend: **Python 3.12+**, **FastAPI + Pydantic v2**, **asyncio + httpx**, **psycopg3** async with **aiosql** (queries live in `.sql` files, driver name `apsycopg`), **yoyo-migrations** (plain `.sql`, explicit `make migrate`), **ruff**, **pytest**, **import-linter** enforcing section 6.2. Interface: **React + TypeScript** under `ui/`, built with Vite, tested with Vitest and Playwright, client generated from `docs/openapi.yaml`. Storage: **PostgreSQL**. LLM: the official Anthropic Python SDK with the `web_search` tool.
 
 **Everything is managed by `uv`** — `uv add`, `uv add --dev`, `uv run`. Never `pip`, never the system Python.
 
 **The contract runs code-first.** `docs/openapi.yaml` was hand-written as the design, but FastAPI now generates it; a test asserts the designed paths and operation IDs still exist so a refactor cannot silently drop an endpoint.
 
-Module layout, all under `backend/src/starnest/` (`arch.md` §6.1) — **named after the domain, not technical roles**:
+Module layout, all under `backend/src/starnest/` (`arch.md` 6.1) — **named after the domain, not technical roles**:
 
 | Path | Responsibility |
 |---|---|
@@ -115,7 +115,7 @@ Module layout, all under `backend/src/starnest/` (`arch.md` §6.1) — **named a
 
 **The interface is a separate client, not a layer.** It reaches the backend only over HTTP, shares no code with it — not even DTO definitions — and appears nowhere in its dependency graph. The acceptance suite is another client of the same contract, which is what makes the API a real boundary rather than an intention.
 
-**The dependency rule is enforceable, not aspirational:** no policy module may import a plugin, the import table in `arch.md` §6.1 is exhaustive, and **`data/` may never import `criteria/`, `household/` or `evaluation/`** — that last one is the objective/subjective invariant expressed as imports.
+**The dependency rule is enforceable, not aspirational:** no policy module may import a plugin, the import table in `arch.md` 6.1 is exhaustive, and **`data/` may never import `criteria/`, `household/` or `evaluation/`** — that last one is the objective/subjective invariant expressed as imports.
 
 ## Architecture: the two-level pipeline
 
@@ -126,11 +126,11 @@ The central structural idea. Evaluation is **not** uniform across all candidates
 
 **"Phase" is retired** — it named the same axis as `Candidate.level`. There is one concept: **level**, either `country` or `city`.
 
-Both levels share the same machinery: a **Candidate** is either a Country or a City. **Levels are ordered records, not a hardcoded pair** — no third level is in scope, but nothing in the code may assume there are exactly two (`reqs.md` §3.1). Scoring, matching, active-value selection and comparison logic must be written once against `Candidate`, not duplicated per level. *(Comparison roles are **focus** and **comparators**.)* What differs per level is the *data*: each level has its own attribute catalog and its own weights, and **weights sum to 100% within a level, independently of the other**.
+Both levels share the same machinery: a **Candidate** is either a Country or a City. **Levels are ordered records, not a hardcoded pair** — no third level is in scope, but nothing in the code may assume there are exactly two (`reqs.md` 3.1). Scoring, matching, active-value selection and comparison logic must be written once against `Candidate`, not duplicated per level. *(Comparison roles are **focus** and **comparators**.)* What differs per level is the *data*: each level has its own attribute catalog and its own weights, and **weights sum to 100% within a level, independently of the other**.
 
 ## The three ideas the ontology rests on
 
-Read `reqs.md` §3.0 before touching the model. The whole design turns on keeping these apart:
+Read `reqs.md` 3.0 before touching the model. The whole design turns on keeping these apart:
 
 - **Attribute** — something knowable about a place (rent, population, homicide rate). **Objective.** Belongs to a Pillar, declares its value type, sources and `max_age`. An attribute with no criterion attached is descriptive and never scored — there is no separate facts entity.
 - **Value** — what that attribute is, for one candidate, from one source, on one date.
@@ -146,7 +146,7 @@ Attributes are grouped into **Pillars** — the load-bearing verticals of a life
 
 These are cross-cutting rules from `docs/reqs.md`. Violating one silently breaks the product's purpose, so treat them as non-negotiable unless the user changes them explicitly.
 
-- **Nothing hardcoded.** The attribute catalog, pillars, default weights, default matching thresholds, and inclusion/exclusion rules are **rows in database tables**, seeded and changed by migrations versioned in git — never config files (`arch.md` §1.2). One store, so nothing can drift; catalog changes get referential integrity, the same audit trail as every other table, and transactions. Adding an attribute must be a data change, not a logic change. No literal attribute names or weights in application code.
+- **Nothing hardcoded.** The attribute catalog, pillars, default weights, default matching thresholds, and inclusion/exclusion rules are **rows in database tables**, seeded and changed by migrations versioned in git — never config files (`arch.md` 1.2). One store, so nothing can drift; catalog changes get referential integrity, the same audit trail as every other table, and transactions. Adding an attribute must be a data change, not a logic change. No literal attribute names or weights in application code.
 - **Data acquisition and scoring are separate operations.** Adjusting a weight or threshold recalculates the score instantly from already-stored data. Score recalculation must **never** trigger a re-fetch. Re-fetching is explicit, per candidate and/or per attribute.
 - **Raw data is stored separately from computed scores**, with timestamps. This is what makes the previous invariant possible at ~100 cities.
 - **Multi-source, non-destructive active-value selection.** The same attribute may have different values from different sources. A configurable **source priority** decides which value is *active* for the score, but every value from every source stays stored and visible. Selecting an active value never discards data.
@@ -154,7 +154,7 @@ These are cross-cutting rules from `docs/reqs.md`. Violating one silently breaks
 - **Full provenance on every displayed number**: source, reference date, retrieval date, and a quote/summary where applicable.
 - **Never fabricate a score from missing data.** Sparse coverage (common for small towns on Numbeo/WhereNext) must be flagged as "insufficient data".
 - **Data quality is the product.** Raw indicators only. Published composite scores are displayed alongside as `ExternalScore` and **never ingested as inputs** — we do not recycle another product's interpretation. Where no credible measurement exists, the honest answer is "insufficient data", never a plausible-looking number.
-- **The LLM inventory in `reqs.md` §6.10 is exhaustive.** Four permitted uses, all `low` confidence, all ranked last in source priority, all required to store and display the pages the model actually read. If a use is not listed there, it is not permitted — adding one is a decision recorded in that section, not a convenience adopted mid-implementation. The LLM is never used for scoring arithmetic or comparison synthesis, and never where a structured source already answers.
+- **The LLM inventory in `reqs.md` 6.10 is exhaustive.** Four permitted uses, all `low` confidence, all ranked last in source priority, all required to store and display the pages the model actually read. If a use is not listed there, it is not permitted — adding one is a decision recorded in that section, not a convenience adopted mid-implementation. The LLM is never used for scoring arithmetic or comparison synthesis, and never where a structured source already answers.
 - **No authentication or authorisation, ever.** One household, running locally. No accounts, no permissions, no multi-tenancy.
 - **Non-matching candidates stay visible**, keeping their computed score, with the reason shown. Do not filter them out of the results view.
 - **The comparator limit is 5 by default but must not be hardcoded.** Design it as a configurable bound.
@@ -162,7 +162,7 @@ These are cross-cutting rules from `docs/reqs.md`. Violating one silently breaks
 
 ## Value types
 
-Each **attribute** declares one of ten semantic value types, and matching thresholds behave differently per type. See `reqs.md` §3.3a for the full table and the validation rules.
+Each **attribute** declares one of ten semantic value types, and matching thresholds behave differently per type. See `reqs.md` 3.3a for the full table and the validation rules.
 
 `Monetary`, `Quantity`, `Count`, `Ratio`, `Index`, `LabelSet`, `ShareComposition`, `Boolean`, `AssignedScore`, `Text`.
 
@@ -175,7 +175,7 @@ The type determines what a `Value` stores, which normalisation methods are legal
 
 ## Scope discipline
 
-**v1 covers the country level only**, with the full feature set applied to it: pillar and criterion configuration, weight profiles, country nomination, data acquisition runs, scoring with coverage and confidence, elimination reporting, the ranking dashboard with drill-down and provenance, and comparison. See `reqs.md` §1.3.
+**v1 covers the country level only**, with the full feature set applied to it: pillar and criterion configuration, weight profiles, country nomination, data acquisition runs, scoring with coverage and confidence, elimination reporting, the ranking dashboard with drill-down and provenance, and comparison. See `reqs.md` 1.3.
 
 **After v1:** the entire city level — city criteria, city nomination, and the LLM + `web_search` data acquisition path.
 

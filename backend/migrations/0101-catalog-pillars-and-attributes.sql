@@ -66,9 +66,9 @@ INSERT INTO attribute (id, pillar, level, value_type, name, description, max_age
     ('country.rule_of_law', 'governance', 'country', 'Index', 'Rule of law', 'World Bank WGI −2.5–2.5', NULL, false),
     ('country.naturalisation_pathway', 'governance', 'country', 'Quantity', 'Naturalisation pathway', 'years of residence', NULL, true),
     ('country.control_of_corruption', 'governance', 'country', 'Index', 'Control of corruption', 'World Bank WGI −2.5–2.5', NULL, false),
-    ('country.residency_admin_ease', 'governance', 'country', 'AssignedScore', 'Residency admin ease', '0–100, rubric in §6.9', NULL, true),
+    ('country.residency_admin_ease', 'governance', 'country', 'AssignedScore', 'Residency admin ease', '0–100, rubric in section 6.9', NULL, true),
     ('country.press_freedom', 'governance', 'country', 'Index', 'Press freedom', 'RSF 0–100', NULL, false),
-    ('country.pension_portability', 'governance', 'country', 'AssignedScore', 'Pension portability', '0–100, rubric in §6.9', NULL, true),
+    ('country.pension_portability', 'governance', 'country', 'AssignedScore', 'Pension portability', '0–100, rubric in section 6.9', NULL, true),
     ('country.school_system_quality', 'family', 'country', 'Index', 'School system quality', 'OECD PISA mean score', NULL, false),
     ('country.parental_leave_policy', 'family', 'country', 'Quantity', 'Parental leave policy', 'weeks paid', NULL, false),
     ('country.child_benefit_policy', 'family', 'country', 'Monetary', 'Child benefit policy', 'EUR/month per child', NULL, false)

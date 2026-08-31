@@ -80,7 +80,7 @@ export interface paths {
         /**
          * The attribute catalog
          * @description Attributes with `pillar: null` are descriptive: nothing scores them, and they exist to
-         *     make a candidate legible (`reqs.md` §3.3).
+         *     make a candidate legible (`reqs.md` 3.3).
          */
         get: operations["listAttributes"];
         put?: never;
@@ -167,7 +167,7 @@ export interface paths {
          * Stored values, with full provenance
          * @description Returns the active value per attribute by default. `include_superseded` returns every
          *     value from every source, which is what the drill-down shows — nothing is ever discarded
-         *     (`reqs.md` §3.6).
+         *     (`reqs.md` 3.6).
          */
         get: operations["listValues"];
         put?: never;
@@ -190,7 +190,7 @@ export interface paths {
         /**
          * Enter a value by hand
          * @description Manual entry is a real source, ranked last, and **permitted only where the attribute
-         *     declares it** (`reqs.md` §6.5). It is how a figure with no adapter gets recorded, and how
+         *     declares it** (`reqs.md` 6.5). It is how a figure with no adapter gets recorded, and how
          *     an early estimate is captured so a real dataset can supersede it later without deleting
          *     anything.
          *
@@ -273,7 +273,7 @@ export interface paths {
          * @description Changing `weight` **rebalances the unlocked siblings within the pillar**, honouring locks,
          *     so the pillar always sums to 1. The response returns every criterion in that pillar with
          *     its new weight — the client sends one number and is told what the others became
-         *     (`arch.md` §8.3).
+         *     (`arch.md` 8.3).
          */
         patch: operations["updateCriterion"];
         trace?: never;
@@ -428,7 +428,7 @@ export interface paths {
         put?: never;
         /**
          * Estimate a run without executing it
-         * @description The dry run of `reqs.md` §6.3 — planned work and estimated cost, for confirmation before
+         * @description The dry run of `reqs.md` 6.3 — planned work and estimated cost, for confirmation before
          *     anything is fetched or spent. Has no side effects despite being a POST, because the
          *     scope is a body rather than a query.
          */
@@ -486,7 +486,7 @@ export interface paths {
         /**
          * Compute a ranking
          * @description **Computes and returns; stores nothing.** This is how "adjusting a weight recalculates
-         *     instantly" works over HTTP (`reqs.md` §5.6, Q155). To keep a result, `POST /evaluations`.
+         *     instantly" works over HTTP (`reqs.md` 5.6, Q155). To keep a result, `POST /evaluations`.
          */
         get: operations["getRanking"];
         put?: never;
@@ -510,7 +510,7 @@ export interface paths {
          * Keep a ranking
          * @description Persists the ranking **with a frozen copy of the criteria used** and the per-attribute
          *     detail behind every score, so it reads the same later however the criteria set or the
-         *     scoring code change (`reqs.md` §3.4a, Q156).
+         *     scoring code change (`reqs.md` 3.4a, Q156).
          */
         post: operations["saveEvaluation"];
         delete?: never;
@@ -566,7 +566,7 @@ export interface paths {
         };
         /**
          * The criteria this evaluation was computed with
-         * @description The frozen snapshot (`reqs.md` §3.4a). The criteria set it names stays editable, so this
+         * @description The frozen snapshot (`reqs.md` 3.4a). The criteria set it names stays editable, so this
          *     is the only record of what the weights actually were when the ranking was produced — and
          *     which attributes were in scope, which is what keeps its coverage figure meaningful.
          */
@@ -608,7 +608,7 @@ export interface paths {
         };
         /**
          * Published scores from outside indices
-         * @description Displayed **beside** the score, never fed into it (`reqs.md` §3.5a).
+         * @description Displayed **beside** the score, never fed into it (`reqs.md` 3.5a).
          */
         get: operations["listExternalScores"];
         put?: never;
@@ -790,7 +790,7 @@ export interface components {
             /** Format: date */
             retrieval_date: string;
             /**
-             * @description Defaults to a deliberately unflattering middle; a source tier says nothing useful about a typed value (`reqs.md` §5.7).
+             * @description Defaults to a deliberately unflattering middle; a source tier says nothing useful about a typed value (`reqs.md` 5.7).
              * @default medium
              * @enum {string}
              */
@@ -840,7 +840,7 @@ export interface components {
              * @enum {string}
              */
             reducer_mode?: "select" | "aggregate";
-            /** @description For the `fixed` method. A label lets a number display as a word without ceasing to be a number (`reqs.md` §5.1). */
+            /** @description For the `fixed` method. A label lets a number display as a word without ceasing to be a number (`reqs.md` 5.1). */
             scale_anchors?: {
                 input_value: number;
                 score: number;
@@ -986,7 +986,7 @@ export interface components {
             score: number | null;
             /** @description Percentage, 0-100. The share of active weight actually backed by data. */
             coverage: number;
-            /** @description How the covered weight splits by confidence (`reqs.md` §5.7). Coverage alone cannot show that a candidate reached 100% entirely on extrapolation; this can. */
+            /** @description How the covered weight splits by confidence (`reqs.md` 5.7). Coverage alone cannot show that a candidate reached 100% entirely on extrapolation; this can. */
             coverage_by_confidence?: {
                 absolute?: number;
                 high?: number;

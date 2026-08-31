@@ -1,7 +1,7 @@
 import type { CandidateResult } from "../api/endpoints";
 
 /**
- * The four counts the sidebar shows (`reqs.md` §8.1): total, matching, not matching,
+ * The four counts the sidebar shows (`reqs.md` 8.1): total, matching, not matching,
  * insufficient data.
  *
  * **This tallies; it does not decide.** `match_status` was computed by `evaluation/` and

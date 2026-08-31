@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
  * the configured display name.
  *
  * **This spec is scaffolding.** End-to-end tests belong to the master agent (`devplan.md`
- * §0.2), and this one is replaced at Gate A by a suite written from `reqs.md` against the real
+ * section 0.2), and this one is replaced at Gate A by a suite written from `reqs.md` against the real
  * backend. Its job until then is to prove the Playwright harness runs at all -- a harness
  * discovered to be broken at a gate is discovered too late.
  *
@@ -31,7 +31,13 @@ test("all four routes render", async ({ page }) => {
 
   for (const tab of TABS) {
     await page.getByRole("link", { name: tab, exact: true }).click();
-    await expect(page.getByRole("heading", { level: 2, name: tab })).toBeVisible();
+    // `exact` matters: an accessible name is matched as a substring by default, so "Run"
+    // also matches the sidebar's "Last run" panel heading. That produced a strict-mode
+    // violation only when the sidebar's data won the race to render -- a real selector bug
+    // wearing a flake's clothing.
+    await expect(
+      page.getByRole("heading", { level: 2, name: tab, exact: true }),
+    ).toBeVisible();
   }
 });
 

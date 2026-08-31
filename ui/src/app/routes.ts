@@ -1,5 +1,5 @@
 /**
- * The four tabs of `reqs.md` §8, in workflow order: configure the criteria, run acquisition,
+ * The four tabs of `reqs.md` 8, in workflow order: configure the criteria, run acquisition,
  * read the ranking, compare candidates.
  *
  * One table, so the sidebar navigation and the router can never disagree about which routes
@@ -40,7 +40,7 @@ export const ROUTES: readonly RouteDefinition[] = [
   },
 ] as const;
 
-/** Where `/` lands. The household is configured first on a fresh installation (`reqs.md` §8.2). */
+/** Where `/` lands. The household is configured first on a fresh installation (`reqs.md` 8.2). */
 export const DEFAULT_ROUTE = ROUTES[0]!.path;
 
 export function findRouteByPath(path: string): RouteDefinition | undefined {

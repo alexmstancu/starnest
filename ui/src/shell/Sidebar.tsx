@@ -7,7 +7,7 @@ import { useSelection } from "./SelectionContext";
 import { useShellSummary } from "./useShellSummary";
 
 /**
- * The persistent sidebar of `reqs.md` §8.1: display name, active criteria set, level toggle,
+ * The persistent sidebar of `reqs.md` 8.1: display name, active criteria set, level toggle,
  * candidate counts, last-run summary and a link to run history.
  *
  * Everything numeric in here came from the API. The only thing the sidebar computes is which

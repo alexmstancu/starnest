@@ -13,13 +13,13 @@ Everything else is from published documentation and should be re-checked before 
 1. **WhereNext is a competitor, not a data source.** It was once listed under "reference
    sources". It is in fact the closest existing product to Starnest — weighted multi-dimension
    country scoring, user-adjustable weights, confidence adjustment for sparse data. It is also
-   *unusable as a primary source* for reasons in §2.3.
+   *unusable as a primary source* for reasons in section 2.3.
 2. **The country/city divide is the whole problem.** the country level is served by excellent free
    official APIs. the city level is thin, and for small localities it collapses.
 3. **The fix is a source-selection principle, not more sources** — prefer *coordinate-bound*
-   sources over *registry-bound* ones (§3). This is what makes Cassis tractable.
-4. **Two sources named in `reqs.md` are dead** and must be replaced (§6.1).
-5. **One attribute has no city-level source at all** — `country.openness_to_foreigners` (§6.2).
+   sources over *registry-bound* ones (section 3). This is what makes Cassis tractable.
+4. **Two sources named in `reqs.md` are dead** and must be replaced (section 6.1).
+5. **One attribute has no city-level source at all** — `country.openness_to_foreigners` (section 6.2).
 
 ---
 
@@ -58,7 +58,7 @@ our coverage percentage solves. This is worth sitting with before building.
 | Uncertainty **disclosed** as coverage % | Uncertainty **absorbed** by shrinking toward the mean |
 
 That last row is a real philosophical split. WhereNext hides low confidence by pulling the
-score toward average; `reqs.md` §5.3 discloses it and leaves the number alone. For a public
+score toward average; `reqs.md` 5.3 discloses it and leaves the number alone. For a public
 ranking their choice is defensible. For a decision you will live inside, ours is better.
 
 ### 2.2 Data-quality problems found in the WhereNext payload **[verified]**
@@ -75,7 +75,7 @@ Testing the live API surfaced three issues:
   per-indicator provenance available.
 
 Also worth noting: their published methodology cites **World Bank Doing Business** for the
-career dimension. That product was discontinued in September 2021 (§6.1).
+career dimension. That product was discontinued in September 2021 (section 6.1).
 
 ### 2.3 Conclusion on using WhereNext as a source
 
@@ -92,7 +92,7 @@ career dimension. That product was discontinued in September 2021 (§6.1).
 
 The one genuinely useful field is `monthly_estimate_usd` from `/api/data/cost-of-living` — an
 absolute figure rather than an index — worth carrying as a **low-priority comparison source**
-under the §6.6 priority mechanism.
+under the section 6.6 priority mechanism.
 
 ### 2.4 The rest of the landscape
 
@@ -161,8 +161,8 @@ have surveyed the specific town — local bureaucracy, local job market, city-le
 | **GeoNames** | Population, elevation, coordinates, timezone, admin hierarchy | REST + dumps, CC BY | Backbone for the descriptive attributes |
 | **Wikidata** | Subdivisions, admin parents, heritage, arbitrary facts | SPARQL | Excellent for arrondissement-style subdivisions |
 | **UNESCO World Heritage** | Inscribed sites with coordinates | XML/CSV list | Feeds `city.heritage_and_culture_density` |
-| **WHO Global Health Observatory** | Health system indicators | REST (OData) | Replaces the dead EHCI (§6.1) |
-| **UNdata** | Aggregator across UN agencies — demography, education, environment | Web + downloads | Convenient, but **largely a mirror** of upstream agencies — see §6.4 |
+| **WHO Global Health Observatory** | Health system indicators | REST (OData) | Replaces the dead EHCI (section 6.1) |
+| **UNdata** | Aggregator across UN agencies — demography, education, environment | Web + downloads | Convenient, but **largely a mirror** of upstream agencies — see section 6.4 |
 | **UNODC** | Homicide, violent crime, prisons, justice | **Portal download** (ZIP: CSV + JSON metadata) | **Not a REST API** — expect a scheduled download, not a live call |
 
 ### Tier 2 — free, with registration or meaningful limits
@@ -178,7 +178,7 @@ have surveyed the specific town — local bureaucracy, local job market, city-le
 
 | Source | Provides | Cost |
 |---|---|---|
-| **Numbeo** | City cost of living, rent, safety, healthcare, pollution indices | **$250/month for 200k requests.** No small tier — see §9.1 |
+| **Numbeo** | City cost of living, rent, safety, healthcare, pollution indices | **$250/month for 200k requests.** No small tier — see section 9.1 |
 | **Google Places** | POIs, ratings, opening hours | The pooled $200 monthly credit was **retired March 2025**. Now per-SKU free tiers — 10,000 Essentials, 5,000 Pro, 1,000 Enterprise, monthly, **no rollover, no pooling** |
 | **Flight data** (Amadeus etc.) | Routes, frequency, price | Free tiers exist, generally too thin for repeated use |
 
@@ -191,7 +191,7 @@ have surveyed the specific town — local bureaucracy, local job market, city-le
 EF English Proficiency Index, MIPEX, Eurobarometer, InterNations, national tax authorities,
 national land registries, immigration and naturalisation law, EU pension coordination rules
 
-These map onto the **manual entry as first-class source** decision (`reqs.md` §6.5) and the
+These map onto the **manual entry as first-class source** decision (`reqs.md` 6.5) and the
 LLM + `web_search` path.
 
 ---
@@ -209,8 +209,8 @@ LLM + `web_search` path.
 | `international_employers` | — | LLM + search | **Low** — no structured source |
 | `country.crime_safety_index` | UNODC homicide | World Bank `VC.IHR.PSRC.P5`; Eurostat crime | **High** (note: WB mirrors UNODC — not independent) |
 | `country.political_economic_stability` | World Bank Governance Indicators | — | **High** |
-| `country.healthcare_system_quality` | **WHO GHO** + OECD Health Statistics | Numbeo healthcare index | **High** (EHCI is dead — §6.1) |
-| `country.residency_admin_ease` | — | LLM / manual | **Low** (Doing Business is dead — §6.1) |
+| `country.healthcare_system_quality` | **WHO GHO** + OECD Health Statistics | Numbeo healthcare index | **High** (EHCI is dead — section 6.1) |
+| `country.residency_admin_ease` | — | LLM / manual | **Low** (Doing Business is dead — section 6.1) |
 | `country.climate_zone` | Köppen classification dataset | — | **High** |
 | `country.avg_annual_temperature` | **Open-Meteo** archive | National met services | **High**, coordinate-bound |
 | `country.annual_sunshine_hours` | **Open-Meteo** (derive from radiation) | National met services | **High**, coordinate-bound |
@@ -224,9 +224,9 @@ LLM + `web_search` path.
 
 | Attribute | Primary | Type | Small-town outlook |
 |---|---|---|---|
-| `tech_software_jobs` | Job-posting counts **(source unresolved, §11)** | — | Poor; postings concentrate in large cities |
+| `tech_software_jobs` | Job-posting counts **(source unresolved, section 11)** | — | Poor; postings concentrate in large cities |
 | `city.international_employers` | LLM + search | — | Poor |
-| `tech_product_jobs` | Job-posting counts **(source unresolved, §11)** | — | Poor; product roles are scarce everywhere |
+| `tech_product_jobs` | Job-posting counts **(source unresolved, section 11)** | — | Poor; product roles are scarce everywhere |
 | `city.cost_of_living_monthly` | Numbeo | **R** | **Fails** — fall back to regional figure + LLM |
 | `city.rent_centre` | Numbeo; national listing sites | **R** | **Fails** — LLM + local listings |
 | `city.property_purchase_price_m2` | National land registries; Eurostat | **R** | Partial — regional averages exist |
@@ -239,7 +239,7 @@ LLM + `web_search` path.
 | `city.flights_to_home` | Manual / LLM; flight APIs | — | Works via `profile.nearest_airport` |
 | `city.proximity_to_hub` | Computed from coordinates | **C** | **Works** — pure geometry |
 | `city.heritage_and_culture_density` | **UNESCO + Overpass + Wikidata** | **C** | **Works** — count monuments, museums, cinemas by radius |
-| `country.openness_to_foreigners` | MIPEX, Eurobarometer, InterNations | **country only** | **Gap — see §6.2** |
+| `country.openness_to_foreigners` | MIPEX, Eurobarometer, InterNations | **country only** | **Gap — see section 6.2** |
 | the `city.distance_to_*` family | WDPA, coastline, elevation | **C** | **Works** |
 | `country.english_proficiency` | EF EPI | **country only** | Country value applied to city |
 | `city.expat_community_size` | **Eurostat Urban Audit** (foreign-born) | **R** | Fails for small towns; national fallback |
@@ -260,7 +260,7 @@ mandating it. Coverage therefore varies sharply by domain: **over 90% of cities 
 demography, under half for environment.** It is a registry source with a population floor, and
 patchy above that floor.
 
-This is direct empirical support for `reqs.md` §5.3: weight redistribution plus a displayed
+This is direct empirical support for `reqs.md` 5.3: weight redistribution plus a displayed
 coverage percentage is not a nicety, it is the only honest way to consume this dataset.
 
 ---
@@ -357,7 +357,7 @@ source.reliability_tier            (official / crowdsourced / llm / manual)
   = confidence, with a manual override retained alongside
 ```
 
-This reuses machinery that already exists — `max_age` from §6.6, `DataSource.kind` from §3.5 —
+This reuses machinery that already exists — `max_age` from section 6.6, `DataSource.kind` from section 3.5 —
 rather than adding a field somebody must remember to fill.
 
 ### 8.3 The open question: does confidence affect the score?
@@ -372,13 +372,13 @@ Four positions, in increasing order of how much they change the numbers:
    to the coverage percentage than a High one, so the `min_coverage` floor catches candidates
    propped up by guesses.
 4. **Affects the score itself.** Low-confidence values are discounted or shrunk toward the
-   mean — **this is what WhereNext does** (§2.1), and it is the option that contradicts our
+   mean — **this is what WhereNext does** (section 2.1), and it is the option that contradicts our
    stated preference for disclosing uncertainty rather than absorbing it.
 
 **Decided: positions 1 and 2.** Confidence is displayed everywhere and breaks ties in source
 priority; it does not touch the score arithmetic. Position 3 (confidence-weighted coverage) was
 considered and left out for now; position 4 is rejected on the same grounds as WhereNext's
-approach. Recorded in `reqs.md` §5.7.
+approach. Recorded in `reqs.md` 5.7.
 
 ---
 
@@ -388,7 +388,7 @@ approach. Recorded in `reqs.md` §5.7.
 
 **$250/month buys 200,000 requests.** Realistic usage here is a few hundred requests for an
 initial load, then a refresh every few months — plausibly under 10,000 requests *per month*
-even being generous, because values are stored once and scoring never re-fetches (§5.6).
+even being generous, because values are stored once and scoring never re-fetches (section 5.6).
 
 That is roughly **5% of the tier being paid for**. The objection is not the money in the
 abstract, it is that there is no tier matching the shape of this usage; a ~$25 tier at 10k
@@ -425,7 +425,7 @@ it is about crowdsourced submission volume. Lisbon and Porto both return exactly
 - Where data exists, extraction is straightforward — server-rendered HTML, one stable table,
   55 `priceValue` cells. `robots.txt` disallows only `/heavy_crawling.any`; the
   `/cost-of-living/in/*` paths are not restricted. Crawl politely and cache aggressively.
-- **This promotes the coordinate-bound strategy (§3) from preferable to load-bearing.** For any
+- **This promotes the coordinate-bound strategy (section 3) from preferable to load-bearing.** For any
   candidate under ~150k, Open-Meteo, Ookla, Overpass and OpenAQ are not a fallback — they are
   the only city-level fact available.
 
@@ -434,7 +434,7 @@ it is about crowdsourced submission volume. Lisbon and Porto both return exactly
 ## 10. Pillar benchmarks — how reputable indices structure this
 
 Four established frameworks, chosen for methodological transparency and standing. Compared
-against the Starnest catalog (`reqs.md` §7) to find gaps.
+against the Starnest catalog (`reqs.md` 7) to find gaps.
 
 ### 10.1 The four references
 
@@ -514,7 +514,7 @@ Reporters Without Borders Press Freedom Index, EU Justice Scoreboard.*
 
 **OECD deliberately locks indicator weights.** Users weight the 11 dimensions but cannot touch
 the 24 indicators beneath them, which stay equal-weighted. Starnest currently allows both
-levels to be adjusted (`reqs.md` §3.3). OECD's restraint is defensible — indicator-level
+levels to be adjusted (`reqs.md` 3.3). OECD's restraint is defensible — indicator-level
 weighting demands that the user understand each indicator, and it invites tuning weights until
 a favoured answer appears. Worth a deliberate decision rather than a default.
 
@@ -535,7 +535,7 @@ index = max(0, 100
 The coefficients are **not** weights. `housePriceToIncomeRatio` ranges roughly 2–30 while the
 other terms are 0–100 indices, so its coefficient of 1.0 contributes far less than it appears
 to, and nothing in the formula corrects for that. This is precisely the failure mode that the
-per-attribute normalisation decision (`reqs.md` §5.1) exists to prevent — a useful confirmation
+per-attribute normalisation decision (`reqs.md` 5.1) exists to prevent — a useful confirmation
 that the decision was the right one.
 
 ---
@@ -551,7 +551,7 @@ not confirmed:
 | **Adzuna** | Documented self-serve API, free tier ~1,000 calls/month, with endpoints that return **vacancy counts by region and category** — exactly the query shape needed. Credibility is genuine: it is the **exclusive data partner to the UK Office for National Statistics**, powering the official real-time job vacancy index in the ONS "faster indicators" report from 36M+ adverts. ⚠️ **EU coverage unconfirmed.** The docs publish no country list; "16+ countries" is the only figure found, and the historical footprint skews UK/US/AU. **This must be verified before committing.** |
 | **EURES** | Official EU portal, 30+ countries. ❌ **Not usable for extraction** — terms explicitly forbid "screen scraping or any other automated or manual system to extract job vacancy data"; bulk download decommissioned October 2023; the only API is a reverse-engineered community spec with no stability guarantees. Its **published aggregate statistics** have download buttons and remain legitimate, but give vacancy totals, not tech-specific counts. |
 | **Eurostat job vacancy statistics** | Official, free, complete EU coverage. ⚠️ Sector-level at best — no split between software and product roles. Useful as a denominator or sanity check, not as the attribute value. |
-| **National public employment services** | Every EU state runs one, many with open APIs. ✓ Authoritative and complete per country. ⚠️ 27 different APIs, 27 schemas, 27 languages — the highest-fidelity and highest-effort option. Fits the plug-in model (`reqs.md` §6.7): one adapter per country, added incrementally. |
+| **National public employment services** | Every EU state runs one, many with open APIs. ✓ Authoritative and complete per country. ⚠️ 27 different APIs, 27 schemas, 27 languages — the highest-fidelity and highest-effort option. Fits the plug-in model (`reqs.md` 6.7): one adapter per country, added incrementally. |
 | **LinkedIn / Indeed** | Best raw coverage. ❌ No usable free API; both actively block automated access. |
 
 ### Open questions before this can be built

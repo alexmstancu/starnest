@@ -3,15 +3,15 @@
 The architecture of Starnest. Terms used here are defined in `reqs.md` Appendix A.
 
 **Status: complete for the MVP.** Ontology, storage, module architecture, runtime flows, the
-interface and operations are all settled, and **the stack is decided** (§10.2). What remains
-open is listed in §11 and blocks nothing.
+interface and operations are all settled, and **the stack is decided** (section 10.2). What remains
+open is listed in section 11 and blocks nothing.
 
-> **This is the MVP architecture — the country level** (`reqs.md` §1.3). It is deliberately
+> **This is the MVP architecture — the country level** (`reqs.md` 1.3). It is deliberately
 > built so the city level adds *sources and rows* rather than machinery, but it has not yet had
 > to prove that. **A second pass revises this document before post-MVP work begins**, because
 > the city level makes the LLM-plus-search acquisition path load-bearing where the MVP exercises
 > it for a single attribute. `devplan.md` covers the MVP only; a second development plan is
-> written against the revised architecture. See `devplan.md` §8.
+> written against the revised architecture. See `devplan.md` 8.
 
 ---
 
@@ -27,7 +27,7 @@ places for a reason that is not stylistic.
 | Changed by | A developer, in a release | A data migration, versioned in git |
 | They are | The vocabulary | The sentences |
 
-The **rule shapes** of `reqs.md` §3.7a are archetypes for the same reason: `ShareOfHouseholdField`
+The **rule shapes** of `reqs.md` 3.7a are archetypes for the same reason: `ShareOfHouseholdField`
 performs a comparison, and `rent_vs_spend` is one instantiation of it — inputs and a threshold,
 stored as data.
 
@@ -80,7 +80,7 @@ as migration scripts. The readability of a YAML diff is traded for a SQL diff, w
 loss than it sounds and comes with the integrity above.
 
 **Retirement, not deletion.** An attribute that should no longer be scored is marked retired
-(§2). Its values remain. There is no operation that deletes a catalog row with values behind
+(section 2). Its values remain. There is no operation that deletes a catalog row with values behind
 it, and a foreign key enforces that.
 
 ### 1.3 The guardrail
@@ -141,10 +141,10 @@ attribute inserts rows and never alters a table.
 
 ### 3.2 Identifiers and keys
 
-**Attributes and candidates are rows** (§1.2), so `value` holds **real foreign keys**, not loose
+**Attributes and candidates are rows** (section 1.2), so `value` holds **real foreign keys**, not loose
 strings.
 
-This is what makes retirement work. When an attribute is retired (§2), its stored values must
+This is what makes retirement work. When an attribute is retired (section 2), its stored values must
 keep pointing at something. If attributes lived only in a file, removing an entry would orphan
 every historical value. As a row with `lifecycle_status = retired`, the foreign key stays valid
 permanently while the attribute drops out of active scoring.
@@ -153,7 +153,7 @@ permanently while the attribute drops out of active scoring.
 
 | Entity | ID | Why |
 |---|---|---|
-| Attribute | `city.rent_centre` | `<level>.<name>` — level is identity, pillar is not (`reqs.md` §3.3) |
+| Attribute | `city.rent_centre` | `<level>.<name>` — level is identity, pillar is not (`reqs.md` 3.3) |
 | Country | `country.portugal` | The name, lowercased, underscores for spaces — `country.united_kingdom` |
 | City | `city.portugal.lisbon` | Country-qualified — city names are not globally unique |
 
@@ -181,7 +181,7 @@ value          id            surrogate PK
 value_monetary value_id      PRIMARY KEY, FK → value.id
 ```
 
-Exactly one payload row per value — see §3.3b for why, and for what enforces it.
+Exactly one payload row per value — see section 3.3b for why, and for what enforces it.
 
 A composite key therefore reads as `city.portugal.lisbon` × `city.rent_centre` — both
 halves legible without a lookup.
@@ -212,7 +212,7 @@ single row that refers to it.
 | `unit` | Units a `Quantity` may carry | `celsius`, `km`, `mbps`, `hours_per_year` |
 | `currency` | Currencies a `Monetary` may carry | `EUR`, `GBP`, `CHF` |
 | `confidence_level` | The four grades | `absolute`, `high`, `medium`, `low` |
-| `match_rule` | The named gates of `reqs.md` §7.3 | `uk_skilled_worker` |
+| `match_rule` | The named gates of `reqs.md` 7.3 | `uk_skilled_worker` |
 | `label_vocabulary` | Controlled vocabularies for `LabelSet` attributes | Köppen zone codes |
 | `criteria_set` | Named criteria sets | `alex`, `remote_only` |
 | `evaluation` | One criteria set run against one level | surrogate |
@@ -257,7 +257,7 @@ This buys three things at once:
 
 - **Real constraints.** `amount NUMERIC NOT NULL`, `currency CHAR(3) NOT NULL`,
   `CHECK (amount > 0)`. The database enforces the type-implicit validation rules from
-  `reqs.md` §3.3a, rather than trusting application code to remember.
+  `reqs.md` 3.3a, rather than trusting application code to remember.
 - **The common path stays cheap.** The four operations the app performs most — every value for
   a candidate, choosing the active value, computing coverage, the attribute drill-down — read
   `value` alone and never touch a child table.
@@ -276,7 +276,7 @@ such as a three-year mean or a trend. **Not in v1.**
 
 **Multi-value — different measurements at the same time, all current.** Rent in Lisbon is about
 €1,100 for a one-bedroom, €1,410 for two, €1,900 for three. None is history; they coexist and
-together describe the attribute (`reqs.md` §3.3b).
+together describe the attribute (`reqs.md` 3.3b).
 
 **These are also separate `value` rows**, distinguished by `breakdown_option`:
 
@@ -299,7 +299,7 @@ value_monetary  9003 | 1900 EUR
 > would force one `confidence_level`, one `reference_period` and one rejection state across all
 > of them, and would stop a fresher two-bedroom figure superseding on its own.
 >
-> It also makes **exactly one payload row per value** true, which §3.3b depends on.
+> It also makes **exactly one payload row per value** true, which section 3.3b depends on.
 
 The reducer runs **at scoring time, never at fetch**. An adapter that fetched all three rents
 and stored only the selected one would make changing household size require re-fetching every
@@ -342,7 +342,7 @@ later.
 
 `value.value_type` is **denormalised on purpose**. It duplicates what the attribute already
 declares, and that duplication is the whole mechanism: a two-column foreign key needs both
-columns present on the referring row. Since attribute type is immutable (§2), the copy can never
+columns present on the referring row. Since attribute type is immutable (section 2), the copy can never
 drift.
 
 **The same pattern applies to criteria.** A `CRITERION` carries the attribute's `value_type` the
@@ -354,7 +354,7 @@ given a numeric range, and exactly one threshold kind can exist.
 Nothing is deleted. A value that fails validation is stored with its `rejection_reason` and never
 becomes active.
 
-**Being active is not stored.** It is computed on read (§4), because it is a *comparison between*
+**Being active is not stored.** It is computed on read (section 4), because it is a *comparison between*
 values rather than a fact about one: it changes when a fresher value arrives, when `max_age` is
 shortened, or when source priority is edited. A stored flag would be a cache of that comparison
 with no owner responsible for refreshing it, and a stale `active` does not fail loudly — it
@@ -373,7 +373,7 @@ performance.
 
 ### 3.6 Two families of table, and the line between them
 
-The schema divides exactly as `reqs.md` §3.0 does, and the division is worth enforcing in the
+The schema divides exactly as `reqs.md` 3.0 does, and the division is worth enforcing in the
 database rather than only in prose:
 
 | Objective — what is true | Subjective — what you make of it |
@@ -386,7 +386,7 @@ database rather than only in prose:
 **No table on the left ever carries a foreign key to one on the right.** Values do not know
 which criteria set is active; candidates do not store a score. That is what makes a
 re-evaluation pure arithmetic over stored rows, and it is why switching from `alex` to
-`partner` cannot trigger a fetch (`reqs.md` §5.6).
+`partner` cannot trigger a fetch (`reqs.md` 5.6).
 
 `evaluation` and `candidate_result` are the tables that did not exist in the earlier draft,
 where score and match status sat on the candidate. Keeping several evaluations is a matter of
@@ -407,7 +407,7 @@ per level. In order:
 1. Discard values with a `rejection_reason`.
 2. **Fresh beats stale** — older than the attribute's `max_age` drops below every fresh value.
 3. **Source priority** — the attribute's override first, then every other source in the global
-   order beneath it (`reqs.md` §6.6).
+   order beneath it (`reqs.md` 6.6).
 4. **Confidence** breaks ties within a priority rank.
 5. Most recently retrieved wins anything remaining.
 
@@ -448,9 +448,9 @@ provides:
 `country.population` exist? Does its `value_type` match what the adapter claims to produce? A
 mismatch is a **startup error**, not a corrupted value discovered months later.
 
-Since the catalog is a table (§1.2), the first half of that check is a foreign key the database
+Since the catalog is a table (section 1.2), the first half of that check is a foreign key the database
 already enforces — an adapter registration naming an attribute that does not exist cannot be
-stored. Only the type agreement needs code, and §3.3b makes even that a constraint once a value
+stored. Only the type agreement needs code, and section 3.3b makes even that a constraint once a value
 is written.
 
 An attribute gets its value by one of two bindings:
@@ -461,7 +461,7 @@ An attribute gets its value by one of two bindings:
 | **Manual entry** | Typed by the user, ranked like any source | The UK visa match-rule result |
 
 > **There used to be a third**, letting an attribute borrow a value from a separate facts
-> entity. `reqs.md` §3.3 dissolved that entity: descriptive facts *are* attributes, so
+> entity. `reqs.md` 3.3 dissolved that entity: descriptive facts *are* attributes, so
 > `country.population` is fetched once by an adapter and read directly by whatever judges it.
 > One binding fewer, and one indirection that can no longer go stale.
 
@@ -503,10 +503,10 @@ matters is *why* nothing came back, because the three cases deserve different tr
 |---|---|---|
 | **Transport failure** | Timeout, connection reset, `503` | Retried inside the adapter, with bounded exponential backoff. If it still fails, the item is recorded as a run failure and is retryable later |
 | **Parse failure** | The page changed shape; a field is missing | **Not** retried — repeating it produces the same result. Recorded as a run failure with the response kept, because this is a bug in the adapter, not a bad day for the source |
-| **Absence** | Numbeo has no data for a town of 7,000 | **Not a failure at all.** The source answered; the answer is that it does not know. Nothing is written, and coverage falls (`reqs.md` §5.3), which is exactly the disclosure that was wanted |
+| **Absence** | Numbeo has no data for a town of 7,000 | **Not a failure at all.** The source answered; the answer is that it does not know. Nothing is written, and coverage falls (`reqs.md` 5.3), which is exactly the disclosure that was wanted |
 
 > **Confusing absence with failure would be the expensive mistake.** Small localities are sparsely
-> covered by design (`datasources.md` §3), so treating "no data" as an error would fill every run
+> covered by design (`datasources.md` 3), so treating "no data" as an error would fill every run
 > with failures, make retry meaningless, and hide the real ones.
 
 ### 5.4 Bulk downloads are kept, not just parsed
@@ -636,7 +636,7 @@ flowchart TD
 > the part a rename *cannot* find mechanically: **no class name, table name, config key,
 > environment-variable prefix or comment carries the product name.** `starnest.evaluation.normalisation`
 > is fine; `class StarnestNormaliser` is not. The display string stays a single settings
-> parameter (`reqs.md` §10).
+> parameter (`reqs.md` 10).
 
 ### 6.2 The dependency rule, as something a build can check
 
@@ -647,15 +647,15 @@ arrow of dependency runs opposite to the arrow of control.
 Four rules, each mechanically checkable by an import linter:
 
 1. **No policy module imports `api/`, `data_sources/` or `storage/`.** Concrete implementations are
-   supplied at startup (§6.7).
-2. **The import table in §6.1 is exhaustive.** An import not listed there is a violation, not a
+   supplied at startup (section 6.7).
+2. **The import table in section 6.1 is exhaustive.** An import not listed there is a violation, not a
    judgement call. The list is a directed acyclic graph; a cycle is always a bug, and the fix is
    to extract the shared piece into a module both may import.
 3. **`data/` may not import `criteria/`, `household/` or `evaluation/`.**
 4. **No backend module imports anything from the interface**, and the interface imports nothing
    from the backend. The only contract between them is HTTP and JSON.
 
-> **Rule 3 is the ontology's central invariant, expressed as imports.** `reqs.md` §3.0 says no
+> **Rule 3 is the ontology's central invariant, expressed as imports.** `reqs.md` 3.0 says no
 > arrow runs from the subjective side back to the objective side — no value knows which criteria
 > set is active, no candidate stores a score. As long as `data` cannot *import* `criteria`, that
 > property cannot be violated even by accident. It stops being a convention people remember and
@@ -690,7 +690,7 @@ persistence.
 
 ### 6.4 The REST surface
 
-Resources, not remote procedure calls, **all under `/v1`** (§7.6). The shape follows the
+Resources, not remote procedure calls, **all under `/v1`** (section 7.6). The shape follows the
 ontology, which is why it reads as the domain rather than as a list of screens.
 
 > **`openapi.yaml` is the contract.** This table is the map; the specification is the territory —
@@ -701,7 +701,7 @@ ontology, which is why it reads as the domain rather than as a list of screens.
 |---|---|---|
 | `/household`, `/settings` | read, update | Singletons |
 | `/candidates` | list, read, create | Nomination is post-MVP; v1 seeds by migration |
-| `/attributes`, `/pillars`, `/levels`, `/data-sources` | list, read | **Read-only.** The catalog is changed by migration (§1.2), and there is deliberately no admin interface (`reqs.md` §2) |
+| `/attributes`, `/pillars`, `/levels`, `/data-sources` | list, read | **Read-only.** The catalog is changed by migration (section 1.2), and there is deliberately no admin interface (`reqs.md` 2) |
 | `/criteria-sets`, `/criteria-sets/{id}/criteria` | full CRUD | Where weights, goals and thresholds are edited |
 | `/values` | list, filtered by candidate and attribute | Read-only over HTTP; values are written by data acquisition, never by a client |
 | `/data-acquisition-runs` | create, read, list | `POST` starts one; `GET` polls its status, cost and failures |
@@ -736,7 +736,7 @@ Every abstraction has a carrying cost. These were considered and rejected, with 
 so they are not silently re-litigated:
 
 - **No presenter interface per use case.** `api/` is the presenter, and it serves every use case
-  (§6.1). A per-use-case output boundary would add an interface with exactly one implementor for
+  (section 6.1). A per-use-case output boundary would add an interface with exactly one implementor for
   each, on top of a boundary that already exists.
 - **No portability across database engines.** The design leans on `DISTINCT ON` for the
   active-value view, composite foreign keys for type agreement, `num_nonnulls` for the one-of
@@ -746,13 +746,13 @@ so they are not silently re-litigated:
 - **No shared code between backend and interface.** Not even DTO definitions. A shared type would
   be a dependency that HTTP is supposed to have removed, and it is how a "decoupled" interface
   quietly becomes coupled.
-- **No dependency-injection framework.** The composition root is a function (§6.7).
-- **No repository per entity.** See §6.3.
+- **No dependency-injection framework.** The composition root is a function (section 6.7).
+- **No repository per entity.** See section 6.3.
 - **No caching layer.** No Redis, no in-process memoisation, no cache headers on
   `GET /rankings`. **The expensive thing is already cached by the design:** values are fetched
-  once and stored, and score recalculation never re-fetches (`reqs.md` §5.6) — the `value`
+  once and stored, and score recalculation never re-fetches (`reqs.md` 5.6) — the `value`
   table *is* the cache, and a durable, inspectable, provenance-carrying one. What remains is
-  two queries and pure arithmetic over 32 candidates (§7.2). A cache would add an invalidation
+  two queries and pure arithmetic over 32 candidates (section 7.2). A cache would add an invalidation
   problem to something already fast, and invalidation is precisely where it would break the
   product's promise: a weight changes, the cache does not notice, and the screen shows a stale
   ranking that looks entirely plausible. **Revisit on a measurement, not an intuition** — the
@@ -780,7 +780,7 @@ concrete implementation.
 
 It is also the only place that reads the environment — connection strings, the API key, the log
 level. Configuration in the technical sense (how to reach things) stays here; configuration in the
-domain sense (attributes, weights, thresholds) is data in the database (§1.2), and the two are
+domain sense (attributes, weights, thresholds) is data in the database (section 1.2), and the two are
 never confused.
 
 Swapping the LLM provider, adding a source, or replacing the interface entirely is an edit to this
@@ -795,23 +795,23 @@ function plus one new directory. No policy module changes.
 **Starting one.** `POST /v1/data-acquisition-runs` with a scope — a level, a set of candidates, a
 set of attributes — creates the run row with `run_status: running`, returns its id immediately,
 and hands the work to a background thread. The client polls the run resource for progress
-(§6.4).
+(section 6.4).
 
 **Planning.** The scope expands into **work items**. Each adapter declares which attributes it
-answers, at which levels, and in which mode (§5.1):
+answers, at which levels, and in which mode (section 5.1):
 
 - A **per-candidate** adapter yields one item per candidate and attribute.
 - A **bulk** adapter yields one item per download, which fans out to many values when it lands.
 
 Which adapters are asked follows one rule: **every structured adapter that can answer is asked;
 the LLM is asked only where none can, or where all of them failed.** Multi-source is the point —
-competing values are how the active-value rule has anything to choose between (§4) — but the LLM
-is a fallback and never a shortcut (`reqs.md` §6.10), so it is scheduled last and only for the
+competing values are how the active-value rule has anything to choose between (section 4) — but the LLM
+is a fallback and never a shortcut (`reqs.md` 6.10), so it is scheduled last and only for the
 gaps that remain.
 
 **Estimating, before anything runs.** `PlanAcquisition` produces the same work items without
 executing them, counts the LLM calls among them, and asks the `CostMeter` what they would cost.
-That is the dry-run figure the user confirms (`reqs.md` §6.3).
+That is the dry-run figure the user confirms (`reqs.md` 6.3).
 
 **Executing, in parallel.** Work items run concurrently against a bounded pool. Concurrency is
 bounded **per source**, from the rate limit each adapter declares, so a slow or strict source
@@ -831,7 +831,7 @@ Nothing accumulates in memory waiting for the run to finish, so a crash, a halt 
 adapter costs only the item in flight. Selective retry then knows exactly what is missing without
 comparing anything.
 
-**Validation happens on the way in** (`reqs.md` §3.3a). A value that fails is still written, with
+**Validation happens on the way in** (`reqs.md` 3.3a). A value that fails is still written, with
 its `rejection_reason` set; it never becomes active and never counts toward coverage. This is not
 an error — it is a recorded observation about a source.
 
@@ -840,7 +840,7 @@ cap, the scheduler stops issuing new work, lets in-flight items finish and commi
 run `halted_on_spend_cap`. Everything already written stays.
 
 **Failing.** A run continues past individual failures — for sparse sources they are routine, and
-aborting would discard good work (`reqs.md` §6.4). `POST /v1/data-acquisition-runs/{id}/retry`
+aborting would discard good work (`reqs.md` 6.4). `POST /v1/data-acquisition-runs/{id}/retry`
 creates a **new run** whose scope is exactly the failures of the referenced one.
 
 **Crashing.** Runs left `running` when the process died are marked `failed` by a sweep at
@@ -859,15 +859,15 @@ Q155). In order:
 1. **Load the criteria set** — its criteria, pillar weights, applied compound rules and enforced
    match rules. One read.
 2. **Load the active values** for those candidates and attributes, through the active-value view
-   (§4). One read. Everything after this point is in memory.
+   (section 4). One read. Everything after this point is in memory.
 3. **Reduce breakdowns.** Where an attribute has several options, the criterion names the one to
-   score (`reqs.md` §3.3b). All options were fetched; the choice happens here, which is what makes
+   score (`reqs.md` 3.3b). All options were fetched; the choice happens here, which is what makes
    changing household size instant.
 4. **Normalise** each value against its criterion — `fixed` against its anchors, `percentile`
    against the candidate set, `as_is` unchanged.
 5. **Redistribute weight** for attributes with no value, proportionally across those that have
    one, and compute **coverage** as the share of active weight actually backed by data.
-6. **Total**, at full precision. Rounding happens only at display (`reqs.md` §5.1).
+6. **Total**, at full precision. Rounding happens only at display (`reqs.md` 5.1).
 7. **Decide eligibility** — see below.
 8. **Raise warnings** from compound rules whose outcome is `warning`.
 9. **Rank** what remains, keeping non-matching candidates visible with their scores.
@@ -880,11 +880,11 @@ coverage is below the floor or a `blocks_if_missing` criterion has no value.
 > **A candidate can be both, and the model reports the decisive one: `not_matching`.** A visa gate
 > that fails is definite regardless of how much data was gathered, whereas insufficient data is a
 > statement about the *score*, not about eligibility. Scoring runs for every candidate either way,
-> because `reqs.md` §5.4 requires a non-matching candidate to keep and display its score.
+> because `reqs.md` 5.4 requires a non-matching candidate to keep and display its score.
 
 **Two properties worth naming.** The whole computation is **two queries and pure arithmetic**, so
 it is fast enough to run on every slider movement. And every step is a pure function of its
-inputs, so each is table-testable without a database (§6.7).
+inputs, so each is table-testable without a database (section 6.7).
 
 ### 7.3 Errors, and where each is caught
 
@@ -895,7 +895,7 @@ unless the error message is worth the duplication.**
 |---|---|---|
 | `api/` | Malformed requests | Missing field, unparseable id, unknown query parameter → `400` |
 | Policy modules | Domain invariants | Weights that would not sum to 100; a rebalance blocked because every other weight is locked; a threshold shape that contradicts the attribute's value type |
-| The database | Everything structural | Type agreement, one-of on non-match reasons, singletons, foreign keys, allowed ranges (§3.3b) |
+| The database | Everything structural | Type agreement, one-of on non-match reasons, singletons, foreign keys, allowed ranges (section 3.3b) |
 
 **The database is authoritative.** A domain check exists where a good message is worth producing
 *before* the constraint fires — "you cannot raise this weight, these four are locked" reads better
@@ -906,13 +906,13 @@ holds the single place that maps exception types to HTTP statuses, so no policy 
 a `409` is.
 
 **A rejected value is not an error.** Validation failure on the way in is a recorded fact about a
-source (§7.1) — stored, visible, and excluded from scoring. Raising it as an error would abort a
-run over a bad row, which §6.4 forbids.
+source (section 7.1) — stored, visible, and excluded from scoring. Raising it as an error would abort a
+run over a bad row, which section 6.4 forbids.
 
 ### 7.4 Migrations and seed data
 
 Everything that defines the system ships as a migration, versioned in git: the schema, and the
-catalog that lives in it (§1.2).
+catalog that lives in it (section 1.2).
 
 | Kind | Contains |
 |---|---|
@@ -921,7 +921,7 @@ catalog that lives in it (§1.2).
 
 **Catalog migrations upsert by identifier**, so re-running one is safe and a partially applied
 sequence can be repeated. **No migration deletes a catalog row that has values behind it** — an
-attribute leaving the catalog is marked retired (§2), and a foreign key makes the alternative
+attribute leaving the catalog is marked retired (section 2), and a foreign key makes the alternative
 impossible.
 
 **Migrations run by an explicit command, never automatically at startup.** A process that
@@ -935,8 +935,8 @@ Two kinds of configuration, deliberately kept apart:
 | | Technical | Domain |
 |---|---|---|
 | What | Connection string, API key, port, log level | Attributes, weights, thresholds, sources |
-| Where | Environment variables | Database rows (§1.2) |
-| Read by | The composition root, and nothing else (§6.8) | Policy modules, through their stores |
+| Where | Environment variables | Database rows (section 1.2) |
+| Read by | The composition root, and nothing else (section 6.8) | Policy modules, through their stores |
 | In git? | **Never** | Yes, as migrations |
 
 The Anthropic API key is the only secret. It is read once at startup, held by the LLM adapter,
@@ -945,10 +945,10 @@ and never written to the database, the statement log, or an error message.
 ### 7.6 REST conventions
 
 - **Versioned from the first request**: `/v1/…`. The contract has consumers other than the
-  interface (§6.1), and adding a version prefix afterwards is a breaking change to all of them.
+  interface (section 6.1), and adding a version prefix afterwards is a breaking change to all of them.
 - **One error shape**, everywhere: a stable machine-readable `code`, a human-readable `message`,
   and optional `details` naming the offending field. Clients branch on `code`, never on prose.
-- **No authentication** (`reqs.md` §10). The service binds to localhost; that is the whole
+- **No authentication** (`reqs.md` 10). The service binds to localhost; that is the whole
   security model, and it is stated rather than assumed.
 - **Pagination only where lists grow**: values, data acquisition runs, evaluations. Candidates,
   attributes and pillars are bounded by the catalog and are returned whole.
@@ -960,7 +960,7 @@ and never written to the database, the statement log, or an error message.
 ## 8. The interface
 
 A **separate client** over HTTP, built and deployed on its own, sharing no code with the backend
-(§6.1). Its architecture is deliberately thin, and one rule does most of the work.
+(section 6.1). Its architecture is deliberately thin, and one rule does most of the work.
 
 ### 8.1 The interface holds no domain logic
 
@@ -978,7 +978,7 @@ expanded, sort order within a rendered table, and how a number is formatted for 
 
 ### 8.2 Screens
 
-The four tabs of `reqs.md` §8, each a route, plus the persistent sidebar:
+The four tabs of `reqs.md` 8, each a route, plus the persistent sidebar:
 
 | Route | Reads | Writes |
 |---|---|---|
@@ -1003,7 +1003,7 @@ drag slider
 ```
 
 **Rebalancing is domain logic and stays on the server**, because it depends on which weights are
-locked and must never leave a set summing to anything but 100 (`reqs.md` §3.4). The client sends
+locked and must never leave a set summing to anything but 100 (`reqs.md` 3.4). The client sends
 one weight and is told what the others became.
 
 **A drag edits the criteria set directly.** There is no draft state: `duplicate` exists precisely
@@ -1013,14 +1013,14 @@ of it.
 
 **Debounced, not per-frame.** Both calls are local — two database queries and pure arithmetic —
 so a short quiet period reads as continuous. The alternative was recomputing in the client, which
-§8.1 exists to prevent.
+section 8.1 exists to prevent.
 
 ### 8.4 Long operations
 
 A data acquisition run is the only one. The client `POST`s, receives a run id, and polls
 `GET /v1/data-acquisition-runs/{id}` while the run is live — status, items completed, cost so far,
 failures as they accumulate. No socket, no streaming, no callback: the run record already holds
-everything the screen shows (§6.4).
+everything the screen shows (section 6.4).
 
 ---
 
@@ -1031,17 +1031,17 @@ everything the screen shows (§6.4).
 Three processes: **PostgreSQL**, the **backend**, the **interface**. The database is the only one
 that needs infrastructure, so it is defined in a compose file and everything else runs from the
 command line. One documented command brings the database up; the application refuses to start
-against a schema it does not recognise (§7.4).
+against a schema it does not recognise (section 7.4).
 
 ### 9.2 Startup sequence
 
 Deterministic, and it fails loudly rather than degrading:
 
-1. Read the environment — connection string, API key, port (§7.5).
+1. Read the environment — connection string, API key, port (section 7.5).
 2. Connect, and **compare the schema version**. Behind ⇒ refuse to start, naming the gap.
 3. Build the adapter registry and **validate every declaration against the catalog** — attributes
-   that exist, value types that agree (§5). A mismatch is a startup error.
-4. **Sweep abandoned runs** — anything left `running` becomes `failed` (§7.1).
+   that exist, value types that agree (section 5). A mismatch is a startup error.
+4. **Sweep abandoned runs** — anything left `running` becomes `failed` (section 7.1).
 5. Mount the API and serve.
 
 Steps 2 and 3 are the ones worth having: both catch, at boot, a class of problem that would
@@ -1058,22 +1058,22 @@ Four queries dominate, and each needs one:
 | What a run produced or failed on | `value (data_acquisition_run)`, `data_acquisition_failure (data_acquisition_run)` |
 | A saved evaluation's per-attribute detail | `candidate_attribute_score (candidate_result)` |
 
-At the size in §3.5 none of this is performance-critical; they are here so the shape of the hot
+At the size in section 3.5 none of this is performance-critical; they are here so the shape of the hot
 path is deliberate rather than discovered.
 
 ### 9.4 Logging
 
-Application logging, distinct from the database's statement log (§10.7):
+Application logging, distinct from the database's statement log (section 10.7):
 
 | Logged | Why |
 |---|---|
 | Run lifecycle — started, item completed, halted, finished | The narrative behind a run record |
-| Adapter failures, with the URL and the response | The only way a parse failure is diagnosable (§5.3) |
+| Adapter failures, with the URL and the response | The only way a parse failure is diagnosable (section 5.3) |
 | Spend accumulation as it approaches the cap | So a halt is never a surprise |
 | Startup decisions — schema version, adapters registered, runs swept | The boot log answers "why did it refuse to start" |
 
 **Never logged:** the API key, and no full response body — the artefact store already keeps those
-that matter (§5.4).
+that matter (section 5.4).
 
 ### 9.5 Backup
 
@@ -1089,14 +1089,14 @@ is being protected.
 `timestamptz` for every moment the system records — run timestamps, retrieval dates, evaluation
 timestamps. Plain `date` for reference periods, which describe a span in the world rather than an
 instant in a timezone. Confusing the two is the standard PostgreSQL mistake, and the two-date rule
-(`reqs.md` §3.6) makes it more likely here than usual.
+(`reqs.md` 3.6) makes it more likely here than usual.
 
 ---
 
 ## 10. Foundations
 
 The goal, the stack, the data flow, the sizing that justifies the two levels, and the auditing
-mechanism. §10.2 is decided; §10.3 records a layout that was rejected, and why.
+mechanism. section 10.2 is decided; section 10.3 records a layout that was rejected, and why.
 
 ### 10.1 Goal
 
@@ -1106,7 +1106,7 @@ starting a run. The bar it must clear: **"zero copy-paste between chat and the a
 
 ### 10.2 The stack
 
-**Decided 2026-08-30.** Every choice below is a plugin in the sense of §6 — policy names none
+**Decided 2026-08-30.** Every choice below is a plugin in the sense of section 6 — policy names none
 of them — but they are settled, and `devplan.md` sequences against them.
 
 | Layer | Choice | Why |
@@ -1114,13 +1114,13 @@ of them — but they are settled, and `devplan.md` sequences against them.
 | Backend language | **Python 3.12+** | Chosen partly to learn it, and it is strongest exactly where the hardest work is: scraping messy pages, parsing SDMX and CSV, and the reference Anthropic SDK |
 | Toolchain | **uv** | Python itself and every dependency. Nothing touches the system Python, and a fresh checkout resolves to the same versions |
 | API framework | **FastAPI + Pydantic v2** | Emits OpenAPI 3.1, matching the contract's version |
-| Concurrency | **asyncio + httpx** | `asyncio.Semaphore` per source *is* the per-source bound of §7.1, expressed directly |
+| Concurrency | **asyncio + httpx** | `asyncio.Semaphore` per source *is* the per-source bound of section 7.1, expressed directly |
 | Database driver | **psycopg3**, async | The modern successor to psycopg2, with first-class async and better type adaptation |
 | Queries | **aiosql**, driver name `apsycopg` | Every query is a named block in a `.sql` file — reviewable as SQL, diffable as SQL, and runnable in `psql` unchanged while debugging |
-| Migrations | **yoyo-migrations** | Plain `.sql` files, explicit `apply` / `rollback`, applied versions recorded in a table so §9.2's "is the schema behind?" is one query |
+| Migrations | **yoyo-migrations** | Plain `.sql` files, explicit `apply` / `rollback`, applied versions recorded in a table so section 9.2's "is the schema behind?" is one query |
 | Lint and format | **ruff** | One tool for both |
-| Tests | **pytest** | With a real PostgreSQL for `storage/` (§6.7) |
-| Boundaries | **import-linter** | §6.2's rules as a contract file that fails the build |
+| Tests | **pytest** | With a real PostgreSQL for `storage/` (section 6.7) |
+| Boundaries | **import-linter** | section 6.2's rules as a contract file that fails the build |
 | Interface | **React + TypeScript** | Its client generated from `openapi.yaml`; a data-dense dashboard is what React is for |
 | Scraping | **selectolax** | Fast, and forgiving of the malformed HTML real sources serve |
 
@@ -1141,7 +1141,7 @@ of them — but they are settled, and `devplan.md` sequences against them.
 
 #### The contract now runs code-first, and that is a reversal
 
-`openapi.yaml` was written first, by hand, as the agreed contract (§6.4). With FastAPI it becomes
+`openapi.yaml` was written first, by hand, as the agreed contract (section 6.4). With FastAPI it becomes
 **generated from the code and committed** — the routes and Pydantic models are the source, and
 the file is their output.
 
@@ -1157,7 +1157,7 @@ fails it. Full equality is not asserted, because a body shape improving is not a
 #### The alternatives, recorded because the reasoning survives
 
 Go was the closest fit to the architecture: `sqlc` for typed SQL, compiler-enforced acyclic
-imports, and a convention of declaring interfaces where they are consumed, which is §6.3
+imports, and a convention of declaring interfaces where they are consumed, which is section 6.3
 exactly. C#/.NET was the closest fit to existing fluency, with compile-time project boundaries.
 Both were passed over deliberately in favour of learning Python — a reason about the author
 rather than the software, which is a legitimate one for a project with no deadline and one
@@ -1183,10 +1183,10 @@ out-of-band edits to a live database.
 An earlier layout proposed `config/`, `acquisition/structured.py`, `acquisition/qualitative.py`,
 `storage/db.py`, `scoring/engine.py`, `scoring/compare.py`, `ui/app.py`.
 
-**§6.1 replaces it.** That layout named files after their technical role and split data acquisition by
+**section 6.1 replaces it.** That layout named files after their technical role and split data acquisition by
 *source kind* rather than by what data acquisition means, which would have made "add a source" a
 change to the core rather than a new plugin. `config/` has no place at all now that the catalog
-is data in the database (§1.2).
+is data in the database (section 1.2).
 
 An earlier SQLite schema sketch — tables `countries`, `country_scores`, `cities`,
 `city_scores`, `config` — **predates the `Candidate` unification and must be re-derived, not
@@ -1254,8 +1254,8 @@ anything, in the server log.
 
 | What could change | What records it |
 |---|---|
-| The catalog — attributes, pillars, sources, thresholds | **Migrations in git.** The catalog is data changed by migration (§1.2), so its history is the repository's history, with a message per change |
-| The criteria used in a past ranking | **The evaluation snapshot** (`reqs.md` §3.4a) — frozen at the moment it ran, unaffected by later edits |
+| The catalog — attributes, pillars, sources, thresholds | **Migrations in git.** The catalog is data changed by migration (section 1.2), so its history is the repository's history, with a message per change |
+| The criteria used in a past ranking | **The evaluation snapshot** (`reqs.md` 3.4a) — frozen at the moment it ran, unaffected by later edits |
 | A measurement | **Nothing overwrites a value.** The `value` table is its own history |
 | Everything else — settings, household, ad-hoc edits | The statement log |
 
@@ -1280,17 +1280,17 @@ queryable.
   protected areas are queried spatially in the database or computed once by the adapter and stored
   as plain `Quantity` values. Nothing today needs a spatial query, so the plain-numbers answer is
   the likely one — decidable when the first geographic adapter is written. **The stack is
-  otherwise settled** (§10.2).
+  otherwise settled** (section 10.2).
 - **Time-series reducers.** Which rows scoring uses when an attribute has several reference
   periods — latest, a three-year mean, a trend. A preference rather than a fact, so it belongs
   in `CriteriaSet`. **Not in v1**, and it needs no schema change: the rows are already separate
-  (§3.3a).
+  (section 3.3a).
 
   *(The multi-value reducer is **not** open — it is in v1. `CRITERION.reducer_mode` plus
-  `CRITERION.breakdown_option` select which rent applies, `reqs.md` §3.4.)*
+  `CRITERION.breakdown_option` select which rent applies, `reqs.md` 3.4.)*
 - **Derived attributes**, deferred to post-MVP. `two_role_feasibility` and
   `country.natural_diversity` both want one. When built, a derivation is an **adapter that reads
-  other attributes** rather than a formula in config — which keeps §1.3's guardrail intact and
+  other attributes** rather than a formula in config — which keeps section 1.3's guardrail intact and
   gives a derived value provenance, confidence and a reference period like any other.
 
 - **The interface's component library.** React is settled; whether the tables, sliders and charts

@@ -9,7 +9,7 @@
  * 2. **Every failure arrives as an `ApiError`** carrying the contract's machine-readable
  *    `code`. Callers branch on that code; nothing branches on an HTTP status or on prose.
  *
- * It holds no domain logic (`arch.md` §8.1) -- it moves bytes and types them.
+ * It holds no domain logic (`arch.md` 8.1) -- it moves bytes and types them.
  */
 
 import { ApiError, CLIENT_ERROR_CODES, apiErrorFromResponse } from "./ApiError";

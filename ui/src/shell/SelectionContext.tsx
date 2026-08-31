@@ -5,12 +5,12 @@ import { useResource, type Resource } from "../api/useResource";
 /**
  * What the user currently has selected: one criteria set and one level.
  *
- * Both are sidebar controls that every screen reads (`reqs.md` §8.1), so the selection lives
+ * Both are sidebar controls that every screen reads (`reqs.md` 8.1), so the selection lives
  * above the routes rather than inside any one of them. This is client state in the sense
- * `arch.md` §8.1 permits -- "what is selected" -- and it decides nothing: the level and the
+ * `arch.md` 8.1 permits -- "what is selected" -- and it decides nothing: the level and the
  * criteria set are sent to the API as query parameters, and the API does the rest.
  *
- * Levels are ordered records, not a hardcoded pair (`reqs.md` §3.1). Nothing here assumes two,
+ * Levels are ordered records, not a hardcoded pair (`reqs.md` 3.1). Nothing here assumes two,
  * and nothing here names `country` or `city`; the toggle renders whatever `/v1/levels`
  * returns, in `depth_order`.
  */

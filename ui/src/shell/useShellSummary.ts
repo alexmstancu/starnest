@@ -9,7 +9,7 @@ import { tallyMatchStatus, type CandidateCounts } from "./candidateCounts";
  *
  * Both depend on the selection, so both re-fetch when it changes -- which is also why the
  * counts are not cached: a criteria set change makes every previous count wrong (`reqs.md`
- * §3.4a, score and match status belong to an Evaluation, not to a candidate).
+ * section 3.4a, score and match status belong to an Evaluation, not to a candidate).
  */
 
 const LAST_RUN_ONLY = 1;

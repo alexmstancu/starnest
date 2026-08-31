@@ -1,7 +1,7 @@
 /**
  * The one place that turns an API failure into something a person reads.
  *
- * `arch.md` §7.6: the client branches on `code`, never on prose. So this module is a lookup
+ * `arch.md` 7.6: the client branches on `code`, never on prose. So this module is a lookup
  * keyed by code, and everything else in the interface renders whatever it returns rather than
  * inspecting an error itself.
  *

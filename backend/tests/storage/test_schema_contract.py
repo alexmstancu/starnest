@@ -14,7 +14,7 @@ import pytest
 pytestmark = pytest.mark.storage
 
 
-# arch.md §3.2a — the reference tables, by name.
+# arch.md 3.2a — the reference tables, by name.
 REFERENCE_TABLES = [
     "candidate",
     "pillar",
@@ -32,7 +32,7 @@ REFERENCE_TABLES = [
     "data_acquisition_run",
 ]
 
-# arch.md §3.3 — the parent and its ten typed children. Adding a value type is a code
+# arch.md 3.3 — the parent and its ten typed children. Adding a value type is a code
 # change, so this list is closed and a schema growing an eleventh should fail here first.
 PAYLOAD_TABLES = [
     "value_monetary",
@@ -47,7 +47,7 @@ PAYLOAD_TABLES = [
     "value_text",
 ]
 
-# arch.md §3.6 — the split the whole ontology rests on.
+# arch.md 3.6 — the split the whole ontology rests on.
 OBJECTIVE = {
     "level",
     "candidate",
@@ -93,7 +93,7 @@ def test_every_value_payload_table_exists(connection: psycopg.Connection, table:
 
 
 def test_the_active_value_is_a_view(connection: psycopg.Connection) -> None:
-    """arch.md §4. Being active is a comparison BETWEEN values, so it is computed on read.
+    """arch.md 4. Being active is a comparison BETWEEN values, so it is computed on read.
 
     A stored flag would be a cache of that comparison with no owner responsible for
     refreshing it — and a stale one does not fail loudly, it scores the wrong number with
@@ -118,13 +118,13 @@ def test_no_table_stores_whether_a_value_is_active(connection: psycopg.Connectio
 def test_rejection_is_stored_because_it_is_a_fact_about_one_value(
     connection: psycopg.Connection,
 ) -> None:
-    """arch.md §3.4. Rejection is decided once at insert and never changes because another
+    """arch.md 3.4. Rejection is decided once at insert and never changes because another
     value appeared, which is exactly why it is a column while active-ness is not."""
     assert "rejection_reason" in _columns(connection, "value")
 
 
 def test_the_type_agreement_chain_is_declared(connection: psycopg.Connection) -> None:
-    """arch.md §3.3b, the subtlest constraint in the schema.
+    """arch.md 3.3b, the subtlest constraint in the schema.
 
     Without it, a value for an attribute declared `Monetary` could carry a count payload.
     Both rows would be individually valid and no constraint would connect them — and the
@@ -161,7 +161,7 @@ def test_the_type_agreement_chain_is_declared(connection: psycopg.Connection) ->
 
 @pytest.mark.parametrize("table", PAYLOAD_TABLES)
 def test_each_payload_pins_its_own_type(connection: psycopg.Connection, table: str) -> None:
-    """The last link of the §3.3b chain: only the monetary payload may attach to a monetary
+    """The last link of the section 3.3b chain: only the monetary payload may attach to a monetary
     value, and its primary key on value_id makes it the only payload of any kind."""
     constraints = connection.execute(
         "SELECT contype, pg_get_constraintdef(oid) FROM pg_constraint "
@@ -184,7 +184,7 @@ def test_each_payload_pins_its_own_type(connection: psycopg.Connection, table: s
 def test_the_objective_side_never_references_the_subjective_side(
     connection: psycopg.Connection,
 ) -> None:
-    """arch.md §3.6 and reqs.md §3.0, expressed as foreign keys.
+    """arch.md 3.6 and reqs.md 3.0, expressed as foreign keys.
 
     No value knows which criteria set is active; no candidate stores a score. That is what
     makes re-evaluation pure arithmetic over stored rows, and why switching criteria sets
@@ -211,9 +211,9 @@ def test_the_objective_side_never_references_the_subjective_side(
 def test_instants_and_reference_periods_are_different_types(
     connection: psycopg.Connection,
 ) -> None:
-    """arch.md §9.6. A retrieval date is an instant; a reference period describes a span in
+    """arch.md 9.6. A retrieval date is an instant; a reference period describes a span in
     the world. Confusing the two is the standard PostgreSQL mistake, and the two-date rule
-    (reqs.md §3.6) makes it more likely here than usual."""
+    (reqs.md 3.6) makes it more likely here than usual."""
     columns = _columns(connection, "value")
 
     assert columns.get("retrieval_date") == "timestamp with time zone"
@@ -222,7 +222,7 @@ def test_instants_and_reference_periods_are_different_types(
 
 
 def test_the_same_fetch_cannot_be_stored_twice(connection: psycopg.Connection) -> None:
-    """arch.md §3.2. The natural key is six columns, and `breakdown_option` is one of them —
+    """arch.md 3.2. The natural key is six columns, and `breakdown_option` is one of them —
     which is what makes the three Lisbon rents three rows rather than a collision."""
     uniques = connection.execute(
         "SELECT pg_get_constraintdef(oid) FROM pg_constraint "

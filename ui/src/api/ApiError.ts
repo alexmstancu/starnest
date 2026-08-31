@@ -1,7 +1,7 @@
 import type { components } from "./schema";
 
 /**
- * The one error shape the API uses (`arch.md` §7.6): a stable machine-readable `code`, a
+ * The one error shape the API uses (`arch.md` 7.6): a stable machine-readable `code`, a
  * human-readable `message`, and optional `details` naming the offending field.
  *
  * **Clients branch on `code`, never on prose.** `message` is for showing a person, not for

@@ -1,5 +1,5 @@
 /**
- * How a number becomes text. This is the client's business (`arch.md` §8.1) -- the API sends
+ * How a number becomes text. This is the client's business (`arch.md` 8.1) -- the API sends
  * numbers, dates and currency codes and never a pre-formatted string.
  *
  * **Nothing here rescales anything.** Weights and coverage arrive as percentages, 0-100, and

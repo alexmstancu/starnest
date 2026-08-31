@@ -159,7 +159,7 @@ def main() -> int:
         known |= {e.lower() for e in entities}
         for field in declared - known - PAYLOAD_FIELDS:
             names = " / ".join(documented[number])
-            drift.append(f"§{number} names `{field}`, which {names} lacks")
+            drift.append(f"section {number} names `{field}`, which {names} lacks")
     audit.check("section 3 field tables match their entities", drift)
 
     print("\n=== the criteria catalog is well formed ===")
@@ -195,12 +195,13 @@ def main() -> int:
     audit.check("every table row has the same column count as its header", bad_rows)
 
     sections = set(re.findall(r"^#{2,4} (\d+(?:\.\d+[a-z]?)?)", text, re.M))
-    # A reference to another document's section is not ours to resolve. Both the bare and
-    # the backticked forms occur — `arch.md` §10.2 as well as arch.md §10.2.
-    foreign = r"(?<!datasources\.md )(?<!arch\.md )(?<!datasources\.md` )(?<!arch\.md` )"
-    references = set(re.findall(foreign + r"§(\d+\.\d+[a-z]?)", text))
+    # A reference within this document reads "section 5.3"; a reference to another document
+    # reads "arch.md 10.2", with no such word. That difference is what separates the two, and
+    # it needs no lookbehind for every filename that might appear -- a reference to a document
+    # we have never heard of is excluded for free.
+    references = set(re.findall(r"section (\d+\.\d+[a-z]?)", text))
     audit.check("every cross-reference points at a section that exists",
-                {f"§{r}" for r in references - sections})
+                {f"section {r}" for r in references - sections})
 
     print("\n" + ("ALL INVARIANTS HOLD" if not audit.failures
                   else f"{audit.failures} CHECK(S) FAILED"))

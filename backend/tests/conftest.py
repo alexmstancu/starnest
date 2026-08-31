@@ -1,14 +1,14 @@
 """Shared fixtures.
 
-The database fixtures here implement devplan.md §0.5: every test run uses a database named
+The database fixtures here implement devplan.md 0.5: every test run uses a database named
 for its workstream, so two agents running `pytest` at the same moment never see each other's
 rows. Set WORKSTREAM in the environment (`WORKSTREAM=w2b uv run pytest -m storage`); it
 defaults to `local` for a developer running the suite by hand.
 
 Storage tests run against a REAL PostgreSQL, never a fake. The schema carries the
-type-agreement constraints, the one-of checks and the singleton checks (arch.md §3.3b), and
+type-agreement constraints, the one-of checks and the singleton checks (arch.md 3.3b), and
 testing those against a fake proves nothing -- the constraints ARE the behaviour under test
-(arch.md §6.7).
+(arch.md 6.7).
 """
 
 import functools

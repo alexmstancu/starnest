@@ -5,7 +5,7 @@ info:
   version: "1.0.0"
   description: |
     The backend contract. Every consumer speaks it: the browser interface, the acceptance
-    suite, and anything added later. See `arch.md` §6.4 for the resource design and §7.6 for
+    suite, and anything added later. See `arch.md` 6.4 for the resource design and section 7.6 for
     the conventions below.
 
     **Conventions**
@@ -21,7 +21,7 @@ info:
     - **Scores are integers 0–100. Coverage is a ratio 0–1.** Different scales because they are
       different things: a score is defined on a range, coverage is a share.
     - Errors share one shape and are distinguished by a stable machine-readable `code`.
-    - No authentication. The service binds to localhost (`reqs.md` §10).
+    - No authentication. The service binds to localhost (`reqs.md` 10).
 
 servers:
   - url: http://localhost:8000/v1
@@ -110,7 +110,7 @@ paths:
       summary: The attribute catalog
       description: |
         Attributes with `pillar: null` are descriptive: nothing scores them, and they exist to
-        make a candidate legible (`reqs.md` §3.3).
+        make a candidate legible (`reqs.md` 3.3).
       operationId: listAttributes
       parameters:
         - { $ref: "#/components/parameters/LevelFilter" }
@@ -199,7 +199,7 @@ paths:
       description: |
         Returns the active value per attribute by default. `include_superseded` returns every
         value from every source, which is what the drill-down shows — nothing is ever discarded
-        (`reqs.md` §3.6).
+        (`reqs.md` 3.6).
       operationId: listValues
       parameters:
         - { name: candidate, in: query, schema: { type: string } }
@@ -227,7 +227,7 @@ paths:
       summary: Enter a value by hand
       description: |
         Manual entry is a real source, ranked last, and **permitted only where the attribute
-        declares it** (`reqs.md` §6.5). It is how a figure with no adapter gets recorded, and how
+        declares it** (`reqs.md` 6.5). It is how a figure with no adapter gets recorded, and how
         an early estimate is captured so a real dataset can supersede it later without deleting
         anything.
 
@@ -336,7 +336,7 @@ paths:
         Changing `weight` **rebalances the unlocked siblings within the pillar**, honouring locks,
         so the pillar always sums to 1. The response returns every criterion in that pillar with
         its new weight — the client sends one number and is told what the others became
-        (`arch.md` §8.3).
+        (`arch.md` 8.3).
       operationId: updateCriterion
       parameters:
         - { $ref: "#/components/parameters/CriteriaSetId" }
@@ -539,7 +539,7 @@ paths:
       tags: [data acquisition]
       summary: Estimate a run without executing it
       description: |
-        The dry run of `reqs.md` §6.3 — planned work and estimated cost, for confirmation before
+        The dry run of `reqs.md` 6.3 — planned work and estimated cost, for confirmation before
         anything is fetched or spent. Has no side effects despite being a POST, because the
         scope is a body rather than a query.
       operationId: planRun
@@ -585,7 +585,7 @@ paths:
       summary: Compute a ranking
       description: |
         **Computes and returns; stores nothing.** This is how "adjusting a weight recalculates
-        instantly" works over HTTP (`reqs.md` §5.6, Q155). To keep a result, `POST /evaluations`.
+        instantly" works over HTTP (`reqs.md` 5.6, Q155). To keep a result, `POST /evaluations`.
       operationId: getRanking
       parameters:
         - { name: criteria_set, in: query, required: true, schema: { type: string } }
@@ -617,7 +617,7 @@ paths:
       description: |
         Persists the ranking **with a frozen copy of the criteria used** and the per-attribute
         detail behind every score, so it reads the same later however the criteria set or the
-        scoring code change (`reqs.md` §3.4a, Q156).
+        scoring code change (`reqs.md` 3.4a, Q156).
       operationId: saveEvaluation
       requestBody:
         required: true
@@ -672,7 +672,7 @@ paths:
       tags: [evaluation]
       summary: The criteria this evaluation was computed with
       description: |
-        The frozen snapshot (`reqs.md` §3.4a). The criteria set it names stays editable, so this
+        The frozen snapshot (`reqs.md` 3.4a). The criteria set it names stays editable, so this
         is the only record of what the weights actually were when the ranking was produced — and
         which attributes were in scope, which is what keeps its coverage figure meaningful.
       operationId: getEvaluationCriteria
@@ -719,7 +719,7 @@ paths:
       tags: [values]
       summary: Published scores from outside indices
       description: |
-        Displayed **beside** the score, never fed into it (`reqs.md` §3.5a).
+        Displayed **beside** the score, never fed into it (`reqs.md` 3.5a).
       operationId: listExternalScores
       parameters: [ { name: candidate, in: query, schema: { type: string } } ]
       responses:
@@ -997,7 +997,7 @@ components:
           type: string
           enum: [absolute, high, medium, low]
           default: medium
-          description: "Defaults to a deliberately unflattering middle; a source tier says nothing useful about a typed value (`reqs.md` §5.7)."
+          description: "Defaults to a deliberately unflattering middle; a source tier says nothing useful about a typed value (`reqs.md` 5.7)."
         quote: { type: [string, "null"], description: "Where this came from, in words." }
         citations: { type: array, items: { type: string, format: uri } }
 
@@ -1044,7 +1044,7 @@ components:
         reducer_mode: { type: string, enum: [select, aggregate], description: "Omit when the attribute has no breakdown." }
         scale_anchors:
           type: array
-          description: "For the `fixed` method. A label lets a number display as a word without ceasing to be a number (`reqs.md` §5.1)."
+          description: "For the `fixed` method. A label lets a number display as a word without ceasing to be a number (`reqs.md` 5.1)."
           items:
             type: object
             required: [input_value, score]
@@ -1238,7 +1238,7 @@ components:
         coverage_by_confidence:
           type: object
           description: >-
-            How the covered weight splits by confidence (`reqs.md` §5.7). Coverage alone cannot
+            How the covered weight splits by confidence (`reqs.md` 5.7). Coverage alone cannot
             show that a candidate reached 100% entirely on extrapolation; this can.
           properties:
             absolute: { type: number }
