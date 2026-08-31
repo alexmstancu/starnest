@@ -325,7 +325,11 @@ PostgreSQL — `tests/acceptance/`). One narrative, executed:
    others and the pillar still sums to 100.** Lock three, adjust a fourth, assert the locks held.
 4. Plan an acquisition. Assert the estimate names work items and costs nothing (Eurostat is free).
 5. Run it. Poll until complete. Assert values landed **with both dates and their source**.
-6. `GET /rankings`. **Assert 32 countries come back ranked, with honest coverage.**
+6. `GET /rankings` **against the shipped default set. Assert all 32 come back
+   `insufficient_data`, each naming the required attribute it lacks** — five of the seven
+   `blocks_if_missing` attributes have no adapter until P4.
+7. `GET /rankings` **against a Gate-A criteria set requiring only the two Eurostat attributes.
+   Assert 32 countries come back ranked, with honest coverage.**
 
 **The contract-drift test.** The FastAPI-generated spec still contains every path and every
 operation ID that `openapi.yaml` designed. This is the guard that made code-first acceptable
@@ -342,24 +346,43 @@ tabulates none). Only 13 can score today. Decided 2026-08-30 (`reqs.md` Q188): a
 **derived from real figures and reviewed**, never invented, and Gate A is the first moment that
 becomes possible.
 
-After the Eurostat run lands, and before the ranking is declared meaningful:
+**The derivation splits across two gates, because the data does.** At Gate A only Eurostat has
+run, so only its `fixed` attributes have a distribution to observe. Anchors for the rest cannot
+be derived from figures that do not exist yet.
 
-1. Compute each `fixed` attribute's **observed range across the 32 countries** — minimum,
-   maximum, median.
+| | Anchors derived for |
+|---|---|
+| **Gate A** | The `fixed` attributes Eurostat answers, and only those |
+| **Gate B** | The remainder, once all six P4 adapters have populated real values |
+
+At each, the same three steps:
+
+1. Compute the attribute's **observed range across the 32 countries** — minimum, maximum, median.
 2. Propose anchor pairs from those ranges, as a table Alex reviews.
 3. Seed the approved anchors as a catalog migration like any other.
 
 **Do not skip to step 3.** A band that looks reasonable in the abstract is usually wrong against
-real figures, which is why every weight and threshold in `reqs.md` 7 is marked provisional. The
-ranking before this step is real but thin, and coverage says so.
+real figures, which is why every weight and threshold in `reqs.md` 7 is marked provisional.
 
-### What Gate A is really testing
+### What Gate A is really testing, and a mistake it used to contain
 
-Coverage will be roughly **20%**, because seven attributes out of 41 have values. **That is the
-correct result, and the gate asserts it rather than working around it.** A system that reported
-a confident score from 20% of its inputs would be broken in exactly the way `reqs.md` 5.3 and
-the "data quality is the product" invariant exist to prevent. The first ranking being honestly
-sparse is the strongest evidence available that redistribution and coverage work.
+**An earlier version of this gate asserted a ranking that `blocks_if_missing` makes impossible.**
+Only two of the seven required attributes come from Eurostat — `cost_of_living_index` and
+`house_price_to_income_ratio`. The other five wait for P4. Under the default set `reqs.md` 5.3
+is unambiguous: a missing value on a `blocks_if_missing` criterion makes the candidate
+**insufficient data, and no total is produced**. Every country would have come back unscored,
+and the gate would have failed on its own arithmetic.
+
+**Two assertions replace it, and together they test more than the original did.** The first
+proves `blocks_if_missing` actually fires and names what it lacks — a mechanism that would
+otherwise go unexercised until P4, and whose silent failure would let a candidate be scored on
+absent data. The second proves redistribution, coverage and ranking work, against a criteria set
+honest about what P3 can answer.
+
+Coverage on that second run will be roughly **20%**, because seven attributes out of 41 have
+values. **That is the correct result, and the gate asserts it rather than working around it.** A
+system reporting a confident score from a fifth of its inputs would be broken in exactly the way
+the "data quality is the product" invariant exists to prevent.
 
 Fix every bug found. Only then does P4 start.
 
@@ -400,6 +423,18 @@ The acceptance suite grows to assert:
 - **All seven `blocks_if_missing` attributes have values for all 32 countries.** A gap here
   means a broken fetch, not an undocumented country — that is precisely the condition on which
   those seven were chosen (`reqs.md` 7.5).
+
+  > **Two known gaps have to be filled first, and honestly.** Eurostat does not survey
+  > **Liechtenstein** in its price baskets — it sits in a customs and currency union with
+  > Switzerland — and several series drop the **UK** post-Brexit. Left alone, both stay
+  > `insufficient_data` and this assertion fails for a true reason rather than a bug.
+  >
+  > **Decided: fill them from fallback sources, with the substitution visible.** A Swiss figure
+  > standing in for Liechtenstein is stored as a value whose `data_source` is the Swiss series,
+  > carrying its own provenance and a **`low` confidence**, never as a Liechtenstein
+  > measurement. The screen therefore shows a number *and* shows that it is a proxy. Storing it
+  > any other way would be fabrication with the paperwork filled in, which is the one thing this
+  > application must not do.
 - **No country is spuriously `insufficient_data`.** Any that is, is investigated, not silenced.
 - Coverage is high and, more importantly, **honest** — spot-checked against the catalog by hand.
 - Where two sources answer one attribute, **both values are stored** and the active-value rule
@@ -582,7 +617,7 @@ Named because they are real, with what the plan does about each.
 |---|---|
 | **The career pillar rests on two attributes with no source** — 14% of the score. `reqs.md` 1.3 already says local employment is the v1 assumption with the weakest evidence | Redistribution and coverage disclose it honestly. Gate B spot-checks that the career pillar's coverage is *reported* low rather than quietly filled |
 | **Six agents adding migrations at once** | Reserved numbering blocks (section 0.6). Master applies them in order at the gate and re-runs C0's arithmetic assertions |
-| **The generated OpenAPI drifts from the designed one** | The drift test at Gate A, run in `just check` from then on |
+| **The generated OpenAPI drifts from the designed one** | The drift test at Gate A, run in `make check` from then on |
 | **Domain logic leaks into the interface** for responsiveness | Explicit review criterion at Gate C. The debounce of `arch.md` 8.3 exists to remove the temptation |
 | **An agent invents a provisional number** — a compound-rule threshold, a scale anchor | section 0.3 rule 2. Seed `NULL`, leave the rule inactive, stop and ask |
 | **Adapter tests bind to live third-party APIs** and become flaky | Recorded fixtures for the normal suite; a separate `live` suite the master agent runs at gates |

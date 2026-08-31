@@ -365,7 +365,7 @@ another value appeared. So it is stored.
 
 ### 3.5 Scale
 
-For v1 — 32 countries × ~44 country attributes × ~2 sources ≈ **2,800 rows**. With cities and
+For v1 — 32 countries × 41 country attributes × ~2 sources ≈ **2,600 rows**. With cities and
 accumulated history, perhaps 50,000. Small enough that no storage decision here is driven by
 performance.
 
@@ -390,8 +390,8 @@ re-evaluation pure arithmetic over stored rows, and it is why switching from `al
 
 `evaluation` and `candidate_result` are the tables that did not exist in the earlier draft,
 where score and match status sat on the candidate. Keeping several evaluations is a matter of
-retaining rows — they are cheap, and comparing two criteria sets over the same data becomes a
-query rather than a re-run.
+retaining rows — they are cheap, and a kept result stays exactly as it was rather than moving
+when the data under it does.
 
 `household` is a single-row table. It is on the subjective side because it describes the asker,
 not any candidate, and because changing it changes criterion defaults and warnings without
@@ -618,6 +618,7 @@ flowchart TD
     storage -. CriteriaStore .-> criteria
     storage -. HouseholdStore .-> household
     storage -. EvaluationStore .-> evaluation
+    storage -. MatchRuleResultStore .-> criteria
 
     main -. constructs .-> plugins
     main -. mounts .-> api
@@ -675,13 +676,14 @@ inner module ever names a concrete implementation.
 | `SourceAdapter` | `data_acquisition` | `data_sources/*` | Which attributes it can answer, at which levels, in bulk or per candidate; fetch and return values with their provenance |
 | `CostMeter` | `data_acquisition` | `data_sources/llm` | What a planned call will cost, and what a completed one did |
 | `ValueStore` | `data` | `storage` | Read active values for candidates and attributes; append new values; never update |
-| `CatalogStore` | `data` | `storage` | Read attributes, pillars, levels, sources, breakdown schemes |
+| `CatalogStore` | `data` | `storage` | Read attributes, pillars, levels, sources, breakdown schemes, and the match-rule and compound-rule catalogs — all of it objective, all changed only by migration |
 | `FxRateProvider` | `data` | `data_sources` | The rate for a currency pair on a date, with its source |
 | `Clock` | `data` | runtime | Now — so `max_age` and staleness are testable without waiting |
 | `CriteriaStore` | `criteria` | `storage` | Read and write criteria sets and their criteria |
 | `HouseholdStore` | `household` | `storage` | Read and write the single household record |
 | `EvaluationStore` | `evaluation` | `storage` | Persist a saved evaluation with its snapshot and per-attribute detail |
 | `RunStore` | `data_acquisition` | `storage` | Create a run with its planned scope; append values and failures per item; read status, cost and failures back |
+| `MatchRuleResultStore` | `criteria` | `storage` | Read a candidate's match-rule results with their citations; record an override with its reason and date |
 
 **One store interface per module that needs one, never one per table.** A module receives only
 the operations it actually calls, so `comparison` cannot accidentally write a value and
@@ -794,7 +796,9 @@ function plus one new directory. No policy module changes.
 
 **Starting one.** `POST /v1/data-acquisition-runs` with a scope — a level, a set of candidates, a
 set of attributes — creates the run row with `run_status: running`, returns its id immediately,
-and hands the work to a background thread. The client polls the run resource for progress
+and hands the work to a background **`asyncio.Task`** on the application's event loop. Not a
+thread: the pipeline is `asyncio` throughout (10.2), and a thread would need an event loop of
+its own. The client polls the run resource for progress
 (section 6.4).
 
 **Planning.** The scope expands into **work items**. Each adapter declares which attributes it
@@ -1164,7 +1168,7 @@ rather than the software, which is a legitimate one for a project with no deadli
 maintainer.
 
 **Storage is PostgreSQL.** SQLite was the earlier plan, on a "15–40 cities" premise that no longer
-holds — v1 alone seeds 32 countries with ~44 attributes, before the city level exists at all. The
+holds — v1 alone seeds 32 countries with 41 attributes, before the city level exists at all. The
 choice is made on optionality rather than on present need. Data volume is not the argument —
 32 countries is trivial for any engine. The argument is **operational**: Postgres has native
 streaming replication, so read replicas and failover are available later without changing
@@ -1196,7 +1200,7 @@ copied.** Separate country and city tables would reintroduce exactly the duplica
 ### 10.4 Data flow
 
 **Country level:** configure attributes → select countries → screen using structured sources only
-→ score → those below the qualification threshold do not have cities extracted.
+→ score → cities are extracted only for countries whose `match_status` is `matching`.
 
 **City level:** for qualified countries, nominate cities → structured *and* qualitative
 data acquisition, **run in parallel** → store → filter and score → ranking updates.
@@ -1207,7 +1211,7 @@ data acquisition, **run in parallel** → store → filter and score → ranking
 
 The figures that justify the architecture:
 
-- ~30 countries screened cheaply is expected to **eliminate 15–20 clearly unsuitable ones**
+- ~30 countries evaluated cheaply is expected to leave **15–20 not matching**
   before any city work begins.
 - That takes deep city evaluation from ~100 candidates down to **~40–50**, without losing a
   serious contender.

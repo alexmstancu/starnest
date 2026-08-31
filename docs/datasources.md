@@ -198,6 +198,25 @@ LLM + `web_search` path.
 
 ## 5. Attribute → source mapping
 
+### Known coverage gaps, and the agreed fallbacks
+
+Two candidates are not fully covered by the primary sources, and both would otherwise fail the
+Gate B coverage assertion for a real reason rather than a defect.
+
+| Candidate | Gap | Fallback |
+|---|---|---|
+| **Liechtenstein** | Absent from Eurostat price level indices and most housing series; it shares a customs and currency union with Switzerland and is usually folded into or omitted from the EU basket. Also missing from WhereNext | The Swiss series, stored **as a Swiss-sourced value with `low` confidence** — a proxy that says so, never a Liechtenstein measurement |
+| **United Kingdom** | Several Eurostat series stop or thin out post-Brexit | World Bank and OECD equivalents, which retain UK coverage, at their own confidence |
+
+> **The provenance must carry the substitution.** A proxy stored as though it were the
+> candidate's own figure is fabrication with the paperwork filled in — the exact failure
+> `reqs.md` guards against when it says the honest answer is sometimes "insufficient data". A
+> proxy is acceptable; a proxy that hides is not. The rule is that the displayed number names
+> the source it actually came from, so a reader can see that Liechtenstein's cost of living is
+> Switzerland's.
+
+---
+
 ### the country level — country
 
 | Attribute | Primary | Secondary | Confidence |

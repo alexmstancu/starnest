@@ -664,7 +664,6 @@ export interface components {
             id: string;
             name: string;
             description?: string;
-            level: string;
         };
         /** @enum {string} */
         ValueTypeName: "Monetary" | "Quantity" | "Count" | "Ratio" | "Index" | "LabelSet" | "ShareComposition" | "Boolean" | "AssignedScore" | "Text";
@@ -768,7 +767,7 @@ export interface components {
             payload: components["schemas"]["MonetaryPayload"] | components["schemas"]["QuantityPayload"] | components["schemas"]["CountPayload"] | components["schemas"]["RatioPayload"] | components["schemas"]["IndexPayload"] | components["schemas"]["LabelSetPayload"] | components["schemas"]["ShareCompositionPayload"] | components["schemas"]["BooleanPayload"] | components["schemas"]["AssignedScorePayload"] | components["schemas"]["TextPayload"];
             data_source: string;
             reference_period: components["schemas"]["ReferencePeriod"];
-            /** Format: date */
+            /** Format: date-time */
             retrieval_date: string;
             /** @enum {string} */
             confidence_level: "absolute" | "high" | "medium" | "low";
@@ -787,7 +786,7 @@ export interface components {
             /** @description Must match the attribute's declared value type, or the request is rejected. */
             payload: components["schemas"]["MonetaryPayload"] | components["schemas"]["QuantityPayload"] | components["schemas"]["CountPayload"] | components["schemas"]["RatioPayload"] | components["schemas"]["IndexPayload"] | components["schemas"]["LabelSetPayload"] | components["schemas"]["ShareCompositionPayload"] | components["schemas"]["BooleanPayload"] | components["schemas"]["AssignedScorePayload"] | components["schemas"]["TextPayload"];
             reference_period: components["schemas"]["ReferencePeriod"];
-            /** Format: date */
+            /** Format: date-time */
             retrieval_date: string;
             /**
              * @description Defaults to a deliberately unflattering middle; a source tier says nothing useful about a typed value (`reqs.md` 5.7).
@@ -897,7 +896,7 @@ export interface components {
             /** @default manual */
             data_source: string;
             reference_period?: components["schemas"]["ReferencePeriod"];
-            /** Format: date */
+            /** Format: date-time */
             retrieval_date?: string;
             override_reason?: string | null;
         };
@@ -912,16 +911,23 @@ export interface components {
             name: string;
             level: string;
             /** @enum {string} */
-            shape: "ShareOfHouseholdField" | "SumBelowFloor" | "RatioBetweenAttributes";
+            shape: "ShareOfHouseholdField" | "SumBelowFloor" | "AllConditionsHold";
             /** @enum {string} */
             outcome: "warning" | "not_matching";
             threshold_min?: number | null;
             threshold_max?: number | null;
-            /** @description In order. Each is an attribute or a household field. */
+            /** @description In order. Each is an attribute or a household field. Used by ShareOfHouseholdField and SumBelowFloor, which take their thresholds at rule level. */
             inputs: {
                 input_order?: number;
                 attribute?: string | null;
                 household_field?: string | null;
+            }[];
+            /** @description Used by AllConditionsHold. Each names one attribute and its own band, in that attribute's own unit; the rule fires when every condition holds. A null bound is unbounded on that side. AND is the only connective and it is implicit in the shape, so there is deliberately no operator field -- see reqs.md 3.7a. */
+            conditions?: {
+                ordinal?: number;
+                attribute?: string;
+                threshold_min?: number | null;
+                threshold_max?: number | null;
             }[];
         };
         RunScope: {
@@ -1074,7 +1080,7 @@ export interface components {
             published_rank?: number | null;
             published_rank_of?: number | null;
             reference_period?: components["schemas"]["ReferencePeriod"];
-            /** Format: date */
+            /** Format: date-time */
             retrieval_date?: string;
             /** Format: uri */
             methodology_url?: string | null;
@@ -1237,10 +1243,7 @@ export interface operations {
     };
     listPillars: {
         parameters: {
-            query?: {
-                /** @description `country` or `city` */
-                level?: components["parameters"]["LevelFilter"];
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;

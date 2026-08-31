@@ -336,7 +336,7 @@ erDiagram
         bigint data_acquisition_run FK
         date reference_period_start
         date reference_period_end
-        date retrieval_date
+        timestamptz retrieval_date
         text confidence_level
         text rejection_reason
         text quote
@@ -347,8 +347,8 @@ erDiagram
     }
     DATA_ACQUISITION_RUN {
         bigint id PK
-        timestamp started_at
-        timestamp finished_at
+        timestamptz started_at
+        timestamptz finished_at
         text triggered_by
         text run_status
         text level FK
@@ -382,9 +382,9 @@ erDiagram
         text reason
         date reference_period_start
         date reference_period_end
-        date retrieval_date
+        timestamptz retrieval_date
         text override_reason
-        date override_date
+        timestamptz override_date
     }
     EXTERNAL_SCORE {
         bigint id PK
@@ -396,7 +396,7 @@ erDiagram
         int published_rank_of
         date reference_period_start
         date reference_period_end
-        date retrieval_date
+        timestamptz retrieval_date
         text methodology_url
         text caveats
     }
@@ -477,7 +477,7 @@ erDiagram
         bigint id PK
         text criteria_set FK
         text level FK
-        timestamp computed_at
+        timestamptz computed_at
     }
     CANDIDATE_RESULT {
         bigint id PK
@@ -1098,8 +1098,22 @@ It is selectable at any moment, and one primitive serves two purposes:
 
 **The application ships one default criteria set**, holding a criterion for every attribute that
 should be scored out of the box. The catalog in section 7 *is* that set. Any other criteria set
-**inherits from the default for anything it does not override**, so a set need only carry what
-it changes, and adding an attribute to the catalog does not break existing sets.
+is created by **duplicating it in full** — every criterion row is copied — after which the two
+are independent.
+
+> **A criteria set is a full copy, not a sparse overlay, and the arithmetic leaves no choice.**
+> An earlier draft said a set "inherits from the default for anything it does not override". That
+> cannot hold: weights sum to 100 within a pillar, so raising one criterion from 22% to 40% is
+> only meaningful if its siblings fall to compensate. A set storing the single override would
+> carry 40% plus five inherited weights totalling 78%, and sum to 118%. Rebalancing is exactly
+> what the override *means*, and it necessarily touches the siblings — so they must be the set's
+> own rows.
+>
+> **What this costs, stated plainly:** adding an attribute to the catalog does not appear in
+> existing sets automatically. A catalog migration that adds one must also decide what every
+> existing set does with it — the honest default being weight 0, included but contributing
+> nothing until you say otherwise. That is a real obligation on catalog migrations, and it is
+> cheaper than an invariant that cannot be satisfied.
 
 > **This is where the earlier draft was wrong, and why it is worth the rename.** What this
 > document previously called a "criterion" was really an attribute — the subject, with no rule
@@ -1201,8 +1215,8 @@ which criteria were in scope, the figure keeps its meaning, and two evaluations 
 without checking whether the catalog moved between them.
 
 Storing `score` or `match_status` on the Candidate would mean one criteria set's answer silently
-overwriting another's, and would make "compare how these two criteria sets rank the same countries"
-impossible to express. An evaluation is cheap — it is pure arithmetic over stored values (section 5.6)
+overwriting another's — switching from `alex` to `partner` would destroy the previous answer
+rather than produce a second one — and a saved evaluation would have nowhere to live. An evaluation is cheap — it is pure arithmetic over stored values (section 5.6)
 — so keeping several is a matter of retaining rows, not of re-fetching anything.
 
 ### 3.5 DataSource
@@ -1396,8 +1410,9 @@ else in the model would say so.
 | `id`, `name`, `level` | Identifier, display label, and which level it applies at |
 | `shape` | Which **rule shape** performs the comparison — see below |
 | `outcome` | `warning` \| `not_matching` |
-| `threshold_min`, `threshold_max` | The shape's numeric parameters. Which are required depends on the shape, and a constraint enforces it |
+| `threshold_min`, `threshold_max` | The shape's numeric parameters, where the shape takes them at rule level. Which are required depends on the shape, and a constraint enforces it |
 | inputs | `compound_rule_input` rows, **in order**: each names either an attribute or a household field |
+| conditions | `compound_rule_condition` rows for `AllConditionsHold`: each names one attribute and its own band |
 
 **The comparison is code; the rule is data.** This is the archetype and instantiation split
 (`arch.md` 1) applied to rules. A handful of **shapes** are implemented in code because they
@@ -1407,13 +1422,33 @@ carry behaviour; each rule is a row naming a shape, its inputs and its threshold
 |---|---|---|
 | `ShareOfHouseholdField` | one attribute, one household field | the attribute exceeds `threshold_max` as a share of the field |
 | `SumBelowFloor` | several attributes | their sum falls below `threshold_min` |
-| `RatioBetweenAttributes` | two attributes, in order | their ratio falls outside `threshold_min`–`threshold_max` |
+| `AllConditionsHold` | any number of attributes, one condition each | **every** condition holds — each attribute's value lies inside its own band, in its own unit |
 
 > **Why the comparison itself is not stored.** Columns for an operator and an aggregation would
 > be a small expression language, which section 3.0's guardrail exists to prevent — and the first rule
 > needing an "or" breaks the grammar. Naming a shape keeps every stored value a parameter and
 > never an instruction. Adding a rule of a known shape is a row; adding a new kind of comparison
 > is code, which it genuinely is.
+
+> **`AllConditionsHold` replaced a shape that was mathematically wrong.** An earlier draft had
+> `RatioBetweenAttributes` — two attributes, fires when their ratio leaves a band — and assigned
+> all three rules to it. It does not work, for reasons that are about arithmetic rather than
+> taste:
+>
+> - **Celsius is an interval scale, not a ratio scale.** 0 °C is not "no temperature", so a
+>   ratio of Celsius values means nothing. `mild_now_brutal_later` divided degrees by a count of
+>   days, which is not a quantity in any unit, and Norway and Finland sit near 1–2 °C, where
+>   that ratio explodes and then changes sign.
+> - **`cheap_but_taxed` divided an index by a percentage**, which has no economic meaning either.
+> - **All three rules were conjunctions all along.** "A comfortable annual mean hides a projected
+>   summer that is not" is *mean within a band* **and** *heat days above a floor* — two
+>   independent tests, each in its own unit. No single ratio can say it.
+>
+> `AllConditionsHold` takes **any number** of conditions rather than exactly two, deliberately:
+> a two-condition shape would be outgrown by the first rule needing a third. **AND is the only
+> connective, and it is implicit in the shape's name** — there is no operator column, no
+> connective column and no nesting, because that is the expression language the guardrail above
+> forbids. A rule needing "or" is two rules, or a new shape.
 
 **Inputs may cross levels.** A city rule may read an attribute of its parent country — a large
 expat community inside a country with low openness to foreigners is worth flagging, and neither
@@ -1578,7 +1613,7 @@ travel with the anchors on the criterion.
 are **displayed as integers** — 86, not 86.4.
 
 **Rounding happens only at display.** All intermediate arithmetic — normalising each value,
-applying weights, redistributing weight for missing data — carries full precision. Rounding ~44
+applying weights, redistributing weight for missing data — carries full precision. Rounding 41
 criterion scores to integers before weighting would accumulate error into the total and could
 reorder candidates separated by less than a point.
 
@@ -2286,12 +2321,20 @@ supplies the comparison.
 
 | Rule | Level | Shape | Reads | Fires when | Outcome |
 |---|---|---|---|---|---|
-| `mild_now_brutal_later` | country | `RatioBetweenAttributes` | `country.avg_annual_temperature`, `country.projected_summer_heat_days` | A comfortable annual mean hides a projected summer that is not. **Thresholds TBD** | warning |
-| `cheap_but_taxed` | country | `RatioBetweenAttributes` | `country.cost_of_living_index`, `country.income_tax_effective` | Low prices are offset by an effective tax rate that removes the advantage. **Thresholds TBD** | warning |
+| `mild_now_brutal_later` | country | `AllConditionsHold` | `country.avg_annual_temperature` within a comfortable band, **and** `country.projected_summer_heat_days` above a floor | A comfortable annual mean hides a projected summer that is not. **Both bands TBD** | warning |
+| `cheap_but_taxed` | country | `AllConditionsHold` | `country.cost_of_living_index` below a ceiling, **and** `country.income_tax_effective` above a floor | Low prices are offset by an effective tax rate that removes the advantage. **Both bands TBD** | warning |
 | `rent_vs_spend` | city | `ShareOfHouseholdField` | `city.rent_centre`, `household.target_monthly_spend` | Rent consumes more than `threshold_max` of total household spend. Provisionally 0.40 | warning |
 | `cost_of_living_vs_income` | city | `ShareOfHouseholdField` | `city.cost_of_living_monthly`, `household.net_income` | Total living costs consume more than `threshold_max` of net income. Provisionally 0.60 | warning |
-| `expat_bubble` | city | `RatioBetweenAttributes` | `city.expat_community_size`, `country.openness_to_foreigners` | A large expat community sits inside a country with low openness — **an input from the parent country**. **Thresholds TBD** | warning |
+| `expat_bubble` | city | `AllConditionsHold` | `city.expat_community_size` above a floor, **and** `country.openness_to_foreigners` below a ceiling — **an input from the parent country** | A large expat community sits inside a country with low openness. **Both bands TBD** | warning |
 | `two_role_feasibility` | city | `SumBelowFloor` | `city.tech_software_jobs`, `city.tech_product_jobs` | The two counts together fall below a floor. **Stays a manual match rule (section 7.3) until those attributes have a source** (section 9) | not matching |
+
+> **`two_role_feasibility` is one rule in two catalogs, and only one of them is real.** In the
+> MVP it exists **solely as the manual match rule of section 7.3** — no `compound_rule` row is
+> seeded, and none should be. The row above records the shape it will take *if and when*
+> `tech_software_jobs` and `tech_product_jobs` acquire a source, at which point a migration
+> moves it. Listing it here is a plan, not a duplicate: `NON_MATCH_REASON` allows a match rule
+> or a compound rule and not both, so two live rows would be a contradiction rather than
+> redundancy.
 
 **Two are in v1** — `mild_now_brutal_later` and `cheap_but_taxed` — because v1 is country-level
 and those are the only country-level rules. They are also the point: two instances are what will
@@ -2358,10 +2401,11 @@ everywhere; each tab owns one stage of the workflow and nests its detail views i
   scoring; an excluded criterion renormalises the remaining weights and does **not** count
   against coverage, unlike missing data (section 5.3).
 - **Criteria sets.** Create, duplicate, rename, switch. Each holds inclusion, weights,
-  goals, ideal ranges, scales and matching thresholds. Compare two sets' evaluations side
-  by side, highlighting where they diverge most — including where they disagree on direction.
-  This comparison is why score and match status belong to an `Evaluation` (section 3.4a) and not to the
-  candidate.
+  goals, ideal ranges, scales and matching thresholds.
+
+  > **Comparing two criteria sets side by side is post-MVP.** It was written here without ever
+  > being asked for, and it is not needed: what gets compared is candidates against candidates
+  > (section 8.5), not opinions against opinions.
 - **Matching thresholds and match rules.** Per-criterion thresholds, typed by the attribute's
   value type; named match rules with their results, sources and overrides.
 - **Source priority.** The global default order, plus per-attribute overrides and `max_age`
@@ -2548,7 +2592,7 @@ wondering whether a second concept is hiding behind the second word.
 | **MatchRule** | A named yes/no gate attached to no attribute: a visa pathway, a quota, whether a market can support two roles. Carries a result, a reason, a source, and an optional audited override. The other mechanism that produces a non-match |
 | **`parent_not_matching`** | A candidate evaluated although its parent does not match — a city worth looking at in a country that failed. Flagged in exactly those words, never hidden |
 | **CompoundRule** | A rule over more than one input — attributes, household fields, or an attribute of the parent country. Names a **shape** implemented in code, its inputs in order, and its thresholds. Its outcome is either a warning or a non-match, which is what lets one mechanism cover a rent alarm and a computed gate |
-| **Rule shape** | The comparison a compound rule performs, implemented in code because it is behaviour: `ShareOfHouseholdField`, `SumBelowFloor`, `RatioBetweenAttributes`. Adding a rule of a known shape is data; adding a shape is a release |
+| **Rule shape** | The comparison a compound rule performs, implemented in code because it is behaviour: `ShareOfHouseholdField`, `SumBelowFloor`, `AllConditionsHold`. Adding a rule of a known shape is data; adding a shape is a release |
 | **Warning** | A compound rule outcome that flags a candidate without ruling it out — rent read against total household spend. Never changes the score, and stored with the evaluation that raised it |
 | **Evaluation** | One criteria set run against the candidates at one level, producing a ranking. **Score, coverage, match status and rank belong to an evaluation, not to the candidate** — they change when you switch criteria sets, and none of them is a property of the place |
 | **Score** | 0–100. Full precision internally, integers only at display |
@@ -2682,7 +2726,7 @@ not only *what*.
 | Q84 | Household parameters are configuration (section 1.4) | Cost of living is meaningless in the abstract; it means something only against your own net income. Population-average purchasing power answers a different question |
 | Q85 | Warnings exist, distinct from non-matches | Rent judged against total household spend is a cross-criterion rule that should flag, not rule out |
 | Q86 | The LLM run cap is the "spend cap"; "budget" means household money | Two different ceilings had taken the same word |
-| Q79 | Full precision internally, integers only at display | Rounding ~44 criterion scores before weighting accumulates error and can reorder candidates separated by less than a point |
+| Q79 | Full precision internally, integers only at display | Rounding 41 criterion scores before weighting accumulates error and can reorder candidates separated by less than a point |
 | Q80 | `reference_date` becomes `reference_period` | A year, a month and a day are all legitimate reference spans; a point date cannot say which |
 | Q81 | Manual entry defaults to `medium` confidence, always overridable | Source tier says nothing useful for manual values — a researched official result and a rough estimate are both `source: manual` |
 | Q82 | Excluded criteria renormalise weights but do not reduce coverage | Nothing is missing; you decided it does not apply |
@@ -2790,4 +2834,12 @@ Recorded from a front-to-back read of this document.
 | Q186 | **A run's planned scope is normalised**: `level` on the run, plus `data_acquisition_run_candidate` and `data_acquisition_run_attribute` | `openapi.yaml` returned a scope that no table held. It records what was **planned**, not what was achieved — selective retry and the dry-run estimate both need the intent, and a run that failed entirely would otherwise report an empty scope. A JSON column was rejected under section 3.0 |
 | Q187 | **A pillar carries no level.** One row per concern; `pillar_weight` gains the level | section 7 calls pillars "the same named concerns at both levels", so `housing` is one concept whose *weight* differs by level, not two pillars. Found independently by two agents: the previous shape made `city.housing` unrepresentable, which is harmless while v1 is country-only and fatal the moment the city level arrives. Prefixed ids and a composite key were the alternatives; both duplicate each pillar's name and description across rows that can drift |
 | Q188 | **Scale anchors are derived from real data and reviewed, not invented** | 26 of 41 criteria normalise `fixed` and no anchors exist, so only 13 can currently score. Rather than guess bands before seeing figures, the first acquisition run computes each attribute's observed range across the 32 countries and proposes anchors for approval. This is what "provisional by design, to be revisited after a first real run" always meant. Defaulting the 26 to `percentile` was rejected: section 5.1 chose `fixed` precisely so a score does not move when a candidate is added or pruned |
+| Q189 | **`RatioBetweenAttributes` is deleted; `AllConditionsHold` replaces it** | The shape was arithmetically wrong for every rule that used it. Celsius is an interval scale, so a ratio of Celsius values is meaningless; degrees divided by a count of days is not a quantity; Norway and Finland sit near 1–2 °C where the ratio explodes and flips sign; and an index divided by a percentage has no meaning either. All three rules were conjunctions of independent thresholds all along. Found by an external review of the documents |
+| Q190 | The new shape takes **N conditions, not two**, ANDed | A two-condition shape would be outgrown by the first rule needing a third. AND is the only connective and it is implicit in the shape's name — no operator column, no nesting, no `or`, because that is the expression language section 3.0 forbids. A rule needing `or` is two rules, or a new shape |
+| Q191 | **A criteria set is a full copy, not a sparse overlay** | The earlier "inherits from the default for anything it does not override" cannot hold: weights sum to 100 within a pillar, so an override that does not move its siblings sums to 118. The cost is real and accepted — a catalog migration adding an attribute must decide what every existing set does with it, the honest default being weight 0 |
+| Q192 | **Comparing two criteria sets side by side moves to post-MVP** | Written into section 8.2 without ever being asked for. What gets compared is candidates against candidates, not opinions against opinions. Score still belongs to an `Evaluation` rather than the Candidate, for two reasons that survive: switching sets would otherwise destroy the previous answer, and a saved evaluation needs somewhere to live |
+| Q193 | **A saved evaluation freezes the interpretation too** — target range, reducer, breakdown option and the anchors | `candidate_attribute_score.used_value` already pins the exact measurement, so only the interpretation was unfrozen. Q188 guarantees the anchors will be revised at least once; without this, every evaluation saved before that revision would show scores its own drill-down could no longer reproduce, against a product whose stated purpose is to explain every number it shows |
+| Q194 | **Gate A asserts insufficient data first, then a ranking** | The gate previously asserted a ranking that `blocks_if_missing` makes impossible — five of the seven required attributes have no adapter until P4. Asserting both outcomes tests more than the original did: that the block fires and names what it lacks, and separately that redistribution and coverage work |
+| Q195 | **Liechtenstein and the UK are filled from fallback sources, visibly** | Eurostat does not survey Liechtenstein's prices and drops several UK series post-Brexit, so Gate B would fail for a true reason. A Swiss figure standing in for Liechtenstein is stored as a Swiss-sourced value at `low` confidence, never as a Liechtenstein measurement. A proxy is acceptable; a proxy that hides is fabrication with the paperwork filled in |
+| Q196 | The value natural key gains `reference_period_end`; `retrieval_date` stays | A monthly and an annual figure sharing a January start would otherwise collide. Removing `retrieval_date` was the reviewer's suggestion and would break a requirement — re-fetches must be preserved, so a second fetch of the same period must be a stored observation rather than a constraint violation |
 

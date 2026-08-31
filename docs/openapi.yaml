@@ -18,8 +18,9 @@ info:
       optional decoration — it is what the product exists to provide.
     - **Two distinct dates**, never merged: `reference_period` is the span the data describes;
       `retrieval_date` is when it was fetched.
-    - **Scores are integers 0–100. Coverage is a ratio 0–1.** Different scales because they are
-      different things: a score is defined on a range, coverage is a share.
+    - **Scores, coverage and weights are all percentages, 0–100.** Scores display as integers;
+      coverage and weights carry decimals. Weights sum to 100 within a pillar, and pillar
+      weights sum to 100 within a level.
     - Errors share one shape and are distinguished by a stable machine-readable `code`.
     - No authentication. The service binds to localhost (`reqs.md` 10).
 
@@ -92,7 +93,9 @@ paths:
     get:
       tags: [catalog]
       operationId: listPillars
-      parameters: [ { $ref: "#/components/parameters/LevelFilter" } ]
+      # No level filter: a pillar carries no level (reqs.md 3.2, Q187). The same eleven
+      # concerns apply everywhere; only their weights differ, and those live on a criteria set.
+      parameters: []
       responses:
         "200":
           description: OK
@@ -802,12 +805,11 @@ components:
 
     Pillar:
       type: object
-      required: [id, name, level]
+      required: [id, name]
       properties:
         id: { type: string }
         name: { type: string }
         description: { type: string }
-        level: { type: string }
 
     ValueTypeName:
       type: string
@@ -962,7 +964,7 @@ components:
             - $ref: "#/components/schemas/TextPayload"
         data_source: { type: string }
         reference_period: { $ref: "#/components/schemas/ReferencePeriod" }
-        retrieval_date: { type: string, format: date }
+        retrieval_date: { type: string, format: date-time }
         confidence_level: { type: string, enum: [absolute, high, medium, low] }
         is_active: { type: boolean, description: "Derived, not stored — the value scoring would use." }
         rejection_reason: { type: [string, "null"] }
@@ -992,7 +994,7 @@ components:
             - $ref: "#/components/schemas/AssignedScorePayload"
             - $ref: "#/components/schemas/TextPayload"
         reference_period: { $ref: "#/components/schemas/ReferencePeriod" }
-        retrieval_date: { type: string, format: date }
+        retrieval_date: { type: string, format: date-time }
         confidence_level:
           type: string
           enum: [absolute, high, medium, low]
@@ -1122,7 +1124,7 @@ components:
         reason: { type: string }
         data_source: { type: string, default: manual }
         reference_period: { $ref: "#/components/schemas/ReferencePeriod" }
-        retrieval_date: { type: string, format: date }
+        retrieval_date: { type: string, format: date-time }
         override_reason: { type: [string, "null"] }
 
     MatchRuleResult:
@@ -1142,19 +1144,35 @@ components:
         id: { type: string }
         name: { type: string }
         level: { type: string }
-        shape: { type: string, enum: [ShareOfHouseholdField, SumBelowFloor, RatioBetweenAttributes] }
+        shape: { type: string, enum: [ShareOfHouseholdField, SumBelowFloor, AllConditionsHold] }
         outcome: { type: string, enum: [warning, not_matching] }
         threshold_min: { type: [number, "null"] }
         threshold_max: { type: [number, "null"] }
         inputs:
           type: array
-          description: In order. Each is an attribute or a household field.
+          description: >-
+            In order. Each is an attribute or a household field. Used by ShareOfHouseholdField
+            and SumBelowFloor, which take their thresholds at rule level.
           items:
             type: object
             properties:
               input_order: { type: integer }
               attribute: { type: [string, "null"] }
               household_field: { type: [string, "null"] }
+        conditions:
+          type: array
+          description: >-
+            Used by AllConditionsHold. Each names one attribute and its own band, in that
+            attribute's own unit; the rule fires when every condition holds. A null bound is
+            unbounded on that side. AND is the only connective and it is implicit in the shape,
+            so there is deliberately no operator field -- see reqs.md 3.7a.
+          items:
+            type: object
+            properties:
+              ordinal: { type: integer }
+              attribute: { type: string }
+              threshold_min: { type: [number, "null"] }
+              threshold_max: { type: [number, "null"] }
 
     RunScope:
       type: object
@@ -1347,6 +1365,6 @@ components:
         published_rank: { type: [integer, "null"] }
         published_rank_of: { type: [integer, "null"] }
         reference_period: { $ref: "#/components/schemas/ReferencePeriod" }
-        retrieval_date: { type: string, format: date }
+        retrieval_date: { type: string, format: date-time }
         methodology_url: { type: [string, "null"], format: uri }
         caveats: { type: [string, "null"] }

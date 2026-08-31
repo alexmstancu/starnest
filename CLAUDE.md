@@ -121,7 +121,7 @@ Module layout, all under `backend/src/starnest/` (`arch.md` 6.1) — **named aft
 
 The central structural idea. Evaluation is **not** uniform across all candidates:
 
-1. **Country level.** Cheap screening across candidate countries using structured sources only, **no LLM calls**. Countries below a qualification threshold are excluded.
+1. **Country level.** A cheap first pass across candidate countries using structured sources only, **no LLM calls**. Cities are nominated only for countries whose `match_status` is `matching` under the active criteria set — there is no separate score cutoff, and no field ever held one.
 2. **City level.** Only for countries that survived the country screen, ~5 cities each. Structured *and* qualitative (LLM + search) data acquisition.
 
 **"Phase" is retired** — it named the same axis as `Candidate.level`. There is one concept: **level**, either `country` or `city`.
@@ -175,7 +175,7 @@ The type determines what a `Value` stores, which normalisation methods are legal
 
 ## Scope discipline
 
-**v1 covers the country level only**, with the full feature set applied to it: pillar and criterion configuration, weight profiles, country nomination, data acquisition runs, scoring with coverage and confidence, elimination reporting, the ranking dashboard with drill-down and provenance, and comparison. See `reqs.md` 1.3.
+**v1 covers the country level only**, with the full feature set applied to it: pillar and criterion configuration, weight profiles, country nomination, data acquisition runs, scoring with coverage and confidence, non-match reporting, the ranking dashboard with drill-down and provenance, and comparison. See `reqs.md` 1.3.
 
 **After v1:** the entire city level — city criteria, city nomination, and the LLM + `web_search` data acquisition path.
 
@@ -185,11 +185,11 @@ Explicitly **post-MVP — do not build without being asked**: personal annotatio
 
 - **All code, UI text, comments, and identifiers must be in English**, regardless of the language used in planning conversations with the user.
 - **The app is named Starnest, and the code borrows the name exactly once.** The **top-level Python package is `starnest`** (`src/starnest/`) — decided 2026-08-30. That is the only place the product name is an identifier. It must never appear in **class names, table names, config keys, environment-variable prefixes, or comments**: `StarnestNormaliser` and a `starnest_value` table are the actual failure this rule exists to prevent, because those are the occurrences a rename cannot mechanically find. A rename means one `git mv` plus a find-and-replace over import lines, and nothing else. The display name itself stays a single config parameter, loaded at startup and used only for presentation (page title, UI headings, About text). This is the "nothing hardcoded" invariant applied to the product's own name.
-- Provisional by design: weights, the country-level qualification threshold, and the ~2000–3000 EUR/month budget guideline are all placeholders pending a manual test. Never bake them into logic (see "nothing hardcoded").
+- Provisional by design: weights, matching thresholds, scale anchors and the ~2000–3000 EUR/month budget guideline are all placeholders pending a manual test. Never bake them into logic (see "nothing hardcoded").
 
 ## Reference data sources
 
-Starting points for the structured adapters in `data_sources/`: **WhereNext Global Relocation Index** (95 countries + ~130 cities, downloadable CSV/JSON — best fit for country-level screening), **Numbeo** (cost of living, safety, healthcare, pollution; countries and cities), **Teleport Cities** (maintenance status unverified — check before relying on it), **Nomads.com** (subscription, city-level only). See `docs/datasources.md` for URLs and caveats.
+Starting points for the structured adapters in `data_sources/`: **WhereNext Global Relocation Index** (95 countries + ~130 cities, downloadable CSV/JSON — best fit for the country level), **Numbeo** (cost of living, safety, healthcare, pollution; countries and cities), **Teleport Cities** (maintenance status unverified — check before relying on it), **Nomads.com** (subscription, city-level only). See `docs/datasources.md` for URLs and caveats.
 
 ## Setup note
 
