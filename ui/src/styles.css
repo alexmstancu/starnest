@@ -1,0 +1,294 @@
+/*
+ * The whole stylesheet.
+ *
+ * No component library, deliberately (decision D3). Plain semantic HTML and native form
+ * controls, styled from one block of custom properties, because a professional design happens
+ * post-MVP and a component kit is exactly what makes that redesign expensive -- it would put
+ * the visual decisions inside a dependency instead of inside this file.
+ *
+ * **Every colour, space, radius and type size is a custom property below.** A redesign edits
+ * :root; it does not touch a single rule, and it does not touch a single component.
+ */
+
+:root {
+  /* Colour */
+  --colour-surface: #ffffff;
+  --colour-surface-sunken: #f4f5f7;
+  --colour-surface-raised: #fbfbfc;
+  --colour-border: #d9dde3;
+  --colour-border-strong: #b3bac4;
+  --colour-text: #1c2127;
+  --colour-text-muted: #5b6472;
+  --colour-accent: #2f5d8a;
+  --colour-accent-contrast: #ffffff;
+  --colour-danger: #8a2f33;
+  --colour-danger-surface: #fdf2f2;
+
+  /* Space */
+  --space-quarter: 0.25rem;
+  --space-half: 0.5rem;
+  --space-single: 1rem;
+  --space-double: 1.5rem;
+  --space-triple: 2rem;
+
+  /* Shape */
+  --radius-small: 3px;
+  --radius-medium: 6px;
+  --border-width: 1px;
+
+  /* Type */
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-size-small: 0.8125rem;
+  --font-size-base: 0.9375rem;
+  --font-size-large: 1.125rem;
+  --font-size-title: 1.375rem;
+  --line-height-body: 1.5;
+  --weight-normal: 400;
+  --weight-strong: 600;
+
+  /* Layout */
+  --sidebar-width: 17rem;
+  --content-max-width: 64rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-body);
+  color: var(--colour-text);
+  background: var(--colour-surface-sunken);
+}
+
+h1,
+h2,
+h3,
+p,
+dl,
+dd,
+fieldset {
+  margin: 0;
+}
+
+fieldset {
+  border: 0;
+  padding: 0;
+}
+
+/* Layout */
+
+.layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  min-height: 100vh;
+}
+
+.content {
+  padding: var(--space-triple);
+  max-width: var(--content-max-width);
+}
+
+/* Sidebar */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-double);
+  padding: var(--space-double) var(--space-single);
+  background: var(--colour-surface);
+  border-right: var(--border-width) solid var(--colour-border);
+}
+
+.sidebar__title {
+  font-size: var(--font-size-title);
+  font-weight: var(--weight-strong);
+}
+
+.nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-quarter);
+}
+
+.nav-link {
+  display: block;
+  padding: var(--space-half) var(--space-single);
+  border-radius: var(--radius-medium);
+  color: var(--colour-text);
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  background: var(--colour-surface-sunken);
+}
+
+.nav-link--active {
+  background: var(--colour-accent);
+  color: var(--colour-accent-contrast);
+}
+
+/* Panels */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+  padding: var(--space-single);
+  background: var(--colour-surface-raised);
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-medium);
+}
+
+.panel__heading {
+  font-size: var(--font-size-small);
+  font-weight: var(--weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--colour-text-muted);
+}
+
+.panel__hint {
+  font-size: var(--font-size-small);
+  color: var(--colour-text-muted);
+}
+
+.panel__link {
+  font-size: var(--font-size-small);
+  color: var(--colour-accent);
+}
+
+/* Form controls -- native, unstyled beyond colour and spacing */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-quarter);
+}
+
+.field__label {
+  font-size: var(--font-size-small);
+  font-weight: var(--weight-strong);
+  color: var(--colour-text-muted);
+}
+
+.field__control {
+  font: inherit;
+  padding: var(--space-quarter) var(--space-half);
+  border: var(--border-width) solid var(--colour-border-strong);
+  border-radius: var(--radius-small);
+  background: var(--colour-surface);
+  color: var(--colour-text);
+}
+
+.toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-quarter);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-half);
+}
+
+.button {
+  font: inherit;
+  padding: var(--space-quarter) var(--space-half);
+  border: var(--border-width) solid var(--colour-border-strong);
+  border-radius: var(--radius-small);
+  background: var(--colour-surface);
+  color: var(--colour-text);
+  cursor: pointer;
+}
+
+/* Statistics */
+
+.stat-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-quarter);
+}
+
+.stat-list--inline {
+  flex-direction: row;
+  gap: var(--space-double);
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-single);
+  font-size: var(--font-size-small);
+}
+
+.stat__label {
+  color: var(--colour-text-muted);
+}
+
+.stat__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-strong);
+}
+
+/* Screens */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-single);
+  padding: var(--space-double);
+  background: var(--colour-surface);
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-medium);
+}
+
+.screen__heading {
+  font-size: var(--font-size-large);
+  font-weight: var(--weight-strong);
+}
+
+.screen__summary {
+  color: var(--colour-text-muted);
+}
+
+.screen__note {
+  font-size: var(--font-size-small);
+  color: var(--colour-text-muted);
+}
+
+/* Errors */
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-quarter);
+  padding: var(--space-half);
+  border-radius: var(--radius-small);
+  font-size: var(--font-size-small);
+}
+
+.notice--error {
+  background: var(--colour-danger-surface);
+  border: var(--border-width) solid var(--colour-danger);
+  color: var(--colour-danger);
+}
+
+.notice__code {
+  font-family: var(--font-mono);
+  color: var(--colour-text-muted);
+}
+
+.boot-failure {
+  padding: var(--space-triple);
+  font-family: var(--font-body);
+  color: var(--colour-text);
+}

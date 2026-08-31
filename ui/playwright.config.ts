@@ -22,10 +22,13 @@ export default defineConfig({
 
   // Gate A onwards run against the real backend, not a mock. A gate that passes against a
   // mock proves the mock works.
+  //
+  // Until then the backend does not answer, so the default server is the mock one. At Gate A
+  // this becomes `npm run dev` again -- a one-word change, kept in one place on purpose.
   webServer: process.env.UI_ORIGIN
     ? undefined
     : {
-        command: "npm run dev",
+        command: "npm run dev:mock",
         url: "http://127.0.0.1:5173",
         reuseExistingServer: true,
         timeout: 60_000,

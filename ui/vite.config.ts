@@ -47,6 +47,10 @@ export default defineConfig({
         "src/api/schema.ts",
         "src/main.tsx",
         "src/test-setup.ts",
+        // Starts the msw service worker, which exists only in a real browser. The Playwright
+        // smoke spec is what proves it works; a jsdom test could only prove the import
+        // resolves. The handlers it registers ARE covered -- every unit test runs against them.
+        "src/mocks/browser.ts",
         "**/*.d.ts",
       ],
     },
