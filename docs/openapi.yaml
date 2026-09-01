@@ -1005,7 +1005,7 @@ components:
 
     HouseholdInput:
       type: object
-      required: [net_income, number_adults, number_children, home_country_candidate]
+      required: [net_income, number_adults, number_children, home_country_candidate, citizenships]
       properties:
         net_income: { type: number }
         number_adults: { type: integer, minimum: 1 }
@@ -1014,7 +1014,14 @@ components:
         max_rent: { type: number }
         home_country_candidate: { type: string }
         home_city_candidate: { type: [string, "null"] }
-        citizenships: { type: array, items: { type: string, description: Candidate ids of countries. } }
+        citizenships:
+          type: array
+          minItems: 1
+          description: >-
+            Candidate ids of countries. At least one is required: eu_free_movement and the UK
+            and Swiss gates all turn on it (reqs.md 7.3), and an empty set would make every
+            such gate pass or fail silently rather than visibly.
+          items: { type: string }
     Household:
       allOf: [ { $ref: "#/components/schemas/HouseholdInput" } ]
 

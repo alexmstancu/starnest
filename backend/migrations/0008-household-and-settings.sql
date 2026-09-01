@@ -9,7 +9,8 @@ CREATE TABLE household (
     id                    integer PRIMARY KEY,
     home_country_candidate text    NOT NULL REFERENCES candidate (id),
     home_city_candidate    text    REFERENCES candidate (id),
-    net_income             numeric NOT NULL,
+    -- Zero is allowed: someone may be living on savings. Negative is not a household.
+    net_income             numeric NOT NULL CHECK (net_income >= 0),
     number_adults          integer NOT NULL,
     number_children        integer NOT NULL,
     -- Guideline ceilings. Provisional, therefore nullable and never defaulted.
@@ -45,7 +46,9 @@ CREATE TABLE settings (
     run_spend_cap_eur numeric,
 
     CONSTRAINT settings_is_a_single_row         CHECK (id = 1),
-    CONSTRAINT settings_coverage_not_negative   CHECK (min_coverage IS NULL OR min_coverage >= 0),
+    -- A percentage, 0-100 (reqs.md Q185). Only the floor was checked before.
+    CONSTRAINT settings_coverage_is_a_percentage
+        CHECK (min_coverage IS NULL OR min_coverage BETWEEN 0 AND 100),
     CONSTRAINT settings_score_scale_is_positive CHECK (score_scale_max IS NULL OR score_scale_max > 0),
     CONSTRAINT settings_comparator_limit_is_positive
         CHECK (comparator_limit IS NULL OR comparator_limit >= 1),
