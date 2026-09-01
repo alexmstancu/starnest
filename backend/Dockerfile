@@ -12,7 +12,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 # Only the manifest, so this layer is invalidated by a dependency change and nothing else.
-COPY pyproject.toml uv.lock .python-version ./
+COPY backend/pyproject.toml backend/uv.lock backend/.python-version ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
@@ -35,8 +35,11 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-COPY --chown=app:app src/ ./src/
-COPY --chown=app:app migrations/ ./migrations/
+# The layout mirrors the repository deliberately, so one path expression finds the SQL in
+# development and in the container alike: from backend/src/starnest/main.py, three parents up
+# is the root, and storage/ sits beside backend/.
+COPY --chown=app:app backend/src/ ./backend/src/
+COPY --chown=app:app storage/ ./storage/
 
 USER app
 EXPOSE 8000
@@ -51,4 +54,4 @@ EXPOSE 8000
 # it does not recognise, which is what makes the omission safe rather than merely tidy.
 CMD ["uvicorn", "starnest.main:app", \
      "--host", "0.0.0.0", "--port", "8000", \
-     "--app-dir", "/app/src"]
+     "--app-dir", "/app/backend/src"]

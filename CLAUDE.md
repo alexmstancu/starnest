@@ -9,17 +9,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Layout
 
 ```
+storage/      ALL the SQL, and nothing else
+  migrations/     yoyo, plain .sql — schema AND catalog
+  queries/        aiosql, loaded at runtime by the storage module
 backend/      Python. The API and every domain rule
   src/starnest/   the ten modules of arch.md 6.1
-  migrations/     yoyo, plain .sql — schema AND catalog
   tests/          unit, storage, acceptance
-ui/    TypeScript. A client of the contract, over HTTP only
+ui/           TypeScript. A client of the contract, over HTTP only
   src/  e2e/      React; Playwright specs owned by the master agent
 docs/         reqs.md, arch.md, datasources.md, devplan.md, openapi.yaml
 tools/        the two structural audits
 compose.yaml  three containers: database, backend, ui
 Makefile      every command the project has
 ```
+
+**`storage/` is a top-level peer because SQL is a system asset, not a Python implementation detail.** Someone applying the migrations from a shell script, or opening a query in `psql` to debug it, should not have to know where a Python package hides its internals. The `storage/` **module** under `backend/src/starnest/` holds only the Python that loads and runs what lives here — that is the adapter, this is the asset. Decided 2026-09-01 (`reqs.md` Q200).
 
 **`backend/` and `ui/` are peers that share no code** — not even DTO definitions (`arch.md` 6.1). There is deliberately no top-level `src/` containing both. The only file they share is `docs/openapi.yaml`: the backend generates it, the interface generates its client from it.
 

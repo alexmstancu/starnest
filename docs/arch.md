@@ -915,6 +915,17 @@ run over a bad row, which section 6.4 forbids.
 
 ### 7.4 Migrations and seed data
 
+> **The SQL lives at the top level, in `storage/`, not inside the Python package.** Migrations
+> and runtime queries both. The tool that applies them is a detail — a shell script, or
+> something written in another language entirely, must be able to find and run them without
+> knowing how a Python package is laid out internally. The `storage/` *module* under
+> `backend/src/starnest/` is the adapter that loads them; the top-level `storage/` directory is
+> the asset. Decided 2026-09-01 (`reqs.md` Q200).
+>
+> The container mirrors the repository for the same reason — `backend/` and `storage/` as
+> siblings under `/app` — so one path expression finds the SQL in development and in the image
+> alike.
+
 Everything that defines the system ships as a migration, versioned in git: the schema, and the
 catalog that lives in it (section 1.2).
 

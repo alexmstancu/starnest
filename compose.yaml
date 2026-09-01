@@ -48,7 +48,8 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     env_file:
       - .env
     environment:
@@ -88,7 +89,8 @@ services:
 
   migrate:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     profiles: ["tools"]
     env_file:
       - .env
@@ -104,7 +106,7 @@ services:
     command: >
       yoyo apply --batch
         --database postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
-        /app/migrations
+        /app/storage/migrations
 
   backup:
     image: postgres:17-alpine

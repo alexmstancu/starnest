@@ -25,7 +25,7 @@ from pydantic import ValidationError
 from starnest.main import Environment
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
-MIGRATIONS = BACKEND_ROOT / "migrations"
+MIGRATIONS = BACKEND_ROOT.parent / "storage" / "migrations"
 ENV_FILE = BACKEND_ROOT.parent / ".env"
 
 

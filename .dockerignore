@@ -1,5 +1,12 @@
+# The build context is the repository root, so the UI and the documents are excluded too.
+ui/
+docs/
+.git/
+.claude/
+backups/
+
 # The build context is backend/. Keep it to what the image actually needs.
-.venv/
+backend/.venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -8,7 +15,7 @@ __pycache__/
 .coverage.*
 htmlcov/
 coverage.xml
-tests/
+backend/tests/
 *.egg-info/
 
 # Never let a secret into a build context. Even unused, it lands in the layer cache.

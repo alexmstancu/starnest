@@ -15,6 +15,8 @@
 
 BACKEND := backend
 UI      := ui
+# The SQL is a system asset, not a Python implementation detail (reqs.md Q200).
+STORAGE := storage
 
 # .env is the single source of technical configuration (arch.md 7.5). `-include` so that
 # `make env` still works before it exists.
@@ -52,10 +54,10 @@ logs:  ## Follow the database statement log (arch.md 10.7 — this IS the audit)
 # manually entered values cannot be re-fetched at any price (arch.md 9.5).
 
 migrate: backup  ## Back up, then apply pending migrations
-	cd $(BACKEND) && uv run yoyo apply --batch --database "$(MIGRATION_URL)" ./migrations
+	cd $(BACKEND) && uv run yoyo apply --batch --database "$(MIGRATION_URL)" ../$(STORAGE)/migrations
 
 rollback:  ## Roll back the most recent migration
-	cd $(BACKEND) && uv run yoyo rollback --batch --database "$(MIGRATION_URL)" ./migrations
+	cd $(BACKEND) && uv run yoyo rollback --batch --database "$(MIGRATION_URL)" ../$(STORAGE)/migrations
 
 backup:  ## pg_dump to ./backups
 	@mkdir -p backups
