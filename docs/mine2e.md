@@ -63,22 +63,44 @@ fully unit-testable and none of the deferred work invalidates it.
 > **Why `fixed` is deferrable although 26 criteria use it:** with no anchors it cannot run
 > regardless. Implementing it would produce code nothing could exercise against real data.
 
-### M2 — Real values, and a household
+### M2 — One real data source: **Eurostat**
 
-A dev-only seeder — `tools/seed_minimal_values.py`, **not a migration** — writing through the
-existing `ValueStore`.
+Not a seeder of hand-copied figures. A real adapter, because one source integrated properly is
+worth more than a fixture and costs little more.
 
-**In:** a handful of genuinely published figures for a handful of countries, on 2–3 attributes,
-carrying honest provenance: real `data_source`, real reference period, real retrieval date. Plus
-one `Household` record.
+**Why Eurostat, decided against the alternatives:**
 
-**Out:** any source adapter, any acquisition run, any fetch.
+- **The catalog was designed around it.** `eurostat` is the named source for **14 of the 41
+  country attributes** — `housing_cost_overburden_rate`, `overcrowding_rate`,
+  `average_working_hours`, `life_satisfaction`, `broadband_coverage` and the rest are literally
+  Eurostat indicator names. No other source comes close.
+- **It covers the candidate set.** Verified live: `ilc_lvho07a` returns 2024 figures for **35
+  countries**, against our 32 — EU plus EFTA, and the UK where it still reports.
+- **Free, no key, no quota.** `ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/`
+  returns JSON-stat. Verified working against the live API.
+- **It ships raw indicators, not a composite.** `reqs.md` forbids ingesting another product's
+  interpretation as an input. Eurostat publishes measurements, which is exactly what we want.
 
-> **Every figure must be real and traceable.** Manual entry is a first-class source
-> (`reqs.md` Q11, Q19), so this is a supported path rather than a hack — but the moment a number
-> is invented to make a screen look populated, this project has become the thing it exists to
-> replace. **Deliberately leave some countries with no data**, so the first ranking we ever see
-> also proves `insufficient_data` renders.
+**In:** a `data_sources/eurostat/` adapter implementing the `SourceAdapter` contract for **3–5
+attributes**, the JSON-stat parser, the geo-code mapping below, and enough of
+`data_acquisition/` to run it once and write `Value` rows with real provenance. Plus one
+`Household` record.
+
+**Out:** the spend cap, dry-run estimation, selective retry, the other 9 Eurostat attributes,
+every other source.
+
+> **The one schema gap this exposes.** Eurostat identifies countries by code (`AT`, `BE`), our
+> candidates by name (`country.austria`), and **`candidate` carries no country code at all**.
+> The fix is *not* a Eurostat-specific lookup buried in the adapter: ISO-3166-1 alpha-2 is a real
+> and stable property of a country, useful to every future source, so it belongs on the
+> candidate as a migration. What stays in the adapter is Eurostat's **deviations** from ISO —
+> `EL` for Greece, `UK` for the United Kingdom — because those are facts about Eurostat, not
+> about the places.
+
+> **Coverage will be partial and that is the point.** Not every country reports every indicator
+> every year. **Do not fill the gaps.** The first ranking we ever see should show real scores
+> beside real `insufficient_data`, because weight redistribution and the coverage percentage are
+> the two hardest things in `reqs.md` 5.3 to believe without seeing them work.
 
 ### M3 — `api/` and the composition root
 
@@ -117,16 +139,20 @@ re-renders → assert at least one country shows a score, and at least one shows
 ## 2. Sequencing, two agents at a time
 
 ```
-Round 1   A: M1 evaluation/            B: M2 seeder + household
-                     └────────┬───────────────┘
-Round 2   A: M3 api/ + composition root
-          B: M4 screens (against the mock until M3 lands, then repointed)
-                              │
+Round 1   BACKEND: M1 evaluation/           UI: M4 both screens
+          (pure functions, no I/O)          (against the existing mock)
+Round 2   BACKEND: M2 Eurostat adapter      UI: repoint at the real backend
+          then M3 api/ + composition root
 Round 3   master: M5 e2e, then fix what it finds
 ```
 
-M1 and M2 share nothing. M3 depends on M1; M4 depends only on the contract, which already
-exists, so it can start before M3 finishes.
+**`ui/` and `backend/` share no code — only `docs/openapi.yaml`** (`arch.md` 6.1). That is what
+makes them safely parallel rather than merely concurrent: the interface builds against the
+contract and its mock, the backend builds against the contract and the database, and neither
+waits. The contract is already written, so the UI can start at the same moment as the backend.
+
+Within the backend, M1 must precede M3 (the API has nothing to serve without a score) and M2 is
+independent of both.
 
 **Definition of done for every task:** `make check` green — lint, the four boundary contracts,
 the 75% coverage floor and both structural audits. Bare-minimum scope does not mean bare-minimum
@@ -159,6 +185,8 @@ minE2E cuts across P2 and P3 rather than replacing them. Once it lands, cross of
 - **W3-B / W6-x** partially — two screens exist in skeleton
 - **Gate A** — reachable for the first time, against the minE2E set rather than the shipped one
 
-What minE2E does **not** touch, and what the revised plan must still carry in full: data
-acquisition and its spend cap, the source adapters, comparison, the drill-down and provenance
+- **W4-x** partially — one source adapter of several, and the thinnest possible run
+
+What minE2E does **not** touch, and what the revised plan must still carry in full: the
+acquisition spend cap and dry-run estimate, selective retry, every other source adapter, comparison, the drill-down and provenance
 surfaces, `fixed` normalisation and the anchors themselves, match rules and compound rules.
