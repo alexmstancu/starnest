@@ -24,21 +24,29 @@ from starnest.data import (
     BreakdownOptionId,
     BreakdownSchemeId,
     CatalogStore,
+    CompoundRule,
+    CompoundRuleCondition,
+    CompoundRuleId,
+    CompoundRuleInput,
+    CompoundRuleShape,
     DataSource,
     DataSourceId,
     IndexParameters,
     LifecycleStatus,
+    MatchRule,
+    MatchRuleId,
     Pillar,
     PillarId,
     QuantityParameters,
     RatioParameters,
+    RuleOutcome,
     SourceKind,
     SourcePriorityOverride,
     UnitId,
     UnknownAttributeError,
     ValueType,
 )
-from starnest.data.identifiers import ReliabilityTierId
+from starnest.data.identifiers import CatalogId, ReliabilityTierId
 from starnest.storage.connections import acquire
 from starnest.storage.queries import load_queries
 
@@ -138,6 +146,80 @@ class PostgresCatalogStore(CatalogStore):
             BreakdownSchemeId(row.id): tuple(BreakdownOptionId(option) for option in row.options)
             for row in rows
         }
+
+    async def read_match_rules(self, *, level: str | None = None) -> tuple[MatchRule, ...]:
+        """The named gates. A rule with no level is asked at every level, so it comes back
+        whichever level was requested -- the filter is in the query, where the null lives."""
+        async with acquire(self._pool) as connection:
+            rows = [row async for row in self._queries.select_match_rules(connection, level=level)]
+        return tuple(
+            MatchRule(
+                id=MatchRuleId(row.id),
+                name=row.name,
+                level=LevelId(row.level) if row.level else None,
+            )
+            for row in rows
+        )
+
+    async def read_compound_rules(self, *, level: str | None = None) -> tuple[CompoundRule, ...]:
+        """Every rule with whichever children its shape reads, in one round trip.
+
+        Both child lists are aggregated by the query and the one a shape does not read comes
+        back empty, so nothing here asks the shape what to fetch next -- and `CompoundRule`
+        refuses a rule carrying the wrong kind, which is the same thing the composite key
+        refuses on the way in.
+        """
+        async with acquire(self._pool) as connection:
+            rows = [
+                row async for row in self._queries.select_compound_rules(connection, level=level)
+            ]
+        return tuple(_compound_rule_from(row) for row in rows)
+
+
+def _compound_rule_from(row: Any) -> CompoundRule:
+    """One rule row with its two aggregated child lists, as a `CompoundRule`.
+
+    A threshold that is still TBD arrives as `None` and stays `None`. Substituting anything
+    for it here would be inventing a bound in the one place nobody would look for one.
+    """
+    return CompoundRule(
+        id=CompoundRuleId(row.id),
+        name=row.name,
+        level=LevelId(row.level) if row.level else None,
+        shape=CompoundRuleShape(row.shape),
+        outcome=RuleOutcome(row.outcome),
+        threshold_min=row.threshold_min,
+        threshold_max=row.threshold_max,
+        inputs=_inputs_from(row.inputs),
+        conditions=_conditions_from(row.conditions),
+    )
+
+
+def _inputs_from(inputs: Sequence[Mapping[str, Any]]) -> tuple[CompoundRuleInput, ...]:
+    return tuple(
+        CompoundRuleInput(
+            input_order=an_input["input_order"],
+            attribute=AttributeId(an_input["attribute"]) if an_input["attribute"] else None,
+            household_field=(
+                CatalogId(an_input["household_field"]) if an_input["household_field"] else None
+            ),
+        )
+        for an_input in inputs
+    )
+
+
+def _conditions_from(
+    conditions: Sequence[Mapping[str, Any]],
+) -> tuple[CompoundRuleCondition, ...]:
+    return tuple(
+        CompoundRuleCondition(
+            ordinal=condition["ordinal"],
+            attribute=AttributeId(condition["attribute"]),
+            threshold_min=condition["threshold_min"],
+            threshold_max=condition["threshold_max"],
+        )
+        for condition in conditions
+    )
 
 
 def _attribute_from(row: Any) -> Attribute:

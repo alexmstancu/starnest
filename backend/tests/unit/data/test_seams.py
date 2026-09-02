@@ -107,6 +107,12 @@ class InMemoryCatalogStore(CatalogStore):
     async def read_breakdown_schemes(self):
         return {}
 
+    async def read_match_rules(self, *, level=None):
+        return ()
+
+    async def read_compound_rules(self, *, level=None):
+        return ()
+
 
 class FixedClock(Clock):
     def __init__(self, moment: datetime) -> None:

@@ -12,10 +12,6 @@ calls, so nothing that reads a catalog can accidentally write a value.
 oversight.** Values are never overwritten and never discarded (`reqs.md` 3.6); catalog rows
 are changed only by migration (`arch.md` 1.2). An implementation that offered either would be
 implementing something this module did not ask for.
-
-*Not here yet:* `arch.md` 6.3 also gives `CatalogStore` the match-rule and compound-rule
-catalogs. Those entities are not modelled in this module, so declaring methods that return
-them would mean inventing their shape here; whichever module models them adds the methods.
 """
 
 from abc import ABC, abstractmethod
@@ -29,6 +25,7 @@ from starnest.data.identifiers import (
     BreakdownOptionId,
     BreakdownSchemeId,
 )
+from starnest.data.rules import CompoundRule, MatchRule
 from starnest.data.sources import DataSource
 from starnest.data.value import Value
 
@@ -157,3 +154,29 @@ class CatalogStore(ABC):
         self,
     ) -> Mapping[BreakdownSchemeId, tuple[BreakdownOptionId, ...]]:
         """What each multi-value attribute is broken down by, with the options in it."""
+
+    @abstractmethod
+    async def read_match_rules(self, *, level: str | None = None) -> tuple[MatchRule, ...]:
+        """The named gates (`reqs.md` 3.7). A rule with no level is returned at every level.
+
+        **Whether a gate is enforced is not here and could not be.** That is a preference held
+        by a criteria set, and reading it through this seam would put the subjective half of
+        the ontology behind the objective one (`arch.md` 3.6). This returns what exists, never
+        what counts.
+
+        The answers themselves are not here either: a result belongs to a candidate rather
+        than to the catalog, and `arch.md` 6.3 gives it its own seam in the module that holds
+        the preference deciding whether to read it.
+        """
+
+    @abstractmethod
+    async def read_compound_rules(self, *, level: str | None = None) -> tuple[CompoundRule, ...]:
+        """The rules that read more than one figure (`reqs.md` 3.7a), children attached.
+
+        A rule comes back carrying whichever children its shape uses, so a caller never has to
+        know which of the two to ask for before it can ask.
+
+        A rule whose thresholds are still TBD comes back with them absent rather than
+        defaulted, and `CompoundRule.is_decided` is how a caller tells one apart. Supplying a
+        default here would be inventing the judgement the application exists to help make.
+        """
