@@ -57,3 +57,7 @@ backups/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# The generated ER diagram (make schema-diagram). A dumped schema and a built web bundle:
+# both are derived from storage/migrations/, which is what is actually versioned.
+docs/schema/

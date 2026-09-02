@@ -55,6 +55,7 @@ Makefile      every command the project has
 | `make migrate` | Backs up first, then applies migrations. **Never automatic** (`arch.md` 7.4) |
 | `make ui-coverage` / `make e2e` | Interface coverage (75% bar); Playwright |
 | `make docker-build` / `docker-up` / `docker-migrate` / `docker-down` | The three containers |
+| `make schema-diagram` / `schema-diagram-open` | Interactive ER diagram of the **live** schema, via Liam ERD. Output is generated and gitignored — run `make migrate` first, or the diagram shows the schema you have rather than the one you wrote |
 
 **The two audits** are the ones that predate the code:
 
