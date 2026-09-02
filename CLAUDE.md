@@ -4,7 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**Scaffolded, but the domain is not built yet.** The toolchain, the boundaries, the coverage bar, the three containers and the test harness all exist and are verified working. Every module under `backend/src/starnest/` is still empty. **`docs/reqs.md` is authoritative for requirements and the ontology — read it first.**
+**Half the backend is built; nothing serves HTTP yet.** **`docs/reqs.md` is authoritative for requirements and the ontology — read it first**, and `docs/devplan.md` 0 before doing implementation work.
+
+| Module | State |
+|---|---|
+| `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~5,400 lines, 956 backend tests, ~99.8% line and branch coverage |
+| `evaluation/` | **Next.** Normalisation, redistribution, coverage, matching, the three compound-rule shapes, ranking. Pure functions, no I/O (`devplan.md` W2-A) |
+| `api/`, `comparison/`, `data_acquisition/`, `data_sources/` | Empty. `openapi.yaml` designs 40 operations; **none is implemented** |
+| `ui/` | The shell only — routes, typed client, mock server, sidebar. 75 tests. It talks to a mock, never to the backend |
+
+**Nothing is wired end to end.** There is no composition root, no running API, and the one Playwright spec exercises the interface against its mock. The first vertical slice is `devplan.md` P3.
 
 ## Layout
 
