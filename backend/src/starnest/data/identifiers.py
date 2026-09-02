@@ -80,6 +80,27 @@ class ReliabilityTierId(CatalogId):
     __slots__ = ()
 
 
+class MatchRuleId(CatalogId):
+    """A named yes/no gate: `eu_free_movement`, `ch_eu_efta_quota` (`reqs.md` 3.7).
+
+    Objective, and here rather than in `criteria/` for that reason: whether a visa route
+    exists is a fact about the world. Whether its absence disqualifies a candidate is a
+    preference, and only that half lives with the criteria set.
+    """
+
+    __slots__ = ()
+
+
+class CompoundRuleId(CatalogId):
+    """A rule over more than one input: `mild_now_brutal_later` (`reqs.md` 3.7a).
+
+    Objective for the same reason as `MatchRuleId`. Which rules a set *applies* is the
+    preference, and it is held elsewhere.
+    """
+
+    __slots__ = ()
+
+
 class BreakdownSchemeId(CatalogId):
     """What a multi-value attribute is broken down *by*: `bedroom_count` (`reqs.md` 3.3b)."""
 

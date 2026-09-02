@@ -60,7 +60,8 @@ SELECT s.id,
                        'scale_anchors', COALESCE(
                            (SELECT jsonb_agg(jsonb_build_object(
                                        'input_value', anchor.input_value,
-                                       'score',       anchor.score)
+                                       'score',       anchor.score,
+                                       'label',       anchor.label)
                                     ORDER BY anchor.input_value)
                             FROM   criterion_scale_anchor AS anchor
                             WHERE  anchor.criterion = c.id), '[]'::jsonb),
@@ -435,7 +436,7 @@ ON CONFLICT (criteria_set, compound_rule) DO UPDATE SET is_applied = EXCLUDED.is
 -- forgotten is a scale nobody wrote, and the four threshold tables are mutually exclusive, so
 -- setting one means clearing whichever was there before.
 
--- name: replace_criterion_scale_anchors(criterion, input_values, scores)!
+-- name: replace_criterion_scale_anchors(criterion, input_values, scores, labels)!
 -- The whole scale, replaced in one statement, so it is never momentarily empty and a concurrent
 -- reader cannot see half of it.
 --
@@ -452,10 +453,12 @@ WITH cleared AS (
     WHERE  criterion = :criterion
       AND  input_value <> ALL (:input_values::numeric[])
 )
-INSERT INTO criterion_scale_anchor (criterion, input_value, score)
-SELECT :criterion, anchor.input_value, anchor.score
-FROM   unnest(:input_values::numeric[], :scores::integer[]) AS anchor(input_value, score)
-ON CONFLICT (criterion, input_value) DO UPDATE SET score = EXCLUDED.score;
+INSERT INTO criterion_scale_anchor (criterion, input_value, score, label)
+SELECT :criterion, anchor.input_value, anchor.score, anchor.label
+FROM   unnest(:input_values::numeric[], :scores::integer[], :labels::text[])
+           AS anchor(input_value, score, label)
+ON CONFLICT (criterion, input_value)
+DO UPDATE SET score = EXCLUDED.score, label = EXCLUDED.label;
 
 -- name: clear_criterion_thresholds(criterion)!
 -- Null clears the matching threshold (openapi.yaml), and which of the four tables held it is

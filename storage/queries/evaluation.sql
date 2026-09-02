@@ -57,12 +57,13 @@ FROM   jsonb_to_recordset(:criteria::jsonb) AS frozen(
 -- id because the criterion it was copied from stays editable and may since have been deleted.
 -- A `fixed` scale is not reproducible without these, so freezing the method and not the points
 -- would freeze half of an answer.
-INSERT INTO evaluation_scale_anchor (evaluation, attribute, input_value, score)
-SELECT :evaluation, anchor.attribute, anchor.input_value, anchor.score
+INSERT INTO evaluation_scale_anchor (evaluation, attribute, input_value, score, label)
+SELECT :evaluation, anchor.attribute, anchor.input_value, anchor.score, anchor.label
 FROM   jsonb_to_recordset(:anchors::jsonb) AS anchor(
            attribute   text,
            input_value numeric,
-           score       integer);
+           score       integer,
+           label       text);
 
 -- name: insert_candidate_results(evaluation, results)
 -- Every candidate's outcome in one statement, returning the generated id beside the candidate
@@ -214,7 +215,8 @@ SELECT ec.attribute,
        COALESCE(
            (SELECT jsonb_agg(jsonb_build_object(
                        'input_value', anchor.input_value,
-                       'score',       anchor.score)
+                       'score',       anchor.score,
+                       'label',       anchor.label)
                      ORDER BY anchor.input_value)
             FROM   evaluation_scale_anchor AS anchor
             WHERE  anchor.evaluation = ec.evaluation

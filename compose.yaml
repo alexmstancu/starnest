@@ -116,15 +116,28 @@ services:
         condition: service_healthy
     volumes:
       - ./backups:/backups
+    # The connection is passed as libpq's own environment variables rather than as command
+    # arguments. That is what makes the command a single short line -- and a single short line
+    # is the point: `sh -c` takes the whole script as ONE argument, so a folded YAML scalar
+    # that keeps its newlines (which it does whenever a continuation line is indented further
+    # than the first) hands sh four separate commands instead of one. This previously ran
+    # pg_dump with no password and then tried to execute `--format=custom` as a program.
+    #
+    # It is also why `migrate` above survives the identical YAML: its command is not wrapped
+    # in a shell, so Compose word-splits it into an argv list and the newlines never matter.
+    environment:
+      PGHOST: database
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
     # Run before every migration (arch.md 9.5). The reasoning is specific: structured values
     # could be re-fetched slowly, LLM values would cost money again, and manually entered
     # values -- visa verdicts, quota research, exclusion reasons -- cannot be re-fetched at
     # all. Those are what this protects.
-    command: >
-      sh -c 'PGPASSWORD=${POSTGRES_PASSWORD}
-             pg_dump -h database -U ${POSTGRES_USER} -d ${POSTGRES_DB}
-             --format=custom
-             --file=/backups/$$(date +%Y%m%d-%H%M%S).dump'
+    #
+    # `--format=custom` is pg_restore's input format, and it is compressed and selective --
+    # so a restore can pick one table out of the dump rather than replaying all of it.
+    command: sh -c 'pg_dump --format=custom --file=/backups/$$(date +%Y%m%d-%H%M%S).dump'
 
 volumes:
   postgres-data:
