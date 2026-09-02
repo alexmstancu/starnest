@@ -28,9 +28,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starnest.candidates import CandidateId, LevelId
 from starnest.data.identifiers import (
     AttributeId,
-    CatalogId,
     CompoundRuleId,
     DataSourceId,
+    HouseholdFieldId,
     MatchRuleId,
 )
 from starnest.data.reference_period import ReferencePeriod
@@ -229,7 +229,7 @@ class CompoundRuleInput(BaseModel):
 
     input_order: int = Field(gt=0)
     attribute: AttributeId | None = None
-    household_field: CatalogId | None = Field(
+    household_field: HouseholdFieldId | None = Field(
         default=None,
         description=(
             "A household number a rule may read, from the controlled vocabulary of `reqs.md` "

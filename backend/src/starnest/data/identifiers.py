@@ -101,6 +101,21 @@ class CompoundRuleId(CatalogId):
     __slots__ = ()
 
 
+class HouseholdFieldId(CatalogId):
+    """A household number a rule may read: `net_income`, `max_rent` (`reqs.md` 3.7a).
+
+    **A name, and only a name.** `data/` may not import `household/` (`arch.md` 6.2), and the
+    boundary is the right one rather than an obstacle worked around: what a compound rule
+    stores is which figure it measures against, checked against a catalog table so a rule
+    cannot name a field nobody has. Turning that name into an amount is `evaluation/`'s, which
+    is where the objective and subjective halves are allowed to meet.
+
+    The vocabulary holds money figures only. A share of a person count is not a quantity.
+    """
+
+    __slots__ = ()
+
+
 class BreakdownSchemeId(CatalogId):
     """What a multi-value attribute is broken down *by*: `bedroom_count` (`reqs.md` 3.3b)."""
 

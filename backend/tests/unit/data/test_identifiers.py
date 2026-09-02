@@ -14,6 +14,7 @@ from starnest.data import (
     BreakdownSchemeId,
     CurrencyCode,
     DataSourceId,
+    HouseholdFieldId,
     PillarId,
     ReliabilityTierId,
     UnitId,
@@ -26,6 +27,7 @@ SINGLE_SEGMENT_TYPES = [
     BreakdownOptionId,
     UnitId,
     ReliabilityTierId,
+    HouseholdFieldId,
 ]
 
 

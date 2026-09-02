@@ -46,7 +46,7 @@ from starnest.data import (
     UnknownAttributeError,
     ValueType,
 )
-from starnest.data.identifiers import CatalogId, ReliabilityTierId
+from starnest.data.identifiers import HouseholdFieldId, ReliabilityTierId
 from starnest.storage.connections import acquire
 from starnest.storage.queries import load_queries
 
@@ -201,7 +201,9 @@ def _inputs_from(inputs: Sequence[Mapping[str, Any]]) -> tuple[CompoundRuleInput
             input_order=an_input["input_order"],
             attribute=AttributeId(an_input["attribute"]) if an_input["attribute"] else None,
             household_field=(
-                CatalogId(an_input["household_field"]) if an_input["household_field"] else None
+                HouseholdFieldId(an_input["household_field"])
+                if an_input["household_field"]
+                else None
             ),
         )
         for an_input in inputs
