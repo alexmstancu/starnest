@@ -68,6 +68,18 @@ honest table, narrow enough that a missing category -- the failure worth catchin
 fails.
 """
 
+FX_CONVERSION_TOLERANCE = Decimal("0.0001")
+"""How far `amount * fx_rate` may sit from the stored `amount_eur`, as a fraction of it.
+
+**Relative rather than absolute, because the drift scales with the figure.** A published rate
+carries a fixed number of digits -- the ECB quotes five -- so converting a larger amount
+through it accumulates proportionally more rounding, and the converted figure is usually stored
+rounded to the cent besides. One hundredth of a percent absorbs both.
+
+It is orders of magnitude narrower than the failure worth catching: a foreign amount copied
+into `amount_eur` unconverted is out by the whole rate, not by a rounding of it.
+"""
+
 
 class Payload(BaseModel):
     """What one value holds, beyond the provenance every value carries.
@@ -113,7 +125,36 @@ class Monetary(Payload):
             raise MalformedPayloadError(
                 f"{self.currency} had to be converted to {EURO}, so the rate must be recorded"
             )
+        self._reject_a_euro_figure_the_rate_does_not_produce()
         return self
+
+    def _reject_a_euro_figure_the_rate_does_not_produce(self) -> None:
+        """The recorded rate has to explain the recorded EUR figure, or it explains nothing.
+
+        Storing a rate that was never applied is worse than storing none: the provenance reads
+        as complete, so a CHF rent copied straight into `amount_eur` -- the likeliest adapter
+        mistake -- compares directly against a EUR figure and nothing looks broken.
+
+        The multiplication is restated here rather than borrowed from `converted()`, which
+        builds an `FxRate`: that record requires the source that published the rate, and a
+        `Monetary` does not carry one. One multiplication is cheaper than inventing a source
+        to satisfy a constructor, and the direction it must run in is the one thing worth
+        stating -- an inverted rate is off by the square of itself.
+        """
+        if self.currency == EURO and self.amount_eur != self.amount:
+            raise MalformedPayloadError(
+                f"{self.amount} is already in EUR, so its EUR equivalent is the same figure, "
+                f"not {self.amount_eur}"
+            )
+        if self.fx_rate is None:
+            return
+        converted = self.amount * self.fx_rate
+        if abs(converted - self.amount_eur) > abs(self.amount_eur) * FX_CONVERSION_TOLERANCE:
+            raise MalformedPayloadError(
+                f"{self.amount} {self.currency} at {self.fx_rate} does not produce "
+                f"{self.amount_eur} {EURO} but {converted}; the stored rate has to be the one "
+                "the conversion actually used"
+            )
 
     @classmethod
     def in_euro(cls, amount: Decimal) -> Self:

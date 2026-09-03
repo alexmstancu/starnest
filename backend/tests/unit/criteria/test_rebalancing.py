@@ -99,25 +99,51 @@ def test_it_refuses_when_every_other_weight_is_locked() -> None:
     assert "unlock" in str(refused.value).lower()
 
 
+def test_moving_a_weight_that_is_itself_locked_is_refused() -> None:
+    """A lock is the user saying "not this one", and the one it was placed on is this one.
+
+    Distinct from every situation below, which are all about the siblings having no room: here
+    there is room, and the refusal is the lock doing exactly what it was set for.
+    """
+    with pytest.raises(WeightsAllLockedError) as refused:
+        rebalance([item("a", "20", locked=True), item("b", "80")], moved="a", to=Decimal("60"))
+
+    assert refused.value.locked == ("a",), "the lock in the way is the one on the moved weight"
+    assert "itself locked" in str(refused.value)
+
+
 def test_it_refuses_when_the_locks_leave_no_room() -> None:
     """An unlocked sibling exists, but the locked weights already claim more than what is left.
 
     Distinct from every-weight-locked, and it fails for the same reason: there is no
-    arrangement that sums to 100.
+    arrangement that sums to 100. The message has to say so, because "every other weight is
+    locked" would be false here -- `c` is unlocked, and telling the user to unlock it would
+    send them after a lock that is not there.
     """
-    with pytest.raises(WeightsAllLockedError):
+    with pytest.raises(WeightsAllLockedError) as refused:
         rebalance(
             [item("a", "10"), item("b", "80", locked=True), item("c", "10")],
             moved="a",
             to=Decimal("50"),
         )
 
+    assert refused.value.locked == ("b",)
+    assert "every other weight" not in str(refused.value)
+    assert "b" in str(refused.value) and "80" in str(refused.value)
+
 
 def test_a_single_weight_pillar_cannot_be_rebalanced() -> None:
     """One criterion in a pillar is already 100 percent of it. There is nothing to absorb a
-    change, and pretending otherwise would silently leave the pillar wrong."""
-    with pytest.raises(WeightsAllLockedError):
+    change, and pretending otherwise would silently leave the pillar wrong.
+
+    No lock is involved, so the message must not name one -- there is nothing to unlock.
+    """
+    with pytest.raises(WeightsAllLockedError) as refused:
         rebalance([item("only", "100")], moved="only", to=Decimal("60"))
+
+    assert refused.value.locked == ()
+    assert "only weight in the pillar" in str(refused.value)
+    assert "unlock" not in str(refused.value).lower()
 
 
 @pytest.mark.parametrize("weight", ["-1", "101", "1000"])

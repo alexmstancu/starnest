@@ -337,6 +337,27 @@ def test_moving_a_weight_when_every_sibling_is_locked_is_refused() -> None:
     assert refused.value.locked == ("country.house_price", "country.mortgage_rate")
 
 
+def test_moving_a_criterion_whose_own_weight_is_locked_is_refused() -> None:
+    """The lock is on the criterion being dragged, and it is honoured there too.
+
+    Its siblings have all the room in the world, so nothing but the lock itself refuses this
+    -- which is what makes it a test of the lock rather than of the arithmetic.
+    """
+    locked = a_set(
+        (
+            criterion("country.rent_centre", "20", locked=True),
+            criterion("country.house_price", "40"),
+            criterion("country.mortgage_rate", "40"),
+        ),
+        (pillar_weight("housing", "100"),),
+    )
+
+    with pytest.raises(WeightsAllLockedError) as refused:
+        locked.with_criterion_weight("country.rent_centre", Decimal("30"))
+
+    assert refused.value.locked == ("country.rent_centre",)
+
+
 def test_a_sole_criterion_in_a_pillar_cannot_be_moved() -> None:
     """It is already 100% of its pillar, and there is nothing to absorb a change."""
     with pytest.raises(WeightsAllLockedError):

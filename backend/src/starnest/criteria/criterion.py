@@ -278,12 +278,13 @@ class Criterion(BaseModel):
         answer is the label of the highest anchor at or below the figure. A figure beneath
         every anchor has no band, which is not an error -- it is a scale that starts higher
         than the value being read.
+
+        **The band is found first and its label read second, in that order.** Every anchor
+        ends the band below it whether or not it carries a word, so skipping the unlabelled
+        ones would let a lower band's label run on through a band that was deliberately left
+        unnamed -- and a wrong word beside a right number is the failure worth refusing.
         """
-        named = [
-            anchor
-            for anchor in self.scale_anchors
-            if anchor.label is not None and anchor.input_value <= figure
-        ]
-        if not named:
+        at_or_below = [anchor for anchor in self.scale_anchors if anchor.input_value <= figure]
+        if not at_or_below:
             return None
-        return max(named, key=lambda anchor: anchor.input_value).label
+        return max(at_or_below, key=lambda anchor: anchor.input_value).label

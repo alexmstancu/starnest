@@ -239,6 +239,28 @@ def test_an_unlabelled_anchor_contributes_no_band() -> None:
     assert partly.band_label_for(Decimal("1600")) == "stretching"
 
 
+def test_an_unlabelled_anchor_ends_the_band_below_it() -> None:
+    """The band an anchor starts is deliberately unnamed, so a figure inside it has no word.
+
+    The mirror of the case above, and the one that bites: here the unlabelled anchor sits
+    *between* two labelled ones, so reading the highest labelled anchor at or below the figure
+    would carry the lower band's word right through a band that was never given one -- a rent
+    of 2,999 displaying as "affordable" beside a number that says otherwise.
+    """
+    partly = criterion(
+        scale_anchors=(
+            ScaleAnchor(input_value=Decimal("500"), score=100, label="affordable"),
+            ScaleAnchor(input_value=Decimal("1500"), score=40),
+            ScaleAnchor(input_value=Decimal("3000"), score=0, label="unaffordable"),
+        )
+    )
+
+    assert partly.band_label_for(Decimal("1400")) == "affordable"
+    assert partly.band_label_for(Decimal("1500")) is None
+    assert partly.band_label_for(Decimal("2999")) is None
+    assert partly.band_label_for(Decimal("3000")) == "unaffordable"
+
+
 def test_a_criterion_with_no_anchors_has_no_band_for_anything() -> None:
     assert criterion().band_label_for(Decimal("500")) is None
 

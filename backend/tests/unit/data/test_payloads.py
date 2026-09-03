@@ -170,6 +170,22 @@ REFUSED: list[tuple[str, type[Payload], dict[str, Any]]] = [
         {"amount": Decimal("NaN"), "currency": "EUR", "amount_eur": Decimal("NaN")},
     ),
     (
+        "a foreign amount whose rate does not produce the stored EUR figure",
+        Monetary,
+        {
+            "amount": Decimal("910"),
+            "currency": "RON",
+            "amount_eur": Decimal("910"),
+            "fx_rate": Decimal("0.201033"),
+            "fx_rate_date": date(2026, 6, 30),
+        },
+    ),
+    (
+        "a EUR figure whose EUR equivalent is a different number",
+        Monetary,
+        {"amount": Decimal("1410"), "currency": "EUR", "amount_eur": Decimal("14.10")},
+    ),
+    (
         "a rate of zero",
         Monetary,
         {
@@ -368,6 +384,51 @@ class TestMoneyAndItsConversion:
         )
         with pytest.raises(CurrencyMismatchError):
             Monetary.converted(Decimal("2900"), rate=rate)
+
+    def test_a_rate_that_does_not_produce_the_stored_euro_figure_is_refused(self) -> None:
+        """The likeliest adapter mistake: a foreign amount copied into `amount_eur` unconverted.
+
+        Nothing about it looks broken -- the rate is recorded, the date is recorded, the
+        provenance is complete -- and a 910 RON rent then compares against a EUR figure five
+        times smaller. The rate is stored precisely so this is checkable, so it is checked.
+        """
+        with pytest.raises(ValidationError, match="does not produce"):
+            Monetary(
+                amount=Decimal("910"),
+                currency="RON",
+                amount_eur=Decimal("910"),
+                fx_rate=Decimal("0.201033"),
+                fx_rate_date=date(2026, 6, 30),
+            )
+
+    def test_a_euro_figure_that_disagrees_with_its_own_euro_equivalent_is_refused(self) -> None:
+        """Nothing was converted, so the two numbers are the same number twice."""
+        with pytest.raises(ValidationError, match="already in EUR"):
+            Monetary(amount=Decimal("1410"), currency="EUR", amount_eur=Decimal("14.10"))
+
+    def test_a_converted_figure_rounded_to_the_cent_is_accepted(self) -> None:
+        """910 RON at 0.201033 is 182.94003, and an adapter that stores 182.94 has rounded a
+        display figure rather than converted it wrongly. That is what the tolerance is for."""
+        money = Monetary(
+            amount=Decimal("910"),
+            currency="RON",
+            amount_eur=Decimal("182.94"),
+            fx_rate=Decimal("0.201033"),
+            fx_rate_date=date(2026, 6, 30),
+        )
+
+        assert money.amount_eur == Decimal("182.94")
+
+    def test_a_conversion_off_by_more_than_the_tolerance_is_refused(self) -> None:
+        """The narrow side of the same bound: a cent of rounding is drift, a euro is an error."""
+        with pytest.raises(ValidationError, match="does not produce"):
+            Monetary(
+                amount=Decimal("910"),
+                currency="RON",
+                amount_eur=Decimal("183.94"),
+                fx_rate=Decimal("0.201033"),
+                fx_rate_date=date(2026, 6, 30),
+            )
 
     def test_a_negative_amount_is_legal_because_a_balance_may_be_negative(self) -> None:
         """Non-negativity is an attribute's rule, never the type's (`reqs.md` 3.3a)."""

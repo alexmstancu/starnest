@@ -4,6 +4,12 @@ The catalog is data in the database (`arch.md` 1.2), so these tests read what th
 actually seeded rather than what a fixture invented. They assert the *shape* a row becomes --
 that an index attribute comes back carrying its scale, that an override comes back as an
 override -- and never the particular 41 attributes, which are a data change away from being 42.
+
+**Two of them name particular rows anyway, and say so where they do.** A shape assertion over a
+mapped list is satisfied by the empty list: sorted, no duplicates, all-true over nothing. So
+where the contents are what decide a number -- which source's figure is active, which
+attributes a rule reads -- the contents are asserted, and a seed change that invalidates the
+test is expected to fail it loudly rather than quietly stop proving anything.
 """
 
 from collections.abc import Callable
@@ -28,6 +34,16 @@ AN_INDEX_ATTRIBUTE = "country.english_proficiency"
 A_RANGE_BOUNDED_ATTRIBUTE = "country.avg_annual_temperature"
 A_LEVEL_WITH_NO_ATTRIBUTES_YET = "city"
 A_GATE_ASKED_AT_EVERY_LEVEL = "not_manually_excluded"
+
+# `country.average_working_hours` overrides the global source order and *reverses* it: OECD is
+# ranked above Eurostat here, and below it everywhere else. Named rather than described because
+# the reversal is the whole point -- a mapper that dropped the override would read Eurostat's
+# figure while the `active_value` view read OECD's, and the two would disagree about which
+# number is being scored with nothing looking broken.
+THE_ORDER_THIS_OVERRIDE_IMPOSES = ("oecd", "eurostat")
+
+A_RULE_THAT_READS_TWO_ATTRIBUTES = "cheap_but_taxed"
+THE_ATTRIBUTES_IT_READS = ("country.cost_of_living_index", "country.income_tax_effective")
 
 
 @pytest.fixture
@@ -83,12 +99,47 @@ async def test_an_allowed_range_survives_as_a_range_and_absence_survives_as_none
 
 
 async def test_source_priority_overrides_come_back_ranked(catalog: PostgresCatalogStore) -> None:
-    """An override is partial (`reqs.md` 6.6), so its ranks are the promoted order only."""
+    """An override is partial (`reqs.md` 6.6), so its ranks are the promoted order only.
+
+    **The sources are named, not merely counted.** Every shape assertion available here is
+    satisfied by an empty tuple -- it is sorted, it has no duplicates -- so a mapper that
+    returned nothing would look correct. What the override decides is which source's figure is
+    active, and only the identifiers say that.
+    """
     attribute = await catalog.read_attribute(A_QUANTITY_ATTRIBUTE)
 
-    ranks = [override.rank for override in attribute.source_priority_overrides]
+    overrides = attribute.source_priority_overrides
+    assert overrides, "this attribute carries an override, and reading none is the bug"
+    assert tuple(str(override.data_source) for override in overrides) == (
+        THE_ORDER_THIS_OVERRIDE_IMPOSES
+    )
+    ranks = [override.rank for override in overrides]
     assert ranks == sorted(ranks)
     assert len(set(ranks)) == len(ranks)
+
+
+async def test_an_override_that_reverses_the_global_order_survives_the_read(
+    catalog: PostgresCatalogStore,
+) -> None:
+    """The case worth pinning: the override and the global order disagree, and it wins.
+
+    An override that merely restated the global order would be indistinguishable from having
+    no override at all, so a dropped one would score the same figure by another route. This one
+    promotes the source the global order ranks *lower*, which is what makes losing it a wrong
+    number rather than a redundant one.
+    """
+    attribute = await catalog.read_attribute(A_QUANTITY_ATTRIBUTE)
+    globally = {source.id: source.default_priority for source in await catalog.read_data_sources()}
+
+    promoted, demoted = THE_ORDER_THIS_OVERRIDE_IMPOSES
+    ranked = {
+        str(override.data_source): override.rank for override in attribute.source_priority_overrides
+    }
+
+    assert ranked[promoted] < ranked[demoted], "the override ranks the promoted source first"
+    assert globally[promoted] > globally[demoted], (
+        "the seed no longer reverses anything, so this test proves nothing -- pick another"
+    )
 
 
 async def test_data_sources_come_back_in_the_global_priority_order(
@@ -198,10 +249,33 @@ async def test_a_compound_rule_comes_back_carrying_the_children_its_shape_reads(
         assert rule.shape is CompoundRuleShape.ALL_CONDITIONS_HOLD
         assert rule.outcome is RuleOutcome.WARNING
         assert rule.inputs == ()
+        # Non-emptiness first: a rule whose conditions vanished is a rule that reads nothing
+        # and can therefore never fire, and every assertion below it holds vacuously over an
+        # empty list.
+        assert rule.conditions, f"{rule.id} reads attributes, and reading none is the bug"
         assert [condition.ordinal for condition in rule.conditions] == sorted(
             condition.ordinal for condition in rule.conditions
         )
         assert all(condition.attribute for condition in rule.conditions)
+
+
+async def test_a_rule_comes_back_reading_the_attributes_it_was_seeded_to_read(
+    catalog: PostgresCatalogStore,
+) -> None:
+    """Which attributes a rule reads is the rule. Naming them is the only way to assert it.
+
+    "Cheap but taxed" is a warning about a country that looks affordable until the tax rate is
+    read beside the cost of living, so it is exactly those two attributes in that order -- one
+    of them missing turns the warning into something else entirely.
+    """
+    rules = await catalog.read_compound_rules(level="country")
+
+    rule = next(rule for rule in rules if rule.id == A_RULE_THAT_READS_TWO_ATTRIBUTES)
+
+    assert tuple(str(condition.attribute) for condition in rule.conditions) == (
+        THE_ATTRIBUTES_IT_READS
+    )
+    assert [condition.ordinal for condition in rule.conditions] == [1, 2]
 
 
 async def test_the_shipped_rules_come_back_undecided_rather_than_defaulted(

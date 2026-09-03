@@ -165,9 +165,18 @@ def test_freshness_is_inert_until_an_attribute_declares_max_age(
 def test_source_priority_decides_between_equally_fresh_values(
     connection: psycopg.Connection,
 ) -> None:
+    """The better source's figure is the one scored, everything else being equal.
+
+    The preferred value is inserted FIRST and both share one retrieval timestamp, deliberately.
+    Everything the view ranks on below rule 3 is then equal, so its last tiebreak -- id DESC --
+    would pick the worse source. Only rule 3 can pick the right winner, which is what makes
+    this a test of rule 3.
+    """
     better, worse = _two_sources(connection)
-    _store(connection, source=worse, retrieved=datetime.now(UTC))
-    preferred = _store(connection, source=better, retrieved=datetime.now(UTC))
+    when = datetime.now(UTC)
+
+    preferred = _store(connection, source=better, retrieved=when)
+    _store(connection, source=worse, retrieved=when)
 
     assert _active(connection) == preferred
 
@@ -180,16 +189,22 @@ def test_a_per_attribute_override_beats_the_global_order(
 
     This is the rule that lets Numbeo beat national statistics for city rent while leaving
     every other attribute's ordering untouched.
+
+    The promoted value is inserted FIRST and both share one retrieval timestamp, deliberately,
+    so that both of the things the override outranks point the other way: the global order
+    prefers the better source, and the view's last tiebreak -- id DESC -- prefers the row
+    inserted second. Only the override can pick the right winner.
     """
     better, worse = _two_sources(connection)
+    when = datetime.now(UTC)
     connection.execute("DELETE FROM attribute_source_priority WHERE attribute = %s", (ATTRIBUTE,))
     connection.execute(
         "INSERT INTO attribute_source_priority (attribute, data_source, rank) VALUES (%s, %s, 1)",
         (ATTRIBUTE, worse),
     )
 
-    _store(connection, source=better, retrieved=datetime.now(UTC))
-    promoted = _store(connection, source=worse, retrieved=datetime.now(UTC))
+    promoted = _store(connection, source=worse, retrieved=when)
+    _store(connection, source=better, retrieved=when)
 
     assert _active(connection) == promoted
 
@@ -226,11 +241,16 @@ def test_confidence_breaks_ties_within_one_source(connection: psycopg.Connection
 def test_the_most_recent_retrieval_wins_anything_remaining(
     connection: psycopg.Connection,
 ) -> None:
-    """Same source, same confidence, same period: the later fetch is the current answer."""
+    """Same source, same confidence, same period: the later fetch is the current answer.
+
+    The later fetch is inserted FIRST, deliberately, so it holds the LOWER of the two ids and
+    the view's last tiebreak -- id DESC -- points at the earlier fetch. That is the only way to
+    make the two disagree, and without them disagreeing this test would pass on the tiebreak
+    with rule 5 deleted.
+    """
     better, _ = _two_sources(connection)
-    earlier = datetime.now(UTC) - timedelta(days=7)
-    _store(connection, source=better, retrieved=earlier)
     latest = _store(connection, source=better, retrieved=datetime.now(UTC))
+    _store(connection, source=better, retrieved=datetime.now(UTC) - timedelta(days=7))
 
     assert _active(connection) == latest
 

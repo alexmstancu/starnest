@@ -77,6 +77,7 @@ from starnest.data.identifiers import (
     UnitId,
 )
 from starnest.data.payloads import (
+    FX_CONVERSION_TOLERANCE,
     PAYLOAD_CLASSES,
     SHARE_SUM_TOLERANCE,
     AssignedScore,
@@ -123,6 +124,7 @@ from starnest.data.value import MalformedValueError, Value
 
 __all__ = [
     "EURO",
+    "FX_CONVERSION_TOLERANCE",
     "MANUAL_ENTRY_DEFAULT_CONFIDENCE",
     "PAYLOAD_CLASSES",
     "SHARE_SUM_TOLERANCE",

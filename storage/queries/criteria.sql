@@ -283,8 +283,11 @@ mapping AS (
           AND source.attribute = copied.attribute
 ),
 copied_anchors AS (
-    INSERT INTO criterion_scale_anchor (criterion, input_value, score)
-    SELECT mapping.copied_criterion, anchor.input_value, anchor.score
+    -- `label` is copied with the pair it belongs to. It is nullable, so omitting it does not
+    -- fail -- it blanks every band label in the copy while the numbers still score identically,
+    -- which is a copy that looks right and reads wrong (migration 0013).
+    INSERT INTO criterion_scale_anchor (criterion, input_value, score, label)
+    SELECT mapping.copied_criterion, anchor.input_value, anchor.score, anchor.label
     FROM   criterion_scale_anchor AS anchor
     JOIN   mapping ON mapping.source_criterion = anchor.criterion
 ),
