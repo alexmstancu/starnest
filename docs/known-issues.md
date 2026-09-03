@@ -119,6 +119,17 @@ Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that s
   is that a length mismatch hits a `NOT NULL` — true for `scores`, but `label` is nullable, so a
   short array **silently blanks labels**.
 
+### Tooling
+
+- **D23** (medium) **The interface is never linted.** `ui/package.json` defines
+  `"lint": "eslint ."`, but there is no `eslint.config.js`, so the script fails on any
+  invocation — and `make check` does not call it, so nothing has ever reported this. `make
+  check` is documented as "lint + boundaries + coverage + audits. This is the gate", and for
+  half the codebase the lint half of that sentence is not true. Fix is an `eslint.config.js`
+  with the TypeScript and React-hooks plugins, plus a `ui-lint` target wired into `check`.
+  The React-hooks rules matter here specifically: the refused-weight defect fixed in
+  `cbef101` was a stale-state bug of exactly the kind `exhaustive-deps` is built to catch.
+
 ---
 
 ## Verified sound
