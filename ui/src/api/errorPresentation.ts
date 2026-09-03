@@ -15,6 +15,13 @@
 
 import { ApiError, CLIENT_ERROR_CODES, isApiError } from "./ApiError";
 
+/**
+ * The refusal a weight change can meet: every other weight in the pillar is locked, so there
+ * is nothing to rebalance into. Named here because two modules branch on it -- the table below
+ * and `lockedAttributes` -- and a code spelled twice is a code that can be spelled wrong once.
+ */
+export const WEIGHTS_ALL_LOCKED = "weights_all_locked";
+
 export interface PresentedError {
   /** The machine-readable code, shown so a report can name it exactly. */
   code: string;
@@ -41,7 +48,7 @@ const KNOWN_CODES: Record<string, { message: string; retryable: boolean }> = {
     message: "The backend answered with something that is not JSON.",
     retryable: false,
   },
-  weights_all_locked: {
+  [WEIGHTS_ALL_LOCKED]: {
     message: "Every other weight in this pillar is locked, so there is nothing to rebalance into.",
     retryable: false,
   },
@@ -68,4 +75,21 @@ export function presentError(error: unknown): PresentedError {
 
 function isRetryableStatus(error: ApiError): boolean {
   return error.status !== null && error.status >= 500;
+}
+
+/**
+ * The attributes whose locks blocked a weight change.
+ *
+ * `docs/openapi.yaml` types `Error.details` as a free-form object, and its one example for
+ * this code carries `details.locked` as a list of attribute ids. So this reads that shape
+ * defensively and returns nothing when it is absent: showing which locks are in the way is
+ * worth doing, and guessing at them is not.
+ */
+export function lockedAttributes(error: unknown): string[] {
+  if (!isApiError(error) || error.code !== WEIGHTS_ALL_LOCKED) return [];
+
+  const locked = error.details?.["locked"];
+  if (!Array.isArray(locked)) return [];
+
+  return locked.filter((entry): entry is string => typeof entry === "string");
 }

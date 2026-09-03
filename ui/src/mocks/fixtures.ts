@@ -14,6 +14,8 @@ import type { components } from "../api/schema";
 type Level = components["schemas"]["Level"];
 type Candidate = components["schemas"]["Candidate"];
 type CriteriaSetSummary = components["schemas"]["CriteriaSetSummary"];
+type CriteriaSet = components["schemas"]["CriteriaSet"];
+type Criterion = components["schemas"]["Criterion"];
 type CandidateResult = components["schemas"]["CandidateResult"];
 type Ranking = components["schemas"]["Ranking"];
 type Run = components["schemas"]["Run"];
@@ -28,6 +30,87 @@ export const CRITERIA_SETS: CriteriaSetSummary[] = [
   { id: "default", name: "Default" },
   { id: "remote-only", name: "Remote only" },
 ];
+
+/**
+ * One criteria set in full, as `GET /criteria-sets/{id}` returns it.
+ *
+ * Three pillars, each shaped to exercise something the Configure screen has to survive:
+ *
+ * - **economics** rebalances normally -- two unlocked siblings and one locked, so a change to
+ *   one weight visibly moves another and the pillar still sums to 100.
+ * - **housing** has two unlocked criteria, the simplest case there is.
+ * - **safety** has exactly one unlocked criterion beside a locked one, which is the only way
+ *   to reach the `weights_all_locked` refusal (`openapi.yaml`, `updateCriterion` 409).
+ *
+ * The weights are illustrative. Nothing here is a proposal about how a life should be scored.
+ */
+function defaultCriteria(): Criterion[] {
+  return [
+    criterion("country.cost_of_living_index", "economics", 50, "minimise"),
+    criterion("country.income_tax_effective", "economics", 30, "minimise"),
+    criterion("country.net_median_salary", "economics", 20, "maximise", { weight_locked: true }),
+    criterion("country.housing_cost_overburden_rate", "housing", 60, "minimise"),
+    criterion("country.overcrowding_rate", "housing", 40, "minimise"),
+    criterion("country.homicide_rate", "safety", 65, "minimise"),
+    criterion("country.perceived_safety_index", "safety", 35, "maximise", { weight_locked: true }),
+  ];
+}
+
+function remoteOnlyCriteria(): Criterion[] {
+  return [
+    criterion("country.broadband_coverage", "connectivity", 70, "maximise"),
+    criterion("country.income_tax_effective", "connectivity", 30, "minimise"),
+  ];
+}
+
+function criterion(
+  attribute: string,
+  pillar: string,
+  weight: number,
+  goal: Criterion["goal"],
+  overrides: Partial<Criterion> = {},
+): Criterion {
+  return {
+    attribute,
+    pillar,
+    weight,
+    weight_locked: false,
+    is_scored: true,
+    goal,
+    normalisation_method: "percentile",
+    blocks_if_missing: false,
+    ...overrides,
+  };
+}
+
+/**
+ * Fresh objects on every call. The mock's PATCH handler rebalances in place, so handing out
+ * the same objects twice would let one test see another test's edits.
+ */
+export function makeCriteriaSetDetails(): Record<string, CriteriaSet> {
+  return {
+    default: {
+      id: "default",
+      name: "Default",
+      pillar_weights: [
+        { pillar: "economics", weight: 40, weight_locked: false },
+        { pillar: "housing", weight: 35, weight_locked: false },
+        { pillar: "safety", weight: 25, weight_locked: false },
+      ],
+      criteria: defaultCriteria(),
+      enforced_match_rules: ["country.visa_route_exists"],
+      applied_compound_rules: [],
+    },
+    "remote-only": {
+      id: "remote-only",
+      name: "Remote only",
+      pillar_weights: [{ pillar: "connectivity", weight: 100, weight_locked: false }],
+      criteria: remoteOnlyCriteria(),
+      enforced_match_rules: [],
+      applied_compound_rules: [],
+    },
+  };
+}
 
 export const COUNTRY_CANDIDATES: Candidate[] = [
   { id: "country.portugal", name: "Portugal", level: "country", parent_candidate: null },

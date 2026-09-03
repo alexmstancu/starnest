@@ -6,7 +6,7 @@
  * contract change visible instead of scattered.
  */
 
-import { getJson, type RequestOptions } from "./client";
+import { getJson, patchJson, type PatchResult, type RequestOptions } from "./client";
 import type { components } from "./schema";
 
 export type Level = components["schemas"]["Level"];
@@ -16,6 +16,14 @@ export type Run = components["schemas"]["Run"];
 export type Ranking = components["schemas"]["Ranking"];
 export type CandidateResult = components["schemas"]["CandidateResult"];
 export type Settings = components["schemas"]["Settings"];
+export type CriteriaSet = components["schemas"]["CriteriaSet"];
+export type Criterion = components["schemas"]["Criterion"];
+
+/**
+ * What a weight change answers with: the affected pillar and every criterion in it, already
+ * rebalanced (`arch.md` 8.3). The client sends one number and is told what the others became.
+ */
+export type RebalancedPillar = PatchResult<"/criteria-sets/{criteriaSetId}/criteria/{attributeId}">;
 
 export function fetchLevels(options?: RequestOptions): Promise<{ items: Level[] }> {
   return getJson("/levels", undefined, options);
@@ -47,6 +55,36 @@ export function fetchRuns(
   options?: RequestOptions,
 ): Promise<{ items: Run[]; total: number }> {
   return getJson("/data-acquisition-runs", { limit }, options);
+}
+
+export function fetchCriteriaSet(
+  criteriaSetId: string,
+  options?: RequestOptions,
+): Promise<CriteriaSet> {
+  return getJson("/criteria-sets/{criteriaSetId}", undefined, {
+    ...options,
+    pathParams: { criteriaSetId },
+  });
+}
+
+/**
+ * Changes one criterion's weight.
+ *
+ * **The rebalance is not computed here and must not be.** Which siblings absorb the change
+ * depends on which weights are locked, and a pillar that does not sum to 100 is a broken
+ * score -- so the server owns the arithmetic and this returns whatever it decided.
+ */
+export function updateCriterionWeight(
+  criteriaSetId: string,
+  attributeId: string,
+  weight: number,
+  options?: RequestOptions,
+): Promise<RebalancedPillar> {
+  return patchJson(
+    "/criteria-sets/{criteriaSetId}/criteria/{attributeId}",
+    { weight },
+    { ...options, pathParams: { criteriaSetId, attributeId } },
+  );
 }
 
 export function fetchSettings(options?: RequestOptions): Promise<Settings> {

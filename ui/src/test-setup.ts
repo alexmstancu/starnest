@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { cleanup, configure } from "@testing-library/react";
+import { resetMockData } from "./mocks/handlers";
 import { mockServer } from "./mocks/server";
 
 // Every wait in the suite is for a mocked request that resolves in milliseconds. The default
@@ -26,6 +27,9 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   mockServer.resetHandlers();
+  // The mock's criteria sets are writable, so one test's weight change must not become the
+  // next test's starting point. `resetHandlers()` restores handlers, not what they wrote.
+  resetMockData();
 });
 
 afterAll(() => {

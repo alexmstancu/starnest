@@ -292,3 +292,84 @@ fieldset {
   font-family: var(--font-body);
   color: var(--colour-text);
 }
+
+/* Tables -- the ranking and the criteria list */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-small);
+}
+
+.table th,
+.table td {
+  padding: var(--space-half);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: var(--border-width) solid var(--colour-border);
+}
+
+.table thead th {
+  font-size: var(--font-size-small);
+  font-weight: var(--weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--colour-text-muted);
+}
+
+.table__cell--numeric {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-strong);
+}
+
+/*
+ * `reqs.md` 5.4: a non-matching candidate keeps its score, greyed out. Muted, not hidden --
+ * the row is still readable, and still says what it would have scored.
+ */
+.table__row--not-matching {
+  color: var(--colour-text-muted);
+}
+
+/*
+ * Where a score would be if there were one. Italic rather than tabular, so it never reads as
+ * a figure at a glance (`reqs.md` 5.3).
+ */
+.table__cell--absent {
+  font-style: italic;
+  color: var(--colour-text-muted);
+}
+
+.table__reason {
+  color: var(--colour-text-muted);
+}
+
+/* The weight editor */
+
+.weight-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-half);
+  flex-wrap: wrap;
+}
+
+.weight-form__input {
+  width: 6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.weight-form__problem {
+  color: var(--colour-danger);
+}
+
+.save-failure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-quarter);
+}
+
+.lock-list {
+  margin: 0;
+  padding-left: var(--space-double);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+}

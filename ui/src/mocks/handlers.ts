@@ -11,16 +11,33 @@
  */
 
 import { http, HttpResponse } from "msw";
+import type { components } from "../api/schema";
 import {
   CRITERIA_SETS,
   LEVELS,
   RUNS,
   SETTINGS,
   candidatesForLevel,
+  makeCriteriaSetDetails,
   rankingFor,
 } from "./fixtures";
 
+type Criterion = components["schemas"]["Criterion"];
+
 const BASE = "/v1";
+
+/**
+ * The one piece of the mock that is mutable, because a weight change that did not stick would
+ * not exercise the screen it exists for.
+ *
+ * `resetMockData` puts it back between tests -- msw's `resetHandlers()` restores handlers, not
+ * anything they wrote.
+ */
+let criteriaSetDetails = makeCriteriaSetDetails();
+
+export function resetMockData(): void {
+  criteriaSetDetails = makeCriteriaSetDetails();
+}
 
 export const handlers = [
   http.get(`${BASE}/levels`, () => HttpResponse.json({ items: LEVELS })),
@@ -52,6 +69,38 @@ export const handlers = [
     return HttpResponse.json(rankingFor(criteriaSet, level));
   }),
 
+  http.get(`${BASE}/criteria-sets/:criteriaSetId`, ({ params }) => {
+    const set = criteriaSetDetails[String(params["criteriaSetId"])];
+    if (!set) return notFound(String(params["criteriaSetId"]));
+    return HttpResponse.json(set);
+  }),
+
+  http.patch(
+    `${BASE}/criteria-sets/:criteriaSetId/criteria/:attributeId`,
+    async ({ params, request }) => {
+      const set = criteriaSetDetails[String(params["criteriaSetId"])];
+      if (!set) return notFound(String(params["criteriaSetId"]));
+
+      const attributeId = String(params["attributeId"]);
+      const criterion = (set.criteria ?? []).find((entry) => entry.attribute === attributeId);
+      if (!criterion) return notFound(attributeId);
+
+      const body = (await request.json()) as { weight?: number };
+      if (typeof body.weight !== "number" || !Number.isFinite(body.weight)) {
+        return HttpResponse.json(
+          {
+            code: "invalid_field",
+            message: "weight must be a number between 0 and 100.",
+            details: { field: "weight" },
+          },
+          { status: 400 },
+        );
+      }
+
+      return rebalancePillar(set.criteria ?? [], criterion, body.weight);
+    },
+  ),
+
   http.get(`${BASE}/data-acquisition-runs`, ({ request }) => {
     const limit = Number(new URL(request.url).searchParams.get("limit") ?? RUNS.length);
     return HttpResponse.json({ items: RUNS.slice(0, limit), total: RUNS.length });
@@ -69,3 +118,54 @@ export const handlers = [
     );
   }),
 ];
+
+function notFound(id: string) {
+  return HttpResponse.json({ code: "not_found", message: `No such resource: ${id}.` }, { status: 404 });
+}
+
+/**
+ * The server's arithmetic, standing in for the server's arithmetic (`arch.md` 8.3).
+ *
+ * **It lives here rather than in the interface on purpose.** The screen sends one weight and
+ * renders what comes back; if this ever moved into a component, the interface would be
+ * deciding what a score is made of. The rule it keeps is the only one that matters: the pillar
+ * sums to 100 afterwards, and locked weights do not move.
+ */
+function rebalancePillar(criteria: Criterion[], edited: Criterion, weight: number) {
+  const pillar = criteria.filter((entry) => entry.pillar === edited.pillar);
+  const siblings = pillar.filter((entry) => entry !== edited);
+  const unlocked = siblings.filter((entry) => !entry.weight_locked);
+  const lockedTotal = siblings
+    .filter((entry) => entry.weight_locked)
+    .reduce((total, entry) => total + (entry.weight ?? 0), 0);
+  const room = 100 - weight - lockedTotal;
+
+  if (unlocked.length === 0 || room < 0) {
+    return HttpResponse.json(
+      {
+        code: "weights_all_locked",
+        message: "The change cannot be absorbed: the other weights in this pillar are locked.",
+        details: { locked: siblings.filter((entry) => entry.weight_locked).map((entry) => entry.attribute) },
+      },
+      { status: 409 },
+    );
+  }
+
+  const before = unlocked.reduce((total, entry) => total + (entry.weight ?? 0), 0);
+  edited.weight = weight;
+
+  let distributed = 0;
+  unlocked.forEach((sibling, index) => {
+    const isLast = index === unlocked.length - 1;
+    const share = before > 0 ? (sibling.weight ?? 0) / before : 1 / unlocked.length;
+    // The last sibling takes the residual, so rounding can never leave the pillar off 100.
+    sibling.weight = isLast ? round(room - distributed) : round(room * share);
+    distributed += sibling.weight;
+  });
+
+  return HttpResponse.json({ pillar: edited.pillar, criteria: pillar });
+}
+
+function round(value: number): number {
+  return Math.round(value * 100) / 100;
+}

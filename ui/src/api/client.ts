@@ -39,6 +39,14 @@ type QueryOf<Operation> = Operation extends { parameters: { query?: infer Query 
   ? Query
   : never;
 
+/**
+ * The `{name}` placeholders a templated path declares, e.g. `{ criteriaSetId: string }`.
+ * `never` for a path that has none, which is why `pathParams` may simply be omitted there.
+ */
+type PathValuesOf<Operation> = Operation extends { parameters: { path?: infer Params } }
+  ? Params
+  : never;
+
 type RequestBodyOf<Operation> = Operation extends {
   requestBody: { content: { "application/json": infer Body } };
 }
@@ -53,6 +61,10 @@ export type PostPath = {
   [Path in keyof ApiPaths]: ApiPaths[Path] extends { post: unknown } ? Path : never;
 }[keyof ApiPaths];
 
+export type PatchPath = {
+  [Path in keyof ApiPaths]: ApiPaths[Path] extends { patch: unknown } ? Path : never;
+}[keyof ApiPaths];
+
 type GetOperation<Path extends GetPath> = ApiPaths[Path] extends { get: infer Operation }
   ? Operation
   : never;
@@ -61,32 +73,64 @@ type PostOperation<Path extends PostPath> = ApiPaths[Path] extends { post: infer
   ? Operation
   : never;
 
+type PatchOperation<Path extends PatchPath> = ApiPaths[Path] extends { patch: infer Operation }
+  ? Operation
+  : never;
+
 export type GetResult<Path extends GetPath> = SuccessBody<GetOperation<Path>>;
 export type GetQuery<Path extends GetPath> = QueryOf<GetOperation<Path>>;
 export type PostResult<Path extends PostPath> = SuccessBody<PostOperation<Path>>;
 export type PostBody<Path extends PostPath> = RequestBodyOf<PostOperation<Path>>;
+export type PatchResult<Path extends PatchPath> = SuccessBody<PatchOperation<Path>>;
+export type PatchBody<Path extends PatchPath> = RequestBodyOf<PatchOperation<Path>>;
 
 export type QueryValues = Record<string, string | number | boolean | undefined>;
+export type PathValues = Record<string, string | number>;
 
 export interface RequestOptions {
   signal?: AbortSignal;
 }
 
-export function buildUrl(path: string, query?: QueryValues): string {
+/**
+ * Path parameters travel in the same options bag as the signal, so a call site has one
+ * optional argument rather than two positional ones it has to keep in order.
+ */
+export type CallOptions<Params> = RequestOptions & { pathParams?: Params };
+
+export function buildUrl(path: string, query?: QueryValues, pathParams?: PathValues): string {
   const parameters = new URLSearchParams();
   for (const [name, value] of Object.entries(query ?? {})) {
     if (value !== undefined) parameters.set(name, String(value));
   }
   const search = parameters.toString();
-  return search === "" ? `${API_PREFIX}${path}` : `${API_PREFIX}${path}?${search}`;
+  const filled = fillPathParams(path, pathParams);
+  return search === "" ? `${API_PREFIX}${filled}` : `${API_PREFIX}${filled}?${search}`;
+}
+
+/**
+ * Substitutes `{criteriaSetId}` and friends. A missing value throws rather than sending the
+ * literal placeholder to the backend: a request to `/criteria-sets/%7BcriteriaSetId%7D` would
+ * come back as a 404 that reads like a missing resource instead of the programming error it is.
+ */
+function fillPathParams(template: string, values?: PathValues): string {
+  return template.replace(/\{([^}]+)\}/g, (_placeholder, name: string) => {
+    const value = values?.[name];
+    if (value === undefined) {
+      throw new Error(`${template} needs a value for the path parameter {${name}}.`);
+    }
+    return encodeURIComponent(String(value));
+  });
 }
 
 export async function getJson<Path extends GetPath>(
   path: Path,
   query?: GetQuery<Path> & QueryValues,
-  options: RequestOptions = {},
+  options: CallOptions<PathValuesOf<GetOperation<Path>>> = {},
 ): Promise<GetResult<Path>> {
-  return request(buildUrl(path as string, query), { method: "GET", signal: options.signal });
+  return request(buildUrl(path as string, query, options.pathParams as PathValues | undefined), {
+    method: "GET",
+    signal: options.signal,
+  });
 }
 
 export async function postJson<Path extends PostPath>(
@@ -100,6 +144,27 @@ export async function postJson<Path extends PostPath>(
     body: JSON.stringify(body),
     signal: options.signal,
   });
+}
+
+/**
+ * The one write the interface makes today (`arch.md` 8.3): send one weight, and be told what
+ * the server made of it. The response is the whole affected pillar, because the rebalance is
+ * the server's arithmetic and the client only renders the outcome.
+ */
+export async function patchJson<Path extends PatchPath>(
+  path: Path,
+  body: PatchBody<Path>,
+  options: CallOptions<PathValuesOf<PatchOperation<Path>>> = {},
+): Promise<PatchResult<Path>> {
+  return request(
+    buildUrl(path as string, undefined, options.pathParams as PathValues | undefined),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: options.signal,
+    },
+  );
 }
 
 /**

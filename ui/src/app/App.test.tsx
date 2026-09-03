@@ -113,8 +113,13 @@ describe("the sidebar selectors", () => {
     await user.selectOptions(selector, "remote-only");
 
     expect(selector).toHaveValue("remote-only");
+    // The ranking screen names the criteria set the ranking it is showing was computed under,
+    // taken from the response rather than from the selector -- so this asserts the fetch
+    // followed the selection, not merely that the dropdown changed.
     const rank = within(screen.getByRole("region", { name: "Rank" }));
-    expect(rank.getByText("Criteria set").nextSibling).toHaveTextContent("Remote only");
+    await waitFor(() =>
+      expect(rank.getByText("Criteria set").nextSibling).toHaveTextContent("remote-only"),
+    );
   });
 });
 
@@ -194,7 +199,8 @@ describe("when the API fails", () => {
     expect(screen.getByRole("combobox", { name: /active criteria set/i })).toBeDisabled();
     // With nothing selected there is nothing to fetch, and the sidebar says so rather than
     // showing a spinner for a request it never made.
-    expect(await screen.findByText(/choose a criteria set and a level/i)).toBeInTheDocument();
+    const counts = within(await screen.findByRole("region", { name: /candidates/i }));
+    expect(counts.getByText(/choose a criteria set and a level/i)).toBeInTheDocument();
     expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
   });
 });
