@@ -22,7 +22,7 @@ async function startMockServerIfRequested(): Promise<void> {
   // Until the backend answers, `npm run dev:mock` serves every path of docs/openapi.yaml from
   // a mock. It is opt-in so that the day the backend is up, `npm run dev` talks to it and no
   // one has to remember to switch anything off.
-  if (import.meta.env.VITE_USE_MOCKS !== "1") return;
+  if (import.meta.env["VITE_USE_MOCKS"] !== "1") return;
   const { startMockWorker } = await import("./mocks/browser");
   await startMockWorker();
 }

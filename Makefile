@@ -10,7 +10,8 @@
 .DEFAULT_GOAL := help
 .PHONY: help up down logs migrate rollback backup \
         test test-storage test-acceptance coverage coverage-open lint format boundaries audit check \
-        ui-install ui-test ui-coverage ui-coverage-open ui-client e2e e2e-report \
+        ui-install ui-lint ui-typecheck ui-test ui-coverage ui-coverage-open ui-check ui-client \
+        e2e e2e-report \
         docker-build docker-up docker-migrate docker-down env \
         schema-diagram schema-diagram-open
 
@@ -103,7 +104,7 @@ audit:  ## Structural audits of the ontology and the API contract
 	uv run --no-project python tools/audit_ontology.py
 	uv run --no-project --with pyyaml python tools/audit_api.py
 
-check: lint boundaries coverage audit  ## Everything. This is the gate.
+check: lint boundaries coverage audit ui-check  ## Everything, both sides. This is the gate.
 
 # --- Interface -----------------------------------------------------------------
 
@@ -112,6 +113,12 @@ ui-install:  ## Install interface dependencies
 
 ui-client:  ## Regenerate the typed client from the contract
 	cd $(UI) && npm run generate:client
+
+ui-lint:  ## eslint, type-aware. Errors fail; warnings are reported
+	cd $(UI) && npm run lint
+
+ui-typecheck:  ## tsc over the interface, with no emit
+	cd $(UI) && npx tsc --noEmit
 
 ui-test:  ## Interface unit tests
 	cd $(UI) && npm run test
@@ -123,6 +130,10 @@ ui-coverage:  ## Interface coverage. Fails below 75%
 
 ui-coverage-open: ui-coverage  ## Run interface coverage, then open the report
 	open $(UI)/coverage/index.html
+
+# The interface half of `check`. It existed as three commands nobody had to run, which is how
+# ui/ went unlinted from the first commit until eslint.config.js (known-issues.md D23).
+ui-check: ui-lint ui-typecheck ui-coverage  ## The interface gate
 
 # --- End to end ----------------------------------------------------------------
 # Owned by the master agent, never by the workstream that wrote the screen (devplan.md 0.2).

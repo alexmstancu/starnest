@@ -14,9 +14,7 @@ import { renderShell } from "../testing/renderShell";
  */
 
 async function weightInput(attribute: string): Promise<HTMLInputElement> {
-  return (await screen.findByRole("spinbutton", {
-    name: `Weight for ${attribute}`,
-  })) as HTMLInputElement;
+  return await screen.findByRole("spinbutton", { name: `Weight for ${attribute}` });
 }
 
 async function saveWeight(attribute: string, weight: string): Promise<void> {

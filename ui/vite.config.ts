@@ -10,7 +10,7 @@ export default defineConfig({
     // client uses the same relative paths in both, and CORS never enters the picture.
     proxy: {
       "/v1": {
-        target: process.env.BACKEND_ORIGIN ?? "http://127.0.0.1:8000",
+        target: process.env["BACKEND_ORIGIN"] ?? "http://127.0.0.1:8000",
         changeOrigin: true,
       },
     },

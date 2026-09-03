@@ -65,7 +65,7 @@ function installRelativeUrlFetch(): () => void {
 
     const response = inner(target, withoutSignal);
     return signal ? Promise.race([response, rejectWhenAborted(signal)]) : response;
-  }) as typeof fetch;
+  });
 
   return () => {
     globalThis.fetch = inner;

@@ -60,8 +60,9 @@ Makefile      every command the project has
 | `make coverage` / `make coverage-open` | Full suite with coverage; **fails below 75%**. HTML at `backend/htmlcov/` |
 | `make boundaries` | `import-linter` — `arch.md` 6.2 as something a build fails on |
 | `make audit` | The two structural audits below |
-| **`make check`** | **lint + boundaries + coverage + audits. This is the gate** |
+| **`make check`** | **Backend lint + boundaries + coverage + audits, then `ui-check`. Both sides. This is the gate** |
 | `make migrate` | Backs up first, then applies migrations. **Never automatic** (`arch.md` 7.4) |
+| `make ui-check` | The interface gate: `ui-lint` (eslint, type-aware) + `ui-typecheck` + `ui-coverage` (75% bar) |
 | `make ui-coverage` / `make e2e` | Interface coverage (75% bar); Playwright |
 | `make docker-build` / `docker-up` / `docker-migrate` / `docker-down` | The three containers |
 | `make schema-diagram` / `schema-diagram-open` | Interactive ER diagram of the **live** schema, via Liam ERD. Output is generated and gitignored — run `make migrate` first, or the diagram shows the schema you have rather than the one you wrote |

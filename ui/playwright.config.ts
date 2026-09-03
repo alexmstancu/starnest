@@ -8,12 +8,12 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
-  forbidOnly: !!process.env.CI,
+  forbidOnly: !!process.env["CI"],
   retries: 0,
   reporter: [["html", { outputFolder: "playwright-report" }], ["list"]],
 
   use: {
-    baseURL: process.env.UI_ORIGIN ?? "http://127.0.0.1:5173",
+    baseURL: process.env["UI_ORIGIN"] ?? "http://127.0.0.1:5173",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -25,7 +25,7 @@ export default defineConfig({
   //
   // Until then the backend does not answer, so the default server is the mock one. At Gate A
   // this becomes `npm run dev` again -- a one-word change, kept in one place on purpose.
-  webServer: process.env.UI_ORIGIN
+  webServer: process.env["UI_ORIGIN"]
     ? undefined
     : {
         command: "npm run dev:mock",

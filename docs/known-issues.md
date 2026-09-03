@@ -129,6 +129,15 @@ Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that s
   with the TypeScript and React-hooks plugins, plus a `ui-lint` target wired into `check`.
   The React-hooks rules matter here specifically: the refused-weight defect fixed in
   `cbef101` was a stale-state bug of exactly the kind `exhaustive-deps` is built to catch.
+  **Fixed** — `ui/eslint.config.js`, `make ui-check`, and `check` now depends on it. The first
+  run found a real one: `availableCriteriaSets` was rebuilt by `?? []` on every render and used
+  as an effect dependency, so that effect re-ran on every render until the fetch landed.
+- **D24** (low) Five call sites set state from an effect to follow something that arrived
+  asynchronously — the default level and criteria set once their lists load
+  (`SelectionContext`), the criteria list and the weight input following what the server
+  returned (`useCriteriaEditor`, `ConfigureScreen`), and the idle reset in `useResource`. Each
+  has a derived-state formulation that would not need the effect. `react-hooks/set-state-in-
+  effect` reports all five as warnings; none is a bug today.
 
 ---
 

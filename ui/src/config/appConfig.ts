@@ -60,7 +60,7 @@ function readDisplayName(body: unknown): string {
     throw new AppConfigError(`${CONFIG_URL} has no "display_name".`);
   }
 
-  const displayName = (body as { display_name: unknown }).display_name;
+  const displayName = (body).display_name;
   if (typeof displayName !== "string" || displayName.trim() === "") {
     throw new AppConfigError(`${CONFIG_URL} has a "display_name" that is not a non-empty string.`);
   }

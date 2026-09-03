@@ -42,7 +42,13 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     () => [...(levels.resource.data?.items ?? [])].sort((a, b) => a.depth_order - b.depth_order),
     [levels.resource.data],
   );
-  const availableCriteriaSets = criteriaSets.resource.data?.items ?? [];
+  // Memoised for the same reason `orderedLevels` is: `?? []` builds a new array on every
+  // render, and this one is a dependency of the effect below -- so without this the effect
+  // re-ran on every render for as long as the fetch had not landed.
+  const availableCriteriaSets = useMemo(
+    () => criteriaSets.resource.data?.items ?? [],
+    [criteriaSets.resource.data],
+  );
 
   // The shallowest level and the first criteria set are the opening view. Adopting a default
   // only while nothing is chosen means a reload never overrides a deliberate choice.
@@ -82,7 +88,7 @@ export function useSelection(): Selection {
   return selection;
 }
 
-function combineStatus(...statuses: Array<Resource<unknown>["status"]>): Selection["status"] {
+function combineStatus(...statuses: Resource<unknown>["status"][]): Selection["status"] {
   if (statuses.includes("error")) return "error";
   return statuses.every((status) => status === "ready") ? "ready" : "loading";
 }

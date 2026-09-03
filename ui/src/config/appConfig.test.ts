@@ -8,7 +8,7 @@ function respondWith(body: unknown, init: ResponseInit = {}): typeof fetch {
       headers: { "Content-Type": "application/json" },
       ...init,
     }),
-  ) as unknown as typeof fetch;
+  );
 }
 
 describe("loadAppConfig", () => {
