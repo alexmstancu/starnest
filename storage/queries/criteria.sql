@@ -42,7 +42,7 @@ SELECT s.id,
        COALESCE(
            (SELECT jsonb_agg(jsonb_build_object(
                        'attribute',            c.attribute,
-                       'pillar',               a.pillar,
+                       'pillar',               c.pillar,
                        'level',                a.level,
                        'value_type',           c.value_type,
                        'is_scored',            c.is_scored,
@@ -91,7 +91,7 @@ SELECT s.id,
                                     ORDER BY share_threshold.label)
                             FROM   criterion_threshold_share AS share_threshold
                             WHERE  share_threshold.criterion = c.id), '[]'::jsonb))
-                     ORDER BY a.pillar NULLS LAST, c.attribute)
+                     ORDER BY c.pillar, c.attribute)
             FROM   criterion AS c
             JOIN   attribute AS a ON a.id = c.attribute
             WHERE  c.criteria_set = s.id
@@ -127,7 +127,7 @@ WHERE  s.id = :criteria_set;
 SELECT c.id,
        c.criteria_set,
        c.attribute,
-       a.pillar,
+       c.pillar,
        c.value_type,
        c.is_scored,
        c.weight,
@@ -142,7 +142,6 @@ SELECT c.id,
        c.reducer_mode,
        c.blocks_if_missing
 FROM   criterion AS c
-JOIN   attribute AS a ON a.id = c.attribute
 WHERE  c.criteria_set = :criteria_set
   AND  c.attribute = :attribute;
 
@@ -159,7 +158,7 @@ SELECT c.id,
 FROM   criterion AS c
 JOIN   attribute AS a ON a.id = c.attribute
 WHERE  c.criteria_set = :criteria_set
-  AND  a.pillar = :pillar
+  AND  c.pillar = :pillar
   AND  (:level::text IS NULL OR a.level = :level)
 ORDER  BY c.attribute;
 
@@ -262,13 +261,13 @@ copied_compound_rules AS (
 ),
 copied AS (
     INSERT INTO criterion (
-        criteria_set, attribute, value_type, breakdown_option, is_scored, weight,
+        criteria_set, attribute, pillar, value_type, breakdown_option, is_scored, weight,
         weight_locked, goal, target_range_min, target_range_max, zero_score_below,
         zero_score_above, normalisation_method, reducer_mode, blocks_if_missing)
-    SELECT :new_criteria_set, c.attribute, c.value_type, c.breakdown_option, c.is_scored,
-           c.weight, c.weight_locked, c.goal, c.target_range_min, c.target_range_max,
-           c.zero_score_below, c.zero_score_above, c.normalisation_method, c.reducer_mode,
-           c.blocks_if_missing
+    SELECT :new_criteria_set, c.attribute, c.pillar, c.value_type, c.breakdown_option,
+           c.is_scored, c.weight, c.weight_locked, c.goal, c.target_range_min,
+           c.target_range_max, c.zero_score_below, c.zero_score_above, c.normalisation_method,
+           c.reducer_mode, c.blocks_if_missing
     FROM   criterion AS c
     WHERE  c.criteria_set = :criteria_set
     RETURNING id, attribute, value_type
@@ -323,14 +322,21 @@ SELECT count(*) FROM mapping;
 -- name: insert_criterion(criteria_set, attribute, value_type, breakdown_option, is_scored, weight, weight_locked, goal, target_range_min, target_range_max, zero_score_below, zero_score_above, normalisation_method, reducer_mode, blocks_if_missing)<!
 -- Attach a criterion to an attribute in a set. The set's own criteria are seeded by migration
 -- (arch.md 1.2); this exists for a set built from nothing rather than duplicated.
+--
+-- The pillar is read from the attribute rather than passed in, because it is the attribute's
+-- and a caller has no business asserting it. Attaching a criterion to a descriptive,
+-- pillar-less attribute therefore fails here on a NOT NULL violation naming the column, rather
+-- than at evaluation-save time long after a ranking was shown (0106).
 INSERT INTO criterion (
-    criteria_set, attribute, value_type, breakdown_option, is_scored, weight, weight_locked,
-    goal, target_range_min, target_range_max, zero_score_below, zero_score_above,
-    normalisation_method, reducer_mode, blocks_if_missing)
-VALUES (
-    :criteria_set, :attribute, :value_type, :breakdown_option, :is_scored, :weight,
+    criteria_set, attribute, pillar, value_type, breakdown_option, is_scored, weight,
+    weight_locked, goal, target_range_min, target_range_max, zero_score_below,
+    zero_score_above, normalisation_method, reducer_mode, blocks_if_missing)
+SELECT
+    :criteria_set, :attribute, a.pillar, :value_type, :breakdown_option, :is_scored, :weight,
     :weight_locked, :goal, :target_range_min, :target_range_max, :zero_score_below,
-    :zero_score_above, :normalisation_method, :reducer_mode, :blocks_if_missing)
+    :zero_score_above, :normalisation_method, :reducer_mode, :blocks_if_missing
+FROM   attribute AS a
+WHERE  a.id = :attribute
 RETURNING id;
 
 -- name: update_criterion(criteria_set, attribute, is_scored, weight, weight_locked, goal, target_range_min, target_range_max, zero_score_below, zero_score_above, normalisation_method, breakdown_option, reducer_mode, blocks_if_missing)!
