@@ -357,3 +357,75 @@ def test_a_malformed_attribute_identifier_is_refused() -> None:
 def test_the_declaration_error_is_a_value_error() -> None:
     """The house contract: every fault in this module is a `ValueError` or a `LookupError`."""
     assert issubclass(CriterionDeclarationError, ValueError)
+
+
+# --- anchors against the score scale (known-issues D25) -------------------------
+
+A_SMALL_SCALE = 10
+"""Deliberately not 100. A score of 50 is inside a hardcoded ceiling and outside this one, so a
+future "fix" that restates 100 as a literal turns these tests red rather than green."""
+
+
+def test_anchors_within_the_scale_are_accepted() -> None:
+    """The control. Nothing below proves anything without it."""
+    fitting = criterion(
+        scale_anchors=(
+            ScaleAnchor(input_value=Decimal("500"), score=A_SMALL_SCALE),
+            ScaleAnchor(input_value=Decimal("2500"), score=0),
+        )
+    )
+
+    fitting.refuse_unless_its_anchors_fit(A_SMALL_SCALE)
+
+
+def test_an_anchor_scoring_above_the_scale_is_refused() -> None:
+    """50 is a legal score on a scale of 100 and a meaningless one on a scale of 10.
+
+    The ceiling is `settings.score_scale_max`, which the user edits (`reqs.md` 3.10), so this
+    cannot be a `Field` bound and is not a literal.
+    """
+    overshooting = criterion(
+        scale_anchors=(
+            ScaleAnchor(input_value=Decimal("500"), score=50),
+            ScaleAnchor(input_value=Decimal("2500"), score=0),
+        )
+    )
+
+    with pytest.raises(CriterionDeclarationError, match="score scale stops at 10"):
+        overshooting.refuse_unless_its_anchors_fit(A_SMALL_SCALE)
+
+
+def test_an_anchor_exactly_at_the_top_of_the_scale_is_accepted() -> None:
+    """The boundary belongs to the scale: a scale of 10 has a score of 10."""
+    at_the_top = criterion(
+        scale_anchors=(
+            ScaleAnchor(input_value=Decimal("500"), score=A_SMALL_SCALE),
+            ScaleAnchor(input_value=Decimal("2500"), score=1),
+        )
+    )
+
+    at_the_top.refuse_unless_its_anchors_fit(A_SMALL_SCALE)
+
+
+def test_the_refusal_names_the_attribute_and_the_anchor() -> None:
+    """A criteria set has many anchors; a complaint that does not say which is unactionable."""
+    overshooting = criterion(
+        scale_anchors=(
+            ScaleAnchor(input_value=Decimal("500"), score=1),
+            ScaleAnchor(input_value=Decimal("2500"), score=99),
+        )
+    )
+
+    with pytest.raises(CriterionDeclarationError) as refusal:
+        overshooting.refuse_unless_its_anchors_fit(A_SMALL_SCALE)
+
+    assert RENT in str(refusal.value)
+    assert "2500" in str(refusal.value)
+
+
+def test_a_criterion_with_no_anchors_fits_every_scale() -> None:
+    """26 of the 41 shipped criteria normalise `fixed` and anchor nothing (`devplan.md` 0.3).
+
+    An empty scale is a decision deferred, not a scale that overshoots.
+    """
+    criterion().refuse_unless_its_anchors_fit(A_SMALL_SCALE)

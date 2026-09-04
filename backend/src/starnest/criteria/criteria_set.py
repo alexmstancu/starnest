@@ -159,6 +159,19 @@ class CriteriaSet(BaseModel):
                     f"the pillar weights at level {level} in {self.id} sum to {total}, not {TOTAL}"
                 )
 
+    def refuse_unless_its_anchors_fit(self, score_scale_max: int) -> None:
+        """Every anchor of every criterion, against the one scale they all score onto.
+
+        Here rather than only on `Criterion` because a set is what gets saved and what gets
+        scored, so a whole-set guarantee should be one call. A caller looping the criteria
+        itself would be a caller who can miss one.
+
+        Not a `model_validator`: the scale is not among the things a set contains, and every
+        other check on this class is a relationship between its own parts.
+        """
+        for criterion in self.criteria:
+            criterion.refuse_unless_its_anchors_fit(score_scale_max)
+
     # --- reading ------------------------------------------------------------
 
     @property

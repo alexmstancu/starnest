@@ -249,6 +249,30 @@ class Criterion(BaseModel):
         if self.matching_threshold is not None:
             self.matching_threshold.refuse_unless_it_suits(self.value_type)
 
+    def refuse_unless_its_anchors_fit(self, score_scale_max: int) -> None:
+        """Every anchor maps its input to a score the scale actually has.
+
+        **Not a `Field` bound, because the ceiling is not a constant.** It is
+        `settings.score_scale_max`, a row the user edits (`reqs.md` 3.10), so it cannot be
+        known when this class is defined -- `ScaleAnchor.score` carries the floor it always
+        has and takes its ceiling here, from whoever holds the settings.
+
+        The frozen side of the same rule is enforced by the database: an evaluation records
+        the scale it used and `0107` holds every score it stores inside it. Nothing equivalent
+        is possible for a live criterion, which belongs to no evaluation and so has no scale
+        beside it in any row -- which is exactly why this method exists rather than a CHECK.
+
+        Called where a criteria set is written or read for scoring. An anchor scoring 4200 on
+        a scale of 100 is not a large score; it is a number with no meaning, and it would
+        reach a ranking as one (known-issues D25).
+        """
+        for anchor in self.scale_anchors:
+            if anchor.score > score_scale_max:
+                raise CriterionDeclarationError(
+                    f"{self.attribute} anchors {anchor.input_value} to a score of "
+                    f"{anchor.score}, and the score scale stops at {score_scale_max}"
+                )
+
     @property
     def counts_toward_coverage(self) -> bool:
         """Whether an absent value for this criterion is a gap in the evidence.

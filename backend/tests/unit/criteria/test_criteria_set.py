@@ -14,8 +14,10 @@ from starnest.criteria import (
     CriteriaSet,
     CriteriaSetError,
     Criterion,
+    CriterionDeclarationError,
     Goal,
     PillarWeight,
+    ScaleAnchor,
     UnknownCriterionError,
     WeightsAllLockedError,
 )
@@ -31,6 +33,7 @@ def criterion(
     pillar: str = "housing",
     criteria_set: str = SET,
     locked: bool = False,
+    anchors: tuple[ScaleAnchor, ...] = (),
 ) -> Criterion:
     return Criterion(
         criteria_set=criteria_set,
@@ -40,6 +43,7 @@ def criterion(
         weight=Decimal(weight),
         weight_locked=locked,
         goal=Goal.MINIMISE,
+        scale_anchors=anchors,
     )
 
 
@@ -426,3 +430,42 @@ def test_moving_a_pillar_weight_at_a_level_this_set_does_not_reach_raises() -> N
 def test_the_set_error_is_a_value_error() -> None:
     assert issubclass(CriteriaSetError, ValueError)
     assert issubclass(UnknownCriterionError, LookupError)
+
+
+# --- anchors against the score scale (known-issues D25) -------------------------
+
+A_SMALL_SCALE = 10
+"""Not 100, so a score of 50 is inside a hardcoded ceiling and outside the one in force."""
+
+
+def _a_set_whose_second_criterion_overshoots(score: int) -> CriteriaSet:
+    """Two criteria in one pillar; only the second anchors anything."""
+    return a_set(
+        (
+            criterion("country.rent_centre", "60"),
+            criterion(
+                "country.house_price_to_income_ratio",
+                "40",
+                anchors=(
+                    ScaleAnchor(input_value=Decimal("3"), score=score),
+                    ScaleAnchor(input_value=Decimal("12"), score=0),
+                ),
+            ),
+        ),
+        (pillar_weight("housing", "100"),),
+    )
+
+
+def test_a_set_whose_anchors_all_fit_is_accepted() -> None:
+    """The control."""
+    _a_set_whose_second_criterion_overshoots(A_SMALL_SCALE).refuse_unless_its_anchors_fit(
+        A_SMALL_SCALE
+    )
+
+
+def test_a_set_is_refused_when_any_one_of_its_criteria_overshoots() -> None:
+    """The whole-set guarantee is one call, so a caller cannot check all but one."""
+    overshooting = _a_set_whose_second_criterion_overshoots(50)
+
+    with pytest.raises(CriterionDeclarationError, match="house_price_to_income_ratio"):
+        overshooting.refuse_unless_its_anchors_fit(A_SMALL_SCALE)
