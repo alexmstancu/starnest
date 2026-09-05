@@ -25,6 +25,7 @@ build/
 .coverage
 .coverage.*
 coverage.xml
+coverage.json
 htmlcov/
 .ruff_cache/
 .import_linter_cache/

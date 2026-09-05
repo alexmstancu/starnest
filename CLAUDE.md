@@ -43,7 +43,7 @@ ui/           TypeScript. A client of the contract, over HTTP only
   src/  e2e/      React; Playwright specs owned by the master agent
 docs/         reqs.md, arch.md, datasources.md, devplan.md, known-issues.md
                 openapi.yaml (target) + openapi.implemented.yaml (generated)
-tools/        the two structural audits
+tools/        the three structural audits
 compose.yaml  three containers: database, backend, ui
 Makefile      every command the project has
 ```
@@ -75,7 +75,7 @@ Makefile      every command the project has
 | `make test` | Fast unit tests, no coverage |
 | `make coverage` / `make coverage-open` | Full suite with coverage; **fails below 85%**. HTML at `backend/htmlcov/` |
 | `make boundaries` | `import-linter` — `arch.md` 6.2 as something a build fails on |
-| `make audit` | The two structural audits below |
+| `make audit` | The three structural audits below |
 | `make openapi` | Regenerate `docs/openapi.implemented.yaml`. **Run after changing any endpoint** — a test fails when it is stale |
 | `make serve` / `make acquire` / `make rank` | Run the API; fetch real figures from Eurostat; print the ranking from what is stored |
 | **`make check`** | **Backend lint + boundaries + coverage + audits, then `ui-check`. Both sides. This is the gate** |
@@ -85,22 +85,29 @@ Makefile      every command the project has
 | `make docker-build` / `docker-up` / `docker-migrate` / `docker-down` | The three containers |
 | `make schema-diagram` / `schema-diagram-open` | Interactive ER diagram of the **live** schema, via Liam ERD. Output is generated and gitignored — run `make migrate` first, or the diagram shows the schema you have rather than the one you wrote |
 
-**The two audits** are the ones that predate the code:
+**The three audits.** The first two predate the code:
 
 ```
 uv run --no-project python tools/audit_ontology.py
 uv run --no-project --with pyyaml python tools/audit_api.py
+uv run --no-project python tools/audit_coverage.py
 ```
 
-The first checks the ontology's structural invariants — the two diagrams against each other, the diagrams against the prose documenting them, and the catalog's weights. The second checks `docs/openapi.yaml`: that every `$ref` resolves, that **every ontology entity is reachable through the API** (with a named exemption for each covered under another name), and that no key has a null value — the fault that is valid YAML but crashes consumers.
+The first checks the ontology's structural invariants — the two diagrams against each other, the diagrams against the prose documenting them, and the catalog's weights. The second checks `docs/openapi.yaml`: that every `$ref` resolves, that **every ontology entity is reachable through the API** (with a named exemption for each covered under another name), and that no key has a null value — the fault that is valid YAML but crashes consumers. The third holds **each package of `arch.md` 6.1 to the 85% bar on its own**, reading `backend/coverage.json` that `make coverage` writes — so `make audit` after `make coverage`, which is the order `make check` already runs them in.
 
-**Run both after any change to `reqs.md` 3, either diagram, the catalog, or the contract.** Exit code 0 means every invariant holds. Both read only and never edit.
+**Run the first two after any change to `reqs.md` 3, either diagram, the catalog, or the contract.** Exit code 0 means every invariant holds. All three read only and never edit.
 
 ## Test coverage
 
 **85% of lines and 85% of branches, both sides**, configured in `backend/pyproject.toml` and `ui/vite.config.ts`. Below the bar the command fails.
 
 **Raised from 75 on 2026-09-05, because 75 had stopped being a check.** Both sides sit near 98%, so a three-quarters floor left roughly a fifth of the suite deletable without the gate noticing. A floor only checks anything when it sits close enough to reality that a real regression trips it.
+
+**Held per package, not just globally** (`tools/audit_coverage.py`). A global floor hides a bad neighbourhood: at 3,400 measurable points a new 100-point module at zero moves the total by three points and trips nothing. Each package of `arch.md` 6.1 clears 85% on its own, so a failure reads as "evaluation is under-tested" rather than "something, somewhere, is". The interface does the same with vitest's per-directory thresholds, holding `src/routes`, `src/api` and `src/shell` to 95% lines and 88% branches.
+
+**Deliberately not per file.** Eighteen of the seventy-five backend files have fewer than ten measurable points, where one uncovered line costs more than ten percentage points. A per-file rule would spend its credibility on noise.
+
+**`src/mocks/` and `src/testing/` are excluded from interface coverage** — they are the msw server and the render helper, and measuring them was the tests testing themselves. It also flattered the total: 308 of 1,287 measured lines were scaffolding, and product branch coverage is 95.9% rather than the 92.8% the mixed figure reported.
 
 **It is a floor on the code, not a ceiling on the testing.** The target is full coverage of features and functionality; the percentage catches only one failure mode — a region of code nobody ran at all. "Coverage is green" is never the argument that a task is tested. Always cover the sad path: errors, edges, empty and missing input.
 

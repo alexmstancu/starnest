@@ -253,7 +253,7 @@ starnest/
 │   ├── e2e/                 Playwright — master agent's, not the screen author's
 │   └── vite.config.ts       includes the 85% vitest coverage thresholds
 ├── docs/                    reqs.md, arch.md, datasources.md, devplan.md, openapi.yaml
-├── tools/                   the two structural audits
+├── tools/                   the three structural audits
 ├── compose.yaml             three containers: database, backend, ui
 ├── Makefile                 every command the project has
 └── .env.example             technical configuration, with placeholders
@@ -736,6 +736,23 @@ deleted without the gate noticing. A floor only measures anything when it sits c
 reality that a real regression trips it. 85 leaves about eight points of headroom on branch
 coverage, which is the tightest of the four metrics, so a module landing mid-build does not
 block the gate on its way to being finished.
+
+**And held per package, not only in total** (`tools/audit_coverage.py`, added the same day). A
+global floor hides a bad neighbourhood, and hides it better the larger the codebase gets: at
+3,400 measurable points a new 100-point module at zero moves the total by three points. Each
+package of `arch.md` 6.1 now clears the bar on its own. The interface does the same through
+vitest's per-directory thresholds on `src/routes`, `src/api` and `src/shell`.
+
+**Not per file, on either side.** Eighteen of seventy-five backend files have fewer than ten
+measurable points, where a single uncovered line is worth more than ten percentage points. The
+rule would be right on one side of the repository and noise on the other, and a gate nobody
+trusts is a gate nobody keeps.
+
+**The gap this found immediately was `main.py` at 45.9%** -- the composition root, invisible
+inside a 97.8% total, and the one file whose failure means the container does not start. This
+project had already paid for that: the Dockerfile asked for `starnest.main:app` where the code
+offers `create_app()`, and eighteen acceptance tests missed it because each builds the
+application itself. `tests/unit/test_composition_root.py` builds it the way production does.
 
 | Command | Produces |
 |---|---|

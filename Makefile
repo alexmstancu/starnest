@@ -35,7 +35,7 @@ LIAM    := @liam-hq/cli@0.7.24
 SCHEMA_DOCS := docs/schema
 
 COV     := --cov=starnest --cov-branch \
-           --cov-report=term-missing --cov-report=html --cov-report=xml
+           --cov-report=term-missing --cov-report=html --cov-report=xml --cov-report=json
 
 help:  ## Show this list
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -112,9 +112,10 @@ boundaries:  ## import-linter — arch.md 6.2 as something a build fails on
 openapi:  ## Regenerate docs/openapi.implemented.yaml from the code. Run after changing an endpoint
 	cd $(BACKEND) && uv run python scripts/openapi.py
 
-audit:  ## Structural audits of the ontology and the API contract
+audit:  ## Structural audits of the ontology, the API contract and per-package coverage
 	uv run --no-project python tools/audit_ontology.py
 	uv run --no-project --with pyyaml python tools/audit_api.py
+	uv run --no-project python tools/audit_coverage.py
 
 check: lint boundaries coverage audit ui-check  ## Everything, both sides. This is the gate.
 

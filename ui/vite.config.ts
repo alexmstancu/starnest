@@ -29,26 +29,48 @@ export default defineConfig({
       reporter: ["text", "html", "lcov"],
       reportsDirectory: "./coverage",
 
-      // The same bar as the backend: 85%, raised from 75 on 2026-09-05.
+      // 85% everywhere, and a higher bar on the three directories that carry behaviour.
       //
       // It is a floor on the code, not a ceiling on the testing. The target is full coverage
       // of features and functionality; this number only catches whole regions nobody
       // exercised. `thresholds` fails the run rather than printing a warning nobody reads.
       //
-      // **Raised because 75 had stopped being a check.** Both sides sit near 98%, so a
-      // three-quarters floor left roughly a fifth of the suite deletable without the gate
-      // noticing. 85 is close enough to reality that a real regression trips it and far enough
-      // below branch coverage -- the tightest metric here -- to survive a module landing
-      // mid-build.
+      // **The global bar rose from 75 to 85 on 2026-09-05, because 75 had stopped being a
+      // check.** Both sides sit near 98%, so a three-quarters floor left roughly a fifth of
+      // the suite deletable without the gate noticing.
+      //
+      // **The per-directory bars exist because a global one hides a bad neighbourhood.** One
+      // under-tested directory disappears behind a codebase's worth of well-tested ones, and
+      // gets less visible as the codebase grows. These are set below where each directory
+      // actually sits -- `routes` is the tightest at 91.5% branches -- so a component can land
+      // mid-build without blocking the gate on its way to being finished.
+      //
+      // **Deliberately not per-file.** Only one file here has under ten statements, but the
+      // backend has eighteen of seventy-five, and a rule that is right on one side of the
+      // repository and noise on the other is a rule nobody trusts. Per-directory says the
+      // useful half of what per-file would say and none of the noisy half.
       thresholds: {
         lines: 85,
         branches: 85,
         functions: 85,
         statements: 85,
+
+        "src/routes/**": { lines: 95, branches: 88, functions: 95, statements: 95 },
+        "src/api/**": { lines: 95, branches: 88, functions: 95, statements: 95 },
+        "src/shell/**": { lines: 95, branches: 88, functions: 95, statements: 95 },
       },
 
       include: ["src/**/*.{ts,tsx}"],
       exclude: [
+        // **Test scaffolding is not product code.** `mocks/` is the msw server the unit tests
+        // run against and `testing/` is the render helper; measuring them told us that 308 of
+        // 1,287 lines were the tests testing themselves. Worse, it flattered the total:
+        // `fixtures.ts` is 183 statements of test data scoring 100%, while `handlers.ts`
+        // dragged branch coverage down for not exercising paths in a mock nobody should be
+        // exercising. Excluding both moved the real number the right way -- product branch
+        // coverage is 95.9%, not the 92.8% the mixed figure reported.
+        "src/mocks/**",
+        "src/testing/**",
         // Generated from docs/openapi.yaml. Testing generated types tests the generator.
         "src/api/schema.ts",
         "src/main.tsx",

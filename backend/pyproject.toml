@@ -104,6 +104,11 @@ title = "Coverage"
 [tool.coverage.xml]
 output = "coverage.xml"
 
+[tool.coverage.json]
+# Read by tools/audit_coverage.py, which holds each package of arch.md 6.1 to the bar on its
+# own. Generated, never committed.
+output = "coverage.json"
+
 
 # ---------------------------------------------------------------------------
 # Lint and format
