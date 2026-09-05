@@ -52,6 +52,8 @@ EXPOSE 8000
 # will one day migrate when you did not intend it to. Migrations are the `migrate` service
 # in compose.yaml, invoked deliberately. The application refuses to start against a schema
 # it does not recognise, which is what makes the omission safe rather than merely tidy.
-CMD ["uvicorn", "starnest.main:app", \
+# `--factory`, because the composition root builds the app when called rather than at import.
+# A module-level instance would open a connection pool the moment anything imported the module.
+CMD ["uvicorn", "--factory", "starnest.main:create_app", \
      "--host", "0.0.0.0", "--port", "8000", \
      "--app-dir", "/app/backend/src"]

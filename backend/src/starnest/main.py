@@ -121,6 +121,18 @@ def build() -> tuple[Environment, "FastAPI"]:
     return environment, app
 
 
+def create_app() -> "FastAPI":
+    """The application alone, for a server that wants to construct it itself.
+
+    **A factory, not a module-level `app`.** uvicorn is told `--factory`, so this is called at
+    startup rather than at import: a module-level instance would build a connection pool the
+    moment anything imported `starnest.main`, including a test that only wanted `Environment`.
+    An import that connects to a database is an import that fails for reasons unrelated to what
+    imported it.
+    """
+    return build()[1]
+
+
 def run() -> None:
     """Build the application and serve it.
 
