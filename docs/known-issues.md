@@ -21,29 +21,22 @@ the account of a defect outlives the defect.
 
 ## Status
 
-**32 findings: 16 closed, 16 open.** Nothing open blocks the next chunk of work.
+**32 findings: 21 closed, 11 open.** Everything high or medium is closed. What remains is
+documentation, test-quality, and one dead table — no open finding has a live effect today.
 
 | Closed | When | Where |
 |---|---|---|
 | **H1**-**H6** | 2026-09-02 | `criteria/`, `data/`, `storage/`, and the tests that missed them |
 | **D23** | 2026-09-03 | `ui/eslint.config.js`, `make ui-check` wired into `check` |
 | **D2**-**D6**, **D8**, **D12**, **D25**, **D26** | 2026-09-05 | migrations `0106`-`0110`, `criteria/`, the value seam, the contract |
+| **D1**, **D7**, **D10**, **D11**, **D13** | 2026-09-05 | migrations `0111`-`0114`, `reqs.md` 7.1, the catalog guards |
 
 | Open | Severity | Waiting on |
 |---|---|---|
-| **D1** | high | The first monetary value. `fx_rate` is stored as loose scalars with no source |
-| **D7** | medium | A decision in `reqs.md` 7.1 first: no attribute declares a `max_age`, and there is nothing to seed from until the intended values exist |
-| **D10**, **D11** | medium | The next schema migration |
-| **D13** | medium | The catalog arithmetic guard, whenever a second criteria set is seeded |
-| **D9**, **D14**-**D22**, **D24** | low | Named chunks below. None has a live effect today |
-
-**Where the open ones bite.** D1 fires the moment `data_sources/` returns a price. D7 means
-rule 2 of the active-value view has never fired against real data, so freshness is currently
-inert. D13 passes today only because exactly one criteria set at one level is seeded, and
-duplicating a set is a shipped feature. The rest are documentation, test-quality, or dead
-schema.
-
----
+| **D9** | low | The catalog. `label_vocabulary` is dead — drop it or wire it |
+| **D14**-**D16** | low | Test-quality. Three tests assert less than their names claim, and `LevelHierarchy` accepts a branching tree |
+| **D17**-**D22** | low | Documentation and query drift between `reqs.md`, `openapi.yaml` and the SQL |
+| **D24** | low | Five `set-state-in-effect` warnings in `ui/`. Each has a derived-state formulation; none is a bug |
 
 ## Fixed
 
@@ -99,43 +92,36 @@ at all until that sweep said so.
 
 ---
 
+### 2026-09-05 — the last high, and the four mediums
+
+Five, in migrations `0111`-`0114` plus `reqs.md` 7.1 and the catalog guards. **D7 was a
+decision rather than a defect**, and is the reason this group is worth reading: `reqs.md` 6.6
+has always said every attribute declares a `max_age` and 7.1 gave none, so all 41 were seeded
+NULL and rule 2 of the active-value view had never fired against real data. A mechanism fully
+built, fully tested, and never once run.
+
+| # | What | Closed by |
+|---|---|---|
+| **D1** | A conversion could name **a rate nobody published**. H3 made the rate explain the EUR figure, which catches an unconverted amount and cannot catch a rate that is internally consistent and simply wrong — 0.18 for RON/EUR on a day the ECB published 0.201 | `0112`. The ECB is seeded as a source and `(currency, EUR, date, rate)` is pinned to `fx_rate`, so the rate must be a published row. The quote currency is generated, so no insert path or model changed |
+| **D7** | **0 of 41 attributes declared a `max_age`**, so freshness was inert and the confidence age-downgrade had no input | `reqs.md` 7.1 gains the column and the **rule** that produces it — stale once twice the source's publication interval has passed. `0111` is generated from that table and a test parses it back, comparing intervals in the database. Four attributes stay NULL and the document says why |
+| **D10** | `external_score_natural_key` **omitted `reference_period_end`**, so a publisher's annual and monthly editions sharing a January start collided | `0113`. Widening a unique key cannot conflict with rows already stored |
+| **D11** | **A candidate at a nested level could have no parent at all.** Three constraints guarded the hierarchy and all three keyed on the nullable `parent_level` | `0114`. **`MATCH FULL` is not the fix and this file was wrong to suggest it** — `candidate.level` is `NOT NULL`, so `MATCH FULL` would reject every country, whose `parent_level` is legitimately absent. The level's `requires_parent` is generated and pinned to the candidate, so a `CHECK` can require a parent without naming a level |
+| **D13** | The weight guards **totalled instead of grouping** — the same question only while one criteria set at one level is seeded, against a product where duplicating a set is a shipped feature | Grouped by `(criteria_set, level)` and `(criteria_set, pillar, level)`, plus two tests that seed a second set split 40/60 — the case that used to read clean — and assert the guards catch it |
+
+---
+
 ## Deferred
 
 Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that should carry it.
 
-### With the first monetary data — `fx_rate` is unreachable
-
-- **D1** (high) `value_monetary` stores `fx_rate` and `fx_rate_date` as loose scalars with **no
-  foreign key to the `fx_rate` table and no publishing source**. `reqs.md` 5.5 requires the rate
-  to carry its source; `openapi.yaml`'s `FxRate` requires `data_source`; `data/fx.py` already
-  models it and storage drops it. The `fx_rate` table has zero rows and **nothing reads it**. Two
-  values can carry different rates for the same pair on the same day — the precise failure
-  `reqs.md` 5.5 names.
-
 ### With the catalog
 
-- **D7** (medium) **No attribute declares a `max_age`** — 0 of 41. So **rule 2 of the
-  active-value view never fires against real data**, and the age downgrade in the confidence
-  derivation has no input. `reqs.md` 7.1 has no column stating the intended values, so there was
-  nothing to seed from: the document needs the column before the migration can exist.
 - **D9** (low) **`label_vocabulary` is dead**: zero rows, zero query references, zero incoming
   foreign keys. Its own comment points at `attribute_allowed_label`, which does the real job.
   Drop it or wire it.
 
-### With the next schema migration
-
-- **D10** (medium) `external_score_natural_key` **omits `reference_period_end`** — an annual and
-  a monthly figure sharing a start date collide. This is the exact argument `value_natural_key`
-  makes for including both dates.
-- **D11** (medium) **A candidate at a nested level can have no parent at all.** The FK is
-  `MATCH SIMPLE`, so a NULL skips the check: `city.orphan` with no country inserts.
-
 ### Test-quality
 
-- **D13** (medium) `test_catalog_arithmetic.py` weight-sum guards **aggregate across criteria sets
-  and levels**. With two sets split 40/60 the totals still read 100 and the checkpoint reports
-  clean. Passes today only because exactly one set at one level is seeded — and duplicating a set
-  is a shipped feature.
 - **D14** (low) `LevelHierarchy` **accepts a branching tree** while three docstrings claim it
   validates "a single ordered containment chain". `country → {city, province}` is accepted.
 - **D15** (low) The objective/subjective FK guard in `test_schema_contract.py` classifies only 5
