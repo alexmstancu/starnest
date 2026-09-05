@@ -43,27 +43,41 @@ application, and where the two disagree, this one is right.
 | **P0** Ground | **Done.** 30 migrations, the catalog seeded, `make check` a real gate |
 | **P1** Vocabulary and seams | **Done**, with one correction: `CandidateStore` was declared during minE2E because nothing had needed it, and `CriteriaStore` had no implementation until M3 needed one |
 | **P2** Core policy | **Done for the MVP's needs.** `evaluation/` exists cut to `percentile` and `as_is`; `fixed`, `target_range`, the compound-rule shapes and match rules are not built |
-| **P3** First vertical slice | **Partly done.** 7 of 40 operations, one source adapter, two screens, and a browser test against the real stack |
+| **P3** First vertical slice | **Done. Gate A closed 2026-09-05.** 16 of 40 operations, one source adapter, two screens, a browser test against the real stack, and the gate itself as an acceptance test |
 | **P4**-**P7** | Not started |
 
-**1,226 tests. 93 real Eurostat values across 31 countries. A browser shows a ranked table.**
+**1,300 backend tests and 98 interface tests. 93 real Eurostat values across 31 countries. A browser shows a ranked table.**
 
-### The state of GATE A, step by step
+### GATE A — closed 2026-09-05
 
-Gate A's seven-step narrative is closer than the phase table suggests, and failing it in
-specific places rather than generally:
+**All nine checks green.** `tests/acceptance/test_gate_a.py` is the gate written down: the seven
+steps in order, against a real database, plus the two standing checks. It is not a second copy
+of the endpoint tests -- those prove each operation in isolation, and this proves the sequence.
 
 | Step | State |
 |---|---|
-| 1. Configure the household, read it back | **No.** No household endpoints and no household record |
-| 2. Read the catalog through the API | **Partly.** Levels, criteria sets and candidates; no pillars or attributes endpoint |
-| 3. Duplicate a set, adjust a weight, assert the rebalance and the locks | **Partly.** The weight change rebalances and is asserted; no duplicate endpoint, and locks are proven only in unit tests |
-| 4. Plan an acquisition, assert the estimate | **No.** No dry run, no estimate |
-| 5. Run it, poll, assert values land with both dates and their source | **Partly.** Values land with both dates and their source, but through `make acquire` rather than the API; nothing persists a run and there is nothing to poll |
-| 6. Rankings against the **shipped** set: all 32 `insufficient_data`, each naming the required attribute it lacks | **No**, and see below — the shipped set cannot score for a different reason than this step assumes |
+| 1. Configure the household, read it back | **Yes.** `PUT`/`GET /v1/household`, and the record reaches criterion defaults |
+| 2. Read the catalog through the API | **Yes.** 11 pillars, 41 attributes, and the shipped set's weights summing to 100 within every pillar |
+| 3. Duplicate a set, adjust a weight, assert the rebalance | **Yes.** Through `POST /duplicate` then `PATCH`, the way a user does it -- nothing shipped is touched |
+| 4. Plan an acquisition, assert the estimate | **Yes.** `POST /v1/data-acquisition-runs/plan` returns the count, the cost and the per-source split before any fetch |
+| 5. Run it, poll, assert values land with both dates and their source | **Yes.** Through the API and a persisted run; the assertion counts rows carrying *both* dates, the source and the run |
+| 6. Rankings against the **shipped** set: all 32 `insufficient_data`, each naming what it lacks | **Yes**, and it was the last to fall -- see below |
 | 7. Rankings against a Gate-A set: 32 ranked, honest coverage | **Yes.** This is `minimal` (`0121`), and it is what the browser shows |
-| The contract-drift test | **Yes**, and stronger than designed — see "the two contracts" below |
+| The contract-drift test | **Yes**, and stronger than designed -- see "the two contracts" below |
 | UI e2e against the real backend | **Yes**, for the Rank and Configure screens; no pillar tree |
+
+**Step 6 was untestable rather than failing, which is a worse thing for a gate to be.** The
+shipped set could not have scored with perfect data (`docs/d6-scale-anchors.md`), so a test
+asserting `insufficient_data` would have passed for the wrong reason and gone on passing after
+the data arrived. Migration `0122` removed that: the three `LabelSet` criteria no longer claim
+to be scoreable, so what remains is honestly missing figures. **A step that cannot fail is not a
+check**, and this one can now -- it fails the moment those seven required attributes land, which
+is exactly when it should be rewritten.
+
+**What Gate A does not cover, deliberately.** `fixed` normalisation, `target_range`, the compound
+rule shapes and match rules are not built (P2 was cut to the MVP's needs). 16 of the contract's
+40 operations are served. The ranking rests on 3 attributes in 2 of 11 pillars -- true of housing
+and happiness, not yet of relocating. That last one sets P4's order; see point 3 below.
 
 ### Four things minE2E discovered that this plan did not anticipate
 
@@ -87,11 +101,13 @@ and not yet about relocating. **A fourth housing attribute would change almost n
 first safety or health attribute changes everything.** P4's adapter fan-out should be ordered by
 pillar coverage, not by adapter convenience.
 
-**4. The shipped criteria set is blocked on a decision, not on data.** All 41 of its criteria
-normalise `fixed` (26) or `as_is` (15). `fixed` needs anchors that do not exist, and `as_is`
-needs figures already on the score scale, which almost none are. So `local_employment` cannot
-score even with perfect data — which makes "Deriving the scale anchors" (below) not a step
-inside Gate A but a **precondition of it**, and the highest-value decision outstanding.
+**4. The shipped criteria set was blocked on a decision, not on data.** All 41 of its criteria
+normalise `fixed` (26) or `as_is` (15), so `local_employment` could not have scored even with
+perfect data — which made "Deriving the scale anchors" not a step inside Gate A but a
+**precondition of it**. **Answered 2026-09-05** (D6, `docs/d6-scale-anchors.md`): it was three
+problems wearing one label, and only one of them was the sitting-down-with-bands exercise this
+plan imagined. The shipped set now reads 12 scored `as_is`, 3 excluded, 26 awaiting anchors as
+their figures land.
 
 ### The delivery model changed
 
@@ -469,7 +485,7 @@ At each, the same three steps:
 **Do not skip to step 3.** A band that looks reasonable in the abstract is usually wrong against
 real figures, which is why every weight and threshold in `reqs.md` 7 is marked provisional.
 
-### What Gate A is really testing, and a mistake it used to contain
+### What Gate A was really testing, and two mistakes it used to contain
 
 **An earlier version of this gate asserted a ranking that `blocks_if_missing` makes impossible.**
 Only two of the seven required attributes come from Eurostat — `cost_of_living_index` and
@@ -484,12 +500,21 @@ otherwise go unexercised until P4, and whose silent failure would let a candidat
 absent data. The second proves redistribution, coverage and ranking work, against a criteria set
 honest about what P3 can answer.
 
-Coverage on that second run will be roughly **20%**, because seven attributes out of 41 have
-values. **That is the correct result, and the gate asserts it rather than working around it.** A
-system reporting a confident score from a fifth of its inputs would be broken in exactly the way
-the "data quality is the product" invariant exists to prevent.
+**This paragraph used to project "roughly 20% coverage" and that turned out to be the wrong
+shape entirely.** It assumed the second set would be the 41-criterion catalog with seven
+attributes answered. What was actually built is `minimal` (`0121`) — three criteria over the
+three attributes Eurostat answers — so the real figures are **100% for 31 countries and 0% for
+Liechtenstein**, which reports no figure for any of the three. Coverage is not a dial that
+settles near a plausible number; it is a statement about one candidate against one set, and it
+turns out to be mostly all-or-nothing at this size. **31 ranked, 1 `insufficient_data`.**
 
-Fix every bug found. Only then does P4 start.
+Both halves still hold, and are what the gate asserts. `blocks_if_missing` fires and names what
+it lacks; redistribution, coverage and ranking work against a set honest about what P3 can
+answer. A system reporting a confident score from a fifth of its inputs would be broken in
+exactly the way the "data quality is the product" invariant exists to prevent — and so would one
+reporting a confident score for Liechtenstein.
+
+**Closed 2026-09-05.** Every bug found was fixed; the tally is in section 0.0. P4 starts now.
 
 ---
 

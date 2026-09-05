@@ -17,6 +17,19 @@ async function weightInput(attribute: string): Promise<HTMLInputElement> {
   return await screen.findByRole("spinbutton", { name: `Weight for ${attribute}` });
 }
 
+/**
+ * The weight the table currently shows, read synchronously.
+ *
+ * **Never call `weightInput` inside a `waitFor`.** `findByRole` is itself a retry loop with its
+ * own one-second budget, so nesting the two means each `waitFor` attempt can spend a second in
+ * the inner one -- five real attempts out of a five-second budget, which passes alone and times
+ * out under load. `getByRole` throws at once and lets `waitFor` poll at its own interval.
+ */
+function shownWeight(attribute: string): number | string | string[] | null {
+  return screen.getByRole<HTMLInputElement>("spinbutton", { name: `Weight for ${attribute}` })
+    .value;
+}
+
 async function saveWeight(attribute: string, weight: string): Promise<void> {
   const user = userEvent.setup();
   const input = await weightInput(attribute);
@@ -63,11 +76,9 @@ describe("changing a weight", () => {
 
     // The unlocked sibling absorbed the whole change; the locked one did not move. Both
     // figures came back from the PATCH.
-    await waitFor(async () =>
-      expect(await weightInput("country.income_tax_effective")).toHaveValue(40),
-    );
-    expect(await weightInput("country.cost_of_living_index")).toHaveValue(40);
-    expect(await weightInput("country.net_median_salary")).toHaveValue(20);
+    await waitFor(() => expect(shownWeight("country.income_tax_effective")).toBe("40"));
+    expect(shownWeight("country.cost_of_living_index")).toBe("40");
+    expect(shownWeight("country.net_median_salary")).toBe("20");
   });
 
   it("leaves the other pillars alone", async () => {
@@ -75,10 +86,8 @@ describe("changing a weight", () => {
 
     await saveWeight("country.cost_of_living_index", "40");
 
-    await waitFor(async () =>
-      expect(await weightInput("country.income_tax_effective")).toHaveValue(40),
-    );
-    expect(await weightInput("country.housing_cost_overburden_rate")).toHaveValue(60);
+    await waitFor(() => expect(shownWeight("country.income_tax_effective")).toBe("40"));
+    expect(shownWeight("country.housing_cost_overburden_rate")).toBe("60");
   });
 
   it("shows the refusal, and which locks caused it, when nothing can absorb the change", async () => {

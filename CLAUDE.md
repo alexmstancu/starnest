@@ -4,18 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**Half the backend is built; nothing serves HTTP yet.** **`docs/reqs.md` is authoritative for requirements and the ontology — read it first**, and `docs/devplan.md` 0 before doing implementation work.
+**A vertical slice runs end to end: three containers, a real database, 31 European countries
+ranked from real Eurostat figures in a browser.** **`docs/reqs.md` is authoritative for
+requirements and the ontology — read it first**, and `docs/devplan.md` 0 before doing
+implementation work.
 
 | Module | State |
 |---|---|
-| `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~5,700 lines, 1,026 backend tests, ~99.8% line and branch coverage. 30 migrations applied |
-| `evaluation/` | **Next.** Normalisation, redistribution, coverage, matching, the three compound-rule shapes, ranking. Pure functions, no I/O (`devplan.md` W2-A) |
-| `api/`, `comparison/`, `data_acquisition/`, `data_sources/` | Empty. `openapi.yaml` designs 40 operations; **none is implemented** |
-| `ui/` | The shell plus the Rank and Configure screens. 98 tests, linted and typechecked by `make ui-check`. It talks to a mock, never to the backend |
+| `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
+| `evaluation/` | **Written, cut to the MVP's needs.** Normalisation (`percentile` and `as_is` only), redistribution, coverage, matching, ranking. Pure functions, no I/O. **`fixed`, `target_range`, the compound-rule shapes and match rules are not built** |
+| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 16 of the contract's 40 operations; one source adapter (Eurostat); runs are planned, persisted and pollable |
+| `comparison/` | Empty. Post-Gate-A |
+| `ui/` | The shell plus the Rank and Configure screens. 98 tests. **It talks to the real backend**, and to a mock only in unit tests |
 
-**Nothing is wired end to end.** There is no composition root, no running API, and the one Playwright spec exercises the interface against its mock. The first vertical slice is `devplan.md` P3.
+**GATE A closed 2026-09-05** — `backend/tests/acceptance/test_gate_a.py` is the gate written
+down, seven steps in order against a real database plus two standing checks. 1,300 backend
+tests, 98 interface tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
+deliberately does not cover.
 
-**The schema was hardened before `evaluation/` was written** (2026-09-05, migrations `0106`-`0110`). Nine findings from `docs/known-issues.md` closed while every affected table still had zero rows: an evaluation now freezes the score scale it used and nothing it stores may leave that scale, a result belongs to its evaluation's level, a non-match reason names the frozen criterion rather than the live one, and a criterion may only judge an attribute that has a pillar. **`evaluation/` must supply `score_scale_max` when it saves, and must refuse rather than substitute 100 when `settings.score_scale_max` is unset.** **Freshness now has inputs** (`0111`): `reqs.md` 7.1 gives every attribute a `max_age`, derived from its source's publication interval rather than chosen one by one, so rule 2 of the active-value rule fires against real data for the first time. **A monetary conversion must name a rate the ECB published** (`0112`). Eleven findings remain open, all low; `known-issues.md` opens with what they are.
+**The ranking rests on 3 attributes in 2 of 11 pillars**, and two of the three measure housing
+cost. Finland leads because it has good housing and content people — a true statement about
+housing and happiness, and not yet about relocating. **P4's adapter fan-out is ordered by pillar
+coverage, not adapter convenience** (`devplan.md` D7).
+
+**The schema was hardened before `evaluation/` was written** (2026-09-05, migrations `0106`-`0114`). Findings from `docs/known-issues.md` closed while every affected table still had zero rows: an evaluation freezes the score scale it used and nothing it stores may leave that scale, a result belongs to its evaluation's level, a non-match reason names the frozen criterion rather than the live one, and a criterion may only judge an attribute that has a pillar. **`evaluation/` must supply `score_scale_max` when it saves, and must refuse rather than substitute 100 when `settings.score_scale_max` is unset.** **Freshness has inputs** (`0111`): `reqs.md` 7.1 gives every attribute a `max_age`, derived from its source's publication interval rather than chosen one by one. **A monetary conversion must name a rate the ECB published** (`0112`). **A criterion may only score a figure with a magnitude** (`0122`, D6): three `LabelSet` criteria claimed to be scoreable and a CHECK now forbids it. Eleven findings remain open, all low; `known-issues.md` opens with what they are.
 
 ## Layout
 
@@ -28,7 +40,8 @@ backend/      Python. The API and every domain rule
   tests/          unit, storage, acceptance
 ui/           TypeScript. A client of the contract, over HTTP only
   src/  e2e/      React; Playwright specs owned by the master agent
-docs/         reqs.md, arch.md, datasources.md, devplan.md, openapi.yaml
+docs/         reqs.md, arch.md, datasources.md, devplan.md, known-issues.md
+                openapi.yaml (target) + openapi.implemented.yaml (generated)
 tools/        the two structural audits
 compose.yaml  three containers: database, backend, ui
 Makefile      every command the project has
@@ -36,7 +49,7 @@ Makefile      every command the project has
 
 **`storage/` is a top-level peer because SQL is a system asset, not a Python implementation detail.** Someone applying the migrations from a shell script, or opening a query in `psql` to debug it, should not have to know where a Python package hides its internals. The `storage/` **module** under `backend/src/starnest/` holds only the Python that loads and runs what lives here — that is the adapter, this is the asset. Decided 2026-09-01 (`reqs.md` Q200).
 
-**`backend/` and `ui/` are peers that share no code** — not even DTO definitions (`arch.md` 6.1). There is deliberately no top-level `src/` containing both. The only file they share is `docs/openapi.yaml`: the backend generates it, the interface generates its client from it.
+**`backend/` and `ui/` are peers that share no code** — not even DTO definitions (`arch.md` 6.1). There is deliberately no top-level `src/` containing both. The only file they share is `docs/openapi.yaml`: the hand-written contract the backend is written against and the interface generates its typed client from. **The backend does not generate it** — see "Two contracts" below.
 
 ## Planning documents
 
@@ -45,7 +58,7 @@ Makefile      every command the project has
 | `docs/reqs.md` | **Written.** Requirements and ontology. v1 scope in section 1.3, glossary in Appendix A, decision log in Appendix B |
 | `docs/datasources.md` | **Written.** Source analysis, market analysis, criterion→source mapping |
 | `docs/arch.md` | **Written, MVP scope.** Ontology, storage, module architecture, runtime flows, the interface, operations. Stack decided (section 10.2). **Revised before post-MVP work** |
-| `docs/openapi.yaml` | **Written.** The REST contract — 31 paths, 48 schemas. Backend and interface are both written against it |
+| `docs/openapi.yaml` | **Written.** The REST contract — 40 operations, of which 16 are served. The **target**, hand-written and deliberately ahead of the code. `docs/openapi.implemented.yaml` is the generated **truth**; see "Two contracts" below |
 | `docs/devplan.md` | **Written, MVP scope only.** Delivery model, 8 phases, 4 e2e gates, agent decomposition. Blocking decisions in section 7; the MVP boundary and what follows it in section 8. **Post-MVP gets a revised `arch.md` and a second `devplan.md`, not an extension of this one** |
 
 **Read `docs/devplan.md` 0 before doing implementation work** — the stop rule, the definition of done per task, and which files an agent may not edit.
