@@ -19,115 +19,24 @@ control beside it that differs in one column only.
 The `connection` fixture rolls back, so no evaluation written here outlives its test.
 """
 
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import psycopg
 import pytest
 from psycopg import errors
 
+from .evaluation_rows import (
+    A_SCORE_A_HARDCODED_HUNDRED_WOULD_ALLOW,
+    A_SCORE_ON_THE_SCALE,
+    THE_FROZEN_SCALE,
+    record_a_frozen_anchor,
+    record_a_frozen_criterion,
+    record_a_result,
+    record_an_attribute_score,
+    record_an_evaluation,
+)
+
 pytestmark = pytest.mark.storage
-
-A_SEEDED_SET = "local_employment"
-A_SEEDED_LEVEL = "country"
-A_SEEDED_CANDIDATE = "country.portugal"
-A_SEEDED_ATTRIBUTE = "country.cost_of_living_index"
-ITS_PILLAR = "economics"
-
-THE_FROZEN_SCALE = 10
-"""Deliberately not 100. A score of 50 is inside a hardcoded ceiling and outside this one."""
-
-A_SCORE_ON_THE_SCALE = 7
-A_SCORE_A_HARDCODED_HUNDRED_WOULD_ALLOW = 50
-
-
-def _record_an_evaluation(connection: psycopg.Connection, *, scale: int = THE_FROZEN_SCALE) -> int:
-    """One saved evaluation, carrying the scale its scores are on."""
-    row = connection.execute(
-        """
-        INSERT INTO evaluation (criteria_set, level, computed_at, score_scale_max)
-        VALUES (%s, %s, %s, %s)
-        RETURNING id
-        """,
-        (A_SEEDED_SET, A_SEEDED_LEVEL, datetime.now(UTC), scale),
-    ).fetchone()
-    assert row is not None
-    return int(row[0])
-
-
-def _record_a_result(
-    connection: psycopg.Connection,
-    evaluation: int,
-    *,
-    score: int | None = A_SCORE_ON_THE_SCALE,
-    coverage: Decimal = Decimal("80"),
-    scale: int = THE_FROZEN_SCALE,
-) -> int:
-    row = connection.execute(
-        """
-        INSERT INTO candidate_result (evaluation, candidate, score, coverage, match_status,
-                                      score_scale_max)
-        VALUES (%s, %s, %s, %s, 'matching', %s)
-        RETURNING id
-        """,
-        (evaluation, A_SEEDED_CANDIDATE, score, coverage, scale),
-    ).fetchone()
-    assert row is not None
-    return int(row[0])
-
-
-def _record_a_frozen_criterion(
-    connection: psycopg.Connection,
-    evaluation: int,
-    *,
-    weight: Decimal = Decimal("40"),
-    pillar_weight: Decimal = Decimal("30"),
-) -> None:
-    connection.execute(
-        """
-        INSERT INTO evaluation_criterion (evaluation, attribute, pillar, is_scored, weight,
-                                          pillar_weight, goal, normalisation_method,
-                                          blocks_if_missing)
-        VALUES (%s, %s, %s, true, %s, %s, 'minimise', 'percentile', false)
-        """,
-        (evaluation, A_SEEDED_ATTRIBUTE, ITS_PILLAR, weight, pillar_weight),
-    )
-
-
-def _record_a_frozen_anchor(
-    connection: psycopg.Connection,
-    evaluation: int,
-    *,
-    score: int = A_SCORE_ON_THE_SCALE,
-    scale: int = THE_FROZEN_SCALE,
-) -> None:
-    _record_a_frozen_criterion(connection, evaluation)
-    connection.execute(
-        """
-        INSERT INTO evaluation_scale_anchor (evaluation, attribute, input_value, score,
-                                             score_scale_max)
-        VALUES (%s, %s, %s, %s, %s)
-        """,
-        (evaluation, A_SEEDED_ATTRIBUTE, Decimal("500"), score, scale),
-    )
-
-
-def _record_an_attribute_score(
-    connection: psycopg.Connection,
-    result: int,
-    *,
-    normalised_score: int | None = A_SCORE_ON_THE_SCALE,
-    effective_weight: Decimal = Decimal("40"),
-    scale: int = THE_FROZEN_SCALE,
-) -> None:
-    connection.execute(
-        """
-        INSERT INTO candidate_attribute_score (candidate_result, attribute, normalised_score,
-                                               effective_weight, contribution, score_scale_max)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """,
-        (result, A_SEEDED_ATTRIBUTE, normalised_score, effective_weight, Decimal("2.8"), scale),
-    )
 
 
 class TestAnEvaluationFreezesItsScale:
@@ -137,10 +46,10 @@ class TestAnEvaluationFreezesItsScale:
         self, connection: psycopg.Connection
     ) -> None:
         """The control for every refusal below: all five tables, all values in range."""
-        evaluation = _record_an_evaluation(connection)
-        _record_a_frozen_anchor(connection, evaluation)
-        result = _record_a_result(connection, evaluation)
-        _record_an_attribute_score(connection, result)
+        evaluation = record_an_evaluation(connection)
+        record_a_frozen_anchor(connection, evaluation)
+        result = record_a_result(connection, evaluation)
+        record_an_attribute_score(connection, result)
 
         stored = connection.execute(
             "SELECT score, score_scale_max FROM candidate_result WHERE id = %s", (result,)
@@ -152,7 +61,7 @@ class TestAnEvaluationFreezesItsScale:
     ) -> None:
         """A scale of zero has no score that means anything."""
         with pytest.raises(errors.CheckViolation):
-            _record_an_evaluation(connection, scale=0)
+            record_an_evaluation(connection, scale=0)
 
     def test_a_result_cannot_claim_a_scale_its_evaluation_did_not_use(
         self, connection: psycopg.Connection
@@ -162,19 +71,19 @@ class TestAnEvaluationFreezesItsScale:
         Without this the ceiling below could be satisfied by writing a bigger scale beside the
         bigger score, which would enforce nothing at all.
         """
-        evaluation = _record_an_evaluation(connection, scale=THE_FROZEN_SCALE)
+        evaluation = record_an_evaluation(connection, scale=THE_FROZEN_SCALE)
 
         with pytest.raises(errors.ForeignKeyViolation):
-            _record_a_result(connection, evaluation, score=None, scale=100)
+            record_a_result(connection, evaluation, score=None, scale=100)
 
     def test_a_frozen_anchor_cannot_claim_a_scale_its_evaluation_did_not_use(
         self, connection: psycopg.Connection
     ) -> None:
         """The same pin, on the second of the three tables that stores a score."""
-        evaluation = _record_an_evaluation(connection, scale=THE_FROZEN_SCALE)
+        evaluation = record_an_evaluation(connection, scale=THE_FROZEN_SCALE)
 
         with pytest.raises(errors.ForeignKeyViolation):
-            _record_a_frozen_anchor(connection, evaluation, scale=100)
+            record_a_frozen_anchor(connection, evaluation, scale=100)
 
     def test_a_per_attribute_score_cannot_claim_a_scale_its_result_did_not_use(
         self, connection: psycopg.Connection
@@ -184,11 +93,11 @@ class TestAnEvaluationFreezesItsScale:
         Pinned all the way down on purpose: a chain that is checked at two links out of three
         can be walked around at the third.
         """
-        evaluation = _record_an_evaluation(connection, scale=THE_FROZEN_SCALE)
-        result = _record_a_result(connection, evaluation)
+        evaluation = record_an_evaluation(connection, scale=THE_FROZEN_SCALE)
+        result = record_a_result(connection, evaluation)
 
         with pytest.raises(errors.ForeignKeyViolation):
-            _record_an_attribute_score(connection, result, scale=100)
+            record_an_attribute_score(connection, result, scale=100)
 
 
 class TestNoScoreLeavesTheScale:
@@ -197,18 +106,18 @@ class TestNoScoreLeavesTheScale:
     def test_a_candidate_score_above_the_scale_is_refused(
         self, connection: psycopg.Connection
     ) -> None:
-        evaluation = _record_an_evaluation(connection)
+        evaluation = record_an_evaluation(connection)
 
         with pytest.raises(errors.CheckViolation):
-            _record_a_result(connection, evaluation, score=A_SCORE_A_HARDCODED_HUNDRED_WOULD_ALLOW)
+            record_a_result(connection, evaluation, score=A_SCORE_A_HARDCODED_HUNDRED_WOULD_ALLOW)
 
     def test_a_frozen_anchor_score_above_the_scale_is_refused(
         self, connection: psycopg.Connection
     ) -> None:
-        evaluation = _record_an_evaluation(connection)
+        evaluation = record_an_evaluation(connection)
 
         with pytest.raises(errors.CheckViolation):
-            _record_a_frozen_anchor(
+            record_a_frozen_anchor(
                 connection, evaluation, score=A_SCORE_A_HARDCODED_HUNDRED_WOULD_ALLOW
             )
 
@@ -216,53 +125,53 @@ class TestNoScoreLeavesTheScale:
         self, connection: psycopg.Connection
     ) -> None:
         """The scale reaches here through the result, not the evaluation, and still binds."""
-        evaluation = _record_an_evaluation(connection)
-        result = _record_a_result(connection, evaluation)
+        evaluation = record_an_evaluation(connection)
+        result = record_a_result(connection, evaluation)
 
         with pytest.raises(errors.CheckViolation):
-            _record_an_attribute_score(
+            record_an_attribute_score(
                 connection, result, normalised_score=A_SCORE_A_HARDCODED_HUNDRED_WOULD_ALLOW
             )
 
     def test_a_negative_score_is_still_refused(self, connection: psycopg.Connection) -> None:
         """The floor the old constraint carried is not lost in gaining a ceiling."""
-        evaluation = _record_an_evaluation(connection)
+        evaluation = record_an_evaluation(connection)
 
         with pytest.raises(errors.CheckViolation):
-            _record_a_result(connection, evaluation, score=-1)
+            record_a_result(connection, evaluation, score=-1)
 
 
 class TestSharesStayWithinWhatAShareIsOutOf:
     """Coverage and the weights are percentages, so 100 is the real bound and not a setting."""
 
     def test_coverage_above_a_hundred_is_refused(self, connection: psycopg.Connection) -> None:
-        evaluation = _record_an_evaluation(connection)
+        evaluation = record_an_evaluation(connection)
 
         with pytest.raises(errors.CheckViolation):
-            _record_a_result(connection, evaluation, coverage=Decimal("101"))
+            record_a_result(connection, evaluation, coverage=Decimal("101"))
 
     def test_a_frozen_criterion_weight_above_a_hundred_is_refused(
         self, connection: psycopg.Connection
     ) -> None:
-        evaluation = _record_an_evaluation(connection)
+        evaluation = record_an_evaluation(connection)
 
         with pytest.raises(errors.CheckViolation):
-            _record_a_frozen_criterion(connection, evaluation, weight=Decimal("101"))
+            record_a_frozen_criterion(connection, evaluation, weight=Decimal("101"))
 
     def test_a_frozen_pillar_weight_above_a_hundred_is_refused(
         self, connection: psycopg.Connection
     ) -> None:
-        evaluation = _record_an_evaluation(connection)
+        evaluation = record_an_evaluation(connection)
 
         with pytest.raises(errors.CheckViolation):
-            _record_a_frozen_criterion(connection, evaluation, pillar_weight=Decimal("101"))
+            record_a_frozen_criterion(connection, evaluation, pillar_weight=Decimal("101"))
 
     def test_an_effective_weight_above_a_hundred_is_refused(
         self, connection: psycopg.Connection
     ) -> None:
         """Redistribution moves weight between criteria and never mints any (`reqs.md` 5.3)."""
-        evaluation = _record_an_evaluation(connection)
-        result = _record_a_result(connection, evaluation)
+        evaluation = record_an_evaluation(connection)
+        result = record_a_result(connection, evaluation)
 
         with pytest.raises(errors.CheckViolation):
-            _record_an_attribute_score(connection, result, effective_weight=Decimal("101"))
+            record_an_attribute_score(connection, result, effective_weight=Decimal("101"))

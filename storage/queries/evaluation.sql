@@ -17,11 +17,16 @@
 -- jsonb_to_recordset names and types every column in the statement, which is the same
 -- information a row type would carry and is visible where the insert is.
 
--- name: insert_evaluation(criteria_set, level, computed_at)<!
+-- name: insert_evaluation(criteria_set, level, computed_at, score_scale_max)<!
 -- The header. An evaluation runs at one level, so a comparison drawn from it can never mix
--- levels (reqs.md 3.4a).
-INSERT INTO evaluation (criteria_set, level, computed_at)
-VALUES (:criteria_set, :level, :computed_at)
+-- levels (reqs.md 3.4a), and it records the scale its scores are on so that reopening it later
+-- shows numbers that still mean what they meant (reqs.md Q193).
+--
+-- score_scale_max is the caller's to supply because it is the settings value AT COMPUTE TIME.
+-- Every other copy of it below is derived rather than passed, so this is the one place the
+-- number enters and the one place it can be got wrong.
+INSERT INTO evaluation (criteria_set, level, computed_at, score_scale_max)
+VALUES (:criteria_set, :level, :computed_at, :score_scale_max)
 RETURNING id;
 
 -- name: insert_evaluation_criteria(evaluation, criteria)!
@@ -57,13 +62,16 @@ FROM   jsonb_to_recordset(:criteria::jsonb) AS frozen(
 -- id because the criterion it was copied from stays editable and may since have been deleted.
 -- A `fixed` scale is not reproducible without these, so freezing the method and not the points
 -- would freeze half of an answer.
-INSERT INTO evaluation_scale_anchor (evaluation, attribute, input_value, score, label)
-SELECT :evaluation, anchor.attribute, anchor.input_value, anchor.score, anchor.label
+INSERT INTO evaluation_scale_anchor (evaluation, attribute, input_value, score, label,
+                                     score_scale_max)
+SELECT :evaluation, anchor.attribute, anchor.input_value, anchor.score, anchor.label,
+       parent.score_scale_max
 FROM   jsonb_to_recordset(:anchors::jsonb) AS anchor(
            attribute   text,
            input_value numeric,
            score       integer,
-           label       text);
+           label       text)
+JOIN   evaluation AS parent ON parent.id = :evaluation;
 
 -- name: insert_candidate_results(evaluation, results)
 -- Every candidate's outcome in one statement, returning the generated id beside the candidate
@@ -74,9 +82,10 @@ FROM   jsonb_to_recordset(:anchors::jsonb) AS anchor(
 -- score is null only for insufficient_data: never fabricate a total from what is missing. A
 -- non-matching candidate keeps its score and stays visible (reqs.md 5.4).
 INSERT INTO candidate_result (
-    evaluation, candidate, score, coverage, match_status, parent_not_matching, rank)
-SELECT :evaluation, result.candidate, result.score, result.coverage, result.match_status,
-       result.parent_not_matching, result.rank
+    evaluation, candidate, level, score, coverage, match_status, parent_not_matching, rank,
+    score_scale_max)
+SELECT :evaluation, result.candidate, parent.level, result.score, result.coverage,
+       result.match_status, result.parent_not_matching, result.rank, parent.score_scale_max
 FROM   jsonb_to_recordset(:results::jsonb) AS result(
            candidate           text,
            score               integer,
@@ -84,6 +93,7 @@ FROM   jsonb_to_recordset(:results::jsonb) AS result(
            match_status        text,
            parent_not_matching boolean,
            rank                integer)
+JOIN   evaluation AS parent ON parent.id = :evaluation
 RETURNING id, candidate;
 
 -- name: insert_candidate_attribute_scores(scores)!
@@ -95,30 +105,34 @@ RETURNING id, candidate;
 -- provenance chain from a total down to a source and a date. It is null when no value was
 -- available and the weight was redistributed away.
 INSERT INTO candidate_attribute_score (
-    candidate_result, attribute, used_value, normalised_score, effective_weight, contribution)
+    candidate_result, attribute, used_value, normalised_score, effective_weight, contribution,
+    score_scale_max)
 SELECT detail.candidate_result, detail.attribute, detail.used_value, detail.normalised_score,
-       detail.effective_weight, detail.contribution
+       detail.effective_weight, detail.contribution, parent.score_scale_max
 FROM   jsonb_to_recordset(:scores::jsonb) AS detail(
            candidate_result bigint,
            attribute        text,
            used_value       bigint,
            normalised_score integer,
            effective_weight numeric,
-           contribution     numeric);
+           contribution     numeric)
+JOIN   candidate_result AS parent ON parent.id = detail.candidate_result;
 
 -- name: insert_non_match_reasons(reasons)!
 -- Why a candidate is out. Both mechanisms feed one surface, so the user never looks in two
 -- places: a criterion's matching threshold, a match rule, or a compound rule -- exactly one per
 -- row, which the schema enforces rather than this statement.
-INSERT INTO non_match_reason (candidate_result, criterion, match_rule, compound_rule, reason_detail)
-SELECT reason.candidate_result, reason.criterion, reason.match_rule, reason.compound_rule,
-       reason.reason_detail
+INSERT INTO non_match_reason (candidate_result, evaluation, attribute, match_rule,
+                              compound_rule, reason_detail)
+SELECT reason.candidate_result, parent.evaluation, reason.attribute, reason.match_rule,
+       reason.compound_rule, reason.reason_detail
 FROM   jsonb_to_recordset(:reasons::jsonb) AS reason(
            candidate_result bigint,
-           criterion        bigint,
+           attribute        text,
            match_rule       text,
            compound_rule    text,
-           reason_detail    text);
+           reason_detail    text)
+JOIN   candidate_result AS parent ON parent.id = reason.candidate_result;
 
 -- name: insert_candidate_warnings(warnings)!
 -- A warning flags without ruling anything out. It never changes the score and never makes a
@@ -171,14 +185,12 @@ SELECT r.id,
        r.rank,
        COALESCE(
            (SELECT jsonb_agg(jsonb_build_object(
-                       'criterion',     reason.criterion,
-                       'attribute',     reason_criterion.attribute,
+                       'attribute',     reason.attribute,
                        'match_rule',    reason.match_rule,
                        'compound_rule', reason.compound_rule,
                        'detail',        reason.reason_detail)
                      ORDER BY reason.id)
             FROM   non_match_reason AS reason
-            LEFT   JOIN criterion AS reason_criterion ON reason_criterion.id = reason.criterion
             WHERE  reason.candidate_result = r.id),
            '[]'::jsonb) AS non_match_reasons,
        COALESCE(
