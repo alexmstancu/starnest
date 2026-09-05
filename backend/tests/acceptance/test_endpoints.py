@@ -16,7 +16,15 @@ import httpx
 import pytest
 from psycopg_pool import AsyncConnectionPool
 
-from starnest.data import ConfidenceLevel, Quantity, Ratio, ReferencePeriod, Value, ValueType
+from starnest.data import (
+    ConfidenceLevel,
+    Index,
+    Quantity,
+    Ratio,
+    ReferencePeriod,
+    Value,
+    ValueType,
+)
 from starnest.storage import PostgresValueStore
 
 pytestmark = pytest.mark.acceptance
@@ -26,6 +34,11 @@ COUNTRY = "country"
 OVERBURDEN = "country.housing_cost_overburden_rate"
 OVERCROWDING = "country.overcrowding_rate"
 SATISFACTION = "country.life_satisfaction"
+RULE_OF_LAW = "country.rule_of_law"
+CORRUPTION = "country.control_of_corruption"
+STABILITY = "country.political_economic_stability"
+GOVERNANCE = (RULE_OF_LAW, CORRUPTION, STABILITY)
+"""The World Bank half of the `minimal` set, normalised `as_is` from published bounds."""
 
 A_YEAR = ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 12, 31))
 
@@ -40,20 +53,56 @@ async def _set_the_score_scale(pool: AsyncConnectionPool, scale: int | None) -> 
 
 
 def _a_figure(candidate: str, attribute: str, figure: str) -> Value:
-    shape = (
-        Quantity(magnitude=Decimal(figure), unit="ladder_points")
-        if attribute == SATISFACTION
-        else Ratio(value=Decimal(figure), basis="households")
+    """One stored figure, in whichever of the three shapes `minimal` scores.
+
+    The governance three are `Index` values on the World Bank's -2.5 to 2.5 scale, so this
+    helper covers both normalisation methods the set uses: `percentile` over the Eurostat
+    figures, and `as_is` over the published bounds.
+    """
+    if attribute in GOVERNANCE:
+        return _stored(
+            candidate,
+            attribute,
+            ValueType.INDEX,
+            Index(
+                value=Decimal(figure),
+                provider="World Bank WGI",
+                scale_min=Decimal("-2.5"),
+                scale_max=Decimal("2.5"),
+            ),
+            source="world_bank",
+        )
+    if attribute == SATISFACTION:
+        return _stored(
+            candidate,
+            attribute,
+            ValueType.QUANTITY,
+            Quantity(magnitude=Decimal(figure), unit="ladder_points"),
+        )
+    return _stored(
+        candidate,
+        attribute,
+        ValueType.RATIO,
+        Ratio(value=Decimal(figure), basis="households"),
     )
+
+
+def _stored(
+    candidate: str,
+    attribute: str,
+    value_type: ValueType,
+    payload: object,
+    source: str = "eurostat",
+) -> Value:
     return Value(
         candidate=candidate,
         attribute=attribute,
-        value_type=ValueType.QUANTITY if attribute == SATISFACTION else ValueType.RATIO,
-        data_source="eurostat",
+        value_type=value_type,
+        data_source=source,
         reference_period=A_YEAR,
         retrieval_date=datetime.now(UTC),
         confidence_level=ConfidenceLevel.HIGH,
-        payload=shape,
+        payload=payload,  # type: ignore[arg-type]
     )
 
 
@@ -91,6 +140,7 @@ class TestGetCriteriaSet:
             OVERBURDEN,
             OVERCROWDING,
             SATISFACTION,
+            *GOVERNANCE,
         }
 
     async def test_the_criteria_carry_the_interpretation_that_scores_them(
@@ -107,7 +157,12 @@ class TestGetCriteriaSet:
         add up."""
         body = (await api.get(f"/v1/criteria-sets/{MINIMAL}")).json()
 
-        assert {w["pillar"] for w in body["pillar_weights"]} == {"housing", "culture"}
+        assert {w["pillar"] for w in body["pillar_weights"]} == {
+            "housing",
+            "culture",
+            "governance",
+            "safety",
+        }
 
     async def test_a_set_that_does_not_exist_is_a_404_in_the_one_error_shape(
         self, api: httpx.AsyncClient
@@ -188,9 +243,15 @@ class TestGetRanking:
                     _a_figure("country.portugal", OVERBURDEN, "5"),
                     _a_figure("country.portugal", OVERCROWDING, "9"),
                     _a_figure("country.portugal", SATISFACTION, "7.1"),
+                    _a_figure("country.portugal", RULE_OF_LAW, "1.1"),
+                    _a_figure("country.portugal", CORRUPTION, "0.9"),
+                    _a_figure("country.portugal", STABILITY, "1.0"),
                     _a_figure("country.greece", OVERBURDEN, "28"),
                     _a_figure("country.greece", OVERCROWDING, "27"),
                     _a_figure("country.greece", SATISFACTION, "6.4"),
+                    _a_figure("country.greece", RULE_OF_LAW, "0.2"),
+                    _a_figure("country.greece", CORRUPTION, "0.0"),
+                    _a_figure("country.greece", STABILITY, "0.1"),
                 ]
             )
 

@@ -57,6 +57,9 @@ class TestReadingASet:
             "country.housing_cost_overburden_rate",
             "country.overcrowding_rate",
             "country.life_satisfaction",
+            "country.rule_of_law",
+            "country.control_of_corruption",
+            "country.political_economic_stability",
         }
 
     async def test_a_criterion_keeps_its_interpretation(
@@ -87,7 +90,12 @@ class TestReadingASet:
         minimal = await criteria.read_criteria_set(MINIMAL, level=COUNTRY)
 
         weights = {str(w.pillar): w.weight for w in minimal.pillar_weights}
-        assert weights == {"housing": Decimal(60), "culture": Decimal(40)}
+        assert weights == {
+            "housing": Decimal(30),
+            "culture": Decimal(20),
+            "governance": Decimal(30),
+            "safety": Decimal(20),
+        }
 
     async def test_the_shipped_set_reads_with_its_anchors_and_thresholds(
         self, criteria: PostgresCriteriaStore

@@ -46,8 +46,10 @@ class TestDuplicating:
             copy = (await api.get("/v1/criteria-sets/a_weighted_copy")).json()
 
             assert {w["pillar"]: w["weight"] for w in copy["pillar_weights"]} == {
-                "housing": 60,
-                "culture": 40,
+                "housing": 30,
+                "culture": 20,
+                "governance": 30,
+                "safety": 20,
             }
         finally:
             await api.delete("/v1/criteria-sets/a_weighted_copy")

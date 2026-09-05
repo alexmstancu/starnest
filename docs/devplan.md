@@ -46,7 +46,7 @@ application, and where the two disagree, this one is right.
 | **P3** First vertical slice | **Done. Gate A closed 2026-09-05.** 16 of 40 operations, one source adapter, two screens, a browser test against the real stack, and the gate itself as an acceptance test |
 | **P4**-**P7** | Not started |
 
-**1,300 backend tests and 98 interface tests. 93 real Eurostat values across 31 countries. A browser shows a ranked table.**
+**1,355 backend tests and 98 interface tests. 189 real values across 32 countries — 93 from Eurostat, 96 from the World Bank. A browser shows a ranked table.**
 
 ### GATE A — closed 2026-09-05
 
@@ -520,12 +520,24 @@ reporting a confident score for Liechtenstein.
 
 ### P4 — Adapter fan-out
 
-**Up to six agents, each in its own worktree, each with a reserved migration block.** The
-`SourceAdapter` contract was proven at Gate A; these add data, not machinery.
+**Sequential, one stream at a time** — the agent fan-out this section describes is not how this
+is being built (see 0.0). The `SourceAdapter` contract was proven at Gate A; these add data, not
+machinery.
+
+**Ordered by pillar coverage, per D7.** W4-A went first on a measurement rather than a
+preference: it answers three `Index` attributes that D6(A) made scoreable with no anchor to
+invent, two of them `blocks_if_missing`, and it opened two dark pillars at once. OECD would have
+opened three pillars but its blocking attribute normalises `fixed` and still has no anchors, so
+its figures would have been stored without being scored.
+
+**A stream may need no migration.** W4-A needed none for the adapter: `data_source`,
+`attribute_source_priority` and `attribute_index_parameter` were already seeded, which is the
+"nothing hardcoded" invariant paying back — the adapter reads the catalog instead of restating
+it. Reserve the block, but do not assume it will be spent.
 
 | Stream | Source | Attributes it answers | Migrations |
 |---|---|---|---|
-| **W4-A** | World Bank WGI | `political_economic_stability`, `rule_of_law`, `control_of_corruption` | 0410–0419 |
+| **W4-A** | World Bank WGI | `political_economic_stability`, `rule_of_law`, `control_of_corruption` | **Done 2026-09-05.** Only `0410`, and not for the adapter — the catalog already declared the source, its priority and the −2.5/2.5 bounds, so the adapter needed no migration at all. `0410` adds the three to `minimal` so the figures are scored rather than merely stored |
 | **W4-B** | OECD | `income_tax_effective`, `average_working_hours`, `statutory_paid_leave`, `school_system_quality`, `parental_leave_policy`, `child_benefit_policy` | 0420–0429 |
 | **W4-C** | Open-Meteo | `avg_annual_temperature`, `annual_sunshine_hours` — **blocked on D4** | 0430–0439 |
 | **W4-D** | UNODC + WHO GHO | `crime_safety_index`, `healthcare_system_quality` — both are **scheduled downloads, not live calls** | 0440–0449 |
