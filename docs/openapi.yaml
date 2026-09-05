@@ -1291,7 +1291,18 @@ components:
         candidate: { type: string }
         name: { type: string }
         rank: { type: [integer, "null"], description: Null when the candidate does not match. }
-        score: { type: [integer, "null"], minimum: 0, maximum: 100, description: Null only when insufficient data. }
+        # No maximum. The ceiling is the evaluation's own score_scale_max, which is a setting
+        # the user edits, so it cannot be stated here as a constant (same reason as the frozen
+        # anchors below).
+        score: { type: [integer, "null"], minimum: 0, description: Null only when insufficient data. }
+        insufficient_reason:
+          type: [string, "null"]
+          description: >-
+            Why this candidate could not be scored, in words -- a blocking criterion with no
+            figure, or coverage below the floor. Null whenever there is a score. Separate from
+            non_match_reasons, which say why a candidate that COULD be scored does not match:
+            "we could not measure this" and "we measured it and it fails" are different things
+            to show.
         coverage: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. The share of active weight actually backed by data." }
         coverage_by_confidence:
           type: object

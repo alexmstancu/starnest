@@ -1003,6 +1003,8 @@ export interface components {
             rank?: number | null;
             /** @description Null only when insufficient data. */
             score: number | null;
+            /** @description Why this candidate could not be scored, in words -- a blocking criterion with no figure, or coverage below the floor. Null whenever there is a score. Separate from non_match_reasons, which say why a candidate that COULD be scored does not match: "we could not measure this" and "we measured it and it fails" are different things to show. */
+            insufficient_reason?: string | null;
             /** @description Percentage, 0-100. The share of active weight actually backed by data. */
             coverage: number;
             /** @description How the covered weight splits by confidence (`reqs.md` 5.7). Coverage alone cannot show that a candidate reached 100% entirely on extrapolation; this can. */

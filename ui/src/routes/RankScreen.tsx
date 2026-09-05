@@ -103,11 +103,18 @@ function CandidateRow({ result }: { result: CandidateResult }) {
       <td className="table__cell--numeric">{formatPercentage(result.coverage)}</td>
       <td>{formatMatchStatus(result.match_status)}</td>
       <td>
+        {/* Two kinds of reason, and they are not the same thing. `non_match_reasons` say why a
+            candidate that COULD be scored does not match; `insufficient_reason` says why one
+            could not be scored at all. A screen that showed only the first would leave every
+            unscoreable candidate with an empty cell and no way to find out why. */}
         {(result.non_match_reasons ?? []).map((reason, index) => (
           <p key={index} className="table__reason">
             {reason.reason_detail}
           </p>
         ))}
+        {result.insufficient_reason ? (
+          <p className="table__reason">{result.insufficient_reason}</p>
+        ) : null}
       </td>
     </tr>
   );

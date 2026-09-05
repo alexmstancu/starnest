@@ -161,11 +161,29 @@ re-renders → assert at least one country shows a score, and at least one shows
 
 ```
 Round 1   M4 both screens against the mock                          DONE (cbef101)
-Round 2   BACKEND: M1 evaluation/       BACKEND: M2 Eurostat adapter    <- here
-          (pure functions, no I/O)      (independent of M1)
-Round 3   BACKEND: M3 api/ + composition root   UI: repoint at the real backend
-Round 4   master: M5 e2e, then fix what it finds
+Round 2   M1 evaluation/            M2 Eurostat adapter             DONE
+Round 3   M3 api/ + composition root, UI against the real backend   DONE
+Round 4   M5 e2e against the real stack                             DONE
 ```
+
+**minE2E is complete, 2026-09-05.** `make up`, `make migrate`, `make acquire`, `make serve`,
+`npm run dev` -- and the browser shows 31 European countries ranked from Eurostat figures, with
+Liechtenstein carrying `Insufficient data` and the sentence saying why. `make e2e` asserts it
+without a mock anywhere.
+
+### What building it changed about this plan
+
+- **M3 named four endpoints and needs seven.** The interface cannot draw a screen without
+  `/levels` for its toggle, `/criteria-sets` for its switcher and `/candidates` for its counts.
+- **`PostgresCriteriaStore` did not exist** and two of those endpoints need it. Its first draft
+  read matching thresholds and never wrote them, which nothing in the shipped catalog could have
+  caught -- zero thresholds and zero anchors are seeded, by design.
+- **The contract gained `insufficient_reason`.** The API had no way to say why a candidate could
+  not be scored, and "we could not measure this" is a different thing to show than "we measured
+  it and it fails".
+- **`/data-acquisition-runs` is deliberately still absent.** Nothing persists a run, and an
+  endpoint that always returned an empty list would be a claim about a feature that does not
+  exist. The sidebar reports it as unreachable, which is true.
 
 M1 and M2 touch no common file: M1 is pure functions under `evaluation/`, M2 is
 `data_sources/eurostat/` plus its own migration block. Neither needs the other to compile.

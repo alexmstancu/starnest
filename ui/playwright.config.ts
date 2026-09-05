@@ -13,24 +13,36 @@ export default defineConfig({
   reporter: [["html", { outputFolder: "playwright-report" }], ["list"]],
 
   use: {
-    baseURL: process.env["UI_ORIGIN"] ?? "http://127.0.0.1:5173",
+    // `localhost` rather than `127.0.0.1`: Vite binds the name, which resolves to ::1 first,
+    // so the numeric form reaches nothing.
+    baseURL: process.env["UI_ORIGIN"] ?? "http://localhost:5173",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
 
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 
-  // Gate A onwards run against the real backend, not a mock. A gate that passes against a
-  // mock proves the mock works.
+  // The real backend, not a mock. A gate that passes against a mock proves the mock works.
   //
-  // Until then the backend does not answer, so the default server is the mock one. At Gate A
-  // this becomes `npm run dev` again -- a one-word change, kept in one place on purpose.
+  // This was `npm run dev:mock` until the backend answered, and the change to `npm run dev` is
+  // the one-word change that comment promised. Both servers are started here so `make e2e` is
+  // one command: the database must already be up (`make up`) and migrated, because a test
+  // suite that migrates is a test suite that can destroy data.
   webServer: process.env["UI_ORIGIN"]
     ? undefined
-    : {
-        command: "npm run dev:mock",
-        url: "http://127.0.0.1:5173",
-        reuseExistingServer: true,
-        timeout: 60_000,
-      },
+    : [
+        {
+          command:
+            'cd ../backend && uv run python -c "from starnest.main import run; run()"',
+          url: "http://127.0.0.1:8000/v1/settings",
+          reuseExistingServer: true,
+          timeout: 60_000,
+        },
+        {
+          command: "npm run dev",
+          url: "http://localhost:5173",
+          reuseExistingServer: true,
+          timeout: 60_000,
+        },
+      ],
 });
