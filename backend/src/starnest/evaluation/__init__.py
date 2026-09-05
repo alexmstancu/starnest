@@ -13,15 +13,22 @@ for a reason the module that would hold it records.
 
 from starnest.evaluation.magnitudes import UnscoreableValueError, is_scoreable, magnitude_of
 from starnest.evaluation.normalisation import NormalisationError, scores_for
+from starnest.evaluation.ranking import RankingError, rank_candidates
+from starnest.evaluation.results import AttributeScore, CandidateResult, MatchStatus
 from starnest.evaluation.weighting import WeightingError, coverage_of, redistribute
 
 __all__ = [
+    "AttributeScore",
+    "CandidateResult",
+    "MatchStatus",
     "NormalisationError",
+    "RankingError",
     "UnscoreableValueError",
     "WeightingError",
     "coverage_of",
     "is_scoreable",
     "magnitude_of",
+    "rank_candidates",
     "redistribute",
     "scores_for",
 ]

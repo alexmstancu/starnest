@@ -17,6 +17,7 @@ FETCHED = datetime(2026, 8, 1, 9, 30, tzinfo=UTC)
 A_SET = "minimal"
 A_PILLAR = "economics"
 AN_ATTRIBUTE = "country.tech_software_jobs"
+RENT = "country.house_price_to_income_ratio"
 A_CANDIDATE = "country.portugal"
 
 A_SMALL_SCALE = 10
@@ -49,3 +50,51 @@ def a_criterion(**overrides: object) -> Criterion:
         "normalisation_method": NormalisationMethod.PERCENTILE,
     }
     return Criterion(**(fields | overrides))  # type: ignore[arg-type]
+
+
+def a_pillar_weight(pillar: str = A_PILLAR, weight: str = "100", level: str = "country"):
+    from starnest.criteria import PillarWeight
+
+    return PillarWeight(pillar=pillar, level=level, weight=Decimal(weight))
+
+
+def a_set(criteria, pillar_weights=None):
+    """A criteria set whose weights already sum, so a test changes one thing at a time."""
+    from starnest.criteria import CriteriaSet
+
+    return CriteriaSet(
+        id=A_SET,
+        name="Minimal",
+        criteria=tuple(criteria),
+        pillar_weights=tuple(pillar_weights or (a_pillar_weight(),)),
+    )
+
+
+def values_for(**by_candidate: object) -> dict[str, tuple]:
+    """`portugal=42, spain=17` as active values on the default attribute."""
+    return {
+        f"country.{candidate}": (a_value(candidate=f"country.{candidate}", payload=Count(count=n)),)
+        for candidate, n in by_candidate.items()
+    }
+
+
+def two_pillars(*, first: str = "50", second: str = "50", **criterion_overrides):
+    """Two criteria in two pillars, each the whole of its own pillar.
+
+    `CriteriaSet` refuses a pillar whose criteria do not sum to 100, so a two-criterion set that
+    splits weight has to split it between PILLARS -- which is the two-level weighting doing
+    exactly what it is for.
+    """
+    from starnest.criteria import NormalisationMethod
+
+    jobs = a_criterion(weight=Decimal("100"), **criterion_overrides)
+    rent = a_criterion(
+        attribute="country.house_price_to_income_ratio",
+        pillar="housing",
+        weight=Decimal("100"),
+        normalisation_method=NormalisationMethod.PERCENTILE,
+    )
+    return a_set(
+        [jobs, rent],
+        [a_pillar_weight(weight=first), a_pillar_weight(pillar="housing", weight=second)],
+    )
