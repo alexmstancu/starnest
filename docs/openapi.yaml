@@ -330,6 +330,10 @@ paths:
                 name: { type: string }
       responses:
         "201": { $ref: "#/components/responses/CriteriaSet" }
+        # The identifier is the caller's to choose, so it can already be taken. Refused rather
+        # than overwritten: silently replacing a set somebody built loses the weights they
+        # chose and says nothing (reqs.md Q191).
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /criteria-sets/{criteriaSetId}/criteria/{attributeId}:
     patch:
@@ -826,7 +830,10 @@ components:
         pillar: { type: [string, "null"], description: "Null for descriptive attributes, which are never scored." }
         value_type: { $ref: "#/components/schemas/ValueTypeName" }
         unit: { type: [string, "null"] }
-        max_age_days: { type: [integer, "null"] }
+        # Months, not days: that is the unit reqs.md 7.1 declares and the unit the column
+        # stores. An interval of two years is 730.5 days, which an integer day count cannot
+        # say (known-issues D18). Null means never stale.
+        max_age_months: { type: [integer, "null"], description: "How stale a figure may be before a fresher one outranks it, in whole months. Null means never." }
         manual_entry: { type: boolean, description: "Whether a value may be typed by hand for this attribute." }
         breakdown_scheme: { type: [string, "null"] }
         breakdown_options: { type: array, items: { type: string } }

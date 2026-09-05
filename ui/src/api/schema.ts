@@ -676,7 +676,8 @@ export interface components {
             pillar?: string | null;
             value_type: components["schemas"]["ValueTypeName"];
             unit?: string | null;
-            max_age_days?: number | null;
+            /** @description How stale a figure may be before a fresher one outranks it, in whole months. Null means never. */
+            max_age_months?: number | null;
             /** @description Whether a value may be typed by hand for this attribute. */
             manual_entry?: boolean;
             breakdown_scheme?: string | null;

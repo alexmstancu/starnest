@@ -26,6 +26,15 @@ from starnest.criteria.criteria_set import CriteriaSet
 from starnest.criteria.identifiers import CriteriaSetId
 
 
+class CriteriaSetExistsError(ValueError):
+    """A set is being created under an identifier something already holds.
+
+    Refused rather than overwritten. Silently replacing a set somebody built is the worst kind
+    of success: the weights they chose are gone, nothing said so, and the ranking simply reads
+    differently the next time they look.
+    """
+
+
 class UnknownCriteriaSetError(LookupError):
     """A criteria set was asked for that does not exist.
 

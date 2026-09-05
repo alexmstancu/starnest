@@ -5,6 +5,34 @@
 # between the two files is the work remaining.
 components:
   schemas:
+    AllowedRangeBody:
+      properties:
+        max_value:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Max Value
+        min_value:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Min Value
+      title: AllowedRangeBody
+      type: object
+    AttributeBody:
+      additionalProperties: true
+      type: object
+    AttributesBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AttributeBody'
+          title: Items
+          type: array
+      required:
+      - items
+      title: AttributesBody
+      type: object
     CandidateBody:
       properties:
         id:
@@ -172,6 +200,20 @@ components:
           title: Weight Locked
       title: CriterionInput
       type: object
+    DuplicateRequest:
+      description: What the copy will be called, and what to call it.
+      properties:
+        id:
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+      required:
+      - id
+      - name
+      title: DuplicateRequest
+      type: object
     HTTPValidationError:
       properties:
         detail:
@@ -180,6 +222,54 @@ components:
           title: Detail
           type: array
       title: HTTPValidationError
+      type: object
+    HouseholdBody:
+      description: '`HouseholdInput` from the contract, which `Household` is defined
+        as.'
+      properties:
+        citizenships:
+          items:
+            type: string
+          minItems: 1
+          title: Citizenships
+          type: array
+        home_city_candidate:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Home City Candidate
+        home_country_candidate:
+          title: Home Country Candidate
+          type: string
+        max_rent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Max Rent
+        net_income:
+          title: Net Income
+          type: number
+        number_adults:
+          minimum: 1.0
+          title: Number Adults
+          type: integer
+        number_children:
+          description: Under 18.
+          minimum: 0.0
+          title: Number Children
+          type: integer
+        target_monthly_spend:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Target Monthly Spend
+      required:
+      - net_income
+      - number_adults
+      - number_children
+      - home_country_candidate
+      - citizenships
+      title: HouseholdBody
       type: object
     LevelBody:
       properties:
@@ -210,6 +300,9 @@ components:
       - items
       title: LevelsBody
       type: object
+    PillarBody:
+      additionalProperties: true
+      type: object
     PillarWeightBody:
       properties:
         level:
@@ -230,6 +323,17 @@ components:
       - weight
       - weight_locked
       title: PillarWeightBody
+      type: object
+    PillarsBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/PillarBody'
+          title: Items
+          type: array
+      required:
+      - items
+      title: PillarsBody
       type: object
     RankingBody:
       properties:
@@ -349,6 +453,48 @@ info:
   version: 1.0.0
 openapi: 3.1.0
 paths:
+  /v1/attributes:
+    get:
+      description: 'The catalog, with every per-attribute declaration attached.
+
+
+        Retired attributes are excluded unless asked for: they keep their stored values
+        and drop out
+
+        of scoring, so a caller that wants them has to say so.'
+      operationId: listAttributes
+      parameters:
+      - in: query
+        name: level
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Level
+      - in: query
+        name: include_retired
+        required: false
+        schema:
+          default: false
+          title: Include Retired
+          type: boolean
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttributesBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Attributes
+      tags:
+      - catalog
   /v1/candidates:
     get:
       description: 'Every candidate, or every candidate at one level.
@@ -510,6 +656,109 @@ paths:
       summary: Update Criterion
       tags:
       - criteria
+  /v1/criteria-sets/{criteria_set_id}/duplicate:
+    post:
+      description: 'Copy a set whole, under a new identifier.
+
+
+        **A full copy, never a sparse overlay** (`reqs.md` Q191). "Inherit from the
+        default for
+
+        anything not overridden" cannot hold: weights sum to 100 within a pillar,
+        so an override
+
+        that did not move its siblings would sum to 118. `CriteriaSet.duplicated_as`
+        produces the
+
+        copy and the store writes it, so what a copy contains is decided in one place
+        -- the domain
+
+        -- rather than here and in the SQL separately.
+
+
+        A duplicate is how a user gets a set they may change without touching the
+        shipped one, which
+
+        is what makes `local_employment` safe to leave exactly as seeded.'
+      operationId: duplicateCriteriaSet
+      parameters:
+      - in: path
+        name: criteria_set_id
+        required: true
+        schema:
+          title: Criteria Set Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DuplicateRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CriteriaSetBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Duplicate Criteria Set
+      tags:
+      - criteria
+  /v1/household:
+    get:
+      description: Raises `HouseholdNotConfiguredError` -- a 404 -- when nothing has
+        been recorded yet.
+      operationId: getHousehold
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HouseholdBody'
+          description: Successful Response
+      summary: Get Household
+      tags:
+      - household
+    put:
+      description: 'Store the household whole, and return what was stored.
+
+
+        Returning it rather than a bare 200: the domain normalises what it accepts
+        -- citizenships
+
+        are a set, so duplicates collapse -- and a client that assumed its request
+        body was the
+
+        stored state would be wrong in a way nothing told it about.'
+      operationId: replaceHousehold
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HouseholdBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HouseholdBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Replace Household
+      tags:
+      - household
   /v1/levels:
     get:
       description: In `depth_order`, which is what tells a caller which level screens
@@ -523,6 +772,24 @@ paths:
                 $ref: '#/components/schemas/LevelsBody'
           description: Successful Response
       summary: List Levels
+      tags:
+      - catalog
+  /v1/pillars:
+    get:
+      description: 'The eleven load-bearing verticals of a life (`reqs.md` 3.3).
+
+
+        Returned whole: eleven rows bounded by the catalog need no cursor (`arch.md`
+        7.6).'
+      operationId: listPillars
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PillarsBody'
+          description: Successful Response
+      summary: List Pillars
       tags:
       - catalog
   /v1/rankings:

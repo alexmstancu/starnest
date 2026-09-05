@@ -13,12 +13,14 @@ passport it had just given up -- which every visa gate would then read as fact
 
 from typing import Any
 
+from psycopg.errors import ForeignKeyViolation
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.candidates import CandidateId
 from starnest.household import (
     Household,
     HouseholdNotConfiguredError,
+    HouseholdPlaceError,
     HouseholdStore,
     Settings,
 )
@@ -44,7 +46,22 @@ class PostgresHouseholdStore(HouseholdStore):
         return _household_from(row)
 
     async def replace_household(self, household: Household) -> None:
-        """One transaction for both tables. A half-written household is not a household."""
+        """One transaction for both tables. A half-written household is not a household.
+
+        A candidate the household names but the catalog does not hold arrives here as a driver
+        error, and is translated: `psycopg` types belong to this module and must not reach
+        `api/`, where an untranslated one becomes a 500 for a request that was merely wrong.
+        The domain already has the word for it -- a place the household names is not one it
+        could possibly be at.
+        """
+        try:
+            await self._write(household)
+        except ForeignKeyViolation as unknown:
+            raise HouseholdPlaceError(
+                f"the household names a place the catalog does not hold: {unknown}"
+            ) from unknown
+
+    async def _write(self, household: Household) -> None:
         async with acquire(self._pool) as connection:
             await self._queries.upsert_household(
                 connection,

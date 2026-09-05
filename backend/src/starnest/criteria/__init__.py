@@ -39,7 +39,7 @@ from starnest.criteria.rebalancing import (
     WeightsAllLockedError,
     rebalance,
 )
-from starnest.criteria.store import CriteriaStore, UnknownCriteriaSetError
+from starnest.criteria.store import CriteriaSetExistsError, CriteriaStore, UnknownCriteriaSetError
 from starnest.criteria.thresholds import (
     NUMERIC_TYPES,
     BooleanThreshold,
@@ -56,6 +56,7 @@ __all__ = [
     "BooleanThreshold",
     "CriteriaSet",
     "CriteriaSetError",
+    "CriteriaSetExistsError",
     "CriteriaSetId",
     "CriteriaStore",
     "Criterion",

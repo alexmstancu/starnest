@@ -142,3 +142,31 @@ async def stored_figures(database_url: str) -> AsyncIterator[None]:
             ]
         )
     yield
+
+
+A_HOUSEHOLD = {
+    "net_income": 5200,
+    "number_adults": 2,
+    "number_children": 1,
+    "home_country_candidate": "country.romania",
+    "citizenships": ["country.romania"],
+    "target_monthly_spend": 2500,
+    "max_rent": 1400,
+}
+"""One household, in the shape `HouseholdInput` describes.
+
+Romania as the home country because `reqs.md` Q30 makes it both baseline and candidate -- "stay
+put" has to be measurable, so the home country is scored like any other.
+"""
+
+
+@pytest.fixture
+async def a_configured_household(api: httpx.AsyncClient) -> str:
+    """A stored household, for the endpoints that have nothing to say without one.
+
+    Written through the API rather than the store: a fixture that reached past the endpoint
+    would let a broken PUT pass every test that depends on a household existing.
+    """
+    response = await api.put("/v1/household", json=A_HOUSEHOLD)
+    assert response.status_code == 200
+    return "configured"

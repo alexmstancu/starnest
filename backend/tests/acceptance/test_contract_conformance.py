@@ -27,6 +27,9 @@ MINIMAL = "minimal"
 
 A_REQUEST_FOR = {
     "getSettings": ("get", "/v1/settings", {}),
+    "getHousehold": ("get", "/v1/household", {}),
+    "listPillars": ("get", "/v1/pillars", {}),
+    "listAttributes": ("get", "/v1/attributes", {"level": COUNTRY}),
     "listLevels": ("get", "/v1/levels", {}),
     "listCriteriaSets": ("get", "/v1/criteria-sets", {}),
     "listCandidates": ("get", "/v1/candidates", {"level": COUNTRY}),
@@ -61,7 +64,7 @@ def test_every_served_read_has_a_conformance_case() -> None:
 
 @pytest.mark.parametrize("operation", sorted(A_REQUEST_FOR))
 async def test_the_response_matches_the_designed_schema(
-    api: httpx.AsyncClient, operation: str, database_url: str
+    api: httpx.AsyncClient, operation: str, database_url: str, a_configured_household: str
 ) -> None:
     """Against the design, byte for byte, including types the language does not distinguish.
 
@@ -119,7 +122,11 @@ async def _set_the_score_scale(database_url: str, scale: int) -> None:
 
 @pytest.mark.parametrize("operation", sorted(A_REQUEST_FOR))
 async def test_the_response_carries_no_field_the_design_never_declared(
-    api: httpx.AsyncClient, operation: str, database_url: str, stored_figures: None
+    api: httpx.AsyncClient,
+    operation: str,
+    database_url: str,
+    stored_figures: None,
+    a_configured_household: str,
 ) -> None:
     """The half schema validation cannot do.
 
@@ -144,3 +151,17 @@ async def test_the_write_response_carries_no_undeclared_field(
     )
 
     assert undeclared_fields("updateCriterion", response.json()) == []
+
+
+async def test_a_stored_household_comes_back_in_the_designed_shape(
+    api: httpx.AsyncClient, a_configured_household: str
+) -> None:
+    """`replaceHousehold` returns what was stored rather than a bare 200, so its response is a
+    shape a client reads and therefore a shape worth checking."""
+    from .conftest import A_HOUSEHOLD
+
+    response = await api.put("/v1/household", json=A_HOUSEHOLD)
+
+    assert response.status_code == 200
+    validate("replaceHousehold", response.json())
+    assert undeclared_fields("replaceHousehold", response.json()) == []

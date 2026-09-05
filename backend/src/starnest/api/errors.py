@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from starnest.criteria import (
     CriteriaSetError,
+    CriteriaSetExistsError,
     CriterionDeclarationError,
     UnknownCriteriaSetError,
     UnknownCriterionError,
@@ -26,7 +27,7 @@ from starnest.criteria import (
 )
 from starnest.data import UnknownAttributeError
 from starnest.evaluation import NormalisationError, RankingError
-from starnest.household import HouseholdNotConfiguredError
+from starnest.household import HouseholdNotConfiguredError, HouseholdPlaceError
 
 
 class ErrorBody(BaseModel):
@@ -49,9 +50,11 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     HouseholdNotConfiguredError: _refusal(404, "household_not_configured"),
     # 409 -- the request is well formed and the state refuses it.
     WeightsAllLockedError: _refusal(409, "weights_all_locked"),
+    CriteriaSetExistsError: _refusal(409, "criteria_set_exists"),
     # 422 -- the request describes something the domain will not accept.
     CriteriaSetError: _refusal(422, "invalid_criteria_set"),
     CriterionDeclarationError: _refusal(422, "invalid_criterion"),
+    HouseholdPlaceError: _refusal(422, "unknown_place"),
     NormalisationError: _refusal(422, "cannot_be_scored"),
     RankingError: _refusal(422, "cannot_be_ranked"),
 }

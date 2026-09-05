@@ -18,11 +18,13 @@ from decimal import Decimal
 from typing import Any
 
 from psycopg import AsyncConnection
+from psycopg.errors import UniqueViolation
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.criteria import (
     BooleanThreshold,
     CriteriaSet,
+    CriteriaSetExistsError,
     CriteriaSetId,
     CriteriaStore,
     Criterion,
@@ -66,11 +68,22 @@ class PostgresCriteriaStore(CriteriaStore):
         return _criteria_set_from(row)
 
     async def create_criteria_set(self, criteria_set: CriteriaSet) -> None:
-        async with acquire(self._pool) as connection:
-            await self._queries.insert_criteria_set(
-                connection, criteria_set=str(criteria_set.id), name=criteria_set.name
-            )
-            await self._write_contents(connection, criteria_set)
+        """Write a set whole, refusing an identifier something already holds.
+
+        The conflict arrives as a driver error and is translated here: `psycopg` types belong to
+        this module, and one that reached `api/` would become a 500 for a request that was
+        merely asking for something taken.
+        """
+        try:
+            async with acquire(self._pool) as connection:
+                await self._queries.insert_criteria_set(
+                    connection, criteria_set=str(criteria_set.id), name=criteria_set.name
+                )
+                await self._write_contents(connection, criteria_set)
+        except UniqueViolation as taken:
+            raise CriteriaSetExistsError(
+                f"a criteria set called {criteria_set.id!r} already exists"
+            ) from taken
 
     async def replace_criteria_set(self, criteria_set: CriteriaSet) -> None:
         """Delete the contents and write them again, inside one transaction.

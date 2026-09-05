@@ -15,11 +15,12 @@ means. It reads the set, asks the domain for the changed one, and writes it back
 """
 
 from decimal import Decimal
-from typing import Any
+from typing import ClassVar
 
-from fastapi import APIRouter
-from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
+from fastapi import APIRouter, Response
+from pydantic import BaseModel, Field
 
+from starnest.api.bodies import ContractBody
 from starnest.api.dependencies import Criteria
 from starnest.criteria import CriteriaSet, Criterion
 
@@ -32,8 +33,12 @@ class ScaleAnchorBody(BaseModel):
     label: str | None = None
 
 
-class CriterionBody(BaseModel):
+class CriterionBody(ContractBody):
     """A criterion as the contract's `Criterion` shape."""
+
+    omit_when_absent: ClassVar[frozenset[str]] = frozenset({"reducer_mode"})
+    """The design types `reducer_mode` as an enum of two strings and says "omit when the
+    attribute has no breakdown", so null is not a value it has."""
 
     attribute: str
     pillar: str
@@ -50,27 +55,6 @@ class CriterionBody(BaseModel):
     breakdown_option: str | None = None
     reducer_mode: str | None = None
     scale_anchors: tuple[ScaleAnchorBody, ...] = ()
-
-    @model_serializer(mode="wrap")
-    def _omit_a_reducer_mode_there_is_none_of(
-        self, serialise: SerializerFunctionWrapHandler
-    ) -> dict[str, Any]:
-        """Absent, not null, when the attribute has no breakdown.
-
-        The contract types `reducer_mode` as an enum of two strings and says in as many words
-        "omit when the attribute has no breakdown" -- so `null` is not a permitted value, and
-        the interface's generated client types the field optional rather than nullable. Sending
-        null satisfied Python and violated both.
-
-        Only this field. The other optional fields here are typed `[number, "null"]` in the
-        design, so null is exactly what they mean, and a blanket `exclude_none` would also drop
-        `score` from a ranking -- which is required AND nullable, and whose absence would be a
-        different lie.
-        """
-        serialised = serialise(self)
-        if serialised.get("reducer_mode") is None:
-            serialised.pop("reducer_mode", None)
-        return serialised
 
 
 class PillarWeightBody(BaseModel):
@@ -213,3 +197,36 @@ def _criterion_body(criterion: Criterion) -> CriterionBody:
             for anchor in criterion.scale_anchors
         ),
     )
+
+
+class DuplicateRequest(BaseModel):
+    """What the copy will be called, and what to call it."""
+
+    id: str
+    name: str
+
+
+@router.post(
+    "/criteria-sets/{criteria_set_id}/duplicate",
+    operation_id="duplicateCriteriaSet",
+    status_code=201,
+)
+async def duplicate_criteria_set(
+    criteria_set_id: str, wanted: DuplicateRequest, criteria: Criteria, response: Response
+) -> CriteriaSetBody:
+    """Copy a set whole, under a new identifier.
+
+    **A full copy, never a sparse overlay** (`reqs.md` Q191). "Inherit from the default for
+    anything not overridden" cannot hold: weights sum to 100 within a pillar, so an override
+    that did not move its siblings would sum to 118. `CriteriaSet.duplicated_as` produces the
+    copy and the store writes it, so what a copy contains is decided in one place -- the domain
+    -- rather than here and in the SQL separately.
+
+    A duplicate is how a user gets a set they may change without touching the shipped one, which
+    is what makes `local_employment` safe to leave exactly as seeded.
+    """
+    original = await criteria.read_criteria_set(criteria_set_id)
+    copy = original.duplicated_as(wanted.id, wanted.name)
+    await criteria.create_criteria_set(copy)
+    response.headers["Location"] = f"/v1/criteria-sets/{wanted.id}"
+    return _set_body(copy)
