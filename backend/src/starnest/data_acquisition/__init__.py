@@ -14,5 +14,6 @@ from starnest.data_acquisition.adapter import (
     AcquisitionFailure,
     SourceAdapter,
 )
+from starnest.data_acquisition.run import RunOutcome, acquire
 
-__all__ = ["Acquired", "AcquisitionFailure", "SourceAdapter"]
+__all__ = ["Acquired", "AcquisitionFailure", "RunOutcome", "SourceAdapter", "acquire"]

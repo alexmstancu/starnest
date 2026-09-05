@@ -13,15 +13,13 @@ that column a Eurostat column, and the next adapter would have to know whose sta
 
 from types import MappingProxyType
 
-ISO_FOR_EUROSTAT = MappingProxyType({"EL": "GR", "UK": "GB"})
-"""Eurostat's code to ISO's, for the two that differ. Everything else is already ISO."""
+EUROSTAT_FOR_ISO = MappingProxyType({"GR": "EL", "GB": "UK"})
+"""ISO's code to Eurostat's, for the two that differ. Everything else is already the same.
 
-EUROSTAT_FOR_ISO = MappingProxyType({iso: eurostat for eurostat, iso in ISO_FOR_EUROSTAT.items()})
-
-
-def iso_code_for(eurostat_code: str) -> str:
-    """The ISO alpha-2 code for one of Eurostat's geo codes."""
-    return ISO_FOR_EUROSTAT.get(eurostat_code, eurostat_code)
+One direction only. Candidates store ISO and we ask Eurostat for their figures, so that is the
+translation this application makes; the inverse would be a function written to be exported
+rather than called.
+"""
 
 
 def eurostat_code_for(iso_code: str) -> str:

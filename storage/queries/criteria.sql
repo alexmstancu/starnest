@@ -182,9 +182,11 @@ WHERE  id = :criteria_set;
 -- An unreferenced CTE still executes -- that is guaranteed for data-modifying CTEs, and it is
 -- what lets the four threshold tables be cleared without being joined to anything.
 --
--- A set an evaluation still points at will not delete: non_match_reason.criterion references
--- criterion, and the foreign key raises rather than cascading. That failure is the 409 the
--- contract promises, and it is the database's answer rather than a check this file repeats.
+-- A saved evaluation does NOT block this, and used to. non_match_reason referenced the live
+-- criterion until 0108, so deleting a criterion any evaluation had ever ruled a candidate out
+-- on failed on a foreign key and went on failing (known-issues D26). The reason now names an
+-- attribute inside the evaluation's own frozen snapshot, so the interpretation an old ranking
+-- was computed with survives this delete rather than preventing it.
 WITH targeted AS (
     SELECT id FROM criterion WHERE criteria_set = :criteria_set
 ),
@@ -221,6 +223,54 @@ cleared_compound_rules AS (
     DELETE FROM criteria_set_compound_rule WHERE criteria_set = :criteria_set
 )
 DELETE FROM criteria_set WHERE id = :criteria_set;
+
+-- name: delete_criteria_set_contents(criteria_set)!
+-- Everything hanging off a set, leaving the set row itself.
+--
+-- What `replace_criteria_set` is built on: a set is written whole because weights sum to 100
+-- within a pillar and within a level, so a differential write would need this module to know
+-- what a change to a set means -- and that knowledge lives in `criteria/`, with the rebalancing
+-- rules. Clearing and rewriting keeps it there.
+--
+-- The set row stays, so a replace cannot turn a mistyped identifier into a new set nobody asked
+-- for. Same CTE structure as the delete below, and for the same reason: the children go first
+-- and every data-modifying CTE runs whether or not anything references it.
+WITH targeted AS (
+    SELECT id FROM criterion WHERE criteria_set = :criteria_set
+),
+cleared_anchors AS (
+    DELETE FROM criterion_scale_anchor
+    WHERE  criterion IN (SELECT id FROM targeted)
+),
+cleared_ranges AS (
+    DELETE FROM criterion_threshold_range
+    WHERE  criterion IN (SELECT id FROM targeted)
+),
+cleared_labels AS (
+    DELETE FROM criterion_threshold_label
+    WHERE  criterion IN (SELECT id FROM targeted)
+),
+cleared_booleans AS (
+    DELETE FROM criterion_threshold_boolean
+    WHERE  criterion IN (SELECT id FROM targeted)
+),
+cleared_shares AS (
+    DELETE FROM criterion_threshold_share
+    WHERE  criterion IN (SELECT id FROM targeted)
+),
+cleared_criteria AS (
+    DELETE FROM criterion WHERE criteria_set = :criteria_set
+),
+cleared_weights AS (
+    DELETE FROM pillar_weight WHERE criteria_set = :criteria_set
+),
+cleared_match_rules AS (
+    DELETE FROM criteria_set_match_rule WHERE criteria_set = :criteria_set
+),
+cleared_compound_rules AS (
+    DELETE FROM criteria_set_compound_rule WHERE criteria_set = :criteria_set
+)
+SELECT 1;
 
 -- name: duplicate_criteria_set(criteria_set, new_criteria_set, name)$
 -- A criteria set is a full copy, never a sparse overlay on another set (reqs.md 3.4, Q191).

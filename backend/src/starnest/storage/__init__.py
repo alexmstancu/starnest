@@ -18,15 +18,19 @@ This module translates and decides nothing. It has no HTTP, no clock, no domain 
 scoring and no interpretation of a row beyond turning it into the type the seam names.
 """
 
+from starnest.storage.candidate_store import PostgresCandidateStore
 from starnest.storage.catalog_store import PostgresCatalogStore
 from starnest.storage.connections import acquire
+from starnest.storage.criteria_store import PostgresCriteriaStore
 from starnest.storage.household_store import PostgresHouseholdStore
 from starnest.storage.queries import QUERY_DIRECTORY, load_queries
 from starnest.storage.value_store import PostgresValueStore
 
 __all__ = [
     "QUERY_DIRECTORY",
+    "PostgresCandidateStore",
     "PostgresCatalogStore",
+    "PostgresCriteriaStore",
     "PostgresHouseholdStore",
     "PostgresValueStore",
     "acquire",

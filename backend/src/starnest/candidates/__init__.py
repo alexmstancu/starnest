@@ -33,11 +33,13 @@ from starnest.candidates.levels import (
     LevelHierarchy,
     UnknownLevelError,
 )
+from starnest.candidates.store import CandidateStore
 
 __all__ = [
     "SEGMENT_SEPARATOR",
     "Candidate",
     "CandidateId",
+    "CandidateStore",
     "CountryCode",
     "Identifier",
     "InconsistentHierarchyError",

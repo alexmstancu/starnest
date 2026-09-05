@@ -7,7 +7,7 @@ product's interpretation as a scoring input.
 """
 
 from starnest.data_sources.eurostat.adapter import EurostatAdapter
-from starnest.data_sources.eurostat.geography import eurostat_code_for, iso_code_for
+from starnest.data_sources.eurostat.geography import eurostat_code_for
 from starnest.data_sources.eurostat.jsonstat import JsonStatError, Observation, observations
 from starnest.data_sources.eurostat.manifest import BASE_URL, QUERIES
 
@@ -18,6 +18,5 @@ __all__ = [
     "JsonStatError",
     "Observation",
     "eurostat_code_for",
-    "iso_code_for",
     "observations",
 ]
