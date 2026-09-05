@@ -73,15 +73,15 @@ Makefile      every command the project has
 | `make env` | Create `.env` from `.env.example` |
 | `make up` / `make down` | PostgreSQL only, for running backend and UI from the command line |
 | `make test` | Fast unit tests, no coverage |
-| `make coverage` / `make coverage-open` | Full suite with coverage; **fails below 75%**. HTML at `backend/htmlcov/` |
+| `make coverage` / `make coverage-open` | Full suite with coverage; **fails below 85%**. HTML at `backend/htmlcov/` |
 | `make boundaries` | `import-linter` — `arch.md` 6.2 as something a build fails on |
 | `make audit` | The two structural audits below |
 | `make openapi` | Regenerate `docs/openapi.implemented.yaml`. **Run after changing any endpoint** — a test fails when it is stale |
 | `make serve` / `make acquire` / `make rank` | Run the API; fetch real figures from Eurostat; print the ranking from what is stored |
 | **`make check`** | **Backend lint + boundaries + coverage + audits, then `ui-check`. Both sides. This is the gate** |
 | `make migrate` | Backs up first, then applies migrations. **Never automatic** (`arch.md` 7.4) |
-| `make ui-check` | The interface gate: `ui-lint` (eslint, type-aware) + `ui-typecheck` + `ui-coverage` (75% bar) |
-| `make ui-coverage` / `make e2e` | Interface coverage (75% bar); Playwright |
+| `make ui-check` | The interface gate: `ui-lint` (eslint, type-aware) + `ui-typecheck` + `ui-coverage` (85% bar) |
+| `make ui-coverage` / `make e2e` | Interface coverage (85% bar); Playwright |
 | `make docker-build` / `docker-up` / `docker-migrate` / `docker-down` | The three containers |
 | `make schema-diagram` / `schema-diagram-open` | Interactive ER diagram of the **live** schema, via Liam ERD. Output is generated and gitignored — run `make migrate` first, or the diagram shows the schema you have rather than the one you wrote |
 
@@ -98,7 +98,9 @@ The first checks the ontology's structural invariants — the two diagrams again
 
 ## Test coverage
 
-**75% of lines and 75% of branches, both sides**, configured in `backend/pyproject.toml` and `ui/vite.config.ts`. Below the bar the command fails.
+**85% of lines and 85% of branches, both sides**, configured in `backend/pyproject.toml` and `ui/vite.config.ts`. Below the bar the command fails.
+
+**Raised from 75 on 2026-09-05, because 75 had stopped being a check.** Both sides sit near 98%, so a three-quarters floor left roughly a fifth of the suite deletable without the gate noticing. A floor only checks anything when it sits close enough to reality that a real regression trips it.
 
 **It is a floor on the code, not a ceiling on the testing.** The target is full coverage of features and functionality; the percentage catches only one failure mode — a region of code nobody ran at all. "Coverage is green" is never the argument that a task is tested. Always cover the sad path: errors, edges, empty and missing input.
 

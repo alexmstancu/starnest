@@ -29,16 +29,22 @@ export default defineConfig({
       reporter: ["text", "html", "lcov"],
       reportsDirectory: "./coverage",
 
-      // The same bar as the backend: 75% lines and branches for the MVP.
+      // The same bar as the backend: 85%, raised from 75 on 2026-09-05.
       //
       // It is a floor on the code, not a ceiling on the testing. The target is full coverage
       // of features and functionality; this number only catches whole regions nobody
       // exercised. `thresholds` fails the run rather than printing a warning nobody reads.
+      //
+      // **Raised because 75 had stopped being a check.** Both sides sit near 98%, so a
+      // three-quarters floor left roughly a fifth of the suite deletable without the gate
+      // noticing. 85 is close enough to reality that a real regression trips it and far enough
+      // below branch coverage -- the tightest metric here -- to survive a module landing
+      // mid-build.
       thresholds: {
-        lines: 75,
-        branches: 75,
-        functions: 75,
-        statements: 75,
+        lines: 85,
+        branches: 85,
+        functions: 85,
+        statements: 85,
       },
 
       include: ["src/**/*.{ts,tsx}"],

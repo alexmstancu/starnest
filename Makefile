@@ -90,7 +90,7 @@ test-storage:  ## Tests against a real PostgreSQL — the constraints ARE the be
 test-acceptance:  ## The HTTP contract, end to end against a live backend
 	cd $(BACKEND) && uv run pytest -m acceptance
 
-coverage:  ## Full suite with coverage. Fails below 75% lines and branches
+coverage:  ## Full suite with coverage. Fails below 85% lines and branches
 	cd $(BACKEND) && uv run pytest $(COV)
 	@echo ""
 	@echo "  HTML report: backend/htmlcov/index.html   (make coverage-open)"
@@ -135,7 +135,7 @@ ui-typecheck:  ## tsc over the interface, with no emit
 ui-test:  ## Interface unit tests
 	cd $(UI) && npm run test
 
-ui-coverage:  ## Interface coverage. Fails below 75%
+ui-coverage:  ## Interface coverage. Fails below 85%
 	cd $(UI) && npm run coverage
 	@echo ""
 	@echo "  HTML report: ui/coverage/index.html   (make ui-coverage-open)"

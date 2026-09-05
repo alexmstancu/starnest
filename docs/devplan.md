@@ -194,13 +194,13 @@ A task is done when all of these hold — not when the code exists:
 - The code does what the task says, and nothing the task does not say.
 - **Unit tests cover the sad path**, not only the happy one: error cases, edge cases, empty
   and missing input (global `CLAUDE.md` 9.4).
-- **Coverage does not fall below 75%** — lines *and* branches. `make check` enforces it; a
+- **Coverage does not fall below 85%** — lines *and* branches, raised from 75 on 2026-09-05. `make check` enforces it; a
   task that drops the number below the bar is not done.
 - `ruff` clean, `import-linter` clean.
 - The full existing test suite still passes.
 - Anything left undone is written down, not left as an intention (`Later Equals Never`).
 
-> **75% is a floor on the code, not a ceiling on the testing, and the difference matters.**
+> **85% is a floor on the code, not a ceiling on the testing, and the difference matters.**
 > The target is **full coverage of features and functionality** — every requirement in
 > `reqs.md` exercised by something. The percentage catches only one failure mode: a whole
 > region of code nobody ran at all. A module can sit at 90% lines with an untested
@@ -251,7 +251,7 @@ starnest/
 ├── ui/                      TypeScript. A client of the contract, nothing more
 │   ├── src/                 React
 │   ├── e2e/                 Playwright — master agent's, not the screen author's
-│   └── vite.config.ts       includes the 75% vitest coverage thresholds
+│   └── vite.config.ts       includes the 85% vitest coverage thresholds
 ├── docs/                    reqs.md, arch.md, datasources.md, devplan.md, openapi.yaml
 ├── tools/                   the two structural audits
 ├── compose.yaml             three containers: database, backend, ui
@@ -334,7 +334,7 @@ relative, not calendar estimates.
 | # | Task | Size | Done when |
 |---|---|---|---|
 | **T0.1** | ~~Scaffold.~~ **Done ahead of P0 by master** — `backend/pyproject.toml`, the ten module directories, `ui/` with its Vite/Vitest/Playwright configs, `compose.yaml`, `Makefile`, `.env.example`, `.gitignore`, both `Dockerfile`s. The P0 agent **inherits** these and does not recreate them | — | `make env && make up` gives a database; `uv sync` resolves |
-| **T0.2** | ~~Tooling config.~~ **Also done ahead** — ruff, pytest markers, coverage at 75% lines and branches, and the four `import-linter` contracts of `arch.md` 6.2. What remains for the P0 agent: **the per-workstream database fixture** (section 0.5), and **proving the boundary contracts actually fail** | S | **Write a deliberately illegal import — `data/` importing `criteria/` — and watch `make boundaries` reject it, then delete it.** A linter that is silently misconfigured passes everything, so it is proven failing before it is trusted passing |
+| **T0.2** | ~~Tooling config.~~ **Also done ahead** — ruff, pytest markers, coverage at 85% lines and branches, and the four `import-linter` contracts of `arch.md` 6.2. What remains for the P0 agent: **the per-workstream database fixture** (section 0.5), and **proving the boundary contracts actually fail** | S | **Write a deliberately illegal import — `data/` importing `criteria/` — and watch `make boundaries` reject it, then delete it.** A linter that is silently misconfigured passes everything, so it is proven failing before it is trusted passing |
 | **T0.3** | Structural migrations: every table, constraint, view and index from `arch.md` 3, section 3.3b, section 4, section 9.3. Includes the composite-key type agreement, the one-of check on non-match reasons, the singleton checks, and the active-value view | **L** | Migrations apply to an empty database and are **idempotent** — applying twice is a no-op |
 | **T0.4** | Catalog migrations: 2 levels, 11 pillars, **41 country attributes** with value types and type parameters, data sources, breakdown schemes, the 4 country-relevant match rules (`reqs.md` 7.3), the 2 country compound rules (section 7.4, **thresholds `NULL`**), and the shipped default criteria set with its weights, goals and the 7 `blocks_if_missing` flags (section 7.5) | **L** | Every row traces to a table row in `reqs.md` 7.1 |
 | **T0.5** | Verify `make check` end to end — ruff + import-linter + coverage + both audits — and confirm the three containers build and start | S | One command, one exit code. `make docker-build && make docker-up && make docker-migrate` brings the stack up |
@@ -725,10 +725,17 @@ invariants live.
 
 ### 5.1 Coverage — the bar, and how to look at it
 
-**75% of lines and 75% of branches, enforced on both sides**, configured in
+**85% of lines and 85% of branches, enforced on both sides**, configured in
 `backend/pyproject.toml` (`[tool.coverage.report] fail_under`) and
 `ui/vite.config.ts` (`test.coverage.thresholds`). Below the bar the command fails; it
 does not print a warning nobody reads.
+
+**Raised from 75 on 2026-09-05.** The backend was at 97.8% and the interface at 98.5%, so a
+three-quarters floor had stopped being a check: roughly a fifth of the suite could have been
+deleted without the gate noticing. A floor only measures anything when it sits close enough to
+reality that a real regression trips it. 85 leaves about eight points of headroom on branch
+coverage, which is the tightest of the four metrics, so a module landing mid-build does not
+block the gate on its way to being finished.
 
 | Command | Produces |
 |---|---|
