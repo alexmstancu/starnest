@@ -14,6 +14,7 @@ thing for every candidate (`reqs.md` 5.5).
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Final
 
@@ -61,13 +62,11 @@ def _published_figure(payload: Index) -> Decimal:
     Under `percentile` this settles nothing and needs to: every candidate is ranked on the one
     provider's scale, so where that scale starts and stops cancels out.
 
-    Under `as_is` it is a real question left open. An `Index` carries `scale_min` and
-    `scale_max`, and its own docstring notes that those bounds would allow a deterministic
-    rescaling with no anchor anyone had to invent -- so rescaling 0-100 onto a scale of 10
-    would not be the fabrication that rescaling usually is. Reading the figure as published is
-    the conservative half of that: it can refuse, and it can never quietly report a number ten
-    times too large. Deciding the other half is not needed until an index is scored `as_is`
-    against a scale that is not its own.
+    Under `as_is` the figure is read as published here and rescaled by `normalisation`, from
+    the bounds this returns. Decided 2026-09-05 (`docs/d6-scale-anchors.md`): rescaling from
+    bounds the PUBLISHER declared invents nothing, which is what separates it from `fixed` --
+    `fixed` interpolates between anchor points somebody chooses, and this reads a mapping the
+    source already published. Ten of the shipped set's criteria turned on it.
     """
     return payload.value
 
@@ -95,6 +94,20 @@ zero.
 """
 
 
+@dataclass(frozen=True)
+class PublishedFigure:
+    """A figure, and the scale its publisher put it on if it declared one.
+
+    **The bounds travel with the figure rather than with the attribute**, because two candidates
+    can legitimately hold values from different providers for the same attribute -- that is what
+    the multi-source design is for -- and each must be read on the scale it was published on. A
+    bound taken from the attribute would silently apply one provider's scale to another's number.
+    """
+
+    magnitude: Decimal
+    published_bounds: tuple[Decimal, Decimal] | None = None
+
+
 def is_scoreable(value_type: ValueType) -> bool:
     """Whether this type carries a figure a score can be computed from at all."""
     return value_type in _READERS
@@ -117,3 +130,18 @@ def magnitude_of(value: Value) -> Decimal:
             "across candidates; it is matched against a threshold, never scored"
         )
     return reader(value.payload)
+
+
+def figure_of(value: Value) -> PublishedFigure:
+    """The comparable figure, with the scale it was published on where there is one.
+
+    Only an `Index` declares bounds, and it always does -- `scale_min` and `scale_max` are
+    required fields, because an index means nothing without them: 72 on Numbeo's 0-100 safety
+    index and 0.72 on the World Bank's -2.5 to 2.5 governance scale are not comparable, and only
+    the declared bounds say so.
+    """
+    magnitude = magnitude_of(value)
+    payload = value.payload
+    if isinstance(payload, Index):
+        return PublishedFigure(magnitude, (payload.scale_min, payload.scale_max))
+    return PublishedFigure(magnitude)

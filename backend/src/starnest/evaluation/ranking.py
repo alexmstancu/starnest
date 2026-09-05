@@ -22,7 +22,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from starnest.candidates import CandidateId
 from starnest.criteria import TOTAL, CriteriaSet, Criterion
 from starnest.data import Value
-from starnest.evaluation.magnitudes import UnscoreableValueError, magnitude_of
+from starnest.evaluation.magnitudes import PublishedFigure, UnscoreableValueError, figure_of
 from starnest.evaluation.normalisation import scores_for
 from starnest.evaluation.results import AttributeScore, CandidateResult, MatchStatus
 from starnest.evaluation.weighting import coverage_of, redistribute
@@ -119,7 +119,7 @@ def _level_wide_weights(
 
 def _figures_by_criterion(
     scored: Sequence[Criterion], values: ValuesByCandidate
-) -> dict[str, dict[str, Decimal]]:
+) -> dict[str, dict[str, PublishedFigure]]:
     """Every comparable figure, per criterion, per candidate.
 
     A value that carries no figure -- rejected, or of a type nothing can compare -- is simply
@@ -128,14 +128,14 @@ def _figures_by_criterion(
     that could not be read, and coverage reports both the same way.
     """
     by_attribute = {str(criterion.attribute): criterion for criterion in scored}
-    figures: dict[str, dict[str, Decimal]] = {attribute: {} for attribute in by_attribute}
+    figures: dict[str, dict[str, PublishedFigure]] = {attribute: {} for attribute in by_attribute}
     for candidate, candidate_values in values.items():
         for value in candidate_values:
             attribute = str(value.attribute)
             if attribute not in by_attribute:
                 continue
             try:
-                figures[attribute][candidate] = magnitude_of(value)
+                figures[attribute][candidate] = figure_of(value)
             except UnscoreableValueError:
                 continue
     return figures
@@ -143,7 +143,7 @@ def _figures_by_criterion(
 
 def _scores_by_criterion(
     scored: Sequence[Criterion],
-    figures: Mapping[str, Mapping[str, Decimal]],
+    figures: Mapping[str, Mapping[str, PublishedFigure]],
     *,
     score_scale_max: int,
 ) -> dict[str, dict[str, int]]:

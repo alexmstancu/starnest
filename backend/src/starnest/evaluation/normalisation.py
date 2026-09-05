@@ -7,9 +7,16 @@ ever produces uses it: a candidate's score is its standing among the candidates 
 so real values alone are enough. Nothing has to be invented, and `devplan.md` 0.3's stop rule
 is never approached.
 
-**`as_is` needs the figure to already be a score**, and refuses when it is not. That refusal is
-the whole of its value: a Numbeo index published 0-100 read onto a scale of 10 would produce
-plausible numbers that are wrong by a factor of ten, and nothing downstream could tell.
+**`as_is` takes the figure as the score**, and refuses one that is not on the scale -- unless
+its publisher declared the scale it *is* on, in which case it is mapped across. Decided
+2026-09-05 (`docs/d6-scale-anchors.md`): rescaling from bounds the source published invents
+nothing, and it is what separates this from `fixed`, which interpolates between anchor points
+somebody chooses. Without it, a World Bank governance figure of 0.72 and a Numbeo index of 72
+mean similar things and score forty-fold apart.
+
+Where no bounds are declared the refusal stands, and it is still the greater part of the
+method's value: a figure that is neither on the score scale nor on a stated one of its own is a
+number nobody can place.
 
 **`fixed` is absent deliberately.** It interpolates between anchor points and no anchor ships
 (`reqs.md` 7.1, `devplan.md` 0.3) -- 26 of the 41 shipped criteria declare it and every one of
@@ -24,6 +31,7 @@ from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal
 
 from starnest.criteria import Goal, NormalisationMethod
+from starnest.evaluation.magnitudes import PublishedFigure
 
 
 class NormalisationError(ValueError):
@@ -31,7 +39,7 @@ class NormalisationError(ValueError):
 
 
 def scores_for(
-    figures: Sequence[Decimal],
+    figures: Sequence[PublishedFigure] | Sequence[Decimal],
     *,
     method: NormalisationMethod,
     goal: Goal,
@@ -48,11 +56,20 @@ def scores_for(
         raise NormalisationError(
             f"a score scale must have a top; {score_scale_max} leaves no score to award"
         )
+    published = tuple(
+        figure if isinstance(figure, PublishedFigure) else PublishedFigure(figure)
+        for figure in figures
+    )
     if method is NormalisationMethod.PERCENTILE:
-        return _by_standing(figures, goal=goal, score_scale_max=score_scale_max)
+        return _by_standing(
+            [figure.magnitude for figure in published],
+            goal=goal,
+            score_scale_max=score_scale_max,
+        )
     if method is NormalisationMethod.AS_IS:
         return tuple(
-            _already_a_score(f, goal=goal, score_scale_max=score_scale_max) for f in figures
+            _already_a_score(figure, goal=goal, score_scale_max=score_scale_max)
+            for figure in published
         )
     raise NormalisationError(
         f"{method} cannot be applied yet; only percentile and as_is are implemented "
@@ -60,20 +77,50 @@ def scores_for(
     )
 
 
-def _already_a_score(figure: Decimal, *, goal: Goal, score_scale_max: int) -> int:
-    """The figure is the score, once the goal has had its say.
+def _already_a_score(figure: PublishedFigure, *, goal: Goal, score_scale_max: int) -> int:
+    """The figure as a score, mapped from its published scale where it declares one.
 
     Refusing an out-of-range figure rather than clamping it: clamping turns a source that
     disagrees with the declared scale into a plausible score at the boundary, and every
     candidate whose figure overshoots then ties at the top for a reason nobody can see.
     """
-    if not 0 <= figure <= score_scale_max:
+    on_the_score_scale = _mapped(figure, score_scale_max)
+    if not 0 <= on_the_score_scale <= score_scale_max:
         raise NormalisationError(
-            f"{figure} is not a score on a scale of 0 to {score_scale_max}; `as_is` is for "
-            "figures already on the score scale, and rescaling one is what `fixed` is for"
+            f"{figure.magnitude} is not a score on a scale of 0 to {score_scale_max} and "
+            "declares no scale of its own; `as_is` is for a figure that is already a score, "
+            "and choosing where one sits is what `fixed` is for"
         )
-    scored = figure if goal is Goal.MAXIMISE else Decimal(score_scale_max) - figure
+    scored = (
+        on_the_score_scale
+        if goal is Goal.MAXIMISE
+        else Decimal(score_scale_max) - on_the_score_scale
+    )
     return int(scored.quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+def _mapped(figure: PublishedFigure, score_scale_max: int) -> Decimal:
+    """A published figure moved onto the score scale, or left alone where it declares none.
+
+    Linear between the publisher's own bounds, so the bottom of their scale is 0 and the top is
+    the whole of ours.
+
+    **A figure outside the bounds it declares needs no guard here**, which is worth stating
+    because the obvious one was written and then removed: the mapping is monotonic, so anything
+    below the publisher's floor maps below 0 and anything above their ceiling maps above the
+    score scale, and `_already_a_score` refuses both. A guard that cannot change an outcome
+    reads as a case that happens. `Index` also refuses to construct a value outside the scale it
+    declares, so the source would have to contradict itself twice.
+
+    Inverted bounds are a different matter and are checked: they would divide by a negative and
+    turn the whole scale upside down without ever leaving the range.
+    """
+    if figure.published_bounds is None:
+        return figure.magnitude
+    lowest, highest = figure.published_bounds
+    if highest <= lowest:
+        return figure.magnitude
+    return (figure.magnitude - lowest) / (highest - lowest) * Decimal(score_scale_max)
 
 
 def _by_standing(

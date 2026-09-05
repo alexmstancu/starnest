@@ -427,14 +427,23 @@ operation ID that `openapi.yaml` designed. This is the guard that made code-firs
 backend, the sidebar shows the active criteria set and the candidate counts, the Configure tab
 renders the pillar tree, and the on-screen total reads 100%.
 
-### Deriving the scale anchors — a PRECONDITION of Gate A, not a step inside it
+### Deriving the scale anchors — answered, and not the way this section assumed
 
-> **Revised 2026-09-05.** This was written as a step within Gate A. It is not: Gate A's step 6
-> asks the shipped set to return `insufficient_data` naming the required attributes it lacks,
-> and the shipped set cannot reach that answer, because 26 of its criteria normalise `fixed`
-> with no anchors and the other 15 normalise `as_is` against figures that are not on the score
-> scale. **It cannot score with perfect data.** Until the anchors exist, `minimal` (`0121`) is
-> the only set that ranks anything, and Gate A step 6 is untestable rather than failing.
+> **Revised 2026-09-05, then answered the same day** (`docs/d6-scale-anchors.md`).
+>
+> This was written as one step inside Gate A: sit down, choose 26 sets of anchors, proceed. Two
+> things were wrong with that. Ten of the criteria it counted did not need anchors at all —
+> they are `Index` attributes, and `as_is` now maps them from the bounds their publishers
+> declare. Three more could never have been scored by any method, because they are `LabelSet`
+> attributes and there is no arithmetic that orders a Köppen code.
+>
+> **And the 23 that remain cannot be answered before their data arrives.** Choosing anchors for
+> an attribute nobody has fetched is guessing about a distribution that does not exist yet. So
+> anchors are decided per attribute, as P4 brings each one's figures — which makes this a
+> recurring small decision rather than a gate-shaped one.
+>
+> Gate A step 6 is now reachable: the shipped set's remaining criteria honestly lack figures
+> rather than being unscoreable by construction.
 
 
 **26 of the 41 country criteria normalise `fixed`, and no anchors ship** (`reqs.md` 7.1
@@ -732,7 +741,7 @@ Each blocks something specific. **D6 is the one blocking now** — the shipped c
 | **D3** | ~~The interface's component library.~~ **Answered 2026-09-05: none, for now.** | — | **Answered.** The interface is built behaviour-first while there is no visual design (`CLAUDE.md`): semantic HTML, roles and labels a test can find, styling confined to `styles.css`. A component kit is a design decision, and it is deferred to the design pass rather than guessed at now — which also keeps the visuals cheap to swap, since nothing is coupled to a kit's idioms |
 | **D4** | **How a coordinate-bound source answers a country-level attribute.** Open-Meteo is coordinate-bound, but `country.avg_annual_temperature` is a national figure. Centroid? Capital? Population-weighted mean of the largest cities? Grid mean? **The documents do not resolve this**, and it changes what the number means | **W4-C** | **Population-weighted mean over the country's largest cities.** A centroid gives Spain the temperature of an empty plateau; a capital gives Portugal the temperature of Lisbon. Neither describes where people would live. This is a real modelling choice and worth your call |
 | **D5** | **The compound-rule thresholds** for `mild_now_brutal_later` and `cheap_but_taxed` (`reqs.md` 7.4, both TBD) | The rules firing at all | **Leave `NULL` through v1.** They are meant to meet real figures first — which Gate B is the first moment that becomes possible |
-| **D6** | **The scale anchors, and what `as_is` should do with a published index.** Prepared in `docs/d6-scale-anchors.md`, which found it to be three problems rather than one — two decisions and a defect. 26 criteria normalise `fixed` with no anchors; 15 normalise `as_is` against figures that are not on the score scale. **Added 2026-09-05** | **Everything.** The shipped criteria set cannot score at all until this is answered, with or without data — so Gate A step 6 is untestable and every ranking runs on `minimal` instead | **The most valuable decision outstanding.** Two parts. (a) The anchors themselves are yours: what rent is affordable, what tax rate is high. Preparing it is mechanical — the attributes, their units, and the real figures now in the database to calibrate against. (b) Whether `as_is` should rescale an `Index` from its declared `scale_min`/`scale_max` is a design question the code deliberately left open: rescaling from published bounds invents no anchor, so it may be legitimate rather than `fixed` by another name (`evaluation/magnitudes.py`) |
+| **D6** | ~~The scale anchors, and what `as_is` should do with a published index.~~ **Answered 2026-09-05**, and it was three problems rather than one (`docs/d6-scale-anchors.md`) | — | **Answered.** (A) `as_is` maps a published `Index` from the `scale_min`/`scale_max` its own publisher declared — rescaling from bounds the source published invents nothing, and it unblocked 10 criteria with no band chosen. (B) Three `LabelSet` criteria carrying 68 weight-points asked to be scored, which `reqs.md` 3.3a forbids; migration `0122` corrects them and adds the constraint so it cannot recur. (C) The remaining 26 need anchors and 23 have no figures to calibrate against, so they are answered **per attribute as its data lands**, not in one sitting before Gate A |
 | **D7** | **Which pillars to cover next.** The adapter fan-out can be ordered by adapter (all of Eurostat, then all of OECD) or by pillar (one attribute each from safety, health, connectivity, then depth). **Added 2026-09-05** | P4's ordering, and how soon the ranking means anything | **By pillar.** The ranking rests on 2 of 11 pillars and two of its three attributes measure housing cost; a fourth housing attribute changes almost nothing and the first safety attribute changes everything. Adapter convenience is the wrong axis to optimise while coverage is this narrow |
 
 > **D1, decided: the package is `starnest`, and the rule it relaxes is worth stating precisely.**

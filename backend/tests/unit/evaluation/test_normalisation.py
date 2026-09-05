@@ -15,7 +15,7 @@ from decimal import Decimal
 import pytest
 
 from starnest.criteria import Goal, NormalisationMethod
-from starnest.evaluation import NormalisationError, scores_for
+from starnest.evaluation import NormalisationError, PublishedFigure, scores_for
 
 A_SMALL_SCALE = 10
 
@@ -152,3 +152,69 @@ def test_fixed_is_refused_rather_than_silently_wrong() -> None:
             goal=Goal.MAXIMISE,
             score_scale_max=A_SMALL_SCALE,
         )
+
+
+# --- as_is over a published index (D6 (A), decided 2026-09-05) -------------------------------
+
+
+def published(figure: str, *, bounds: tuple[str, str] | None = None) -> PublishedFigure:
+    return PublishedFigure(
+        Decimal(figure),
+        None if bounds is None else (Decimal(bounds[0]), Decimal(bounds[1])),
+    )
+
+
+def as_is_published(figures, *, goal: Goal = Goal.MAXIMISE, scale: int = A_SMALL_SCALE):
+    return scores_for(figures, method=NormalisationMethod.AS_IS, goal=goal, score_scale_max=scale)
+
+
+class TestAnIndexIsReadOnTheScaleItsPublisherDeclared:
+    """`docs/d6-scale-anchors.md` (A). Rescaling from bounds the SOURCE published invents
+    nothing, which is what separates it from `fixed` -- `fixed` interpolates between anchor
+    points somebody chooses, and this reads a mapping that already exists."""
+
+    def test_a_figure_on_its_own_scale_maps_onto_the_score_scale(self) -> None:
+        """Numbeo publishes 0-100. On a score scale of 10, 72 is a 7."""
+        assert as_is_published([published("72", bounds=("0", "100"))]) == (7,)
+
+    def test_a_scale_that_starts_below_zero_maps_too(self) -> None:
+        """The World Bank's governance indicators run -2.5 to 2.5, so 0.72 is well above the
+        middle -- and unmapped it would have scored 0.72 out of 100, forty-fold adrift of a
+        Numbeo index meaning something similar."""
+        assert as_is_published([published("0.72", bounds=("-2.5", "2.5"))], scale=100) == (64,)
+
+    def test_the_ends_of_a_published_scale_are_the_ends_of_ours(self) -> None:
+        column = [published("0", bounds=("0", "100")), published("100", bounds=("0", "100"))]
+
+        assert as_is_published(column) == (0, A_SMALL_SCALE)
+
+    def test_two_publishers_scales_are_each_read_on_their_own(self) -> None:
+        """Why the bounds travel with the figure and not with the attribute: the multi-source
+        design exists so two candidates may hold values from different providers."""
+        numbeo = published("50", bounds=("0", "100"))
+        world_bank = published("0", bounds=("-2.5", "2.5"))
+
+        assert as_is_published([numbeo, world_bank]) == (5, 5)
+
+    def test_a_figure_with_no_declared_scale_is_still_taken_as_it_stands(self) -> None:
+        """The behaviour every other value type keeps: only an Index declares bounds."""
+        assert as_is_published([published("7")]) == (7,)
+
+    def test_a_figure_outside_the_bounds_it_declares_is_refused(self) -> None:
+        """A source contradicting its own published range is a fault worth surfacing, not one
+        to smooth over by clamping."""
+        with pytest.raises(NormalisationError, match="not a score"):
+            as_is_published([published("140", bounds=("0", "100"))])
+
+    def test_minimising_reflects_the_mapped_figure(self) -> None:
+        """A cost index of 72 on 0-100, read as "lower is better", is a 3 out of 10."""
+        assert as_is_published([published("72", bounds=("0", "100"))], goal=Goal.MINIMISE) == (3,)
+
+    def test_bounds_the_wrong_way_round_do_not_invert_the_scale(self) -> None:
+        """`Index` refuses to declare these, but `scores_for` is public and takes a figure
+        directly -- and dividing by a negative span would turn every score upside down while
+        staying inside the range, so nothing downstream could tell.
+
+        Left as it stands instead, which the range check below then judges on its merits.
+        """
+        assert as_is_published([published("7", bounds=("10", "0"))]) == (7,)

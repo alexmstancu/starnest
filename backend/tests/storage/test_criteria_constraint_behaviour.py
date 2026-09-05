@@ -125,3 +125,82 @@ class TestACriterionJudgesAnAttributeThatHasAPillar:
 
         with pytest.raises(errors.ForeignKeyViolation):
             _attach_a_criterion(connection, attribute=A_SCORED_ATTRIBUTE, pillar=A_DIFFERENT_PILLAR)
+
+
+# --- a criterion may only score what carries a comparable figure (0122) ----------------------
+
+A_LABELLED_ATTRIBUTE = "country.climate_zone"
+"""Köppen codes. There is no arithmetic that puts `Cfb` above `Dfb` (`reqs.md` 3.3a)."""
+
+
+def _attach_a_labelled_criterion(connection: psycopg.Connection, *, is_scored: bool) -> None:
+    connection.execute(
+        """
+        INSERT INTO criterion (criteria_set, attribute, pillar, value_type, is_scored, weight,
+                               goal, normalisation_method)
+        SELECT %s, a.id, a.pillar, a.value_type, %s, 10, 'maximise', 'as_is'
+        FROM   attribute AS a WHERE a.id = %s
+        """,
+        (A_SET, is_scored, A_LABELLED_ATTRIBUTE),
+    )
+
+
+class TestOnlyAComparableFigureCanBeScored:
+    """Four of the ten value types carry no number. A criterion that asks to score one would
+    hold weight that redistributes away on every candidate for ever, while coverage reported it
+    as missing data -- and the figure is not missing, it is not a number."""
+
+    def test_a_label_set_criterion_may_still_be_declared(
+        self, connection: psycopg.Connection
+    ) -> None:
+        """The control, and the point: excluding a criterion is not a downgrade. It still
+        matches, still gates through a threshold, and still shows in the drill-down."""
+        _record_the_catalog(connection)
+
+        _attach_a_labelled_criterion(connection, is_scored=False)
+
+        stored = connection.execute(
+            "SELECT is_scored FROM criterion WHERE criteria_set = %s AND attribute = %s",
+            (A_SET, A_LABELLED_ATTRIBUTE),
+        ).fetchone()
+        assert stored == (False,)
+
+    def test_a_label_set_criterion_may_not_ask_to_be_scored(
+        self, connection: psycopg.Connection
+    ) -> None:
+        _record_the_catalog(connection)
+
+        with pytest.raises(errors.CheckViolation):
+            _attach_a_labelled_criterion(connection, is_scored=True)
+
+    def test_a_numeric_criterion_may_ask_to_be_scored(self, connection: psycopg.Connection) -> None:
+        """The other control. Count carries a figure, so nothing here is refused."""
+        _record_the_catalog(connection)
+
+        _attach_a_criterion(connection, attribute=A_SCORED_ATTRIBUTE, pillar=ITS_PILLAR)
+
+        stored = connection.execute(
+            "SELECT is_scored FROM criterion WHERE criteria_set = %s AND attribute = %s",
+            (A_SET, A_SCORED_ATTRIBUTE),
+        ).fetchone()
+        assert stored == (True,)
+
+
+def test_the_shipped_set_no_longer_asks_to_score_a_label_set(
+    connection: psycopg.Connection,
+) -> None:
+    """The three rows `0122` corrected, checked in the seeded catalog rather than in a fixture.
+
+    They carried 68 weight-points between them across three pillars, and the defect was
+    invisible until `evaluation/` existed to try scoring them.
+    """
+    asking = connection.execute(
+        """
+        SELECT c.attribute FROM criterion AS c
+        JOIN   attribute AS a ON a.id = c.attribute
+        WHERE  c.is_scored
+          AND  a.value_type IN ('LabelSet', 'ShareComposition', 'Boolean', 'Text')
+        """
+    ).fetchall()
+
+    assert asking == []

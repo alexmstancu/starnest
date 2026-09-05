@@ -11,7 +11,13 @@ rule shapes, match rules and evaluation snapshots are deliberately absent, and e
 for a reason the module that would hold it records.
 """
 
-from starnest.evaluation.magnitudes import UnscoreableValueError, is_scoreable, magnitude_of
+from starnest.evaluation.magnitudes import (
+    PublishedFigure,
+    UnscoreableValueError,
+    figure_of,
+    is_scoreable,
+    magnitude_of,
+)
 from starnest.evaluation.normalisation import NormalisationError, scores_for
 from starnest.evaluation.ranking import RankingError, rank_candidates
 from starnest.evaluation.results import AttributeScore, CandidateResult, MatchStatus
@@ -22,10 +28,12 @@ __all__ = [
     "CandidateResult",
     "MatchStatus",
     "NormalisationError",
+    "PublishedFigure",
     "RankingError",
     "UnscoreableValueError",
     "WeightingError",
     "coverage_of",
+    "figure_of",
     "is_scoreable",
     "magnitude_of",
     "rank_candidates",
