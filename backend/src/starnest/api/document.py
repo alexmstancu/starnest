@@ -31,6 +31,7 @@ def served_schema() -> dict:
         candidates=None,  # type: ignore[arg-type]
         values=None,  # type: ignore[arg-type]
         catalog_store=None,  # type: ignore[arg-type]
+        run_store=None,  # type: ignore[arg-type]
     ).openapi()
 
 

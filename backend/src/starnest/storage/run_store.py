@@ -1,0 +1,160 @@
+"""`RunStore` against PostgreSQL: what a run planned, did and failed at.
+
+`arch.md` 6.3. The scope is written **expanded** -- one row per candidate and one per attribute
+-- rather than as "everything at this level". A scope recorded as "everything" would mean
+something different after the catalog grew, and both selective retry and the dry-run estimate
+need to know what was actually asked for on the day.
+
+One read serves a poll (`arch.md` 8.4): status, progress and counts arrive together, because a
+screen polling a live run should not cost four queries a second.
+"""
+
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Any
+
+from psycopg_pool import AsyncConnectionPool
+
+from starnest.data_acquisition import (
+    AcquisitionFailure,
+    Run,
+    RunScope,
+    RunStatus,
+    RunStore,
+    UnknownRunError,
+)
+from starnest.storage.connections import acquire
+from starnest.storage.queries import load_queries
+
+
+class PostgresRunStore(RunStore):
+    """The run record, as the four tables of `0004-data-acquisition.sql` hold it."""
+
+    def __init__(self, pool: AsyncConnectionPool) -> None:
+        self._pool = pool
+        self._queries = load_queries()
+
+    async def start_run(self, scope: RunScope, *, triggered_by: str) -> int:
+        """Open the run and write its scope, in one transaction.
+
+        Opened before anything is fetched: a run that dies mid-flight must still be visible as
+        one that started and never finished, which is what the abandoned-run sweep looks for
+        (`arch.md` 9.2). A run written only on success would leave nothing to sweep.
+        """
+        if not scope.candidates or not scope.attributes:
+            raise ValueError(
+                "a run's scope is stored expanded, so the candidates and attributes must "
+                "already have been resolved from the level"
+            )
+        async with acquire(self._pool) as connection:
+            row = await self._queries.insert_run(
+                connection,
+                started_at=datetime.now(tz=UTC),
+                triggered_by=triggered_by,
+                run_status=str(RunStatus.RUNNING),
+                level=scope.level,
+            )
+            await self._queries.insert_run_candidates(
+                connection, data_acquisition_run=row.id, candidates=list(scope.candidates)
+            )
+            await self._queries.insert_run_attributes(
+                connection, data_acquisition_run=row.id, attributes=list(scope.attributes)
+            )
+        return int(row.id)
+
+    async def finish_run(self, run: int, *, status: RunStatus, finished_at: datetime) -> None:
+        async with acquire(self._pool) as connection:
+            await self._queries.update_run_status(
+                connection,
+                data_acquisition_run=run,
+                run_status=str(status),
+                finished_at=finished_at,
+            )
+
+    async def record_failures(self, run: int, failures: Sequence[AcquisitionFailure]) -> None:
+        """One row per (candidate, attribute), which is the unit a retry addresses.
+
+        A failure with no candidate -- a whole indicator unreachable -- has nothing to key on
+        and is skipped rather than invented against an arbitrary candidate. The run's status
+        carries it instead.
+        """
+        addressable = [failure for failure in failures if failure.candidate]
+        if not addressable:
+            return
+        async with acquire(self._pool) as connection:
+            for failure in addressable:
+                await self._queries.upsert_run_failure(
+                    connection,
+                    data_acquisition_run=run,
+                    candidate=failure.candidate,
+                    attribute=str(failure.attribute),
+                    error_message=failure.reason,
+                )
+
+    async def read_run(self, run: int) -> Run:
+        async with acquire(self._pool) as connection:
+            row = await self._queries.select_run(connection, data_acquisition_run=run)
+            if row is None:
+                raise UnknownRunError(f"there is no data acquisition run numbered {run}")
+            failures = [
+                failure
+                async for failure in self._queries.select_run_failures(
+                    connection, data_acquisition_run=run
+                )
+            ]
+        return _run_from(row, failures)
+
+    async def read_runs(self, *, limit: int = 20, offset: int = 0) -> tuple[Run, ...]:
+        async with acquire(self._pool) as connection:
+            rows = [
+                row
+                async for row in self._queries.select_runs(
+                    connection, limit_rows=limit, offset_rows=offset
+                )
+            ]
+        return tuple(_run_header_from(row) for row in rows)
+
+    async def count_runs(self) -> int:
+        async with acquire(self._pool) as connection:
+            return int(await self._queries.count_runs(connection))
+
+
+def _run_from(row: Any, failures: Sequence[Any]) -> Run:
+    return Run(
+        id=int(row.id),
+        status=RunStatus(row.run_status),
+        started_at=row.started_at,
+        triggered_by=row.triggered_by,
+        finished_at=row.finished_at,
+        llm_call_count=int(row.llm_call_count),
+        cost_eur=Decimal(str(row.cost_eur)),
+        scope=RunScope(
+            level=row.level,
+            candidates=tuple(row.scope_candidates),
+            attributes=tuple(row.scope_attributes),
+        ),
+        items_total=int(row.items_total),
+        items_completed=int(row.items_completed),
+        failures=tuple(
+            AcquisitionFailure(
+                attribute=failure.attribute,
+                candidate=failure.candidate,
+                reason=failure.error_message,
+            )
+            for failure in failures
+        ),
+    )
+
+
+def _run_header_from(row: Any) -> Run:
+    """A list row, which carries no scope and no failures -- the list is a list."""
+    return Run(
+        id=int(row.id),
+        status=RunStatus(row.run_status),
+        started_at=row.started_at,
+        triggered_by=row.triggered_by,
+        finished_at=row.finished_at,
+        llm_call_count=int(row.llm_call_count),
+        cost_eur=Decimal(str(row.cost_eur)),
+    )

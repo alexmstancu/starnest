@@ -33,6 +33,19 @@ components:
       - items
       title: AttributesBody
       type: object
+    BySourceBody:
+      properties:
+        data_source:
+          title: Data Source
+          type: string
+        items:
+          title: Items
+          type: integer
+      required:
+      - data_source
+      - items
+      title: BySourceBody
+      type: object
     CandidateBody:
       properties:
         id:
@@ -214,6 +227,23 @@ components:
       - name
       title: DuplicateRequest
       type: object
+    FailureBody:
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        candidate:
+          title: Candidate
+          type: string
+        error_message:
+          title: Error Message
+          type: string
+      required:
+      - candidate
+      - attribute
+      - error_message
+      title: FailureBody
+      type: object
     HTTPValidationError:
       properties:
         detail:
@@ -335,6 +365,23 @@ components:
       - items
       title: PillarsBody
       type: object
+    ProgressBody:
+      properties:
+        items_completed:
+          title: Items Completed
+          type: integer
+        items_failed:
+          title: Items Failed
+          type: integer
+        items_total:
+          title: Items Total
+          type: integer
+      required:
+      - items_total
+      - items_completed
+      - items_failed
+      title: ProgressBody
+      type: object
     RankingBody:
       properties:
         candidates:
@@ -375,6 +422,74 @@ components:
       - pillar
       - criteria
       title: RebalancedPillar
+      type: object
+    RunBody:
+      additionalProperties: true
+      type: object
+    RunDetailBody:
+      additionalProperties: true
+      type: object
+    RunPlanBody:
+      properties:
+        by_source:
+          default: []
+          items:
+            $ref: '#/components/schemas/BySourceBody'
+          title: By Source
+          type: array
+        estimated_cost_eur:
+          title: Estimated Cost Eur
+          type: number
+        items_total:
+          title: Items Total
+          type: integer
+        llm_call_count:
+          title: Llm Call Count
+          type: integer
+      required:
+      - items_total
+      - llm_call_count
+      - estimated_cost_eur
+      title: RunPlanBody
+      type: object
+    RunScopeBody:
+      description: What a run is asked to cover. Null means everything at the level.
+      properties:
+        attributes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Attributes
+        candidates:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Candidates
+        level:
+          title: Level
+          type: string
+      required:
+      - level
+      title: RunScopeBody
+      type: object
+    RunsBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RunBody'
+          title: Items
+          type: array
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - total
+      title: RunsBody
       type: object
     ScaleAnchorBody:
       properties:
@@ -710,6 +825,155 @@ paths:
       summary: Duplicate Criteria Set
       tags:
       - criteria
+  /v1/data-acquisition-runs:
+    get:
+      description: Recent runs, newest first. Headers only -- a scope and its failures
+        are the detail read.
+      operationId: listRuns
+      parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          title: Limit
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          title: Offset
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunsBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Runs
+      tags:
+      - acquisition
+    post:
+      description: 'Start a run, and answer with it.
+
+
+        **It runs inline today, and the response carries a finished run.** 202 is
+        still right --
+
+        the work was accepted and the client polls the id either way -- but claiming
+        the run is in
+
+        flight when it is not would be a lie a screen could act on. One source and
+        31 countries take
+
+        a few seconds, and a background task would add a lifecycle to manage for no
+        benefit anybody
+
+        can currently see. Making it genuinely asynchronous is a change here and nowhere
+        else,
+
+        because the run record already holds everything the polling endpoint reads
+        (`arch.md` 8.4).
+
+
+        The run row exists before any figure is fetched, so a process that dies mid-run
+        leaves a
+
+        visibly unfinished run rather than nothing at all.'
+      operationId: startRun
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunScopeBody'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Start Run
+      tags:
+      - acquisition
+  /v1/data-acquisition-runs/plan:
+    post:
+      description: 'What a run would do, without doing any of it.
+
+
+        Counts the work as the cross product of candidates and answerable attributes,
+        per source.
+
+        An attribute no adapter can supply is not counted: promising to fetch something
+        nothing can
+
+        fetch would make the estimate a wish.'
+      operationId: planRun
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunScopeBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunPlanBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Plan Run
+      tags:
+      - acquisition
+  /v1/data-acquisition-runs/{run_id}:
+    get:
+      description: One run with its scope, progress and failures -- what a screen
+        polls.
+      operationId: getRun
+      parameters:
+      - in: path
+        name: run_id
+        required: true
+        schema:
+          title: Run Id
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunDetailBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Run
+      tags:
+      - acquisition
   /v1/household:
     get:
       description: Raises `HouseholdNotConfiguredError` -- a 404 -- when nothing has

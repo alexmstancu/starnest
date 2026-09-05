@@ -63,4 +63,25 @@ data rather than by a fixture invented to exercise them.
 """
 
 BASE_URL: Final = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data"
-"""Free, unauthenticated, no quota. No key reaches this file, and none is needed."""
+"""Free, unauthenticated, and the guidelines publish no quota. No key reaches this file.
+
+`format=JSON` is the only value the API supports and `lang` defaults to EN; both are sent
+explicitly anyway, because a default that changes is a response that changes.
+"""
+
+# --- What the catalogue API offers, and why none of it is used yet ---------------------------
+#
+# Eurostat publishes a catalogue alongside the data
+# (`/api/dissemination/catalogue/`): a table of contents, a DCAT feed of UPDATES only, and a
+# metabase listing every dataset's dimensions. Three things it would buy, none of them needed
+# for the work in hand:
+#
+#   * **Verifying these dataset codes still exist**, which the `live` test currently infers from
+#     a successful fetch.
+#   * **Fetching only what changed.** Datasets are refreshed twice a day, at 11:00 and 23:00
+#     Europe/Brussels, so a full sweep re-downloads mostly unchanged series.
+#   * **Discovering a dataset's dimensions** rather than reading them off a captured response,
+#     which is how the filters below were found.
+#
+# Left unbuilt deliberately: re-fetch scheduling is `reqs.md` 6.6's question and nothing asks it
+# yet, and a catalogue reader with no caller would be code written to be exported.

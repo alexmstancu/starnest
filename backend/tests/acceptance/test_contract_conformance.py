@@ -33,6 +33,7 @@ A_REQUEST_FOR = {
     "listLevels": ("get", "/v1/levels", {}),
     "listCriteriaSets": ("get", "/v1/criteria-sets", {}),
     "listCandidates": ("get", "/v1/candidates", {"level": COUNTRY}),
+    "listRuns": ("get", "/v1/data-acquisition-runs", {}),
     "getCriteriaSet": ("get", f"/v1/criteria-sets/{MINIMAL}", {}),
     "getRanking": ("get", "/v1/rankings", {"criteria_set": MINIMAL, "level": COUNTRY}),
 }
@@ -52,14 +53,24 @@ def _served_get_operations() -> set[str]:
     }
 
 
+COVERED_BY_A_SEQUENCE = frozenset({"getRun"})
+"""Reads that need something to exist before they can be read.
+
+`getRun` needs a run, so it is checked in `test_the_run_endpoints_match_the_designed_shapes`
+alongside the plan and the start -- in the order a client meets them, rather than parametrised
+apart from the thing that creates what it reads.
+"""
+
+
 def test_every_served_read_has_a_conformance_case() -> None:
     """The guard on the guard.
 
     Parametrising over a hand-kept list would quietly stop covering the endpoint added after
     somebody forgot to extend it -- so the list is compared to what is actually served, and
-    falls behind loudly instead.
+    falls behind loudly instead. An operation checked by a dedicated test is named above rather
+    than dropped, so "covered elsewhere" stays a decision somebody wrote down.
     """
-    assert _served_get_operations() == set(A_REQUEST_FOR)
+    assert _served_get_operations() == set(A_REQUEST_FOR) | COVERED_BY_A_SEQUENCE
 
 
 @pytest.mark.parametrize("operation", sorted(A_REQUEST_FOR))
@@ -165,3 +176,27 @@ async def test_a_stored_household_comes_back_in_the_designed_shape(
     assert response.status_code == 200
     validate("replaceHousehold", response.json())
     assert undeclared_fields("replaceHousehold", response.json()) == []
+
+
+async def test_the_run_endpoints_match_the_designed_shapes(
+    api: httpx.AsyncClient, a_configured_household: str
+) -> None:
+    """Plan, start and poll, checked as one sequence because that is how they are used.
+
+    A run's detail shape can only be checked against a run that exists, so the three are
+    exercised in the order a client meets them rather than parametrised apart.
+    """
+    scope = {"level": COUNTRY}
+
+    planned = await api.post("/v1/data-acquisition-runs/plan", json=scope)
+    validate("planRun", planned.json())
+    assert undeclared_fields("planRun", planned.json()) == []
+
+    started = await api.post("/v1/data-acquisition-runs", json=scope)
+    assert started.status_code == 202
+    validate("startRun", started.json(), status=202)
+    assert undeclared_fields("startRun", started.json(), status=202) == []
+
+    polled = await api.get(f"/v1/data-acquisition-runs/{started.json()['id']}")
+    validate("getRun", polled.json())
+    assert undeclared_fields("getRun", polled.json()) == []

@@ -49,9 +49,24 @@ EUROSTAT = DataSourceId("eurostat")
 UNSETTLED_FLAGS = frozenset({"p", "e"})
 """Provisional and estimated. Eurostat's own marks that a figure is not yet settled."""
 
+TOO_LARGE_TO_ANSWER_NOW = 413
+"""Eurostat's "your request will be treated asynchronously; try again later".
+
+Documented as a 413 carrying a `warning` rather than an `error` (the API guidelines), and it is
+not a failure of the request -- the same request will answer once the extraction is prepared.
+Reported in those words so a retry is an obvious next step rather than a guess.
+"""
+
 
 class EurostatAdapter(SourceAdapter):
-    """The dissemination API, which is free, unauthenticated and returns JSON-stat."""
+    """The dissemination API, which is free, unauthenticated and returns JSON-stat.
+
+    **The whole series is fetched, not the recent periods.** The API offers `lastTimePeriod` and
+    it would shrink every response, and it would also be wrong here: countries publish on their
+    own timetables, and of the 31 that answer `ilc_lvho07a` today, three have newest figures
+    from 2018, 2020 and 2024 rather than 2025. Trimming to the last few periods would turn those
+    three into `insufficient_data` -- a smaller request buying a quieter, worse answer.
+    """
 
     def __init__(self, client: httpx.AsyncClient, *, base_url: str = BASE_URL) -> None:
         self._client = client
@@ -79,6 +94,10 @@ class EurostatAdapter(SourceAdapter):
         try:
             document = await self._get(query.dataset, dict(query.filters))
             reported = observations(document)
+        except httpx.HTTPStatusError as refused:
+            return Acquired(
+                failures=(AcquisitionFailure(attribute=attribute.id, reason=_why(refused)),)
+            )
         except (httpx.HTTPError, JsonStatError) as unreachable:
             return Acquired(
                 failures=(AcquisitionFailure(attribute=attribute.id, reason=str(unreachable)),)
@@ -126,6 +145,21 @@ class EurostatAdapter(SourceAdapter):
                 _a_value(newest, attribute=attribute, candidate=candidate, retrieved=retrieved)
             )
         return Acquired(values=tuple(values), failures=tuple(failures))
+
+
+def _why(refused: httpx.HTTPStatusError) -> str:
+    """What went wrong, in words a retry can act on.
+
+    A 413 is the one status that is not a fault: Eurostat is preparing the extraction and the
+    same request will answer later. Reporting it as a plain HTTP error would send somebody
+    looking for a mistake in a request that had none.
+    """
+    if refused.response.status_code == TOO_LARGE_TO_ANSWER_NOW:
+        return (
+            "eurostat is preparing this extraction and asked us to try the same request again "
+            "later; nothing is wrong with it"
+        )
+    return str(refused)
 
 
 def _a_value(

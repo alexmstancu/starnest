@@ -87,14 +87,17 @@ def build() -> tuple[Environment, "FastAPI"]:
     connecting is not, and a composition root that awaited would have to be async for the
     benefit of one line.
     """
+    import httpx
     from psycopg_pool import AsyncConnectionPool
 
     from starnest.api import build_app
+    from starnest.data_sources.eurostat import EurostatAdapter
     from starnest.storage import (
         PostgresCandidateStore,
         PostgresCatalogStore,
         PostgresCriteriaStore,
         PostgresHouseholdStore,
+        PostgresRunStore,
         PostgresValueStore,
     )
 
@@ -107,6 +110,10 @@ def build() -> tuple[Environment, "FastAPI"]:
         candidates=PostgresCandidateStore(pool),
         values=PostgresValueStore(pool),
         catalog_store=PostgresCatalogStore(pool),
+        run_store=PostgresRunStore(pool),
+        # The one place a concrete source is named. `api/` holds only the interface, which is
+        # what lets the acceptance suite drive the same endpoints against a stub.
+        adapters=(EurostatAdapter(httpx.AsyncClient(timeout=60)),),
         display_name=environment.app_display_name,
     )
 

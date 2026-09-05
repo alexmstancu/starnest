@@ -39,6 +39,7 @@ async def acquire(
     attributes: Sequence[Attribute],
     candidates: Sequence[Candidate],
     values: ValueStore,
+    run: int | None = None,
 ) -> RunOutcome:
     """Fetch every attribute this source can answer, and append what it found.
 
@@ -55,5 +56,15 @@ async def acquire(
     for attribute in answerable:
         acquired = acquired + await adapter.fetch(attribute, candidates)
 
-    stored = await values.append(acquired.values) if acquired.values else ()
+    # Every value carries the run that fetched it (`reqs.md` 3.8), stamped here rather than by
+    # each adapter: which occasion a figure came from is a fact about the run, and an adapter
+    # that had to be told its own run id could forget.
+    fetched = (
+        acquired.values
+        if run is None
+        else tuple(
+            value.model_copy(update={"data_acquisition_run": run}) for value in acquired.values
+        )
+    )
+    stored = await values.append(fetched) if fetched else ()
     return RunOutcome(stored=tuple(stored), failures=acquired.failures)

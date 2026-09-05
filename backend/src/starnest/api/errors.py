@@ -26,6 +26,7 @@ from starnest.criteria import (
     WeightsAllLockedError,
 )
 from starnest.data import UnknownAttributeError
+from starnest.data_acquisition import UnknownRunError
 from starnest.evaluation import NormalisationError, RankingError
 from starnest.household import HouseholdNotConfiguredError, HouseholdPlaceError
 
@@ -47,6 +48,7 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     UnknownCriteriaSetError: _refusal(404, "not_found"),
     UnknownCriterionError: _refusal(404, "not_found"),
     UnknownAttributeError: _refusal(404, "not_found"),
+    UnknownRunError: _refusal(404, "not_found"),
     HouseholdNotConfiguredError: _refusal(404, "household_not_configured"),
     # 409 -- the request is well formed and the state refuses it.
     WeightsAllLockedError: _refusal(409, "weights_all_locked"),

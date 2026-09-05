@@ -22,10 +22,17 @@ from starnest.storage import (
     PostgresCatalogStore,
     PostgresCriteriaStore,
     PostgresHouseholdStore,
+    PostgresRunStore,
     PostgresValueStore,
 )
 
-WRITABLE_TABLES = ("value", "household", "household_citizenship", "settings")
+WRITABLE_TABLES = (
+    "value",
+    "household",
+    "household_citizenship",
+    "settings",
+    "data_acquisition_run",
+)
 """What an acceptance test may write and what is emptied afterwards.
 
 **The criteria tables are not here**, and a test that changes a criteria set must therefore
@@ -51,6 +58,8 @@ async def api(database_url: str) -> AsyncIterator[httpx.AsyncClient]:
             candidates=PostgresCandidateStore(pool),
             values=PostgresValueStore(pool),
             catalog_store=PostgresCatalogStore(pool),
+            run_store=PostgresRunStore(pool),
+            adapters=(_a_stub_source(),),
         )
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://api") as client:
@@ -170,3 +179,73 @@ async def a_configured_household(api: httpx.AsyncClient) -> str:
     response = await api.put("/v1/household", json=A_HOUSEHOLD)
     assert response.status_code == 200
     return "configured"
+
+
+def _a_stub_source():
+    """A source that answers instantly with figures the test controls.
+
+    **Not Eurostat.** An acceptance test that fetched from the real API would fail when Eurostat
+    is slow, which says nothing about this application, and would put a network round trip in
+    every run of the suite. What is under test here is the *run*: that it is recorded before
+    anything is fetched, that values carry it, that failures are kept and that progress can be
+    polled. Eurostat's own behaviour is tested where Eurostat lives, against captured responses.
+    """
+    from collections.abc import Sequence
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    from starnest.candidates import Candidate
+    from starnest.data import (
+        Attribute,
+        ConfidenceLevel,
+        DataSourceId,
+        Ratio,
+        ReferencePeriod,
+        Value,
+        ValueType,
+    )
+    from starnest.data_acquisition import Acquired, AcquisitionFailure, SourceAdapter
+
+    answers = ("country.housing_cost_overburden_rate", "country.overcrowding_rate")
+    silent_about = "country.portugal"
+
+    class StubSource(SourceAdapter):
+        @property
+        def data_source(self) -> DataSourceId:
+            return DataSourceId("eurostat")
+
+        @property
+        def attributes(self) -> tuple:
+            return answers
+
+        async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+            values, failures = [], []
+            for candidate in candidates:
+                if str(candidate.id) == silent_about:
+                    # One reproducible failure, so a run always has something to report and the
+                    # failure path is exercised by every test rather than by a special one.
+                    failures.append(
+                        AcquisitionFailure(
+                            attribute=attribute.id,
+                            candidate=str(candidate.id),
+                            reason="the stub source declines to answer for this candidate",
+                        )
+                    )
+                    continue
+                values.append(
+                    Value(
+                        candidate=candidate.id,
+                        attribute=attribute.id,
+                        value_type=ValueType.RATIO,
+                        data_source="eurostat",
+                        reference_period=ReferencePeriod(
+                            start=date(2025, 1, 1), end=date(2025, 12, 31)
+                        ),
+                        retrieval_date=datetime.now(UTC),
+                        confidence_level=ConfidenceLevel.HIGH,
+                        payload=Ratio(value=Decimal("7.5"), basis="households"),
+                    )
+                )
+            return Acquired(values=tuple(values), failures=tuple(failures))
+
+    return StubSource()

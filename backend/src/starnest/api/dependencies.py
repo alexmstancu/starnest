@@ -13,6 +13,7 @@ from fastapi import Depends, Request
 from starnest.candidates import CandidateStore
 from starnest.criteria import CriteriaStore
 from starnest.data import CatalogStore, ValueStore
+from starnest.data_acquisition import RunStore, SourceAdapter
 from starnest.household import HouseholdStore
 
 
@@ -36,8 +37,24 @@ def _catalog(request: Request) -> CatalogStore:
     return request.app.state.catalog
 
 
+def _runs(request: Request) -> RunStore:
+    return request.app.state.runs
+
+
+def _adapters(request: Request) -> tuple[SourceAdapter, ...]:
+    """Every source this application can fetch from.
+
+    A tuple rather than one, because a run plan reports work per source and there will be more
+    than one. The API knows only the interface; which concrete adapters exist is the composition
+    root's business (`arch.md` 6.3).
+    """
+    return request.app.state.adapters
+
+
 Households = Annotated[HouseholdStore, Depends(_household)]
 Criteria = Annotated[CriteriaStore, Depends(_criteria)]
 Candidates = Annotated[CandidateStore, Depends(_candidates)]
 Values = Annotated[ValueStore, Depends(_values)]
 Catalog = Annotated[CatalogStore, Depends(_catalog)]
+Runs = Annotated[RunStore, Depends(_runs)]
+Adapters = Annotated[tuple[SourceAdapter, ...], Depends(_adapters)]

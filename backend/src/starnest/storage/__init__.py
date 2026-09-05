@@ -24,6 +24,7 @@ from starnest.storage.connections import acquire
 from starnest.storage.criteria_store import PostgresCriteriaStore
 from starnest.storage.household_store import PostgresHouseholdStore
 from starnest.storage.queries import QUERY_DIRECTORY, load_queries
+from starnest.storage.run_store import PostgresRunStore
 from starnest.storage.value_store import PostgresValueStore
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "PostgresCatalogStore",
     "PostgresCriteriaStore",
     "PostgresHouseholdStore",
+    "PostgresRunStore",
     "PostgresValueStore",
     "acquire",
     "load_queries",

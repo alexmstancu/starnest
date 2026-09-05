@@ -10,11 +10,12 @@ database and a test's fakes without knowing which they have.
 
 from fastapi import FastAPI
 
-from starnest.api import catalog, criteria, household, rankings, settings
+from starnest.api import catalog, criteria, household, rankings, runs, settings
 from starnest.api.errors import domain_error_handler
 from starnest.candidates import CandidateStore
 from starnest.criteria import CriteriaStore
 from starnest.data import CatalogStore, ValueStore
+from starnest.data_acquisition import RunStore, SourceAdapter
 from starnest.household import HouseholdStore
 
 API_PREFIX = "/v1"
@@ -27,6 +28,8 @@ def build_app(
     candidates: CandidateStore,
     values: ValueStore,
     catalog_store: CatalogStore,
+    run_store: RunStore,
+    adapters: tuple[SourceAdapter, ...] = (),
     display_name: str = "Starnest",
 ) -> FastAPI:
     """One application, wired to the stores it was given.
@@ -45,6 +48,8 @@ def build_app(
     app.state.candidates = candidates
     app.state.values = values
     app.state.catalog = catalog_store
+    app.state.runs = run_store
+    app.state.adapters = adapters
 
     for router in (
         settings.router,
@@ -52,6 +57,7 @@ def build_app(
         catalog.router,
         criteria.router,
         rankings.router,
+        runs.router,
     ):
         app.include_router(router, prefix=API_PREFIX)
 

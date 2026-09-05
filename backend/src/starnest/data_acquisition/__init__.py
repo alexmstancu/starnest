@@ -14,6 +14,26 @@ from starnest.data_acquisition.adapter import (
     AcquisitionFailure,
     SourceAdapter,
 )
+from starnest.data_acquisition.execution import execute_run
 from starnest.data_acquisition.run import RunOutcome, acquire
+from starnest.data_acquisition.store import (
+    Run,
+    RunScope,
+    RunStatus,
+    RunStore,
+    UnknownRunError,
+)
 
-__all__ = ["Acquired", "AcquisitionFailure", "RunOutcome", "SourceAdapter", "acquire"]
+__all__ = [
+    "Acquired",
+    "AcquisitionFailure",
+    "Run",
+    "RunOutcome",
+    "RunScope",
+    "RunStatus",
+    "RunStore",
+    "SourceAdapter",
+    "UnknownRunError",
+    "acquire",
+    "execute_run",
+]
