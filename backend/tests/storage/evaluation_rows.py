@@ -152,9 +152,12 @@ def record_a_city(connection: psycopg.Connection, *, city: str, country: str) ->
     """A candidate one level down, since the catalog seeds countries only."""
     connection.execute(
         """
-        INSERT INTO candidate (id, name, level, parent_level, parent_candidate)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO candidate (id, name, level, parent_level, parent_candidate,
+                               parent_required)
+        SELECT %s, %s, l.id, %s, %s, l.requires_parent
+        FROM   level AS l
+        WHERE  l.id = %s
         """,
-        (city, city, THE_NESTED_LEVEL, A_SEEDED_LEVEL, country),
+        (city, city, A_SEEDED_LEVEL, country, THE_NESTED_LEVEL),
     )
     return city

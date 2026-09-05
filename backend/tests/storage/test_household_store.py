@@ -38,8 +38,10 @@ async def home_city(pool: AsyncConnectionPool) -> AsyncIterator[str]:
     """
     async with pool.connection() as connection:
         await connection.execute(
-            "INSERT INTO candidate (id, name, level, parent_level, parent_candidate)"
-            " VALUES (%s, 'Bucharest', 'city', 'country', %s)",
+            "INSERT INTO candidate (id, name, level, parent_level, parent_candidate,"
+            "                       parent_required)"
+            " SELECT %s, 'Bucharest', l.id, 'country', %s, l.requires_parent"
+            " FROM level AS l WHERE l.id = 'city'",
             (HOME_CITY, HOME_COUNTRY),
         )
     yield HOME_CITY

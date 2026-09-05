@@ -14,6 +14,7 @@ from typing import Any
 
 import psycopg
 import pytest
+from psycopg import errors
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.data import (
@@ -164,23 +165,95 @@ async def test_a_payload_of_a_type_the_mvp_catalog_has_no_attribute_for_also_sur
     assert stored.payload == payload
 
 
+A_PUBLISHED_RATE = Decimal("0.201033")
+A_RATE_DAY = date(2026, 6, 30)
+A_FOREIGN_CURRENCY = "RON"
+
+
+async def _publish(
+    pool: AsyncConnectionPool, *, rate: Decimal = A_PUBLISHED_RATE, on: date = A_RATE_DAY
+) -> None:
+    """One ECB reference rate, as the acquisition path would have stored it."""
+    async with pool.connection() as connection:
+        await connection.execute(
+            "INSERT INTO fx_rate (base_currency, quote_currency, rate_date, rate, data_source)"
+            " VALUES (%s, 'EUR', %s, %s, 'ecb')",
+            (A_FOREIGN_CURRENCY, on, rate),
+        )
+
+
+def _a_converted_amount(*, rate: Decimal = A_PUBLISHED_RATE, on: date = A_RATE_DAY) -> Monetary:
+    """910 RON, converted. The arithmetic holds whatever the rate, so only provenance varies."""
+    return Monetary(
+        amount=Decimal("910.00"),
+        currency=A_FOREIGN_CURRENCY,
+        amount_eur=(Decimal("910.00") * rate).quantize(Decimal("0.01")),
+        fx_rate=rate,
+        fx_rate_date=on,
+    )
+
+
 async def test_a_converted_amount_keeps_the_rate_and_the_day_it_was_converted_on(
-    values: PostgresValueStore,
+    values: PostgresValueStore, pool: AsyncConnectionPool
 ) -> None:
     """A EUR figure nobody can reproduce is not a figure (`reqs.md` 5.5)."""
-    payload = Monetary(
-        amount=Decimal("910.00"),
-        currency="RON",
-        amount_eur=Decimal("182.94"),
-        fx_rate=Decimal("0.201033"),
-        fx_rate_date=date(2026, 6, 30),
-    )
+    await _publish(pool)
+    payload = _a_converted_amount()
 
     await values.append([a_value(attribute=A_MONETARY_ATTRIBUTE, payload=payload)])
     (stored,) = await values.read_active_values(attributes=[A_MONETARY_ATTRIBUTE])
 
     assert stored.payload == payload
-    assert stored.payload.fx_rate == Decimal("0.201033")
+    assert stored.payload.fx_rate == A_PUBLISHED_RATE
+
+
+async def test_a_conversion_at_a_rate_nobody_published_is_refused(
+    values: PostgresValueStore,
+) -> None:
+    """The gap H3 could not close (known-issues D1).
+
+    `amount * fx_rate == amount_eur` catches an unconverted figure and cannot catch a rate that
+    is internally consistent and simply wrong. This payload's arithmetic is perfect; the rate
+    was never published by anyone, and that is now the objection.
+    """
+    with pytest.raises(errors.ForeignKeyViolation):
+        await values.append(
+            [
+                a_value(
+                    attribute=A_MONETARY_ATTRIBUTE,
+                    payload=_a_converted_amount(rate=Decimal("0.180000")),
+                )
+            ]
+        )
+
+
+async def test_a_conversion_dated_to_a_day_the_rate_was_not_published_for_is_refused(
+    values: PostgresValueStore, pool: AsyncConnectionPool
+) -> None:
+    """One rate per pair per day, so the day is part of what makes the rate the right one."""
+    await _publish(pool, on=A_RATE_DAY)
+
+    with pytest.raises(errors.ForeignKeyViolation):
+        await values.append(
+            [
+                a_value(
+                    attribute=A_MONETARY_ATTRIBUTE,
+                    payload=_a_converted_amount(on=date(2026, 7, 1)),
+                )
+            ]
+        )
+
+
+async def test_a_figure_already_in_euro_needs_no_published_rate(
+    values: PostgresValueStore,
+) -> None:
+    """The control, and why the key is MATCH SIMPLE: no conversion happened, so none is checked."""
+    payload = Monetary.in_euro(Decimal("1410.00"))
+
+    await values.append([a_value(attribute=A_MONETARY_ATTRIBUTE, payload=payload)])
+    (stored,) = await values.read_active_values(attributes=[A_MONETARY_ATTRIBUTE])
+
+    assert stored.payload == payload
 
 
 # --- appending ----------------------------------------------------------------------------

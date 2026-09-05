@@ -2055,14 +2055,37 @@ registry-bound one with a population floor (`datasources.md` 3).
 
 ### 7.1 Country level
 
+**`max_age` follows the source's publication interval; it is not chosen per attribute.** A
+value is stale once **twice that interval** has passed since the period it describes — long
+enough that one late release does not condemn a figure, short enough that a superseded one
+loses to its replacement. So an annual indicator gets 24 months, a twice-yearly forecast 12, a
+monthly flow 3, and a source on a multi-year cycle gets twice that cycle: PISA is triennial, so
+72.
+
+Stating the rule rather than the numbers is the point. Every value in the column below follows
+from it, so a reviewer checks one sentence instead of 41 judgements, and changing our tolerance
+for stale data is an edit to that sentence.
+
+**Four attributes declare none, and that is a statement rather than an omission.** A Köppen
+climate zone, a coastline and an elevation range do not go out of date on this application's
+horizon, and `country.natural_diversity` is derived from other attributes and has no
+publication of its own. `max_age IS NULL` means exactly this — never stale — and is read that
+way by the active-value rule (section 3.6).
+
+> **What `max_age` does.** It is rule 2 of active-value selection: a value older than its
+> attribute's `max_age` drops below every fresh one whatever its source's standing, and its
+> confidence is downgraded. Age is measured from the **reference date** — what the data
+> describes — never from the retrieval date, because rent from 2019 fetched this morning is
+> stale rent.
+
 #### Economics — 14%
 
-| Attribute | Weight | Value type | Sources |
-|---|---|---|---|
-| `country.cost_of_living_index` | 35% | **Index** — Eurostat PLI, EU27 = 100 | Eurostat price level indices, World Bank ICP |
-| `country.income_tax_effective` | 30% | **Ratio** — share of gross income | OECD Tax Database, national tax authorities |
-| `country.remote_work_tax_treaty` | 20% | **LabelSet** — treaty partners; must include `home_country` | OECD treaty database, manual |
-| `country.economic_outlook` | 15% | **Quantity** — projected GDP growth, % per year | IMF *World Economic Outlook*, European Commission forecasts, World Bank Global Economic Prospects |
+| Attribute | Weight | Value type | Sources | Max age |
+|---|---|---|---|---|
+| `country.cost_of_living_index` | 35% | **Index** — Eurostat PLI, EU27 = 100 | Eurostat price level indices, World Bank ICP | 24 months |
+| `country.income_tax_effective` | 30% | **Ratio** — share of gross income | OECD Tax Database, national tax authorities | 24 months |
+| `country.remote_work_tax_treaty` | 20% | **LabelSet** — treaty partners; must include `home_country` | OECD treaty database, manual | 24 months |
+| `country.economic_outlook` | 15% | **Quantity** — projected GDP growth, % per year | IMF *World Economic Outlook*, European Commission forecasts, World Bank Global Economic Prospects | 12 months |
 
 > **We do not compute trends.** The IMF, the European Commission and the World Bank already
 > publish projections with far more analysis behind them than we could justify. This criterion
@@ -2073,22 +2096,22 @@ registry-bound one with a population floor (`datasources.md` 3).
 
 #### Housing — 10%
 
-| Attribute | Weight | Value type | Sources |
-|---|---|---|---|
-| `country.house_price_to_income_ratio` | 40% | **Ratio** — price ÷ annual income | Eurostat, OECD Affordable Housing Database |
-| `country.housing_cost_overburden_rate` | 35% | **Ratio** — share of households | Eurostat `ilc_lvho07a` |
-| `country.overcrowding_rate` | 25% | **Ratio** — share of households | Eurostat `ilc_lvho05a` |
+| Attribute | Weight | Value type | Sources | Max age |
+|---|---|---|---|---|
+| `country.house_price_to_income_ratio` | 40% | **Ratio** — price ÷ annual income | Eurostat, OECD Affordable Housing Database | 24 months |
+| `country.housing_cost_overburden_rate` | 35% | **Ratio** — share of households | Eurostat `ilc_lvho07a` | 24 months |
+| `country.overcrowding_rate` | 25% | **Ratio** — share of households | Eurostat `ilc_lvho05a` | 24 months |
 
 #### Career & work — 14%
 
-| Attribute | Weight | Value type | Sources |
-|---|---|---|---|
-| `country.tech_software_jobs` | 22% | **Count** — open postings | Job-posting counts — **source unresolved, see `datasources.md` 11** |
-| `country.tech_product_jobs` | 22% | **Count** — open postings | Job-posting counts — same source |
-| `country.international_employers` | 18% | **LabelSet** — named firms | LLM + search, company sites |
-| `country.average_working_hours` | 15% | **Quantity** — hours/week | OECD Employment Database, Eurostat `lfsa_ewhun2` |
-| `country.tech_employment_share` | 13% | **Ratio** — share of workforce | Eurostat ICT/high-tech employment, ILO |
-| `country.statutory_paid_leave` | 10% | **Quantity** — days/year | OECD, EU Working Time Directive, national law |
+| Attribute | Weight | Value type | Sources | Max age |
+|---|---|---|---|---|
+| `country.tech_software_jobs` | 22% | **Count** — open postings | Job-posting counts — **source unresolved, see `datasources.md` 11** | 3 months |
+| `country.tech_product_jobs` | 22% | **Count** — open postings | Job-posting counts — same source | 3 months |
+| `country.international_employers` | 18% | **LabelSet** — named firms | LLM + search, company sites | 12 months |
+| `country.average_working_hours` | 15% | **Quantity** — hours/week | OECD Employment Database, Eurostat `lfsa_ewhun2` | 24 months |
+| `country.tech_employment_share` | 13% | **Ratio** — share of workforce | Eurostat ICT/high-tech employment, ILO | 24 months |
+| `country.statutory_paid_leave` | 10% | **Quantity** — days/year | OECD, EU Working Time Directive, national law | 24 months |
 
 > **Four measures, four different questions** — they look redundant and are not:
 >
@@ -2108,34 +2131,34 @@ registry-bound one with a population floor (`datasources.md` 3).
 
 #### Safety & stability — 12%
 
-| Attribute | Weight | Value type | Sources |
-|---|---|---|---|
-| `country.crime_safety_index` | 50% | **Index** — Numbeo 0–100 | UNODC homicide, Eurostat crime |
-| `country.political_economic_stability` | 50% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators |
+| Attribute | Weight | Value type | Sources | Max age |
+|---|---|---|---|---|
+| `country.crime_safety_index` | 50% | **Index** — Numbeo 0–100 | UNODC homicide, Eurostat crime | 24 months |
+| `country.political_economic_stability` | 50% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators | 24 months |
 
 #### Health — 9%
 
-| Attribute | Weight | Value type | Sources |
-|---|---|---|---|
-| `country.healthcare_system_quality` | 100% | **Index** — WHO UHC 0–100 | WHO Global Health Observatory, OECD Health Statistics |
+| Attribute | Weight | Value type | Sources | Max age |
+|---|---|---|---|---|
+| `country.healthcare_system_quality` | 100% | **Index** — WHO UHC 0–100 | WHO Global Health Observatory, OECD Health Statistics | 24 months |
 
 #### Climate & environment — 7%
 
-| Attribute | Weight | Value type | Sources |
-|---|---|---|---|
-| `country.climate_zone` | 30% | **LabelSet** — Köppen codes | Köppen classification |
-| `country.avg_annual_temperature` | 25% | **Quantity** — °C | Open-Meteo archive **(C)** |
-| `country.annual_sunshine_hours` | 25% | **Quantity** — hours/year | Open-Meteo, from radiation **(C)** |
-| `country.projected_summer_heat_days` | 20% | **Quantity** — days above 35 °C projected for 2050, SSP2-4.5 | Copernicus CDS climate projections |
+| Attribute | Weight | Value type | Sources | Max age |
+|---|---|---|---|---|
+| `country.climate_zone` | 30% | **LabelSet** — Köppen codes | Köppen classification | — |
+| `country.avg_annual_temperature` | 25% | **Quantity** — °C | Open-Meteo archive **(C)** | 60 months |
+| `country.annual_sunshine_hours` | 25% | **Quantity** — hours/year | Open-Meteo, from radiation **(C)** | 60 months |
+| `country.projected_summer_heat_days` | 20% | **Quantity** — days above 35 °C projected for 2050, SSP2-4.5 | Copernicus CDS climate projections | 60 months |
 
 #### Connectivity — 8%
 
-| Attribute | Weight | Value type | Sources |
-|---|---|---|---|
-| `country.rail_network_density` | 30% | **Quantity** — km of line per 1,000 km² | Eurostat rail infrastructure statistics |
-| `country.international_air_connectivity` | 25% | **Count** — international destinations served | Eurostat air transport, OpenFlights, airport authorities |
-| `country.broadband_coverage` | 25% | **Ratio** — share of households with high-speed or fibre access | Eurostat DESI, national regulators |
-| `country.road_network_quality` | 20% | **Quantity** — km of motorway per 1,000 km² | Eurostat road transport statistics |
+| Attribute | Weight | Value type | Sources | Max age |
+|---|---|---|---|---|
+| `country.rail_network_density` | 30% | **Quantity** — km of line per 1,000 km² | Eurostat rail infrastructure statistics | 24 months |
+| `country.international_air_connectivity` | 25% | **Count** — international destinations served | Eurostat air transport, OpenFlights, airport authorities | 24 months |
+| `country.broadband_coverage` | 25% | **Ratio** — share of households with high-speed or fibre access | Eurostat DESI, national regulators | 24 months |
+| `country.road_network_quality` | 20% | **Quantity** — km of motorway per 1,000 km² | Eurostat road transport statistics | 24 months |
 
 > Each pairs with a city criterion without duplicating it, on the `safety_national` /
 > `city.safety` pattern: national broadband coverage **sets the ceiling**, while Ookla tiles report what
@@ -2147,13 +2170,13 @@ registry-bound one with a population floor (`datasources.md` 3).
 
 #### Nature & landscape — 8%
 
-| Attribute | Weight | Value type | Sources |
-|---|---|---|---|
-| `country.natural_diversity` | 25% | **Count** — 0–6, feature types present | **Derived**, see below |
-| `country.protected_land_share` | 25% | **Ratio** — share of territory | WDPA / Protected Planet, Eurostat |
-| `country.coastline_access` | 20% | **Quantity** — km coast per 1000 km² | Natural Earth, Eurostat — length relative to area |
-| `country.forest_cover` | 15% | **Ratio** — share of land area | FAO, Corine Land Cover |
-| `country.elevation_range` | 15% | **Quantity** — m | Copernicus DEM — relief variety |
+| Attribute | Weight | Value type | Sources | Max age |
+|---|---|---|---|---|
+| `country.natural_diversity` | 25% | **Count** — 0–6, feature types present | **Derived**, see below | — |
+| `country.protected_land_share` | 25% | **Ratio** — share of territory | WDPA / Protected Planet, Eurostat | 24 months |
+| `country.coastline_access` | 20% | **Quantity** — km coast per 1000 km² | Natural Earth, Eurostat — length relative to area | — |
+| `country.forest_cover` | 15% | **Ratio** — share of land area | FAO, Corine Land Cover | 60 months |
+| `country.elevation_range` | 15% | **Quantity** — m | Copernicus DEM — relief variety | — |
 
 > A large country can host sea, high mountains, lakes and forest **simultaneously**, and that
 > combination is the thing worth measuring. `country.natural_diversity` measures coexistence rather
@@ -2166,30 +2189,30 @@ registry-bound one with a population floor (`datasources.md` 3).
 
 #### Culture & community — 6%
 
-| Attribute | Weight | Value type | Sources |
-|---|---|---|---|
-| `country.life_satisfaction` | 40% | **Quantity** — Cantril ladder 0–10 | Eurostat `ilc_pw01` *(survey figure, not the World Happiness composite — section 3.5a)* |
-| `country.openness_to_foreigners` | 35% | **Index** — MIPEX 0–100 | MIPEX, Eurobarometer, InterNations |
-| `country.english_proficiency` | 25% | **Index** — EF EPI 0–800 | EF English Proficiency Index |
+| Attribute | Weight | Value type | Sources | Max age |
+|---|---|---|---|---|
+| `country.life_satisfaction` | 40% | **Quantity** — Cantril ladder 0–10 | Eurostat `ilc_pw01` *(survey figure, not the World Happiness composite — section 3.5a)* | 24 months |
+| `country.openness_to_foreigners` | 35% | **Index** — MIPEX 0–100 | MIPEX, Eurobarometer, InterNations | 60 months |
+| `country.english_proficiency` | 25% | **Index** — EF EPI 0–800 | EF English Proficiency Index | 24 months |
 
 #### Governance & administration — 8%
 
-| Attribute | Weight | Value type | Sources |
-|---|---|---|---|
-| `country.rule_of_law` | 25% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators, V-Dem |
-| `country.naturalisation_pathway` | 25% | **Quantity** — years of residence | **Official administrative sources** — published requirements, steps, timeline and fees; difficulty derived. See section 6.9 |
-| `country.control_of_corruption` | 20% | **Index** — World Bank WGI −2.5–2.5 | World Bank WGI, Transparency International |
-| `country.residency_admin_ease` | 15% | **AssignedScore** — 0–100, rubric in section 6.9 | **Official administrative sources**; World Bank B-READY where covered |
-| `country.press_freedom` | 10% | **Index** — RSF 0–100 | Reporters Without Borders |
-| `country.pension_portability` | 5% | **AssignedScore** — 0–100, rubric in section 6.9 | **Official administrative sources** — EU social-security coordination rules |
+| Attribute | Weight | Value type | Sources | Max age |
+|---|---|---|---|---|
+| `country.rule_of_law` | 25% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators, V-Dem | 24 months |
+| `country.naturalisation_pathway` | 25% | **Quantity** — years of residence | **Official administrative sources** — published requirements, steps, timeline and fees; difficulty derived. See section 6.9 | 24 months |
+| `country.control_of_corruption` | 20% | **Index** — World Bank WGI −2.5–2.5 | World Bank WGI, Transparency International | 24 months |
+| `country.residency_admin_ease` | 15% | **AssignedScore** — 0–100, rubric in section 6.9 | **Official administrative sources**; World Bank B-READY where covered | 24 months |
+| `country.press_freedom` | 10% | **Index** — RSF 0–100 | Reporters Without Borders | 24 months |
+| `country.pension_portability` | 5% | **AssignedScore** — 0–100, rubric in section 6.9 | **Official administrative sources** — EU social-security coordination rules | 24 months |
 
 #### Family & education — 4%
 
-| Attribute | Weight | Value type | Sources |
-|---|---|---|---|
-| `country.school_system_quality` | 45% | **Index** — OECD PISA mean score | OECD PISA, UNESCO |
-| `country.parental_leave_policy` | 30% | **Quantity** — weeks paid | OECD Family Database |
-| `country.child_benefit_policy` | 25% | **Monetary** — EUR/month per child | OECD, national social-security bodies |
+| Attribute | Weight | Value type | Sources | Max age |
+|---|---|---|---|---|
+| `country.school_system_quality` | 45% | **Index** — OECD PISA mean score | OECD PISA, UNESCO | 72 months |
+| `country.parental_leave_policy` | 30% | **Quantity** — weeks paid | OECD Family Database | 24 months |
+| `country.child_benefit_policy` | 25% | **Monetary** — EUR/month per child | OECD, national social-security bodies | 24 months |
 
 ### 7.2 City level
 

@@ -167,3 +167,58 @@ class TestTheHouseholdFieldVocabulary:
         seeded = connection.execute("SELECT id FROM household_field").fetchall()
 
         assert {row[0] for row in seeded} == set(THE_HOUSEHOLD_MONEY_FIGURES)
+
+
+# --- an outside opinion is identified by its whole period (known-issues D10) -----------------
+
+A_PUBLISHER = "oecd"
+A_PERIOD_START_FOR_BOTH = date(2026, 1, 1)
+THE_YEAR_END = date(2026, 12, 31)
+THE_MONTH_END = date(2026, 1, 31)
+
+
+def _publish_an_external_score(
+    connection: psycopg.Connection, *, period_end: date, retrieved: datetime
+) -> None:
+    """One published composite score. Never ingested as an input -- displayed alongside."""
+    connection.execute(
+        """
+        INSERT INTO external_score (candidate, data_source, published_value, published_scale,
+                                    reference_period_start, reference_period_end,
+                                    retrieval_date)
+        VALUES (%s, %s, 71.4, '0-100', %s, %s, %s)
+        """,
+        (A_CANDIDATE, A_PUBLISHER, A_PERIOD_START_FOR_BOTH, period_end, retrieved),
+    )
+
+
+class TestAnExternalScoreIsIdentifiedByBothEndsOfItsPeriod:
+    """A period is a span, and half a span does not identify it (`reqs.md` 3.6)."""
+
+    def test_an_annual_and_a_monthly_figure_sharing_a_start_date_both_store(
+        self, connection: psycopg.Connection
+    ) -> None:
+        """The defect. The natural key omitted `reference_period_end`, so the second collided.
+
+        This is the case published composites actually produce: one publisher issuing an annual
+        edition and a monthly one, both beginning on the first of January.
+        """
+        retrieved = datetime.now(UTC)
+
+        _publish_an_external_score(connection, period_end=THE_YEAR_END, retrieved=retrieved)
+        _publish_an_external_score(connection, period_end=THE_MONTH_END, retrieved=retrieved)
+
+        stored = connection.execute(
+            "SELECT count(*) FROM external_score WHERE candidate = %s", (A_CANDIDATE,)
+        ).fetchone()
+        assert stored == (2,)
+
+    def test_the_same_figure_for_the_same_period_still_collides(
+        self, connection: psycopg.Connection
+    ) -> None:
+        """The control. Widening the key must not stop it being a key."""
+        retrieved = datetime.now(UTC)
+        _publish_an_external_score(connection, period_end=THE_YEAR_END, retrieved=retrieved)
+
+        with pytest.raises(errors.UniqueViolation):
+            _publish_an_external_score(connection, period_end=THE_YEAR_END, retrieved=retrieved)

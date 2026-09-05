@@ -38,8 +38,15 @@ WHERE  c.id = :candidate_id;
 --
 -- The nesting rule is the schema's, not this query's: candidate_nesting_is_declared and
 -- candidate_parent_is_at_parent_level reject a city recorded under another city.
-INSERT INTO candidate (id, name, level, parent_level, parent_candidate)
-VALUES (:candidate_id, :name, :level, :parent_level, :parent_candidate);
+--
+-- parent_required is read from the level rather than passed in: it is the level's fact, and a
+-- caller asserting it could assert the opposite of what the level says (0114). Naming a level
+-- that does not exist therefore inserts nothing rather than a row with a made-up flag, and the
+-- foreign key on (level, parent_required) refuses it either way.
+INSERT INTO candidate (id, name, level, parent_level, parent_candidate, parent_required)
+SELECT :candidate_id, :name, l.id, :parent_level, :parent_candidate, l.requires_parent
+FROM   level AS l
+WHERE  l.id = :level;
 
 -- name: update_candidate_name(candidate_id, name)!
 -- A display name may be corrected, translated or re-styled without touching a row that refers

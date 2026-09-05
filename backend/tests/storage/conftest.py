@@ -20,6 +20,7 @@ from psycopg_pool import AsyncConnectionPool
 
 WRITABLE_TABLES = (
     "value",
+    "fx_rate",
     "external_score",
     "household",
     "household_citizenship",
@@ -27,7 +28,9 @@ WRITABLE_TABLES = (
 )
 """Everything a storage test may write.
 
-The catalog is not here and must not be: it is seeded by migration and read-only through this
+`fx_rate` is here because a rate is fetched at runtime like any other figure -- the ECB
+publishes daily and nothing seeds it -- so it is test data rather than catalog. The catalog is
+not here and must not be: it is seeded by migration and read-only through this
 seam (`arch.md` 1.2), so a test that emptied it would be testing a database the application
 can never be in. CASCADE reaches the ten typed payload tables and the citation table, which
 have no rows of their own that outlive their parent value.
