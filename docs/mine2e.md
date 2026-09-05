@@ -14,18 +14,39 @@ real reference date.
 
 ## 0. Where we actually are
 
+*Revised 2026-09-05, after the schema-hardening pass.*
+
 | Layer | State |
 |---|---|
-| `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Built.** 956 tests, ~99.8% coverage |
-| Catalog in the database | **Seeded.** 32 countries, 41 attributes, 41 criteria, 11 pillars, 34 sources |
+| `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Built.** 1,026 tests, ~99.8% coverage, 30 migrations |
+| Catalog in the database | **Seeded.** 32 countries, 41 attributes, 41 criteria, 11 pillars, 35 sources. Every attribute now declares a `max_age` |
 | **Measured values** | **Zero rows.** Nothing has ever been fetched |
 | **Household** | **Zero rows** |
 | `evaluation/` | Empty. Nothing turns a value into a score |
 | `api/` | Empty. `openapi.yaml` designs 40 operations; none exists |
 | `main.run()` | Raises `NotImplementedError` |
-| `ui/` | Shell only. Every route renders `PlaceholderScreen`, against a mock |
+| `ui/` | **M4 is done** (`cbef101`) — Rank and Configure both render against the mock, 98 tests. It has never spoken to the backend |
 
-**Five gaps, and only five.** Everything below the API is done.
+**Four gaps left, not five.** M4 landed early because the interface builds against the contract
+and its mock, which is exactly the independence `arch.md` 6.1 was for.
+
+### What the hardening pass changed underneath this plan
+
+Twenty-one findings closed (`known-issues.md`), and three of them are rules M1 and M2 must now
+write against rather than discover:
+
+- **An evaluation records the score scale it used.** `insert_evaluation` takes
+  `score_scale_max`, every stored score is bounded by it, and `settings.score_scale_max` is
+  nullable and unseeded — so **saving an evaluation before it is set must refuse and name the
+  missing setting.** Substituting 100 is the fabrication `devplan.md` 0.3 forbids, wearing a
+  plausible number.
+- **A conversion names a published rate.** `value_monetary` is keyed into `fx_rate`, so a
+  monetary value cannot be written until the rate behind it has been stored with its source.
+  Eurostat's figures for minE2E are shares and counts, so this does not block M2 — but the first
+  rent figure will need an ECB rate first.
+- **Freshness has inputs for the first time.** Every attribute declares a `max_age`, so rule 2
+  of the active-value rule now fires against real data. A 2019 figure loses to a 2024 one even
+  from a better source.
 
 ### The fact that shapes this whole plan
 
@@ -139,12 +160,15 @@ re-renders → assert at least one country shows a score, and at least one shows
 ## 2. Sequencing, two agents at a time
 
 ```
-Round 1   BACKEND: M1 evaluation/           UI: M4 both screens
-          (pure functions, no I/O)          (against the existing mock)
-Round 2   BACKEND: M2 Eurostat adapter      UI: repoint at the real backend
-          then M3 api/ + composition root
-Round 3   master: M5 e2e, then fix what it finds
+Round 1   M4 both screens against the mock                          DONE (cbef101)
+Round 2   BACKEND: M1 evaluation/       BACKEND: M2 Eurostat adapter    <- here
+          (pure functions, no I/O)      (independent of M1)
+Round 3   BACKEND: M3 api/ + composition root   UI: repoint at the real backend
+Round 4   master: M5 e2e, then fix what it finds
 ```
+
+M1 and M2 touch no common file: M1 is pure functions under `evaluation/`, M2 is
+`data_sources/eurostat/` plus its own migration block. Neither needs the other to compile.
 
 **`ui/` and `backend/` share no code — only `docs/openapi.yaml`** (`arch.md` 6.1). That is what
 makes them safely parallel rather than merely concurrent: the interface builds against the
