@@ -8,12 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | Module | State |
 |---|---|
-| `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~5,400 lines, 956 backend tests, ~99.8% line and branch coverage |
+| `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~5,700 lines, 1,013 backend tests, ~99.8% line and branch coverage. 26 migrations applied |
 | `evaluation/` | **Next.** Normalisation, redistribution, coverage, matching, the three compound-rule shapes, ranking. Pure functions, no I/O (`devplan.md` W2-A) |
 | `api/`, `comparison/`, `data_acquisition/`, `data_sources/` | Empty. `openapi.yaml` designs 40 operations; **none is implemented** |
-| `ui/` | The shell only — routes, typed client, mock server, sidebar. 75 tests. It talks to a mock, never to the backend |
+| `ui/` | The shell plus the Rank and Configure screens. 98 tests, linted and typechecked by `make ui-check`. It talks to a mock, never to the backend |
 
 **Nothing is wired end to end.** There is no composition root, no running API, and the one Playwright spec exercises the interface against its mock. The first vertical slice is `devplan.md` P3.
+
+**The schema was hardened before `evaluation/` was written** (2026-09-05, migrations `0106`-`0110`). Nine findings from `docs/known-issues.md` closed while every affected table still had zero rows: an evaluation now freezes the score scale it used and nothing it stores may leave that scale, a result belongs to its evaluation's level, a non-match reason names the frozen criterion rather than the live one, and a criterion may only judge an attribute that has a pillar. **`evaluation/` must supply `score_scale_max` when it saves, and must refuse rather than substitute 100 when `settings.score_scale_max` is unset.** Sixteen findings remain open; `known-issues.md` opens with what they are and what each waits on.
 
 ## Layout
 

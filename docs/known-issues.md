@@ -14,14 +14,42 @@ count is recorded so that nobody re-imports them later on the strength of the tw
 real.
 
 **How to read the split.** "Fixed" is what would have corrupted the first real numbers we ever
-see, or cost a line. "Deferred" is real but survivable, and is picked up in a named later
-chunk. Nothing is here because it was too hard.
+see, cost a line, or become expensive to fix once rows existed. "Deferred" is real but
+survivable, and is picked up in a named later chunk. Nothing is here because it was too hard,
+and nothing leaves this file by being forgotten -- a closed finding keeps its description, so
+the account of a defect outlives the defect.
+
+## Status
+
+**32 findings: 16 closed, 16 open.** Nothing open blocks the next chunk of work.
+
+| Closed | When | Where |
+|---|---|---|
+| **H1**-**H6** | 2026-09-02 | `criteria/`, `data/`, `storage/`, and the tests that missed them |
+| **D23** | 2026-09-03 | `ui/eslint.config.js`, `make ui-check` wired into `check` |
+| **D2**-**D6**, **D8**, **D12**, **D25**, **D26** | 2026-09-05 | migrations `0106`-`0110`, `criteria/`, the value seam, the contract |
+
+| Open | Severity | Waiting on |
+|---|---|---|
+| **D1** | high | The first monetary value. `fx_rate` is stored as loose scalars with no source |
+| **D7** | medium | A decision in `reqs.md` 7.1 first: no attribute declares a `max_age`, and there is nothing to seed from until the intended values exist |
+| **D10**, **D11** | medium | The next schema migration |
+| **D13** | medium | The catalog arithmetic guard, whenever a second criteria set is seeded |
+| **D9**, **D14**-**D22**, **D24** | low | Named chunks below. None has a live effect today |
+
+**Where the open ones bite.** D1 fires the moment `data_sources/` returns a price. D7 means
+rule 2 of the active-value view has never fired against real data, so freshness is currently
+inert. D13 passes today only because exactly one criteria set at one level is seeded, and
+duplicating a set is a shipped feature. The rest are documentation, test-quality, or dead
+schema.
 
 ---
 
 ## Fixed
 
-All six on 2026-09-02, each with a test written to fail against the old behaviour first. The
+### 2026-09-02 — the six that would have corrupted the first numbers
+
+All six with a test written to fail against the old behaviour first. The
 last column says what now holds; the description beside it is kept exactly as written, because
 a defect nobody can still read the account of is one that comes back.
 
@@ -33,6 +61,19 @@ a defect nobody can still read the account of is one that comes back.
 | **H4** | `criteria/rebalancing.py` | **A locked weight can be moved without complaint.** `moved.locked` is never read. The lock is ignored for the one weight it was placed on | `rebalance` reads `moved.locked`; four situations, four accurate sentences, one exception type so `409 weights_all_locked` is unaffected |
 | **H5** | `storage/queries/criteria.sql` `duplicate_criteria_set` | The copy **drops every band label** — `label` is missing from the insert. A criteria set is defined as a *full* copy (`reqs.md` Q191) | `label` added to both halves of the `copied_anchors` insert, with a storage test that duplicates a labelled anchor |
 | **H6** | `tests/storage/test_active_value_behaviour.py` | **Three of the five ordering-rule tests still pass with the rule they name deleted from the view.** The expected winner is inserted *second*, so `id DESC` picks it for the wrong reason. The view itself is correct — the tests are the weak part | each expected winner is inserted FIRST so the view's tail tiebreaks against the rule under test; proven by deleting each ordering term from the view in a scratch database |
+
+### 2026-09-03 — the gate covered half the codebase
+
+- **D23** (medium) **The interface is never linted.** `ui/package.json` defines
+  `"lint": "eslint ."`, but there is no `eslint.config.js`, so the script fails on any
+  invocation — and `make check` does not call it, so nothing has ever reported this. `make
+  check` is documented as "lint + boundaries + coverage + audits. This is the gate", and for
+  half the codebase the lint half of that sentence is not true.
+  **Closed by** `ui/eslint.config.js`, a `make ui-check` target, and `check` depending on it —
+  the hole was bigger than reported, since `ui/` was never typechecked or tested by the gate
+  either. The first run found a real defect: `availableCriteriaSets` was rebuilt by `?? []` on
+  every render and used as an effect dependency, so that effect re-ran on every render until
+  the fetch landed. **D24** below is the residue of that run, and is warnings only.
 
 ### 2026-09-05 — the schema, before `evaluation/` writes to it
 
@@ -88,6 +129,7 @@ Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that s
   makes for including both dates.
 - **D11** (medium) **A candidate at a nested level can have no parent at all.** The FK is
   `MATCH SIMPLE`, so a NULL skips the check: `city.orphan` with no country inserts.
+
 ### Test-quality
 
 - **D13** (medium) `test_catalog_arithmetic.py` weight-sum guards **aggregate across criteria sets
@@ -123,17 +165,6 @@ Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that s
 
 ### Tooling
 
-- **D23** (medium) **The interface is never linted.** `ui/package.json` defines
-  `"lint": "eslint ."`, but there is no `eslint.config.js`, so the script fails on any
-  invocation — and `make check` does not call it, so nothing has ever reported this. `make
-  check` is documented as "lint + boundaries + coverage + audits. This is the gate", and for
-  half the codebase the lint half of that sentence is not true. Fix is an `eslint.config.js`
-  with the TypeScript and React-hooks plugins, plus a `ui-lint` target wired into `check`.
-  The React-hooks rules matter here specifically: the refused-weight defect fixed in
-  `cbef101` was a stale-state bug of exactly the kind `exhaustive-deps` is built to catch.
-  **Fixed** — `ui/eslint.config.js`, `make ui-check`, and `check` now depends on it. The first
-  run found a real one: `availableCriteriaSets` was rebuilt by `?? []` on every render and used
-  as an effect dependency, so that effect re-ran on every render until the fetch landed.
 - **D24** (low) Five call sites set state from an effect to follow something that arrived
   asynchronously — the default level and criteria set once their lists load
   (`SelectionContext`), the criteria list and the weight input following what the server
