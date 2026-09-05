@@ -8,7 +8,7 @@
 # Recipes are prefixed accordingly. `make check` runs everything both sides can prove.
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs migrate rollback backup \
+.PHONY: help up down logs serve acquire rank migrate rollback backup \
         test test-storage test-acceptance coverage coverage-open lint format boundaries audit check \
         ui-install ui-lint ui-typecheck ui-test ui-coverage ui-coverage-open ui-check ui-client \
         e2e e2e-report \
@@ -49,6 +49,15 @@ env:  ## Create .env from the example, if it does not exist yet
 
 up:  ## Start PostgreSQL only. The backend and UI run from the command line
 	docker compose up -d database
+
+serve:  ## Run the API from the command line, against the database in Docker
+	cd $(BACKEND) && uv run python -c "from starnest.main import run; run()"
+
+acquire:  ## Fetch real figures from Eurostat and store them. One run, explicit like migrate
+	cd $(BACKEND) && uv run python scripts/acquire.py
+
+rank:  ## Print the ranking from what is stored, without going through the API
+	cd $(BACKEND) && uv run python scripts/rank.py
 
 down:  ## Stop everything, keeping the data volume
 	docker compose down

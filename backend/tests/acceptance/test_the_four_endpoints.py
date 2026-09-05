@@ -264,3 +264,44 @@ class TestGetRanking:
 
         assert response.status_code == 409
         assert "score_scale_max" in response.text
+
+
+class TestTheListsTheInterfaceNeedsBeforeItCanRender:
+    """Levels, criteria sets and candidates. Not in `docs/mine2e.md` M3's list of four, and
+    the interface cannot draw a screen without them -- the plan under-counted, and building it
+    is what found that."""
+
+    async def test_the_levels_come_back_in_nesting_order(self, api: httpx.AsyncClient) -> None:
+        """`depth_order` is what tells a caller which level screens first. Nothing here names
+        `country` or `city`: levels are ordered records (`reqs.md` 3.1)."""
+        body = (await api.get("/v1/levels")).json()
+
+        orders = [level["depth_order"] for level in body["items"]]
+        assert orders == sorted(orders)
+        assert body["items"][0]["parent_level"] is None
+
+    async def test_the_criteria_sets_come_back_as_headers_only(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """Reading 41 criteria per set to fill a dropdown would make the most frequently
+        rendered element the most expensive one."""
+        body = (await api.get("/v1/criteria-sets")).json()
+
+        assert {s["id"] for s in body["items"]} >= {MINIMAL, "local_employment"}
+        assert all(set(s) == {"id", "name"} for s in body["items"])
+
+    async def test_the_candidates_at_a_level_come_back_whole(self, api: httpx.AsyncClient) -> None:
+        """Bounded by the catalog, so returned whole rather than paginated (`arch.md` 7.6)."""
+        body = (await api.get("/v1/candidates", params={"level": COUNTRY})).json()
+
+        assert len(body["items"]) == 32
+        assert all(candidate["level"] == COUNTRY for candidate in body["items"])
+
+    async def test_filtering_candidates_by_a_parent_that_has_none_returns_nothing(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """The filter is applied rather than ignored: silently dropping it would return every
+        country to a caller that asked for one country's cities."""
+        body = (await api.get("/v1/candidates", params={"parent": "country.portugal"})).json()
+
+        assert body["items"] == []

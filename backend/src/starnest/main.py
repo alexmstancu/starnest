@@ -32,7 +32,11 @@ class Environment(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Both, because the application is started from two places: the repository root by
+        # `make serve`, and `backend/` by anything run inside the package. In a container
+        # neither exists and the values come from real environment variables, which is the
+        # arrangement `.env` imitates rather than replaces.
+        env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         extra="ignore",
         # No env_prefix. The product name must not appear in an environment-variable
@@ -88,6 +92,7 @@ def build() -> tuple[Environment, "FastAPI"]:
     from starnest.api import build_app
     from starnest.storage import (
         PostgresCandidateStore,
+        PostgresCatalogStore,
         PostgresCriteriaStore,
         PostgresHouseholdStore,
         PostgresValueStore,
@@ -101,6 +106,7 @@ def build() -> tuple[Environment, "FastAPI"]:
         criteria_store=PostgresCriteriaStore(pool),
         candidates=PostgresCandidateStore(pool),
         values=PostgresValueStore(pool),
+        catalog_store=PostgresCatalogStore(pool),
         display_name=environment.app_display_name,
     )
 

@@ -19,6 +19,7 @@ from psycopg_pool import AsyncConnectionPool
 from starnest.api import build_app
 from starnest.storage import (
     PostgresCandidateStore,
+    PostgresCatalogStore,
     PostgresCriteriaStore,
     PostgresHouseholdStore,
     PostgresValueStore,
@@ -49,6 +50,7 @@ async def api(database_url: str) -> AsyncIterator[httpx.AsyncClient]:
             criteria_store=PostgresCriteriaStore(pool),
             candidates=PostgresCandidateStore(pool),
             values=PostgresValueStore(pool),
+            catalog_store=PostgresCatalogStore(pool),
         )
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://api") as client:

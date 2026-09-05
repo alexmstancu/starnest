@@ -12,7 +12,7 @@ from fastapi import Depends, Request
 
 from starnest.candidates import CandidateStore
 from starnest.criteria import CriteriaStore
-from starnest.data import ValueStore
+from starnest.data import CatalogStore, ValueStore
 from starnest.household import HouseholdStore
 
 
@@ -32,7 +32,12 @@ def _values(request: Request) -> ValueStore:
     return request.app.state.values
 
 
+def _catalog(request: Request) -> CatalogStore:
+    return request.app.state.catalog
+
+
 Households = Annotated[HouseholdStore, Depends(_household)]
 Criteria = Annotated[CriteriaStore, Depends(_criteria)]
 Candidates = Annotated[CandidateStore, Depends(_candidates)]
 Values = Annotated[ValueStore, Depends(_values)]
+Catalog = Annotated[CatalogStore, Depends(_catalog)]

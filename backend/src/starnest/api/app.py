@@ -10,11 +10,11 @@ database and a test's fakes without knowing which they have.
 
 from fastapi import FastAPI
 
-from starnest.api import criteria, rankings, settings
+from starnest.api import catalog, criteria, rankings, settings
 from starnest.api.errors import domain_error_handler
 from starnest.candidates import CandidateStore
 from starnest.criteria import CriteriaStore
-from starnest.data import ValueStore
+from starnest.data import CatalogStore, ValueStore
 from starnest.household import HouseholdStore
 
 API_PREFIX = "/v1"
@@ -26,6 +26,7 @@ def build_app(
     criteria_store: CriteriaStore,
     candidates: CandidateStore,
     values: ValueStore,
+    catalog_store: CatalogStore,
     display_name: str = "Starnest",
 ) -> FastAPI:
     """One application, wired to the stores it was given.
@@ -43,8 +44,9 @@ def build_app(
     app.state.criteria = criteria_store
     app.state.candidates = candidates
     app.state.values = values
+    app.state.catalog = catalog_store
 
-    for router in (settings.router, criteria.router, rankings.router):
+    for router in (settings.router, catalog.router, criteria.router, rankings.router):
         app.include_router(router, prefix=API_PREFIX)
 
     # One handler for every domain fault, rather than a try/except in each endpoint: two
