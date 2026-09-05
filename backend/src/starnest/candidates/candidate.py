@@ -10,9 +10,9 @@ was used -- storing them here would mean one set's answer silently overwriting a
 There is no status field and no `parent_not_matching` flag for the same reason.
 """
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from starnest.candidates.identifiers import CandidateId, LevelId
+from starnest.candidates.identifiers import CandidateId, CountryCode, LevelId
 from starnest.candidates.levels import Level
 
 
@@ -39,6 +39,11 @@ class Candidate(BaseModel):
     name: str
     level: Level
     parent_candidate: CandidateId | None = None
+    country_code: CountryCode | None = Field(
+        default=None,
+        description="ISO 3166-1 alpha-2, for a country. None for a city, whose country is its "
+        "parent, and None for a country nobody has recorded one for yet.",
+    )
 
     @field_validator("name")
     @classmethod
@@ -137,4 +142,5 @@ class Candidate(BaseModel):
             name=name,
             level=self.level,
             parent_candidate=self.parent_candidate,
+            country_code=self.country_code,
         )

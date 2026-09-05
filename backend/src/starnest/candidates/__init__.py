@@ -21,6 +21,7 @@ from starnest.candidates.candidate import Candidate, NestingError
 from starnest.candidates.identifiers import (
     SEGMENT_SEPARATOR,
     CandidateId,
+    CountryCode,
     Identifier,
     LevelId,
     MalformedIdentifierError,
@@ -37,6 +38,7 @@ __all__ = [
     "SEGMENT_SEPARATOR",
     "Candidate",
     "CandidateId",
+    "CountryCode",
     "Identifier",
     "InconsistentHierarchyError",
     "Level",

@@ -13,6 +13,7 @@ SELECT c.id,
        c.level,
        c.parent_level,
        c.parent_candidate,
+       c.country_code,
        parent.name AS parent_name
 FROM   candidate AS c
 LEFT   JOIN candidate AS parent ON parent.id = c.parent_candidate
@@ -27,6 +28,7 @@ SELECT c.id,
        c.level,
        c.parent_level,
        c.parent_candidate,
+       c.country_code,
        parent.name AS parent_name
 FROM   candidate AS c
 LEFT   JOIN candidate AS parent ON parent.id = c.parent_candidate

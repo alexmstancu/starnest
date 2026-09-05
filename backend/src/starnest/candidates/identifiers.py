@@ -165,3 +165,42 @@ def suggest_identifier_segment(display_name: str) -> str:
             f"no identifier segment follows from {display_name!r} -- choose one by hand"
         )
     return proposed
+
+
+_ALPHA_2 = re.compile(r"^[A-Z]{2}$")
+
+
+class CountryCode(str):
+    """An ISO 3166-1 alpha-2 code: `PT`, `GR`, `GB`.
+
+    **Not an `Identifier`**, and the difference is the point. Every other name in this module is
+    ours -- assigned once, permanent, and legible because we chose it that way. This one is
+    ISO's, published and maintained by somebody else, and it is uppercase for the same reason
+    `country.portugal` is lowercase: it is spelled the way its owner spells it.
+
+    Two letters exactly, which is the whole of the alpha-2 grammar. That rules out the mistake
+    worth ruling out -- an alpha-3 code, or a source's own spelling, in a column whose readers
+    will treat it as the standard. `EL` for Greece and `UK` for the United Kingdom are Eurostat's
+    conventions and are valid alpha-2 *shapes*, so this cannot catch them; the Eurostat adapter
+    translates them, because whose spelling they are is a fact about Eurostat.
+
+    The same rule as the database's `candidate_country_code_is_iso_3166_alpha_2` check, stated
+    in both places for the reason `arch.md` 3.3b gives: the constraint fires with a violation,
+    this fires with a sentence.
+    """
+
+    __slots__ = ()
+
+    def __new__(cls, text: str) -> Self:
+        if not _ALPHA_2.fullmatch(text):
+            raise MalformedIdentifierError(
+                f"{text!r} is not an ISO 3166-1 alpha-2 code: two uppercase letters, no more "
+                "and no fewer"
+            )
+        return super().__new__(cls, text)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        return core_schema.no_info_after_validator_function(cls, core_schema.str_schema())

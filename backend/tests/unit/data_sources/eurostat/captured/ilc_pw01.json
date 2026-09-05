@@ -1,0 +1,539 @@
+{
+ "class": "dataset",
+ "dimension": {
+  "age": {
+   "category": {
+    "index": {
+     "Y_GE16": 0
+    },
+    "label": {
+     "Y_GE16": "16 years or over"
+    }
+   },
+   "label": "Age class"
+  },
+  "freq": {
+   "category": {
+    "index": {
+     "A": 0
+    },
+    "label": {
+     "A": "Annual"
+    }
+   },
+   "label": "Time frequency"
+  },
+  "geo": {
+   "category": {
+    "index": {
+     "AL": 36,
+     "AT": 22,
+     "BE": 3,
+     "BG": 4,
+     "CH": 32,
+     "CY": 15,
+     "CZ": 5,
+     "DE": 7,
+     "DK": 6,
+     "EA20": 2,
+     "EA21": 1,
+     "EE": 8,
+     "EL": 10,
+     "ES": 11,
+     "EU27_2020": 0,
+     "FI": 28,
+     "FR": 12,
+     "HR": 13,
+     "HU": 19,
+     "IE": 9,
+     "IS": 30,
+     "IT": 14,
+     "LT": 17,
+     "LU": 18,
+     "LV": 16,
+     "ME": 34,
+     "MK": 35,
+     "MT": 20,
+     "NL": 21,
+     "NO": 31,
+     "PL": 23,
+     "PT": 24,
+     "RO": 25,
+     "RS": 37,
+     "SE": 29,
+     "SI": 26,
+     "SK": 27,
+     "TR": 38,
+     "UK": 33,
+     "XK": 39
+    },
+    "label": {
+     "AL": "Albania",
+     "AT": "Austria",
+     "BE": "Belgium",
+     "BG": "Bulgaria",
+     "CH": "Switzerland",
+     "CY": "Cyprus",
+     "CZ": "Czechia",
+     "DE": "Germany",
+     "DK": "Denmark",
+     "EA20": "Euro area \u2013 20 countries (2023-2025)",
+     "EA21": "Euro area \u2013 21 countries (from 2026)",
+     "EE": "Estonia",
+     "EL": "Greece",
+     "ES": "Spain",
+     "EU27_2020": "European Union - 27 countries (from 2020)",
+     "FI": "Finland",
+     "FR": "France",
+     "HR": "Croatia",
+     "HU": "Hungary",
+     "IE": "Ireland",
+     "IS": "Iceland",
+     "IT": "Italy",
+     "LT": "Lithuania",
+     "LU": "Luxembourg",
+     "LV": "Latvia",
+     "ME": "Montenegro",
+     "MK": "North Macedonia",
+     "MT": "Malta",
+     "NL": "Netherlands",
+     "NO": "Norway",
+     "PL": "Poland",
+     "PT": "Portugal",
+     "RO": "Romania",
+     "RS": "Serbia",
+     "SE": "Sweden",
+     "SI": "Slovenia",
+     "SK": "Slovakia",
+     "TR": "T\u00fcrkiye",
+     "UK": "United Kingdom",
+     "XK": "Kosovo*"
+    }
+   },
+   "label": "Geopolitical entity (reporting)"
+  },
+  "isced11": {
+   "category": {
+    "index": {
+     "TOTAL": 0
+    },
+    "label": {
+     "TOTAL": "All ISCED 2011 levels"
+    }
+   },
+   "label": "International Standard Classification of Education (ISCED 2011)"
+  },
+  "life_sat": {
+   "category": {
+    "index": {
+     "LIFE": 0
+    },
+    "label": {
+     "LIFE": "Life as a whole"
+    }
+   },
+   "label": "Life satisfaction"
+  },
+  "sex": {
+   "category": {
+    "index": {
+     "T": 0
+    },
+    "label": {
+     "T": "Total"
+    }
+   },
+   "label": "Sex"
+  },
+  "statinfo": {
+   "category": {
+    "index": {
+     "AVG": 0
+    },
+    "label": {
+     "AVG": "Average"
+    }
+   },
+   "label": "Statistical information"
+  },
+  "time": {
+   "category": {
+    "index": {
+     "2021": 0,
+     "2022": 1,
+     "2023": 2,
+     "2024": 3,
+     "2025": 4
+    },
+    "label": {
+     "2021": "2021",
+     "2022": "2022",
+     "2023": "2023",
+     "2024": "2024",
+     "2025": "2025"
+    }
+   },
+   "label": "Time"
+  },
+  "unit": {
+   "category": {
+    "index": {
+     "RTG": 0
+    },
+    "label": {
+     "RTG": "Rating (0-10)"
+    }
+   },
+   "label": "Unit of measure"
+  }
+ },
+ "extension": {
+  "agencyId": "ESTAT",
+  "annotation": [
+   {
+    "date": "2024-04-18T14:46:42+0200",
+    "type": "CREATED"
+   },
+   {
+    "title": "<adms:identifier xmlns:adms=\"http://www.w3.org/ns/adms#\" xmlns:skos=\"http://www.w3.org/2004/02/skos/core.html\" xmlns:dct=\"http://purl.org/dc/terms/\" xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><adms:Identifier rdf:about=\"https://doi.org/10.2908/ILC_PW01\"><skos:notation rdf:datatype=\"http://purl.org/spar/datacite/doi\">10.2908/ILC_PW01</skos:notation><dct:creator rdf:resource=\"http://publications.europa.eu/resource/authority/corporate-body/ESTAT\"/><dct:issued rdf:datatype=\"http://www.w3.org/2001/XMLSchema#date\">2023-01-19</dct:issued></adms:Identifier></adms:identifier>",
+    "type": "DISSEMINATION_DOI_XML"
+   },
+   {
+    "href": "https://ec.europa.eu/eurostat/databrowser-backend/api/public/explanatory-notes/get/Info_note_ILC_20251009.pdf",
+    "text": "Information note",
+    "title": "info-category",
+    "type": "DISSEMINATION_EXPLANATORY_LINK"
+   },
+   {
+    "href": "https://ec.europa.eu/eurostat/databrowser-backend/api/public/explanatory-notes/get/Info_note_ILC_20251009.pdf",
+    "title": "info-category",
+    "type": "DISSEMINATION_EXPLANATORY_LINK"
+   },
+   {
+    "href": "https://ec.europa.eu/eurostat/databrowser-backend/api/public/explanatory-notes/get/Info_note_ILC_20251009.pdf",
+    "title": "info-category",
+    "type": "DISSEMINATION_EXPLANATORY_LINK"
+   },
+   {
+    "title": "DATASET",
+    "type": "DISSEMINATION_OBJECT_TYPE"
+   },
+   {
+    "date": "2026-06-08T23:00:00+0200",
+    "type": "DISSEMINATION_TIMESTAMP_DATA"
+   },
+   {
+    "date": "2026-06-08T23:00:00+0200",
+    "type": "DISSEMINATION_TIMESTAMP_GLOBAL"
+   },
+   {
+    "date": "2026-06-08T23:00:00+0200",
+    "type": "DISSEMINATION_TIMESTAMP_PLANNED"
+   },
+   {
+    "href": "https://ec.europa.eu/eurostat/cache/metadata/en/ilc_sieusilc.htm",
+    "title": "Explanatory texts (metadata)",
+    "type": "ESMS_HTML"
+   },
+   {
+    "href": "https://ec.europa.eu/eurostat/api/dissemination/files?file=metadata/ilc_sieusilc.sdmx.zip",
+    "title": "Explanatory texts (metadata)",
+    "type": "ESMS_SDMX"
+   },
+   {
+    "title": "36471",
+    "type": "OBS_COUNT"
+   },
+   {
+    "title": "2025",
+    "type": "OBS_PERIOD_OVERALL_LATEST"
+   },
+   {
+    "title": "2013",
+    "type": "OBS_PERIOD_OVERALL_OLDEST"
+   },
+   {
+    "text": "Eurostat",
+    "type": "SOURCE_INSTITUTIONS"
+   },
+   {
+    "date": "2026-06-08T23:00:00+0200",
+    "type": "UPDATE_DATA"
+   },
+   {
+    "date": "2026-06-08T23:00:00+0200",
+    "type": "UPDATE_STRUCTURE"
+   }
+  ],
+  "datastructure": {
+   "agencyId": "ESTAT",
+   "id": "ILC_PW01",
+   "version": "69.0"
+  },
+  "id": "ILC_PW01",
+  "lang": "EN",
+  "positions-with-no-data": {
+   "age": [],
+   "freq": [],
+   "geo": [
+    30,
+    33,
+    39
+   ],
+   "isced11": [],
+   "life_sat": [],
+   "sex": [],
+   "statinfo": [],
+   "time": [],
+   "unit": []
+  },
+  "status": {
+   "label": {
+    "b": "break in time series",
+    "bu": "break in time series, low reliability",
+    "e": "estimated",
+    "p": "provisional",
+    "u": "low reliability"
+   }
+  },
+  "version": "1.0"
+ },
+ "id": [
+  "freq",
+  "statinfo",
+  "unit",
+  "isced11",
+  "life_sat",
+  "sex",
+  "age",
+  "geo",
+  "time"
+ ],
+ "label": "Overall life satisfaction by sex, age and educational attainment",
+ "size": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  40,
+  5
+ ],
+ "source": "ESTAT",
+ "status": {
+  "0": "u",
+  "1": "e",
+  "11": "e",
+  "115": "u",
+  "116": "u",
+  "117": "u",
+  "118": "u",
+  "119": "u",
+  "12": "e",
+  "120": "u",
+  "121": "u",
+  "122": "u",
+  "123": "u",
+  "124": "u",
+  "132": "b",
+  "142": "b",
+  "171": "b",
+  "175": "b",
+  "2": "e",
+  "35": "u",
+  "36": "u",
+  "37": "u",
+  "60": "u",
+  "61": "bu",
+  "62": "u",
+  "63": "u",
+  "64": "u",
+  "67": "b",
+  "88": "p",
+  "89": "p",
+  "91": "b",
+  "94": "b",
+  "95": "u",
+  "96": "u",
+  "97": "u",
+  "98": "u",
+  "99": "u"
+ },
+ "updated": "2026-06-08T23:00:00+0200",
+ "value": {
+  "1": 7.1,
+  "100": 7.1,
+  "101": 7.4,
+  "102": 7.4,
+  "103": 7.5,
+  "104": 7.6,
+  "105": 7.7,
+  "106": 7.7,
+  "107": 7.6,
+  "108": 7.6,
+  "109": 7.6,
+  "11": 7.1,
+  "110": 8.0,
+  "111": 7.9,
+  "112": 7.7,
+  "113": 7.6,
+  "114": 7.7,
+  "115": 7.5,
+  "116": 7.7,
+  "117": 7.6,
+  "118": 7.6,
+  "119": 7.7,
+  "12": 7.2,
+  "121": 7.0,
+  "122": 7.1,
+  "123": 7.3,
+  "124": 7.3,
+  "125": 7.7,
+  "126": 7.7,
+  "127": 7.7,
+  "128": 7.7,
+  "129": 7.8,
+  "13": 7.2,
+  "130": 7.6,
+  "131": 7.6,
+  "132": 7.7,
+  "133": 7.7,
+  "134": 7.6,
+  "135": 7.1,
+  "136": 7.0,
+  "137": 7.3,
+  "138": 7.3,
+  "139": 7.4,
+  "14": 7.2,
+  "140": 8.1,
+  "141": 7.9,
+  "142": 7.8,
+  "143": 7.8,
+  "144": 7.8,
+  "145": 7.6,
+  "146": 7.5,
+  "147": 7.5,
+  "148": 7.4,
+  "149": 7.4,
+  "15": 7.5,
+  "155": 7.5,
+  "156": 7.7,
+  "157": 7.6,
+  "158": 7.6,
+  "159": 7.7,
+  "16": 7.6,
+  "160": 7.9,
+  "161": 8.0,
+  "162": 7.8,
+  "163": 7.7,
+  "17": 7.7,
+  "170": 6.4,
+  "171": 5.8,
+  "172": 6.6,
+  "175": 5.7,
+  "176": 5.4,
+  "177": 5.8,
+  "178": 6.2,
+  "18": 7.6,
+  "180": 5.7,
+  "181": 6.0,
+  "182": 6.3,
+  "185": 5.9,
+  "186": 6.1,
+  "187": 6.4,
+  "188": 6.5,
+  "189": 6.6,
+  "19": 7.6,
+  "190": 5.6,
+  "191": 5.4,
+  "192": 5.6,
+  "193": 5.8,
+  "194": 5.7,
+  "2": 7.3,
+  "20": 5.7,
+  "21": 5.6,
+  "22": 5.9,
+  "23": 6.2,
+  "24": 6.3,
+  "25": 7.3,
+  "26": 7.4,
+  "27": 7.4,
+  "28": 7.4,
+  "29": 7.4,
+  "3": 7.2,
+  "30": 7.5,
+  "31": 7.6,
+  "32": 7.5,
+  "33": 7.6,
+  "34": 7.7,
+  "36": 6.5,
+  "37": 7.0,
+  "38": 7.0,
+  "39": 7.0,
+  "4": 7.2,
+  "40": 7.2,
+  "41": 7.2,
+  "42": 7.2,
+  "43": 7.1,
+  "44": 7.3,
+  "45": 7.3,
+  "46": 7.4,
+  "47": 7.6,
+  "48": 7.5,
+  "49": 7.6,
+  "50": 6.8,
+  "51": 6.7,
+  "52": 6.9,
+  "53": 6.7,
+  "54": 6.9,
+  "55": 7.2,
+  "56": 7.1,
+  "57": 7.2,
+  "58": 7.2,
+  "59": 7.2,
+  "60": 6.8,
+  "61": 7.0,
+  "62": 7.1,
+  "63": 7.1,
+  "64": 7.1,
+  "65": 6.8,
+  "66": 6.8,
+  "67": 7.1,
+  "68": 7.2,
+  "69": 7.4,
+  "70": 7.2,
+  "71": 7.2,
+  "72": 7.2,
+  "73": 7.2,
+  "74": 7.1,
+  "75": 6.7,
+  "76": 7.1,
+  "77": 7.4,
+  "78": 7.4,
+  "79": 7.4,
+  "80": 6.7,
+  "81": 6.8,
+  "82": 6.9,
+  "83": 6.9,
+  "84": 6.9,
+  "85": 7.0,
+  "86": 7.1,
+  "87": 7.2,
+  "88": 7.2,
+  "89": 7.3,
+  "9": 7.2,
+  "90": 7.4,
+  "91": 7.2,
+  "92": 7.3,
+  "93": 7.2,
+  "94": 7.4,
+  "95": 6.5,
+  "96": 6.9,
+  "97": 7.2,
+  "98": 7.1,
+  "99": 7.1
+ },
+ "version": "2.0"
+}

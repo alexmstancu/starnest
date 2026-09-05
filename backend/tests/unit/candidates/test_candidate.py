@@ -55,8 +55,19 @@ class TestWhatACandidateIs:
 
     def test_carries_nothing_an_evaluation_owns(self) -> None:
         """No score, no status, no `parent_not_matching` -- all of them depend on which
-        criteria set was used, so they belong to the result, not the place."""
-        assert set(Candidate.model_fields) == {"id", "name", "level", "parent_candidate"}
+        criteria set was used, so they belong to the result, not the place.
+
+        `country_code` passes this bar and a score does not, which is the distinction the test
+        is really about: ISO 3166-1 alpha-2 is true of Portugal whoever is looking and whatever
+        they weighted, so it is a property of the place in the way a score never is.
+        """
+        assert set(Candidate.model_fields) == {
+            "id",
+            "name",
+            "level",
+            "parent_candidate",
+            "country_code",
+        }
 
     def test_refuses_a_field_it_does_not_declare(self) -> None:
         with pytest.raises(ValidationError):
@@ -169,3 +180,37 @@ class TestNothingAssumesThereAreExactlyTwoLevels:
                 level=NEIGHBOURHOOD,
                 parent_candidate="country.portugal",
             )
+
+
+class TestTheCountryCode:
+    def test_a_country_carries_its_iso_code(self) -> None:
+        """Alpha-2, because every structured source keys countries by it and the translation
+        has to live somewhere that is not the second adapter to need it."""
+        portugal = Candidate(
+            id="country.portugal", name="Portugal", level=COUNTRY, country_code="PT"
+        )
+
+        assert portugal.country_code == "PT"
+
+    def test_a_country_nobody_has_coded_yet_is_allowed(self) -> None:
+        """The column was added before the codes were seeded, and a city never has one."""
+        assert Candidate(id="country.portugal", name="Portugal", level=COUNTRY).country_code is None
+
+    @pytest.mark.parametrize(
+        "wrong",
+        ["PRT", "P", "pt", "P1", ""],
+        ids=["alpha-3", "one letter", "lowercase", "digit", "empty"],
+    )
+    def test_something_that_is_not_an_alpha_2_code_is_refused(self, wrong: str) -> None:
+        """The mistake worth refusing is an alpha-3 code, or a source's own spelling, in a
+        column whose readers will treat it as the standard."""
+        with pytest.raises(ValidationError):
+            Candidate(id="country.portugal", name="Portugal", level=COUNTRY, country_code=wrong)
+
+    def test_a_rename_keeps_the_code(self) -> None:
+        """Czechia is the case this exists for: the label changed and CZ did not."""
+        czechia = Candidate(
+            id="country.czechia", name="Czech Republic", level=COUNTRY, country_code="CZ"
+        )
+
+        assert czechia.renamed_to("Czechia").country_code == "CZ"
