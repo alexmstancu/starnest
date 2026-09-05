@@ -1,6 +1,8 @@
 # Development plan — Starnest **MVP**
 
-**Status:** written 2026-08-30, from `reqs.md` and `arch.md`.
+**Status:** written 2026-08-30 from `reqs.md` and `arch.md`. **Reassessed 2026-09-05**, after
+minE2E — see section 0.0, which is the only part of this document written with output to look
+at rather than a design to reason from.
 
 > ### This plan covers the MVP only, and the MVP is the country level
 >
@@ -25,6 +27,88 @@ each agent is allowed to decide alone.
 
 It does not restate requirements or architecture. Where it names a rule, the authority is the
 section it cites.
+
+---
+
+## 0.0 Where this plan actually stands — 2026-09-05
+
+Written after minE2E (`docs/mine2e.md`) landed a working vertical slice. Everything below this
+section was reasoned from documents; this section is the first part written from a running
+application, and where the two disagree, this one is right.
+
+### What is built
+
+| Phase | State |
+|---|---|
+| **P0** Ground | **Done.** 30 migrations, the catalog seeded, `make check` a real gate |
+| **P1** Vocabulary and seams | **Done**, with one correction: `CandidateStore` was declared during minE2E because nothing had needed it, and `CriteriaStore` had no implementation until M3 needed one |
+| **P2** Core policy | **Done for the MVP's needs.** `evaluation/` exists cut to `percentile` and `as_is`; `fixed`, `target_range`, the compound-rule shapes and match rules are not built |
+| **P3** First vertical slice | **Partly done.** 7 of 40 operations, one source adapter, two screens, and a browser test against the real stack |
+| **P4**-**P7** | Not started |
+
+**1,226 tests. 93 real Eurostat values across 31 countries. A browser shows a ranked table.**
+
+### The state of GATE A, step by step
+
+Gate A's seven-step narrative is closer than the phase table suggests, and failing it in
+specific places rather than generally:
+
+| Step | State |
+|---|---|
+| 1. Configure the household, read it back | **No.** No household endpoints and no household record |
+| 2. Read the catalog through the API | **Partly.** Levels, criteria sets and candidates; no pillars or attributes endpoint |
+| 3. Duplicate a set, adjust a weight, assert the rebalance and the locks | **Partly.** The weight change rebalances and is asserted; no duplicate endpoint, and locks are proven only in unit tests |
+| 4. Plan an acquisition, assert the estimate | **No.** No dry run, no estimate |
+| 5. Run it, poll, assert values land with both dates and their source | **Partly.** Values land with both dates and their source, but through `make acquire` rather than the API; nothing persists a run and there is nothing to poll |
+| 6. Rankings against the **shipped** set: all 32 `insufficient_data`, each naming the required attribute it lacks | **No**, and see below — the shipped set cannot score for a different reason than this step assumes |
+| 7. Rankings against a Gate-A set: 32 ranked, honest coverage | **Yes.** This is `minimal` (`0121`), and it is what the browser shows |
+| The contract-drift test | **Yes**, and stronger than designed — see "the two contracts" below |
+| UI e2e against the real backend | **Yes**, for the Rank and Configure screens; no pillar tree |
+
+### Four things minE2E discovered that this plan did not anticipate
+
+**1. The contract was never generated, and could not be.** `arch.md` 10.2 and section 0.6 below
+both said FastAPI regenerates `openapi.yaml`. Nothing ever has: it is hand-written, has been
+hand-edited in four commits, and describes 40 operations against the 7 served — regenerating it
+would delete the design. There are now **two files with two jobs**: `openapi.yaml` is the target,
+`openapi.implemented.yaml` is generated from the code and committed, and three tests hold them
+together. The acceptance suite validates responses against the *target*, which is what makes it
+an independent check rather than the code agreeing with itself.
+
+**2. An endpoint count is not a plan.** P3 named four endpoints. The interface cannot draw a
+screen without seven — the levels for its toggle, the criteria sets for its switcher, the
+candidates behind its counts. Endpoint counts in the phases below should be read as lower
+bounds.
+
+**3. Breadth across pillars beats depth within one.** The ranking currently rests on 3 of 41
+attributes in 2 of 11 pillars, and two of the three measure housing cost. Finland leads because
+it has good housing and content people, which is a true statement about housing and happiness
+and not yet about relocating. **A fourth housing attribute would change almost nothing; the
+first safety or health attribute changes everything.** P4's adapter fan-out should be ordered by
+pillar coverage, not by adapter convenience.
+
+**4. The shipped criteria set is blocked on a decision, not on data.** All 41 of its criteria
+normalise `fixed` (26) or `as_is` (15). `fixed` needs anchors that do not exist, and `as_is`
+needs figures already on the score scale, which almost none are. So `local_employment` cannot
+score even with perfect data — which makes "Deriving the scale anchors" (below) not a step
+inside Gate A but a **precondition of it**, and the highest-value decision outstanding.
+
+### The delivery model changed
+
+**Sections 0.1 and 0.2 describe agent fan-out. That is not how this is being built.** Decided
+2026-09-05, from observation rather than preference: three workstream agents ran on this project
+and all three produced work that had to be discarded or substantially reworked. The cost that
+sank them is specific — an agent starts cold and re-derives the project's context, and this
+codebase's standard is unusually implicit (the mutation-testing discipline, the never-fabricate
+rule, the comment voice, the composite-key idiom). Transferring that costs more than the work
+it buys, and it arrives imperfectly.
+
+**The rule now:** work is done sequentially by one agent holding the context. Delegation is for
+tasks where the *exploration* is large and the *result* is small — a broad search across many
+files — which is the opposite shape of "write a module to this standard".
+
+Sections 0.1 and 0.2 stand as a description of how the work is decomposed and reviewed. Read
+"agent" as "one task, done and proven before the next", not as "a process running in parallel".
 
 ---
 
@@ -134,7 +218,8 @@ Files everyone wants to edit. Each has a rule.
 |---|---|
 | `backend/pyproject.toml` | **Written before any agent starts** — dependencies, the coverage bar, the ruff rules and the four `import-linter` contracts all live here. An agent needing a dependency it does not find **stops** (section 0.3); master runs `uv add` at the checkpoint. Never `pip` (`CLAUDE.md`) |
 | `backend/migrations/` | Numbered `NNNN-slug.sql`. **Each workstream is allocated a reserved block** in its task brief — W4-A owns 0410–0419, W4-B owns 0420–0429, and so on. Two agents cannot pick the same number because neither may pick outside its block |
-| `docs/openapi.yaml` | **The target, and master's alone.** Hand-written and deliberately ahead of the code; the interface generates its client from it. A workstream wanting to change it is a stop. `docs/openapi.implemented.yaml` is generated from the code by `make openapi` and is the one that follows — the earlier claim that FastAPI regenerates *this* file was never true, and 40 designed operations against 7 served is why it could not be |
+| `docs/openapi.yaml` | **The target.** Hand-written, deliberately ahead of the code, and the file the interface generates its typed client from. Changing it is a decision, not a step |
+| `docs/openapi.implemented.yaml` | **The truth.** Generated by `make openapi` from the routes that exist, and committed. Never edited by hand. Regenerate after any endpoint change — a test fails when it is stale |
 | `Makefile`, `compose.yaml`, `.env.example` | **Master only.** They describe how the whole system is built and run, which is not any one workstream's business |
 | `.env` | **Never committed, never generated by an agent.** It holds the database password and the Anthropic API key. `.gitignore` ignores every `.env*` and re-includes only `.env.example`, so a new variant is ignored by default rather than by someone remembering |
 
@@ -205,18 +290,21 @@ P0 and P1 are single-agent phases sized to finish fast rather than to be complet
 
 **All eight phases are MVP scope.** Nothing below reaches past Gate D (section 8).
 
-| Phase | What | Agents | Ends with |
+| Phase | What | State (2026-09-05) | Ends with |
 |---|---|---|---|
-| **P0** | Ground: scaffold, schema, catalog | 1 | Checkpoint |
-| **P1** | The shared vocabulary, and all nine seam interfaces | 1 | Checkpoint |
-| **P2** | Core policy fan-out | 4 | Checkpoint |
-| **P3** | The first vertical slice — API + Eurostat | 2 | **GATE A** |
-| **P4** | Adapter fan-out | up to 6 | **GATE B** |
-| **P5** | Evaluation persistence, comparison, rules | 3 | Checkpoint |
-| **P6** | The interface's four tabs | 3 | **GATE C** |
-| **P7** | Hardening: the LLM path, operations, failure modes | 2 | **GATE D — the MVP ships** |
+| **P0** | Ground: scaffold, schema, catalog | **Done** | Checkpoint |
+| **P1** | The shared vocabulary, and all nine seam interfaces | **Done** | Checkpoint |
+| **P2** | Core policy | **Done for the MVP's needs** — `evaluation/` is cut to two normalisation methods | Checkpoint |
+| **P3** | The first vertical slice — API + Eurostat | **Partly done**: 7 of 40 operations, one adapter, two screens | **GATE A** |
+| **P4** | Adapter fan-out | Not started | **GATE B** |
+| **P5** | Evaluation persistence, comparison, rules | Not started | Checkpoint |
+| **P6** | The interface's four tabs | Two of four exist in skeleton | **GATE C** |
+| **P7** | Hardening: the LLM path, operations, failure modes | Not started | **GATE D — the MVP ships** |
 
-Sizes below are **S / M / L**, meaning roughly one, two, or several agent sessions. They are
+The **Agents** column is gone. Work is sequential (section 0.0), so a phase's shape is what it
+contains and what it depends on, not how many things run at once.
+
+Sizes below are **S / M / L**, meaning roughly one, two, or several working sessions. They are
 relative, not calendar estimates.
 
 ---
@@ -339,7 +427,15 @@ operation ID that `openapi.yaml` designed. This is the guard that made code-firs
 backend, the sidebar shows the active criteria set and the candidate counts, the Configure tab
 renders the pillar tree, and the on-screen total reads 100%.
 
-### Deriving the scale anchors — a step that belongs to Gate A
+### Deriving the scale anchors — a PRECONDITION of Gate A, not a step inside it
+
+> **Revised 2026-09-05.** This was written as a step within Gate A. It is not: Gate A's step 6
+> asks the shipped set to return `insufficient_data` naming the required attributes it lacks,
+> and the shipped set cannot reach that answer, because 26 of its criteria normalise `fixed`
+> with no anchors and the other 15 normalise `as_is` against figures that are not on the score
+> scale. **It cannot score with perfect data.** Until the anchors exist, `minimal` (`0121`) is
+> the only set that ranks anything, and Gate A step 6 is untestable rather than failing.
+
 
 **26 of the 41 country criteria normalise `fixed`, and no anchors ship** (`reqs.md` 7.1
 tabulates none). Only 13 can score today. Decided 2026-08-30 (`reqs.md` Q188): anchors are
@@ -627,15 +723,17 @@ Named because they are real, with what the plan does about each.
 
 ## 7. Decisions needed from Alex
 
-Each blocks something specific. **D1 blocks the very first task.**
+Each blocks something specific. **D6 is the one blocking now** — the shipped criteria set cannot score until it is answered, whatever data arrives.
 
 | # | Decision | Blocks | Recommendation |
 |---|---|---|---|
 | **D1** | ~~The top-level package name.~~ **Decided 2026-08-30: `starnest`.** The rule narrows rather than disappears — see below | — | **Answered** |
 | **D2** | **PostGIS, or plain numbers?** (`arch.md` 11) Whether coastline, elevation and protected-area distances are spatial queries or `Quantity` values computed at fetch time | W4-C, and the nature attributes | **Plain numbers.** Nothing in v1 needs a spatial query, and `arch.md` already calls this the likely answer |
-| **D3** | **The interface's component library** (`arch.md` 11) — a kit, or assembled directly | **W2-D**, and it is hard to reverse later | A headless kit for the sliders, tables and dialogs; styling assembled directly. The Configure tab is slider-dense and lock-toggle-heavy, which is where a kit earns its cost |
+| **D3** | ~~The interface's component library.~~ **Answered 2026-09-05: none, for now.** | — | **Answered.** The interface is built behaviour-first while there is no visual design (`CLAUDE.md`): semantic HTML, roles and labels a test can find, styling confined to `styles.css`. A component kit is a design decision, and it is deferred to the design pass rather than guessed at now — which also keeps the visuals cheap to swap, since nothing is coupled to a kit's idioms |
 | **D4** | **How a coordinate-bound source answers a country-level attribute.** Open-Meteo is coordinate-bound, but `country.avg_annual_temperature` is a national figure. Centroid? Capital? Population-weighted mean of the largest cities? Grid mean? **The documents do not resolve this**, and it changes what the number means | **W4-C** | **Population-weighted mean over the country's largest cities.** A centroid gives Spain the temperature of an empty plateau; a capital gives Portugal the temperature of Lisbon. Neither describes where people would live. This is a real modelling choice and worth your call |
 | **D5** | **The compound-rule thresholds** for `mild_now_brutal_later` and `cheap_but_taxed` (`reqs.md` 7.4, both TBD) | The rules firing at all | **Leave `NULL` through v1.** They are meant to meet real figures first — which Gate B is the first moment that becomes possible |
+| **D6** | **The scale anchors, and what `as_is` should do with a published index.** 26 criteria normalise `fixed` with no anchors; 15 normalise `as_is` against figures that are not on the score scale. **Added 2026-09-05** | **Everything.** The shipped criteria set cannot score at all until this is answered, with or without data — so Gate A step 6 is untestable and every ranking runs on `minimal` instead | **The most valuable decision outstanding.** Two parts. (a) The anchors themselves are yours: what rent is affordable, what tax rate is high. Preparing it is mechanical — the attributes, their units, and the real figures now in the database to calibrate against. (b) Whether `as_is` should rescale an `Index` from its declared `scale_min`/`scale_max` is a design question the code deliberately left open: rescaling from published bounds invents no anchor, so it may be legitimate rather than `fixed` by another name (`evaluation/magnitudes.py`) |
+| **D7** | **Which pillars to cover next.** The adapter fan-out can be ordered by adapter (all of Eurostat, then all of OECD) or by pillar (one attribute each from safety, health, connectivity, then depth). **Added 2026-09-05** | P4's ordering, and how soon the ranking means anything | **By pillar.** The ranking rests on 2 of 11 pillars and two of its three attributes measure housing cost; a fourth housing attribute changes almost nothing and the first safety attribute changes everything. Adapter convenience is the wrong axis to optimise while coverage is this narrow |
 
 > **D1, decided: the package is `starnest`, and the rule it relaxes is worth stating precisely.**
 > `arch.md` 6.1 asked for a neutral package name so that renaming the product would touch no
@@ -650,8 +748,9 @@ Each blocks something specific. **D1 blocks the very first task.**
 >
 > Concretely: `src/starnest/evaluation/normalisation.py` is fine; `class StarnestNormaliser` is not.
 
-**D3 is needed at kickoff. D2, D4 and D5 can be answered at Gate A**, and the plan is
-written so that nothing stalls waiting for them.
+**D6 is the one that blocks.** D2, D4 and D5 can still wait; D3 is answered by deferring it.
+D7 is a sequencing preference rather than a blocker, and the recommendation stands until real
+output argues otherwise — which is exactly how D7 came to be asked.
 
 ---
 
