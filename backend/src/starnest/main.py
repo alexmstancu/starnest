@@ -15,8 +15,13 @@ Two kinds of configuration are kept apart, deliberately:
 Confusing the two is how "nothing hardcoded" quietly stops being true.
 """
 
+from typing import TYPE_CHECKING
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 
 class Environment(BaseSettings):
@@ -66,11 +71,65 @@ class Environment(BaseSettings):
     __str__ = __repr__
 
 
-def run() -> None:
-    """Build every concrete type, wire it, and serve.
+def build() -> tuple[Environment, "FastAPI"]:
+    """Every concrete type, constructed and wired. The only place that names an implementation.
 
-    Implemented in P3 (devplan.md). The startup sequence it must follow is arch.md 9.2:
-    read the environment, refuse to start if the schema version is behind, validate every
-    adapter declaration against the catalog, sweep abandoned runs, then serve.
+    Separate from `run` so that a caller which wants the application without a server -- the
+    acceptance suite, or a script -- gets one without starting uvicorn. Nothing below this
+    function knows which store implementation it holds, which is what makes the seams of
+    `arch.md` 6.3 real rather than decorative.
+
+    **The pool is opened lazily by the application, not here.** Constructing it is synchronous;
+    connecting is not, and a composition root that awaited would have to be async for the
+    benefit of one line.
     """
-    raise NotImplementedError("The composition root is built in P3 (devplan.md).")
+    from psycopg_pool import AsyncConnectionPool
+
+    from starnest.api import build_app
+    from starnest.storage import (
+        PostgresCandidateStore,
+        PostgresCriteriaStore,
+        PostgresHouseholdStore,
+        PostgresValueStore,
+    )
+
+    environment = Environment()  # type: ignore[call-arg]
+    pool = AsyncConnectionPool(environment.database_url, min_size=1, open=False)
+
+    app = build_app(
+        households=PostgresHouseholdStore(pool),
+        criteria_store=PostgresCriteriaStore(pool),
+        candidates=PostgresCandidateStore(pool),
+        values=PostgresValueStore(pool),
+        display_name=environment.app_display_name,
+    )
+
+    @app.on_event("startup")
+    async def _open_the_pool() -> None:
+        await pool.open(wait=True)
+
+    @app.on_event("shutdown")
+    async def _close_the_pool() -> None:
+        await pool.close()
+
+    return environment, app
+
+
+def run() -> None:
+    """Build the application and serve it.
+
+    Binding to `host` is the security model, stated rather than assumed: there is no
+    authentication and there never will be (`reqs.md` 10), so what the socket is bound to is
+    the whole of it.
+
+    The startup checks `arch.md` 9.2 names -- refusing to start against a schema the code does
+    not recognise, validating adapter declarations against the catalog, sweeping abandoned runs
+    -- are not here yet. minE2E is the first thing that runs at all (`docs/mine2e.md` M3), and
+    each of those needs a thing that does not exist to check against.
+    """
+    import uvicorn
+
+    environment, app = build()
+    uvicorn.run(
+        app, host=environment.host, port=environment.port, log_level=environment.log_level.lower()
+    )
