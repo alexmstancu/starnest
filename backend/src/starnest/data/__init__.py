@@ -120,7 +120,7 @@ from starnest.data.sources import (
     UnknownDataSourceError,
 )
 from starnest.data.store import CatalogStore, UnknownAttributeError, ValueStore
-from starnest.data.value import MalformedValueError, Value
+from starnest.data.value import MalformedValueError, Value, ValueListing
 
 __all__ = [
     "EURO",
@@ -195,6 +195,7 @@ __all__ = [
     "UnknownDataSourceError",
     "UnknownReliabilityTierError",
     "Value",
+    "ValueListing",
     "ValuePayload",
     "ValueStore",
     "ValueType",

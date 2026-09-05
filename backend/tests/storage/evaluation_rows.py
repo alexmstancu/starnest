@@ -36,15 +36,16 @@ def record_an_evaluation(
     *,
     scale: int = THE_FROZEN_SCALE,
     level: str = A_SEEDED_LEVEL,
+    note: str | None = None,
 ) -> int:
     """One saved evaluation, carrying the level it ran at and the scale its scores are on."""
     row = connection.execute(
         """
-        INSERT INTO evaluation (criteria_set, level, computed_at, score_scale_max)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO evaluation (criteria_set, level, computed_at, score_scale_max, note)
+        VALUES (%s, %s, %s, %s, %s)
         RETURNING id
         """,
-        (A_SEEDED_SET, level, datetime.now(UTC), scale),
+        (A_SEEDED_SET, level, datetime.now(UTC), scale, note),
     ).fetchone()
     assert row is not None
     return int(row[0])

@@ -147,3 +147,25 @@ class Value(BaseModel):
     def is_rejected(self) -> bool:
         """Whether this figure failed validation. A rejected value never becomes active."""
         return self.rejection_reason is not None
+
+
+class ValueListing(BaseModel):
+    """One row of the drill-down: a value, and whether it is the one being scored.
+
+    **`is_active` is not a field of `Value`, and must not become one.** Being active is a
+    comparison BETWEEN values -- it changes when a fresher one arrives, when an attribute's
+    `max_age` is shortened, or when source priority is edited -- while a `Value` is a fact about
+    one figure that does not change when its neighbours do (`arch.md` 4). Putting the comparison
+    on the thing compared is how a stale flag comes to be written, and a stale `active` does not
+    fail loudly: it scores the wrong number with correct-looking provenance.
+
+    So the pairing lives at the seam instead, which reads several values at once and can
+    therefore answer the question honestly. `openapi.yaml` requires `is_active` on every value
+    it returns; the SQL computed it and the mapper then dropped it, leaving `api/` unable to
+    populate a field the contract marks required (known-issues D6).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    value: Value
+    is_active: bool

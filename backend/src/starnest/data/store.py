@@ -27,7 +27,7 @@ from starnest.data.identifiers import (
 )
 from starnest.data.rules import CompoundRule, MatchRule
 from starnest.data.sources import DataSource
-from starnest.data.value import Value
+from starnest.data.value import Value, ValueListing
 
 
 class UnknownAttributeError(LookupError):
@@ -70,11 +70,17 @@ class ValueStore(ABC):
         include_superseded: bool = True,
         limit: int | None = None,
         offset: int = 0,
-    ) -> tuple[Value, ...]:
+    ) -> tuple[ValueListing, ...]:
         """Every stored value, superseded and rejected ones included, for the drill-down.
 
         Nothing is discarded, and the point of the screen is to show that: the figure that
         lost, the figure that was rejected and why, and the one being used, together.
+
+        **Each comes back paired with whether it is the active one**, because "the one being
+        used" is the only part of that sentence a caller cannot work out from the values
+        themselves -- it depends on the attribute's `max_age` and the source priority, both of
+        which live elsewhere. `ValueListing` carries the pair rather than `Value` growing a
+        field, for the reason set out there.
         """
 
     @abstractmethod

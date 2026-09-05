@@ -807,7 +807,8 @@ export interface components {
             max_rent?: number;
             home_country_candidate: string;
             home_city_candidate?: string | null;
-            citizenships?: string[];
+            /** @description Candidate ids of countries. At least one is required: eu_free_movement and the UK and Swiss gates all turn on it (reqs.md 7.3), and an empty set would make every such gate pass or fail silently rather than visibly. */
+            citizenships: string[];
         };
         Household: components["schemas"]["HouseholdInput"];
         SettingsInput: {
@@ -870,10 +871,12 @@ export interface components {
         };
         /** @description A criterion as it stood when an evaluation ran, not as it stands now. The criteria set it was copied from stays editable, so this is the only record of the interpretation that produced the scores (reqs.md 3.4a, Q193). */
         EvaluationCriterion: components["schemas"]["Criterion"] & {
-            /** @description The anchors frozen at the moment the evaluation ran. */
+            /** @description The anchors frozen at the moment the evaluation ran, label included -- re-reading an old evaluation must show the words it showed then. */
             scale_anchors?: {
                 input_value?: number;
                 score?: number;
+                /** @description The word this band displays as, from this anchor up to the next. */
+                label?: string | null;
             }[];
         };
         PillarWeight: {
@@ -1032,6 +1035,8 @@ export interface components {
             level: string;
             /** Format: date-time */
             computed_at: string;
+            /** @description The top of the score range this evaluation used, frozen with it. Read scores against this rather than against the current setting, which may since have changed. */
+            score_scale_max: number;
             note?: string | null;
         };
         AttributeScore: {

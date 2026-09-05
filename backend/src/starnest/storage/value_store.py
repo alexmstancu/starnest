@@ -37,6 +37,7 @@ from starnest.data import (
     ShareComposition,
     Text,
     Value,
+    ValueListing,
     ValueStore,
     ValueType,
     payload_class_for,
@@ -96,7 +97,7 @@ class PostgresValueStore(ValueStore):
         include_superseded: bool = True,
         limit: int | None = None,
         offset: int = 0,
-    ) -> tuple[Value, ...]:
+    ) -> tuple[ValueListing, ...]:
         """Every stored value for the drill-down: superseded, rejected and active together.
 
         Two reads rather than one. The page of values is selected first and its payloads are
@@ -118,11 +119,16 @@ class PostgresValueStore(ValueStore):
             ]
             payloads = await self._read_payloads(connection, [row.id for row in rows])
         return tuple(
-            _value_from(
-                row,
-                payload=payloads.get(row.id),
-                rejection_reason=row.rejection_reason,
-                citations=tuple(row.citations),
+            ValueListing(
+                value=_value_from(
+                    row,
+                    payload=payloads.get(row.id),
+                    rejection_reason=row.rejection_reason,
+                    citations=tuple(row.citations),
+                ),
+                # Computed by the view, never by this method: which value wins depends on every
+                # other value for the same attribute, and this row knows nothing about them.
+                is_active=row.is_active,
             )
             for row in rows
         )
@@ -351,6 +357,11 @@ def _value_from(
     Columns the domain has no field for are dropped rather than carried: `is_fresh` and
     `is_active` are both derived facts about a row's standing among other rows, and `Value` is
     deliberately a fact about one figure (`data/value.py`).
+
+    `is_active` is dropped here and then paired back on by `read_values`, in a `ValueListing`.
+    The contract requires it on every value it returns, so losing it outright left `api/`
+    unable to populate a required field (known-issues D6) -- but putting it ON the value would
+    be storing a comparison on the thing compared, which is what this paragraph refuses.
     """
     return Value(
         candidate=CandidateId(row.candidate),

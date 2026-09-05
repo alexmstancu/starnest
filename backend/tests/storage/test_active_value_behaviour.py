@@ -297,3 +297,55 @@ def test_a_candidate_with_no_values_produces_no_row(connection: psycopg.Connecti
     starts from the candidate roster and joins values onto it.
     """
     assert _active(connection) is None
+
+
+# --- the views' column lists (known-issues D12) ---------------------------------
+
+THE_RANKING_COLUMNS = (
+    "is_fresh",
+    "source_override_rank",
+    "source_default_priority",
+    "confidence_rank",
+)
+"""What the view adds to a value: the three things `arch.md` 4 ranks on, plus freshness."""
+
+
+def _columns_of(connection: psycopg.Connection, relation: str) -> tuple[str, ...]:
+    rows = connection.execute(
+        "SELECT column_name FROM information_schema.columns"
+        " WHERE table_name = %s ORDER BY ordinal_position",
+        (relation,),
+    ).fetchall()
+    return tuple(row[0] for row in rows)
+
+
+@pytest.mark.parametrize("view", ["value_with_rank", "active_value"])
+def test_the_view_exposes_every_column_of_value(connection: psycopg.Connection, view: str) -> None:
+    """A column added to `value` reaches the ranking, or this fails.
+
+    Both views listed `*` until `0109`, and a `*` inside a view is not a wildcard: PostgreSQL
+    expands it once at CREATE VIEW and freezes the answer. So a column added to `value`
+    afterwards was simply absent here -- no error, no missing table, just one input the score
+    silently stopped accounting for (known-issues D12).
+
+    Naming the columns did not fix that on its own; it made it visible. This test is the part
+    that makes it fail, and it is why any migration touching `value` has to recreate both
+    views.
+    """
+    stored = _columns_of(connection, "value")
+
+    assert _columns_of(connection, view)[: len(stored)] == stored
+
+
+@pytest.mark.parametrize("view", ["value_with_rank", "active_value"])
+def test_the_view_adds_what_the_ordering_rules_need(
+    connection: psycopg.Connection, view: str
+) -> None:
+    """The other half: the derived columns the five rules order by are all present.
+
+    Without this the test above would pass against a view that had quietly lost `is_fresh`,
+    which is rule 2.
+    """
+    exposed = _columns_of(connection, view)
+
+    assert set(THE_RANKING_COLUMNS) <= set(exposed)

@@ -17,7 +17,7 @@
 -- jsonb_to_recordset names and types every column in the statement, which is the same
 -- information a row type would carry and is visible where the insert is.
 
--- name: insert_evaluation(criteria_set, level, computed_at, score_scale_max)<!
+-- name: insert_evaluation(criteria_set, level, computed_at, score_scale_max, note)<!
 -- The header. An evaluation runs at one level, so a comparison drawn from it can never mix
 -- levels (reqs.md 3.4a), and it records the scale its scores are on so that reopening it later
 -- shows numbers that still mean what they meant (reqs.md Q193).
@@ -25,8 +25,8 @@
 -- score_scale_max is the caller's to supply because it is the settings value AT COMPUTE TIME.
 -- Every other copy of it below is derived rather than passed, so this is the one place the
 -- number enters and the one place it can be got wrong.
-INSERT INTO evaluation (criteria_set, level, computed_at, score_scale_max)
-VALUES (:criteria_set, :level, :computed_at, :score_scale_max)
+INSERT INTO evaluation (criteria_set, level, computed_at, score_scale_max, note)
+VALUES (:criteria_set, :level, :computed_at, :score_scale_max, :note)
 RETURNING id;
 
 -- name: insert_evaluation_criteria(evaluation, criteria)!
@@ -152,7 +152,8 @@ FROM   jsonb_to_recordset(:warnings::jsonb) AS warning(
 SELECT e.id,
        e.criteria_set,
        e.level,
-       e.computed_at
+       e.computed_at,
+       e.note
 FROM   evaluation AS e
 ORDER  BY e.computed_at DESC, e.id DESC;
 
@@ -161,7 +162,8 @@ ORDER  BY e.computed_at DESC, e.id DESC;
 SELECT e.id,
        e.criteria_set,
        e.level,
-       e.computed_at
+       e.computed_at,
+       e.note
 FROM   evaluation AS e
 WHERE  e.id = :evaluation;
 

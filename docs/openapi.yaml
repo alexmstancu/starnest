@@ -1106,12 +1106,20 @@ components:
           properties:
             scale_anchors:
               type: array
-              description: The anchors frozen at the moment the evaluation ran.
+              description: >-
+                The anchors frozen at the moment the evaluation ran, label included --
+                re-reading an old evaluation must show the words it showed then.
               items:
                 type: object
                 properties:
                   input_value: { type: number }
-                  score: { type: integer, minimum: 0, maximum: 100 }
+                  # No maximum. The ceiling is the evaluation's own frozen score_scale_max,
+                  # which is a setting the user edits, so it cannot be stated here as a
+                  # constant. Migration 0107 enforces it per evaluation.
+                  score: { type: integer, minimum: 0 }
+                  label:
+                    type: [string, "null"]
+                    description: The word this band displays as, from this anchor up to the next.
 
     PillarWeight:
       type: object
@@ -1313,12 +1321,17 @@ components:
 
     EvaluationSummary:
       type: object
-      required: [id, criteria_set, level, computed_at]
+      required: [id, criteria_set, level, computed_at, score_scale_max]
       properties:
         id: { type: integer }
         criteria_set: { type: string }
         level: { type: string }
         computed_at: { type: string, format: date-time }
+        score_scale_max:
+          type: integer
+          description: >-
+            The top of the score range this evaluation used, frozen with it. Read scores
+            against this rather than against the current setting, which may since have changed.
         note: { type: [string, "null"] }
 
     AttributeScore:

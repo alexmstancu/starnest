@@ -216,8 +216,8 @@ async def test_the_pages_behind_a_figure_come_back_with_it(values: PostgresValue
         [a_value(attribute=A_COUNT_ATTRIBUTE, payload=Count(count=3), citations=citations)]
     )
 
-    (stored,) = await values.read_values(attribute=A_COUNT_ATTRIBUTE)
-    assert stored.citations == citations
+    (listed,) = await values.read_values(attribute=A_COUNT_ATTRIBUTE)
+    assert listed.value.citations == citations
 
 
 async def test_appending_nothing_stores_nothing_and_returns_nothing(
@@ -246,9 +246,12 @@ async def test_a_rejected_figure_is_stored_with_its_reason_and_never_becomes_act
     )
 
     assert await values.read_active_values(attributes=[A_COUNT_ATTRIBUTE]) == ()
-    (stored,) = await values.read_values(attribute=A_COUNT_ATTRIBUTE)
-    assert stored.is_rejected
-    assert stored.payload is None
+    (listed,) = await values.read_values(attribute=A_COUNT_ATTRIBUTE)
+    assert listed.value.is_rejected
+    assert listed.value.payload is None
+    # A rejected value never becomes active (`arch.md` 4, rule 1), and the listing says so
+    # rather than the reader having to infer it from the rejection.
+    assert listed.is_active is False
 
 
 async def test_a_figure_rejected_for_being_outside_its_credible_range_keeps_its_payload(
@@ -267,9 +270,9 @@ async def test_a_figure_rejected_for_being_outside_its_credible_range_keeps_its_
         ]
     )
 
-    (stored,) = await values.read_values(attribute=A_COUNT_ATTRIBUTE)
-    assert stored.payload == payload
-    assert stored.is_rejected
+    (listed,) = await values.read_values(attribute=A_COUNT_ATTRIBUTE)
+    assert listed.value.payload == payload
+    assert listed.value.is_rejected
 
 
 async def test_a_payload_of_another_type_is_refused_by_the_domain() -> None:
@@ -329,7 +332,13 @@ async def test_the_better_source_is_active_and_the_other_one_is_still_there(
 
     assert active.data_source == A_BETTER_SOURCE
     assert len(stored) == 2
-    assert {value.data_source for value in stored} == {A_BETTER_SOURCE, A_WORSE_SOURCE}
+    assert {listed.value.data_source for listed in stored} == {A_BETTER_SOURCE, A_WORSE_SOURCE}
+    # The drill-down's whole job: both figures visible, and which one is scored marked on the
+    # row rather than left for the reader to work out (known-issues D6).
+    assert {listed.value.data_source: listed.is_active for listed in stored} == {
+        A_BETTER_SOURCE: True,
+        A_WORSE_SOURCE: False,
+    }
 
 
 async def test_the_drill_down_can_be_asked_for_the_active_value_only(
@@ -348,7 +357,8 @@ async def test_the_drill_down_can_be_asked_for_the_active_value_only(
 
     only_active = await values.read_values(attribute=A_COUNT_ATTRIBUTE, include_superseded=False)
 
-    assert [value.data_source for value in only_active] == [A_BETTER_SOURCE]
+    assert [listed.value.data_source for listed in only_active] == [A_BETTER_SOURCE]
+    assert [listed.is_active for listed in only_active] == [True]
     assert await values.count_values(attribute=A_COUNT_ATTRIBUTE, include_superseded=False) == 1
 
 

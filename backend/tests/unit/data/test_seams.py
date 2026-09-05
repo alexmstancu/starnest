@@ -27,6 +27,7 @@ from starnest.data import (
     ReferencePeriod,
     UnknownAttributeError,
     Value,
+    ValueListing,
     ValueStore,
     ValueType,
 )
@@ -65,7 +66,11 @@ class InMemoryValueStore(ValueStore):
     async def read_values(
         self, *, candidate=None, attribute=None, include_superseded=True, limit=None, offset=0
     ):
-        return tuple(self._values)
+        # A rejected value never becomes active, which is the only part of the rule a fake
+        # holding one attribute's values can honestly answer (`arch.md` 4, rule 1).
+        return tuple(
+            ValueListing(value=value, is_active=not value.is_rejected) for value in self._values
+        )
 
     async def count_values(self, *, candidate=None, attribute=None, include_superseded=True):
         return len(self._values)
@@ -147,7 +152,7 @@ class TestTheValueStore:
         store = InMemoryValueStore()
         (stored,) = await store.append([A_VALUE])
         assert stored.id is not None
-        assert await store.read_values() == (stored,)
+        assert await store.read_values() == (ValueListing(value=stored, is_active=True),)
         assert await store.count_values() == 1
 
     async def test_a_rejected_value_stays_stored_and_is_not_active(self) -> None:
