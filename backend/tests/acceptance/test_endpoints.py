@@ -305,3 +305,164 @@ class TestTheListsTheInterfaceNeedsBeforeItCanRender:
         body = (await api.get("/v1/candidates", params={"parent": "country.portugal"})).json()
 
         assert body["items"] == []
+
+
+class TestReadingACriteriaSetAtALevel:
+    """`level` narrows the criteria and the pillar weights **together**, never one without the
+    other. Weights sum to 100 within a level, so a read that narrowed only the criteria would
+    return a set whose pillar weights summed to 200 -- and the domain would refuse to build it,
+    which is the right outcome reached the wrong way."""
+
+    async def test_narrowing_to_a_level_narrows_both_halves(self, api: httpx.AsyncClient) -> None:
+        whole = (await api.get(f"/v1/criteria-sets/{MINIMAL}")).json()
+        country = (await api.get(f"/v1/criteria-sets/{MINIMAL}", params={"level": COUNTRY})).json()
+
+        assert len(country["criteria"]) == len(whole["criteria"])
+        assert len(country["pillar_weights"]) == len(whole["pillar_weights"])
+
+    async def test_a_level_the_set_says_nothing_about_comes_back_empty_not_broken(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """The MVP is the country level (`reqs.md` 1.3), so `minimal` has no city criteria.
+        An empty set is the honest answer and must not be an error."""
+        response = await api.get(f"/v1/criteria-sets/{MINIMAL}", params={"level": "city"})
+
+        assert response.status_code == 200
+        assert response.json()["criteria"] == []
+
+
+class TestTheWeightsTheRebalanceProduces:
+    async def test_the_weight_that_was_asked_for_is_the_weight_that_lands(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        body = (
+            await api.patch(
+                f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+                json={"weight": 65},
+            )
+        ).json()
+
+        moved = next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)
+        assert Decimal(str(moved["weight"])) == Decimal(65)
+
+    @pytest.mark.parametrize("weight", [0, 100], ids=["nothing", "everything"])
+    async def test_the_ends_of_the_range_are_accepted(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str, weight: int
+    ) -> None:
+        """A criterion worth nothing is a decision, and one worth everything is a pillar with
+        one criterion in it. Both are legal, and a range that excluded them would make the
+        boundary a surprise."""
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"weight": weight},
+        )
+
+        assert response.status_code == 200
+        assert sum(Decimal(str(c["weight"])) for c in response.json()["criteria"]) == Decimal(100)
+
+    async def test_only_the_pillar_that_moved_comes_back(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """Rebalancing is within a pillar (`reqs.md` 5.2). Returning the whole set would invite
+        a screen to redraw criteria that did not change."""
+        body = (
+            await api.patch(
+                f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+                json={"weight": 60},
+            )
+        ).json()
+
+        assert body["pillar"] == "housing"
+        assert {c["pillar"] for c in body["criteria"]} == {"housing"}
+
+    async def test_the_other_pillars_are_left_alone(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"weight": 60},
+        )
+
+        whole = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+
+        satisfaction = next(c for c in whole["criteria"] if c["attribute"] == SATISFACTION)
+        assert Decimal(str(satisfaction["weight"])) == Decimal(100)
+
+
+class TestARankingIsComputedAndNotStored:
+    async def test_two_identical_requests_agree(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        """Adjusting a weight recalculates from stored values and never re-fetches
+        (`reqs.md` 5.6). Two reads of unchanged data must therefore agree exactly."""
+        first = (
+            await api.get("/v1/rankings", params={"criteria_set": MINIMAL, "level": COUNTRY})
+        ).json()
+        second = (
+            await api.get("/v1/rankings", params={"criteria_set": MINIMAL, "level": COUNTRY})
+        ).json()
+
+        assert [c["score"] for c in first["candidates"]] == [
+            c["score"] for c in second["candidates"]
+        ]
+
+    async def test_nothing_is_written_by_reading_a_ranking(
+        self, api: httpx.AsyncClient, stored_figures: None, database_url: str
+    ) -> None:
+        """An evaluation is written only when deliberately kept (`reqs.md` Q155). A GET that
+        stored one would bury the few that matter under hundreds from an afternoon of tuning."""
+        async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+            await pool.open(wait=True)
+            await api.get("/v1/rankings", params={"criteria_set": MINIMAL, "level": COUNTRY})
+            async with pool.connection() as connection:
+                kept = await (
+                    await connection.execute("SELECT count(*) FROM evaluation")
+                ).fetchone()
+
+        assert kept == (0,)
+
+    async def test_the_ranked_come_before_the_unscoreable(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        """A response read straight through is already the dashboard's order."""
+        body = (
+            await api.get("/v1/rankings", params={"criteria_set": MINIMAL, "level": COUNTRY})
+        ).json()
+
+        ranks = [c["rank"] for c in body["candidates"]]
+        first_unranked = next(i for i, rank in enumerate(ranks) if rank is None)
+        assert all(rank is None for rank in ranks[first_unranked:])
+
+    async def test_a_score_is_never_present_without_a_matching_status(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        """`score` is null exactly when `match_status` is insufficient_data, and never
+        otherwise. A zero would be a claim that everything measured badly."""
+        body = (
+            await api.get("/v1/rankings", params={"criteria_set": MINIMAL, "level": COUNTRY})
+        ).json()
+
+        for candidate in body["candidates"]:
+            unscored = candidate["score"] is None
+            assert unscored == (candidate["match_status"] == "insufficient_data")
+
+    async def test_coverage_is_a_percentage_on_every_row(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        body = (
+            await api.get("/v1/rankings", params={"criteria_set": MINIMAL, "level": COUNTRY})
+        ).json()
+
+        assert all(0 <= float(c["coverage"]) <= 100 for c in body["candidates"])
+
+    async def test_an_unscoreable_candidate_says_why(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        """ "Insufficient data" on its own tells a user nothing they can act on."""
+        body = (
+            await api.get("/v1/rankings", params={"criteria_set": MINIMAL, "level": COUNTRY})
+        ).json()
+
+        unscored = [c for c in body["candidates"] if c["score"] is None]
+        assert unscored
+        assert all(c["insufficient_reason"] for c in unscored)

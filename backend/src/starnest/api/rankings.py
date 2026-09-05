@@ -56,6 +56,12 @@ async def get_ranking(
     user has set nothing is the plausible-looking fabrication `devplan.md` 0.3 forbids -- so an
     unset scale is a refusal that names the setting, not a ranking on a scale nobody chose.
     """
+    # The named resource first. Asked for a ranking of a criteria set that does not exist, this
+    # used to answer "score_scale_max is not set" -- true, and not the reason the request
+    # failed. A 404 is about the request; a 409 is about state, and a client told the second
+    # when the first applies goes and changes a setting that was never the problem.
+    criteria_set_read = await criteria.read_criteria_set(criteria_set, level=level)
+
     settings = await households.get_settings()
     if settings.score_scale_max is None:
         raise HTTPException(
@@ -69,7 +75,6 @@ async def get_ranking(
             },
         )
 
-    criteria_set_read = await criteria.read_criteria_set(criteria_set, level=level)
     roster = await candidates.read_candidates(level=level)
     active = {
         str(candidate.id): await values.read_active_values(candidates=[str(candidate.id)])

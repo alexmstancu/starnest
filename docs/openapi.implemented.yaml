@@ -1,0 +1,583 @@
+# GENERATED -- do not edit. Run `make openapi`.
+#
+# Exactly what the application serves today, written from the routes FastAPI has. The hand-
+# written design lives in `openapi.yaml` and is deliberately ahead of this; the difference
+# between the two files is the work remaining.
+components:
+  schemas:
+    CandidateBody:
+      properties:
+        id:
+          title: Id
+          type: string
+        level:
+          title: Level
+          type: string
+        name:
+          title: Name
+          type: string
+        parent_candidate:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Parent Candidate
+      required:
+      - id
+      - name
+      - level
+      title: CandidateBody
+      type: object
+    CandidateResultBody:
+      properties:
+        candidate:
+          title: Candidate
+          type: string
+        coverage:
+          title: Coverage
+          type: number
+        insufficient_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Insufficient Reason
+        match_status:
+          title: Match Status
+          type: string
+        name:
+          title: Name
+          type: string
+        rank:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rank
+        score:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Null only when insufficient data. On the evaluation's scale.
+          title: Score
+      required:
+      - candidate
+      - name
+      - coverage
+      - match_status
+      title: CandidateResultBody
+      type: object
+    CandidatesBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CandidateBody'
+          title: Items
+          type: array
+      required:
+      - items
+      title: CandidatesBody
+      type: object
+    CriteriaSetBody:
+      properties:
+        applied_compound_rules:
+          default: []
+          items:
+            type: string
+          title: Applied Compound Rules
+          type: array
+        criteria:
+          items:
+            $ref: '#/components/schemas/CriterionBody'
+          title: Criteria
+          type: array
+        enforced_match_rules:
+          default: []
+          items:
+            type: string
+          title: Enforced Match Rules
+          type: array
+        id:
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+        pillar_weights:
+          items:
+            $ref: '#/components/schemas/PillarWeightBody'
+          title: Pillar Weights
+          type: array
+      required:
+      - id
+      - name
+      - criteria
+      - pillar_weights
+      title: CriteriaSetBody
+      type: object
+    CriteriaSetSummaryBody:
+      properties:
+        id:
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+      required:
+      - id
+      - name
+      title: CriteriaSetSummaryBody
+      type: object
+    CriteriaSetsBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CriteriaSetSummaryBody'
+          title: Items
+          type: array
+      required:
+      - items
+      title: CriteriaSetsBody
+      type: object
+    CriterionBody:
+      additionalProperties: true
+      type: object
+    CriterionInput:
+      description: 'Only the fields present are changed.
+
+
+        minE2E sends one of them. The rest are declared because the contract declares
+        them, and an
+
+        endpoint that silently ignored a field a client sent would be worse than one
+        that refuses
+
+        it.'
+      properties:
+        is_scored:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Scored
+        weight:
+          anyOf:
+          - maximum: 100.0
+            minimum: 0.0
+            type: number
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Weight
+        weight_locked:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Weight Locked
+      title: CriterionInput
+      type: object
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          title: Detail
+          type: array
+      title: HTTPValidationError
+      type: object
+    LevelBody:
+      properties:
+        depth_order:
+          title: Depth Order
+          type: integer
+        id:
+          title: Id
+          type: string
+        parent_level:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Parent Level
+      required:
+      - id
+      - depth_order
+      title: LevelBody
+      type: object
+    LevelsBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/LevelBody'
+          title: Items
+          type: array
+      required:
+      - items
+      title: LevelsBody
+      type: object
+    PillarWeightBody:
+      properties:
+        level:
+          title: Level
+          type: string
+        pillar:
+          title: Pillar
+          type: string
+        weight:
+          title: Weight
+          type: number
+        weight_locked:
+          title: Weight Locked
+          type: boolean
+      required:
+      - pillar
+      - level
+      - weight
+      - weight_locked
+      title: PillarWeightBody
+      type: object
+    RankingBody:
+      properties:
+        candidates:
+          items:
+            $ref: '#/components/schemas/CandidateResultBody'
+          title: Candidates
+          type: array
+        computed_at:
+          format: date-time
+          title: Computed At
+          type: string
+        criteria_set:
+          title: Criteria Set
+          type: string
+        level:
+          title: Level
+          type: string
+      required:
+      - criteria_set
+      - level
+      - computed_at
+      - candidates
+      title: RankingBody
+      type: object
+    RebalancedPillar:
+      description: 'What a weight change actually produced: the whole pillar, as it
+        now stands.'
+      properties:
+        criteria:
+          items:
+            $ref: '#/components/schemas/CriterionBody'
+          title: Criteria
+          type: array
+        pillar:
+          title: Pillar
+          type: string
+      required:
+      - pillar
+      - criteria
+      title: RebalancedPillar
+      type: object
+    ScaleAnchorBody:
+      properties:
+        input_value:
+          title: Input Value
+          type: number
+        label:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Label
+        score:
+          title: Score
+          type: integer
+      required:
+      - input_value
+      - score
+      title: ScaleAnchorBody
+      type: object
+    SettingsBody:
+      description: '`SettingsInput` from the contract, which `Settings` is defined
+        as.'
+      properties:
+        comparator_limit:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Comparator Limit
+        min_coverage:
+          anyOf:
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Min Coverage
+        run_spend_cap_eur:
+          anyOf:
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Run Spend Cap Eur
+        score_scale_max:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Score Scale Max
+      title: SettingsBody
+      type: object
+    ValidationError:
+      properties:
+        ctx:
+          title: Context
+          type: object
+        input:
+          title: Input
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          title: Location
+          type: array
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+      type: object
+info:
+  title: Starnest
+  version: 1.0.0
+openapi: 3.1.0
+paths:
+  /v1/candidates:
+    get:
+      description: 'Every candidate, or every candidate at one level.
+
+
+        `parent` is in the contract for the city level and is accepted rather than
+        ignored: a filter
+
+        silently dropped would return every country to a caller that asked for one
+        country''s cities.'
+      operationId: listCandidates
+      parameters:
+      - in: query
+        name: level
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Level
+      - in: query
+        name: parent
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Parent
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidatesBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Candidates
+      tags:
+      - catalog
+  /v1/criteria-sets:
+    get:
+      description: 'Headers only. Reading 41 criteria per set to fill a dropdown would
+        make the most
+
+        frequently rendered element in the product the most expensive one.'
+      operationId: listCriteriaSets
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CriteriaSetsBody'
+          description: Successful Response
+      summary: List Criteria Sets
+      tags:
+      - catalog
+  /v1/criteria-sets/{criteria_set_id}:
+    get:
+      description: 'One whole set. `level` narrows the criteria and the pillar weights
+        together.
+
+
+        Never one without the other: weights sum to 100 within a level, so narrowing
+        only the
+
+        criteria would return a set whose pillar weights summed to 200 -- and the
+        domain would
+
+        refuse to build it, which is the right outcome reached the wrong way.'
+      operationId: getCriteriaSet
+      parameters:
+      - in: path
+        name: criteria_set_id
+        required: true
+        schema:
+          title: Criteria Set Id
+          type: string
+      - in: query
+        name: level
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Level
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CriteriaSetBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Criteria Set
+      tags:
+      - criteria
+  /v1/criteria-sets/{criteria_set_id}/criteria/{attribute_id}:
+    patch:
+      description: 'Move one weight, and return the pillar it moved within.
+
+
+        The whole pillar comes back because the whole pillar changed: raising one
+        criterion lowers
+
+        its unlocked siblings so the pillar still sums to 100 (`reqs.md` 5.2). Returning
+        only the
+
+        criterion that was asked about would leave the screen showing a set that does
+        not add up.
+
+
+        Raises `WeightsAllLockedError` -- a 409 -- when every other weight in the
+        pillar is locked,
+
+        naming the locks so the screen can say which ones.'
+      operationId: updateCriterion
+      parameters:
+      - in: path
+        name: criteria_set_id
+        required: true
+        schema:
+          title: Criteria Set Id
+          type: string
+      - in: path
+        name: attribute_id
+        required: true
+        schema:
+          title: Attribute Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CriterionInput'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RebalancedPillar'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Update Criterion
+      tags:
+      - criteria
+  /v1/levels:
+    get:
+      description: In `depth_order`, which is what tells a caller which level screens
+        first.
+      operationId: listLevels
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LevelsBody'
+          description: Successful Response
+      summary: List Levels
+      tags:
+      - catalog
+  /v1/rankings:
+    get:
+      description: 'Score every candidate at this level and return them in rank order.
+
+
+        `score_scale_max` comes from settings and has no default here. Substituting
+        100 where the
+
+        user has set nothing is the plausible-looking fabrication `devplan.md` 0.3
+        forbids -- so an
+
+        unset scale is a refusal that names the setting, not a ranking on a scale
+        nobody chose.'
+      operationId: getRanking
+      parameters:
+      - in: query
+        name: criteria_set
+        required: true
+        schema:
+          title: Criteria Set
+          type: string
+      - in: query
+        name: level
+        required: true
+        schema:
+          title: Level
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RankingBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Ranking
+      tags:
+      - rankings
+  /v1/settings:
+    get:
+      operationId: getSettings
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsBody'
+          description: Successful Response
+      summary: Get Settings
+      tags:
+      - settings

@@ -15,9 +15,10 @@ means. It reads the set, asks the domain for the changed one, and writes it back
 """
 
 from decimal import Decimal
+from typing import Any
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
 from starnest.api.dependencies import Criteria
 from starnest.criteria import CriteriaSet, Criterion
@@ -49,6 +50,27 @@ class CriterionBody(BaseModel):
     breakdown_option: str | None = None
     reducer_mode: str | None = None
     scale_anchors: tuple[ScaleAnchorBody, ...] = ()
+
+    @model_serializer(mode="wrap")
+    def _omit_a_reducer_mode_there_is_none_of(
+        self, serialise: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        """Absent, not null, when the attribute has no breakdown.
+
+        The contract types `reducer_mode` as an enum of two strings and says in as many words
+        "omit when the attribute has no breakdown" -- so `null` is not a permitted value, and
+        the interface's generated client types the field optional rather than nullable. Sending
+        null satisfied Python and violated both.
+
+        Only this field. The other optional fields here are typed `[number, "null"]` in the
+        design, so null is exactly what they mean, and a blanket `exclude_none` would also drop
+        `score` from a ranking -- which is required AND nullable, and whose absence would be a
+        different lie.
+        """
+        serialised = serialise(self)
+        if serialised.get("reducer_mode") is None:
+            serialised.pop("reducer_mode", None)
+        return serialised
 
 
 class PillarWeightBody(BaseModel):

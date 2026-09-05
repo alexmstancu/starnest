@@ -9,7 +9,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help up down logs serve acquire rank migrate rollback backup \
-        test test-storage test-acceptance coverage coverage-open lint format boundaries audit check \
+        test test-storage test-acceptance coverage coverage-open lint format boundaries audit openapi check \
         ui-install ui-lint ui-typecheck ui-test ui-coverage ui-coverage-open ui-check ui-client \
         e2e e2e-report \
         docker-build docker-up docker-migrate docker-down env \
@@ -108,6 +108,9 @@ format:  ## ruff, applying fixes
 
 boundaries:  ## import-linter — arch.md 6.2 as something a build fails on
 	cd $(BACKEND) && uv run lint-imports
+
+openapi:  ## Regenerate docs/openapi.implemented.yaml from the code. Run after changing an endpoint
+	cd $(BACKEND) && uv run python scripts/openapi.py
 
 audit:  ## Structural audits of the ontology and the API contract
 	uv run --no-project python tools/audit_ontology.py

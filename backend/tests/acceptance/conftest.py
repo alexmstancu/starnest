@@ -82,3 +82,63 @@ async def a_scratch_criteria_set(database_url: str) -> AsyncIterator[str]:
             yield scratch
         finally:
             await criteria.delete_criteria_set(scratch)
+
+
+@pytest.fixture
+async def stored_figures(database_url: str) -> AsyncIterator[None]:
+    """Real figures for two countries, so a response is checked with data in it as well as
+    without.
+
+    Two shapes, not one: an endpoint that validates when every field is null and fails when they
+    carry numbers is the likelier of the two to ship, because nulls are what a first test reaches
+    and numbers are what a user sees.
+    """
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    from starnest.data import (
+        ConfidenceLevel,
+        Quantity,
+        Ratio,
+        ReferencePeriod,
+        Value,
+        ValueType,
+    )
+
+    a_year = ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 12, 31))
+
+    def a_figure(candidate: str, attribute: str, figure: str) -> Value:
+        satisfaction = attribute == "country.life_satisfaction"
+        return Value(
+            candidate=candidate,
+            attribute=attribute,
+            value_type=ValueType.QUANTITY if satisfaction else ValueType.RATIO,
+            data_source="eurostat",
+            reference_period=a_year,
+            retrieval_date=datetime.now(UTC),
+            confidence_level=ConfidenceLevel.HIGH,
+            payload=(
+                Quantity(magnitude=Decimal(figure), unit="ladder_points")
+                if satisfaction
+                else Ratio(value=Decimal(figure), basis="households")
+            ),
+        )
+
+    async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+        await pool.open(wait=True)
+        async with pool.connection() as connection:
+            await connection.execute(
+                "INSERT INTO settings (id, score_scale_max) VALUES (1, 100)"
+                " ON CONFLICT (id) DO UPDATE SET score_scale_max = 100"
+            )
+        await PostgresValueStore(pool).append(
+            [
+                a_figure("country.portugal", "country.housing_cost_overburden_rate", "5"),
+                a_figure("country.portugal", "country.overcrowding_rate", "9"),
+                a_figure("country.portugal", "country.life_satisfaction", "7.1"),
+                a_figure("country.greece", "country.housing_cost_overburden_rate", "28"),
+                a_figure("country.greece", "country.overcrowding_rate", "27"),
+                a_figure("country.greece", "country.life_satisfaction", "6.4"),
+            ]
+        )
+    yield
