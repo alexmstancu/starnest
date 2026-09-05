@@ -4,6 +4,15 @@ Findings from the review of 2026-09-02, after `criteria/`, `data/`, `storage/`, 
 `candidates/` were built. Two independent reviews — one of the Python, one of the SQL and the
 contract. **Every finding here was reproduced**; nothing is speculative.
 
+**D25 and D26 arrived later**, from an external review dated 2026-09-04 covering `storage/`,
+`backend/` and `ui/`. They are recorded here on the same terms as the rest: both were checked
+against the code, and the account below is the one the code supports rather than the one the
+review wrote. The same review produced fifteen further findings that did not survive checking
+— three contradicted by the line they cited, four naming files that do not exist, two that
+would have introduced a defect if applied. Those fifteen are deliberately not filed, and the
+count is recorded so that nobody re-imports them later on the strength of the two that were
+real.
+
 **How to read the split.** "Fixed" is what would have corrupted the first real numbers we ever
 see, or cost a line. "Deferred" is real but survivable, and is picked up in a named later
 chunk. Nothing is here because it was too hard.
@@ -25,6 +34,28 @@ a defect nobody can still read the account of is one that comes back.
 | **H5** | `storage/queries/criteria.sql` `duplicate_criteria_set` | The copy **drops every band label** — `label` is missing from the insert. A criteria set is defined as a *full* copy (`reqs.md` Q191) | `label` added to both halves of the `copied_anchors` insert, with a storage test that duplicates a labelled anchor |
 | **H6** | `tests/storage/test_active_value_behaviour.py` | **Three of the five ordering-rule tests still pass with the rule they name deleted from the view.** The expected winner is inserted *second*, so `id DESC` picks it for the wrong reason. The view itself is correct — the tests are the weak part | each expected winner is inserted FIRST so the view's tail tiebreaks against the rule under test; proven by deleting each ordering term from the view in a scratch database |
 
+### 2026-09-05 — the schema, before `evaluation/` writes to it
+
+Nine, in migrations `0106`-`0110` plus the Python and the contract. Done now rather than later
+because every table involved was **empty**: a constraint added to a table with no rows is one
+`ALTER`, and the same constraint added afterwards is an `ALTER` plus a decision about every row
+that violates it — which in this application is unanswerable, since a score whose anchor was out
+of range cannot be honestly repaired. That window closes the first time `evaluation/` runs.
+
+Each constraint was removed in turn and the failing tests recorded. Two scale pins had no test
+at all until that sweep said so.
+
+| # | What | Closed by |
+|---|---|---|
+| **D2** | A **city could be ranked inside a country evaluation**: `candidate_result` named a candidate and an evaluation with nothing tying them together. `candidate_level_key` was created in `0002` for exactly this and went unused for six migrations | `0108`. Two keys: the row's level is the evaluation's, and the candidate is at the row's level |
+| **D3**, **D25** | **Six columns across four tables carried a floor and no ceiling** — `score=999` and `coverage=4200` both inserted. The filed report named three; there were six. No ceiling could be written because there was nowhere to read one from | `0107`. The evaluation freezes `score_scale_max` — owed anyway under `reqs.md` Q193 — and each table carries it down pinned by a composite key. Percentages get a plain 0-100 bound. The live side has no evaluation to hang a ceiling on, so `Criterion.refuse_unless_its_anchors_fit` does it there |
+| **D4** | The contract accepted and returned an evaluation **`note` the schema could not store** — the band-label defect again | `0110`. `evaluation.note`, refused when blank. `btrim(note) <> ''` was the first attempt and a parametrised test found that `btrim` strips spaces and nothing else; it is `note ~ '\S'` |
+| **D5** | `EvaluationCriterion.scale_anchors` **omitted `label`** and carried a `maximum: 100` that is not the real ceiling | `openapi.yaml`. Label added, maximum dropped, and `EvaluationSummary` now carries `score_scale_max` — without it the freeze is invisible to every client |
+| **D6** | `is_active` was computed by the view, **required by the contract, and dropped by the mapper**, so `api/` could not populate a required field | `ValueListing` at the seam. The mapper's reason for dropping it is right and is kept: being active is a comparison between values, and putting it on the value is how a stale flag comes to be written |
+| **D8** | A criterion **could attach to a pillar-less attribute**, crashing at *save* time after a ranking had been computed and shown | `0106`. The criterion restates its pillar, as it already restates `value_type`, making the link a composite key |
+| **D12** | Both views used `SELECT *`, which PostgreSQL **expands and freezes at `CREATE VIEW`** — every future column on `value` silently absent from the ranking read path | `0109`. The views name their columns, and a test compares the lists against the table so a build fails instead |
+| **D26** | `non_match_reason` pointed at the **live** criterion. Nothing orphaned — the key restricts — so the failure ran the other way: `delete_criterion` would fail once any saved evaluation had recorded a non-match on it, and go on failing | `0108`. The reason names an attribute within the evaluation, reaching `evaluation_criterion` the way the frozen anchors already do |
+
 ---
 
 ## Deferred
@@ -40,37 +71,12 @@ Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that s
   values can carry different rates for the same pair on the same day — the precise failure
   `reqs.md` 5.5 names.
 
-### With `evaluation/`
-
-- **D2** (medium) `candidate_result` may sit at a **different level than its own evaluation**.
-  A city can be ranked inside a country evaluation. `candidate_level_key` was created for exactly
-  this composite-FK trick and is unused here.
-- **D3** (medium) `candidate_result.score`/`coverage` and `evaluation_criterion.weight` carry
-  **only a floor, no ceiling** — `score=999, coverage=4200` inserts. The sibling tables were
-  corrected; these were missed. The ceiling on `score` is `settings.score_scale_max`, not a
-  literal 100.
-- **D4** (medium) `openapi.yaml` accepts and returns an evaluation **`note` the schema cannot
-  store**. Same shape as the band-label bug. Decide which document is right.
-- **D5** (medium) `EvaluationCriterion.scale_anchors` in the contract **omits `label`** and adds a
-  `maximum: 100` the live shape does not have. Migration 0013 added the frozen column precisely
-  so an old evaluation shows the words it showed then.
-
-### With `api/`
-
-- **D6** (medium) `is_active` is computed by `select_values`, **required by `openapi.yaml`**,
-  typed non-optional in the generated client — and **thrown away by the mapper**. `Value` has no
-  field for it, so a caller of the seam cannot populate a required field.
-
 ### With the catalog
 
 - **D7** (medium) **No attribute declares a `max_age`** — 0 of 41. So **rule 2 of the
   active-value view never fires against real data**, and the age downgrade in the confidence
   derivation has no input. `reqs.md` 7.1 has no column stating the intended values, so there was
   nothing to seed from: the document needs the column before the migration can exist.
-- **D8** (medium) A **criterion may attach to a pillar-less attribute**. `reqs.md` 3.3 says
-  descriptive attributes carry no criterion; nothing enforces it, and
-  `evaluation_criterion.pillar` is `NOT NULL` — so it crashes at *save* time, after the ranking
-  has been computed and shown.
 - **D9** (low) **`label_vocabulary` is dead**: zero rows, zero query references, zero incoming
   foreign keys. Its own comment points at `attribute_allowed_label`, which does the real job.
   Drop it or wire it.
@@ -82,10 +88,6 @@ Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that s
   makes for including both dates.
 - **D11** (medium) **A candidate at a nested level can have no parent at all.** The FK is
   `MATCH SIMPLE`, so a NULL skips the check: `city.orphan` with no country inserts.
-- **D12** (low) Both views use `SELECT *`, which PostgreSQL **expands and freezes at
-  `CREATE VIEW`**. Every future column on `value` will be silently absent from the ranking read
-  path. Any migration touching `value` must recreate both views.
-
 ### Test-quality
 
 - **D13** (medium) `test_catalog_arithmetic.py` weight-sum guards **aggregate across criteria sets
