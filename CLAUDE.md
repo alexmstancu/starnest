@@ -29,9 +29,11 @@ Four adapters, four sources, no shared machinery beyond the `SourceAdapter` cont
 
 **Climate and family are the two left, and both are blocked on something real rather than on
 effort.** Climate needs D4 answered — how a coordinate-bound source answers a national
-question. Family is OECD's, and **the OECD SDMX API answers a script with Cloudflare's bot
-challenge**, so no adapter written against it will work — W4-B needs a bulk download or a
-different source per attribute (`docs/catalog-blockers.md` item 5).
+question. Family is OECD's, and OECD is reachable after all: **`stats.oecd.org/SDMX-JSON/` answers a
+script and covers 29 of the 32** (Cyprus, Liechtenstein and Malta missing, Romania present).
+Only `www.oecd.org` is Cloudflare-blocked. An earlier note here said no OECD adapter could
+work; that generalised one bad path to a whole organisation and is corrected in
+`docs/catalog-blockers.md` item 5.
 
 **The shipped set is two attributes from scoring**, down from seven when P4 started, and both
 are OECD's — `house_price_to_income_ratio` and `income_tax_effective`. The OECD SDMX API answers

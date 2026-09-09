@@ -106,7 +106,32 @@ on something outside the MVP boundary, not on an adapter.
 
 ---
 
-## 5. The OECD API is behind a bot challenge, and W4-B is planned around it
+## 5. ~~The OECD API is behind a bot challenge~~ — corrected 2026-09-09
+
+> **This item was wrong and is left standing with the correction, because the mistake is the
+> instructive part.** I probed one path on `sdmx.oecd.org`, got a Cloudflare interstitial, and
+> concluded "no adapter written against that API will work". That generalised one path to a
+> whole organisation.
+>
+> What is actually true, from three probes:
+>
+> | Host | Result |
+> |---|---|
+> | `www.oecd.org` (the website) | **403**, Cloudflare interstitial |
+> | `sdmx.oecd.org/public/rest/data/...` | **404** — it answered; my dataflow id was wrong |
+> | **`stats.oecd.org/SDMX-JSON/data/...`** | **200**, real SDMX JSON, 1.7 MB |
+>
+> `stats.oecd.org` answers a script fine. **And the coverage claim was wrong too**: the house
+> price dataflow reports 52 areas covering **29 of our 32** — missing Cyprus, Liechtenstein and
+> Malta, and **not** Romania, which was the whole reason I thought this mattered.
+>
+> So W4-B needs no bulk download and no workaround. It needs an adapter against
+> `stats.oecd.org`, like the other four. The remaining question is a real but much smaller one:
+> its `MEASURE` list offers `HPI_YDH` (house price to disposable income) but `UNIT_MEASURE`
+> offers `IX` and `PT_AVG_L_TERM` — an index and a percentage of the long-run average — so
+> whether it publishes the raw ratio the attribute wants still has to be checked.
+
+### The original item, as filed
 
 Three family attributes plus `income_tax_effective` and `house_price_to_income_ratio` are
 OECD's — five in all, two of them `blocks_if_missing`.
