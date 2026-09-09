@@ -29,8 +29,9 @@ Four adapters, four sources, no shared machinery beyond the `SourceAdapter` cont
 
 **Climate and family are the two left, and both are blocked on something real rather than on
 effort.** Climate needs D4 answered — how a coordinate-bound source answers a national
-question. Family is OECD's, and **OECD does not cover six of the 32, including Romania**, which
-is both the household's home country and the comparison anchor (`reqs.md` Q30).
+question. Family is OECD's, and **the OECD SDMX API answers a script with Cloudflare's bot
+challenge**, so no adapter written against it will work — W4-B needs a bulk download or a
+different source per attribute (`docs/catalog-blockers.md` item 5).
 
 **Three attributes are blocked in the catalog rather than at the source**, and are worth knowing
 before anyone writes an adapter for them: `cost_of_living_index` is typed `Index` and declares
