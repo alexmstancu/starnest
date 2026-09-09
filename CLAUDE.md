@@ -22,7 +22,7 @@ down, seven steps in order against a real database plus two standing checks. 1,3
 tests, 98 interface tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
 deliberately does not cover.
 
-**The ranking rests on 11 attributes in 9 of 11 pillars**, and health is complete. P4 is
+**The ranking rests on 13 attributes in 9 of 11 pillars**, and health is complete. P4 is
 **ordered by pillar coverage, not adapter convenience** (`devplan.md` D7): World Bank WGI, then
 Eurostat extended (career, connectivity, nature), then WHO (health), then the IMF (economics).
 Four adapters, four sources, no shared machinery beyond the `SourceAdapter` contract.
@@ -33,11 +33,17 @@ question. Family is OECD's, and **the OECD SDMX API answers a script with Cloudf
 challenge**, so no adapter written against it will work — W4-B needs a bulk download or a
 different source per attribute (`docs/catalog-blockers.md` item 5).
 
-**Two attributes are still blocked in the catalog rather than at the source** — worth knowing
-before anyone writes an adapter for them. `cost_of_living_index` is typed `Index` and declares
-no bounds (its "EU27 = 100" is a base, not a range), and `Quantity` is the only payload that
-can hold it since `Ratio` is capped at 100. `house_price_to_income_ratio` is not a Eurostat
-series at all — Eurostat publishes a house price *index*. Both in `docs/catalog-blockers.md`.
+**The shipped set is two attributes from scoring**, down from seven when P4 started, and both
+are OECD's — `house_price_to_income_ratio` and `income_tax_effective`. The OECD SDMX API answers
+a script with Cloudflare's bot challenge, so they need a bulk download or a different source
+(`docs/catalog-blockers.md` item 5).
+
+**`cost_of_living_index` was the third and is resolved** (`0443`): typed `Index` with no bounds
+declared, it could hold no value at all. A price level index has a *base* (EU27 = 100), not a
+range — Romania 65.1, Germany 108.3, Iceland 173.5, and no maximum expensiveness — so it is a
+`Quantity` whose unit names the base. `Ratio` could not hold it either, being capped at 100.
+**This ontology reserves `Index` for figures whose bounds do the work**, and `life_satisfaction`
+already set that precedent.
 
 **`crime_safety_index` was the third and is resolved** (`0442`): it declared Numbeo's 0–100
 scale while naming UNODC rank 1, two different quantities. It split into `country.homicide_rate`

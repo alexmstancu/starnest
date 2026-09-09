@@ -353,6 +353,29 @@ class TestTheTwoSeriesP4Added:
         assert figures["country.germany"] == Decimal("39.1")
         assert figures["country.romania"] == Decimal("23.5")
 
+    async def test_the_price_level_arrives_with_the_eu_average_as_its_unit(self) -> None:
+        """The attribute that could hold no value at all until `0443` retyped it.
+
+        The figures are why `Index` was wrong: Romania 65.1 and Iceland 173.5 on a scale whose
+        middle is 100 and whose top does not exist. Any bound wide enough to hold Iceland would
+        have been a number nobody published.
+        """
+        acquired = await adapter_returning("tec00120").fetch(
+            an_attribute(
+                id="country.cost_of_living_index",
+                value_type=ValueType.QUANTITY,
+                pillar="economics",
+                ratio_parameters=None,
+                quantity_parameters=QuantityParameters(unit="eu27_average_100"),
+            ),
+            [a_country("romania", "RO"), a_country("iceland", "IS")],
+        )
+
+        figures = {v.candidate: v.payload.magnitude for v in acquired.values}
+        assert figures["country.romania"] == Decimal("65.1")
+        assert figures["country.iceland"] == Decimal("173.5")
+        assert figures["country.iceland"] > 100, "the EU average is the middle, not the top"
+
     async def test_the_homicide_rate_arrives_per_hundred_thousand(self) -> None:
         """`0442` created this attribute out of `crime_safety_index`, whose rank-1 source was a
         portal download and whose bounds were behind a subscription. Eurostat was rank 2 all

@@ -1,5 +1,9 @@
 # What is blocked in the catalog rather than at the source
 
+> **Items 1 and 2 were resolved on 2026-09-09** — migrations `0443` and `0442`. They are
+> kept below with their reasoning, because the account of why an attribute was wrong is
+> worth more than the record that it was fixed. Items 3, 4 and 5 are open.
+
 **Prepared 2026-09-09**, after four P4 adapter streams took the ranking from two pillars to
 nine. Everything left is blocked, and **none of it is blocked on writing an adapter** — which
 is worth stating plainly, because each one looks like an adapter task from the outside.

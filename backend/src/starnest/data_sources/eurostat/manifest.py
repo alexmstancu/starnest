@@ -68,14 +68,23 @@ QUERIES: Final = MappingProxyType(
         AttributeId("country.homicide_rate"): EurostatQuery(
             "sdg_16_10", freq="A", unit="RT", icd10="X85-Y09_Y871", sex="T", age="TOTAL"
         ),
+        AttributeId("country.cost_of_living_index"): EurostatQuery(
+            "tec00120", freq="A", indic_ppp="PLI_EU27_2020", ppp_cat18="E011"
+        ),
     }
 )
-"""Seven attributes, and the last of them was not planned as Eurostat's at all.
+"""Eight attributes, two of which arrived by fixing the catalog rather than by finding a source.
 
 The first three were minE2E's: two Ratios and a Quantity, so both payload paths are exercised
 by real data rather than by a fixture invented to exercise them. The last three are P4's W4-F,
 chosen because each opens a pillar nothing had answered -- career, connectivity and nature --
 rather than deepening housing, which already had two of its three (`devplan.md` D7).
+
+**`tec00120` answers an attribute that could not hold a value until 2026-09-09.**
+`cost_of_living_index` was typed `Index` and declared no bounds, so nothing could be stored
+against it at all; migration `0443` retyped it as a `Quantity` whose unit names the base. The
+figure is a price level relative to the EU27 average -- Romania 65.1, Germany 108.3, Iceland
+173.5 -- and the absence of any ceiling is exactly why `Index` was the wrong type.
 
 **`sdg_16_10` replaced a source nobody could reach.** `country.homicide_rate` was created by
 migration `0442` out of `crime_safety_index`, whose rank-1 source was UNODC -- a portal download
