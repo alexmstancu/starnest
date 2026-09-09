@@ -46,7 +46,7 @@ application, and where the two disagree, this one is right.
 | **P3** First vertical slice | **Done. Gate A closed 2026-09-05.** 16 of 40 operations, one source adapter, two screens, a browser test against the real stack, and the gate itself as an acceptance test |
 | **P4**-**P7** | Not started |
 
-**1,409 backend tests and 98 interface tests. 309 real values across 32 countries — 182 from Eurostat, 96 from the World Bank, 31 from WHO, over 8 of 11 pillars. A browser shows a ranked table.**
+**1,428 backend tests and 98 interface tests. 341 real values across 32 countries — 182 from Eurostat, 96 from the World Bank, 31 from WHO, 32 from the IMF, over 9 of 11 pillars. A browser shows a ranked table.**
 
 ### GATE A — closed 2026-09-05
 
