@@ -18,6 +18,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from starnest.data_acquisition import SourceAdapter, acquire
 from starnest.data_sources.eurostat import EurostatAdapter
+from starnest.data_sources.who import WhoAdapter
 from starnest.data_sources.world_bank import WorldBankAdapter
 from starnest.main import Environment
 from starnest.storage import (
@@ -39,7 +40,7 @@ def every_adapter() -> tuple[SourceAdapter, ...]:
     that into a script whose whole point is being smaller than it.
     """
     client = httpx.AsyncClient(timeout=60)
-    return (EurostatAdapter(client), WorldBankAdapter(client))
+    return (EurostatAdapter(client), WorldBankAdapter(client), WhoAdapter(client))
 
 
 async def main() -> int:

@@ -12,7 +12,12 @@ There is no status field and no `parent_not_matching` flag for the same reason.
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from starnest.candidates.identifiers import CandidateId, CountryCode, LevelId
+from starnest.candidates.identifiers import (
+    CandidateId,
+    CountryCode,
+    CountryCodeAlpha3,
+    LevelId,
+)
 from starnest.candidates.levels import Level
 
 
@@ -43,6 +48,12 @@ class Candidate(BaseModel):
         default=None,
         description="ISO 3166-1 alpha-2, for a country. None for a city, whose country is its "
         "parent, and None for a country nobody has recorded one for yet.",
+    )
+    country_code_alpha3: CountryCodeAlpha3 | None = Field(
+        default=None,
+        description="ISO 3166-1 alpha-3, the same standard's other form. Carried because WHO, "
+        "FAO, UNODC and Protected Planet publish against it, and translating in each of their "
+        "adapters would mean writing one table four times.",
     )
 
     @field_validator("name")
@@ -143,4 +154,5 @@ class Candidate(BaseModel):
             level=self.level,
             parent_candidate=self.parent_candidate,
             country_code=self.country_code,
+            country_code_alpha3=self.country_code_alpha3,
         )

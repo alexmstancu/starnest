@@ -41,9 +41,10 @@ class PostgresCandidateStore(CandidateStore):
 def _candidate_from(row: Any, levels: dict[str, Any]) -> Candidate:
     """One `candidate` row as the domain object `candidates/` declared.
 
-    `country_code` comes back as a plain string and is validated on the way into the model, so
-    a code that somehow reached the column without matching alpha-2 is refused here with a
-    sentence rather than travelling on as a two-letter-shaped string.
+    Both country codes come back as plain strings and are validated on the way into the model,
+    so a code that somehow reached the column without matching its standard is refused here with
+    a sentence rather than travelling on as a correctly-shaped string. The database checks the
+    same two rules; the constraint fires with a violation, this fires in words (`arch.md` 3.3b).
     """
     level = levels[row.level]
     return Candidate(
@@ -52,4 +53,5 @@ def _candidate_from(row: Any, levels: dict[str, Any]) -> Candidate:
         level=Level(id=level.id, depth_order=level.depth_order, parent_level=level.parent_level),
         parent_candidate=row.parent_candidate,
         country_code=row.country_code,
+        country_code_alpha3=row.country_code_alpha3,
     )

@@ -92,6 +92,7 @@ def build() -> tuple[Environment, "FastAPI"]:
 
     from starnest.api import build_app
     from starnest.data_sources.eurostat import EurostatAdapter
+    from starnest.data_sources.who import WhoAdapter
     from starnest.data_sources.world_bank import WorldBankAdapter
     from starnest.storage import (
         PostgresCandidateStore,
@@ -117,6 +118,7 @@ def build() -> tuple[Environment, "FastAPI"]:
         adapters=(
             EurostatAdapter(httpx.AsyncClient(timeout=60)),
             WorldBankAdapter(httpx.AsyncClient(timeout=60)),
+            WhoAdapter(httpx.AsyncClient(timeout=60)),
         ),
         display_name=environment.app_display_name,
     )

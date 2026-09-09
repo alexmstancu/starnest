@@ -87,15 +87,28 @@ class TestWhatIsActuallyWiredIn:
         serve at all."""
         assert path in _routed_paths()
 
-    def test_both_sources_are_wired_and_reachable_from_the_app(self) -> None:
+    def test_every_source_is_wired_and_reachable_from_the_app(self) -> None:
         """The adapters are what `POST /data-acquisition-runs` fans out over. One that is
-        written but never passed here is a source that silently fetches nothing."""
+        written but never passed here is a source that silently fetches nothing -- no error,
+        no failure row, just an attribute that stays empty for a reason nobody can see.
+
+        **The roster is deliberate.** P4 adds a source at a time, and each one should be a line
+        changed here rather than a thing that appeared."""
         _, app = build()
 
         assert {str(adapter.data_source) for adapter in app.state.adapters} == {
             "eurostat",
             "world_bank",
+            "who",
         }
+
+    def test_no_two_adapters_claim_to_be_the_same_source(self) -> None:
+        """Two adapters sharing a `data_source` would write values indistinguishable in
+        provenance, and the active-value rule picks between sources by name."""
+        _, app = build()
+
+        sources = [str(adapter.data_source) for adapter in app.state.adapters]
+        assert len(sources) == len(set(sources))
 
     def test_every_store_the_routers_read_is_present(self) -> None:
         """`api/` reads these off `app.state` by name, so a missing one is an `AttributeError`

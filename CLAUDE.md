@@ -13,7 +13,7 @@ implementation work.
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
 | `evaluation/` | **Written, cut to the MVP's needs.** Normalisation (`percentile` and `as_is` only), redistribution, coverage, matching, ranking. Pure functions, no I/O. **`fixed`, `target_range`, the compound-rule shapes and match rules are not built** |
-| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 16 of the contract's 40 operations; two source adapters (Eurostat, World Bank WGI); runs are planned, persisted and pollable |
+| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 16 of the contract's 40 operations; three source adapters (Eurostat, World Bank WGI, WHO GHO); runs are planned, persisted and pollable |
 | `comparison/` | Empty. Post-Gate-A |
 | `ui/` | The shell plus the Rank and Configure screens. 98 tests. **It talks to the real backend**, and to a mock only in unit tests |
 
@@ -22,11 +22,12 @@ down, seven steps in order against a real database plus two standing checks. 1,3
 tests, 98 interface tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
 deliberately does not cover.
 
-**The ranking rests on 8 attributes in 6 of 11 pillars.** P4 is underway and **ordered by pillar
-coverage, not adapter convenience** (`devplan.md` D7): World Bank WGI first, for three `Index`
-values D6(A) made scoreable with no anchor to invent, two of them `blocks_if_missing`; then
-Eurostat extended, for the two attributes that opened career and connectivity. Economics,
-climate, family, health and nature are still dark.
+**The ranking rests on 9 attributes in 7 of 11 pillars**, and health is complete — its one
+attribute is answered. P4 is underway and **ordered by pillar coverage, not adapter
+convenience** (`devplan.md` D7): World Bank WGI first, for three `Index` values D6(A) made
+scoreable with no anchor to invent; then Eurostat extended, opening career and connectivity;
+then WHO, opening health. The shipped set's blocking list is down from seven attributes to
+four. Economics, climate, family and nature are still dark.
 
 **The schema was hardened before `evaluation/` was written** (2026-09-05, migrations `0106`-`0114`). Findings from `docs/known-issues.md` closed while every affected table still had zero rows: an evaluation freezes the score scale it used and nothing it stores may leave that scale, a result belongs to its evaluation's level, a non-match reason names the frozen criterion rather than the live one, and a criterion may only judge an attribute that has a pillar. **`evaluation/` must supply `score_scale_max` when it saves, and must refuse rather than substitute 100 when `settings.score_scale_max` is unset.** **Freshness has inputs** (`0111`): `reqs.md` 7.1 gives every attribute a `max_age`, derived from its source's publication interval rather than chosen one by one. **A monetary conversion must name a rate the ECB published** (`0112`). **A criterion may only score a figure with a magnitude** (`0122`, D6): three `LabelSet` criteria claimed to be scoreable and a CHECK now forbids it. Eleven findings remain open, all low; `known-issues.md` opens with what they are.
 

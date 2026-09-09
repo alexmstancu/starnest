@@ -168,6 +168,7 @@ def suggest_identifier_segment(display_name: str) -> str:
 
 
 _ALPHA_2 = re.compile(r"^[A-Z]{2}$")
+_ALPHA_3 = re.compile(r"^[A-Z]{3}$")
 
 
 class CountryCode(str):
@@ -195,6 +196,37 @@ class CountryCode(str):
         if not _ALPHA_2.fullmatch(text):
             raise MalformedIdentifierError(
                 f"{text!r} is not an ISO 3166-1 alpha-2 code: two uppercase letters, no more "
+                "and no fewer"
+            )
+        return super().__new__(cls, text)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        return core_schema.no_info_after_validator_function(cls, core_schema.str_schema())
+
+
+class CountryCodeAlpha3(str):
+    """An ISO 3166-1 alpha-3 code: `PRT`, `GRC`, `GBR`.
+
+    **The same standard's other form, and not a second-class one.** Alpha-2 is what a URL and a
+    flag icon use, so it is the code this project reads first; alpha-3 is what WHO, FAO, UNODC
+    and Protected Planet publish against, and translating in each of their adapters would mean
+    writing the same table four times. It is ISO's either way, which is what makes it catalog
+    data rather than a fact about any one source (migration `0440`).
+
+    Three letters exactly. That rules out the mistake worth ruling out -- an alpha-2 code in a
+    field whose readers will send it to a source that only speaks alpha-3, where it silently
+    matches nothing and arrives as missing data rather than as an error.
+    """
+
+    __slots__ = ()
+
+    def __new__(cls, text: str) -> Self:
+        if not _ALPHA_3.fullmatch(text):
+            raise MalformedIdentifierError(
+                f"{text!r} is not an ISO 3166-1 alpha-3 code: three uppercase letters, no more "
                 "and no fewer"
             )
         return super().__new__(cls, text)

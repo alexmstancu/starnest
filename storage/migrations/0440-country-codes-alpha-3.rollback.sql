@@ -1,0 +1,4 @@
+ALTER TABLE candidate DROP CONSTRAINT candidate_country_codes_arrive_together;
+ALTER TABLE candidate DROP CONSTRAINT candidate_country_code_alpha3_is_three_letters;
+ALTER TABLE candidate DROP CONSTRAINT candidate_country_code_alpha3_unique;
+ALTER TABLE candidate DROP COLUMN country_code_alpha3;

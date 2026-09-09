@@ -59,7 +59,13 @@ class TestWhatACandidateIs:
 
         `country_code` passes this bar and a score does not, which is the distinction the test
         is really about: ISO 3166-1 alpha-2 is true of Portugal whoever is looking and whatever
-        they weighted, so it is a property of the place in the way a score never is.
+        they weighted, so it is a property of the place in the way a score never is. Alpha-3
+        passes for the same reason and is not a second fact -- it is the same fact in the
+        spelling WHO, FAO and UNODC publish against.
+
+        **The roster is deliberate here**, unlike the criteria-set tests that were rewritten as
+        invariants: this one exists to make adding a field a decision rather than a reflex, and
+        a field that does not belong is exactly what it should refuse.
         """
         assert set(Candidate.model_fields) == {
             "id",
@@ -67,6 +73,7 @@ class TestWhatACandidateIs:
             "level",
             "parent_candidate",
             "country_code",
+            "country_code_alpha3",
         }
 
     def test_refuses_a_field_it_does_not_declare(self) -> None:
