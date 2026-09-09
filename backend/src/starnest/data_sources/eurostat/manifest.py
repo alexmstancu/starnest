@@ -62,14 +62,23 @@ QUERIES: Final = MappingProxyType(
             terrtypo="TOTAL",
             inet_spd="MBPS_GT100",
         ),
+        AttributeId("country.protected_land_share"): EurostatQuery(
+            "sdg_15_20", freq="A", unit="PC", areaprot="TPA"
+        ),
     }
 )
-"""Five of the fourteen attributes `reqs.md` 7.1 names Eurostat for.
+"""Six of the fourteen attributes `reqs.md` 7.1 names Eurostat for.
 
 The first three were minE2E's: two Ratios and a Quantity, so both payload paths are exercised
-by real data rather than by a fixture invented to exercise them. The last two are P4's W4-F,
-chosen because they open two pillars nothing had answered -- career and connectivity -- rather
-than deepening housing, which already had two of its three (`devplan.md` D7).
+by real data rather than by a fixture invented to exercise them. The last three are P4's W4-F,
+chosen because each opens a pillar nothing had answered -- career, connectivity and nature --
+rather than deepening housing, which already had two of its three (`devplan.md` D7).
+
+**`sdg_15_20` answers 27 of the 32 candidates, and the five it misses are the honest kind.**
+Switzerland, Iceland, Liechtenstein, Norway and the United Kingdom are outside the EU reporting
+this series is built on. They arrive as coverage rather than as a failure, which is what
+`reqs.md` 5.3 asks for -- and is a better outcome than a figure assembled from somewhere else
+and presented as though it were the same measurement.
 
 **`isoc_cbs` asks for coverage at 100 Mbit/s, and that is a judgement rather than a lookup.**
 The dataset offers five thresholds, and the obvious assumption -- that 30 Mbit/s is saturated

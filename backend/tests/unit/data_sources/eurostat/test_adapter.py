@@ -338,6 +338,47 @@ class TestTheTwoSeriesP4Added:
         assert years["country.united_kingdom"] == 2019
         assert years["country.germany"] == 2025
 
+    async def test_protected_land_arrives_as_a_share_of_territory(self) -> None:
+        acquired = await adapter_returning("sdg_15_20").fetch(
+            an_attribute(
+                id="country.protected_land_share",
+                value_type=ValueType.RATIO,
+                pillar="nature",
+                ratio_parameters=RatioParameters(basis="territory"),
+            ),
+            [a_country("germany", "DE"), a_country("romania", "RO")],
+        )
+
+        figures = {v.candidate: v.payload.value for v in acquired.values}
+        assert figures["country.germany"] == Decimal("39.1")
+        assert figures["country.romania"] == Decimal("23.5")
+
+    async def test_the_five_countries_outside_the_eu_series_are_coverage_not_failures(
+        self,
+    ) -> None:
+        """`sdg_15_20` is built on EU reporting, so Switzerland, Iceland, Liechtenstein, Norway
+        and the United Kingdom are simply not in it.
+
+        **That gap must arrive as coverage rather than as an error**, because it is neither a
+        broken fetch nor something anybody can fix -- and a ranking that quietly filled it from
+        another measurement would be presenting two different things as one (`reqs.md` 5.3).
+        """
+        outside = ["switzerland", "iceland", "liechtenstein", "norway", "united_kingdom"]
+        codes = ["CH", "IS", "LI", "NO", "GB"]
+
+        acquired = await adapter_returning("sdg_15_20").fetch(
+            an_attribute(
+                id="country.protected_land_share",
+                value_type=ValueType.RATIO,
+                pillar="nature",
+                ratio_parameters=RatioParameters(basis="territory"),
+            ),
+            [a_country(name, code) for name, code in zip(outside, codes, strict=True)],
+        )
+
+        assert acquired.values == ()
+        assert acquired.failures == ()
+
     async def test_liechtenstein_is_absent_from_both_and_gets_no_value(self) -> None:
         """Eurostat does not survey it. That gap is coverage, and the World Bank is what fills
         the ranking's picture of it (`data_sources/world_bank`)."""
