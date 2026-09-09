@@ -353,6 +353,28 @@ class TestTheTwoSeriesP4Added:
         assert figures["country.germany"] == Decimal("39.1")
         assert figures["country.romania"] == Decimal("23.5")
 
+    async def test_the_homicide_rate_arrives_per_hundred_thousand(self) -> None:
+        """`0442` created this attribute out of `crime_safety_index`, whose rank-1 source was a
+        portal download and whose bounds were behind a subscription. Eurostat was rank 2 all
+        along and answers all 32."""
+        acquired = await adapter_returning("sdg_16_10").fetch(
+            an_attribute(
+                id="country.homicide_rate",
+                value_type=ValueType.QUANTITY,
+                pillar="safety",
+                # The helper defaults to a Ratio; an attribute may declare parameters for one
+                # type only, so the default is cleared rather than joined.
+                ratio_parameters=None,
+                quantity_parameters=QuantityParameters(unit="per_100000_population"),
+            ),
+            [a_country("romania", "RO"), a_country("germany", "DE")],
+        )
+
+        figures = {v.candidate: v.payload.magnitude for v in acquired.values}
+        assert figures["country.romania"] == Decimal("1.12")
+        assert figures["country.germany"] == Decimal("0.41")
+        assert {v.payload.unit for v in acquired.values} == {"per_100000_population"}
+
     async def test_the_five_countries_outside_the_eu_series_are_coverage_not_failures(
         self,
     ) -> None:

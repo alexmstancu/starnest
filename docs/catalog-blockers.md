@@ -29,13 +29,25 @@ a base, not a range.** A price level index says a country is 12% above the Europ
 has no ceiling, and Switzerland sits around 160. Choosing 0–200 would invent the top, which is
 precisely what D6 refused to do for scale anchors.
 
-**Options**
+**It is an attribute, not an `ExternalScore`, and that was worth checking.** The rule in
+`data/external_score.py` is "raw indicators become attributes; composite scores become external
+scores -- the test is whether someone else has already applied weights to it". A price level
+index applies expenditure weights *within one dimension*, which is measurement methodology; the
+World Happiness Report weights six different factors, which is somebody's view of what matters.
+`reqs.md` 2085 lists this attribute in the country catalog, so the question is settled there
+too. **The type is the problem, not the entity.**
 
-- **(a) Retype it as a `Ratio`**, basis "EU27 average". This is what a price level index
-  actually is, and a Ratio needs no bounds. Scoring would be `percentile` or `fixed`. My
-  recommendation: it makes the type match the thing.
-- **(b) Keep `Index` and declare bounds** wide enough to hold Europe, say 0–250. Cheapest, and
-  it puts an invented ceiling into the catalog where a reader will take it for a published one.
+**Options** (a first draft of this recommended `Ratio`, which is wrong: `Ratio` is constrained
+`0 <= value <= 100`, so Switzerland's ~160 is refused exactly as `Index` refuses it.)
+
+- **(a) Retype it as a `Quantity`**, unit `eu27_average_100`. `Quantity` is the only payload
+  whose magnitude is unbounded, and the unit carries the base. `life_satisfaction` sets the
+  precedent: a Cantril ladder 0-10 is a `Quantity`, not an `Index`, even though it has a
+  published range -- **this ontology reserves `Index` for figures whose bounds do the work**.
+  Scoring would be `percentile`. My recommendation.
+- **(b) Keep `Index` and declare bounds** wide enough to hold Europe, say 0-250. Cheapest, and
+  it puts an invented ceiling into the catalog where a reader will take it for a published one,
+  and silently refuses any country above it.
 - **(c) Leave it.** The shipped set stays unscoreable indefinitely.
 
 ---
@@ -121,6 +133,29 @@ comparison anchor every delta is measured against (`reqs.md` Q30).
   Eurostat (item 3, option b). The family three have no alternative recorded.
 - **(c) Drop the family pillar from the MVP** and say so, rather than leaving three attributes
   that look pending but are not.
+
+---
+
+## A rule that is not being applied consistently
+
+Worth deciding separately, because it decides how the next ten attributes are typed.
+
+By the test above -- *has someone already applied weights?* -- three attributes ingested during
+P4 are composites and would belong as `ExternalScore` rather than as scored values:
+
+| Attribute | What it actually is |
+|---|---|
+| `rule_of_law`, `control_of_corruption`, `political_economic_stability` | An unobserved-components model over ~30 expert surveys |
+| `healthcare_system_quality` | WHO's composite of 14 tracer indicators |
+
+`reqs.md` 7.1 names both sources explicitly, so these are recorded exceptions rather than
+accidents, and no comparable pan-European raw measure exists to prefer instead. But the test as
+written would classify them the other way, which means **the rule cannot currently be applied by
+reading it** -- and the next person to type an attribute will either import a composite or
+exclude a usable one, depending on which document they read first.
+
+Either `reqs.md`'s named sources override the test, or the test narrows to say what it really
+means. It should say which.
 
 ---
 

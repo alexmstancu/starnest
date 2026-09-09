@@ -57,7 +57,9 @@ REQUIRED_ATTRIBUTES = {
     "country.cost_of_living_index",
     "country.income_tax_effective",
     "country.house_price_to_income_ratio",
-    "country.crime_safety_index",
+    # `0442` split this: a measured homicide rate we score, and Numbeo's composite as an
+    # ExternalScore that never enters the arithmetic (docs/catalog-blockers.md item 2).
+    "country.homicide_rate",
     "country.political_economic_stability",
     "country.healthcare_system_quality",
     "country.rule_of_law",
@@ -122,11 +124,36 @@ def test_criterion_weights_sum_to_one_hundred_within_every_pillar(
     assert _criterion_weights_that_do_not_sum(connection) == []
 
 
-def test_the_country_catalog_has_forty_one_attributes(connection: psycopg.Connection) -> None:
+def test_the_country_catalog_has_forty_one_active_attributes(
+    connection: psycopg.Connection,
+) -> None:
+    """**Active**, not total, and the distinction arrived with `0442`.
+
+    A retired attribute keeps its row so the account of why it existed outlives it, but it is
+    not part of the catalog anybody can use. Counting rows would have made retiring one look
+    like adding one.
+    """
     count = connection.execute(
-        "SELECT count(*) FROM attribute WHERE id LIKE %s", (f"{COUNTRY}.%",)
+        "SELECT count(*) FROM attribute WHERE id LIKE %s AND lifecycle_status = %s",
+        (f"{COUNTRY}.%", "active"),
     ).fetchone()[0]
     assert count == 41
+
+
+def test_a_retired_attribute_keeps_its_row_and_loses_its_criterion(
+    connection: psycopg.Connection,
+) -> None:
+    """Retiring is not deleting. The row stays, and what makes it stop counting is that no
+    criteria set scores it -- "an attribute with no criterion attached is descriptive and never
+    scored" (`reqs.md` 3.0)."""
+    retired = {
+        row[0]
+        for row in connection.execute("SELECT id FROM attribute WHERE lifecycle_status = 'retired'")
+    }
+    scored = {row[0] for row in connection.execute("SELECT DISTINCT attribute FROM criterion")}
+
+    assert retired, "0442 retired country.crime_safety_index; this test needs one to look at"
+    assert retired.isdisjoint(scored)
 
 
 def test_every_attribute_declares_a_real_value_type(connection: psycopg.Connection) -> None:

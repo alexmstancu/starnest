@@ -33,11 +33,17 @@ question. Family is OECD's, and **the OECD SDMX API answers a script with Cloudf
 challenge**, so no adapter written against it will work — W4-B needs a bulk download or a
 different source per attribute (`docs/catalog-blockers.md` item 5).
 
-**Three attributes are blocked in the catalog rather than at the source**, and are worth knowing
-before anyone writes an adapter for them: `cost_of_living_index` is typed `Index` and declares
-no bounds (its "EU27 = 100" is a base, not a range, so no value can be stored against it);
-`crime_safety_index` declares Numbeo's 0–100 scale but names UNODC as its rank-1 source;
-`house_price_to_income_ratio` is not a Eurostat series at all.
+**Two attributes are still blocked in the catalog rather than at the source** — worth knowing
+before anyone writes an adapter for them. `cost_of_living_index` is typed `Index` and declares
+no bounds (its "EU27 = 100" is a base, not a range), and `Quantity` is the only payload that
+can hold it since `Ratio` is capped at 100. `house_price_to_income_ratio` is not a Eurostat
+series at all — Eurostat publishes a house price *index*. Both in `docs/catalog-blockers.md`.
+
+**`crime_safety_index` was the third and is resolved** (`0442`): it declared Numbeo's 0–100
+scale while naming UNODC rank 1, two different quantities. It split into `country.homicide_rate`
+— a standardised death rate from Eurostat `sdg_16_10`, answering all 32 — and Numbeo's composite
+as an `ExternalScore`, which needs no attribute and no subscription until somebody wants it on
+screen. The old attribute is `lifecycle_status = 'retired'`, not deleted.
 
 **The schema was hardened before `evaluation/` was written** (2026-09-05, migrations `0106`-`0114`). Findings from `docs/known-issues.md` closed while every affected table still had zero rows: an evaluation freezes the score scale it used and nothing it stores may leave that scale, a result belongs to its evaluation's level, a non-match reason names the frozen criterion rather than the live one, and a criterion may only judge an attribute that has a pillar. **`evaluation/` must supply `score_scale_max` when it saves, and must refuse rather than substitute 100 when `settings.score_scale_max` is unset.** **Freshness has inputs** (`0111`): `reqs.md` 7.1 gives every attribute a `max_age`, derived from its source's publication interval rather than chosen one by one. **A monetary conversion must name a rate the ECB published** (`0112`). **A criterion may only score a figure with a magnitude** (`0122`, D6): three `LabelSet` criteria claimed to be scoreable and a CHECK now forbids it. Eleven findings remain open, all low; `known-issues.md` opens with what they are.
 

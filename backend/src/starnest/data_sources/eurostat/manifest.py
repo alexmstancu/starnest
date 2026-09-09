@@ -65,14 +65,25 @@ QUERIES: Final = MappingProxyType(
         AttributeId("country.protected_land_share"): EurostatQuery(
             "sdg_15_20", freq="A", unit="PC", areaprot="TPA"
         ),
+        AttributeId("country.homicide_rate"): EurostatQuery(
+            "sdg_16_10", freq="A", unit="RT", icd10="X85-Y09_Y871", sex="T", age="TOTAL"
+        ),
     }
 )
-"""Six of the fourteen attributes `reqs.md` 7.1 names Eurostat for.
+"""Seven attributes, and the last of them was not planned as Eurostat's at all.
 
 The first three were minE2E's: two Ratios and a Quantity, so both payload paths are exercised
 by real data rather than by a fixture invented to exercise them. The last three are P4's W4-F,
 chosen because each opens a pillar nothing had answered -- career, connectivity and nature --
 rather than deepening housing, which already had two of its three (`devplan.md` D7).
+
+**`sdg_16_10` replaced a source nobody could reach.** `country.homicide_rate` was created by
+migration `0442` out of `crime_safety_index`, whose rank-1 source was UNODC -- a portal download
+rather than an API -- and whose declared bounds were Numbeo's, behind a $50-500/month
+subscription. Eurostat was rank 2 all along and answers all 32. It publishes a **standardised
+death rate** from cause-of-death statistics rather than police-recorded offences, which is the
+better indicator anyway: recording practice varies enormously between countries, so
+police-recorded crime partly measures the recording.
 
 **`sdg_15_20` answers 27 of the 32 candidates, and the five it misses are the honest kind.**
 Switzerland, Iceland, Liechtenstein, Norway and the United Kingdom are outside the EU reporting
