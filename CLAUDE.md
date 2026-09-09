@@ -22,11 +22,11 @@ down, seven steps in order against a real database plus two standing checks. 1,3
 tests, 98 interface tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
 deliberately does not cover.
 
-**The ranking rests on 6 attributes in 4 of 11 pillars.** P4 is underway and **ordered by pillar
-coverage, not adapter convenience** (`devplan.md` D7): the World Bank stream came first because
-its three figures are `Index` values that D6(A) made scoreable with no anchor to invent, and
-because two of them are `blocks_if_missing`. Economics, career, health, climate, connectivity,
-nature and family are still dark.
+**The ranking rests on 8 attributes in 6 of 11 pillars.** P4 is underway and **ordered by pillar
+coverage, not adapter convenience** (`devplan.md` D7): World Bank WGI first, for three `Index`
+values D6(A) made scoreable with no anchor to invent, two of them `blocks_if_missing`; then
+Eurostat extended, for the two attributes that opened career and connectivity. Economics,
+climate, family, health and nature are still dark.
 
 **The schema was hardened before `evaluation/` was written** (2026-09-05, migrations `0106`-`0114`). Findings from `docs/known-issues.md` closed while every affected table still had zero rows: an evaluation freezes the score scale it used and nothing it stores may leave that scale, a result belongs to its evaluation's level, a non-match reason names the frozen criterion rather than the live one, and a criterion may only judge an attribute that has a pillar. **`evaluation/` must supply `score_scale_max` when it saves, and must refuse rather than substitute 100 when `settings.score_scale_max` is unset.** **Freshness has inputs** (`0111`): `reqs.md` 7.1 gives every attribute a `max_age`, derived from its source's publication interval rather than chosen one by one. **A monetary conversion must name a rate the ECB published** (`0112`). **A criterion may only score a figure with a magnitude** (`0122`, D6): three `LabelSet` criteria claimed to be scoreable and a CHECK now forbids it. Eleven findings remain open, all low; `known-issues.md` opens with what they are.
 

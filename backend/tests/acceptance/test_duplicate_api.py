@@ -45,12 +45,15 @@ class TestDuplicating:
         try:
             copy = (await api.get("/v1/criteria-sets/a_weighted_copy")).json()
 
+            original = (await api.get(f"/v1/criteria-sets/{MINIMAL}")).json()
+
+            # Asserted against the original rather than against a written-down list: what a
+            # duplicate owes is *the same weights*, and naming them broke this test twice as
+            # P4 grew the set it copies.
             assert {w["pillar"]: w["weight"] for w in copy["pillar_weights"]} == {
-                "housing": 30,
-                "culture": 20,
-                "governance": 30,
-                "safety": 20,
+                w["pillar"]: w["weight"] for w in original["pillar_weights"]
             }
+            assert copy["pillar_weights"], "a copy with no pillar weights cannot add up"
         finally:
             await api.delete("/v1/criteria-sets/a_weighted_copy")
 

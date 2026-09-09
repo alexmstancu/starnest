@@ -271,6 +271,94 @@ class TestWhenTheSourceCannotAnswer:
         assert "publishes no series" in failure.reason
 
 
+class TestTheTwoSeriesP4Added:
+    """W4-F: `tech_employment_share` and `broadband_coverage`, against captured responses.
+
+    They earn their place by opening pillars rather than deepening one -- career and
+    connectivity had no figures at all, while housing already had two of its three
+    (`devplan.md` D7). Both are Ratios, so they run the same payload path the first three
+    proved; what is new is the datasets, and a dataset code is the one thing here a typo breaks
+    silently.
+    """
+
+    TECH = "country.tech_employment_share"
+    BROADBAND = "country.broadband_coverage"
+
+    async def test_ict_specialists_arrive_as_a_share_of_the_workforce(self) -> None:
+        acquired = await adapter_returning("isoc_sks_itspt").fetch(
+            an_attribute(
+                id=self.TECH,
+                value_type=ValueType.RATIO,
+                pillar="career",
+                ratio_parameters=RatioParameters(basis="workforce"),
+            ),
+            [a_country("portugal", "PT"), a_country("romania", "RO")],
+        )
+
+        figures = {v.candidate: v.payload.value for v in acquired.values}
+        assert figures["country.portugal"] == Decimal("5.4")
+        assert figures["country.romania"] == Decimal("2.7")
+        assert {v.payload.basis for v in acquired.values} == {"workforce"}
+
+    async def test_broadband_coverage_arrives_as_a_share_of_households(self) -> None:
+        acquired = await adapter_returning("isoc_cbs").fetch(
+            an_attribute(
+                id=self.BROADBAND,
+                value_type=ValueType.RATIO,
+                pillar="connectivity",
+                ratio_parameters=RatioParameters(basis="households"),
+            ),
+            [a_country("greece", "GR"), a_country("portugal", "PT")],
+        )
+
+        figures = {v.candidate: v.payload.value for v in acquired.values}
+        # Greece is the spread this threshold exists to show: 80.5 against Portugal's 97.2.
+        assert figures["country.greece"] == Decimal("80.5")
+        assert figures["country.portugal"] == Decimal("97.2")
+
+    async def test_a_country_that_stopped_reporting_keeps_its_last_real_year(self) -> None:
+        """**The rule the whole "fetch the series, not the last period" decision rests on.**
+
+        Every country in this dataset reports 2025 except the United Kingdom, whose newest
+        figure is 2019. Asking Eurostat for the recent periods would have returned a smaller
+        response and no United Kingdom at all -- a quieter request buying a worse answer. The
+        reference period says 2019, so the figure is visibly old rather than silently current.
+        """
+        acquired = await adapter_returning("isoc_sks_itspt").fetch(
+            an_attribute(
+                id=self.TECH,
+                value_type=ValueType.RATIO,
+                pillar="career",
+                ratio_parameters=RatioParameters(basis="workforce"),
+            ),
+            [a_country("united_kingdom", "GB"), a_country("germany", "DE")],
+        )
+
+        years = {v.candidate: v.reference_period.end.year for v in acquired.values}
+        assert years["country.united_kingdom"] == 2019
+        assert years["country.germany"] == 2025
+
+    async def test_liechtenstein_is_absent_from_both_and_gets_no_value(self) -> None:
+        """Eurostat does not survey it. That gap is coverage, and the World Bank is what fills
+        the ranking's picture of it (`data_sources/world_bank`)."""
+        for dataset, attribute, basis in (
+            ("isoc_sks_itspt", self.TECH, "workforce"),
+            ("isoc_cbs", self.BROADBAND, "households"),
+        ):
+            acquired = await adapter_returning(dataset).fetch(
+                an_attribute(
+                    id=attribute,
+                    value_type=ValueType.RATIO,
+                    pillar="career",
+                    ratio_parameters=RatioParameters(basis=basis),
+                ),
+                [a_country("liechtenstein", "LI")],
+            )
+
+            assert acquired.values == ()
+            assert acquired.failures == ()
+
+
 def test_the_adapter_declares_only_the_attributes_it_can_answer() -> None:
     """Declared rather than discovered, so a run can be planned and asking for something this
     source does not publish is a question that cannot be posed."""

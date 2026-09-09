@@ -34,13 +34,15 @@ COUNTRY = "country"
 OVERBURDEN = "country.housing_cost_overburden_rate"
 OVERCROWDING = "country.overcrowding_rate"
 SATISFACTION = "country.life_satisfaction"
-RULE_OF_LAW = "country.rule_of_law"
-CORRUPTION = "country.control_of_corruption"
-STABILITY = "country.political_economic_stability"
-GOVERNANCE = (RULE_OF_LAW, CORRUPTION, STABILITY)
-"""The World Bank half of the `minimal` set, normalised `as_is` from published bounds."""
 
 A_YEAR = ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 12, 31))
+
+GOOD, POOR = "better", "worse"
+"""Two profiles rather than two numbers.
+
+Which number is better depends on the criterion's goal -- 5% housing overburden is good and 5%
+ICT employment is not -- so the figure is chosen per attribute by `_a_figure` from the goal the
+catalog declares, and the test says only which of the pair a candidate should be."""
 
 
 async def _set_the_score_scale(pool: AsyncConnectionPool, scale: int | None) -> None:
@@ -52,39 +54,87 @@ async def _set_the_score_scale(pool: AsyncConnectionPool, scale: int | None) -> 
         )
 
 
-def _a_figure(candidate: str, attribute: str, figure: str) -> Value:
-    """One stored figure, in whichever of the three shapes `minimal` scores.
+def _weight_per_pillar(criteria: list[dict]) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for criterion in criteria:
+        totals[criterion["pillar"]] = totals.get(criterion["pillar"], 0) + float(
+            criterion["weight"]
+        )
+    return totals
 
-    The governance three are `Index` values on the World Bank's -2.5 to 2.5 scale, so this
-    helper covers both normalisation methods the set uses: `percentile` over the Eurostat
-    figures, and `as_is` over the published bounds.
+
+def _a_figure(candidate: str, attribute: str, figure: str) -> Value:
+    """One stored figure, for a candidate that should look good or bad on this criterion.
+
+    `figure` is `GOOD` or `POOR` rather than a number, because which number is good depends on
+    the criterion's goal: 5% housing overburden is excellent and 5% ICT employment is not. The
+    caller says what it wants the candidate to look like and this works out the figure from
+    what the catalog declares, so a criterion added by the next P4 stream needs no edit here.
     """
-    if attribute in GOVERNANCE:
+    shape = _CATALOG[attribute]
+    strong = figure == GOOD
+    wanted = strong if shape.goal == "maximise" else not strong
+
+    if shape.value_type == "Index":
+        # Any bounds the figure sits inside are valid; the catalog's own are the WGI scale.
         return _stored(
             candidate,
             attribute,
             ValueType.INDEX,
             Index(
-                value=Decimal(figure),
+                value=Decimal("1.8" if wanted else "-0.4"),
                 provider="World Bank WGI",
                 scale_min=Decimal("-2.5"),
                 scale_max=Decimal("2.5"),
             ),
             source="world_bank",
         )
-    if attribute == SATISFACTION:
+    if shape.value_type == "Quantity":
         return _stored(
             candidate,
             attribute,
             ValueType.QUANTITY,
-            Quantity(magnitude=Decimal(figure), unit="ladder_points"),
+            Quantity(magnitude=Decimal("8.1" if wanted else "6.3"), unit=shape.unit or "units"),
         )
     return _stored(
         candidate,
         attribute,
         ValueType.RATIO,
-        Ratio(value=Decimal(figure), basis="households"),
+        Ratio(value=Decimal("90" if wanted else "9"), basis="households"),
     )
+
+
+class _Shape:
+    """What the catalog says an attribute is, and what the criterion wants of it."""
+
+    __slots__ = ("goal", "unit", "value_type")
+
+    def __init__(self, value_type: str, unit: str | None, goal: str) -> None:
+        self.value_type = value_type
+        self.unit = unit
+        self.goal = goal
+
+
+_CATALOG: dict[str, _Shape] = {}
+"""Filled by `_learn_the_catalog`, so the figure helper never restates the catalog."""
+
+
+async def _learn_the_catalog(api: httpx.AsyncClient, criteria_set: str) -> list[dict]:
+    """The criteria of a set, and the shape of every attribute they name.
+
+    Read through the API rather than hardcoded, which is what stopped these tests breaking
+    every time a P4 stream added a source. They broke twice that way, each time reporting a
+    catalog that had grown rather than a mapper that had failed.
+    """
+    attributes = (await api.get("/v1/attributes", params={"level": COUNTRY})).json()["items"]
+    by_id = {a["id"]: a for a in attributes}
+    criteria = (await api.get(f"/v1/criteria-sets/{criteria_set}")).json()["criteria"]
+    for criterion in criteria:
+        declared = by_id[criterion["attribute"]]
+        _CATALOG[criterion["attribute"]] = _Shape(
+            declared["value_type"], declared["unit"], criterion["goal"]
+        )
+    return criteria
 
 
 def _stored(
@@ -131,17 +181,23 @@ class TestGetSettings:
 
 class TestGetCriteriaSet:
     async def test_the_minimal_set_comes_back_whole(self, api: httpx.AsyncClient) -> None:
+        """Whole means nothing was dropped on the way out, which is a property of the set
+        rather than a list of its members.
+
+        **This used to name the three attributes the set shipped with**, and broke twice as P4
+        added sources -- each time reporting a catalog that had grown, not a mapper that had
+        failed. What a dropped criterion actually looks like is a pillar whose weights no
+        longer sum to 100, because the criteria within a pillar must (`reqs.md` 3.8), and no
+        list of names is needed to see it.
+        """
         response = await api.get(f"/v1/criteria-sets/{MINIMAL}", params={"level": COUNTRY})
 
         assert response.status_code == 200
         body = response.json()
         assert body["id"] == MINIMAL
-        assert {c["attribute"] for c in body["criteria"]} == {
-            OVERBURDEN,
-            OVERCROWDING,
-            SATISFACTION,
-            *GOVERNANCE,
-        }
+        assert body["criteria"], "a set with no criteria cannot rank anything"
+        for pillar, weight in _weight_per_pillar(body["criteria"]).items():
+            assert round(weight) == 100, f"{pillar} does not add up, so a criterion went missing"
 
     async def test_the_criteria_carry_the_interpretation_that_scores_them(
         self, api: httpx.AsyncClient
@@ -154,15 +210,17 @@ class TestGetCriteriaSet:
 
     async def test_the_pillar_weights_come_with_it(self, api: httpx.AsyncClient) -> None:
         """A screen that showed criteria without pillar weights would show a set that cannot
-        add up."""
+        add up.
+
+        Asserted as the relationship rather than as the list: every pillar a criterion names
+        carries a weight, and the weights total 100 across the level. Which pillars those are
+        is a fact about the catalog on the day, and changes every time a source lands.
+        """
         body = (await api.get(f"/v1/criteria-sets/{MINIMAL}")).json()
 
-        assert {w["pillar"] for w in body["pillar_weights"]} == {
-            "housing",
-            "culture",
-            "governance",
-            "safety",
-        }
+        weighted = {w["pillar"] for w in body["pillar_weights"]}
+        assert {c["pillar"] for c in body["criteria"]} <= weighted
+        assert round(sum(float(w["weight"]) for w in body["pillar_weights"])) == 100
 
     async def test_a_set_that_does_not_exist_is_a_404_in_the_one_error_shape(
         self, api: httpx.AsyncClient
@@ -235,23 +293,19 @@ class TestGetRanking:
     ) -> None:
         """minE2E's acceptance condition, over HTTP: a ranked table with a score, a coverage
         percentage and a match status, from figures with reference dates."""
+        criteria = await _learn_the_catalog(api, MINIMAL)
+
         async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
             await pool.open(wait=True)
             await _set_the_score_scale(pool, 100)
+            # Every criterion the set actually holds, so coverage is 100% whatever P4 added
+            # last. Naming them here meant the assertion below silently became a test of
+            # partial coverage each time a source landed.
             await PostgresValueStore(pool).append(
                 [
-                    _a_figure("country.portugal", OVERBURDEN, "5"),
-                    _a_figure("country.portugal", OVERCROWDING, "9"),
-                    _a_figure("country.portugal", SATISFACTION, "7.1"),
-                    _a_figure("country.portugal", RULE_OF_LAW, "1.1"),
-                    _a_figure("country.portugal", CORRUPTION, "0.9"),
-                    _a_figure("country.portugal", STABILITY, "1.0"),
-                    _a_figure("country.greece", OVERBURDEN, "28"),
-                    _a_figure("country.greece", OVERCROWDING, "27"),
-                    _a_figure("country.greece", SATISFACTION, "6.4"),
-                    _a_figure("country.greece", RULE_OF_LAW, "0.2"),
-                    _a_figure("country.greece", CORRUPTION, "0.0"),
-                    _a_figure("country.greece", STABILITY, "0.1"),
+                    _a_figure(candidate, criterion["attribute"], figure)
+                    for candidate, figure in (("country.portugal", GOOD), ("country.greece", POOR))
+                    for criterion in criteria
                 ]
             )
 

@@ -52,14 +52,32 @@ QUERIES: Final = MappingProxyType(
             sex="T",
             age="Y_GE16",
         ),
+        AttributeId("country.tech_employment_share"): EurostatQuery(
+            "isoc_sks_itspt", freq="A", unit="PC_EMP"
+        ),
+        AttributeId("country.broadband_coverage"): EurostatQuery(
+            "isoc_cbs",
+            freq="A",
+            unit="PC_HH",
+            terrtypo="TOTAL",
+            inet_spd="MBPS_GT100",
+        ),
     }
 )
-"""Three of the fourteen attributes `reqs.md` 7.1 names Eurostat for.
+"""Five of the fourteen attributes `reqs.md` 7.1 names Eurostat for.
 
-Three rather than fourteen because `docs/mine2e.md` M2 asks for a real adapter rather than a
-complete one, and because these three are verified to return figures for most of the 32
-candidates. Two are Ratios and one is a Quantity, so both payload paths are exercised by real
-data rather than by a fixture invented to exercise them.
+The first three were minE2E's: two Ratios and a Quantity, so both payload paths are exercised
+by real data rather than by a fixture invented to exercise them. The last two are P4's W4-F,
+chosen because they open two pillars nothing had answered -- career and connectivity -- rather
+than deepening housing, which already had two of its three (`devplan.md` D7).
+
+**`isoc_cbs` asks for coverage at 100 Mbit/s, and that is a judgement rather than a lookup.**
+The dataset offers five thresholds, and the obvious assumption -- that 30 Mbit/s is saturated
+across Europe and would discriminate nothing -- is simply false: its spread across the 32
+candidates is 36.6 points against 100 Mbit/s's 37.6, and its floor is 63.4%. Neither threshold
+can be chosen on spread, so it is chosen on meaning. 100 Mbit/s is the EU's own very-high-
+capacity line and the honest reading of "could somebody work from here". Gigabit spreads widest
+of the three but measures an ambition rather than a requirement.
 """
 
 BASE_URL: Final = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data"

@@ -46,7 +46,7 @@ application, and where the two disagree, this one is right.
 | **P3** First vertical slice | **Done. Gate A closed 2026-09-05.** 16 of 40 operations, one source adapter, two screens, a browser test against the real stack, and the gate itself as an acceptance test |
 | **P4**-**P7** | Not started |
 
-**1,355 backend tests and 98 interface tests. 189 real values across 32 countries — 93 from Eurostat, 96 from the World Bank. A browser shows a ranked table.**
+**1,372 backend tests and 98 interface tests. 251 real values across 32 countries — 155 from Eurostat, 96 from the World Bank, over 6 of 11 pillars. A browser shows a ranked table.**
 
 ### GATE A — closed 2026-09-05
 
@@ -542,7 +542,7 @@ it. Reserve the block, but do not assume it will be spent.
 | **W4-C** | Open-Meteo | `avg_annual_temperature`, `annual_sunshine_hours` — **blocked on D4** | 0430–0439 |
 | **W4-D** | UNODC + WHO GHO | `crime_safety_index`, `healthcare_system_quality` — both are **scheduled downloads, not live calls** | 0440–0449 |
 | **W4-E** | Manual entry | `residency_admin_ease`, `naturalisation_pathway`, `pension_portability`, `remote_work_tax_treaty`, plus the `uk_skilled_worker`, `ch_eu_efta_quota` and `not_manually_excluded` match-rule results. `POST /values/manual`, `/match-rules`, `/match-rule-results` | 0450–0459 |
-| **W4-F** | Eurostat, extended | `housing_cost_overburden_rate`, `overcrowding_rate`, `tech_employment_share`, `rail_network_density`, `broadband_coverage`, `life_satisfaction`, and the remaining Eurostat rows of `reqs.md` 7.1 | 0460–0469 |
+| **W4-F** | Eurostat, extended | **Done 2026-09-09** for `tech_employment_share` (`isoc_sks_itspt`) and `broadband_coverage` (`isoc_cbs`), which opened career and connectivity. `0411` adds both to `minimal`; the adapter needed only a manifest entry each, no code. **Still open:** `rail_network_density` and `road_network_quality` need land area as well as length, so they are derived rather than fetched; `house_price_to_income_ratio` is not a Eurostat series at all (it publishes an index, not a ratio) and belongs to W4-B |
 
 **Two attributes stay deliberately empty.** `tech_software_jobs` and `tech_product_jobs` have no
 confirmed source (`datasources.md` 11). They remain in the catalog with no adapter, permitting
