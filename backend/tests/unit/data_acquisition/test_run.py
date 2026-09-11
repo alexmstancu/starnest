@@ -154,6 +154,23 @@ class TestWhatARunKeeps:
         assert len(outcome.failures) == 1
         assert outcome.attempted == 2
 
+    async def test_every_failure_is_stamped_with_the_source_that_failed(self) -> None:
+        """Two sources answer the total tax rate, and a retry has to know which to ask again.
+        Stamped here rather than trusted to each adapter, as a value's run is."""
+        adapter = StubAdapter(
+            {PRESS_FREEDOM: Acquired(failures=(AcquisitionFailure(PRESS_FREEDOM, "503"),))},
+            declares=(PRESS_FREEDOM,),
+        )
+
+        outcome = await acquire(
+            adapter=adapter,
+            attributes=[an_attribute(PRESS_FREEDOM)],
+            candidates=[PORTUGAL],
+            values=RecordingValueStore(),
+        )
+
+        assert [failure.data_source for failure in outcome.failures] == ["eurostat"]
+
     async def test_a_run_that_found_nothing_appends_nothing_at_all(self) -> None:
         """Not an empty write. A store call with no rows is a transaction for nothing."""
         adapter = StubAdapter({OVERBURDEN: Acquired()}, declares=(OVERBURDEN,))

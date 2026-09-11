@@ -13,7 +13,7 @@ implementation work.
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
 | `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. **`target_range`, the compound-rule shapes and match rules are not built.** Only the total tax rate has `fixed` anchors; every other `fixed` criterion refuses — truthfully |
-| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 16 of the contract's 40 operations; six source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, and an estimate from Eurostat's tax-benefit figures); runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
+| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 17 of the contract's 40 operations; six source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, and an estimate from Eurostat's tax-benefit figures); runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | Empty. Post-Gate-A |
 | `ui/` | The shell plus the Rank and Configure screens. 98 tests. **It talks to the real backend**, and to a mock only in unit tests |
 
@@ -97,7 +97,7 @@ Makefile      every command the project has
 | `docs/reqs.md` | **Written.** Requirements and ontology. v1 scope in section 1.3, glossary in Appendix A, decision log in Appendix B |
 | `docs/datasources.md` | **Written.** Source analysis, market analysis, criterion→source mapping |
 | `docs/arch.md` | **Written, MVP scope.** Ontology, storage, module architecture, runtime flows, the interface, operations. Stack decided (section 10.2). **Revised before post-MVP work** |
-| `docs/openapi.yaml` | **Written.** The REST contract — 40 operations, of which 16 are served. The **target**, hand-written and deliberately ahead of the code. `docs/openapi.implemented.yaml` is the generated **truth**; see "Two contracts" below |
+| `docs/openapi.yaml` | **Written.** The REST contract — 40 operations, of which 17 are served. The **target**, hand-written and deliberately ahead of the code. `docs/openapi.implemented.yaml` is the generated **truth**; see "Two contracts" below |
 | `docs/devplan.md` | **Written, MVP scope only.** Delivery model, 8 phases, 4 e2e gates, agent decomposition. Blocking decisions in section 7; the MVP boundary and what follows it in section 8. **Post-MVP gets a revised `arch.md` and a second `devplan.md`, not an extension of this one** |
 
 **Read `docs/devplan.md` 0 before doing implementation work** — the stop rule, the definition of done per task, and which files an agent may not edit.

@@ -60,12 +60,14 @@ What its section below asks for, against what exists on 2026-09-11.
 | Coverage high, and honest | **Honest, not high.** 36% for every country: 25 `fixed` criteria have no anchors, and anchors are the household's to choose. The spot-check by hand is a human's and has not happened |
 | Two sources for one attribute: both stored, the right one active | **Yes, and tested.** The tax rate (OECD beside the estimate) and Liechtenstein (a stand-in beside a real figure) — `test_runs_api.py` proves the real figure wins with the stand-in still stored |
 | Reference date distinct from retrieval date | **Yes.** Both columns on every value since `0005`; a stand-in keeps the original's period and records its own retrieval |
-| `POST /data-acquisition-runs/{id}/retry` re-runs only what failed | **Not built** |
+| `POST /data-acquisition-runs/{id}/retry` re-runs only what failed | **Yes, and tested** (2026-09-11). A new run asking only the sources that failed, only about the attributes each failed on. It needed failures to name their source first (`0461`) |
 
 **Found on the way:** a run through the API had been fetching from the first source only
-(`known-issues.md` P5, fixed), and OECD's front door served a Cloudflare browser challenge to a
-script for the first time (`catalog-blockers.md` item 5). Neither was visible from the stored
-figures, which `make acquire` had been writing by looping over every adapter itself.
+(`known-issues.md` P5, fixed); a whole source failing left no trace on the run, and a failure
+did not say which source had failed (P7, fixed); and OECD's front door served a Cloudflare
+browser challenge to a script for the first time (`catalog-blockers.md` item 5). None was
+visible from the stored figures, which `make acquire` had been writing by looping over every
+adapter itself.
 
 ### GATE A — closed 2026-09-05
 

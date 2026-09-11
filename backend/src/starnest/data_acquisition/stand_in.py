@@ -107,6 +107,7 @@ def figures_standing_in(
                 AcquisitionFailure(
                     attribute=declared.attribute,
                     candidate=str(declared.candidate),
+                    data_source=STAND_IN,
                     reason=(
                         f"{declared.substitute_name} stands in for {declared.candidate_name} "
                         "here, and has no figure of its own to lend"

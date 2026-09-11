@@ -14,7 +14,7 @@ thing that can be judged before any figure exists.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from starnest.candidates import Candidate
 from starnest.data import Attribute, Value, ValueStore
@@ -67,4 +67,9 @@ async def acquire(
         )
     )
     stored = await values.append(fetched) if fetched else ()
-    return RunOutcome(stored=tuple(stored), failures=acquired.failures)
+    # Which source failed, stamped for the same reason as the run above: two sources answer the
+    # total tax rate, and a retry has to know which one to ask again.
+    failures = tuple(
+        replace(failure, data_source=adapter.data_source) for failure in acquired.failures
+    )
+    return RunOutcome(stored=tuple(stored), failures=failures)

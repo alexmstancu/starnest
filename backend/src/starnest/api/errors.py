@@ -26,7 +26,7 @@ from starnest.criteria import (
     WeightsAllLockedError,
 )
 from starnest.data import UnknownAttributeError
-from starnest.data_acquisition import UnknownRunError
+from starnest.data_acquisition import NothingToRetryError, UnknownRunError
 from starnest.evaluation import NormalisationError, RankingError
 from starnest.household import HouseholdNotConfiguredError, HouseholdPlaceError
 
@@ -53,6 +53,7 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     # 409 -- the request is well formed and the state refuses it.
     WeightsAllLockedError: _refusal(409, "weights_all_locked"),
     CriteriaSetExistsError: _refusal(409, "criteria_set_exists"),
+    NothingToRetryError: _refusal(409, "nothing_to_retry"),
     # 422 -- the request describes something the domain will not accept.
     CriteriaSetError: _refusal(422, "invalid_criteria_set"),
     CriterionDeclarationError: _refusal(422, "invalid_criterion"),

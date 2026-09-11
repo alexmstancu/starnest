@@ -16,6 +16,7 @@ from typing import Any
 
 from psycopg_pool import AsyncConnectionPool
 
+from starnest.data import DataSourceId
 from starnest.data_acquisition import (
     AcquisitionFailure,
     Run,
@@ -73,20 +74,27 @@ class PostgresRunStore(RunStore):
             )
 
     async def record_failures(self, run: int, failures: Sequence[AcquisitionFailure]) -> None:
-        """One row per (candidate, attribute), which is the unit a retry addresses.
+        """One row per source per (candidate, attribute), which is the unit a retry addresses.
 
-        A failure with no candidate -- a whole indicator unreachable -- has nothing to key on
-        and is skipped rather than invented against an arbitrary candidate. The run's status
-        carries it instead.
+        **Refuses a failure that does not say where and from whom.** The run itemises a
+        whole-source failure against every candidate it asked about before it gets here, and
+        stamps every failure with its source; one arriving without either is a bug upstream, and
+        storing it against a guessed candidate would be inventing a fact about a place.
         """
-        addressable = [failure for failure in failures if failure.candidate]
-        if not addressable:
+        if not failures:
             return
+        unaddressed = [f for f in failures if f.candidate is None or f.data_source is None]
+        if unaddressed:
+            raise ValueError(
+                f"{len(unaddressed)} failures name no candidate or no source, so none can be "
+                f"retried: the first is {unaddressed[0]!r}"
+            )
         async with acquire(self._pool) as connection:
-            for failure in addressable:
+            for failure in failures:
                 await self._queries.upsert_run_failure(
                     connection,
                     data_acquisition_run=run,
+                    data_source=str(failure.data_source),
                     candidate=failure.candidate,
                     attribute=str(failure.attribute),
                     error_message=failure.reason,
@@ -136,11 +144,13 @@ def _run_from(row: Any, failures: Sequence[Any]) -> Run:
         ),
         items_total=int(row.items_total),
         items_completed=int(row.items_completed),
+        items_failed=int(row.items_failed),
         failures=tuple(
             AcquisitionFailure(
                 attribute=failure.attribute,
                 candidate=failure.candidate,
                 reason=failure.error_message,
+                data_source=DataSourceId(failure.data_source),
             )
             for failure in failures
         ),

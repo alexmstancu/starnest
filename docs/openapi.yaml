@@ -577,7 +577,12 @@ paths:
     post:
       tags: [data acquisition]
       summary: Retry only what failed
-      description: Creates a **new** run whose scope is exactly the failures of this one.
+      description: |
+        Creates a **new** run asking only the sources that failed, only about the attributes each
+        failed on, across the candidates that failed. Its scope is the smallest covering the
+        failures -- every failed candidate against every failed attribute -- because the scope is
+        recorded as two lists, and every pair in it is asked of at least one source. The run
+        retried keeps its own record of what went wrong.
       operationId: retryRun
       parameters: [ { name: runId, in: path, required: true, schema: { type: integer } } ]
       responses:
@@ -585,6 +590,11 @@ paths:
           description: Accepted
           content:
             application/json: { schema: { $ref: "#/components/schemas/Run" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The run failed on nothing, so there is nothing to retry.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
 
   /rankings:
     get:
@@ -1265,13 +1275,14 @@ components:
               properties:
                 items_total: { type: integer }
                 items_completed: { type: integer }
-                items_failed: { type: integer }
+                items_failed: { type: integer, description: "Items some source failed on and no source answered. An item OECD failed on and the estimate answered is complete; the failure is still listed." }
             failures:
               type: array
               items:
                 type: object
-                required: [candidate, attribute, error_message]
+                required: [data_source, candidate, attribute, error_message]
                 properties:
+                  data_source: { type: string, description: "Which source failed. Two may answer one attribute, and a retry asks only the one that failed." }
                   candidate: { type: string }
                   attribute: { type: string }
                   error_message: { type: string }

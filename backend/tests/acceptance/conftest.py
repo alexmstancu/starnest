@@ -216,6 +216,8 @@ def a_stub_source(
         "country.overcrowding_rate",
     ),
     silent_about: tuple[str, ...] = ("country.portugal",),
+    silent_on: tuple[str, ...] | None = None,
+    unreachable: bool = False,
 ) -> SourceAdapter:
     """A source that answers instantly with figures the test controls.
 
@@ -256,9 +258,17 @@ def a_stub_source(
             return answers
 
         async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+            if unreachable:
+                # A whole source failing, for no candidate in particular -- OECD behind a
+                # browser challenge -- which is how an adapter reports an HTTP refusal.
+                return Acquired(
+                    failures=(AcquisitionFailure(attribute=attribute.id, reason="unreachable"),)
+                )
             values, failures = [], []
             for candidate in candidates:
-                if str(candidate.id) in silent_about:
+                if str(candidate.id) in silent_about and (
+                    silent_on is None or str(attribute.id) in silent_on
+                ):
                     # One reproducible failure, so a run always has something to report and the
                     # failure path is exercised by every test rather than by a special one.
                     failures.append(

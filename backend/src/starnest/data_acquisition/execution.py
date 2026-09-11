@@ -15,11 +15,12 @@ screen say which pass produced it, and what makes "re-run just this" answerable 
 """
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from starnest.candidates import Candidate
-from starnest.data import Attribute, StandIn, ValueStore
-from starnest.data_acquisition.adapter import AcquisitionFailure, SourceAdapter
+from starnest.data import Attribute, AttributeId, DataSourceId, StandIn, ValueStore
+from starnest.data_acquisition.adapter import Acquired, AcquisitionFailure, SourceAdapter
 from starnest.data_acquisition.run import acquire
 from starnest.data_acquisition.stand_in import stand_in
 from starnest.data_acquisition.store import Run, RunScope, RunStatus, RunStore
@@ -96,6 +97,111 @@ async def execute_run(
         await runs.finish_run(run, status=RunStatus.FAILED, finished_at=datetime.now(tz=UTC))
         raise
 
-    await runs.record_failures(run, failures)
+    await runs.record_failures(run, _item_by_item(failures, candidates))
     await runs.finish_run(run, status=RunStatus.COMPLETED, finished_at=datetime.now(tz=UTC))
     return await runs.read_run(run)
+
+
+def _item_by_item(
+    failures: Sequence[AcquisitionFailure], candidates: Sequence[Candidate]
+) -> list[AcquisitionFailure]:
+    """Every failure against the candidate it failed for -- a whole-source failure against all.
+
+    A source that could not be reached at all -- OECD behind a browser challenge -- fails once,
+    for no candidate in particular. It did fail for every candidate the run asked it about, and
+    recording it that way is what keeps it visible and retryable. An earlier version skipped it,
+    saying the run's status would carry it; the status said `completed`, and a whole source's
+    outage left no trace on the run.
+    """
+    itemised: list[AcquisitionFailure] = []
+    for failure in failures:
+        if failure.candidate is not None:
+            itemised.append(failure)
+        else:
+            itemised.extend(
+                replace(failure, candidate=str(candidate.id)) for candidate in candidates
+            )
+    return itemised
+
+
+class NothingToRetryError(ValueError):
+    """A retry of a run that failed on nothing. A new run over an empty scope would be a no-op
+    recorded as though it were work."""
+
+
+async def retry_run(
+    *,
+    failed: Run,
+    adapters: Sequence[SourceAdapter],
+    attributes: Sequence[Attribute],
+    candidates: Sequence[Candidate],
+    values: ValueStore,
+    runs: RunStore,
+    stand_ins: Sequence[StandIn] = (),
+    triggered_by: str = MANUAL,
+) -> Run:
+    """A new run asking only the sources that failed, only about what they failed on.
+
+    `reqs.md` 6.4. `attributes` and `candidates` are the level's whole catalog and roster; the
+    retry narrows both to the failures. **The old run is untouched** -- it keeps its record of
+    what went wrong, and the new one records what happened this time.
+
+    **The scope is the smallest one covering the failures**: every failed candidate against every
+    failed attribute. Each source is asked only about the attributes *it* failed on, so OECD
+    failing on the tax rate does not re-ask the estimate that answered it. Asking a source about
+    a candidate that did not fail costs nothing extra -- every source here answers a whole
+    indicator in one request -- and stores one more observation of a figure already held.
+
+    Declared stand-ins run afterwards as in any run, so a substitute's figure that arrives in the
+    retry is lent on in the same pass.
+    """
+    if not failed.failures or failed.scope is None:
+        raise NothingToRetryError(
+            f"run {failed.id} failed on nothing, so there is nothing to retry"
+        )
+
+    failed_on = _what_each_source_failed_on(failed.failures)
+    wanted_candidates = {failure.candidate for failure in failed.failures}
+    wanted_attributes = {failure.attribute for failure in failed.failures}
+    return await execute_run(
+        adapters=[
+            _AskedOnlyAbout(adapter, failed_on[adapter.data_source])
+            for adapter in adapters
+            if adapter.data_source in failed_on
+        ],
+        attributes=[attribute for attribute in attributes if attribute.id in wanted_attributes],
+        candidates=[candidate for candidate in candidates if candidate.id in wanted_candidates],
+        values=values,
+        runs=runs,
+        level=failed.scope.level,
+        stand_ins=stand_ins,
+        triggered_by=triggered_by,
+    )
+
+
+def _what_each_source_failed_on(
+    failures: Sequence[AcquisitionFailure],
+) -> dict[DataSourceId | None, frozenset[AttributeId]]:
+    by_source: dict[DataSourceId | None, set[AttributeId]] = {}
+    for failure in failures:
+        by_source.setdefault(failure.data_source, set()).add(failure.attribute)
+    return {source: frozenset(failed_on) for source, failed_on in by_source.items()}
+
+
+class _AskedOnlyAbout(SourceAdapter):
+    """A source, narrowed to the attributes a retry should ask it about again."""
+
+    def __init__(self, adapter: SourceAdapter, attributes: frozenset[AttributeId]) -> None:
+        self._adapter = adapter
+        self._attributes = attributes
+
+    @property
+    def data_source(self) -> DataSourceId:
+        return self._adapter.data_source
+
+    @property
+    def attributes(self) -> tuple[AttributeId, ...]:
+        return tuple(a for a in self._adapter.attributes if a in self._attributes)
+
+    async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+        return await self._adapter.fetch(attribute, candidates)

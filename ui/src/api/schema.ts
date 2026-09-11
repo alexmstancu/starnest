@@ -467,7 +467,11 @@ export interface paths {
         put?: never;
         /**
          * Retry only what failed
-         * @description Creates a **new** run whose scope is exactly the failures of this one.
+         * @description Creates a **new** run asking only the sources that failed, only about the attributes each
+         *     failed on, across the candidates that failed. Its scope is the smallest covering the
+         *     failures -- every failed candidate against every failed attribute -- because the scope is
+         *     recorded as two lists, and every pair in it is asked of at least one source. The run
+         *     retried keeps its own record of what went wrong.
          */
         post: operations["retryRun"];
         delete?: never;
@@ -977,9 +981,12 @@ export interface components {
             progress?: {
                 items_total?: number;
                 items_completed?: number;
+                /** @description Items some source failed on and no source answered. An item OECD failed on and the estimate answered is complete; the failure is still listed. */
                 items_failed?: number;
             };
             failures?: {
+                /** @description Which source failed. Two may answer one attribute, and a retry asks only the one that failed. */
+                data_source: string;
                 candidate: string;
                 attribute: string;
                 error_message: string;
@@ -1937,6 +1944,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Run"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The run failed on nothing, so there is nothing to retry. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

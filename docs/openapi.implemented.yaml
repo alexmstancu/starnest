@@ -263,10 +263,14 @@ components:
         candidate:
           title: Candidate
           type: string
+        data_source:
+          title: Data Source
+          type: string
         error_message:
           title: Error Message
           type: string
       required:
+      - data_source
       - candidate
       - attribute
       - error_message
@@ -1013,6 +1017,43 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Get Run
+      tags:
+      - acquisition
+  /v1/data-acquisition-runs/{run_id}/retry:
+    post:
+      description: 'A **new** run asking only the sources that failed, only about
+        what they failed on.
+
+
+        `reqs.md` 6.4. The run retried keeps its record of what went wrong; the new
+        one records what
+
+        happened this time. A run that failed on nothing is refused with 409, because
+        a run over an
+
+        empty scope would be a no-op recorded as though it were work.'
+      operationId: retryRun
+      parameters:
+      - in: path
+        name: run_id
+        required: true
+        schema:
+          title: Run Id
+          type: integer
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Retry
       tags:
       - acquisition
   /v1/household:

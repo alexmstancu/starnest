@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from starnest.api.bodies import ContractBody
 from starnest.api.dependencies import Adapters, Candidates, Catalog, Runs, Values
-from starnest.data_acquisition import Run, execute_run
+from starnest.data_acquisition import Run, execute_run, retry_run
 
 router = APIRouter(tags=["acquisition"])
 
@@ -61,6 +61,7 @@ class ProgressBody(BaseModel):
 
 
 class FailureBody(BaseModel):
+    data_source: str
     candidate: str
     attribute: str
     error_message: str
@@ -151,6 +152,40 @@ async def start_run(
     return _run_body(started)
 
 
+@router.post(
+    "/data-acquisition-runs/{run_id}/retry",
+    operation_id="retryRun",
+    status_code=202,
+    response_model=RunBody,
+)
+async def retry(
+    run_id: int,
+    adapters: Adapters,
+    candidates: Candidates,
+    catalog: Catalog,
+    values: Values,
+    runs: Runs,
+) -> RunBody:
+    """A **new** run asking only the sources that failed, only about what they failed on.
+
+    `reqs.md` 6.4. The run retried keeps its record of what went wrong; the new one records what
+    happened this time. A run that failed on nothing is refused with 409, because a run over an
+    empty scope would be a no-op recorded as though it were work.
+    """
+    failed = await runs.read_run(run_id)
+    level = failed.scope.level if failed.scope else None
+    retried = await retry_run(
+        failed=failed,
+        adapters=adapters,
+        attributes=await catalog.read_attributes(level=level),
+        candidates=await candidates.read_candidates(level=level),
+        values=values,
+        runs=runs,
+        stand_ins=await catalog.read_stand_ins(level=level),
+    )
+    return _run_body(retried)
+
+
 @router.get("/data-acquisition-runs", operation_id="listRuns", response_model=RunsBody)
 async def list_runs(runs: Runs, limit: int = 20, offset: int = 0) -> RunsBody:
     """Recent runs, newest first. Headers only -- a scope and its failures are the detail read."""
@@ -178,10 +213,11 @@ async def get_run(run_id: int, runs: Runs) -> RunDetailBody:
         progress=ProgressBody(
             items_total=run.items_total,
             items_completed=run.items_completed,
-            items_failed=len(run.failures),
+            items_failed=run.items_failed,
         ),
         failures=tuple(
             FailureBody(
+                data_source=str(failure.data_source),
                 candidate=str(failure.candidate),
                 attribute=str(failure.attribute),
                 error_message=failure.reason,

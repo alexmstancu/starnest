@@ -15,7 +15,7 @@ from starnest.data_acquisition.adapter import (
     AcquisitionFailure,
     SourceAdapter,
 )
-from starnest.data_acquisition.execution import execute_run
+from starnest.data_acquisition.execution import NothingToRetryError, execute_run, retry_run
 from starnest.data_acquisition.run import RunOutcome, acquire
 from starnest.data_acquisition.stand_in import STAND_IN, figures_standing_in, stand_in
 from starnest.data_acquisition.store import (
@@ -30,6 +30,7 @@ __all__ = [
     "STAND_IN",
     "Acquired",
     "AcquisitionFailure",
+    "NothingToRetryError",
     "Run",
     "RunOutcome",
     "RunScope",
@@ -40,5 +41,6 @@ __all__ = [
     "acquire",
     "execute_run",
     "figures_standing_in",
+    "retry_run",
     "stand_in",
 ]

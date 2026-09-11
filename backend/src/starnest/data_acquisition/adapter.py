@@ -34,6 +34,9 @@ class AcquisitionFailure:
     attribute: AttributeId
     reason: str
     candidate: str | None = None
+    # Which source failed. Stamped by the run, as a value's run is, so an adapter cannot forget
+    # to say who it is.
+    data_source: DataSourceId | None = None
 
 
 @dataclass(frozen=True)

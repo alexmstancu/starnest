@@ -60,24 +60,28 @@ SET    llm_call_count = llm_call_count + :llm_call_count,
 WHERE  id = :data_acquisition_run
 RETURNING llm_call_count, cost_eur;
 
--- name: upsert_run_failure(data_acquisition_run, candidate, attribute, error_message)!
--- One failure per item per run. A run continues past a failure (reqs.md 6.4), and the
--- (candidate, attribute) pair is exactly the unit selective retry needs.
+-- name: upsert_run_failure(data_acquisition_run, data_source, candidate, attribute, error_message)!
+-- One failure per source per item per run. A run continues past a failure (reqs.md 6.4), and
+-- a source asked about one candidate's attribute is exactly the unit selective retry needs
+-- (0461): asking OECD again is a different act from asking the estimate again.
 --
 -- Upsert rather than insert because an item may be attempted more than once within a run --
 -- the retry-with-backoff of arch.md 5.3 -- and the failure that matters is the last one, not a
 -- pile of identical rows.
-INSERT INTO data_acquisition_failure (data_acquisition_run, candidate, attribute, error_message)
-VALUES (:data_acquisition_run, :candidate, :attribute, :error_message)
-ON CONFLICT (data_acquisition_run, candidate, attribute) DO UPDATE
+INSERT INTO data_acquisition_failure
+       (data_acquisition_run, data_source, candidate, attribute, error_message)
+VALUES (:data_acquisition_run, :data_source, :candidate, :attribute, :error_message)
+ON CONFLICT (data_acquisition_run, data_source, candidate, attribute) DO UPDATE
 SET error_message = EXCLUDED.error_message;
 
--- name: clear_run_failure(data_acquisition_run, candidate, attribute)!
--- An item that failed and then succeeded on a later attempt inside the same run is not a
--- failure of that run. Retry across runs never uses this: a retry is a NEW run whose scope is
--- the old one's failures (openapi.yaml), and the old run keeps its record of what went wrong.
+-- name: clear_run_failure(data_acquisition_run, data_source, candidate, attribute)!
+-- An item that failed and then succeeded from the same source on a later attempt inside the
+-- same run is not a failure of that run. Retry across runs never uses this: a retry is a NEW run
+-- whose scope is the old one's failures (openapi.yaml), and the old run keeps its record of what
+-- went wrong.
 DELETE FROM data_acquisition_failure
 WHERE  data_acquisition_run = :data_acquisition_run
+  AND  data_source = :data_source
   AND  candidate = :candidate
   AND  attribute = :attribute;
 
@@ -110,8 +114,11 @@ SELECT count(*) FROM data_acquisition_run;
 -- includes values stored as rejected -- the item was fetched and answered, and whether the
 -- answer survived validation is a separate question the value itself records.
 --
--- Failures are counted here and listed by select_run_failures. A run with a thousand failures
--- should not make its own status unreadable.
+-- items_failed counts the pairs some source failed on and NO source answered, so it never
+-- overlaps items_completed. Where OECD failed and the estimate answered, the item is complete;
+-- OECD's failure is still listed by select_run_failures, source and all, because it is still a
+-- thing worth retrying. A run with a thousand failures should not make its own status
+-- unreadable, so they are counted here and listed there.
 SELECT r.id,
        r.run_status,
        r.triggered_by,
@@ -137,21 +144,26 @@ SELECT r.id,
        (SELECT count(DISTINCT (v.candidate, v.attribute))
         FROM   value AS v
         WHERE  v.data_acquisition_run = r.id) AS items_completed,
-       (SELECT count(*)
+       (SELECT count(DISTINCT (f.candidate, f.attribute))
         FROM   data_acquisition_failure AS f
-        WHERE  f.data_acquisition_run = r.id) AS items_failed
+        WHERE  f.data_acquisition_run = r.id
+          AND  NOT EXISTS (SELECT 1 FROM value AS v
+                           WHERE  v.data_acquisition_run = r.id
+                             AND  v.candidate = f.candidate
+                             AND  v.attribute = f.attribute)) AS items_failed
 FROM   data_acquisition_run AS r
 WHERE  r.id = :data_acquisition_run;
 
 -- name: select_run_failures(data_acquisition_run)
--- What a run failed on, item by item. This is both the failure list on the run screen and the
--- scope of the retry run: a retry creates a new run covering exactly these pairs.
-SELECT f.candidate,
+-- What a run failed on, item by item and source by source. This is both the failure list on
+-- the run screen and the scope of the retry run, which asks only these sources about these items.
+SELECT f.data_source,
+       f.candidate,
        f.attribute,
        f.error_message
 FROM   data_acquisition_failure AS f
 WHERE  f.data_acquisition_run = :data_acquisition_run
-ORDER  BY f.candidate, f.attribute;
+ORDER  BY f.candidate, f.attribute, f.data_source;
 
 -- name: select_run_values(data_acquisition_run)
 -- What a run produced, as ids and their pairs. The full values are read through values.sql;

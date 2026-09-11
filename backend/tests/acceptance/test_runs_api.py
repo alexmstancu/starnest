@@ -325,3 +325,145 @@ class TestAStandInThroughARun:
             ("eurostat", True),
             ("stand_in", False),
         ]
+
+
+async def _count(database_url: str, query: str, *parameters: object) -> int:
+    async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+        await pool.open(wait=True)
+        async with pool.connection() as connection:
+            row = await (await connection.execute(query, parameters)).fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+class TestWhatAFailureRecords:
+    async def test_a_failure_names_the_source_that_failed(self, api: httpx.AsyncClient) -> None:
+        """Two sources answer the total tax rate; a retry has to know which one to ask again."""
+        run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+        failures = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()["failures"]
+
+        assert {failure["data_source"] for failure in failures} == {"eurostat"}
+
+    async def test_a_whole_source_failing_is_recorded_against_every_candidate(
+        self, database_url: str
+    ) -> None:
+        """It once left no trace: skipped for having no candidate, while the run said
+        `completed`. OECD behind a browser challenge failed for every candidate it was asked
+        about, and that is what the run records."""
+        unreachable = a_stub_source(answers=(OVERBURDEN,), unreachable=True)
+        async with an_api(database_url, (unreachable,)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        assert len(detail["failures"]) == 32
+        assert detail["progress"]["items_failed"] == 32
+
+    async def test_an_item_another_source_answered_is_complete_not_failed(
+        self, database_url: str
+    ) -> None:
+        """Failed and completed never overlap. Eurostat declines Portugal on both attributes, and
+        a second source answers Portugal's overcrowding: one item failed, and two failures are
+        still listed, because Eurostat still failed on both and is still worth asking again."""
+        overlapping = (
+            a_stub_source(),
+            a_stub_source(
+                data_source="world_bank", answers=("country.overcrowding_rate",), silent_about=()
+            ),
+        )
+        async with an_api(database_url, overlapping) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        assert detail["progress"]["items_failed"] == 1
+        assert detail["progress"]["items_completed"] == 32 * 2 - 1
+        assert len(detail["failures"]) == 2
+
+
+class TestRetryingARun:
+    async def test_a_retry_is_a_new_run_over_only_what_failed(self, api: httpx.AsyncClient) -> None:
+        first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+        retried = await api.post(f"/v1/data-acquisition-runs/{first['id']}/retry")
+
+        assert retried.status_code == 202
+        assert retried.json()["id"] != first["id"]
+        scope = (await api.get(f"/v1/data-acquisition-runs/{retried.json()['id']}")).json()["scope"]
+        assert scope["candidates"] == [THE_STUB_DECLINES_FOR]
+        assert sorted(scope["attributes"]) == [OVERBURDEN, "country.overcrowding_rate"]
+
+    async def test_the_run_retried_keeps_its_record_of_what_went_wrong(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+        before = (await api.get(f"/v1/data-acquisition-runs/{first['id']}")).json()["failures"]
+
+        await api.post(f"/v1/data-acquisition-runs/{first['id']}/retry")
+
+        after = (await api.get(f"/v1/data-acquisition-runs/{first['id']}")).json()["failures"]
+        assert after == before
+
+    async def test_only_the_source_that_failed_is_asked_again(self, database_url: str) -> None:
+        """World Bank answered Portugal's overcrowding; only Eurostat failed. Asking World Bank
+        again would store a figure nobody asked to refresh."""
+        overlapping = (
+            a_stub_source(),
+            a_stub_source(
+                data_source="world_bank", answers=("country.overcrowding_rate",), silent_about=()
+            ),
+        )
+        async with an_api(database_url, overlapping) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            retried = (await api.post(f"/v1/data-acquisition-runs/{first['id']}/retry")).json()
+
+            asked_again = await _count(
+                database_url,
+                "SELECT count(*) FROM value WHERE data_acquisition_run = %s"
+                " AND data_source = 'world_bank'",
+                retried["id"],
+            )
+
+        assert asked_again == 0
+
+    async def test_a_source_is_asked_again_only_about_what_it_failed_on(
+        self, database_url: str
+    ) -> None:
+        """Eurostat answers both attributes and failed on overburden only; World Bank failed on
+        overcrowding. The retry covers both attributes for Portugal -- and Eurostat, which
+        answered Portugal's overcrowding the first time, must not be asked about it again."""
+        each_failing_on_one = (
+            a_stub_source(silent_on=(OVERBURDEN,)),
+            a_stub_source(data_source="world_bank", answers=("country.overcrowding_rate",)),
+        )
+        async with an_api(database_url, each_failing_on_one) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            retried = (await api.post(f"/v1/data-acquisition-runs/{first['id']}/retry")).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{retried['id']}")).json()
+
+            asked_again_about_overcrowding = await _count(
+                database_url,
+                "SELECT count(*) FROM value WHERE data_acquisition_run = %s"
+                " AND data_source = 'eurostat' AND attribute = 'country.overcrowding_rate'",
+                retried["id"],
+            )
+
+        assert sorted(detail["scope"]["attributes"]) == [OVERBURDEN, "country.overcrowding_rate"]
+        assert asked_again_about_overcrowding == 0
+
+    async def test_a_run_that_failed_on_nothing_has_nothing_to_retry(
+        self, database_url: str
+    ) -> None:
+        async with an_api(database_url, (a_stub_source(silent_about=()),)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+            refused = await api.post(f"/v1/data-acquisition-runs/{run['id']}/retry")
+
+        assert refused.status_code == 409
+        assert refused.json()["code"] == "nothing_to_retry"
+
+    async def test_retrying_a_run_that_does_not_exist_is_a_404(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.post("/v1/data-acquisition-runs/999999/retry")
+
+        assert response.status_code == 404

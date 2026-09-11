@@ -60,6 +60,9 @@ class Run:
     scope: RunScope | None = None
     items_total: int = 0
     items_completed: int = 0
+    # Items some source failed on and no source answered -- never `len(failures)`, which counts
+    # each source's failure and so overlaps `items_completed` wherever a second source answered.
+    items_failed: int = 0
     failures: tuple[AcquisitionFailure, ...] = field(default=())
 
 
