@@ -42,12 +42,12 @@ application, and where the two disagree, this one is right.
 |---|---|
 | **P0** Ground | **Done.** 30 migrations, the catalog seeded, `make check` a real gate |
 | **P1** Vocabulary and seams | **Done**, with one correction: `CandidateStore` was declared during minE2E because nothing had needed it, and `CriteriaStore` had no implementation until M3 needed one |
-| **P2** Core policy | **Done for the MVP's needs.** `evaluation/` has all three normalisation methods -- `fixed` added 2026-09-11, anchored so far only on the total tax rate (Q206). The ranking reports how its covered weight splits by confidence (`reqs.md` 5.7). `target_range`, the compound-rule shapes and match rules are not built |
+| **P2** Core policy | **Done for the MVP's needs.** `evaluation/` has all three normalisation methods -- `fixed` added 2026-09-11, anchored on the eight criteria whose data has landed (Q206, Q209). The ranking reports how its covered weight splits by confidence (`reqs.md` 5.7). `target_range`, the compound-rule shapes and match rules are not built |
 | **P3** First vertical slice | **Done. Gate A closed 2026-09-05.** 16 of 40 operations, one source adapter, two screens, a browser test against the real stack, and the gate itself as an acceptance test |
 | **P4** Adapter fan-out | **Under way.** Six adapters (Eurostat, World Bank, WHO, IMF, OECD, and an estimate from Eurostat's tax-benefit figures) plus declared stand-ins, 9 of 11 pillars. Ordered by pillar coverage per D7. Open: OECD's family pillar, Open-Meteo (blocked on D4), manual entry |
 | **P5**-**P7** | Not started |
 
-**1,547 backend tests and 98 interface tests. The shipped set `local_employment` ranks all 32 countries** (2026-09-11). Liechtenstein, the last, is ranked on Switzerland's figures for three attributes, visibly (Q208) — and the ranking now says how much of each score rests on low-confidence figures: 54% of Liechtenstein's, 12% for the five countries on the estimated tax rate, none for anyone else. **Coverage is 36% for every country**, because 25 `fixed` criteria still have no anchors.
+**1,561 backend tests and 98 interface tests. The shipped set `local_employment` ranks all 32 countries** (2026-09-11). Liechtenstein, the last, is ranked on Switzerland's figures for three attributes, visibly (Q208) — and the ranking now says how much of each score rests on low-confidence figures: 51% of Liechtenstein's, 8% for the five countries on the estimated tax rate, none for anyone else. **Coverage is 57%** (from 36%) since Gate B's anchors (Q209); the rest of the gap is criteria with no data at all — climate, family, the manual-entry attributes, and two with no source.
 
 ### GATE B — under way
 
@@ -57,7 +57,7 @@ What its section below asks for, against what exists on 2026-09-11.
 |---|---|
 | All six blocking attributes for all 32 | **Yes, and a test** — `tests/live/test_gate_b.py` runs every real source and the stand-ins into the test database and reads the result through the active-value rule. `make live`, never `make check`. Watched failing with the stand-ins removed: exactly Liechtenstein's three |
 | No country spuriously `insufficient_data` | **Yes.** All 32 ranked under `local_employment` |
-| Coverage high, and honest | **Honest, not high.** 36% for every country: 25 `fixed` criteria have no anchors, and anchors are the household's to choose. The spot-check by hand is a human's and has not happened |
+| Coverage high, and honest | **Honest, and higher**: 57% for the EU countries, from 36%, once the household anchored the seven `fixed` criteria with data (`0462`, Q209). What remains uncovered has **no data**, not no anchor: climate (D4), family (OECD), manual entry (W4-E), and the two tech-jobs attributes with no source. **The spot-check by hand is a human's and has not happened** |
 | Two sources for one attribute: both stored, the right one active | **Yes, and tested.** The tax rate (OECD beside the estimate) and Liechtenstein (a stand-in beside a real figure) — `test_runs_api.py` proves the real figure wins with the stand-in still stored |
 | Reference date distinct from retrieval date | **Yes.** Both columns on every value since `0005`; a stand-in keeps the original's period and records its own retrieval |
 | `POST /data-acquisition-runs/{id}/retry` re-runs only what failed | **Yes, and tested** (2026-09-11). A new run asking only the sources that failed, only about the attributes each failed on. It needed failures to name their source first (`0461`) |

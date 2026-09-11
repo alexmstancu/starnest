@@ -12,7 +12,7 @@ implementation work.
 | Module | State |
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
-| `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. **`target_range`, the compound-rule shapes and match rules are not built.** Only the total tax rate has `fixed` anchors; every other `fixed` criterion refuses — truthfully |
+| `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. **`target_range`, the compound-rule shapes and match rules are not built.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
 | `api/`, `data_acquisition/`, `data_sources/` | **Written.** 17 of the contract's 40 operations; six source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, and an estimate from Eurostat's tax-benefit figures); runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | Empty. Post-Gate-A |
 | `ui/` | The shell plus the Rank and Configure screens. 98 tests. **It talks to the real backend**, and to a mock only in unit tests |
@@ -44,9 +44,10 @@ a published figure. **Liechtenstein is ranked on Switzerland's figures for three
 (Q208, `0460`): the `stand_in` table declares, per attribute and with a reason, whose figure
 stands in where no source covers a candidate, and the copy is stored under the `stand_in`
 source at `low` confidence, never as the candidate's own measurement. **Every ranked candidate
-now reports `coverage_by_confidence`** (`reqs.md` 5.7) — 54% of Liechtenstein's covered weight
-is low-confidence, 12% for the five on the estimate. Coverage is 36% because 25 `fixed` criteria
-have no anchors yet — honest, and shown.
+now reports `coverage_by_confidence`** (`reqs.md` 5.7) — 51% of Liechtenstein's covered weight
+is low-confidence, 8% for the five on the estimate. **Coverage is 57%** since the household
+anchored the seven `fixed` criteria with data (Q209, `0462`); what remains uncovered has no data
+at all, not merely no anchor.
 
 **The total tax rate (Q205) counts every component, employee's and employer's, over the whole
 cost of employment, at 167% of the average wage** — so Romania, which moved contributions onto
