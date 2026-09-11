@@ -2111,7 +2111,7 @@ way by the active-value rule (section 3.6).
 
 | Attribute | Weight | Value type | Sources | Max age |
 |---|---|---|---|---|
-| `country.house_price_to_income_ratio` | 40% | **Ratio** — price ÷ annual income | Eurostat, OECD Affordable Housing Database | 24 months |
+| `country.house_price_to_income_ratio` | 40% | **Quantity** — a home's price as a multiple of annual income | *None yet* — to be derived (Q204). OECD publishes only its change over time | 24 months |
 | `country.housing_cost_overburden_rate` | 35% | **Ratio** — share of households | Eurostat `ilc_lvho07a` | 24 months |
 | `country.overcrowding_rate` | 25% | **Ratio** — share of households | Eurostat `ilc_lvho05a` | 24 months |
 
@@ -2453,21 +2453,32 @@ show whether the three shapes are right, and zero would not.
 deliberately sparse — every flag is a way for a candidate to drop out on a data gap rather than
 on merit.
 
-**Seven at country level**, chosen on two conditions together: the score means little without
+**Six at country level**, chosen on two conditions together: the score means little without
 them, *and* the source covers all 32 seeded countries, so a gap signals a broken fetch rather
 than a genuinely undocumented place.
+
+> **There were seven until 2026-09-11** (Q204). `country.house_price_to_income_ratio` failed
+> the second condition outright: no source publishes it as a cross-country figure, so as a
+> blocking attribute it could only ever have made every candidate unscoreable. It keeps its
+> criterion and its weight, unanswered, and deriving it is post-MVP work.
+>
+> **Liechtenstein strains the second condition for three of the six** —
+> `cost_of_living_index`, `income_tax_effective` and `healthcare_system_quality` each come from
+> a source that covers 31 of the 32, and Liechtenstein is the one. That is not a broken fetch:
+> no pan-European statistics office surveys it. Gate B's decision covers it — a Swiss figure
+> standing in, stored as a Swiss value at `low` confidence, the substitution visible
+> (`devplan.md` Gate B).
 
 | Attribute | Share of the country score | Why |
 |---|---|---|
 | `country.cost_of_living_index` | 4.9% | Affordability is the question the app exists to answer |
 | `country.income_tax_effective` | 4.2% | Net income is unknowable without it |
-| `country.house_price_to_income_ratio` | 4.0% | The housing pillar's anchor |
 | `country.homicide_rate` | 6.0% | Half the safety pillar |
 | `country.political_economic_stability` | 6.0% | The other half; WGI covers every country, so absence means failure |
 | `country.healthcare_system_quality` | 9.0% | The **entire** health pillar — missing it means health silently contributes nothing |
 | `country.rule_of_law` | 2.0% | Governance anchor, and complete in WGI |
 
-Together **36.1% of the country score**. A candidate missing any one of them is reported as
+Together **32.1% of the country score**. A candidate missing any one of them is reported as
 insufficient data with that attribute named.
 
 > **Nothing in the `career` pillar is required, deliberately** — even though section 1.3 makes local
@@ -2952,4 +2963,5 @@ Recorded from a front-to-back read of this document.
 | Q201 | **The SQL's tests stay in Python**, under `backend/tests/storage/` | This is inconsistent with Q200 and the inconsistency is accepted, because the two needs are not alike. Q200 solved a daily act: opening a query in `psql` to debug it, without spelunking a Python package. Running the test suite from another language is hypothetical, and pgTAP would cost a build step on the database image, a second runner outside `make check`'s single exit code, and Perl. Revisit if someone actually needs to run these without Python |
 | Q202 | **`country.crime_safety_index` splits into `country.homicide_rate` and a Numbeo `ExternalScore`** (2026-09-09, migration `0442`) | It declared Numbeo's 0–100 bounds and named UNODC's homicide rate first — two quantities on two scales, so a figure from one would have been stored under the other's bounds, wrong in a way nothing downstream could detect. The split follows section 3.5a: the measured rate is scored, the crowdsourced composite is displayed. Eurostat `sdg_16_10` answers all 32 as a standardised death rate, which is more comparable than police-recorded offences because recording practice varies. The goal flips to `minimise`: a safety index rises as things improve and a homicide rate falls. The old attribute is retired, not deleted, and Numbeo's $50–500/month becomes optional rather than blocking |
 | Q203 | **`country.cost_of_living_index` is a `Quantity`, unit `eu27_average_100`** (2026-09-09, migration `0443`) | Typed `Index` with no bounds declared, it could hold no value at all, while being one of the seven attributes the shipped set will not score without. A price level index has a base, not a range — Romania 65.1, Iceland 173.5, no ceiling — so any `Index` bound wide enough would be invented, and `Ratio` is capped at 100. `Index` is reserved for figures whose bounds do the work. **It stays an attribute rather than an `ExternalScore`** although it is computed over a basket: its weights are within one dimension, all prices, and encode no view of what matters — the reading of section 3.5a's test this entry adopts |
+| Q204 | **`country.house_price_to_income_ratio` stops blocking, becomes a `Quantity`, and is derived post-MVP** (2026-09-11, migration `0444`) | No source publishes it as a cross-country figure. OECD, checked directly, has only an index with 2015 = 100 for every country and a percentage of each country's own long-run average — Portugal 133 and Germany 87 say which is further above its own history, not which is less affordable. It fails section 7.5's own condition that a blocking source cover all 32, so blocking could only ever make every candidate unscoreable. It keeps its criterion and weight, unanswered; the long-term answer is to **derive** it from an absolute house price level and median income (`devplan.md` 8). Retyped because a price-to-income ratio is a multiple with no ceiling, and `Ratio` means a share and is capped at 100 |
 

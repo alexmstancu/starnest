@@ -22,7 +22,7 @@ down, seven steps in order against a real database plus two standing checks. 1,3
 tests, 98 interface tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
 deliberately does not cover.
 
-**The ranking rests on 13 attributes in 9 of 11 pillars**, and health is complete. P4 is
+**The ranking rests on 14 attributes in 9 of 11 pillars**, and health is complete. P4 is
 **ordered by pillar coverage, not adapter convenience** (`devplan.md` D7): World Bank WGI, then
 Eurostat extended (career, connectivity, nature), then WHO (health), then the IMF (economics).
 Four adapters, four sources, no shared machinery beyond the `SourceAdapter` contract.
@@ -35,10 +35,12 @@ Only `www.oecd.org` is Cloudflare-blocked. An earlier note here said no OECD ada
 work; that generalised one bad path to a whole organisation and is corrected in
 `docs/catalog-blockers.md` item 5.
 
-**The shipped set is two attributes from scoring**, down from seven when P4 started, and both
-are OECD's — `house_price_to_income_ratio` and `income_tax_effective`. The OECD SDMX API answers
-a script with Cloudflare's bot challenge, so they need a bulk download or a different source
-(`docs/catalog-blockers.md` item 5).
+**The shipped set has every figure it needs for 31 of 32 countries, and still cannot score** —
+because what blocks it now is a *method*, not data. `income_tax_effective` is answered by
+Eurostat `earn_nt_net` (31 of 32, Romania included, 41.5% — what Romanian law gives) and
+normalises `fixed`, which has no anchors and is not built. `house_price_to_income_ratio`
+stopped blocking (Q204): no source publishes it across countries, and deriving it is post-MVP.
+Liechtenstein is missing from three blocking sources and waits on Gate B's Swiss proxy.
 
 **`cost_of_living_index` was the third and is resolved** (`0443`): typed `Index` with no bounds
 declared, it could hold no value at all. A price level index has a *base* (EU27 = 100), not a

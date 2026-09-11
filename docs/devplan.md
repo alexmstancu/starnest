@@ -47,7 +47,7 @@ application, and where the two disagree, this one is right.
 | **P4** Adapter fan-out | **Under way.** Four adapters (Eurostat, World Bank, WHO, IMF), 9 of 11 pillars, 13 attributes. Ordered by pillar coverage per D7. The shipped set is two attributes from scoring, both OECD's |
 | **P5**-**P7** | Not started |
 
-**1,431 backend tests and 98 interface tests. 436 real values across 32 countries — 277 from Eurostat, 96 from the World Bank, 31 from WHO, 32 from the IMF, over 9 of 11 pillars. The shipped set's blocking list is down from seven attributes to two, both OECD's.**
+**1,441 backend tests and 98 interface tests. 467 real values across 32 countries — 308 from Eurostat, 96 from the World Bank, 31 from WHO, 32 from the IMF, over 9 of 11 pillars. The shipped set has every figure it needs for 31 countries; what blocks it now is the unbuilt `fixed` method.**
 
 ### GATE A — closed 2026-09-05
 
@@ -839,6 +839,7 @@ section 0.3 stop.
 | `relocation_window` | The second pass, as a match rule with its own requirements (`reqs.md` 1.3) |
 | Personal annotations, gradient maps, favourites, saved comparisons | The second pass |
 | Time-series reducers, derived attributes | The second pass. Both are recorded as open in `arch.md` 11 and neither needs a schema change |
+| **`country.house_price_to_income_ratio`, derived** | **The second pass, decided 2026-09-11** (`reqs.md` Q204). An absolute house price level — euros per m² or a median dwelling price — over median household income, from sources whose definitions line up. No publisher offers it across countries: OECD's forms describe change over time, not level. It is the first concrete derived attribute, so it also decides what "derived" means in practice. Until then it sits in the catalog unanswered and non-blocking, keeping its weight so a figure counts the day it arrives |
 | **Caching of any kind** — no Redis, no in-process memoisation, no HTTP cache headers on `GET /rankings` | **Deferred, and only if a measured inefficiency appears.** See below |
 | Any admin interface | **Never.** Its absence is deliberate (`reqs.md` 2) |
 | Authentication or authorisation | **Never**, in any form |

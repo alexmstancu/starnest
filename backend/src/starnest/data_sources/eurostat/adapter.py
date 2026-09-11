@@ -17,7 +17,7 @@ publisher has not settled is not one we should present as settled. The rule is E
 judgement read off, never ours invented (`reqs.md` 5.7).
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -42,7 +42,7 @@ from starnest.data_sources.eurostat.jsonstat import (
     Observation,
     observations,
 )
-from starnest.data_sources.eurostat.manifest import BASE_URL, QUERIES
+from starnest.data_sources.eurostat.manifest import BASE_URL, QUERIES, EurostatShare
 
 EUROSTAT = DataSourceId("eurostat")
 
@@ -92,8 +92,11 @@ class EurostatAdapter(SourceAdapter):
                 )
             )
         try:
-            document = await self._get(query.dataset, dict(query.filters))
-            reported = observations(document)
+            if isinstance(query, EurostatShare):
+                reported, describe = await self._shares(query)
+            else:
+                reported = observations(await self._get(query.dataset, dict(query.filters)))
+                describe = _as_published
         except httpx.HTTPStatusError as refused:
             return Acquired(
                 failures=(AcquisitionFailure(attribute=attribute.id, reason=_why(refused)),)
@@ -102,7 +105,49 @@ class EurostatAdapter(SourceAdapter):
             return Acquired(
                 failures=(AcquisitionFailure(attribute=attribute.id, reason=str(unreachable)),)
             )
-        return self._values_from(reported, attribute, candidates)
+        return self._values_from(reported, attribute, candidates, describe=describe)
+
+    async def _shares(
+        self, share: EurostatShare
+    ) -> tuple[list[Observation], Callable[[Observation], str]]:
+        """Every place-and-year for which all the components exist, as one share each.
+
+        A year missing any component is not a year we have -- dividing 2025 taxes by 2024
+        earnings would describe no year at all -- so it is skipped rather than approximated,
+        and the newest-year rule downstream then picks each country's newest *complete* year.
+        A flag on any component carries onto the share: a rate built from a provisional figure
+        is itself provisional.
+        """
+        components: dict[str, dict[tuple[str, str], Observation]] = {}
+        for component in (share.whole, *share.parts):
+            query = share.slice_for(component)
+            reported = observations(await self._get(query.dataset, dict(query.filters)))
+            components[component] = {(o.geo, o.period): o for o in reported}
+
+        shares: list[Observation] = []
+        workings: dict[tuple[str, str], str] = {}
+        for key, whole in components[share.whole].items():
+            parts = [components[part].get(key) for part in share.parts]
+            if whole.figure == 0 or any(part is None for part in parts):
+                continue
+            present = [part for part in parts if part is not None]
+            figure = sum(part.figure for part in present) / whole.figure * 100
+            flag = next((o.flag for o in (whole, *present) if o.flag in UNSETTLED_FLAGS), None)
+            shares.append(Observation(geo=key[0], period=key[1], figure=figure, flag=flag))
+            workings[key] = (
+                " + ".join(
+                    f"{name} {part.figure}" for name, part in zip(share.parts, present, strict=True)
+                )
+                + f" of {share.whole} {whole.figure} = {figure:.1f}%"
+            )
+
+        def describe(observation: Observation) -> str:
+            return (
+                f"Eurostat {share.dataset} {observation.period}: "
+                f"{workings[(observation.geo, observation.period)]}"
+            )
+
+        return shares, describe
 
     async def _get(self, dataset: str, filters: dict[str, str]) -> dict:
         response = await self._client.get(
@@ -117,6 +162,8 @@ class EurostatAdapter(SourceAdapter):
         reported: Sequence[Observation],
         attribute: Attribute,
         candidates: Sequence[Candidate],
+        *,
+        describe: Callable[[Observation], str],
     ) -> Acquired:
         retrieved = datetime.now(UTC)
         by_geo: dict[str, list[Observation]] = {}
@@ -142,7 +189,13 @@ class EurostatAdapter(SourceAdapter):
                 continue
             newest = max(found, key=lambda observation: observation.period)
             values.append(
-                _a_value(newest, attribute=attribute, candidate=candidate, retrieved=retrieved)
+                _a_value(
+                    newest,
+                    attribute=attribute,
+                    candidate=candidate,
+                    retrieved=retrieved,
+                    quote=describe(newest),
+                )
             )
         return Acquired(values=tuple(values), failures=tuple(failures))
 
@@ -162,12 +215,18 @@ def _why(refused: httpx.HTTPStatusError) -> str:
     return str(refused)
 
 
+def _as_published(observation: Observation) -> str:
+    """The provenance of a figure Eurostat publishes whole: which year, and the number itself."""
+    return f"Eurostat {observation.period}: {observation.figure}"
+
+
 def _a_value(
     observation: Observation,
     *,
     attribute: Attribute,
     candidate: Candidate,
     retrieved: datetime,
+    quote: str,
 ) -> Value:
     return Value(
         candidate=candidate.id,
@@ -180,7 +239,7 @@ def _a_value(
             ConfidenceLevel.MEDIUM if observation.flag in UNSETTLED_FLAGS else ConfidenceLevel.HIGH
         ),
         payload=_payload_for(attribute, observation.figure),
-        quote=f"Eurostat {observation.period}: {observation.figure}",
+        quote=quote,
     )
 
 

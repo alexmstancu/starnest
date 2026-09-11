@@ -34,6 +34,44 @@ class EurostatQuery:
         return f"EurostatQuery({self.dataset!r}, {dict(self.filters)!r})"
 
 
+class EurostatShare:
+    """A share assembled from components of one dataset: the parts over the whole, in percent.
+
+    **For a figure Eurostat publishes only in pieces.** The effective tax rate is not a series of
+    its own; `earn_nt_net` publishes gross earnings, taxes and social contributions separately,
+    and the rate is what they make together. Each component is fetched as its own slice -- the
+    JSON-stat decoder drops every dimension but place and period, so asking for all three at once
+    would return figures with nothing to say which was which.
+
+    **The components must come from the same year.** A country whose taxes are published for
+    2025 and whose gross earnings stop at 2024 has no 2025 rate: dividing one year by another
+    would produce a plausible number describing no year at all. The adapter only divides where
+    every component has the same period, which is the same rule `reqs.md` 3.6 applies to a
+    single figure's reference date.
+    """
+
+    __slots__ = ("dataset", "filters", "parts", "split_by", "whole")
+
+    def __init__(
+        self, dataset: str, *, split_by: str, parts: tuple[str, ...], whole: str, **filters: str
+    ) -> None:
+        self.dataset = dataset
+        self.split_by = split_by
+        self.parts = parts
+        self.whole = whole
+        self.filters = MappingProxyType(dict(filters))
+
+    def slice_for(self, component: str) -> EurostatQuery:
+        """The single-series query that fetches one component."""
+        return EurostatQuery(self.dataset, **dict(self.filters), **{self.split_by: component})
+
+    def __repr__(self) -> str:
+        return (
+            f"EurostatShare({self.dataset!r}, {' + '.join(self.parts)} of {self.whole}, "
+            f"{dict(self.filters)!r})"
+        )
+
+
 QUERIES: Final = MappingProxyType(
     {
         AttributeId("country.housing_cost_overburden_rate"): EurostatQuery(
@@ -71,14 +109,36 @@ QUERIES: Final = MappingProxyType(
         AttributeId("country.cost_of_living_index"): EurostatQuery(
             "tec00120", freq="A", indic_ppp="PLI_EU27_2020", ppp_cat18="E011"
         ),
+        AttributeId("country.income_tax_effective"): EurostatShare(
+            "earn_nt_net",
+            split_by="estruct",
+            parts=("TAX", "SOC"),
+            whole="GRS",
+            freq="A",
+            currency="EUR",
+            ecase="P1_NCH_AW100",
+        ),
     }
 )
-"""Eight attributes, two of which arrived by fixing the catalog rather than by finding a source.
+"""Nine attributes, two of which arrived by fixing the catalog rather than by finding a source.
 
 The first three were minE2E's: two Ratios and a Quantity, so both payload paths are exercised
 by real data rather than by a fixture invented to exercise them. The last three are P4's W4-F,
 chosen because each opens a pillar nothing had answered -- career, connectivity and nature --
 rather than deepening housing, which already had two of its three (`devplan.md` D7).
+
+**`earn_nt_net` answers `income_tax_effective` for 31 of 32, where OECD answers 26.** It is
+built on the same joint EU-OECD tax-benefit model as OECD's Taxing Wages, and it covers the
+five EU members OECD does not -- **including Romania**, which is the comparison anchor.
+The rate is income tax plus employee social contributions over gross earnings, for a single
+person without children on the average wage (`P1_NCH_AW100`, the reference case both
+publishers use). Romania comes out at 41.5%, which is what its law gives: 35% employee
+contributions, then 10% income tax on the remaining 65%.
+
+The household case is a provisional choice like every default here. `reqs.md` Q84 says costs
+mean something only against the household's own situation, and `ecase` is exactly where that
+would plug in -- couples, children, other income levels are all published -- once the
+household reaches evaluation, which is post-MVP.
 
 **`tec00120` answers an attribute that could not hold a value until 2026-09-09.**
 `cost_of_living_index` was typed `Index` and declared no bounds, so nothing could be stored

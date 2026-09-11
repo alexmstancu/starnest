@@ -69,6 +69,7 @@ def rank_candidates(
             candidate,
             scored_criteria=scored_criteria,
             weights=weights,
+            figures=figures,
             scores=scores,
             min_coverage=min_coverage,
         )
@@ -178,6 +179,7 @@ def _result_for(
     *,
     scored_criteria: Sequence[Criterion],
     weights: Mapping[str, Decimal],
+    figures: Mapping[str, Mapping[str, PublishedFigure]],
     scores: Mapping[str, Mapping[str, int]],
     min_coverage: Decimal | None,
 ) -> CandidateResult:
@@ -185,6 +187,13 @@ def _result_for(
         str(criterion.attribute)
         for criterion in scored_criteria
         if candidate in scores.get(str(criterion.attribute), {})
+    }
+    # What was *found*, as distinct from what *scored*. The two differ when a figure exists and
+    # its criterion's method could not place it, and the reason sentence has to know which.
+    found = {
+        str(criterion.attribute)
+        for criterion in scored_criteria
+        if candidate in figures.get(str(criterion.attribute), {})
     }
     coverage = coverage_of(weights, answered)
     effective = redistribute(weights, answered)
@@ -194,7 +203,7 @@ def _result_for(
         for criterion in scored_criteria
     )
     refusal = _why_it_cannot_be_scored(
-        scored_criteria, answered, coverage=coverage, min_coverage=min_coverage
+        scored_criteria, answered, found=found, coverage=coverage, min_coverage=min_coverage
     )
     if refusal is not None:
         return CandidateResult(
@@ -238,6 +247,7 @@ def _why_it_cannot_be_scored(
     scored_criteria: Sequence[Criterion],
     answered: set[str],
     *,
+    found: set[str],
     coverage: Decimal,
     min_coverage: Decimal | None,
 ) -> str | None:
@@ -247,16 +257,33 @@ def _why_it_cannot_be_scored(
     user declared the candidate unscoreable without, whatever else was found. The coverage floor
     is the general case: too little of what was asked for was answered for a total to mean
     anything.
+
+    **A blocking criterion fails in one of two ways, and they are named apart.** Either no
+    figure was found, and the fix is to fetch one; or a figure was found and its criterion's
+    method could not place it -- the `fixed` method before its anchors are chosen, or
+    `percentile` with a single candidate -- and fetching more changes nothing. Until 2026-09-11
+    both read "no figure for", which was false for the second kind. It had stayed accidentally
+    true only because every blocking `fixed` criterion also happened to have no data.
     """
-    blocking = [
-        str(criterion.attribute)
+    unanswered = [
+        criterion
         for criterion in scored_criteria
         if criterion.blocks_if_missing and str(criterion.attribute) not in answered
     ]
-    if blocking:
+    if unanswered:
+        missing = sorted(str(c.attribute) for c in unanswered if str(c.attribute) not in found)
+        unplaced = sorted(
+            f"{c.attribute} (normalised {c.normalisation_method.value})"
+            for c in unanswered
+            if str(c.attribute) in found
+        )
+        problems = []
+        if missing:
+            problems.append("no figure for " + ", ".join(missing))
+        if unplaced:
+            problems.append("figures that could not be scored for " + ", ".join(unplaced))
         return (
-            "no figure for "
-            + ", ".join(sorted(blocking))
+            "; ".join(problems)
             + ", which this criteria set requires before scoring a candidate at all"
         )
     if coverage == 0:

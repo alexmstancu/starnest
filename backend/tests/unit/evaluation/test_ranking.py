@@ -16,7 +16,7 @@ from decimal import Decimal
 
 import pytest
 
-from starnest.criteria import Goal
+from starnest.criteria import Goal, NormalisationMethod
 from starnest.data import Count
 from starnest.evaluation import MatchStatus, RankingError, rank_candidates
 
@@ -182,6 +182,60 @@ class TestWhenACandidateCannotBeScored:
         spain = by_candidate(rank(criteria, {"country.spain": ()}))["country.spain"]
 
         assert a_criterion().attribute in (spain.insufficient_reason or "")
+
+    def test_a_figure_that_could_not_be_placed_is_not_reported_as_missing(self) -> None:
+        """**Found 2026-09-11, before it could bite.** The reason sentence was built from which
+        criteria *scored*, so a blocking criterion whose figures existed but could not be
+        normalised read "no figure for" -- a false statement with real data in the database.
+
+        It had stayed accidentally true: every blocking criterion using the unbuilt `fixed`
+        method also had no figures. `income_tax_effective` was about to get 31 of them. One
+        candidate under `percentile` reaches the same seam without needing `fixed`: a single
+        figure has no standing to report, so the column refuses.
+        """
+        criteria = a_set([a_criterion(blocks_if_missing=True)])
+
+        alone = by_candidate(rank(criteria, values_for(portugal=42)))["country.portugal"]
+
+        reason = alone.insufficient_reason or ""
+        assert alone.match_status is MatchStatus.INSUFFICIENT_DATA
+        assert "no figure for" not in reason
+        assert a_criterion().attribute in reason
+        assert "could not be scored" in reason
+
+    def test_a_criterion_using_a_method_not_yet_built_says_so(self) -> None:
+        """The shipped set's real case: 26 of its criteria normalise `fixed`, which no scale
+        anchor supports yet. The reason names the method, because the fix is choosing anchors
+        rather than fetching anything."""
+        criteria = a_set(
+            [a_criterion(blocks_if_missing=True, normalisation_method=NormalisationMethod.FIXED)]
+        )
+
+        found = by_candidate(rank(criteria, values_for(portugal=42, spain=17)))
+
+        reason = found["country.portugal"].insufficient_reason or ""
+        assert "no figure for" not in reason
+        assert "fixed" in reason
+
+    def test_a_missing_figure_and_an_unplaceable_one_are_named_separately(self) -> None:
+        """Two different problems with two different fixes -- fetch something, or choose
+        anchors -- so one sentence may not blur them."""
+        # `two_pillars` applies overrides to its first criterion only, so both are built here to
+        # make each one blocking.
+        criteria = a_set(
+            [
+                a_criterion(blocks_if_missing=True),
+                a_criterion(attribute=RENT, pillar=HOUSING, blocks_if_missing=True),
+            ],
+            [a_pillar_weight(weight="50"), a_pillar_weight(pillar=HOUSING, weight="50")],
+        )
+        values = values_for(portugal=42)  # a jobs figure, alone, and no rent at all
+
+        portugal = by_candidate(rank(criteria, values))["country.portugal"]
+
+        reason = portugal.insufficient_reason or ""
+        assert f"no figure for {RENT}" in reason
+        assert "could not be scored" in reason
 
     def test_coverage_below_the_floor_makes_it_insufficient_data(self) -> None:
         found = by_candidate(

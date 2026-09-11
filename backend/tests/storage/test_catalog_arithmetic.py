@@ -56,7 +56,8 @@ VALUE_TYPES = {
 REQUIRED_ATTRIBUTES = {
     "country.cost_of_living_index",
     "country.income_tax_effective",
-    "country.house_price_to_income_ratio",
+    # `0444` stopped `house_price_to_income_ratio` blocking: no source covers it, which fails
+    # reqs.md 7.5's own second condition (Q204).
     # `0442` split this: a measured homicide rate we score, and Numbeo's composite as an
     # ExternalScore that never enters the arithmetic (docs/catalog-blockers.md item 2).
     "country.homicide_rate",
@@ -161,12 +162,12 @@ def test_every_attribute_declares_a_real_value_type(connection: psycopg.Connecti
     assert declared <= VALUE_TYPES, f"unknown value types: {declared - VALUE_TYPES}"
 
 
-def test_exactly_the_seven_required_attributes_block_on_missing_data(
+def test_exactly_the_six_required_attributes_block_on_missing_data(
     connection: psycopg.Connection,
 ) -> None:
     """reqs.md 7.5. Chosen on two conditions together: the score means little without them,
     AND the source covers all 32 seeded countries -- so a gap signals a broken fetch rather
-    than a genuinely undocumented place. An eighth would be a new way to lose a candidate."""
+    than a genuinely undocumented place. A seventh would be a new way to lose a candidate."""
     flagged = {
         row[0]
         for row in connection.execute("SELECT attribute FROM criterion WHERE blocks_if_missing")
