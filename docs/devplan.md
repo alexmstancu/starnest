@@ -57,11 +57,26 @@ What its section below asks for, against what exists on 2026-09-11.
 |---|---|
 | All six blocking attributes for all 32 | **Yes, and a test** — `tests/live/test_gate_b.py` runs every real source and the stand-ins into the test database and reads the result through the active-value rule. `make live`, never `make check`. Watched failing with the stand-ins removed: exactly Liechtenstein's three |
 | No country spuriously `insufficient_data` | **Yes.** All 32 ranked under `local_employment` |
-| Coverage high, and honest | **Honest, and higher**: 67% for the EU countries, from 36%, once the household anchored every `fixed` criterion with data (Q206, Q209, Q212, Q213). **Twenty scored criteria have no figure.** Twelve are accounted for: family (OECD, blocked), the five manual-entry attributes (the household's to type), sunshine (no usable source, Q210), summer heat days (a Copernicus account), the derived house-price ratio (post-MVP, Q204) and the two tech-jobs attributes (no source). **Eight are in no P4 stream at all** -- see below. **The spot-check by hand is a human's and has not happened** |
+| Coverage high, and honest | **Honest, and higher**: 67% for the EU countries, from 36%, once the household anchored every `fixed` criterion with data (Q206, Q209, Q212, Q213). **Twenty scored criteria have no figure.** Twelve are accounted for: family (OECD, blocked), the five manual-entry attributes (the household's to type), sunshine (no usable source, Q210), summer heat days (a Copernicus account), the derived house-price ratio (post-MVP, Q204) and the two tech-jobs attributes (no source). **Eight are in no P4 stream at all** -- see below. **Spot-checked 2026-09-12, all four matching** -- see below |
 | Two sources for one attribute: both stored, the right one active | **Yes, and tested.** The tax rate (OECD beside the estimate) and Liechtenstein (a stand-in beside a real figure) — `test_runs_api.py` proves the real figure wins with the stand-in still stored |
 | Reference date distinct from retrieval date, both displayable | **Yes.** Both columns on every value since `0005`, and served by `GET /v1/values` since W4-E; a stand-in keeps the original's period and records its own retrieval |
 | `POST /data-acquisition-runs/{id}/retry` re-runs only what failed | **Yes, and tested** (2026-09-11). A new run asking only the sources that failed, only about the attributes each failed on. It needed failures to name their source first (`0461`) |
 | Every P4 stream has populated real values | **All but OECD's family pillar**: W4-A, W4-D and W4-F done; W4-C (temperature, 32 of 32) and W4-E (the machinery; values are the household's to type) done 2026-09-11; W4-B has the tax rate from OECD and nothing else, because OECD serves scripts a Cloudflare challenge. Probed between every task this session; still closed |
+
+**The spot-check, done by routes the adapters never use** (2026-09-12). The household asked the
+agent to do it rather than by hand, so each figure was read from somewhere other than where its
+adapter reads it, and each dataset's own title and unit were checked, so a wrong series would
+show rather than agree with itself:
+
+| Figure | Stored | Read independently from | Found |
+|---|---|---|---|
+| Romania, cost of living, 2025 | 65.1 | Eurostat's SDMX TSV service (the adapter reads JSON-stat); category confirmed as household final consumption expenditure | 65.1 |
+| Greece, housing cost overburden, 2025 | 26.4% | Eurostat's SDMX TSV service; dataset titled "Housing cost overburden rate", unit percentage | 26.4 |
+| Portugal, rule of law, 2024 | 1.0721547 | The World Bank's own 2025 WGI workbook (the adapter reads its API) | 1.0721547, 13 sources, the same standard error |
+| Germany, healthcare coverage, 2023 | 87 | Our World in Data's republication of WHO's GHO (the adapter reads WHO's OData service) | 87 |
+
+What it cannot replace is a person's eye on the publisher's page: it proves each number is the
+one the publisher holds under that name, not that the name is the right question to ask.
 
 **A planning gap, found by listing what has no figure.** Eight scored attributes of the shipped
 set were never assigned to a P4 stream, though each declares a source:
