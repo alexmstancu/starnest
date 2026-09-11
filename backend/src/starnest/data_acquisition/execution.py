@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 
 from starnest.candidates import Candidate
 from starnest.data import Attribute, ValueStore
-from starnest.data_acquisition.adapter import SourceAdapter
+from starnest.data_acquisition.adapter import AcquisitionFailure, SourceAdapter
 from starnest.data_acquisition.run import acquire
 from starnest.data_acquisition.store import Run, RunScope, RunStatus, RunStore
 
@@ -30,7 +30,7 @@ starts runs (`reqs.md` 10)."""
 
 async def execute_run(
     *,
-    adapter: SourceAdapter,
+    adapters: Sequence[SourceAdapter],
     attributes: Sequence[Attribute],
     candidates: Sequence[Candidate],
     values: ValueStore,
@@ -38,10 +38,14 @@ async def execute_run(
     level: str,
     triggered_by: str = MANUAL,
 ) -> Run:
-    """Open a run, fetch everything in scope, record what happened, close it.
+    """Open a run, fetch everything in scope from every source, record what happened, close it.
+
+    **Every source, in one run.** A run is one pass, and the plan the household confirmed
+    counted the work of all of them; an earlier version handed this the first adapter only,
+    which fetched a sixth of what the plan promised while reporting the run completed.
 
     **The scope recorded is what was asked for, not what worked.** Every candidate and every
-    attribute the adapter could answer goes in, so a country that produced nothing is
+    attribute some source could answer goes in, so a country that produced nothing is
     distinguishable afterwards from one nobody asked about -- which is the difference selective
     retry turns on.
 
@@ -49,7 +53,11 @@ async def execute_run(
     works and reports the rest (`reqs.md` 6.4); `failed` is for a run that could not proceed at
     all, and treating a sparse indicator as a failed run would mean never completing one.
     """
-    answerable = [attribute for attribute in attributes if attribute.id in adapter.attributes]
+    answerable = [
+        attribute
+        for attribute in attributes
+        if any(attribute.id in adapter.attributes for adapter in adapters)
+    ]
     scope = RunScope(
         level=level,
         candidates=tuple(str(candidate.id) for candidate in candidates),
@@ -57,14 +65,17 @@ async def execute_run(
     )
     run = await runs.start_run(scope, triggered_by=triggered_by)
 
+    failures: list[AcquisitionFailure] = []
     try:
-        outcome = await acquire(
-            adapter=adapter,
-            attributes=answerable,
-            candidates=candidates,
-            values=values,
-            run=run,
-        )
+        for adapter in adapters:
+            outcome = await acquire(
+                adapter=adapter,
+                attributes=answerable,
+                candidates=candidates,
+                values=values,
+                run=run,
+            )
+            failures.extend(outcome.failures)
     except Exception:
         # The run stays visible as one that could not proceed, rather than as one still
         # running for ever. Re-raised because an unexpected failure is a bug, and a tidy
@@ -72,6 +83,6 @@ async def execute_run(
         await runs.finish_run(run, status=RunStatus.FAILED, finished_at=datetime.now(tz=UTC))
         raise
 
-    await runs.record_failures(run, outcome.failures)
+    await runs.record_failures(run, failures)
     await runs.finish_run(run, status=RunStatus.COMPLETED, finished_at=datetime.now(tz=UTC))
     return await runs.read_run(run)

@@ -10,6 +10,8 @@ import httpx
 import pytest
 from psycopg_pool import AsyncConnectionPool
 
+from .conftest import A_SECOND_SOURCE_ANSWERS, a_stub_source, an_api
+
 pytestmark = pytest.mark.acceptance
 
 COUNTRY = "country"
@@ -174,3 +176,75 @@ class TestListingRuns:
 
         assert len(page["items"]) == 2
         assert page["total"] == 3
+
+
+class TestARunOverSeveralSources:
+    """`POST /data-acquisition-runs` once fetched from the first adapter only, while its plan
+    counted all six. Every test above runs against one source, where the two cannot differ."""
+
+    async def test_every_source_is_asked_not_only_the_first(
+        self, api_over_two_sources: httpx.AsyncClient, database_url: str
+    ) -> None:
+        await api_over_two_sources.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+
+        async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+            await pool.open(wait=True)
+            async with pool.connection() as connection:
+                rows = await (
+                    await connection.execute("SELECT DISTINCT data_source FROM value")
+                ).fetchall()
+        assert {source for (source,) in rows} == {"eurostat", "world_bank"}
+
+    async def test_the_run_does_the_work_its_plan_promised(
+        self, api_over_two_sources: httpx.AsyncClient
+    ) -> None:
+        """The plan is what the household confirms before a run (`reqs.md` 6.3). A run that
+        then did a third of it would make the confirmation a formality."""
+        planned = (
+            await api_over_two_sources.post(
+                "/v1/data-acquisition-runs/plan", json={"level": COUNTRY}
+            )
+        ).json()
+        run = (
+            await api_over_two_sources.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+        ).json()
+
+        detail = (await api_over_two_sources.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+        assert detail["progress"]["items_total"] == planned["items_total"] == 32 * 3
+
+    async def test_the_scope_recorded_names_what_every_source_answers(
+        self, api_over_two_sources: httpx.AsyncClient
+    ) -> None:
+        run = (
+            await api_over_two_sources.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+        ).json()
+
+        detail = (await api_over_two_sources.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+        assert sorted(detail["scope"]["attributes"]) == [
+            A_SECOND_SOURCE_ANSWERS,
+            OVERBURDEN,
+            "country.overcrowding_rate",
+        ]
+
+    async def test_two_sources_answering_one_attribute_are_one_item_per_country(
+        self, database_url: str
+    ) -> None:
+        """An item is one candidate and one attribute -- the unit progress counts and a retry
+        addresses. OECD and the estimate both answer the tax rate, and a plan that counted it
+        twice would promise work the run's progress can never reach."""
+        overlapping = (
+            a_stub_source(),
+            a_stub_source(data_source="world_bank", answers=("country.overcrowding_rate",)),
+        )
+        async with an_api(database_url, overlapping) as api:
+            planned = (
+                await api.post("/v1/data-acquisition-runs/plan", json={"level": COUNTRY})
+            ).json()
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        assert planned["items_total"] == detail["progress"]["items_total"] == 32 * 2
+        assert planned["by_source"] == [
+            {"data_source": "eurostat", "items": 64},
+            {"data_source": "world_bank", "items": 32},
+        ]

@@ -11,12 +11,14 @@ afterwards, exactly as the storage suite does.
 """
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import httpx
 import pytest
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.api import build_app
+from starnest.data_acquisition import SourceAdapter
 from starnest.storage import (
     PostgresCandidateStore,
     PostgresCatalogStore,
@@ -50,6 +52,32 @@ async def api(database_url: str) -> AsyncIterator[httpx.AsyncClient]:
     builds. What is under test is the application, and binding a socket would only add a way for
     the test to fail for reasons that are not about it.
     """
+    async with an_api(database_url, (a_stub_source(),)) as client:
+        yield client
+
+
+@pytest.fixture
+async def api_over_two_sources(database_url: str) -> AsyncIterator[httpx.AsyncClient]:
+    """The same application with a second source beside the first.
+
+    Every other acceptance test runs against one source, which is how `POST
+    /data-acquisition-runs` came to fetch from the first adapter only while its plan counted all
+    six: with one adapter, "the first" and "all of them" are the same thing, and no test could
+    tell them apart.
+    """
+    second = a_stub_source(data_source="world_bank", answers=(A_SECOND_SOURCE_ANSWERS,))
+    async with an_api(database_url, (a_stub_source(), second)) as client:
+        yield client
+
+
+A_SECOND_SOURCE_ANSWERS = "country.broadband_coverage"
+
+
+@asynccontextmanager
+async def an_api(
+    database_url: str, adapters: tuple[SourceAdapter, ...]
+) -> AsyncIterator[httpx.AsyncClient]:
+    """The application over the sources given, emptied of what the test wrote when it closes."""
     async with AsyncConnectionPool(database_url, min_size=1, max_size=4, open=False) as pool:
         await pool.open(wait=True)
         app = build_app(
@@ -59,7 +87,7 @@ async def api(database_url: str) -> AsyncIterator[httpx.AsyncClient]:
             values=PostgresValueStore(pool),
             catalog_store=PostgresCatalogStore(pool),
             run_store=PostgresRunStore(pool),
-            adapters=(_a_stub_source(),),
+            adapters=adapters,
         )
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://api") as client:
@@ -181,7 +209,13 @@ async def a_configured_household(api: httpx.AsyncClient) -> str:
     return "configured"
 
 
-def _a_stub_source():
+def a_stub_source(
+    data_source: str = "eurostat",
+    answers: tuple[str, ...] = (
+        "country.housing_cost_overburden_rate",
+        "country.overcrowding_rate",
+    ),
+) -> SourceAdapter:
     """A source that answers instantly with figures the test controls.
 
     **Not Eurostat.** An acceptance test that fetched from the real API would fail when Eurostat
@@ -204,15 +238,14 @@ def _a_stub_source():
         Value,
         ValueType,
     )
-    from starnest.data_acquisition import Acquired, AcquisitionFailure, SourceAdapter
+    from starnest.data_acquisition import Acquired, AcquisitionFailure
 
-    answers = ("country.housing_cost_overburden_rate", "country.overcrowding_rate")
     silent_about = "country.portugal"
 
     class StubSource(SourceAdapter):
         @property
         def data_source(self) -> DataSourceId:
-            return DataSourceId("eurostat")
+            return DataSourceId(data_source)
 
         @property
         def attributes(self) -> tuple:
@@ -237,7 +270,7 @@ def _a_stub_source():
                         candidate=candidate.id,
                         attribute=attribute.id,
                         value_type=ValueType.RATIO,
-                        data_source="eurostat",
+                        data_source=data_source,
                         reference_period=ReferencePeriod(
                             start=date(2025, 1, 1), end=date(2025, 12, 31)
                         ),

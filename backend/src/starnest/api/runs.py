@@ -83,27 +83,30 @@ async def plan_run(
 ) -> RunPlanBody:
     """What a run would do, without doing any of it.
 
-    Counts the work as the cross product of candidates and answerable attributes, per source.
-    An attribute no adapter can supply is not counted: promising to fetch something nothing can
-    fetch would make the estimate a wish.
+    Counts the work as the cross product of candidates and answerable attributes. An attribute no
+    adapter can supply is not counted: promising to fetch something nothing can fetch would make
+    the estimate a wish.
+
+    **An item is one candidate and one attribute**, however many sources answer it -- the unit a
+    run's progress counts and a retry addresses. `by_source` says what each source will be asked,
+    so where two answer the same attribute its entries sum to more than `items_total`, which is
+    the truth: the tax rate for Germany is one item, asked of OECD and of the estimate.
     """
     roster = await _candidates_in(scope, candidates)
     wanted = await _attributes_in(scope, catalog)
 
     by_source = []
-    items_total = 0
     for adapter in adapters:
-        answerable = [a for a in wanted if a.id in adapter.attributes]
-        items = len(answerable) * len(roster)
-        items_total += items
+        items = len([a for a in wanted if a.id in adapter.attributes]) * len(roster)
         if items:
             by_source.append(BySourceBody(data_source=str(adapter.data_source), items=items))
+    answerable = [a for a in wanted if any(a.id in adapter.attributes for adapter in adapters)]
 
     return RunPlanBody(
-        items_total=items_total,
-        # Both zero while Eurostat is the only source. The LLM path is `reqs.md` 6.10 and the
-        # city level, and reporting a guess here would be the invented number the estimate
-        # exists to prevent.
+        items_total=len(answerable) * len(roster),
+        # Both zero while every source is a free structured one. The LLM path is `reqs.md` 6.10
+        # and the city level, and reporting a guess here would be the invented number the
+        # estimate exists to prevent.
         llm_call_count=0,
         estimated_cost_eur=0,
         by_source=tuple(by_source),
@@ -125,9 +128,9 @@ async def start_run(
 
     **It runs inline today, and the response carries a finished run.** 202 is still right --
     the work was accepted and the client polls the id either way -- but claiming the run is in
-    flight when it is not would be a lie a screen could act on. One source and 31 countries take
-    a few seconds, and a background task would add a lifecycle to manage for no benefit anybody
-    can currently see. Making it genuinely asynchronous is a change here and nowhere else,
+    flight when it is not would be a lie a screen could act on. A full sweep of every source
+    fits in one request, and a background task would add a lifecycle to manage for no benefit
+    anybody can currently see. Making it genuinely asynchronous is a change here and nowhere else,
     because the run record already holds everything the polling endpoint reads (`arch.md` 8.4).
 
     The run row exists before any figure is fetched, so a process that dies mid-run leaves a
@@ -137,7 +140,7 @@ async def start_run(
     wanted = await _attributes_in(scope, catalog)
 
     started = await execute_run(
-        adapter=adapters[0],
+        adapters=adapters,
         attributes=wanted,
         candidates=roster,
         values=values,
