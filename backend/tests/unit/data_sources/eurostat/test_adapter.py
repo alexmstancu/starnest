@@ -563,3 +563,122 @@ def _drop(document: dict, *, geo: str, period: str) -> None:
     index = geos[geo] * len(times) + times[period]
     assert str(index) in document["value"], "the fixture must hold the figure being dropped"
     del document["value"][str(index)]
+
+
+class TestADensityAcrossTwoDatasets:
+    """`rail_network_density` and `road_network_quality`: a length per 1,000 km² of land.
+
+    Eurostat publishes the length (`rail_if_line_tr`, `road_if_motorwa`) and the land area
+    (`reg_area3`) separately, so the adapter fetches both and divides. These tests answer each
+    request from its own captured response, told apart by the dataset in the URL.
+    """
+
+    RAIL = "country.rail_network_density"
+    MOTORWAYS = "country.road_network_quality"
+
+    @staticmethod
+    def an_adapter(**replaced: object) -> EurostatAdapter:
+        bodies = {
+            dataset: replaced.get(dataset) or json.loads((CAPTURED / f"{dataset}.json").read_text())
+            for dataset in ("rail_if_line_tr", "road_if_motorwa", "reg_area3")
+        }
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=bodies[request.url.path.rsplit("/", 1)[-1]])
+
+        return EurostatAdapter(httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+
+    def an_attribute(self, identifier: str = RAIL) -> Attribute:
+        return an_attribute(
+            id=identifier,
+            pillar="connectivity",
+            value_type=ValueType.QUANTITY,
+            ratio_parameters=None,
+            quantity_parameters=QuantityParameters(unit="km_per_1000_km2"),
+        )
+
+    async def test_the_figure_is_the_length_per_thousand_square_kilometres_of_land(self) -> None:
+        """Austria 2024: 5,624 km of railway over 82,494 km² of land."""
+        (value,) = (
+            await self.an_adapter().fetch(self.an_attribute(), [a_country("austria", "AT")])
+        ).values
+
+        assert value.payload.magnitude == pytest.approx(Decimal(5624) / Decimal(82494) * 1000)
+        assert value.payload.unit == "km_per_1000_km2"
+
+    async def test_the_period_is_the_lengths_own_year(self) -> None:
+        """Germany's newest railway length is 2021; the area is a stable denominator and is
+        taken at its newest, so the figure describes 2021 -- the year the length was measured."""
+        (value,) = (
+            await self.an_adapter().fetch(self.an_attribute(), [a_country("germany", "DE")])
+        ).values
+
+        assert value.reference_period.start == date(2021, 1, 1)
+
+    async def test_the_quote_shows_both_figures_and_both_years(self) -> None:
+        (value,) = (
+            await self.an_adapter().fetch(self.an_attribute(), [a_country("austria", "AT")])
+        ).values
+
+        assert value.quote is not None
+        assert "rail_if_line_tr 2024: 5624" in value.quote
+        assert "reg_area3" in value.quote
+        assert "82494" in value.quote
+
+    async def test_a_country_with_no_published_length_gets_no_value_not_a_zero(self) -> None:
+        """Cyprus has no railway, and Eurostat publishes nothing rather than 0. Writing the 0
+        ourselves would be the adapter inventing a figure; a manual value with a citation is
+        the honest way to record it."""
+        acquired = await self.an_adapter().fetch(self.an_attribute(), [a_country("cyprus", "CY")])
+
+        assert acquired.values == ()
+
+    async def test_a_published_zero_is_a_figure(self) -> None:
+        """Latvia reports 0 km of motorway. That is a measurement, and it scores."""
+        (value,) = (
+            await self.an_adapter().fetch(
+                self.an_attribute(self.MOTORWAYS), [a_country("latvia", "LV")]
+            )
+        ).values
+
+        assert value.payload.magnitude == 0
+
+    async def test_a_country_with_no_area_gets_no_value(self) -> None:
+        empty_area = json.loads((CAPTURED / "reg_area3.json").read_text())
+        empty_area["value"] = {}
+
+        acquired = await self.an_adapter(reg_area3=empty_area).fetch(
+            self.an_attribute(), [a_country("austria", "AT")]
+        )
+
+        assert acquired.values == ()
+
+    async def test_an_area_of_zero_gives_no_value_rather_than_a_division_by_zero(self) -> None:
+        zero_area = json.loads((CAPTURED / "reg_area3.json").read_text())
+        zero_area["value"] = dict.fromkeys(zero_area["value"], 0)
+
+        acquired = await self.an_adapter(reg_area3=zero_area).fetch(
+            self.an_attribute(), [a_country("austria", "AT")]
+        )
+
+        assert acquired.values == ()
+
+
+class TestWorkingHours:
+    async def test_the_usual_full_time_week_of_employees(self) -> None:
+        """`lfsa_ewhun2`: usual hours, full-time employees aged 20-64 -- the week a household
+        moving for work would actually be offered. Total hours would count part-timers, and
+        the Netherlands would look like a four-day country."""
+        acquired = await adapter_returning("lfsa_ewhun2").fetch(
+            an_attribute(
+                id="country.average_working_hours",
+                pillar="career",
+                value_type=ValueType.QUANTITY,
+                ratio_parameters=None,
+                quantity_parameters=QuantityParameters(unit="hours_per_week"),
+            ),
+            [a_country("germany", "DE")],
+        )
+
+        (value,) = acquired.values
+        assert value.payload.magnitude == Decimal("39.8")

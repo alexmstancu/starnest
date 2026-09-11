@@ -72,6 +72,36 @@ class EurostatShare:
         )
 
 
+class EurostatDensity:
+    """A length per 1,000 km² of land, from two datasets: the length over the land area.
+
+    **For a density Eurostat publishes as its two halves.** Railway and motorway lengths are
+    series of their own, and so is land area; the density is what they make together. Unlike a
+    share's components, the halves come from different datasets and different years: the length
+    is measured most years, while area barely moves and `reg_area3` is refreshed on its own
+    timetable. So the figure takes **the length's year** as its period, divided by the country's
+    newest land area -- the area is a stable denominator, and matching years would throw away
+    every length measured in a year the area series happens not to cover.
+    """
+
+    __slots__ = ("area", "length", "per")
+
+    def __init__(self, length: EurostatQuery, area: EurostatQuery, *, per: int = 1000) -> None:
+        self.length = length
+        self.area = area
+        self.per = per
+
+    def __repr__(self) -> str:
+        return f"EurostatDensity({self.length!r} per {self.per} of {self.area!r})"
+
+
+LAND_AREA: Final = EurostatQuery(
+    "reg_area3", freq="A", unit="KM2", landuse="L0008", geoLevel="country"
+)
+"""Land area, without inland water, by country. `geoLevel` keeps the answer to the 37 national
+figures rather than 2,330 regions, which is 10 KB instead of 526 KB for the same numbers."""
+
+
 QUERIES: Final = MappingProxyType(
     {
         AttributeId("country.housing_cost_overburden_rate"): EurostatQuery(
@@ -109,6 +139,25 @@ QUERIES: Final = MappingProxyType(
         AttributeId("country.cost_of_living_index"): EurostatQuery(
             "tec00120", freq="A", indic_ppp="PLI_EU27_2020", ppp_cat18="E011"
         ),
+        AttributeId("country.average_working_hours"): EurostatQuery(
+            "lfsa_ewhun2",
+            freq="A",
+            unit="HR",
+            nace_r2="TOTAL",
+            wstatus="SAL",
+            worktime="FT",
+            age="Y20-64",
+            sex="T",
+        ),
+        AttributeId("country.rail_network_density"): EurostatDensity(
+            EurostatQuery(
+                "rail_if_line_tr", freq="A", unit="KM", tra_infr="TOTAL", n_tracks="TOTAL"
+            ),
+            LAND_AREA,
+        ),
+        AttributeId("country.road_network_quality"): EurostatDensity(
+            EurostatQuery("road_if_motorwa", freq="A", unit="KM", tra_infr="MWAY"), LAND_AREA
+        ),
         AttributeId("country.income_tax_effective"): EurostatShare(
             "earn_nt_net",
             split_by="estruct",
@@ -120,7 +169,15 @@ QUERIES: Final = MappingProxyType(
         ),
     }
 )
-"""Nine attributes, two of which arrived by fixing the catalog rather than by finding a source.
+"""Twelve attributes, two of which arrived by fixing the catalog rather than by finding a source.
+
+**The three added at Gate B (2026-09-11)** close W4-F. `average_working_hours` reads the usual
+week of full-time employees aged 20-64 -- the week a household moving for work would be offered;
+total hours would count part-timers and make the Netherlands look like a four-day country.
+Eurostat is the attribute's declared second source, below OECD, which is unreachable to scripts
+for now (`catalog-blockers.md` item 5). The two densities are motorway and railway length per
+1,000 km² of land; Cyprus, Malta and Iceland have no railway, and Eurostat publishes nothing
+rather than zero for them, so they get no figure rather than one the adapter invented.
 
 The first three were minE2E's: two Ratios and a Quantity, so both payload paths are exercised
 by real data rather than by a fixture invented to exercise them. The last three are P4's W4-F,

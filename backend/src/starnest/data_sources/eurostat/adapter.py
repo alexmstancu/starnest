@@ -42,7 +42,12 @@ from starnest.data_sources.eurostat.jsonstat import (
     Observation,
     observations,
 )
-from starnest.data_sources.eurostat.manifest import BASE_URL, QUERIES, EurostatShare
+from starnest.data_sources.eurostat.manifest import (
+    BASE_URL,
+    QUERIES,
+    EurostatDensity,
+    EurostatShare,
+)
 
 EUROSTAT = DataSourceId("eurostat")
 
@@ -94,6 +99,8 @@ class EurostatAdapter(SourceAdapter):
         try:
             if isinstance(query, EurostatShare):
                 reported, describe = await self._shares(query)
+            elif isinstance(query, EurostatDensity):
+                reported, describe = await self._densities(query)
             else:
                 reported = observations(await self._get(query.dataset, dict(query.filters)))
                 describe = _as_published
@@ -148,6 +155,45 @@ class EurostatAdapter(SourceAdapter):
             )
 
         return shares, describe
+
+    async def _densities(
+        self, density: EurostatDensity
+    ) -> tuple[list[Observation], Callable[[Observation], str]]:
+        """Every place-and-year with a length, over that place's newest land area.
+
+        A place with no area, or an area of zero, has no density; it is skipped rather than
+        guessed, and reaches the ranking as missing coverage like any other gap.
+        """
+        lengths = observations(
+            await self._get(density.length.dataset, dict(density.length.filters))
+        )
+        areas = observations(await self._get(density.area.dataset, dict(density.area.filters)))
+        newest_area: dict[str, Observation] = {}
+        for area in areas:
+            if area.geo not in newest_area or area.period > newest_area[area.geo].period:
+                newest_area[area.geo] = area
+
+        densities: list[Observation] = []
+        workings: dict[tuple[str, str], str] = {}
+        for length in lengths:
+            area = newest_area.get(length.geo)
+            if area is None or area.figure == 0:
+                continue
+            figure = length.figure / area.figure * density.per
+            flag = next((o.flag for o in (length, area) if o.flag in UNSETTLED_FLAGS), None)
+            densities.append(
+                Observation(geo=length.geo, period=length.period, figure=figure, flag=flag)
+            )
+            workings[(length.geo, length.period)] = (
+                f"Eurostat {density.length.dataset} {length.period}: {length.figure} km over "
+                f"{area.figure} km² of land ({density.area.dataset} {area.period}) = "
+                f"{figure:.1f} per {density.per:,} km²"
+            )
+
+        def describe(observation: Observation) -> str:
+            return workings[(observation.geo, observation.period)]
+
+        return densities, describe
 
     async def _get(self, dataset: str, filters: dict[str, str]) -> dict:
         response = await self._client.get(
