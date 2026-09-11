@@ -2082,10 +2082,23 @@ way by the active-value rule (section 3.6).
 
 | Attribute | Weight | Value type | Sources | Max age |
 |---|---|---|---|---|
-| `country.cost_of_living_index` | 35% | **Index** — Eurostat PLI, EU27 = 100 | Eurostat price level indices, World Bank ICP | 24 months |
+| `country.cost_of_living_index` | 35% | **Quantity** — price level, EU27 average = 100 | Eurostat price level indices (`tec00120`), World Bank ICP | 24 months |
 | `country.income_tax_effective` | 30% | **Ratio** — share of gross income | OECD Tax Database, national tax authorities | 24 months |
 | `country.remote_work_tax_treaty` | 20% | **LabelSet** — treaty partners; must include `home_country` | OECD treaty database, manual | 24 months |
 | `country.economic_outlook` | 15% | **Quantity** — projected GDP growth, % per year | IMF *World Economic Outlook*, European Commission forecasts, World Bank Global Economic Prospects | 12 months |
+
+> **`country.cost_of_living_index` is a `Quantity`, not an `Index`** (migration `0443`, Q203).
+> A price level index has a *base* — EU27 = 100 — and no range: Romania is 65.1, Iceland 173.5,
+> and nothing caps expensiveness. An `Index` requires published bounds and refuses a figure
+> outside them, so as first typed **no value of any kind could be stored against it**, and any
+> bound wide enough for Iceland would have been one nobody published. `Ratio` is capped at 100
+> and fails the same way. **`Index` is reserved for figures whose bounds do the work**, the
+> precedent `country.life_satisfaction` set.
+>
+> It is an attribute rather than an `ExternalScore` although it is built by formula over a
+> basket, because the weights it applies are *within one dimension* — every one of them is a
+> price. Section 3.5a's test is better read as "does the formula encode somebody's view of what
+> matters", and a price basket does not.
 
 > **We do not compute trends.** The IMF, the European Commission and the World Bank already
 > publish projections with far more analysis behind them than we could justify. This criterion
@@ -2133,8 +2146,21 @@ way by the active-value rule (section 3.6).
 
 | Attribute | Weight | Value type | Sources | Max age |
 |---|---|---|---|---|
-| `country.crime_safety_index` | 50% | **Index** — Numbeo 0–100 | UNODC homicide, Eurostat crime | 24 months |
+| `country.homicide_rate` | 50% | **Quantity** — standardised death rate from assault, per 100,000 | Eurostat (`sdg_16_10`), UNODC, WHO | 24 months |
 | `country.political_economic_stability` | 50% | **Index** — World Bank WGI −2.5–2.5 | World Bank Governance Indicators | 24 months |
+
+> **`country.homicide_rate` replaced `country.crime_safety_index` on 2026-09-09** (migration
+> `0442`, Q202). The old attribute declared Numbeo's 0–100 scale while naming UNODC's homicide
+> rate as its first source — two different quantities, so a figure from one would have been
+> stored under the other's bounds. It split along the line section 3.5a already draws: the
+> **measured rate** is an attribute and is scored; **Numbeo's crime index is a crowdsourced
+> composite** and becomes an `ExternalScore`, shown beside the score and never inside it. The
+> retired attribute keeps its row, with `lifecycle_status = retired`.
+>
+> It is narrower than what it replaced, and the name says so: one measured thing rather than an
+> unmeasured aggregate. Eurostat answers it for all 32, as a *standardised death rate* from
+> cause-of-death statistics rather than police-recorded offences — recording practice varies
+> enormously between countries, so police-recorded crime partly measures the recording.
 
 #### Health — 9%
 
@@ -2436,7 +2462,7 @@ than a genuinely undocumented place.
 | `country.cost_of_living_index` | 4.9% | Affordability is the question the app exists to answer |
 | `country.income_tax_effective` | 4.2% | Net income is unknowable without it |
 | `country.house_price_to_income_ratio` | 4.0% | The housing pillar's anchor |
-| `country.crime_safety_index` | 6.0% | Half the safety pillar |
+| `country.homicide_rate` | 6.0% | Half the safety pillar |
 | `country.political_economic_stability` | 6.0% | The other half; WGI covers every country, so absence means failure |
 | `country.healthcare_system_quality` | 9.0% | The **entire** health pillar — missing it means health silently contributes nothing |
 | `country.rule_of_law` | 2.0% | Governance anchor, and complete in WGI |
@@ -2924,4 +2950,6 @@ Recorded from a front-to-back read of this document.
 | Q199 | **A match rule result carries citations**; a frozen evaluation criterion is its own schema | A gate decided by reading official pages owes the same evidence a measurement does. And `GET /evaluations/{id}/criteria` returned the *live* `Criterion` shape while claiming to be the only record of what the weights were — now `EvaluationCriterion`, carrying the frozen anchors |
 | Q200 | **All SQL lives in a top-level `storage/` directory** — migrations and runtime queries alike | SQL is an asset of the system, not a Python implementation detail. 41 migrations and 128 queries are read, edited and pasted into `psql` constantly, and burying them three directories inside a Python package misrepresents what they are. The point is where a person looks for them, not which language runs them — an earlier draft of this entry argued the latter and it was the weaker case. The earlier argument for keeping queries inside the package — that it made "storage is the only module that writes SQL" literal — was already false, since 34 migration files sat outside it. The `storage/` **module** is the adapter; the `storage/` **directory** is the asset |
 | Q201 | **The SQL's tests stay in Python**, under `backend/tests/storage/` | This is inconsistent with Q200 and the inconsistency is accepted, because the two needs are not alike. Q200 solved a daily act: opening a query in `psql` to debug it, without spelunking a Python package. Running the test suite from another language is hypothetical, and pgTAP would cost a build step on the database image, a second runner outside `make check`'s single exit code, and Perl. Revisit if someone actually needs to run these without Python |
+| Q202 | **`country.crime_safety_index` splits into `country.homicide_rate` and a Numbeo `ExternalScore`** (2026-09-09, migration `0442`) | It declared Numbeo's 0–100 bounds and named UNODC's homicide rate first — two quantities on two scales, so a figure from one would have been stored under the other's bounds, wrong in a way nothing downstream could detect. The split follows section 3.5a: the measured rate is scored, the crowdsourced composite is displayed. Eurostat `sdg_16_10` answers all 32 as a standardised death rate, which is more comparable than police-recorded offences because recording practice varies. The goal flips to `minimise`: a safety index rises as things improve and a homicide rate falls. The old attribute is retired, not deleted, and Numbeo's $50–500/month becomes optional rather than blocking |
+| Q203 | **`country.cost_of_living_index` is a `Quantity`, unit `eu27_average_100`** (2026-09-09, migration `0443`) | Typed `Index` with no bounds declared, it could hold no value at all, while being one of the seven attributes the shipped set will not score without. A price level index has a base, not a range — Romania 65.1, Iceland 173.5, no ceiling — so any `Index` bound wide enough would be invented, and `Ratio` is capped at 100. `Index` is reserved for figures whose bounds do the work. **It stays an attribute rather than an `ExternalScore`** although it is computed over a basket: its weights are within one dimension, all prices, and encode no view of what matters — the reading of section 3.5a's test this entry adopts |
 

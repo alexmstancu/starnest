@@ -44,7 +44,8 @@ application, and where the two disagree, this one is right.
 | **P1** Vocabulary and seams | **Done**, with one correction: `CandidateStore` was declared during minE2E because nothing had needed it, and `CriteriaStore` had no implementation until M3 needed one |
 | **P2** Core policy | **Done for the MVP's needs.** `evaluation/` exists cut to `percentile` and `as_is`; `fixed`, `target_range`, the compound-rule shapes and match rules are not built |
 | **P3** First vertical slice | **Done. Gate A closed 2026-09-05.** 16 of 40 operations, one source adapter, two screens, a browser test against the real stack, and the gate itself as an acceptance test |
-| **P4**-**P7** | Not started |
+| **P4** Adapter fan-out | **Under way.** Four adapters (Eurostat, World Bank, WHO, IMF), 9 of 11 pillars, 13 attributes. Ordered by pillar coverage per D7. The shipped set is two attributes from scoring, both OECD's |
+| **P5**-**P7** | Not started |
 
 **1,431 backend tests and 98 interface tests. 436 real values across 32 countries — 277 from Eurostat, 96 from the World Bank, 31 from WHO, 32 from the IMF, over 9 of 11 pillars. The shipped set's blocking list is down from seven attributes to two, both OECD's.**
 
@@ -311,8 +312,8 @@ P0 and P1 are single-agent phases sized to finish fast rather than to be complet
 | **P0** | Ground: scaffold, schema, catalog | **Done** | Checkpoint |
 | **P1** | The shared vocabulary, and all nine seam interfaces | **Done** | Checkpoint |
 | **P2** | Core policy | **Done for the MVP's needs** — `evaluation/` is cut to two normalisation methods | Checkpoint |
-| **P3** | The first vertical slice — API + Eurostat | **Partly done**: 7 of 40 operations, one adapter, two screens | **GATE A** |
-| **P4** | Adapter fan-out | Not started | **GATE B** |
+| **P3** | The first vertical slice — API + Eurostat | **Done.** Gate A closed 2026-09-05 | **GATE A** |
+| **P4** | Adapter fan-out | **Under way** — four of six streams' worth of sources, 9 of 11 pillars | **GATE B** |
 | **P5** | Evaluation persistence, comparison, rules | Not started | Checkpoint |
 | **P6** | The interface's four tabs | Two of four exist in skeleton | **GATE C** |
 | **P7** | Hardening: the LLM path, operations, failure modes | Not started | **GATE D — the MVP ships** |

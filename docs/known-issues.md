@@ -174,3 +174,18 @@ Recorded because these are the invariants most worth knowing hold:
 - **Money never becomes a float** — `parse_float=Decimal` registered per connection.
 - **Nothing hardcoded** — no attribute id, pillar id, weight, threshold, or the string `Romania`
   in any of the five modules.
+
+---
+
+## Found during P4 — 2026-09-09 to 2026-09-11
+
+Four findings from the adapter streams, all reproduced. **None is a defect in running code**:
+each is a place where two documents, or a document and the code, say different things -- the
+kind of fault that costs nothing today and misleads the next person to rely on either.
+
+| # | Finding | State |
+|---|---|---|
+| **P1** | **`reqs.md` 7.1 drifted from the catalog and no guard noticed.** `0442` and `0443` changed three attributes; the document went on describing all three the old way. The existing check walks `reqs.md` and looks each row up, so an attribute only the database has is never visited, and value types were never compared | **Fixed 2026-09-11.** `reqs.md` corrected, Q202 and Q203 logged, and two guards in `test_catalog_arithmetic.py` compare both directions and every value type. Both were watched failing against the stale document before it was fixed |
+| **P2** | **Section 3.5a's test cannot be applied by reading it.** "Has someone already applied weights?" classifies the WGI governance indices (a model over ~30 expert surveys) and WHO UHC (14 tracer indicators) as composites -- `ExternalScore`, never scored -- yet `reqs.md` 7.1 names both as scored sources. Q203 adopts a narrower reading for price indices ("does the formula encode a view of what matters?") but does not say whether it settles the other two | **Open.** A decision, not a fix: either the named sources override the test or the test narrows. See `docs/catalog-blockers.md` |
+| **P3** | **The interface mock invents `country.net_median_salary`**, an attribute that does not exist in the catalog (`ui/src/mocks/fixtures.ts`). Mocks may be fictional; one naming a non-existent attribute id reads as documentation of what is available | **Open**, low. Rename to a real attribute when the fixtures are next touched |
+| **P4** | **The household's income is stored and never used.** `net_income`, `target_monthly_spend` and `max_rent` are persisted and served, and nothing in `evaluation/` reads them. Q84 says cost of living means something only against your own income; Q85 specifies rent-against-spend as a warning. Neither is built | **Open, by scope.** Confirmed out of MVP on 2026-09-11 along with rent by bedroom count, which is city-level. Recorded so the unused columns are not mistaken for dead ones |

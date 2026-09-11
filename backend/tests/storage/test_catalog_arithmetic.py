@@ -323,3 +323,64 @@ def test_only_the_documented_four_are_never_stale(connection: psycopg.Connection
     }
 
     assert without == NEVER_STALE
+
+
+# --- The catalog itself, against reqs.md 7.1 -------------------------------------------------
+#
+# Added 2026-09-11, after two P4 migrations changed the catalog underneath `reqs.md` and every
+# guard here stayed green. `0442` retired `crime_safety_index` and added `homicide_rate`; `0443`
+# retyped `cost_of_living_index` from Index to Quantity. The document -- which CLAUDE.md calls
+# authoritative and tells a reader to open first -- went on describing all three the old way.
+#
+# **Why nothing caught it.** The max-age check above walks `reqs.md` and looks each row up in the
+# database, so an attribute the database has and the document lacks is never visited, and a
+# value type is never compared at all. Both directions, and the type, are checked below.
+
+_ROW = re.compile(r"^\| `(country\.[a-z_]+)` \|[^|]*\| \*\*([A-Za-z]+)\*\*")
+
+
+def _value_types_reqs_declares() -> dict[str, str]:
+    """The value type `reqs.md` 7.1 gives each country attribute, read from the document."""
+    lines = REQS.read_text().split("\n")
+    start = next(i for i, line in enumerate(lines) if line.startswith("### 7.1 Country level"))
+    end = next(i for i, line in enumerate(lines) if line.startswith("### 7.2 City level"))
+    return {m.group(1): m.group(2) for line in lines[start:end] if (m := _ROW.match(line))}
+
+
+def _active_country_attributes(connection: psycopg.Connection) -> dict[str, str]:
+    return dict(
+        connection.execute(
+            "SELECT id, value_type FROM attribute WHERE id LIKE %s AND lifecycle_status = 'active'",
+            (f"{COUNTRY}.%",),
+        ).fetchall()
+    )
+
+
+def test_the_document_and_the_catalog_list_the_same_attributes(
+    connection: psycopg.Connection,
+) -> None:
+    """Both directions. An attribute the database has and `reqs.md` lacks is one nobody can read
+    about; one `reqs.md` lists and the database has retired is one somebody will try to fetch."""
+    documented = set(_value_types_reqs_declares())
+    seeded = set(_active_country_attributes(connection))
+
+    assert seeded - documented == set(), "in the catalog but not in reqs.md 7.1"
+    assert documented - seeded == set(), "in reqs.md 7.1 but not active in the catalog"
+
+
+def test_the_document_and_the_catalog_agree_on_every_value_type(
+    connection: psycopg.Connection,
+) -> None:
+    """The value type decides what a value may hold and how it may be normalised
+    (`reqs.md` 3.3a), so a disagreement here is a disagreement about what the attribute *is*.
+    `cost_of_living_index` was an Index in the document and a Quantity in the database, and the
+    difference is whether a price level of 173.5 can be stored at all."""
+    documented = _value_types_reqs_declares()
+    seeded = _active_country_attributes(connection)
+
+    disagreeing = {
+        attribute: (documented[attribute], seeded[attribute])
+        for attribute in documented.keys() & seeded.keys()
+        if documented[attribute] != seeded[attribute]
+    }
+    assert disagreeing == {}, f"reqs.md says, catalog says: {disagreeing}"
