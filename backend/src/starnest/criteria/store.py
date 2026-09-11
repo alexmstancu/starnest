@@ -15,15 +15,17 @@ criteria set is an opinion the user wrote and may withdraw. Nothing depends on a
 having been held -- a saved evaluation froze its own copy for exactly this reason
 (`reqs.md` Q193), so deleting the set it came from leaves the evaluation still readable.
 
-*Not here yet:* `arch.md` 6.3 also gives this module a `MatchRuleResultStore`. The results it
-would return are not modelled anywhere yet, and declaring methods that return them would mean
-inventing their shape here.
+**`MatchRuleResultStore` is here too** (`arch.md` 6.3), because whether a gate's answer counts
+is a criteria set's preference -- and the module that holds the preference is the one that
+decides to read the answer. The answer itself (`data.MatchRuleResult`) is a finding about a
+candidate, modelled where findings are.
 """
 
 from abc import ABC, abstractmethod
 
 from starnest.criteria.criteria_set import CriteriaSet
 from starnest.criteria.identifiers import CriteriaSetId
+from starnest.data import MatchRuleResult
 
 
 class CriteriaSetExistsError(ValueError):
@@ -97,3 +99,26 @@ class CriteriaStore(ABC):
         Raises `UnknownCriteriaSetError` when there is no such set, so a second delete is
         reported rather than silently succeeding.
         """
+
+
+class MatchRuleResultStore(ABC):
+    """Each gate's answer for each candidate, with the pages it was read from and any override.
+
+    **One answer per gate per candidate**: recording replaces, because a gate is re-checked
+    rather than accumulated. An override is a reason and the moment it was given, and travels
+    with the answer everywhere it is shown (`reqs.md` 3.7).
+    """
+
+    @abstractmethod
+    async def read_results(
+        self,
+        *,
+        candidate: str | None = None,
+        match_rule: str | None = None,
+        level: str | None = None,
+    ) -> tuple[MatchRuleResult, ...]:
+        """Every answer the filters allow; each narrows independently."""
+
+    @abstractmethod
+    async def record(self, result: MatchRuleResult) -> None:
+        """Store one answer with its citations, replacing the previous answer and its pages."""

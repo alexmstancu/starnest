@@ -312,6 +312,16 @@ erDiagram
         text level FK
         text reason
     }
+    POPULATION_CENTRE {
+        bigint geonames_id PK
+        text candidate FK
+        text name
+        numeric latitude
+        numeric longitude
+        int population
+        text data_source FK
+        date retrieved_on
+    }
     BREAKDOWN_SCHEME {
         text id PK
     }
@@ -606,6 +616,8 @@ erDiagram
     CANDIDATE ||--o{ STAND_IN : "stands in as"
     ATTRIBUTE ||--o{ STAND_IN : "may be borrowed as"
     LEVEL ||--o{ STAND_IN : scopes
+    CANDIDATE ||--o{ POPULATION_CENTRE : "is measured at"
+    DATA_SOURCE ||--o{ POPULATION_CENTRE : locates
     ATTRIBUTE ||--o{ VALUE : "realised as"
     CANDIDATE ||--o{ VALUE : "measured by"
     DATA_SOURCE ||--o{ VALUE : produces
@@ -699,6 +711,8 @@ erDiagram
 | `CANDIDATE \|\|--o{ STAND_IN` | Twice: the candidate no source covers, and the **substitute** whose figure it borrows for one attribute | Liechtenstein is surveyed by no pan-European source for three blocking attributes; Switzerland's figure is the least-bad answer. Declared **per attribute**, with the reason on the row, because a neighbour's price level transfers and its homicide rate does not (Q208) |
 | `ATTRIBUTE \|\|--o{ STAND_IN` | Which figure may be borrowed | The borrowed figure is stored as a `VALUE` under the `stand_in` source at `low` confidence, never as the candidate's own measurement |
 | `LEVEL \|\|--o{ STAND_IN` | Both candidates and the attribute sit at one level | A city standing in for a country is a category error the schema refuses outright |
+| `CANDIDATE \|\|--o{ POPULATION_CENTRE` | A country's five largest places, weighted by population | Where a coordinate-bound source measures a country (D4, Q210): a centroid would give Spain an empty plateau's climate, a capital would give Italy only Rome's |
+| `DATA_SOURCE \|\|--o{ POPULATION_CENTRE` | Who located the places | GeoNames, under CC BY 4.0, whose attribution is the source row. Reference geography carries provenance like any figure |
 
 **Measurements**
 
@@ -2994,4 +3008,6 @@ Recorded from a front-to-back read of this document.
 | Q207 | **Where OECD publishes no total tax rate, an estimate from Eurostat's figures stands in, at low confidence, ranked below OECD** (2026-09-11, migration `0449`) | OECD Taxing Wages omits Romania, Bulgaria, Croatia, Cyprus and Malta — Romania being the comparison anchor. Eurostat publishes the full wedge only at 67% of the average wage; the employer's rate is backed out there and applied at 167%, with no rate typed in. Tested against OECD's own 167% wedge on twelve countries: within a point where employer contributions are flat, one to eight off where they are capped or wage-dependent. Romania and Croatia are flat, and the data recovers their statutory 2.25% and 16.5% unprompted; Bulgaria and Malta cap below that income and are probably overstated. The household chose all five at low confidence over only the two where the method is exact. Its own source row, `eurostat_estimate`, so provenance never reads an estimate as Eurostat's figure; ranked second, so it never displaces a published one |
 | Q208 | **Where no source covers a candidate, a declared substitute's figure stands in — per attribute, under its own `stand_in` source, at `low` confidence** (2026-09-11, migration `0460`) | Q195 decided the principle; this is how it is stored. Liechtenstein is covered by none of the sources for `cost_of_living_index`, `total_tax_rate_effective` and `healthcare_system_quality`, and Switzerland's figure stands in for each, with the reason on the declaration and in the quote. **Not under the Swiss figure's own publisher:** stored as OECD's it would rank as OECD and read as OECD having measured Liechtenstein. The `stand_in` source ranks 75, below every source that measures a place, so a real figure wins the day one exists, with nothing deleted. **Declared per attribute, not per country**, because Switzerland's price level transfers to Liechtenstein and its homicide rate or protected land does not. A substitute lends only a real figure, never one it borrowed. The ranking now carries `coverage_by_confidence`, so the half of Liechtenstein's covered weight resting on Switzerland's figures (54% on the day it was built, 51% once Q209's anchors landed) is on screen rather than absorbed |
 | Q209 | **Anchors for the seven `fixed` criteria of the shipped set whose data had landed** (2026-09-11, migration `0462`) — Gate B's derivation | Each proposed from the real distribution across the 32 with its effect on named countries, beside a stricter or gentler pair and percentile; the household took the first each time. Housing cost overburden 5% → 100, 20% → 0; tech employment share 3% → 0, 7% → 100; broadband 80% → 0, 100% → 100; life satisfaction 6 → 0, 8 → 100; growth outlook 0% → 0, 3% → 100; overcrowding 5% → 100, 30% → 0; protected land 10% → 0, 40% → 100. Coverage of the shipped set rose from 36% to 57%. Caveats seen and accepted: the tech share is national (Bucharest and Cluj are city-level questions), a growth forecast is noisy and partly catch-up, and protected land is not the same as reachable nature |
+| Q210 | **D4: a national climate figure is the population-weighted mean over the country's five largest places** (2026-09-11, `0464`) | The household's choice over a capital alone (Italy is not only Rome) and a grid mean (Norway is not its empty north). The places are GeoNames' (CC BY 4.0), stored as `population_centre` rows with provenance and regenerable by `backend/scripts/population_centres.py`. One settled ERA5 year, because the free tier counts a year for one place as 26 calls and a decade for 160 places would be four days of allowance; year-to-year swings are small beside the differences between countries. `medium` confidence, being derived. Sunshine is not fetched: Open-Meteo's is modelled, and runs 30% to 68% above the recorders, unevenly |
+| Q211 | **A fourth container: the live schema diagram** (2026-09-11) | Asked for by the household, to browse the schema beside the running app. Liam ERD built from a schema-only dump at start, on `127.0.0.1:4174`; a viewing aid that reads and never writes. Q182's three are unchanged |
 

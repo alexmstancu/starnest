@@ -24,6 +24,7 @@ from starnest.storage import (
     PostgresCatalogStore,
     PostgresCriteriaStore,
     PostgresHouseholdStore,
+    PostgresMatchRuleResultStore,
     PostgresRunStore,
     PostgresValueStore,
 )
@@ -34,6 +35,7 @@ WRITABLE_TABLES = (
     "household_citizenship",
     "settings",
     "data_acquisition_run",
+    "match_rule_result",
 )
 """What an acceptance test may write and what is emptied afterwards.
 
@@ -87,6 +89,7 @@ async def an_api(
             values=PostgresValueStore(pool),
             catalog_store=PostgresCatalogStore(pool),
             run_store=PostgresRunStore(pool),
+            match_rule_results=PostgresMatchRuleResultStore(pool),
             adapters=adapters,
         )
         transport = httpx.ASGITransport(app=app)

@@ -25,6 +25,7 @@ from starnest.data.identifiers import (
     BreakdownOptionId,
     BreakdownSchemeId,
 )
+from starnest.data.population_centre import PopulationCentre
 from starnest.data.rules import CompoundRule, MatchRule
 from starnest.data.sources import DataSource
 from starnest.data.stand_in import StandIn
@@ -161,6 +162,10 @@ class CatalogStore(ABC):
         self,
     ) -> Mapping[BreakdownSchemeId, tuple[BreakdownOptionId, ...]]:
         """What each multi-value attribute is broken down by, with the options in it."""
+
+    @abstractmethod
+    async def read_population_centres(self) -> tuple[PopulationCentre, ...]:
+        """Every country's largest places, with the population that weights each (D4, Q210)."""
 
     @abstractmethod
     async def read_stand_ins(self, *, level: str | None = None) -> tuple[StandIn, ...]:

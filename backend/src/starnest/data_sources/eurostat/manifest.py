@@ -177,7 +177,9 @@ total hours would count part-timers and make the Netherlands look like a four-da
 Eurostat is the attribute's declared second source, below OECD, which is unreachable to scripts
 for now (`catalog-blockers.md` item 5). The two densities are motorway and railway length per
 1,000 km² of land; Cyprus, Malta and Iceland have no railway, and Eurostat publishes nothing
-rather than zero for them, so they get no figure rather than one the adapter invented.
+rather than zero for them, so they get no figure rather than one the adapter invented -- and the
+attribute does not permit manual entry, so the zero cannot be typed either (`known-issues.md`
+P11).
 
 The first three were minE2E's: two Ratios and a Quantity, so both payload paths are exercised
 by real data rather than by a fixture invented to exercise them. The last three are P4's W4-F,

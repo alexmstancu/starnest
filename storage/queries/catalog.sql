@@ -121,6 +121,17 @@ SELECT b.id,
 FROM   breakdown_scheme AS b
 ORDER  BY b.id;
 
+-- name: select_population_centres()
+-- Where a coordinate-bound source measures each country (D4, Q210): its largest places, heaviest
+-- first, so a quote naming them reads in the order that matters.
+SELECT p.candidate,
+       p.name,
+       p.latitude,
+       p.longitude,
+       p.population
+FROM   population_centre AS p
+ORDER  BY p.candidate, p.population DESC, p.geonames_id;
+
 -- name: select_stand_ins(level)
 -- Where a neighbour's figure may stand in, and why (reqs.md Q208). Both display names are
 -- joined in because the quote on every borrowed figure says, in words, whose figure it is.

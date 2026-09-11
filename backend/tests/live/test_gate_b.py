@@ -22,6 +22,7 @@ from starnest.data_acquisition import execute_run
 from starnest.data_sources.eurostat import EurostatAdapter, TaxWedgeEstimateAdapter
 from starnest.data_sources.imf import ImfAdapter
 from starnest.data_sources.oecd import OecdAdapter
+from starnest.data_sources.open_meteo import OpenMeteoAdapter
 from starnest.data_sources.who import WhoAdapter
 from starnest.data_sources.world_bank import WorldBankAdapter
 from starnest.storage import (
@@ -64,6 +65,7 @@ async def test_every_blocking_attribute_answers_for_every_country(
                 ImfAdapter(client),
                 OecdAdapter(client),
                 TaxWedgeEstimateAdapter(client),
+                OpenMeteoAdapter(client, catalog),
             ),
             attributes=await catalog.read_attributes(level=COUNTRY),
             candidates=candidates,

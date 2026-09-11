@@ -103,6 +103,7 @@ class TestWhatIsActuallyWiredIn:
             "imf",
             "oecd",
             "eurostat_estimate",
+            "open_meteo",
         }
 
     def test_no_two_adapters_claim_to_be_the_same_source(self) -> None:

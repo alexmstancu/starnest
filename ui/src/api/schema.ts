@@ -903,18 +903,26 @@ export interface components {
         MatchRule: {
             id: string;
             name: string;
-            level: string;
+            /** @description Null for a gate asked at every level, such as not_manually_excluded. */
+            level: string | null;
         };
         MatchRuleResultInput: {
             /** @enum {string} */
             match_result: "matching" | "not_matching" | "unknown";
-            reason?: string;
+            reason?: string | null;
             /** @default manual */
             data_source: string;
-            reference_period?: components["schemas"]["ReferencePeriod"];
-            /** Format: date-time */
+            /** @description What period the answer holds for. Null where nobody recorded one: an answer with no expiry, not one that never expires. */
+            reference_period?: components["schemas"]["ReferencePeriod"] | null;
+            /**
+             * Format: date-time
+             * @description When the gate was checked. Defaults to now.
+             */
             retrieval_date?: string;
+            /** @description An override is audited: the server records the moment it was given as override_date. */
             override_reason?: string | null;
+            /** @description The pages the answer was read from. Replaces the previous answer's pages. */
+            citations?: string[];
         };
         MatchRuleResult: components["schemas"]["MatchRuleResultInput"] & {
             match_rule: string;

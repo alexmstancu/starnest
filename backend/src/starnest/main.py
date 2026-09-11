@@ -94,6 +94,7 @@ def build() -> tuple[Environment, "FastAPI"]:
     from starnest.data_sources.eurostat import EurostatAdapter, TaxWedgeEstimateAdapter
     from starnest.data_sources.imf import ImfAdapter
     from starnest.data_sources.oecd import OecdAdapter
+    from starnest.data_sources.open_meteo import OpenMeteoAdapter
     from starnest.data_sources.who import WhoAdapter
     from starnest.data_sources.world_bank import WorldBankAdapter
     from starnest.storage import (
@@ -101,6 +102,7 @@ def build() -> tuple[Environment, "FastAPI"]:
         PostgresCatalogStore,
         PostgresCriteriaStore,
         PostgresHouseholdStore,
+        PostgresMatchRuleResultStore,
         PostgresRunStore,
         PostgresValueStore,
     )
@@ -108,13 +110,15 @@ def build() -> tuple[Environment, "FastAPI"]:
     environment = Environment()  # type: ignore[call-arg]
     pool = AsyncConnectionPool(environment.database_url, min_size=1, open=False)
 
+    catalog = PostgresCatalogStore(pool)
     app = build_app(
         households=PostgresHouseholdStore(pool),
         criteria_store=PostgresCriteriaStore(pool),
         candidates=PostgresCandidateStore(pool),
         values=PostgresValueStore(pool),
-        catalog_store=PostgresCatalogStore(pool),
+        catalog_store=catalog,
         run_store=PostgresRunStore(pool),
+        match_rule_results=PostgresMatchRuleResultStore(pool),
         # The one place a concrete source is named. `api/` holds only the interface, which is
         # what lets the acceptance suite drive the same endpoints against a stub.
         adapters=(
@@ -124,6 +128,8 @@ def build() -> tuple[Environment, "FastAPI"]:
             ImfAdapter(httpx.AsyncClient(timeout=60)),
             OecdAdapter(httpx.AsyncClient(timeout=120)),
             TaxWedgeEstimateAdapter(httpx.AsyncClient(timeout=60)),
+            # Reads the places it measures at from the catalog (D4), so it holds the store.
+            OpenMeteoAdapter(httpx.AsyncClient(timeout=120), catalog),
         ),
         display_name=environment.app_display_name,
     )

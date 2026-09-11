@@ -302,3 +302,21 @@ async def test_a_level_with_no_compound_rules_reads_as_empty_not_as_an_error(
 ) -> None:
     """The MVP is the country level (`reqs.md` 1.3); the city rules genuinely do not exist."""
     assert await catalog.read_compound_rules(level=A_LEVEL_WITH_NO_ATTRIBUTES_YET) == ()
+
+
+async def test_every_country_is_measured_at_its_five_largest_places(
+    catalog: PostgresCatalogStore,
+) -> None:
+    """D4, Q210: 160 places from GeoNames, five per country, heaviest first."""
+    centres = await catalog.read_population_centres()
+
+    by_country: dict[str, list] = {}
+    for centre in centres:
+        by_country.setdefault(str(centre.candidate), []).append(centre)
+    assert len(by_country) == 32
+    assert {len(places) for places in by_country.values()} == {5}
+    romania = [centre.name for centre in by_country["country.romania"]]
+    assert romania[0] == "Bucharest"
+    assert [c.population for c in by_country["country.romania"]] == sorted(
+        (c.population for c in by_country["country.romania"]), reverse=True
+    )

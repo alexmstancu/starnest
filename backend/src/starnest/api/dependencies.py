@@ -11,7 +11,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from starnest.candidates import CandidateStore
-from starnest.criteria import CriteriaStore
+from starnest.criteria import CriteriaStore, MatchRuleResultStore
 from starnest.data import CatalogStore, ValueStore
 from starnest.data_acquisition import RunStore, SourceAdapter
 from starnest.household import HouseholdStore
@@ -23,6 +23,10 @@ def _household(request: Request) -> HouseholdStore:
 
 def _criteria(request: Request) -> CriteriaStore:
     return request.app.state.criteria
+
+
+def _match_rule_results(request: Request) -> MatchRuleResultStore:
+    return request.app.state.match_rule_results
 
 
 def _candidates(request: Request) -> CandidateStore:
@@ -53,6 +57,7 @@ def _adapters(request: Request) -> tuple[SourceAdapter, ...]:
 
 Households = Annotated[HouseholdStore, Depends(_household)]
 Criteria = Annotated[CriteriaStore, Depends(_criteria)]
+MatchRuleResults = Annotated[MatchRuleResultStore, Depends(_match_rule_results)]
 Candidates = Annotated[CandidateStore, Depends(_candidates)]
 Values = Annotated[ValueStore, Depends(_values)]
 Catalog = Annotated[CatalogStore, Depends(_catalog)]

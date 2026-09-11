@@ -36,6 +36,9 @@ A_REQUEST_FOR = {
     "listRuns": ("get", "/v1/data-acquisition-runs", {}),
     "getCriteriaSet": ("get", f"/v1/criteria-sets/{MINIMAL}", {}),
     "getRanking": ("get", "/v1/rankings", {"criteria_set": MINIMAL, "level": COUNTRY}),
+    "listValues": ("get", "/v1/values", {"include_superseded": True}),
+    "listMatchRules": ("get", "/v1/match-rules", {}),
+    "listMatchRuleResults": ("get", "/v1/match-rule-results", {}),
 }
 """One successful call per served GET, by operation id.
 
@@ -200,3 +203,44 @@ async def test_the_run_endpoints_match_the_designed_shapes(
     polled = await api.get(f"/v1/data-acquisition-runs/{started.json()['id']}")
     validate("getRun", polled.json())
     assert undeclared_fields("getRun", polled.json()) == []
+
+
+async def test_manual_entry_and_a_gate_answer_match_the_designed_shapes(
+    api: httpx.AsyncClient,
+) -> None:
+    """The two writes of W4-E, and the reads that return what they wrote, checked with data in
+    them -- an empty list validates against almost anything."""
+    typed = await api.post(
+        "/v1/values/manual",
+        json={
+            "candidate": "country.portugal",
+            "attribute": "country.naturalisation_pathway",
+            "payload": {"magnitude": 5, "unit": "years"},
+            "reference_period": {"start": "2026-01-01", "end": "2026-12-31"},
+            "retrieval_date": "2026-09-11T10:00:00Z",
+        },
+    )
+    assert typed.status_code == 201
+    validate("enterValueManually", typed.json(), status=201)
+    assert undeclared_fields("enterValueManually", typed.json(), status=201) == []
+
+    answered = await api.put(
+        "/v1/match-rule-results/not_manually_excluded/country.greece",
+        json={"match_result": "not_matching", "override_reason": "ruled out by hand"},
+    )
+    validate("putMatchRuleResult", answered.json())
+    assert undeclared_fields("putMatchRuleResult", answered.json()) == []
+
+    listed = await api.get("/v1/match-rule-results")
+    validate("listMatchRuleResults", listed.json())
+    assert undeclared_fields("listMatchRuleResults", listed.json()) == []
+
+
+async def test_a_retry_matches_the_designed_shape(api: httpx.AsyncClient) -> None:
+    run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+    retried = await api.post(f"/v1/data-acquisition-runs/{run['id']}/retry")
+
+    assert retried.status_code == 202
+    validate("retryRun", retried.json(), status=202)
+    assert undeclared_fields("retryRun", retried.json(), status=202) == []

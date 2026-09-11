@@ -76,6 +76,12 @@ from starnest.data.identifiers import (
     ReliabilityTierId,
     UnitId,
 )
+from starnest.data.manual import (
+    MANUAL,
+    InvalidManualValueError,
+    ManualEntryNotPermittedError,
+    a_manual_value,
+)
 from starnest.data.payloads import (
     FX_CONVERSION_TOLERANCE,
     PAYLOAD_CLASSES,
@@ -98,6 +104,7 @@ from starnest.data.payloads import (
     ValueType,
     payload_class_for,
 )
+from starnest.data.population_centre import PopulationCentre
 from starnest.data.reference_period import InvalidReferencePeriodError, ReferencePeriod
 from starnest.data.rules import (
     CompoundRule,
@@ -110,6 +117,7 @@ from starnest.data.rules import (
     MatchRule,
     MatchRuleResult,
     RuleOutcome,
+    UnknownMatchRuleError,
 )
 from starnest.data.sources import (
     DataSource,
@@ -126,6 +134,7 @@ from starnest.data.value import MalformedValueError, Value, ValueListing
 __all__ = [
     "EURO",
     "FX_CONVERSION_TOLERANCE",
+    "MANUAL",
     "MANUAL_ENTRY_DEFAULT_CONFIDENCE",
     "PAYLOAD_CLASSES",
     "SHARE_SUM_TOLERANCE",
@@ -161,6 +170,7 @@ __all__ = [
     "HouseholdFieldId",
     "Index",
     "IndexParameters",
+    "InvalidManualValueError",
     "InvalidReferencePeriodError",
     "InvalidSourcePriorityError",
     "LabelSet",
@@ -170,6 +180,7 @@ __all__ = [
     "MalformedPayloadError",
     "MalformedStandInError",
     "MalformedValueError",
+    "ManualEntryNotPermittedError",
     "MatchResult",
     "MatchRule",
     "MatchRuleId",
@@ -179,6 +190,7 @@ __all__ = [
     "Payload",
     "Pillar",
     "PillarId",
+    "PopulationCentre",
     "Quantity",
     "QuantityParameters",
     "Ratio",
@@ -196,6 +208,7 @@ __all__ = [
     "UnitId",
     "UnknownAttributeError",
     "UnknownDataSourceError",
+    "UnknownMatchRuleError",
     "UnknownReliabilityTierError",
     "Value",
     "ValueListing",
@@ -203,6 +216,7 @@ __all__ = [
     "ValueStore",
     "ValueType",
     "ValueTypeMismatchError",
+    "a_manual_value",
     "derive_confidence",
     "payload_class_for",
     "select_active_value",

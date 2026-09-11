@@ -34,7 +34,7 @@ from starnest.candidates.levels import (
     LevelHierarchy,
     UnknownLevelError,
 )
-from starnest.candidates.store import CandidateStore
+from starnest.candidates.store import CandidateStore, UnknownCandidateError
 
 __all__ = [
     "SEGMENT_SEPARATOR",
@@ -50,6 +50,7 @@ __all__ = [
     "LevelId",
     "MalformedIdentifierError",
     "NestingError",
+    "UnknownCandidateError",
     "UnknownLevelError",
     "suggest_identifier_segment",
 ]

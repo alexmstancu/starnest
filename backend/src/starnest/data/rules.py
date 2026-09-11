@@ -44,6 +44,10 @@ class CompoundRuleDeclarationError(ValueError):
     """A catalog row carries something its shape has no meaning for."""
 
 
+class UnknownMatchRuleError(LookupError):
+    """A gate was named that the catalog does not have."""
+
+
 class MatchResult(StrEnum):
     """What one gate says about one candidate.
 

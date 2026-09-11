@@ -1164,18 +1164,29 @@ components:
     MatchRule:
       type: object
       required: [id, name, level]
-      properties: { id: { type: string }, name: { type: string }, level: { type: string } }
+      properties:
+        id: { type: string }
+        name: { type: string }
+        level: { type: [string, "null"], description: "Null for a gate asked at every level, such as not_manually_excluded." }
 
     MatchRuleResultInput:
       type: object
       required: [match_result]
       properties:
         match_result: { type: string, enum: [matching, not_matching, unknown] }
-        reason: { type: string }
+        reason: { type: [string, "null"] }
         data_source: { type: string, default: manual }
-        reference_period: { $ref: "#/components/schemas/ReferencePeriod" }
-        retrieval_date: { type: string, format: date-time }
-        override_reason: { type: [string, "null"] }
+        reference_period:
+          description: "What period the answer holds for. Null where nobody recorded one: an answer with no expiry, not one that never expires."
+          oneOf:
+            - $ref: "#/components/schemas/ReferencePeriod"
+            - type: "null"
+        retrieval_date: { type: string, format: date-time, description: "When the gate was checked. Defaults to now." }
+        override_reason: { type: [string, "null"], description: "An override is audited: the server records the moment it was given as override_date." }
+        citations:
+          type: array
+          description: "The pages the answer was read from. Replaces the previous answer's pages."
+          items: { type: string, format: uri }
 
     MatchRuleResult:
       allOf:

@@ -32,6 +32,7 @@ def served_schema() -> dict:
         values=None,  # type: ignore[arg-type]
         catalog_store=None,  # type: ignore[arg-type]
         run_store=None,  # type: ignore[arg-type]
+        match_rule_results=None,  # type: ignore[arg-type]
     ).openapi()
 
 

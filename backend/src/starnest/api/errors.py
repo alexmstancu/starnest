@@ -17,6 +17,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from starnest.candidates import UnknownCandidateError
 from starnest.criteria import (
     CriteriaSetError,
     CriteriaSetExistsError,
@@ -25,7 +26,14 @@ from starnest.criteria import (
     UnknownCriterionError,
     WeightsAllLockedError,
 )
-from starnest.data import UnknownAttributeError
+from starnest.data import (
+    InvalidManualValueError,
+    MalformedMatchRuleResultError,
+    ManualEntryNotPermittedError,
+    UnknownAttributeError,
+    UnknownDataSourceError,
+    UnknownMatchRuleError,
+)
 from starnest.data_acquisition import NothingToRetryError, UnknownRunError
 from starnest.evaluation import NormalisationError, RankingError
 from starnest.household import HouseholdNotConfiguredError, HouseholdPlaceError
@@ -49,17 +57,23 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     UnknownCriterionError: _refusal(404, "not_found"),
     UnknownAttributeError: _refusal(404, "not_found"),
     UnknownRunError: _refusal(404, "not_found"),
+    UnknownCandidateError: _refusal(404, "not_found"),
+    UnknownMatchRuleError: _refusal(404, "not_found"),
     HouseholdNotConfiguredError: _refusal(404, "household_not_configured"),
     # 409 -- the request is well formed and the state refuses it.
     WeightsAllLockedError: _refusal(409, "weights_all_locked"),
     CriteriaSetExistsError: _refusal(409, "criteria_set_exists"),
     NothingToRetryError: _refusal(409, "nothing_to_retry"),
+    ManualEntryNotPermittedError: _refusal(409, "manual_entry_not_permitted"),
+    InvalidManualValueError: _refusal(409, "invalid_value"),
     # 422 -- the request describes something the domain will not accept.
     CriteriaSetError: _refusal(422, "invalid_criteria_set"),
     CriterionDeclarationError: _refusal(422, "invalid_criterion"),
     HouseholdPlaceError: _refusal(422, "unknown_place"),
     NormalisationError: _refusal(422, "cannot_be_scored"),
     RankingError: _refusal(422, "cannot_be_ranked"),
+    MalformedMatchRuleResultError: _refusal(422, "invalid_match_rule_result"),
+    UnknownDataSourceError: _refusal(422, "unknown_data_source"),
 }
 """Which domain fault is which kind of refusal.
 

@@ -14,6 +14,10 @@ from abc import ABC, abstractmethod
 from starnest.candidates.candidate import Candidate
 
 
+class UnknownCandidateError(LookupError):
+    """A candidate was named that the catalog does not hold."""
+
+
 class CandidateStore(ABC):
     """The places under evaluation, as the catalog holds them."""
 

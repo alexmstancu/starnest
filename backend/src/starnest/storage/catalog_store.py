@@ -37,6 +37,7 @@ from starnest.data import (
     MatchRuleId,
     Pillar,
     PillarId,
+    PopulationCentre,
     QuantityParameters,
     RatioParameters,
     RuleOutcome,
@@ -147,6 +148,20 @@ class PostgresCatalogStore(CatalogStore):
             BreakdownSchemeId(row.id): tuple(BreakdownOptionId(option) for option in row.options)
             for row in rows
         }
+
+    async def read_population_centres(self) -> tuple[PopulationCentre, ...]:
+        async with acquire(self._pool) as connection:
+            rows = [row async for row in self._queries.select_population_centres(connection)]
+        return tuple(
+            PopulationCentre(
+                candidate=row.candidate,
+                name=row.name,
+                latitude=row.latitude,
+                longitude=row.longitude,
+                population=row.population,
+            )
+            for row in rows
+        )
 
     async def read_stand_ins(self, *, level: str | None = None) -> tuple[StandIn, ...]:
         async with acquire(self._pool) as connection:

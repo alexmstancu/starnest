@@ -122,6 +122,24 @@ components:
       - items
       title: CandidatesBody
       type: object
+    ConfidenceLevel:
+      description: 'The four grades, strongest first.
+
+
+        Declaration order *is* the ladder: `priority_order` and `downgraded` both
+        read it, so the
+
+        ranking the `confidence_level` reference table stores and the ranking this
+        module applies
+
+        cannot disagree.'
+      enum:
+      - absolute
+      - high
+      - medium
+      - low
+      title: ConfidenceLevel
+      type: string
     ConfidenceSplitBody:
       description: Percentages of the covered weight, summing to 100 (`reqs.md` 5.7).
       properties:
@@ -362,6 +380,221 @@ components:
       - items
       title: LevelsBody
       type: object
+    ManualValueBody:
+      description: '`ManualValueInput`. The source is implicitly `manual` and cannot
+        be set here.'
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        breakdown_option:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Breakdown Option
+        candidate:
+          title: Candidate
+          type: string
+        citations:
+          default: []
+          items:
+            type: string
+          title: Citations
+          type: array
+        confidence_level:
+          $ref: '#/components/schemas/ConfidenceLevel'
+          default: medium
+        payload:
+          additionalProperties: true
+          title: Payload
+          type: object
+        quote:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Quote
+        reference_period:
+          $ref: '#/components/schemas/ReferencePeriodBody'
+        retrieval_date:
+          format: date-time
+          title: Retrieval Date
+          type: string
+      required:
+      - candidate
+      - attribute
+      - payload
+      - reference_period
+      - retrieval_date
+      title: ManualValueBody
+      type: object
+    MatchResult:
+      description: 'What one gate says about one candidate.
+
+
+        **Close to the evaluation''s match status, and deliberately not the same enumeration.**
+        An
+
+        evaluation reports `matching`, `not_matching` or `insufficient_data`; a gate
+        reports
+
+        `matching`, `not_matching` or `unknown`. The first two members mean the same
+        thing in both
+
+        -- there is one match vocabulary in this application -- but the third members
+        answer
+
+        different questions and must not be merged.
+
+
+        `unknown` is a gate **nobody has researched yet**: the Swiss quota may well
+        be open, and
+
+        nobody has looked. `insufficient_data` is a candidate whose values are **too
+        sparse to
+
+        score**. A country whose visa route is `unknown` may be perfectly scoreable,
+        and a country
+
+        with every gate answered may still be unscoreable. One enumeration covering
+        both would
+
+        make each of those states unsayable.'
+      enum:
+      - matching
+      - not_matching
+      - unknown
+      title: MatchResult
+      type: string
+    MatchRuleBody:
+      properties:
+        id:
+          title: Id
+          type: string
+        level:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Level
+        name:
+          title: Name
+          type: string
+      required:
+      - id
+      - name
+      title: MatchRuleBody
+      type: object
+    MatchRuleResultBody:
+      properties:
+        candidate:
+          title: Candidate
+          type: string
+        citations:
+          default: []
+          items:
+            type: string
+          title: Citations
+          type: array
+        data_source:
+          title: Data Source
+          type: string
+        match_result:
+          title: Match Result
+          type: string
+        match_rule:
+          title: Match Rule
+          type: string
+        override_date:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Override Date
+        override_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Override Reason
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        reference_period:
+          anyOf:
+          - $ref: '#/components/schemas/ReferencePeriodBody'
+          - type: 'null'
+        retrieval_date:
+          format: date-time
+          title: Retrieval Date
+          type: string
+      required:
+      - match_rule
+      - candidate
+      - match_result
+      - data_source
+      - retrieval_date
+      title: MatchRuleResultBody
+      type: object
+    MatchRuleResultInputBody:
+      properties:
+        citations:
+          default: []
+          items:
+            type: string
+          title: Citations
+          type: array
+        data_source:
+          default: manual
+          title: Data Source
+          type: string
+        match_result:
+          $ref: '#/components/schemas/MatchResult'
+        override_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Override Reason
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        reference_period:
+          anyOf:
+          - $ref: '#/components/schemas/ReferencePeriodBody'
+          - type: 'null'
+        retrieval_date:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Retrieval Date
+      required:
+      - match_result
+      title: MatchRuleResultInputBody
+      type: object
+    MatchRuleResultsBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/MatchRuleResultBody'
+          title: Items
+          type: array
+      required:
+      - items
+      title: MatchRuleResultsBody
+      type: object
+    MatchRulesBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/MatchRuleBody'
+          title: Items
+          type: array
+      required:
+      - items
+      title: MatchRulesBody
+      type: object
     PillarBody:
       additionalProperties: true
       type: object
@@ -454,6 +687,21 @@ components:
       - pillar
       - criteria
       title: RebalancedPillar
+      type: object
+    ReferencePeriodBody:
+      properties:
+        end:
+          format: date
+          title: End
+          type: string
+        start:
+          format: date
+          title: Start
+          type: string
+      required:
+      - start
+      - end
+      title: ReferencePeriodBody
       type: object
     RunBody:
       additionalProperties: true
@@ -594,6 +842,93 @@ components:
       - msg
       - type
       title: ValidationError
+      type: object
+    ValueBody:
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        breakdown_option:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Breakdown Option
+        candidate:
+          title: Candidate
+          type: string
+        citations:
+          default: []
+          items:
+            type: string
+          title: Citations
+          type: array
+        confidence_level:
+          title: Confidence Level
+          type: string
+        data_acquisition_run:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Data Acquisition Run
+        data_source:
+          title: Data Source
+          type: string
+        id:
+          title: Id
+          type: integer
+        is_active:
+          title: Is Active
+          type: boolean
+        payload:
+          additionalProperties: true
+          title: Payload
+          type: object
+        quote:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Quote
+        reference_period:
+          $ref: '#/components/schemas/ReferencePeriodBody'
+        rejection_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rejection Reason
+        retrieval_date:
+          format: date-time
+          title: Retrieval Date
+          type: string
+        value_type:
+          title: Value Type
+          type: string
+      required:
+      - id
+      - candidate
+      - attribute
+      - value_type
+      - payload
+      - data_source
+      - reference_period
+      - retrieval_date
+      - confidence_level
+      - is_active
+      title: ValueBody
+      type: object
+    ValuesBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ValueBody'
+          title: Items
+          type: array
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - total
+      title: ValuesBody
       type: object
 info:
   title: Starnest
@@ -1120,6 +1455,115 @@ paths:
       summary: List Levels
       tags:
       - catalog
+  /v1/match-rule-results:
+    get:
+      operationId: listMatchRuleResults
+      parameters:
+      - in: query
+        name: candidate
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Candidate
+      - in: query
+        name: match_rule
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Match Rule
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchRuleResultsBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Match Rule Results
+      tags:
+      - rules
+  /v1/match-rule-results/{match_rule_id}/{candidate_id}:
+    put:
+      description: 'Record or override one gate''s answer. Also how a candidate is
+        ruled out by hand: the
+
+        `not_manually_excluded` gate, answered `not_matching`, with a reason (`reqs.md`
+        Q152).'
+      operationId: putMatchRuleResult
+      parameters:
+      - in: path
+        name: match_rule_id
+        required: true
+        schema:
+          title: Match Rule Id
+          type: string
+      - in: path
+        name: candidate_id
+        required: true
+        schema:
+          title: Candidate Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchRuleResultInputBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchRuleResultBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Put Match Rule Result
+      tags:
+      - rules
+  /v1/match-rules:
+    get:
+      description: The gates, or those asked at one level. A gate with no level is
+        asked at every level.
+      operationId: listMatchRules
+      parameters:
+      - in: query
+        name: level
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Level
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchRulesBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Match Rules
+      tags:
+      - rules
   /v1/pillars:
     get:
       description: 'The eleven load-bearing verticals of a life (`reqs.md` 3.3).
@@ -1194,3 +1638,91 @@ paths:
       summary: Get Settings
       tags:
       - settings
+  /v1/values:
+    get:
+      description: The active value per attribute, or every value when `include_superseded`
+        is set.
+      operationId: listValues
+      parameters:
+      - in: query
+        name: candidate
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Candidate
+      - in: query
+        name: attribute
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Attribute
+      - in: query
+        name: include_superseded
+        required: false
+        schema:
+          default: false
+          title: Include Superseded
+          type: boolean
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 100
+          title: Limit
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          title: Offset
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValuesBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Values
+      tags:
+      - values
+  /v1/values/manual:
+    post:
+      description: 'Refused with 409 `manual_entry_not_permitted` where the attribute
+        does not allow it, and
+
+        409 `invalid_value` where the value is not one the attribute can hold.'
+      operationId: enterValueManually
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualValueBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValueBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Enter Value Manually
+      tags:
+      - values

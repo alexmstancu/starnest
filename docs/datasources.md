@@ -231,8 +231,8 @@ Gate B coverage assertion for a real reason rather than a defect.
 | `country.healthcare_system_quality` | **WHO GHO** + OECD Health Statistics | Numbeo healthcare index | **High** (EHCI is dead — section 6.1) |
 | `country.residency_admin_ease` | — | LLM / manual | **Low** (Doing Business is dead — section 6.1) |
 | `country.climate_zone` | Köppen classification dataset | — | **High** |
-| `country.avg_annual_temperature` | **Open-Meteo** archive | National met services | **High**, coordinate-bound |
-| `country.annual_sunshine_hours` | **Open-Meteo** (derive from radiation) | National met services | **High**, coordinate-bound |
+| `country.avg_annual_temperature` | **Open-Meteo** archive (ERA5), population-weighted over the five largest places (Q210) | National met services | **Medium** -- derived from five points |
+| `country.annual_sunshine_hours` | ~~Open-Meteo (derive from radiation)~~ **Not usable**: checked 2026-09-11, its sunshine runs 30% to 68% above the recorders, unevenly (Q210) | National met services | **None yet** |
 | `country.projected_summer_heat_days` | Copernicus CDS projections (SSP2-4.5) | IPCC regional | Medium — scenario is now named |
 | `country.naturalisation_pathway` | — | Manual / LLM | **Low** — legal text, no dataset |
 | `country.pension_portability` | EU coordination rules | Manual / LLM | **Low** |

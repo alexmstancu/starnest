@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**A vertical slice runs end to end: three containers, a real database, 31 European countries
+**A vertical slice runs end to end: four containers, a real database, 31 European countries
 ranked from real Eurostat figures in a browser.** **`docs/reqs.md` is authoritative for
 requirements and the ontology — read it first**, and `docs/devplan.md` 0 before doing
 implementation work.
@@ -13,7 +13,7 @@ implementation work.
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
 | `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. `target_range` scores its band and falls linearly to its zero points (built 2026-09-11). **The compound-rule shapes and match rules are not built.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
-| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 17 of the contract's 40 operations; six source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, and an estimate from Eurostat's tax-benefit figures); runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
+| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 22 of the contract's 40 operations; seven source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, and an estimate from Eurostat's tax-benefit figures); values served with both dates, manual entry where the attribute permits it, and the gates' answers; runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | Empty. Post-Gate-A |
 | `ui/` | The shell plus the Rank and Configure screens. 98 tests. **It talks to the real backend**, and to a mock only in unit tests |
 
@@ -22,18 +22,16 @@ down, seven steps in order against a real database plus two standing checks. 1,3
 tests, 98 interface tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
 deliberately does not cover.
 
-**The ranking rests on 14 attributes in 9 of 11 pillars**, and health is complete. P4 is
-**ordered by pillar coverage, not adapter convenience** (`devplan.md` D7): World Bank WGI, then
-Eurostat extended (career, connectivity, nature), then WHO (health), then the IMF (economics).
-Four adapters, four sources, no shared machinery beyond the `SourceAdapter` contract.
+**Figures reach 10 of 11 pillars.** P4 was **ordered by pillar coverage, not adapter
+convenience** (`devplan.md` D7): World Bank WGI, then Eurostat extended (career, connectivity,
+nature), then WHO (health), the IMF (economics), OECD (tax) and Open-Meteo (climate). Seven
+adapters, no shared machinery beyond the `SourceAdapter` contract.
 
-**Climate and family are the two left, and both are blocked on something real rather than on
-effort.** Climate needs D4 answered — how a coordinate-bound source answers a national
-question. Family is OECD's, and OECD is reachable after all: **`stats.oecd.org/SDMX-JSON/` answers a
-script and covers 29 of the 32** (Cyprus, Liechtenstein and Malta missing, Romania present).
-Only `www.oecd.org` is Cloudflare-blocked. An earlier note here said no OECD adapter could
-work; that generalised one bad path to a whole organisation and is corrected in
-`docs/catalog-blockers.md` item 5.
+**Family is the one pillar left, and it is blocked on something real rather than on effort.**
+It is OECD's, and OECD's API now serves scripts a Cloudflare browser challenge
+(`docs/catalog-blockers.md` item 5). **Climate is answered** (D4, Q210): temperature is the
+population-weighted mean over each country's five largest places, from GeoNames and Open-Meteo;
+sunshine is deliberately not fetched, because Open-Meteo's runs 30% to 68% high, unevenly.
 
 **The shipped set ranks all 32 countries** (2026-09-11). `fixed` is built and the total tax
 rate carries the first anchors the catalog has shipped — 35% → 100, 55% → 0, chosen against real
@@ -83,7 +81,7 @@ ui/           TypeScript. A client of the contract, over HTTP only
 docs/         reqs.md, arch.md, datasources.md, devplan.md, known-issues.md
                 openapi.yaml (target) + openapi.implemented.yaml (generated)
 tools/        the three structural audits
-compose.yaml  three containers: database, backend, ui
+compose.yaml  four containers: database, backend, ui, schema diagram
 Makefile      every command the project has
 ```
 
@@ -98,7 +96,7 @@ Makefile      every command the project has
 | `docs/reqs.md` | **Written.** Requirements and ontology. v1 scope in section 1.3, glossary in Appendix A, decision log in Appendix B |
 | `docs/datasources.md` | **Written.** Source analysis, market analysis, criterion→source mapping |
 | `docs/arch.md` | **Written, MVP scope.** Ontology, storage, module architecture, runtime flows, the interface, operations. Stack decided (section 10.2). **Revised before post-MVP work** |
-| `docs/openapi.yaml` | **Written.** The REST contract — 40 operations, of which 17 are served. The **target**, hand-written and deliberately ahead of the code. `docs/openapi.implemented.yaml` is the generated **truth**; see "Two contracts" below |
+| `docs/openapi.yaml` | **Written.** The REST contract — 40 operations, of which 22 are served. The **target**, hand-written and deliberately ahead of the code. `docs/openapi.implemented.yaml` is the generated **truth**; see "Two contracts" below |
 | `docs/devplan.md` | **Written, MVP scope only.** Delivery model, 8 phases, 4 e2e gates, agent decomposition. Blocking decisions in section 7; the MVP boundary and what follows it in section 8. **Post-MVP gets a revised `arch.md` and a second `devplan.md`, not an extension of this one** |
 
 **Read `docs/devplan.md` 0 before doing implementation work** — the stop rule, the definition of done per task, and which files an agent may not edit.
@@ -122,7 +120,7 @@ Makefile      every command the project has
 | `make migrate` | Backs up first, then applies migrations. **Never automatic** (`arch.md` 7.4) |
 | `make ui-check` | The interface gate: `ui-lint` (eslint, type-aware) + `ui-typecheck` + `ui-coverage` (85% bar) |
 | `make ui-coverage` / `make e2e` | Interface coverage (85% bar); Playwright |
-| `make docker-build` / `docker-up` / `docker-migrate` / `docker-down` | The three containers |
+| `make docker-build` / `docker-up` / `docker-migrate` / `docker-down` | The four containers: database, backend, the interface on `127.0.0.1:5173`, and the live schema diagram on `127.0.0.1:4174` (`docker compose restart schema-diagram` after a migration) |
 | `make schema-diagram` / `schema-diagram-open` | Interactive ER diagram of the **live** schema, via Liam ERD. Output is generated and gitignored — run `make migrate` first, or the diagram shows the schema you have rather than the one you wrote |
 
 **The three audits.** The first two predate the code:

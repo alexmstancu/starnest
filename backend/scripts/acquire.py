@@ -20,6 +20,7 @@ from starnest.data_acquisition import STAND_IN, SourceAdapter, acquire, stand_in
 from starnest.data_sources.eurostat import EurostatAdapter, TaxWedgeEstimateAdapter
 from starnest.data_sources.imf import ImfAdapter
 from starnest.data_sources.oecd import OecdAdapter
+from starnest.data_sources.open_meteo import OpenMeteoAdapter
 from starnest.data_sources.who import WhoAdapter
 from starnest.data_sources.world_bank import WorldBankAdapter
 from starnest.main import Environment
@@ -34,7 +35,7 @@ REPO = Path(__file__).resolve().parents[2]
 COUNTRY = "country"
 
 
-def every_adapter() -> tuple[SourceAdapter, ...]:
+def every_adapter(catalog: PostgresCatalogStore) -> tuple[SourceAdapter, ...]:
     """The same sources `main.py` wires into the API, listed once more here.
 
     Duplicated deliberately rather than imported from the composition root: that one builds a
@@ -49,6 +50,7 @@ def every_adapter() -> tuple[SourceAdapter, ...]:
         ImfAdapter(client),
         OecdAdapter(client),
         TaxWedgeEstimateAdapter(client),
+        OpenMeteoAdapter(httpx.AsyncClient(timeout=120), catalog),
     )
 
 
@@ -66,7 +68,7 @@ async def main() -> int:
         values = PostgresValueStore(pool)
         print(f"{len(candidates)} candidates, {len(attributes)} attributes in the catalog")
 
-        for adapter in every_adapter():
+        for adapter in every_adapter(catalog):
             print(
                 f"\n{adapter.data_source} answers {len(adapter.attributes)} of them: "
                 f"{', '.join(adapter.attributes)}"
