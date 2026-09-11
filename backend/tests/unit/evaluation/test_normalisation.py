@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 
-from starnest.criteria import Goal, NormalisationMethod
+from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor
 from starnest.evaluation import NormalisationError, PublishedFigure, scores_for
 
 A_SMALL_SCALE = 10
@@ -139,19 +139,88 @@ class TestTheScaleItselfMustBeUsable:
             percentile(["1", "2"], scale=scale)
 
 
-def test_fixed_is_refused_rather_than_silently_wrong() -> None:
-    """26 of the 41 shipped criteria declare `fixed` and none ships an anchor.
+# --- fixed: anchors chosen by the user, linearly between (reqs.md 5.1) ----------------------
 
-    Saying so is the point: a caller that reaches this has configured something that cannot run,
-    and an empty result would look like a criterion with no data rather than one not built yet.
-    """
-    with pytest.raises(NormalisationError, match="only percentile and as_is"):
-        scores_for(
-            [Decimal("1")],
-            method=NormalisationMethod.FIXED,
-            goal=Goal.MAXIMISE,
-            score_scale_max=A_SMALL_SCALE,
-        )
+
+def anchored(*points: tuple[str, int]) -> tuple[ScaleAnchor, ...]:
+    return tuple(ScaleAnchor(input_value=Decimal(value), score=score) for value, score in points)
+
+
+def fixed(figures: list[str], anchors, *, scale: int = A_SMALL_SCALE):
+    return scores_for(
+        [Decimal(f) for f in figures],
+        method=NormalisationMethod.FIXED,
+        goal=Goal.MINIMISE,
+        score_scale_max=scale,
+        anchors=anchors,
+    )
+
+
+# A tax scale on a score scale of 10: 20% or less is full marks, 40% or more is nothing.
+A_TAX_SCALE = anchored(("20", 10), ("40", 0))
+
+
+class TestFixedMapsBetweenTheAnchorsTheUserChose:
+    def test_a_figure_between_two_anchors_is_placed_linearly(self) -> None:
+        """30% is halfway from 20 to 40, so it scores halfway from 10 to 0."""
+        assert fixed(["30"], A_TAX_SCALE) == (5,)
+
+    def test_a_figure_on_an_anchor_scores_exactly_that_anchor(self) -> None:
+        assert fixed(["20", "40"], A_TAX_SCALE) == (10, 0)
+
+    def test_beyond_the_outermost_anchors_the_score_holds_at_theirs(self) -> None:
+        """Clamped, because extrapolating would leave the score range: a 45% rate is not
+        "less than nothing", and an 18% rate is not "more than full marks"."""
+        assert fixed(["18.1", "58.6"], A_TAX_SCALE) == (10, 0)
+
+    def test_three_anchors_make_two_slopes(self) -> None:
+        """The reason anchors are a list rather than two numbers: 20 to 30 might matter more
+        than 30 to 40, and only a middle anchor can say so."""
+        steep_then_shallow = anchored(("20", 10), ("30", 2), ("40", 0))
+
+        assert fixed(["25", "35"], steep_then_shallow) == (6, 1)
+
+    def test_the_order_the_anchors_were_declared_in_does_not_matter(self) -> None:
+        assert fixed(["30"], tuple(reversed(A_TAX_SCALE))) == (5,)
+
+    def test_the_score_rounds_half_up_like_every_other_method(self) -> None:
+        """29% is 5.5 on the way down from 10: half up is 6."""
+        assert fixed(["29"], A_TAX_SCALE) == (6,)
+
+
+class TestFixedIsStable:
+    """`reqs.md` 5.1: a candidate's score "does not change when another candidate is added or
+    removed". The property that separates `fixed` from `percentile`."""
+
+    def test_one_figure_alone_is_scored(self) -> None:
+        """`percentile` refuses a single candidate -- there is no standing to report. `fixed`
+        needs no others at all."""
+        assert fixed(["30"], A_TAX_SCALE) == (5,)
+
+    def test_adding_a_candidate_does_not_move_anyone_else(self) -> None:
+        alone = fixed(["30"], A_TAX_SCALE)
+        among_others = fixed(["30", "18.1", "58.6", "41.5"], A_TAX_SCALE)
+
+        assert among_others[0] == alone[0]
+
+
+class TestFixedRefusesWhatItCannotPlace:
+    def test_no_anchors_is_refused_and_says_they_are_missing(self) -> None:
+        """26 shipped criteria declare `fixed` with none chosen yet. The refusal names the
+        missing anchors, because choosing them -- not fetching anything -- is the fix."""
+        with pytest.raises(NormalisationError, match="no scale anchors"):
+            fixed(["30"], ())
+
+    def test_a_goal_the_anchors_cannot_express_is_refused(self) -> None:
+        """A target range is its own four numbers (`reqs.md` 5.1), not built yet."""
+        with pytest.raises(NormalisationError, match="target_range"):
+            scores_for(
+                [Decimal("30")],
+                method=NormalisationMethod.FIXED,
+                goal=Goal.TARGET_RANGE,
+                score_scale_max=A_SMALL_SCALE,
+                anchors=A_TAX_SCALE,
+            )
 
 
 # --- as_is over a published index (D6 (A), decided 2026-09-05) -------------------------------

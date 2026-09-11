@@ -166,6 +166,7 @@ def _scores_by_criterion(
                 method=criterion.normalisation_method,
                 goal=criterion.goal,
                 score_scale_max=score_scale_max,
+                anchors=criterion.scale_anchors,
             )
         except ValueError:
             columns[attribute] = {}

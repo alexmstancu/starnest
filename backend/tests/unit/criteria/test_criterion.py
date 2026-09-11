@@ -185,6 +185,62 @@ def test_anchoring_one_input_twice_is_refused() -> None:
         )
 
 
+def test_anchors_running_against_a_minimise_goal_are_refused() -> None:
+    """**The fault that ranks a criterion upside down without an error anywhere.**
+
+    With `fixed`, the anchors carry the direction and `goal` is not applied on top of them. So a
+    criterion that minimises rent but scores 2500 EUR higher than 500 would silently reward the
+    expensive -- the same inversion `0442` had to catch by hand when a safety index became a
+    homicide rate and `maximise` had to become `minimise`.
+    """
+    with pytest.raises(ValueError, match=r"minimise.*scores rise"):
+        criterion(
+            goal=Goal.MINIMISE,
+            scale_anchors=(
+                ScaleAnchor(input_value=Decimal("500"), score=0),
+                ScaleAnchor(input_value=Decimal("2500"), score=100),
+            ),
+        )
+
+
+def test_anchors_running_against_a_maximise_goal_are_refused() -> None:
+    with pytest.raises(ValueError, match=r"maximise.*scores fall"):
+        criterion(
+            goal=Goal.MAXIMISE,
+            scale_anchors=(
+                ScaleAnchor(input_value=Decimal("500"), score=100),
+                ScaleAnchor(input_value=Decimal("2500"), score=0),
+            ),
+        )
+
+
+def test_a_plateau_between_anchors_is_not_a_contradiction() -> None:
+    """Two anchors at one score say "anything in here is equally fine", which is a view about
+    the attribute rather than a mistake."""
+    flat_then_falling = criterion(
+        goal=Goal.MINIMISE,
+        scale_anchors=(
+            ScaleAnchor(input_value=Decimal("500"), score=100),
+            ScaleAnchor(input_value=Decimal("900"), score=100),
+            ScaleAnchor(input_value=Decimal("2500"), score=0),
+        ),
+    )
+
+    assert flat_then_falling.declares_a_readable_scale
+
+
+def test_the_direction_is_judged_by_value_not_by_the_order_anchors_were_written() -> None:
+    written_backwards = criterion(
+        goal=Goal.MINIMISE,
+        scale_anchors=(
+            ScaleAnchor(input_value=Decimal("2500"), score=0),
+            ScaleAnchor(input_value=Decimal("500"), score=100),
+        ),
+    )
+
+    assert written_backwards.declares_a_readable_scale
+
+
 @pytest.mark.parametrize("method", [NormalisationMethod.PERCENTILE, NormalisationMethod.AS_IS])
 def test_a_scale_is_readable_when_the_method_needs_no_anchors(
     method: NormalisationMethod,
@@ -408,11 +464,16 @@ def test_an_anchor_exactly_at_the_top_of_the_scale_is_accepted() -> None:
 
 
 def test_the_refusal_names_the_attribute_and_the_anchor() -> None:
-    """A criteria set has many anchors; a complaint that does not say which is unactionable."""
+    """A criteria set has many anchors; a complaint that does not say which is unactionable.
+
+    These anchors used to run 500 to 1 and 2500 to 99 under the default `minimise` goal --
+    rewarding high rent while claiming to penalise it. Nothing noticed until the direction check
+    was added on 2026-09-11 and refused this fixture before its own assertion ran.
+    """
     overshooting = criterion(
         scale_anchors=(
-            ScaleAnchor(input_value=Decimal("500"), score=1),
-            ScaleAnchor(input_value=Decimal("2500"), score=99),
+            ScaleAnchor(input_value=Decimal("500"), score=99),
+            ScaleAnchor(input_value=Decimal("2500"), score=1),
         )
     )
 
@@ -420,7 +481,7 @@ def test_the_refusal_names_the_attribute_and_the_anchor() -> None:
         overshooting.refuse_unless_its_anchors_fit(A_SMALL_SCALE)
 
     assert RENT in str(refusal.value)
-    assert "2500" in str(refusal.value)
+    assert "anchors 500 to a score of 99" in str(refusal.value)
 
 
 def test_a_criterion_with_no_anchors_fits_every_scale() -> None:

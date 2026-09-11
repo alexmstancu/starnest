@@ -42,7 +42,7 @@ application, and where the two disagree, this one is right.
 |---|---|
 | **P0** Ground | **Done.** 30 migrations, the catalog seeded, `make check` a real gate |
 | **P1** Vocabulary and seams | **Done**, with one correction: `CandidateStore` was declared during minE2E because nothing had needed it, and `CriteriaStore` had no implementation until M3 needed one |
-| **P2** Core policy | **Done for the MVP's needs.** `evaluation/` exists cut to `percentile` and `as_is`; `fixed`, `target_range`, the compound-rule shapes and match rules are not built |
+| **P2** Core policy | **Done for the MVP's needs.** `evaluation/` has all three normalisation methods -- `fixed` added 2026-09-11, with no anchor chosen yet. `target_range`, the compound-rule shapes and match rules are not built |
 | **P3** First vertical slice | **Done. Gate A closed 2026-09-05.** 16 of 40 operations, one source adapter, two screens, a browser test against the real stack, and the gate itself as an acceptance test |
 | **P4** Adapter fan-out | **Under way.** Four adapters (Eurostat, World Bank, WHO, IMF), 9 of 11 pillars, 13 attributes. Ordered by pillar coverage per D7. The shipped set is two attributes from scoring, both OECD's |
 | **P5**-**P7** | Not started |

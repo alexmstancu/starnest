@@ -12,7 +12,7 @@ implementation work.
 | Module | State |
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
-| `evaluation/` | **Written, cut to the MVP's needs.** Normalisation (`percentile` and `as_is` only), redistribution, coverage, matching, ranking. Pure functions, no I/O. **`fixed`, `target_range`, the compound-rule shapes and match rules are not built** |
+| `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage, matching, ranking. Pure functions, no I/O. **`target_range`, the compound-rule shapes and match rules are not built.** `fixed` exists but no anchor is chosen yet, so every `fixed` criterion still refuses — truthfully |
 | `api/`, `data_acquisition/`, `data_sources/` | **Written.** 16 of the contract's 40 operations; five source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD); runs are planned, persisted and pollable |
 | `comparison/` | Empty. Post-Gate-A |
 | `ui/` | The shell plus the Rank and Configure screens. 98 tests. **It talks to the real backend**, and to a mock only in unit tests |

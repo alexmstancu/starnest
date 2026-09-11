@@ -12,6 +12,7 @@ not a rule at all.
 
 from decimal import Decimal
 from enum import StrEnum
+from itertools import pairwise
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -154,6 +155,7 @@ class Criterion(BaseModel):
         self._reject_a_zero_score_inside_the_band()
         self._reject_a_reducer_that_disagrees_with_its_option()
         self._reject_a_scale_that_cannot_be_read()
+        self._reject_anchors_that_run_against_the_goal()
         self._reject_a_threshold_of_the_wrong_shape()
         return self
 
@@ -238,6 +240,33 @@ class Criterion(BaseModel):
             raise CriterionDeclarationError(
                 f"{self.attribute} anchors the same input value twice, so it maps to two "
                 "different scores"
+            )
+
+    def _reject_anchors_that_run_against_the_goal(self) -> None:
+        """Anchors whose scores rise where the goal says lower is better, or the reverse.
+
+        **With `fixed`, the anchors carry the direction** and `goal` is not applied on top of
+        them -- applying it would invert a correctly written scale. So the two can disagree, and
+        when they do the criterion ranks every candidate upside down with no error anywhere.
+        Judged by input value, not by the order the anchors were written in; a plateau is a view
+        about the attribute, not a contradiction, so the check is on direction only.
+        """
+        if self.goal is Goal.TARGET_RANGE or len(self.scale_anchors) < 2:
+            return
+        scores = [
+            anchor.score for anchor in sorted(self.scale_anchors, key=lambda a: a.input_value)
+        ]
+        rising = any(later > earlier for earlier, later in pairwise(scores))
+        falling = any(later < earlier for earlier, later in pairwise(scores))
+        if self.goal is Goal.MINIMISE and rising:
+            raise CriterionDeclarationError(
+                f"{self.attribute} is to minimise, but its anchors' scores rise as the value "
+                "rises -- it would reward exactly what it means to penalise"
+            )
+        if self.goal is Goal.MAXIMISE and falling:
+            raise CriterionDeclarationError(
+                f"{self.attribute} is to maximise, but its anchors' scores fall as the value "
+                "rises -- it would penalise exactly what it means to reward"
             )
 
     def _reject_a_threshold_of_the_wrong_shape(self) -> None:

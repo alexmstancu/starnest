@@ -18,10 +18,14 @@ Where no bounds are declared the refusal stands, and it is still the greater par
 method's value: a figure that is neither on the score scale nor on a stated one of its own is a
 number nobody can place.
 
-**`fixed` is absent deliberately.** It interpolates between anchor points and no anchor ships
-(`reqs.md` 7.1, `devplan.md` 0.3) -- 26 of the 41 shipped criteria declare it and every one of
-them has an empty scale, because the anchors are the user's to set against real figures. Code
-here would be code nothing could exercise.
+**`fixed` maps a figure between anchors the user chose, linearly between** (`reqs.md` 5.1),
+and it is the only method whose score is *stable*: it reads the figure and the anchors and
+nothing else, so a candidate's score does not move when another is added. Beyond the outermost
+anchors the score holds at theirs -- extrapolating would leave the score range. The anchors
+carry the direction, so `goal` is not applied on top of them; a set of anchors that contradicts
+its goal is refused where the criterion is declared, not here. **With no anchors it refuses**:
+26 shipped criteria declare `fixed` with none chosen yet, and inventing a scale is exactly what
+this module must not do.
 
 **A score is an integer on 0..`score_scale_max`.** The scale is a setting the user edits
 (`reqs.md` 3.10), never the literal 100, and it arrives as an argument for that reason.
@@ -29,8 +33,9 @@ here would be code nothing could exercise.
 
 from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal
+from itertools import pairwise
 
-from starnest.criteria import Goal, NormalisationMethod
+from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor
 from starnest.evaluation.magnitudes import PublishedFigure
 
 
@@ -44,6 +49,7 @@ def scores_for(
     method: NormalisationMethod,
     goal: Goal,
     score_scale_max: int,
+    anchors: Sequence[ScaleAnchor] = (),
 ) -> tuple[int, ...]:
     """One criterion's column of figures, as scores, in the order the figures were given.
 
@@ -71,10 +77,41 @@ def scores_for(
             _already_a_score(figure, goal=goal, score_scale_max=score_scale_max)
             for figure in published
         )
-    raise NormalisationError(
-        f"{method} cannot be applied yet; only percentile and as_is are implemented "
-        "(docs/mine2e.md M1)"
+    return tuple(_on_the_anchored_scale(figure, anchors, goal=goal) for figure in published)
+
+
+def _on_the_anchored_scale(
+    figure: PublishedFigure, anchors: Sequence[ScaleAnchor], *, goal: Goal
+) -> int:
+    """Where the figure falls between the user's anchors, as a score.
+
+    Read off the figure's own magnitude, in the attribute's unit -- the anchors are written in
+    that unit ("20% scores 10"), so a published scale an index carries is not consulted here.
+    """
+    if goal is Goal.TARGET_RANGE:
+        raise NormalisationError(
+            "a target_range goal is its own four numbers, not a set of anchors, and is not "
+            "built yet"
+        )
+    if not anchors:
+        raise NormalisationError(
+            "this criterion normalises `fixed` and has no scale anchors chosen yet; choosing "
+            "them is what makes a fixed score, and nothing here invents one"
+        )
+    points = sorted(anchors, key=lambda anchor: anchor.input_value)
+    figure_value = figure.magnitude
+    if figure_value <= points[0].input_value:
+        return points[0].score
+    if figure_value >= points[-1].input_value:
+        return points[-1].score
+    low, high = next(
+        (low, high)
+        for low, high in pairwise(points)
+        if low.input_value <= figure_value <= high.input_value
     )
+    along = (figure_value - low.input_value) / (high.input_value - low.input_value)
+    placed = Decimal(low.score) + along * (high.score - low.score)
+    return int(placed.quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
 def _already_a_score(figure: PublishedFigure, *, goal: Goal, score_scale_max: int) -> int:
