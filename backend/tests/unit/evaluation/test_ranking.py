@@ -389,3 +389,21 @@ class TestWhatTheScoreRestsOn:
 
         assert portugal.coverage == Decimal(0)
         assert portugal.coverage_by_confidence == {}
+
+
+class TestATargetRangeCriterion:
+    def test_it_scores_by_closeness_to_its_band(self) -> None:
+        """Temperature: 14 is in the band, 8 is halfway to the lower zero point."""
+        mild = a_criterion(
+            goal=Goal.TARGET_RANGE,
+            normalisation_method=NormalisationMethod.FIXED,
+            target_range_min=Decimal(12),
+            target_range_max=Decimal(16),
+            zero_score_below=Decimal(4),
+            zero_score_above=Decimal(24),
+        )
+
+        found = by_candidate(rank(a_set([mild]), values_for(portugal=14, sweden=8), scale=100))
+
+        assert found["country.portugal"].score == 100
+        assert found["country.sweden"].score == 50

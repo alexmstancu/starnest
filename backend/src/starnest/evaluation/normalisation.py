@@ -35,7 +35,7 @@ from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal
 from itertools import pairwise
 
-from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor
+from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor, TargetRange
 from starnest.evaluation.magnitudes import PublishedFigure
 
 
@@ -50,6 +50,7 @@ def scores_for(
     goal: Goal,
     score_scale_max: int,
     anchors: Sequence[ScaleAnchor] = (),
+    target: TargetRange | None = None,
 ) -> tuple[int, ...]:
     """One criterion's column of figures, as scores, in the order the figures were given.
 
@@ -77,7 +78,52 @@ def scores_for(
             _already_a_score(figure, goal=goal, score_scale_max=score_scale_max)
             for figure in published
         )
+    if goal is Goal.TARGET_RANGE:
+        return tuple(
+            _in_the_target_band(figure, target, score_scale_max=score_scale_max)
+            for figure in published
+        )
     return tuple(_on_the_anchored_scale(figure, anchors, goal=goal) for figure in published)
+
+
+def _in_the_target_band(
+    figure: PublishedFigure, target: TargetRange | None, *, score_scale_max: int
+) -> int:
+    """Full marks inside the band, falling linearly to 0 at each zero point (`reqs.md` 5.1).
+
+    The four numbers are the whole scale; anchors are not consulted. A zero point on the band's
+    own edge is a cliff -- anything outside scores 0 -- rather than a division by zero.
+    """
+    if target is None:
+        raise NormalisationError(
+            "a target_range goal is four numbers -- the band, and where the score reaches zero "
+            "on each side -- and this criterion does not name all four; nothing here invents "
+            "the missing ones"
+        )
+    value = figure.magnitude
+    if target.minimum <= value <= target.maximum:
+        return score_scale_max
+    if value < target.minimum:
+        return _on_the_slope(
+            value, full_at=target.minimum, zero_at=target.zero_below, top=score_scale_max
+        )
+    return _on_the_slope(
+        value, full_at=target.maximum, zero_at=target.zero_above, top=score_scale_max
+    )
+
+
+def _on_the_slope(value: Decimal, *, full_at: Decimal, zero_at: Decimal, top: int) -> int:
+    """How far along the slope from the zero point to the band's edge, as a score.
+
+    The same formula serves both sides: below the band the slope rises towards `full_at`, above
+    it falls away from it, and the share is positive exactly when the figure lies between the two.
+    """
+    if full_at == zero_at:
+        return 0
+    share = (value - zero_at) / (full_at - zero_at)
+    if share <= 0:
+        return 0
+    return int((share * top).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
 def _on_the_anchored_scale(
@@ -88,11 +134,6 @@ def _on_the_anchored_scale(
     Read off the figure's own magnitude, in the attribute's unit -- the anchors are written in
     that unit ("20% scores 10"), so a published scale an index carries is not consulted here.
     """
-    if goal is Goal.TARGET_RANGE:
-        raise NormalisationError(
-            "a target_range goal is its own four numbers, not a set of anchors, and is not "
-            "built yet"
-        )
     if not anchors:
         raise NormalisationError(
             "this criterion normalises `fixed` and has no scale anchors chosen yet; choosing "

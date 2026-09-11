@@ -31,6 +31,7 @@ from starnest.criteria.criterion import (
     NormalisationMethod,
     ReducerMode,
     ScaleAnchor,
+    TargetRange,
 )
 from starnest.criteria.identifiers import CriteriaSetId
 from starnest.criteria.rebalancing import (
@@ -70,6 +71,7 @@ __all__ = [
     "ReducerMode",
     "ScaleAnchor",
     "ShareThreshold",
+    "TargetRange",
     "ThresholdShapeError",
     "UnknownCriteriaSetError",
     "UnknownCriterionError",

@@ -42,7 +42,7 @@ application, and where the two disagree, this one is right.
 |---|---|
 | **P0** Ground | **Done.** 30 migrations, the catalog seeded, `make check` a real gate |
 | **P1** Vocabulary and seams | **Done**, with one correction: `CandidateStore` was declared during minE2E because nothing had needed it, and `CriteriaStore` had no implementation until M3 needed one |
-| **P2** Core policy | **Done for the MVP's needs.** `evaluation/` has all three normalisation methods -- `fixed` added 2026-09-11, anchored on the eight criteria whose data has landed (Q206, Q209). The ranking reports how its covered weight splits by confidence (`reqs.md` 5.7). `target_range`, the compound-rule shapes and match rules are not built |
+| **P2** Core policy | **Done for the MVP's needs.** `evaluation/` has all three normalisation methods -- `fixed` added 2026-09-11, anchored on the eight criteria whose data has landed (Q206, Q209). The ranking reports how its covered weight splits by confidence (`reqs.md` 5.7). `target_range` built 2026-09-11 for the climate stream. The compound-rule shapes and match rules are not built |
 | **P3** First vertical slice | **Done. Gate A closed 2026-09-05.** 16 of 40 operations, one source adapter, two screens, a browser test against the real stack, and the gate itself as an acceptance test |
 | **P4** Adapter fan-out | **Under way.** Six adapters (Eurostat, World Bank, WHO, IMF, OECD, and an estimate from Eurostat's tax-benefit figures) plus declared stand-ins, 9 of 11 pillars. Ordered by pillar coverage per D7. Open: OECD's family pillar, Open-Meteo (blocked on D4), manual entry |
 | **P5**-**P7** | Not started |

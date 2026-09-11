@@ -23,6 +23,7 @@ from starnest.criteria import (
     RangeThreshold,
     ReducerMode,
     ScaleAnchor,
+    TargetRange,
 )
 from starnest.data import ValueType
 
@@ -490,3 +491,31 @@ def test_a_criterion_with_no_anchors_fits_every_scale() -> None:
     An empty scale is a decision deferred, not a scale that overshoots.
     """
     criterion().refuse_unless_its_anchors_fit(A_SMALL_SCALE)
+
+
+class TestTheTargetRangeAsOneScale:
+    def test_all_four_numbers_make_a_scale(self) -> None:
+        declared = criterion(
+            goal=Goal.TARGET_RANGE,
+            target_range_min=Decimal(12),
+            target_range_max=Decimal(16),
+            zero_score_below=Decimal(4),
+            zero_score_above=Decimal(24),
+        )
+
+        assert declared.target_range == TargetRange(
+            minimum=Decimal(12), maximum=Decimal(16), zero_below=Decimal(4), zero_above=Decimal(24)
+        )
+
+    @pytest.mark.parametrize("missing", ["zero_score_below", "zero_score_above"])
+    def test_a_missing_zero_point_leaves_no_scale(self, missing: str) -> None:
+        """Normalisation refuses rather than inventing the cliff a missing point would imply."""
+        numbers = {
+            "target_range_min": Decimal(12),
+            "target_range_max": Decimal(16),
+            "zero_score_below": Decimal(4),
+            "zero_score_above": Decimal(24),
+        }
+        del numbers[missing]
+
+        assert criterion(goal=Goal.TARGET_RANGE, **numbers).target_range is None

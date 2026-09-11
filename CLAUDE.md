@@ -12,7 +12,7 @@ implementation work.
 | Module | State |
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
-| `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. **`target_range`, the compound-rule shapes and match rules are not built.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
+| `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. `target_range` scores its band and falls linearly to its zero points (built 2026-09-11). **The compound-rule shapes and match rules are not built.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
 | `api/`, `data_acquisition/`, `data_sources/` | **Written.** 17 of the contract's 40 operations; six source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, and an estimate from Eurostat's tax-benefit figures); runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | Empty. Post-Gate-A |
 | `ui/` | The shell plus the Rank and Configure screens. 98 tests. **It talks to the real backend**, and to a mock only in unit tests |

@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 
-from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor
+from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor, TargetRange
 from starnest.evaluation import NormalisationError, PublishedFigure, scores_for
 
 A_SMALL_SCALE = 10
@@ -211,9 +211,10 @@ class TestFixedRefusesWhatItCannotPlace:
         with pytest.raises(NormalisationError, match="no scale anchors"):
             fixed(["30"], ())
 
-    def test_a_goal_the_anchors_cannot_express_is_refused(self) -> None:
-        """A target range is its own four numbers (`reqs.md` 5.1), not built yet."""
-        with pytest.raises(NormalisationError, match="target_range"):
+    def test_a_target_range_without_its_four_numbers_is_refused(self) -> None:
+        """A target range is its own four numbers (`reqs.md` 5.1), never a set of anchors. A
+        criterion that names fewer has not said what scores zero, and nothing here decides it."""
+        with pytest.raises(NormalisationError, match="four numbers"):
             scores_for(
                 [Decimal("30")],
                 method=NormalisationMethod.FIXED,
@@ -287,3 +288,63 @@ class TestAnIndexIsReadOnTheScaleItsPublisherDeclared:
         Left as it stands instead, which the range check below then judges on its merits.
         """
         assert as_is_published([published("7", bounds=("10", "0"))]) == (7,)
+
+
+MILD = TargetRange(
+    minimum=Decimal(12), maximum=Decimal(16), zero_below=Decimal(4), zero_above=Decimal(24)
+)
+"""12-16 °C scores full marks, falling to 0 by 4 °C and by 24 °C -- in the attribute's own unit."""
+
+
+def on_the_band(
+    *figures: str, target: TargetRange | None = MILD, scale: int = 100
+) -> tuple[int, ...]:
+    return scores_for(
+        [Decimal(figure) for figure in figures],
+        method=NormalisationMethod.FIXED,
+        goal=Goal.TARGET_RANGE,
+        score_scale_max=scale,
+        target=target,
+    )
+
+
+class TestATargetRangeScoresTheBandAndFallsAwayFromIt:
+    """`reqs.md` 5.1: everything in the band scores 100, the score falls linearly to 0 at each
+    zero point, and every figure is a temperature you can check by eye."""
+
+    def test_anywhere_in_the_band_scores_the_top_of_the_scale(self) -> None:
+        assert on_the_band("12", "14", "16") == (100, 100, 100)
+
+    def test_below_the_band_the_score_falls_linearly_to_the_lower_zero(self) -> None:
+        """8 °C is halfway from 4 to 12, so half marks."""
+        assert on_the_band("8") == (50,)
+
+    def test_above_the_band_the_score_falls_linearly_to_the_upper_zero(self) -> None:
+        """22 °C is three quarters of the way from 16 to 24."""
+        assert on_the_band("22") == (25,)
+
+    def test_at_and_beyond_a_zero_point_the_score_is_zero(self) -> None:
+        assert on_the_band("4", "-3", "24", "31") == (0, 0, 0, 0)
+
+    def test_the_band_scores_the_configured_scale_not_a_hundred(self) -> None:
+        assert on_the_band("14", "8", scale=A_SMALL_SCALE) == (A_SMALL_SCALE, A_SMALL_SCALE // 2)
+
+    def test_a_zero_point_on_the_band_edge_is_a_cliff_not_a_division_by_zero(self) -> None:
+        cliff = TargetRange(
+            minimum=Decimal(12), maximum=Decimal(16), zero_below=Decimal(12), zero_above=Decimal(24)
+        )
+
+        assert on_the_band("11.9", "12", target=cliff) == (0, 100)
+
+    def test_the_anchors_are_not_consulted(self) -> None:
+        """The four numbers are the whole scale; a stray anchor cannot bend it."""
+        with_anchors = scores_for(
+            [Decimal(8)],
+            method=NormalisationMethod.FIXED,
+            goal=Goal.TARGET_RANGE,
+            score_scale_max=100,
+            anchors=A_TAX_SCALE,
+            target=MILD,
+        )
+
+        assert with_anchors == (50,)

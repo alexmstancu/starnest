@@ -72,6 +72,22 @@ class ReducerMode(StrEnum):
     AGGREGATE = "aggregate"
 
 
+class TargetRange(BaseModel):
+    """The four numbers of a `target_range` goal, all in the attribute's own unit (`reqs.md` 5.1).
+
+    Everything from `minimum` to `maximum` scores full marks; the score falls linearly to 0 at
+    `zero_below` and at `zero_above`. Built by `Criterion.target_range` only when all four are
+    set, so holding one means the scale is complete.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    minimum: Decimal
+    maximum: Decimal
+    zero_below: Decimal
+    zero_above: Decimal
+
+
 class ScaleAnchor(BaseModel):
     """One point of a `fixed` scale: an input value and the score it maps to.
 
@@ -158,6 +174,23 @@ class Criterion(BaseModel):
         self._reject_anchors_that_run_against_the_goal()
         self._reject_a_threshold_of_the_wrong_shape()
         return self
+
+    @property
+    def target_range(self) -> TargetRange | None:
+        """The four numbers as one scale, or None while any of them is unset."""
+        if (
+            self.target_range_min is None
+            or self.target_range_max is None
+            or self.zero_score_below is None
+            or self.zero_score_above is None
+        ):
+            return None
+        return TargetRange(
+            minimum=self.target_range_min,
+            maximum=self.target_range_max,
+            zero_below=self.zero_score_below,
+            zero_above=self.zero_score_above,
+        )
 
     def _reject_a_target_range_that_names_no_band(self) -> None:
         """A `target_range` goal is four numbers, and the band itself is two of them.
