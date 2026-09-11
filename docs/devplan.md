@@ -47,7 +47,7 @@ application, and where the two disagree, this one is right.
 | **P4** Adapter fan-out | **Done but for the family pillar.** Seven adapters (Eurostat, World Bank, WHO, IMF, OECD, Open-Meteo, and an estimate from Eurostat's tax-benefit figures) plus declared stand-ins and manual entry, 10 of 11 pillars. Family waits on OECD, which blocks scripts |
 | **P5**-**P7** | Not started |
 
-**1,561 backend tests and 98 interface tests. The shipped set `local_employment` ranks all 32 countries** (2026-09-11). Liechtenstein, the last, is ranked on Switzerland's figures for three attributes, visibly (Q208) — and the ranking now says how much of each score rests on low-confidence figures: 51% of Liechtenstein's, 8% for the five countries on the estimated tax rate, none for anyone else. **Coverage is 57%** (from 36%) since Gate B's anchors (Q209); the rest of the gap is criteria with no data at all — climate, family, the manual-entry attributes, and two with no source.
+**1,635 backend tests (two of them `live`) and 98 interface tests. The shipped set `local_employment` ranks all 32 countries** (2026-09-11). Liechtenstein is ranked on Switzerland's figures for three attributes, visibly (Q208), and the ranking says how much of each score rests on low-confidence figures: 41% of Liechtenstein's, 7% for the five countries on the estimated tax rate, none for anyone else. **Coverage is 67%** (36% before Gate B's anchors); every remaining gap is a criterion with **no data**, not one waiting for an anchor.
 
 ### GATE B — under way
 
@@ -57,11 +57,20 @@ What its section below asks for, against what exists on 2026-09-11.
 |---|---|
 | All six blocking attributes for all 32 | **Yes, and a test** — `tests/live/test_gate_b.py` runs every real source and the stand-ins into the test database and reads the result through the active-value rule. `make live`, never `make check`. Watched failing with the stand-ins removed: exactly Liechtenstein's three |
 | No country spuriously `insufficient_data` | **Yes.** All 32 ranked under `local_employment` |
-| Coverage high, and honest | **Honest, and higher**: 57% for the EU countries, from 36%, once the household anchored the seven `fixed` criteria with data (`0462`, Q209). What remains uncovered has **no data**, not no anchor: climate (D4), family (OECD), manual entry (W4-E), and the two tech-jobs attributes with no source. **The spot-check by hand is a human's and has not happened** |
+| Coverage high, and honest | **Honest, and higher**: 67% for the EU countries, from 36%, once the household anchored every `fixed` criterion with data (Q206, Q209, Q212, Q213). **Twenty scored criteria have no figure.** Twelve are accounted for: family (OECD, blocked), the five manual-entry attributes (the household's to type), sunshine (no usable source, Q210), summer heat days (a Copernicus account), the derived house-price ratio (post-MVP, Q204) and the two tech-jobs attributes (no source). **Eight are in no P4 stream at all** -- see below. **The spot-check by hand is a human's and has not happened** |
 | Two sources for one attribute: both stored, the right one active | **Yes, and tested.** The tax rate (OECD beside the estimate) and Liechtenstein (a stand-in beside a real figure) — `test_runs_api.py` proves the real figure wins with the stand-in still stored |
-| Reference date distinct from retrieval date | **Yes.** Both columns on every value since `0005`; a stand-in keeps the original's period and records its own retrieval |
+| Reference date distinct from retrieval date, both displayable | **Yes.** Both columns on every value since `0005`, and served by `GET /v1/values` since W4-E; a stand-in keeps the original's period and records its own retrieval |
 | `POST /data-acquisition-runs/{id}/retry` re-runs only what failed | **Yes, and tested** (2026-09-11). A new run asking only the sources that failed, only about the attributes each failed on. It needed failures to name their source first (`0461`) |
 | Every P4 stream has populated real values | **All but OECD's family pillar**: W4-A, W4-D and W4-F done; W4-C (temperature, 32 of 32) and W4-E (the machinery; values are the household's to type) done 2026-09-11; W4-B has the tax rate from OECD and nothing else, because OECD serves scripts a Cloudflare challenge. Probed between every task this session; still closed |
+
+**A planning gap, found by listing what has no figure.** Eight scored attributes of the shipped
+set were never assigned to a P4 stream, though each declares a source:
+`international_air_connectivity` (Eurostat), `coastline_access` (Natural Earth),
+`elevation_range` (Copernicus), `forest_cover` (FAO), `natural_diversity` (derived),
+`english_proficiency` (EF EPI), `openness_to_foreigners` (MIPEX) and `press_freedom` (RSF). The
+stream table was written from `datasources.md`'s headline sources and these fell between rows.
+Gate B's assertions do not need them -- none blocks -- so they are recorded here as the first
+work after the gate rather than folded into it quietly.
 
 **Found on the way:** a run through the API had been fetching from the first source only
 (`known-issues.md` P5, fixed); a whole source failing left no trace on the run, and a failure
