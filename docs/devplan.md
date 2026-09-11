@@ -42,12 +42,30 @@ application, and where the two disagree, this one is right.
 |---|---|
 | **P0** Ground | **Done.** 30 migrations, the catalog seeded, `make check` a real gate |
 | **P1** Vocabulary and seams | **Done**, with one correction: `CandidateStore` was declared during minE2E because nothing had needed it, and `CriteriaStore` had no implementation until M3 needed one |
-| **P2** Core policy | **Done for the MVP's needs.** `evaluation/` has all three normalisation methods -- `fixed` added 2026-09-11, with no anchor chosen yet. `target_range`, the compound-rule shapes and match rules are not built |
+| **P2** Core policy | **Done for the MVP's needs.** `evaluation/` has all three normalisation methods -- `fixed` added 2026-09-11, anchored so far only on the total tax rate (Q206). The ranking reports how its covered weight splits by confidence (`reqs.md` 5.7). `target_range`, the compound-rule shapes and match rules are not built |
 | **P3** First vertical slice | **Done. Gate A closed 2026-09-05.** 16 of 40 operations, one source adapter, two screens, a browser test against the real stack, and the gate itself as an acceptance test |
-| **P4** Adapter fan-out | **Under way.** Four adapters (Eurostat, World Bank, WHO, IMF), 9 of 11 pillars, 13 attributes. Ordered by pillar coverage per D7. The shipped set is two attributes from scoring, both OECD's |
+| **P4** Adapter fan-out | **Under way.** Six adapters (Eurostat, World Bank, WHO, IMF, OECD, and an estimate from Eurostat's tax-benefit figures) plus declared stand-ins, 9 of 11 pillars. Ordered by pillar coverage per D7. Open: OECD's family pillar, Open-Meteo (blocked on D4), manual entry |
 | **P5**-**P7** | Not started |
 
-**1,489 backend tests and 98 interface tests. The shipped set `local_employment` ranks 31 of 32 countries — the first rankings it has ever produced. Six sources, 9 of 11 pillars. Only Liechtenstein is unranked, waiting on Gate B's Swiss proxy.**
+**1,547 backend tests and 98 interface tests. The shipped set `local_employment` ranks all 32 countries** (2026-09-11). Liechtenstein, the last, is ranked on Switzerland's figures for three attributes, visibly (Q208) — and the ranking now says how much of each score rests on low-confidence figures: 54% of Liechtenstein's, 12% for the five countries on the estimated tax rate, none for anyone else. **Coverage is 36% for every country**, because 25 `fixed` criteria still have no anchors.
+
+### GATE B — under way
+
+What its section below asks for, against what exists on 2026-09-11.
+
+| Assertion | State |
+|---|---|
+| All six blocking attributes for all 32 | **Yes, live** — once Switzerland stands in for Liechtenstein on three (`0460`, Q208). Checked against the stored figures, **not yet written down as a test**: the acceptance suite runs on stub sources, so this needs a `live`-marked check |
+| No country spuriously `insufficient_data` | **Yes.** All 32 ranked under `local_employment` |
+| Coverage high, and honest | **Honest, not high.** 36% for every country: 25 `fixed` criteria have no anchors, and anchors are the household's to choose. The spot-check by hand is a human's and has not happened |
+| Two sources for one attribute: both stored, the right one active | **Yes, and tested.** The tax rate (OECD beside the estimate) and Liechtenstein (a stand-in beside a real figure) — `test_runs_api.py` proves the real figure wins with the stand-in still stored |
+| Reference date distinct from retrieval date | **Yes.** Both columns on every value since `0005`; a stand-in keeps the original's period and records its own retrieval |
+| `POST /data-acquisition-runs/{id}/retry` re-runs only what failed | **Not built** |
+
+**Found on the way:** a run through the API had been fetching from the first source only
+(`known-issues.md` P5, fixed), and OECD's front door served a Cloudflare browser challenge to a
+script for the first time (`catalog-blockers.md` item 5). Neither was visible from the stored
+figures, which `make acquire` had been writing by looping over every adapter itself.
 
 ### GATE A — closed 2026-09-05
 
@@ -539,9 +557,9 @@ it. Reserve the block, but do not assume it will be spent.
 | Stream | Source | Attributes it answers | Migrations |
 |---|---|---|---|
 | **W4-A** | World Bank WGI | `political_economic_stability`, `rule_of_law`, `control_of_corruption` | **Done 2026-09-05.** Only `0410`, and not for the adapter — the catalog already declared the source, its priority and the −2.5/2.5 bounds, so the adapter needed no migration at all. `0410` adds the three to `minimal` so the figures are scored rather than merely stored |
-| **W4-B** | OECD | **Do not plan until `docs/catalog-blockers.md` item 5 is answered** — whether OECD's datasets cover the 32 is unverified, and Romania is the comparison anchor. Original scope: | `income_tax_effective`, `average_working_hours`, `statutory_paid_leave`, `school_system_quality`, `parental_leave_policy`, `child_benefit_policy` | 0420–0429 |
+| **W4-B** | OECD | **Tax done 2026-09-11**: `total_tax_rate_effective` from Taxing Wages (`0445`-`0447`), replacing `income_tax_effective`, with an estimate from Eurostat where OECD is silent (`0449`). **Still open:** `average_working_hours`, `statutory_paid_leave`, and the family pillar (`school_system_quality`, `parental_leave_policy`, `child_benefit_policy`). **Access is intermittent**: on 2026-09-11 `sdmx.oecd.org` served a script Cloudflare's browser challenge, two days after answering one (`catalog-blockers.md` item 5) | 0420–0429 |
 | **W4-C** | Open-Meteo | `avg_annual_temperature`, `annual_sunshine_hours` — **blocked on D4** | 0430–0439 |
-| **W4-D** | UNODC + WHO GHO | **WHO done 2026-09-09**: `healthcare_system_quality` from `UHC_INDEX_REPORTED`, and it is *not* a scheduled download — the Global Health Observatory is an unauthenticated OData service. `0440` puts ISO alpha-3 on the candidate (WHO, FAO, UNODC and Protected Planet all key on it), `0441` adds the attribute to `minimal`. **Still open:** `crime_safety_index` from UNODC, which really is a portal download |
+| **W4-D** | UNODC + WHO GHO | **WHO done 2026-09-09**: `healthcare_system_quality` from `UHC_INDEX_REPORTED`, and it is *not* a scheduled download — the Global Health Observatory is an unauthenticated OData service. `0440` puts ISO alpha-3 on the candidate (WHO, FAO, UNODC and Protected Planet all key on it), `0441` adds the attribute to `minimal`. **UNODC is not needed**: `crime_safety_index` split in two (`0442`), and `homicide_rate` comes from Eurostat `sdg_16_10`, which answers all 32 |
 | **W4-E** | Manual entry | `residency_admin_ease`, `naturalisation_pathway`, `pension_portability`, `remote_work_tax_treaty`, plus the `uk_skilled_worker`, `ch_eu_efta_quota` and `not_manually_excluded` match-rule results. `POST /values/manual`, `/match-rules`, `/match-rule-results` | 0450–0459 |
 | **W4-F** | Eurostat, extended | **Done 2026-09-09** for `tech_employment_share` (`isoc_sks_itspt`) and `broadband_coverage` (`isoc_cbs`), which opened career and connectivity. `0411` adds both to `minimal`; the adapter needed only a manifest entry each, no code. **Still open:** `rail_network_density` and `road_network_quality` need land area as well as length, so they are derived rather than fetched; `house_price_to_income_ratio` is not a Eurostat series at all (it publishes an index, not a ratio) and belongs to W4-B |
 
@@ -573,11 +591,15 @@ The acceptance suite grows to assert:
   > `insufficient_data` and this assertion fails for a true reason rather than a bug.
   >
   > **Decided: fill them from fallback sources, with the substitution visible.** A Swiss figure
-  > standing in for Liechtenstein is stored as a value whose `data_source` is the Swiss series,
-  > carrying its own provenance and a **`low` confidence**, never as a Liechtenstein
-  > measurement. The screen therefore shows a number *and* shows that it is a proxy. Storing it
-  > any other way would be fabrication with the paperwork filled in, which is the one thing this
-  > application must not do.
+  > standing in for Liechtenstein carries its own provenance and a **`low` confidence**, never
+  > as a Liechtenstein measurement. The screen therefore shows a number *and* shows that it is a
+  > proxy. Storing it any other way would be fabrication with the paperwork filled in, which is
+  > the one thing this application must not do.
+  >
+  > **Built 2026-09-11** (`0460`, Q208), with one refinement: the value's `data_source` is
+  > `stand_in`, not the Swiss series' publisher. Stored as OECD's, it would rank as OECD and read
+  > as OECD having measured Liechtenstein; the quote names the Swiss series and its publisher
+  > instead. Declared per attribute in the `stand_in` table, each with its reason.
 - **No country is spuriously `insufficient_data`.** Any that is, is investigated, not silenced.
 - Coverage is high and, more importantly, **honest** — spot-checked against the catalog by hand.
 - Where two sources answer one attribute, **both values are stored** and the active-value rule

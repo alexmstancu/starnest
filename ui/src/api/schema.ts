@@ -1008,13 +1008,13 @@ export interface components {
             insufficient_reason?: string | null;
             /** @description Percentage, 0-100. The share of active weight actually backed by data. */
             coverage: number;
-            /** @description How the covered weight splits by confidence (`reqs.md` 5.7). Coverage alone cannot show that a candidate reached 100% entirely on extrapolation; this can. */
+            /** @description How the covered weight splits by confidence (`reqs.md` 5.7), as percentages of the covered weight summing to 100. Coverage alone cannot show that a candidate reached 100% entirely on extrapolation; this can. Null when nothing is covered: a split of nothing is not a split, and four zeros would read as one. */
             coverage_by_confidence?: {
                 absolute?: number;
                 high?: number;
                 medium?: number;
                 low?: number;
-            };
+            } | null;
             /** @enum {string} */
             match_status: "matching" | "not_matching" | "insufficient_data";
             parent_not_matching?: boolean;
@@ -1585,6 +1585,7 @@ export interface operations {
         };
         responses: {
             201: components["responses"]["CriteriaSet"];
+            409: components["responses"]["Conflict"];
         };
     };
     updateCriterion: {

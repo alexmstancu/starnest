@@ -215,6 +215,7 @@ def a_stub_source(
         "country.housing_cost_overburden_rate",
         "country.overcrowding_rate",
     ),
+    silent_about: tuple[str, ...] = ("country.portugal",),
 ) -> SourceAdapter:
     """A source that answers instantly with figures the test controls.
 
@@ -233,14 +234,17 @@ def a_stub_source(
         Attribute,
         ConfidenceLevel,
         DataSourceId,
+        Quantity,
         Ratio,
         ReferencePeriod,
         Value,
-        ValueType,
     )
     from starnest.data_acquisition import Acquired, AcquisitionFailure
 
-    silent_about = "country.portugal"
+    def a_figure_shaped_for(attribute: Attribute) -> Quantity | Ratio:
+        if attribute.quantity_parameters is not None:
+            return Quantity(magnitude=Decimal("7.5"), unit=attribute.quantity_parameters.unit)
+        return Ratio(value=Decimal("7.5"), basis="households")
 
     class StubSource(SourceAdapter):
         @property
@@ -254,7 +258,7 @@ def a_stub_source(
         async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
             values, failures = [], []
             for candidate in candidates:
-                if str(candidate.id) == silent_about:
+                if str(candidate.id) in silent_about:
                     # One reproducible failure, so a run always has something to report and the
                     # failure path is exercised by every test rather than by a special one.
                     failures.append(
@@ -269,14 +273,14 @@ def a_stub_source(
                     Value(
                         candidate=candidate.id,
                         attribute=attribute.id,
-                        value_type=ValueType.RATIO,
+                        value_type=attribute.value_type,
                         data_source=data_source,
                         reference_period=ReferencePeriod(
                             start=date(2025, 1, 1), end=date(2025, 12, 31)
                         ),
                         retrieval_date=datetime.now(UTC),
                         confidence_level=ConfidenceLevel.HIGH,
-                        payload=Ratio(value=Decimal("7.5"), basis="households"),
+                        payload=a_figure_shaped_for(attribute),
                     )
                 )
             return Acquired(values=tuple(values), failures=tuple(failures))

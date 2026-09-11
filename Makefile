@@ -53,11 +53,11 @@ up:  ## Start PostgreSQL only. The backend and UI run from the command line
 serve:  ## Run the API from the command line, against the database in Docker
 	cd $(BACKEND) && uv run python -c "from starnest.main import run; run()"
 
-acquire:  ## Fetch real figures from Eurostat and store them. One run, explicit like migrate
+acquire:  ## Fetch real figures from every source, then the stand-ins. One run, explicit like migrate
 	cd $(BACKEND) && uv run python scripts/acquire.py
 
-rank:  ## Print the ranking from what is stored, without going through the API
-	cd $(BACKEND) && uv run python scripts/rank.py
+rank:  ## Print the ranking from what is stored. SET=local_employment for another criteria set
+	cd $(BACKEND) && uv run python scripts/rank.py $(SET)
 
 down:  ## Stop everything, keeping the data volume
 	docker compose down

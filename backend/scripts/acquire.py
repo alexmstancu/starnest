@@ -16,7 +16,7 @@ from pathlib import Path
 import httpx
 from psycopg_pool import AsyncConnectionPool
 
-from starnest.data_acquisition import SourceAdapter, acquire
+from starnest.data_acquisition import STAND_IN, SourceAdapter, acquire, stand_in
 from starnest.data_sources.eurostat import EurostatAdapter, TaxWedgeEstimateAdapter
 from starnest.data_sources.imf import ImfAdapter
 from starnest.data_sources.oecd import OecdAdapter
@@ -60,7 +60,8 @@ async def main() -> int:
     async with AsyncConnectionPool(environment.database_url, min_size=1, open=False) as pool:
         await pool.open(wait=True)
 
-        attributes = await PostgresCatalogStore(pool).read_attributes(level=COUNTRY)
+        catalog = PostgresCatalogStore(pool)
+        attributes = await catalog.read_attributes(level=COUNTRY)
         candidates = await PostgresCandidateStore(pool).read_candidates(level=COUNTRY)
         values = PostgresValueStore(pool)
         print(f"{len(candidates)} candidates, {len(attributes)} attributes in the catalog")
@@ -74,6 +75,14 @@ async def main() -> int:
                 adapter=adapter, attributes=attributes, candidates=candidates, values=values
             )
             _report(outcome, len(candidates))
+
+        # Last, so a substitute's figure fetched above is the one borrowed (reqs.md Q208).
+        stand_ins = await catalog.read_stand_ins(level=COUNTRY)
+        print(f"\n{STAND_IN}: {len(stand_ins)} declared")
+        outcome = await stand_in(
+            stand_ins=stand_ins, attributes=attributes, candidates=candidates, values=values
+        )
+        _report(outcome, len(candidates))
 
     return 0
 

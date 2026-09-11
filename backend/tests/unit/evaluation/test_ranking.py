@@ -17,7 +17,7 @@ from decimal import Decimal
 import pytest
 
 from starnest.criteria import Goal, NormalisationMethod
-from starnest.data import Count
+from starnest.data import ConfidenceLevel, Count
 from starnest.evaluation import MatchStatus, RankingError, rank_candidates
 
 from .builders import (
@@ -342,3 +342,50 @@ def test_a_value_for_an_attribute_this_set_does_not_score_is_ignored() -> None:
     assert [row.attribute for row in found["country.spain"].attribute_scores] == [
         a_criterion().attribute
     ]
+
+
+class TestWhatTheScoreRestsOn:
+    """`reqs.md` 5.7. A low-confidence figure is never discounted in the score, so the ranking
+    has to say how much of each score rests on one -- otherwise an estimate and a measurement
+    are indistinguishable wherever the two land."""
+
+    def test_the_covered_weight_splits_by_the_confidence_of_what_scored(self) -> None:
+        values = three_countries_one_missing_its_rent()
+        values["country.portugal"] = (
+            values["country.portugal"][0],
+            a_value(
+                candidate="country.portugal",
+                attribute=RENT,
+                payload=Count(count=5),
+                confidence_level=ConfidenceLevel.LOW,
+            ),
+        )
+
+        portugal = by_candidate(rank(two_pillars(), values))["country.portugal"]
+
+        assert portugal.coverage_by_confidence[ConfidenceLevel.HIGH] == Decimal(50)
+        assert portugal.coverage_by_confidence[ConfidenceLevel.LOW] == Decimal(50)
+
+    def test_a_sparse_candidate_splits_only_what_it_answered(self) -> None:
+        spain = by_candidate(rank(two_pillars(), three_countries_one_missing_its_rent()))[
+            "country.spain"
+        ]
+
+        assert spain.coverage_by_confidence[ConfidenceLevel.HIGH] == Decimal(100)
+
+    def test_a_candidate_with_nothing_scored_has_no_split(self) -> None:
+        values = values_for(portugal=90, spain=10)
+        values["country.greece"] = ()
+
+        greece = by_candidate(rank(a_set([a_criterion()]), values))["country.greece"]
+
+        assert greece.coverage_by_confidence == {}
+
+    def test_a_figure_that_could_not_be_placed_does_not_count_as_evidence(self) -> None:
+        """Found but unscored costs coverage, so it cannot count toward what coverage splits."""
+        lonely = {"country.portugal": (a_value(confidence_level=ConfidenceLevel.LOW),)}
+
+        portugal = by_candidate(rank(a_set([a_criterion()]), lonely))["country.portugal"]
+
+        assert portugal.coverage == Decimal(0)
+        assert portugal.coverage_by_confidence == {}

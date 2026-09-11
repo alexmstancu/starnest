@@ -21,11 +21,11 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from starnest.candidates import CandidateId
 from starnest.criteria import TOTAL, CriteriaSet, Criterion
-from starnest.data import Value
+from starnest.data import ConfidenceLevel, Value
 from starnest.evaluation.magnitudes import PublishedFigure, UnscoreableValueError, figure_of
 from starnest.evaluation.normalisation import scores_for
 from starnest.evaluation.results import AttributeScore, CandidateResult, MatchStatus
-from starnest.evaluation.weighting import coverage_of, redistribute
+from starnest.evaluation.weighting import confidence_split, coverage_of, redistribute
 
 ValuesByCandidate = Mapping[str, Sequence[Value]]
 
@@ -61,7 +61,7 @@ def rank_candidates(
     criteria.refuse_unless_its_anchors_fit(score_scale_max)
 
     weights = _level_wide_weights(criteria, scored_criteria, level)
-    figures = _figures_by_criterion(scored_criteria, values)
+    figures, confidences = _figures_by_criterion(scored_criteria, values)
     scores = _scores_by_criterion(scored_criteria, figures, score_scale_max=score_scale_max)
 
     results = tuple(
@@ -70,6 +70,7 @@ def rank_candidates(
             scored_criteria=scored_criteria,
             weights=weights,
             figures=figures,
+            confidences=confidences,
             scores=scores,
             min_coverage=min_coverage,
         )
@@ -120,16 +121,23 @@ def _level_wide_weights(
 
 def _figures_by_criterion(
     scored: Sequence[Criterion], values: ValuesByCandidate
-) -> dict[str, dict[str, PublishedFigure]]:
-    """Every comparable figure, per criterion, per candidate.
+) -> tuple[dict[str, dict[str, PublishedFigure]], dict[str, dict[str, ConfidenceLevel]]]:
+    """Every comparable figure, per criterion, per candidate -- and what each figure is worth.
 
     A value that carries no figure -- rejected, or of a type nothing can compare -- is simply
     absent, which is the same state as never having been fetched. That is deliberate: from the
     point of view of a score there is no difference between a figure nobody found and a figure
     that could not be read, and coverage reports both the same way.
+
+    **The confidence travels beside the figure, not inside it.** Normalisation must never see
+    it -- a low-confidence figure is not discounted (`reqs.md` 5.7) -- but the result has to say
+    how much of a score rests on one, and after this point the value is gone.
     """
     by_attribute = {str(criterion.attribute): criterion for criterion in scored}
     figures: dict[str, dict[str, PublishedFigure]] = {attribute: {} for attribute in by_attribute}
+    confidences: dict[str, dict[str, ConfidenceLevel]] = {
+        attribute: {} for attribute in by_attribute
+    }
     for candidate, candidate_values in values.items():
         for value in candidate_values:
             attribute = str(value.attribute)
@@ -139,7 +147,8 @@ def _figures_by_criterion(
                 figures[attribute][candidate] = figure_of(value)
             except UnscoreableValueError:
                 continue
-    return figures
+            confidences[attribute][candidate] = value.confidence_level
+    return figures, confidences
 
 
 def _scores_by_criterion(
@@ -181,6 +190,7 @@ def _result_for(
     scored_criteria: Sequence[Criterion],
     weights: Mapping[str, Decimal],
     figures: Mapping[str, Mapping[str, PublishedFigure]],
+    confidences: Mapping[str, Mapping[str, ConfidenceLevel]],
     scores: Mapping[str, Mapping[str, int]],
     min_coverage: Decimal | None,
 ) -> CandidateResult:
@@ -197,6 +207,9 @@ def _result_for(
         if candidate in figures.get(str(criterion.attribute), {})
     }
     coverage = coverage_of(weights, answered)
+    resting_on = confidence_split(
+        weights, {attribute: confidences[attribute][candidate] for attribute in answered}
+    )
     effective = redistribute(weights, answered)
 
     breakdown = tuple(
@@ -211,6 +224,7 @@ def _result_for(
             candidate=CandidateId(candidate),
             score=None,
             coverage=coverage,
+            coverage_by_confidence=resting_on,
             match_status=MatchStatus.INSUFFICIENT_DATA,
             attribute_scores=breakdown,
             insufficient_reason=refusal,
@@ -220,6 +234,7 @@ def _result_for(
         candidate=CandidateId(candidate),
         score=int(total.quantize(Decimal(1), rounding=ROUND_HALF_UP)),
         coverage=coverage,
+        coverage_by_confidence=resting_on,
         match_status=MatchStatus.MATCHING,
         attribute_scores=breakdown,
     )

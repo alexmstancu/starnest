@@ -10,7 +10,8 @@ from decimal import Decimal
 
 import pytest
 
-from starnest.evaluation import WeightingError, coverage_of, redistribute
+from starnest.data import ConfidenceLevel
+from starnest.evaluation import WeightingError, confidence_split, coverage_of, redistribute
 
 
 def weights(**named: str) -> dict[str, Decimal]:
@@ -107,3 +108,57 @@ def test_a_subset_of_a_set_is_scored_against_its_own_total() -> None:
 
     assert coverage_of(one_pillar, {"rent"}) == Decimal(60)
     assert redistribute(one_pillar, {"rent"})["rent"] == Decimal(100)
+
+
+class TestHowTheCoveredWeightSplitsByConfidence:
+    """`reqs.md` 5.7: "64% coverage, of which 20% high, 55% medium, 25% low". Coverage alone
+    cannot show that a candidate reached 100% entirely on extrapolation; this can."""
+
+    def test_the_split_is_of_the_covered_weight_and_sums_to_the_whole(self) -> None:
+        split = confidence_split(
+            ALL_THREE, {"rent": ConfidenceLevel.HIGH, "jobs": ConfidenceLevel.LOW}
+        )
+
+        assert split[ConfidenceLevel.HIGH] == Decimal("62.5")
+        assert split[ConfidenceLevel.LOW] == Decimal("37.5")
+        assert sum(split.values()) == Decimal(100)
+
+    def test_it_is_weighted_by_importance_not_counted_by_rows(self) -> None:
+        """One low figure on the criterion that carries half the weight is half the evidence,
+        however many high ones sit on the rest."""
+        split = confidence_split(
+            ALL_THREE,
+            {
+                "rent": ConfidenceLevel.LOW,
+                "jobs": ConfidenceLevel.HIGH,
+                "safety": ConfidenceLevel.HIGH,
+            },
+        )
+
+        assert split[ConfidenceLevel.LOW] == Decimal(50)
+
+    def test_every_grade_is_present_even_at_zero(self) -> None:
+        """A screen reads "of which 0% low" as a fact worth showing, not as a missing key."""
+        split = confidence_split(ALL_THREE, {"rent": ConfidenceLevel.HIGH})
+
+        assert split == {
+            ConfidenceLevel.ABSOLUTE: Decimal(0),
+            ConfidenceLevel.HIGH: Decimal(100),
+            ConfidenceLevel.MEDIUM: Decimal(0),
+            ConfidenceLevel.LOW: Decimal(0),
+        }
+
+    def test_nothing_covered_has_no_split_to_report(self) -> None:
+        """A split of nothing is not a split, and all zeros would read as one."""
+        assert confidence_split(ALL_THREE, {}) == {}
+
+    def test_an_answer_the_criteria_set_does_not_weigh_is_ignored(self) -> None:
+        split = confidence_split(
+            ALL_THREE, {"rent": ConfidenceLevel.HIGH, "climate": ConfidenceLevel.LOW}
+        )
+
+        assert split[ConfidenceLevel.LOW] == Decimal(0)
+
+    def test_no_criteria_at_all_is_refused_as_coverage_is(self) -> None:
+        with pytest.raises(WeightingError):
+            confidence_split({}, {})

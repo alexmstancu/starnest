@@ -24,6 +24,7 @@ from collections.abc import Mapping, Set
 from decimal import Decimal
 
 from starnest.criteria import TOTAL
+from starnest.data import ConfidenceLevel
 
 AttributeWeights = Mapping[str, Decimal]
 
@@ -47,6 +48,31 @@ def coverage_of(weights: AttributeWeights, answered: Set[str]) -> Decimal:
     total = _total_of(weights)
     covered = sum((weight for attribute, weight in weights.items() if attribute in answered), _ZERO)
     return covered / total * TOTAL
+
+
+def confidence_split(
+    weights: AttributeWeights, confidence_of: Mapping[str, ConfidenceLevel]
+) -> dict[ConfidenceLevel, Decimal]:
+    """How the covered weight divides between the four grades, as percentages summing to 100.
+
+    `reqs.md` 5.7: "64% coverage, of which 20% high, 55% medium, 25% low". **Coverage alone
+    cannot show that a candidate reached 100% on extrapolation**, and since a low-confidence
+    figure is never discounted in the score (5.7 again -- uncertainty is disclosed, not absorbed),
+    this is the only place the difference between an estimate and a measurement reaches a ranking.
+
+    Weighted like coverage, for the same reason: one low figure on the criterion carrying half
+    the weight is half the evidence. Every grade is present, zeros included, so "of which 0% low"
+    is a fact a screen can show. **Nothing covered returns an empty mapping** -- a split of
+    nothing is not a split, and four zeros would read as one.
+    """
+    _total_of(weights)
+    by_grade = dict.fromkeys(ConfidenceLevel, _ZERO)
+    for attribute, grade in confidence_of.items():
+        by_grade[grade] += weights.get(attribute, _ZERO)
+    covered = sum(by_grade.values(), _ZERO)
+    if covered == 0:
+        return {}
+    return {grade: weight / covered * TOTAL for grade, weight in by_grade.items()}
 
 
 def redistribute(weights: AttributeWeights, answered: Set[str]) -> dict[str, Decimal]:

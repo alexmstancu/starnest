@@ -119,6 +119,7 @@ from starnest.data.sources import (
     SourcePriorityOverride,
     UnknownDataSourceError,
 )
+from starnest.data.stand_in import MalformedStandInError, StandIn
 from starnest.data.store import CatalogStore, UnknownAttributeError, ValueStore
 from starnest.data.value import MalformedValueError, Value, ValueListing
 
@@ -167,6 +168,7 @@ __all__ = [
     "MalformedExternalScoreError",
     "MalformedMatchRuleResultError",
     "MalformedPayloadError",
+    "MalformedStandInError",
     "MalformedValueError",
     "MatchResult",
     "MatchRule",
@@ -189,6 +191,7 @@ __all__ = [
     "SourceKind",
     "SourcePriority",
     "SourcePriorityOverride",
+    "StandIn",
     "Text",
     "UnitId",
     "UnknownAttributeError",

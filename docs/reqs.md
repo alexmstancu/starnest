@@ -305,6 +305,13 @@ erDiagram
         text data_source FK
         int rank
     }
+    STAND_IN {
+        text candidate FK
+        text attribute FK
+        text substitute_candidate FK
+        text level FK
+        text reason
+    }
     BREAKDOWN_SCHEME {
         text id PK
     }
@@ -595,6 +602,10 @@ erDiagram
     ATTRIBUTE ||--o{ ATTRIBUTE_ALLOWED_LABEL : validates
     ATTRIBUTE ||--o{ ATTRIBUTE_SOURCE_PRIORITY : overrides
     DATA_SOURCE ||--o{ ATTRIBUTE_SOURCE_PRIORITY : "is ranked in"
+    CANDIDATE ||--o{ STAND_IN : "borrows through"
+    CANDIDATE ||--o{ STAND_IN : "stands in as"
+    ATTRIBUTE ||--o{ STAND_IN : "may be borrowed as"
+    LEVEL ||--o{ STAND_IN : scopes
     ATTRIBUTE ||--o{ VALUE : "realised as"
     CANDIDATE ||--o{ VALUE : "measured by"
     DATA_SOURCE ||--o{ VALUE : produces
@@ -685,6 +696,9 @@ erDiagram
 | `ATTRIBUTE \|\|--o{ ATTRIBUTE_ALLOWED_LABEL` | Per-attribute vocabulary validation | A `LabelSet` may only carry labels declared here |
 | `ATTRIBUTE \|\|--o{ ATTRIBUTE_SOURCE_PRIORITY` | Overrides the global source order | Numbeo outranks Eurostat on rent; the reverse holds elsewhere (section 6.6) |
 | `DATA_SOURCE \|\|--o{ ATTRIBUTE_SOURCE_PRIORITY` | The other half of that override | The junction is a table, not a JSON list, so "which attributes prefer this source?" is a query |
+| `CANDIDATE \|\|--o{ STAND_IN` | Twice: the candidate no source covers, and the **substitute** whose figure it borrows for one attribute | Liechtenstein is surveyed by no pan-European source for three blocking attributes; Switzerland's figure is the least-bad answer. Declared **per attribute**, with the reason on the row, because a neighbour's price level transfers and its homicide rate does not (Q208) |
+| `ATTRIBUTE \|\|--o{ STAND_IN` | Which figure may be borrowed | The borrowed figure is stored as a `VALUE` under the `stand_in` source at `low` confidence, never as the candidate's own measurement |
+| `LEVEL \|\|--o{ STAND_IN` | Both candidates and the attribute sit at one level | A city standing in for a country is a category error the schema refuses outright |
 
 **Measurements**
 
@@ -1779,8 +1793,8 @@ show it.
 |---|---|---|
 | `absolute` | Definitionally true, not a measurement | ISO codes, coordinates, timezone, area |
 | `high` | Official statistic, directly measured, within `max_age` | Eurostat, World Bank, OECD, WHO, UNODC, Open-Meteo |
-| `medium` | A real measurement, degraded — stale, a proxy, coarser geography, or crowdsourced | Past-`max_age` official data; a regional average applied to a town; Numbeo |
-| `low` | Inferred rather than measured | LLM extrapolation, derivation from a related figure, rough manual estimate |
+| `medium` | A real measurement, degraded — stale, coarser geography, or crowdsourced | Past-`max_age` official data; a regional average applied to a town; Numbeo |
+| `low` | Inferred rather than measured | LLM extrapolation, derivation from a related figure, another country's figure standing in (Q208), rough manual estimate |
 
 Most descriptive attributes (section 3.3) are `absolute`; almost no measured `Value` ever is — the
 best a measurement achieves is `high`.
@@ -2476,9 +2490,9 @@ than a genuinely undocumented place.
 > **Liechtenstein strains the second condition for three of the six** —
 > `cost_of_living_index`, `total_tax_rate_effective` and `healthcare_system_quality` each come from
 > a source that covers 31 of the 32, and Liechtenstein is the one. That is not a broken fetch:
-> no pan-European statistics office surveys it. Gate B's decision covers it — a Swiss figure
-> standing in, stored as a Swiss value at `low` confidence, the substitution visible
-> (`devplan.md` Gate B).
+> no pan-European statistics office surveys it. Gate B's decision covers it, and is built
+> (Q208, `0460`): Switzerland's figure stands in for each of the three under the `stand_in`
+> source at `low` confidence, the reason in its quote, so all six now answer for all 32.
 
 | Attribute | Share of the country score | Why |
 |---|---|---|
@@ -2978,4 +2992,5 @@ Recorded from a front-to-back read of this document.
 | Q205 | **The tax attribute measures the total rate — every component, employee's and employer's, over total labour cost, at 167% of the average wage** (2026-09-11, migrations `0445`, `0446`) | The household's words: "what everybody needs to see is the total tax applied to their salary; whether it has three components in Romania and four in Lithuania is not important — compare apples to apples." The employee-side measure made Romania heaviest of 31 only because of how it splits contributions. Over labour cost rather than gross, because the employer's share sits on top of gross. At 167% because both publishers model it and a relocating skilled worker is above average; an effective rate, not a top bracket, so flat and progressive systems are measured the same way. A new attribute rather than a rename, since identifiers are immutable. Brackets applied to the household's own salary are post-MVP |
 | Q206 | **The total tax rate is anchored at 35% → 100 and 55% → 0** (2026-09-11, migration `0447`) — the first anchors the catalog has shipped | Chosen by the household against 26 real figures: Switzerland 27.4%, median 43.8%, Belgium 58.6%, half of Europe between 41.7% and 48.9%. It frames the crowded middle, so 42% against 48% reads as 65 against 35, at the cost of clamping both ends. The condition D6(C) set is met: chosen per attribute once its data had landed. Scores are on the shipped scale of 100 |
 | Q207 | **Where OECD publishes no total tax rate, an estimate from Eurostat's figures stands in, at low confidence, ranked below OECD** (2026-09-11, migration `0449`) | OECD Taxing Wages omits Romania, Bulgaria, Croatia, Cyprus and Malta — Romania being the comparison anchor. Eurostat publishes the full wedge only at 67% of the average wage; the employer's rate is backed out there and applied at 167%, with no rate typed in. Tested against OECD's own 167% wedge on twelve countries: within a point where employer contributions are flat, one to eight off where they are capped or wage-dependent. Romania and Croatia are flat, and the data recovers their statutory 2.25% and 16.5% unprompted; Bulgaria and Malta cap below that income and are probably overstated. The household chose all five at low confidence over only the two where the method is exact. Its own source row, `eurostat_estimate`, so provenance never reads an estimate as Eurostat's figure; ranked second, so it never displaces a published one |
+| Q208 | **Where no source covers a candidate, a declared substitute's figure stands in — per attribute, under its own `stand_in` source, at `low` confidence** (2026-09-11, migration `0460`) | Q195 decided the principle; this is how it is stored. Liechtenstein is covered by none of the sources for `cost_of_living_index`, `total_tax_rate_effective` and `healthcare_system_quality`, and Switzerland's figure stands in for each, with the reason on the declaration and in the quote. **Not under the Swiss figure's own publisher:** stored as OECD's it would rank as OECD and read as OECD having measured Liechtenstein. The `stand_in` source ranks 75, below every source that measures a place, so a real figure wins the day one exists, with nothing deleted. **Declared per attribute, not per country**, because Switzerland's price level transfers to Liechtenstein and its homicide rate or protected land does not. A substitute lends only a real figure, never one it borrowed. The ranking now carries `coverage_by_confidence`, so the 54% of Liechtenstein's covered weight resting on Switzerland's figures is on screen rather than absorbed |
 

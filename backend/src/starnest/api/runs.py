@@ -146,6 +146,7 @@ async def start_run(
         values=values,
         runs=runs,
         level=scope.level,
+        stand_ins=await catalog.read_stand_ins(level=scope.level),
     )
     return _run_body(started)
 

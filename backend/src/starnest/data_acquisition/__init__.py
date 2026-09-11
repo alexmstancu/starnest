@@ -5,8 +5,9 @@ particular publisher answers. The interface is declared here and implemented the
 policy module ever names a concrete source -- `import-linter` contract 1 enforces it.
 
 **Cut to one run** (`docs/mine2e.md` M2). The spend cap, the dry-run estimate and selective
-retry are `reqs.md` 6.3 and 6.4 and are not here yet; what is here is enough to ask one source
-for one attribute across the candidates and keep what came back.
+retry are `reqs.md` 6.3 and 6.4 and are not here yet; what is here is enough to ask every source
+for what it has across the candidates, keep what came back, and let a declared neighbour stand in
+where nothing did.
 """
 
 from starnest.data_acquisition.adapter import (
@@ -16,6 +17,7 @@ from starnest.data_acquisition.adapter import (
 )
 from starnest.data_acquisition.execution import execute_run
 from starnest.data_acquisition.run import RunOutcome, acquire
+from starnest.data_acquisition.stand_in import STAND_IN, figures_standing_in, stand_in
 from starnest.data_acquisition.store import (
     Run,
     RunScope,
@@ -25,6 +27,7 @@ from starnest.data_acquisition.store import (
 )
 
 __all__ = [
+    "STAND_IN",
     "Acquired",
     "AcquisitionFailure",
     "Run",
@@ -36,4 +39,6 @@ __all__ = [
     "UnknownRunError",
     "acquire",
     "execute_run",
+    "figures_standing_in",
+    "stand_in",
 ]

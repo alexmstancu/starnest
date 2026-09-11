@@ -11,13 +11,14 @@ scored, what it was actually weighted at after redistribution, and what it there
 contributed.
 """
 
+from collections.abc import Mapping
 from decimal import Decimal
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.candidates import CandidateId
-from starnest.data import AttributeId, PillarId
+from starnest.data import AttributeId, ConfidenceLevel, PillarId
 
 
 class MatchStatus(StrEnum):
@@ -71,6 +72,13 @@ class CandidateResult(BaseModel):
     candidate: CandidateId
     score: int | None = None
     coverage: Decimal = Field(ge=0, le=100, description="Percentage of scored weight answered.")
+    coverage_by_confidence: Mapping[ConfidenceLevel, Decimal] = Field(
+        default_factory=dict,
+        description=(
+            "How the covered weight splits between the four grades, summing to 100 (`reqs.md` "
+            "5.7). Empty when nothing is covered: a split of nothing is not a split."
+        ),
+    )
     match_status: MatchStatus
     rank: int | None = Field(
         default=None, description="Position among the scored candidates. None when unscored."

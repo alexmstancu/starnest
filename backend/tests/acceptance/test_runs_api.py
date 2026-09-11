@@ -6,6 +6,8 @@ are kept rather than raised, and that progress can be polled. Eurostat's own beh
 where Eurostat lives, against captured responses.
 """
 
+from collections.abc import AsyncIterator
+
 import httpx
 import pytest
 from psycopg_pool import AsyncConnectionPool
@@ -247,4 +249,79 @@ class TestARunOverSeveralSources:
         assert planned["by_source"] == [
             {"data_source": "eurostat", "items": 64},
             {"data_source": "world_bank", "items": 32},
+        ]
+
+
+PRICES = "country.cost_of_living_index"
+LIECHTENSTEIN = "country.liechtenstein"
+
+
+class TestAStandInThroughARun:
+    """`reqs.md` Q208: where no source covers Liechtenstein, Switzerland's figure stands in --
+    under its own source, at low confidence, and saying so."""
+
+    @pytest.fixture
+    async def a_source_silent_about_liechtenstein(
+        self, database_url: str
+    ) -> AsyncIterator[httpx.AsyncClient]:
+        prices = a_stub_source(answers=(PRICES,), silent_about=(LIECHTENSTEIN,))
+        async with an_api(database_url, (prices,)) as api:
+            yield api
+
+    async def _what_is_stored_for_liechtenstein(
+        self, database_url: str
+    ) -> list[tuple[str, str, str, bool]]:
+        async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+            await pool.open(wait=True)
+            async with pool.connection() as connection:
+                rows = await (
+                    await connection.execute(
+                        "SELECT v.data_source, v.confidence_level, v.quote,"
+                        "       v.id IN (SELECT a.id FROM active_value AS a)"
+                        " FROM value AS v WHERE v.candidate = %s AND v.attribute = %s",
+                        (LIECHTENSTEIN, PRICES),
+                    )
+                ).fetchall()
+        return [tuple(row) for row in rows]
+
+    async def test_liechtenstein_gets_switzerlands_figure_under_its_own_source(
+        self, a_source_silent_about_liechtenstein: httpx.AsyncClient, database_url: str
+    ) -> None:
+        await a_source_silent_about_liechtenstein.post(
+            "/v1/data-acquisition-runs", json={"level": COUNTRY}
+        )
+
+        ((source, confidence, quote, active),) = await self._what_is_stored_for_liechtenstein(
+            database_url
+        )
+        assert (source, confidence, active) == ("stand_in", "low", True)
+        assert quote.startswith("Switzerland's figure, standing in for Liechtenstein.")
+
+    async def test_the_run_counts_the_stand_in_as_the_items_answer(
+        self, a_source_silent_about_liechtenstein: httpx.AsyncClient
+    ) -> None:
+        run = (
+            await a_source_silent_about_liechtenstein.post(
+                "/v1/data-acquisition-runs", json={"level": COUNTRY}
+            )
+        ).json()
+
+        detail = (
+            await a_source_silent_about_liechtenstein.get(f"/v1/data-acquisition-runs/{run['id']}")
+        ).json()
+        assert detail["progress"]["items_completed"] == 32
+
+    async def test_a_real_figure_outranks_the_stand_in_and_both_stay_stored(
+        self, database_url: str
+    ) -> None:
+        """The day a source publishes Liechtenstein's own figure it wins, and nobody has to
+        delete the stand-in for that to happen."""
+        async with an_api(database_url, (a_stub_source(answers=(PRICES,)),)) as api:
+            await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+
+            stored = await self._what_is_stored_for_liechtenstein(database_url)
+
+        assert sorted((source, active) for source, _, _, active in stored) == [
+            ("eurostat", True),
+            ("stand_in", False),
         ]

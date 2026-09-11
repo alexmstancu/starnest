@@ -1312,10 +1312,12 @@ components:
             to show.
         coverage: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. The share of active weight actually backed by data." }
         coverage_by_confidence:
-          type: object
+          type: [object, "null"]
           description: >-
-            How the covered weight splits by confidence (`reqs.md` 5.7). Coverage alone cannot
-            show that a candidate reached 100% entirely on extrapolation; this can.
+            How the covered weight splits by confidence (`reqs.md` 5.7), as percentages of the
+            covered weight summing to 100. Coverage alone cannot show that a candidate reached
+            100% entirely on extrapolation; this can. Null when nothing is covered: a split of
+            nothing is not a split, and four zeros would read as one.
           properties:
             absolute: { type: number }
             high: { type: number }

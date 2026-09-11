@@ -42,6 +42,7 @@ from starnest.data import (
     RuleOutcome,
     SourceKind,
     SourcePriorityOverride,
+    StandIn,
     UnitId,
     UnknownAttributeError,
     ValueType,
@@ -146,6 +147,21 @@ class PostgresCatalogStore(CatalogStore):
             BreakdownSchemeId(row.id): tuple(BreakdownOptionId(option) for option in row.options)
             for row in rows
         }
+
+    async def read_stand_ins(self, *, level: str | None = None) -> tuple[StandIn, ...]:
+        async with acquire(self._pool) as connection:
+            rows = [row async for row in self._queries.select_stand_ins(connection, level=level)]
+        return tuple(
+            StandIn(
+                candidate=row.candidate,
+                candidate_name=row.candidate_name,
+                attribute=AttributeId(row.attribute),
+                substitute=row.substitute_candidate,
+                substitute_name=row.substitute_name,
+                reason=row.reason,
+            )
+            for row in rows
+        )
 
     async def read_match_rules(self, *, level: str | None = None) -> tuple[MatchRule, ...]:
         """The named gates. A rule with no level is asked at every level, so it comes back

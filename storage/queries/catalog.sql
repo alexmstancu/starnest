@@ -121,6 +121,21 @@ SELECT b.id,
 FROM   breakdown_scheme AS b
 ORDER  BY b.id;
 
+-- name: select_stand_ins(level)
+-- Where a neighbour's figure may stand in, and why (reqs.md Q208). Both display names are
+-- joined in because the quote on every borrowed figure says, in words, whose figure it is.
+SELECT s.candidate,
+       candidate.name  AS candidate_name,
+       s.attribute,
+       s.substitute_candidate,
+       substitute.name AS substitute_name,
+       s.reason
+FROM   stand_in AS s
+JOIN   candidate            ON candidate.id = s.candidate
+JOIN   candidate AS substitute ON substitute.id = s.substitute_candidate
+WHERE  (:level::text IS NULL OR s.level = :level)
+ORDER  BY s.candidate, s.attribute;
+
 -- name: select_match_rules(level)
 -- The named gates. A rule with a NULL level applies at every level, so it is returned
 -- whatever level is asked for.

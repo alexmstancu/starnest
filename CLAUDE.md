@@ -12,8 +12,8 @@ implementation work.
 | Module | State |
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
-| `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage, matching, ranking. Pure functions, no I/O. **`target_range`, the compound-rule shapes and match rules are not built.** `fixed` exists but no anchor is chosen yet, so every `fixed` criterion still refuses — truthfully |
-| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 16 of the contract's 40 operations; six source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, and an estimate from Eurostat's tax-benefit figures); runs are planned, persisted and pollable |
+| `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. **`target_range`, the compound-rule shapes and match rules are not built.** Only the total tax rate has `fixed` anchors; every other `fixed` criterion refuses — truthfully |
+| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 16 of the contract's 40 operations; six source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, and an estimate from Eurostat's tax-benefit figures); runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | Empty. Post-Gate-A |
 | `ui/` | The shell plus the Rank and Configure screens. 98 tests. **It talks to the real backend**, and to a mock only in unit tests |
 
@@ -35,14 +35,18 @@ Only `www.oecd.org` is Cloudflare-blocked. An earlier note here said no OECD ada
 work; that generalised one bad path to a whole organisation and is corrected in
 `docs/catalog-blockers.md` item 5.
 
-**The shipped set ranks 31 of 32 countries** (2026-09-11), for the first time. `fixed` is built
-and the total tax rate carries the first anchors the catalog has shipped — 35% → 100, 55% → 0,
-chosen against real figures (Q206). **Romania, Bulgaria, Croatia, Cyprus and Malta are ranked on
-an estimated tax rate** (Q207): OECD omits them, so their rate is estimated from Eurostat's own
-figures under a separate `eurostat_estimate` source at `low` confidence, ranked below OECD so it
-never displaces a published figure. Only Liechtenstein is unranked, waiting on Gate B's Swiss
-proxy. Coverage is 36.4% because 25 `fixed` criteria have no anchors yet and some attributes have
-no data — honest, and shown.
+**The shipped set ranks all 32 countries** (2026-09-11). `fixed` is built and the total tax
+rate carries the first anchors the catalog has shipped — 35% → 100, 55% → 0, chosen against real
+figures (Q206). **Romania, Bulgaria, Croatia, Cyprus and Malta are ranked on an estimated tax
+rate** (Q207): OECD omits them, so their rate is estimated from Eurostat's own figures under a
+separate `eurostat_estimate` source at `low` confidence, ranked below OECD so it never displaces
+a published figure. **Liechtenstein is ranked on Switzerland's figures for three attributes**
+(Q208, `0460`): the `stand_in` table declares, per attribute and with a reason, whose figure
+stands in where no source covers a candidate, and the copy is stored under the `stand_in`
+source at `low` confidence, never as the candidate's own measurement. **Every ranked candidate
+now reports `coverage_by_confidence`** (`reqs.md` 5.7) — 54% of Liechtenstein's covered weight
+is low-confidence, 12% for the five on the estimate. Coverage is 36% because 25 `fixed` criteria
+have no anchors yet — honest, and shown.
 
 **The total tax rate (Q205) counts every component, employee's and employer's, over the whole
 cost of employment, at 167% of the average wage** — so Romania, which moved contributions onto
@@ -111,7 +115,7 @@ Makefile      every command the project has
 | `make boundaries` | `import-linter` — `arch.md` 6.2 as something a build fails on |
 | `make audit` | The three structural audits below |
 | `make openapi` | Regenerate `docs/openapi.implemented.yaml`. **Run after changing any endpoint** — a test fails when it is stale |
-| `make serve` / `make acquire` / `make rank` | Run the API; fetch real figures from Eurostat; print the ranking from what is stored |
+| `make serve` / `make acquire` / `make rank` | Run the API; fetch real figures from every source, then the stand-ins; print the ranking from what is stored (`make rank SET=local_employment` for the shipped set) |
 | **`make check`** | **Backend lint + boundaries + coverage + audits, then `ui-check`. Both sides. This is the gate** |
 | `make migrate` | Backs up first, then applies migrations. **Never automatic** (`arch.md` 7.4) |
 | `make ui-check` | The interface gate: `ui-lint` (eslint, type-aware) + `ui-typecheck` + `ui-coverage` (85% bar) |

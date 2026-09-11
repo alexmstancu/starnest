@@ -581,3 +581,34 @@ class TestARankingIsComputedAndNotStored:
         unscored = [c for c in body["candidates"] if c["score"] is None]
         assert unscored
         assert all(c["insufficient_reason"] for c in unscored)
+
+
+class TestWhatARankingSaysItRestsOn:
+    """`reqs.md` 5.7: coverage says how much of the weight is backed by data, and this says what
+    that data is worth. Six countries are ranked partly on estimates or a neighbour's figure, and
+    without it they would be indistinguishable from the measured."""
+
+    async def test_a_scored_candidate_says_how_its_covered_weight_splits(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        body = (
+            await api.get("/v1/rankings", params={"criteria_set": MINIMAL, "level": COUNTRY})
+        ).json()
+
+        portugal = next(c for c in body["candidates"] if c["candidate"] == "country.portugal")
+        assert portugal["coverage_by_confidence"] == {
+            "absolute": 0,
+            "high": 100,
+            "medium": 0,
+            "low": 0,
+        }
+
+    async def test_a_candidate_with_nothing_covered_has_no_split_rather_than_zeros(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        body = (
+            await api.get("/v1/rankings", params={"criteria_set": MINIMAL, "level": COUNTRY})
+        ).json()
+
+        france = next(c for c in body["candidates"] if c["candidate"] == "country.france")
+        assert france["coverage_by_confidence"] is None

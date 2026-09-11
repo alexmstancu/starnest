@@ -47,6 +47,7 @@ COVERED_ELSEWHERE = {
     "PILLAR_WEIGHT": "PillarWeight",
     "HOUSEHOLD_FIELD": "CompoundRule input, as household_field",
     "FX_RATE": "FxRate, inside MonetaryPayload",
+    "STAND_IN": "Value.data_source stand_in, with Value.quote naming the substitute and the reason",
 }
 
 

@@ -22,6 +22,15 @@ from starnest.evaluation import CandidateResult, rank_candidates
 router = APIRouter(tags=["rankings"])
 
 
+class ConfidenceSplitBody(BaseModel):
+    """Percentages of the covered weight, summing to 100 (`reqs.md` 5.7)."""
+
+    absolute: float
+    high: float
+    medium: float
+    low: float
+
+
 class CandidateResultBody(BaseModel):
     candidate: str
     name: str
@@ -30,6 +39,10 @@ class CandidateResultBody(BaseModel):
         default=None, description="Null only when insufficient data. On the evaluation's scale."
     )
     coverage: float
+    coverage_by_confidence: ConfidenceSplitBody | None = Field(
+        default=None,
+        description="How the covered weight splits by confidence. Null when nothing is covered.",
+    )
     match_status: str
     insufficient_reason: str | None = None
 
@@ -114,6 +127,11 @@ def _result_body(result: CandidateResult, names: dict[str, str]) -> CandidateRes
         rank=result.rank,
         score=result.score,
         coverage=result.coverage,
+        coverage_by_confidence=(
+            ConfidenceSplitBody(**{str(grade): share for grade, share in split.items()})
+            if (split := result.coverage_by_confidence)
+            else None
+        ),
         match_status=str(result.match_status),
         insufficient_reason=result.insufficient_reason,
     )

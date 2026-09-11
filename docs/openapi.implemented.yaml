@@ -76,6 +76,12 @@ components:
         coverage:
           title: Coverage
           type: number
+        coverage_by_confidence:
+          anyOf:
+          - $ref: '#/components/schemas/ConfidenceSplitBody'
+          - type: 'null'
+          description: How the covered weight splits by confidence. Null when nothing
+            is covered.
         insufficient_reason:
           anyOf:
           - type: string
@@ -115,6 +121,28 @@ components:
       required:
       - items
       title: CandidatesBody
+      type: object
+    ConfidenceSplitBody:
+      description: Percentages of the covered weight, summing to 100 (`reqs.md` 5.7).
+      properties:
+        absolute:
+          title: Absolute
+          type: number
+        high:
+          title: High
+          type: number
+        low:
+          title: Low
+          type: number
+        medium:
+          title: Medium
+          type: number
+      required:
+      - absolute
+      - high
+      - medium
+      - low
+      title: ConfidenceSplitBody
       type: object
     CriteriaSetBody:
       properties:
@@ -871,14 +899,14 @@ paths:
         the work was accepted and the client polls the id either way -- but claiming
         the run is in
 
-        flight when it is not would be a lie a screen could act on. One source and
-        31 countries take
+        flight when it is not would be a lie a screen could act on. A full sweep of
+        every source
 
-        a few seconds, and a background task would add a lifecycle to manage for no
-        benefit anybody
+        fits in one request, and a background task would add a lifecycle to manage
+        for no benefit
 
-        can currently see. Making it genuinely asynchronous is a change here and nowhere
-        else,
+        anybody can currently see. Making it genuinely asynchronous is a change here
+        and nowhere else,
 
         because the run record already holds everything the polling endpoint reads
         (`arch.md` 8.4).
@@ -916,13 +944,26 @@ paths:
       description: 'What a run would do, without doing any of it.
 
 
-        Counts the work as the cross product of candidates and answerable attributes,
-        per source.
+        Counts the work as the cross product of candidates and answerable attributes.
+        An attribute no
 
-        An attribute no adapter can supply is not counted: promising to fetch something
-        nothing can
+        adapter can supply is not counted: promising to fetch something nothing can
+        fetch would make
 
-        fetch would make the estimate a wish.'
+        the estimate a wish.
+
+
+        **An item is one candidate and one attribute**, however many sources answer
+        it -- the unit a
+
+        run''s progress counts and a retry addresses. `by_source` says what each source
+        will be asked,
+
+        so where two answer the same attribute its entries sum to more than `items_total`,
+        which is
+
+        the truth: the tax rate for Germany is one item, asked of OECD and of the
+        estimate.'
       operationId: planRun
       requestBody:
         content:

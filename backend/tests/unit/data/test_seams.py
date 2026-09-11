@@ -115,6 +115,9 @@ class InMemoryCatalogStore(CatalogStore):
     async def read_match_rules(self, *, level=None):
         return ()
 
+    async def read_stand_ins(self, *, level=None):
+        return ()
+
     async def read_compound_rules(self, *, level=None):
         return ()
 

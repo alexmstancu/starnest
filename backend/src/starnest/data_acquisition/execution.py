@@ -18,9 +18,10 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from starnest.candidates import Candidate
-from starnest.data import Attribute, ValueStore
+from starnest.data import Attribute, StandIn, ValueStore
 from starnest.data_acquisition.adapter import AcquisitionFailure, SourceAdapter
 from starnest.data_acquisition.run import acquire
+from starnest.data_acquisition.stand_in import stand_in
 from starnest.data_acquisition.store import Run, RunScope, RunStatus, RunStore
 
 MANUAL = "user"
@@ -36,13 +37,16 @@ async def execute_run(
     values: ValueStore,
     runs: RunStore,
     level: str,
+    stand_ins: Sequence[StandIn] = (),
     triggered_by: str = MANUAL,
 ) -> Run:
     """Open a run, fetch everything in scope from every source, record what happened, close it.
 
     **Every source, in one run.** A run is one pass, and the plan the household confirmed
     counted the work of all of them; an earlier version handed this the first adapter only,
-    which fetched a sixth of what the plan promised while reporting the run completed.
+    which fetched a sixth of what the plan promised while reporting the run completed. **Then
+    the declared stand-ins**, visibly and at `low` confidence, where a neighbour's figure is the
+    least-bad answer for a place no source covers (`stand_in.py`).
 
     **The scope recorded is what was asked for, not what worked.** Every candidate and every
     attribute some source could answer goes in, so a country that produced nothing is
@@ -76,6 +80,15 @@ async def execute_run(
                 run=run,
             )
             failures.extend(outcome.failures)
+        # Last, so a substitute's figure fetched in this same run is the one borrowed.
+        borrowed = await stand_in(
+            stand_ins=stand_ins,
+            attributes=answerable,
+            candidates=candidates,
+            values=values,
+            run=run,
+        )
+        failures.extend(borrowed.failures)
     except Exception:
         # The run stays visible as one that could not proceed, rather than as one still
         # running for ever. Re-raised because an unexpected failure is a bug, and a tidy

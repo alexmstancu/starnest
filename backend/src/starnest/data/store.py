@@ -27,6 +27,7 @@ from starnest.data.identifiers import (
 )
 from starnest.data.rules import CompoundRule, MatchRule
 from starnest.data.sources import DataSource
+from starnest.data.stand_in import StandIn
 from starnest.data.value import Value, ValueListing
 
 
@@ -160,6 +161,15 @@ class CatalogStore(ABC):
         self,
     ) -> Mapping[BreakdownSchemeId, tuple[BreakdownOptionId, ...]]:
         """What each multi-value attribute is broken down by, with the options in it."""
+
+    @abstractmethod
+    async def read_stand_ins(self, *, level: str | None = None) -> tuple[StandIn, ...]:
+        """Where a neighbour's figure may stand in for a candidate no source covers, and why.
+
+        Declared per attribute (`reqs.md` Q208). Every declaration at the level, whether or not
+        it is needed today: which ones actually decide a score is the active-value rule's
+        question, answered at read time like every other choice between figures.
+        """
 
     @abstractmethod
     async def read_match_rules(self, *, level: str | None = None) -> tuple[MatchRule, ...]:

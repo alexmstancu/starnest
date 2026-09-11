@@ -205,7 +205,7 @@ Gate B coverage assertion for a real reason rather than a defect.
 
 | Candidate | Gap | Fallback |
 |---|---|---|
-| **Liechtenstein** | Absent from Eurostat price level indices and most housing series; it shares a customs and currency union with Switzerland and is usually folded into or omitted from the EU basket. Also missing from WhereNext | The Swiss series, stored **as a Swiss-sourced value with `low` confidence** — a proxy that says so, never a Liechtenstein measurement |
+| **Liechtenstein** | Absent from Eurostat price level indices and most housing series; it shares a customs and currency union with Switzerland and is usually folded into or omitted from the EU basket. Also missing from WhereNext | Switzerland's figure, stored under the **`stand_in`** source at **`low` confidence** with a quote naming the Swiss series and why it transfers — a proxy that says so, never a Liechtenstein measurement. Built 2026-09-11 for cost of living, the total tax rate and health (`reqs.md` Q208); also absent from OECD Taxing Wages and, as a non-member, from WHO |
 | **United Kingdom** | Several Eurostat series stop or thin out post-Brexit | World Bank and OECD equivalents, which retain UK coverage, at their own confidence |
 
 > **The provenance must carry the substitution.** A proxy stored as though it were the
