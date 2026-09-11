@@ -38,8 +38,11 @@ THE_ANCHORS_THE_HOUSEHOLD_CHOSE = {
     "country.economic_outlook": ((Decimal(0), 0), (Decimal(3), 100)),
     "country.overcrowding_rate": ((Decimal(5), 100), (Decimal(30), 0)),
     "country.protected_land_share": ((Decimal(10), 0), (Decimal(40), 100)),
+    "country.average_working_hours": ((Decimal(40), 100), (Decimal(48), 0)),
+    "country.rail_network_density": ((Decimal(0), 0), (Decimal(100), 100)),
+    "country.road_network_quality": ((Decimal(0), 0), (Decimal(40), 100)),
 }
-"""Every anchor the shipped set carries, each one decided against real figures (Q206, Q209).
+"""Every anchor the shipped set carries, each one decided against real figures (Q206, Q209, Q212).
 
 **The roster is the point.** "No anchor ships" held until `0447`, and it was never the real
 rule -- the rule is that no anchor ships that nobody chose. An anchor appearing here without a
