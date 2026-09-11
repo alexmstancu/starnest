@@ -17,7 +17,7 @@ import httpx
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.data_acquisition import SourceAdapter, acquire
-from starnest.data_sources.eurostat import EurostatAdapter
+from starnest.data_sources.eurostat import EurostatAdapter, TaxWedgeEstimateAdapter
 from starnest.data_sources.imf import ImfAdapter
 from starnest.data_sources.oecd import OecdAdapter
 from starnest.data_sources.who import WhoAdapter
@@ -48,6 +48,7 @@ def every_adapter() -> tuple[SourceAdapter, ...]:
         WhoAdapter(client),
         ImfAdapter(client),
         OecdAdapter(client),
+        TaxWedgeEstimateAdapter(client),
     )
 
 

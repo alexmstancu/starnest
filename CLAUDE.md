@@ -13,7 +13,7 @@ implementation work.
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
 | `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage, matching, ranking. Pure functions, no I/O. **`target_range`, the compound-rule shapes and match rules are not built.** `fixed` exists but no anchor is chosen yet, so every `fixed` criterion still refuses — truthfully |
-| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 16 of the contract's 40 operations; five source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD); runs are planned, persisted and pollable |
+| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 16 of the contract's 40 operations; six source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, and an estimate from Eurostat's tax-benefit figures); runs are planned, persisted and pollable |
 | `comparison/` | Empty. Post-Gate-A |
 | `ui/` | The shell plus the Rank and Configure screens. 98 tests. **It talks to the real backend**, and to a mock only in unit tests |
 
@@ -35,12 +35,14 @@ Only `www.oecd.org` is Cloudflare-blocked. An earlier note here said no OECD ada
 work; that generalised one bad path to a whole organisation and is corrected in
 `docs/catalog-blockers.md` item 5.
 
-**The shipped set ranks for the first time: 26 of 32 countries, at 36.4% coverage** (2026-09-11).
-`fixed` is built and the total tax rate carries the first anchors the catalog has shipped —
-35% → 100, 55% → 0, chosen against real figures (Q206). **Romania, Bulgaria, Croatia, Cyprus and
-Malta are unranked** because OECD does not cover them for the total tax rate; per-country sources
-are next. Liechtenstein waits on Gate B's Swiss proxy. Coverage is 36.4% because the other 25
-`fixed` criteria have no anchors and some attributes have no data — honest, and shown.
+**The shipped set ranks 31 of 32 countries** (2026-09-11), for the first time. `fixed` is built
+and the total tax rate carries the first anchors the catalog has shipped — 35% → 100, 55% → 0,
+chosen against real figures (Q206). **Romania, Bulgaria, Croatia, Cyprus and Malta are ranked on
+an estimated tax rate** (Q207): OECD omits them, so their rate is estimated from Eurostat's own
+figures under a separate `eurostat_estimate` source at `low` confidence, ranked below OECD so it
+never displaces a published figure. Only Liechtenstein is unranked, waiting on Gate B's Swiss
+proxy. Coverage is 36.4% because 25 `fixed` criteria have no anchors yet and some attributes have
+no data — honest, and shown.
 
 **The total tax rate (Q205) counts every component, employee's and employer's, over the whole
 cost of employment, at 167% of the average wage** — so Romania, which moved contributions onto

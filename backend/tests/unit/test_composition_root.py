@@ -102,6 +102,7 @@ class TestWhatIsActuallyWiredIn:
             "who",
             "imf",
             "oecd",
+            "eurostat_estimate",
         }
 
     def test_no_two_adapters_claim_to_be_the_same_source(self) -> None:

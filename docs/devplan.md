@@ -47,7 +47,7 @@ application, and where the two disagree, this one is right.
 | **P4** Adapter fan-out | **Under way.** Four adapters (Eurostat, World Bank, WHO, IMF), 9 of 11 pillars, 13 attributes. Ordered by pillar coverage per D7. The shipped set is two attributes from scoring, both OECD's |
 | **P5**-**P7** | Not started |
 
-**1,476 backend tests and 98 interface tests. The shipped set `local_employment` ranks for the first time — 26 of 32 countries, at 36.4% coverage. Five sources, 9 of 11 pillars. Romania and four others wait on per-country tax sources.**
+**1,489 backend tests and 98 interface tests. The shipped set `local_employment` ranks 31 of 32 countries — the first rankings it has ever produced. Six sources, 9 of 11 pillars. Only Liechtenstein is unranked, waiting on Gate B's Swiss proxy.**
 
 ### GATE A — closed 2026-09-05
 
