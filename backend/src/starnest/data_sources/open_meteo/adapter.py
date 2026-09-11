@@ -42,8 +42,9 @@ from starnest.data_sources.open_meteo.manifest import (
     BASE_URL,
     CALLS_PER_MINUTE,
     DAYS_PER_CALL,
+    SERIES,
     SETTLING_DAYS,
-    VARIABLES,
+    ClimateSeries,
 )
 from starnest.data_sources.open_meteo.response import OpenMeteoError, daily_series
 
@@ -74,11 +75,11 @@ class OpenMeteoAdapter(SourceAdapter):
 
     @property
     def attributes(self) -> tuple[AttributeId, ...]:
-        return tuple(VARIABLES)
+        return tuple(SERIES)
 
     async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
-        variable = VARIABLES.get(attribute.id)
-        if variable is None:
+        series_of = SERIES.get(attribute.id)
+        if series_of is None:
             return Acquired(
                 failures=(
                     AcquisitionFailure(
@@ -106,41 +107,48 @@ class OpenMeteoAdapter(SourceAdapter):
                 )
                 continue
             if asked:
-                await self._pause(_seconds_for(len(places)))
+                await self._pause(_seconds_for(len(places), series_of, year))
             asked = True
             try:
-                series = await self._daily(places, variable, year)
+                series = await self._daily(places, series_of, year)
             except httpx.HTTPStatusError as refused:
                 failures.append(_a_failure(attribute.id, candidate, _why(refused)))
                 continue
             except (httpx.HTTPError, OpenMeteoError) as unreadable:
                 failures.append(_a_failure(attribute.id, candidate, str(unreadable)))
                 continue
-            value = _the_national_figure(places, series, attribute=attribute, unit=unit, year=year)
+            value = _the_national_figure(
+                places, series, attribute=attribute, unit=unit, window=series_of.window(year)
+            )
             if value is None:
                 failures.append(
-                    _a_failure(attribute.id, candidate, f"no place has a complete year of {year}")
+                    _a_failure(
+                        attribute.id,
+                        candidate,
+                        f"no place has a complete {_named(series_of.window(year))}",
+                    )
                 )
                 continue
             values.append(value)
         return Acquired(values=tuple(values), failures=tuple(failures))
 
     async def _daily(
-        self, places: Sequence[PopulationCentre], variable: str, year: int
+        self, places: Sequence[PopulationCentre], series_of: ClimateSeries, year: int
     ) -> list[list[Decimal | None]]:
+        first, last = series_of.window(year)
         response = await self._client.get(
             self._base_url,
             params={
                 "latitude": ",".join(str(place.latitude) for place in places),
                 "longitude": ",".join(str(place.longitude) for place in places),
-                "start_date": f"{year}-01-01",
-                "end_date": f"{year}-12-31",
-                "daily": variable,
+                "start_date": first.isoformat(),
+                "end_date": last.isoformat(),
+                "daily": series_of.variable,
                 "timezone": "GMT",
             },
         )
         response.raise_for_status()
-        return daily_series(response.json(), variable, len(places))
+        return daily_series(response.json(), series_of.variable, len(places))
 
 
 def _the_national_figure(
@@ -149,9 +157,9 @@ def _the_national_figure(
     *,
     attribute: Attribute,
     unit: str,
-    year: int,
+    window: tuple[date, date],
 ) -> Value | None:
-    """The population-weighted mean over the places with a complete year, or None if none has.
+    """The population-weighted mean over the places with a complete window, or None.
 
     A place with any missing day is left out rather than averaged over the days it has: a year
     missing its winter is not that place's annual mean.
@@ -176,18 +184,30 @@ def _the_national_figure(
         attribute=attribute.id,
         value_type=attribute.value_type,
         data_source=OPEN_METEO,
-        reference_period=ReferencePeriod.covering_year(year),
+        reference_period=ReferencePeriod(start=window[0], end=window[1]),
         retrieval_date=datetime.now(UTC),
         confidence_level=ConfidenceLevel.MEDIUM,
         payload=Quantity(magnitude=figure, unit=unit),
-        quote=f"Open-Meteo archive (ERA5) {year}, weighted by population: {workings} = {figure}",
+        quote=(
+            f"Open-Meteo archive (ERA5) {_named(window)}, weighted by population: "
+            f"{workings} = {figure}"
+        ),
     )
 
 
-def _seconds_for(places: int) -> float:
-    """This request's share of a minute: a year for each place, at the free tier's rate."""
-    calls = places * 365 / DAYS_PER_CALL
+def _seconds_for(places: int, series_of: ClimateSeries, year: int) -> float:
+    """This request's share of a minute: its days for each place, at the free tier's rate."""
+    first, last = series_of.window(year)
+    calls = places * ((last - first).days + 1) / DAYS_PER_CALL
     return calls / CALLS_PER_MINUTE * 60
+
+
+def _named(window: tuple[date, date]) -> str:
+    """ "2025" for a calendar year, "June 2025 to August 2025" for anything shorter."""
+    first, last = window
+    if (first.month, first.day, last.month, last.day) == (1, 1, 12, 31) and first.year == last.year:
+        return str(first.year)
+    return f"{first:%B %Y} to {last:%B %Y}"
 
 
 def _the_unit_of(attribute: Attribute) -> str:

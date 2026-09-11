@@ -47,7 +47,7 @@ class TestGateA:
         shipped = (await api.get(f"/v1/criteria-sets/{SHIPPED}")).json()
 
         assert len(pillars["items"]) == 11
-        assert len(attributes["items"]) == 41
+        assert len(attributes["items"]) == 43
         by_pillar: dict[str, float] = {}
         for criterion in shipped["criteria"]:
             by_pillar[criterion["pillar"]] = by_pillar.get(criterion["pillar"], 0) + float(

@@ -41,8 +41,9 @@ THE_ANCHORS_THE_HOUSEHOLD_CHOSE = {
     "country.average_working_hours": ((Decimal(40), 100), (Decimal(48), 0)),
     "country.rail_network_density": ((Decimal(0), 0), (Decimal(100), 100)),
     "country.road_network_quality": ((Decimal(0), 0), (Decimal(40), 100)),
+    "country.winter_daytime_temperature": ((Decimal(0), 0), (Decimal(15), 100)),
 }
-"""Every anchor the shipped set carries, each one decided against real figures (Q206, Q209, Q212).
+"""Every anchor the shipped set carries, each decided against real figures (Q206, Q209, Q212, Q213).
 
 **The roster is the point.** "No anchor ships" held until `0447`, and it was never the real
 rule -- the rule is that no anchor ships that nobody chose. An anchor appearing here without a
@@ -118,11 +119,11 @@ class TestReadingASet:
     async def test_the_shipped_set_reads_with_its_anchors_and_thresholds(
         self, criteria: PostgresCriteriaStore
     ) -> None:
-        """41 criteria, four threshold shapes and the rules it enforces. The heavier read, and
+        """43 criteria, four threshold shapes and the rules it enforces. The heavier read, and
         the one that would expose a mapper that only handles the simple case."""
         shipped = await criteria.read_criteria_set(SHIPPED, level=COUNTRY)
 
-        assert len(shipped.criteria) == 41
+        assert len(shipped.criteria) == 43
         assert shipped.enforced_match_rules
         # Not an omission in the read: `reqs.md` 7.4 leaves every threshold TBD, and an anchor
         # ships only where the household chose it against real figures. A seeded one nobody

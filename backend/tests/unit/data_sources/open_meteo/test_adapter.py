@@ -221,7 +221,7 @@ class TestWhatIsNotAFigure:
         acquired = await an_adapter(empty).fetch(temperature(), [PORTUGAL])
 
         assert acquired.values == ()
-        assert "complete year" in acquired.failures[0].reason
+        assert "no place has a complete 2025" in acquired.failures[0].reason
 
     async def test_a_country_with_no_places_declared_is_reported(self) -> None:
         acquired = await an_adapter().fetch(temperature(), [SPAIN])
@@ -258,8 +258,86 @@ class TestWhatIsNotAFigure:
             await an_adapter().fetch(unitless, [PORTUGAL])
 
 
-def test_it_declares_temperature_and_not_sunshine() -> None:
+def test_it_declares_three_temperatures_and_not_sunshine() -> None:
     """Open-Meteo's sunshine is derived from modelled radiation and runs 30% to 68% above the
     recorders' figures, unevenly -- London +60%, Madrid +32% -- so it is not fetched as hours
     of sunshine at all."""
-    assert an_adapter().attributes == (TEMPERATURE,)
+    assert an_adapter().attributes == (TEMPERATURE, SUMMER, WINTER)
+
+
+SUMMER = "country.summer_daytime_temperature"
+WINTER = "country.winter_daytime_temperature"
+
+
+def a_season(identifier: str) -> Attribute:
+    return temperature().model_copy(update={"id": identifier})
+
+
+def seasonal(name: str) -> list:
+    return json.loads((CAPTURED / f"portugal_{name}_2025.json").read_text())
+
+
+class TestTheSeasons:
+    """Q213: how warm a summer day and a winter day get -- the average daily high over a
+    meteorological season, never the night-time minimum."""
+
+    async def test_summer_asks_for_the_daily_high_from_june_to_august(self) -> None:
+        requests: list[httpx.Request] = []
+
+        await an_adapter(seasonal("summer"), requests=requests).fetch(a_season(SUMMER), [PORTUGAL])
+
+        params = requests[0].url.params
+        assert (params["start_date"], params["end_date"]) == ("2025-06-01", "2025-08-31")
+        assert params["daily"] == "temperature_2m_max"
+
+    async def test_winter_is_the_one_that_ends_in_the_settled_year(self) -> None:
+        """December to February crosses New Year: the winter of 2025 began in December 2024."""
+        requests: list[httpx.Request] = []
+
+        await an_adapter(seasonal("winter"), requests=requests).fetch(a_season(WINTER), [PORTUGAL])
+
+        params = requests[0].url.params
+        assert (params["start_date"], params["end_date"]) == ("2024-12-01", "2025-02-28")
+
+    async def test_a_leap_year_winter_ends_on_the_twenty_ninth(self) -> None:
+        requests: list[httpx.Request] = []
+
+        await an_adapter(seasonal("winter"), today=date(2029, 9, 1), requests=requests).fetch(
+            a_season(WINTER), [PORTUGAL]
+        )
+
+        assert requests[0].url.params["end_date"] == "2028-02-29"
+
+    async def test_the_figure_describes_its_season_not_the_year(self) -> None:
+        (value,) = (await an_adapter(seasonal("winter")).fetch(a_season(WINTER), [PORTUGAL])).values
+
+        assert value.reference_period.start == date(2024, 12, 1)
+        assert value.reference_period.end == date(2025, 2, 28)
+        assert value.quote is not None
+        assert value.quote.startswith("Open-Meteo archive (ERA5) December 2024 to February 2025")
+
+    async def test_summer_days_are_warmer_than_the_year_and_winter_days_cooler(self) -> None:
+        """A sanity check on real bytes: Portugal's daily highs, weighted by population."""
+        (year,) = (await an_adapter().fetch(temperature(), [PORTUGAL])).values
+        (summer,) = (
+            await an_adapter(seasonal("summer")).fetch(a_season(SUMMER), [PORTUGAL])
+        ).values
+        (winter,) = (
+            await an_adapter(seasonal("winter")).fetch(a_season(WINTER), [PORTUGAL])
+        ).values
+
+        assert winter.payload.magnitude < year.payload.magnitude < summer.payload.magnitude
+
+    async def test_a_season_is_paced_by_its_own_days_not_a_years(self) -> None:
+        """Ninety-two days for five places is 33 calls, not the year's 130."""
+        spain = tuple(
+            place.model_copy(update={"candidate": "country.spain"}) for place in PORTUGALS_PLACES
+        )
+        pauses = Pauses()
+
+        await an_adapter(
+            seasonal("summer"), places=Places(PORTUGALS_PLACES + spain), pauses=pauses
+        ).fetch(a_season(SUMMER), [PORTUGAL, SPAIN])
+
+        (pause,) = pauses.seconds
+        assert pause == pytest.approx(5 * 92 / 14 / 500 * 60, rel=0.01)

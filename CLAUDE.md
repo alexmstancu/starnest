@@ -30,7 +30,8 @@ adapters, no shared machinery beyond the `SourceAdapter` contract.
 **Family is the one pillar left, and it is blocked on something real rather than on effort.**
 It is OECD's, and OECD's API now serves scripts a Cloudflare browser challenge
 (`docs/catalog-blockers.md` item 5). **Climate is answered** (D4, Q210): temperature is the
-population-weighted mean over each country's five largest places, from GeoNames and Open-Meteo;
+population-weighted mean over each country's five largest places, from GeoNames and Open-Meteo,
+for the year and for a summer day and a winter day (Q213: daytime highs, never the night);
 sunshine is deliberately not fetched, because Open-Meteo's runs 30% to 68% high, unevenly.
 
 **The shipped set ranks all 32 countries** (2026-09-11). `fixed` is built and the total tax

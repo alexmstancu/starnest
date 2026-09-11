@@ -139,7 +139,7 @@ def test_the_country_catalog_has_forty_one_active_attributes(
         "SELECT count(*) FROM attribute WHERE id LIKE %s AND lifecycle_status = %s",
         (f"{COUNTRY}.%", "active"),
     ).fetchone()[0]
-    assert count == 41
+    assert count == 43
 
 
 def test_a_retired_attribute_keeps_its_row_and_loses_its_criterion(
@@ -298,7 +298,7 @@ def test_every_attribute_declares_the_max_age_reqs_gives_it(
     failed against a correctly seeded catalog.
     """
     declared = _max_ages_reqs_declares()
-    assert len(declared) == 41, "reqs.md 7.1 should list all 41 country attributes"
+    assert len(declared) == 43, "reqs.md 7.1 should list all 43 country attributes"
 
     with_a_horizon = {a: v for a, v in declared.items() if v != NO_HORIZON}
     disagreeing = connection.execute(

@@ -2211,10 +2211,12 @@ way by the active-value rule (section 3.6).
 
 | Attribute | Weight | Value type | Sources | Max age |
 |---|---|---|---|---|
-| `country.climate_zone` | 30% | **LabelSet** — Köppen codes | Köppen classification | — |
-| `country.avg_annual_temperature` | 25% | **Quantity** — °C | Open-Meteo archive **(C)** | 60 months |
-| `country.annual_sunshine_hours` | 25% | **Quantity** — hours/year | Open-Meteo, from radiation **(C)** | 60 months |
-| `country.projected_summer_heat_days` | 20% | **Quantity** — days above 35 °C projected for 2050, SSP2-4.5 | Copernicus CDS climate projections | 60 months |
+| `country.climate_zone` | 15% | **LabelSet** — Köppen codes | Köppen classification | — |
+| `country.avg_annual_temperature` | 20% | **Quantity** — °C | Open-Meteo archive **(C)**, population-weighted (Q210) | 60 months |
+| `country.summer_daytime_temperature` | 20% | **Quantity** — °C, average daily high June to August | Open-Meteo archive **(C)**, population-weighted (Q210) | 60 months |
+| `country.winter_daytime_temperature` | 20% | **Quantity** — °C, average daily high December to February | Open-Meteo archive **(C)**, population-weighted (Q210) | 60 months |
+| `country.annual_sunshine_hours` | 15% | **Quantity** — hours/year | No usable source yet: Open-Meteo's, from radiation, runs 30% to 68% high (Q210) | 60 months |
+| `country.projected_summer_heat_days` | 10% | **Quantity** — days above 35 °C projected for 2050, SSP2-4.5 | Copernicus CDS climate projections | 60 months |
 
 #### Connectivity — 8%
 
@@ -3011,4 +3013,5 @@ Recorded from a front-to-back read of this document.
 | Q210 | **D4: a national climate figure is the population-weighted mean over the country's five largest places** (2026-09-11, `0464`) | The household's choice over a capital alone (Italy is not only Rome) and a grid mean (Norway is not its empty north). The places are GeoNames' (CC BY 4.0), stored as `population_centre` rows with provenance and regenerable by `backend/scripts/population_centres.py`. One settled ERA5 year, because the free tier counts a year for one place as 26 calls and a decade for 160 places would be four days of allowance; year-to-year swings are small beside the differences between countries. `medium` confidence, being derived. Sunshine is not fetched: Open-Meteo's is modelled, and runs 30% to 68% above the recorders, unevenly |
 | Q211 | **A fourth container: the live schema diagram** (2026-09-11) | Asked for by the household, to browse the schema beside the running app. Liam ERD built from a schema-only dump at start, on `127.0.0.1:4174`; a viewing aid that reads and never writes. Q182's three are unchanged |
 | Q212 | **Working hours, rail and motorway density anchored; the densities rethought after the MVP** (2026-09-11, `0465`) | From the household's notes against the real figures. Working hours 40 h → 100, 48 h → 0: the proposed 0 at 42 hours was "too aggressive", 40 being the standard and 42 "not too much", and 48 is the EU Working Time Directive's weekly maximum. Rail 0 → 0, 100 km per 1,000 km² → 100; motorways 0 → 0, 40 → 100, both kept for the MVP. Dividing a network by land area punishes empty land; the household's real question is whether the main places are connected, recorded as post-MVP work in `devplan.md` 8 |
+| Q213 | **Temperature: the yearly average keeps its 18–26 °C band, and a summer day and a winter day join it** (2026-09-11, `0466`, `0467`) | The household kept the band, knowing it reads most of Europe as cool. A yearly average hides the extremes a year is lived in -- Romania (12.6 °C) and Belgium (11.9 °C) read alike while Bucharest's summers pass 30 °C and its winters freeze -- so two measures were added beside it, **daytime, never the night**: the average daily high of June to August, scored comfortable at 20–26 °C with zero at 12 and 36 °C, and of December to February, scored the warmer the better, 0 °C → 0 and 15 °C → 100. The three temperatures weigh the same within climate. The yearly band favours the south where the summer band penalises it: a mild climate without scorching summers |
 
