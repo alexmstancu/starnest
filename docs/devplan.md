@@ -55,7 +55,7 @@ What its section below asks for, against what exists on 2026-09-11.
 
 | Assertion | State |
 |---|---|
-| All six blocking attributes for all 32 | **Yes, live** — once Switzerland stands in for Liechtenstein on three (`0460`, Q208). Checked against the stored figures, **not yet written down as a test**: the acceptance suite runs on stub sources, so this needs a `live`-marked check |
+| All six blocking attributes for all 32 | **Yes, and a test** — `tests/live/test_gate_b.py` runs every real source and the stand-ins into the test database and reads the result through the active-value rule. `make live`, never `make check`. Watched failing with the stand-ins removed: exactly Liechtenstein's three |
 | No country spuriously `insufficient_data` | **Yes.** All 32 ranked under `local_employment` |
 | Coverage high, and honest | **Honest, not high.** 36% for every country: 25 `fixed` criteria have no anchors, and anchors are the household's to choose. The spot-check by hand is a human's and has not happened |
 | Two sources for one attribute: both stored, the right one active | **Yes, and tested.** The tax rate (OECD beside the estimate) and Liechtenstein (a stand-in beside a real figure) — `test_runs_api.py` proves the real figure wins with the stand-in still stored |

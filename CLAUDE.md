@@ -112,6 +112,7 @@ Makefile      every command the project has
 | `make up` / `make down` | PostgreSQL only, for running backend and UI from the command line |
 | `make test` | Fast unit tests, no coverage |
 | `make coverage` / `make coverage-open` | Full suite with coverage; **fails below 85%**. HTML at `backend/htmlcov/` |
+| `make live` | The tests that call real third-party sources: whether the captured fixtures still match, and Gate B's all-32 coverage. **Never part of `make check`** |
 | `make boundaries` | `import-linter` — `arch.md` 6.2 as something a build fails on |
 | `make audit` | The three structural audits below |
 | `make openapi` | Regenerate `docs/openapi.implemented.yaml`. **Run after changing any endpoint** — a test fails when it is stale |

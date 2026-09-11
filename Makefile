@@ -9,7 +9,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help up down logs serve acquire rank migrate rollback backup \
-        test test-storage test-acceptance coverage coverage-open lint format boundaries audit openapi check \
+        test test-storage test-acceptance live coverage coverage-open lint format boundaries audit openapi check \
         ui-install ui-lint ui-typecheck ui-test ui-coverage ui-coverage-open ui-check ui-client \
         e2e e2e-report \
         docker-build docker-up docker-migrate docker-down env \
@@ -90,8 +90,13 @@ test-storage:  ## Tests against a real PostgreSQL — the constraints ARE the be
 test-acceptance:  ## The HTTP contract, end to end against a live backend
 	cd $(BACKEND) && uv run pytest -m acceptance
 
-coverage:  ## Full suite with coverage. Fails below 85% lines and branches
-	cd $(BACKEND) && uv run pytest $(COV)
+live:  ## Real third-party sources, on purpose: the fixtures still match, and Gate B's coverage holds
+	cd $(BACKEND) && uv run pytest -m live
+
+# `live` is excluded: those tests call real third-party sources, and a gate that fails because
+# Eurostat was slow says nothing about this code (arch.md 6.7). Until 2026-09-11 it ran them.
+coverage:  ## Full suite with coverage, live sources excluded. Fails below 85% lines and branches
+	cd $(BACKEND) && uv run pytest -m "not live" $(COV)
 	@echo ""
 	@echo "  HTML report: backend/htmlcov/index.html   (make coverage-open)"
 
