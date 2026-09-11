@@ -55,7 +55,8 @@ VALUE_TYPES = {
 # data gap rather than on merit.
 REQUIRED_ATTRIBUTES = {
     "country.cost_of_living_index",
-    "country.income_tax_effective",
+    # `0445` replaced `income_tax_effective`: the total rate, every component (Q205).
+    "country.total_tax_rate_effective",
     # `0444` stopped `house_price_to_income_ratio` blocking: no source covers it, which fails
     # reqs.md 7.5's own second condition (Q204).
     # `0442` split this: a measured homicide rate we score, and Numbeo's composite as an
@@ -385,3 +386,25 @@ def test_the_document_and_the_catalog_agree_on_every_value_type(
         if documented[attribute] != seeded[attribute]
     }
     assert disagreeing == {}, f"reqs.md says, catalog says: {disagreeing}"
+
+
+def test_no_rule_judges_a_retired_attribute(connection: psycopg.Connection) -> None:
+    """A retired attribute receives no new figures, so a rule that judges one is a rule that can
+    never fire -- and would never say so. `0445` retired `income_tax_effective` while
+    `cheap_but_taxed` still named it, and nothing noticed until the document was read by hand.
+    """
+    stranded = connection.execute(
+        """
+        SELECT r.compound_rule, r.attribute
+        FROM (
+            SELECT compound_rule, attribute FROM compound_rule_condition
+            UNION ALL
+            SELECT compound_rule, attribute FROM compound_rule_input
+        ) AS r
+        JOIN attribute AS a ON a.id = r.attribute
+        WHERE a.lifecycle_status = 'retired'
+        ORDER BY 1, 2
+        """
+    ).fetchall()
+
+    assert stranded == [], f"rules judging retired attributes: {stranded}"

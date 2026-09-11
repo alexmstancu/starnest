@@ -127,7 +127,14 @@ by real data rather than by a fixture invented to exercise them. The last three 
 chosen because each opens a pillar nothing had answered -- career, connectivity and nature --
 rather than deepening housing, which already had two of its three (`devplan.md` D7).
 
-**`earn_nt_net` answers `income_tax_effective` for 31 of 32, where OECD answers 26.** It is
+**`income_tax_effective` is retired (`0445`, Q205) and this entry is inert** -- acquisition
+reads active attributes only. It measured the employee's side over gross, which penalised
+countries that put contributions on the employee; the total tax rate replaced it. The entry
+stays because its three components -- gross, taxes, employee contributions -- are what the total
+rate is computed from for the five EU members OECD does not cover, and it is rewired to that
+next.
+
+**`earn_nt_net` answered `income_tax_effective` for 31 of 32, where OECD answers 26.** It is
 built on the same joint EU-OECD tax-benefit model as OECD's Taxing Wages, and it covers the
 five EU members OECD does not -- **including Romania**, which is the comparison anchor.
 The rate is income tax plus employee social contributions over gross earnings, for a single

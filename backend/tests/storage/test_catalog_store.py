@@ -43,7 +43,8 @@ A_GATE_ASKED_AT_EVERY_LEVEL = "not_manually_excluded"
 THE_ORDER_THIS_OVERRIDE_IMPOSES = ("oecd", "eurostat")
 
 A_RULE_THAT_READS_TWO_ATTRIBUTES = "cheap_but_taxed"
-THE_ATTRIBUTES_IT_READS = ("country.cost_of_living_index", "country.income_tax_effective")
+THE_ATTRIBUTES_IT_READS = ("country.cost_of_living_index", "country.total_tax_rate_effective")
+"""`0446` moved the second from the retired income-tax attribute to the total rate (Q205)."""
 
 
 @pytest.fixture

@@ -13,7 +13,7 @@ implementation work.
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
 | `evaluation/` | **Written, cut to the MVP's needs.** Normalisation (`percentile` and `as_is` only), redistribution, coverage, matching, ranking. Pure functions, no I/O. **`fixed`, `target_range`, the compound-rule shapes and match rules are not built** |
-| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 16 of the contract's 40 operations; four source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO); runs are planned, persisted and pollable |
+| `api/`, `data_acquisition/`, `data_sources/` | **Written.** 16 of the contract's 40 operations; five source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD); runs are planned, persisted and pollable |
 | `comparison/` | Empty. Post-Gate-A |
 | `ui/` | The shell plus the Rank and Configure screens. 98 tests. **It talks to the real backend**, and to a mock only in unit tests |
 
@@ -35,12 +35,16 @@ Only `www.oecd.org` is Cloudflare-blocked. An earlier note here said no OECD ada
 work; that generalised one bad path to a whole organisation and is corrected in
 `docs/catalog-blockers.md` item 5.
 
-**The shipped set has every figure it needs for 31 of 32 countries, and still cannot score** —
-because what blocks it now is a *method*, not data. `income_tax_effective` is answered by
-Eurostat `earn_nt_net` (31 of 32, Romania included, 41.5% — what Romanian law gives) and
-normalises `fixed`, which has no anchors and is not built. `house_price_to_income_ratio`
-stopped blocking (Q204): no source publishes it across countries, and deriving it is post-MVP.
-Liechtenstein is missing from three blocking sources and waits on Gate B's Swiss proxy.
+**The shipped set cannot score yet, and each country's reason is now true and names its own
+fix.** For 26, every figure is present and `country.total_tax_rate_effective` normalises
+`fixed`, which is not built — build it and choose anchors. For Romania, Bulgaria, Croatia,
+Cyprus and Malta, the total tax rate has no source yet — OECD does not cover them, and
+per-country sources are next. Liechtenstein waits on Gate B's Swiss proxy.
+
+**The total tax rate (Q205) counts every component, employee's and employer's, over the whole
+cost of employment, at 167% of the average wage** — so Romania, which moved contributions onto
+the employee in 2018, is not penalised for how it splits the same money. It replaced
+`income_tax_effective`, which is retired. `house_price_to_income_ratio` stopped blocking (Q204).
 
 **`cost_of_living_index` was the third and is resolved** (`0443`): typed `Index` with no bounds
 declared, it could hold no value at all. A price level index has a *base* (EU27 = 100), not a

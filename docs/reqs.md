@@ -2083,7 +2083,7 @@ way by the active-value rule (section 3.6).
 | Attribute | Weight | Value type | Sources | Max age |
 |---|---|---|---|---|
 | `country.cost_of_living_index` | 35% | **Quantity** — price level, EU27 average = 100 | Eurostat price level indices (`tec00120`), World Bank ICP | 24 months |
-| `country.income_tax_effective` | 30% | **Ratio** — share of gross income | OECD Tax Database, national tax authorities | 24 months |
+| `country.total_tax_rate_effective` | 30% | **Ratio** — every tax and contribution, employee's and employer's, as a share of total labour cost, at 167% of the average wage | OECD Taxing Wages (`AV_TW`); per-country sources for the five EU members OECD does not cover | 24 months |
 | `country.remote_work_tax_treaty` | 20% | **LabelSet** — treaty partners; must include `home_country` | OECD treaty database, manual | 24 months |
 | `country.economic_outlook` | 15% | **Quantity** — projected GDP growth, % per year | IMF *World Economic Outlook*, European Commission forecasts, World Bank Global Economic Prospects | 12 months |
 
@@ -2099,6 +2099,17 @@ way by the active-value rule (section 3.6).
 > basket, because the weights it applies are *within one dimension* — every one of them is a
 > price. Section 3.5a's test is better read as "does the formula encode somebody's view of what
 > matters", and a price basket does not.
+
+> **`country.total_tax_rate_effective` replaced `country.income_tax_effective` on 2026-09-11**
+> (migration `0445`, Q205). The old measure was income tax plus the *employee's* contributions
+> over gross pay, which penalised every country that puts contributions on the employee:
+> Romania, which moved almost all of them there in 2018, came out heaviest of 31 at 41.5% while
+> Switzerland looked light at 18.1% with its employer's share invisible. The total rate counts
+> **every component, whoever pays it, over the whole cost of employment** — the tax wedge,
+> OECD's headline measure for exactly this reason. It is read at **167% of the average wage**,
+> the highest step OECD models, so a progressive system shows its bite; it is an *effective*
+> rate at that income, not a top marginal bracket, which would tax the last euro rather than the
+> salary. Applying each country's brackets to the household's own salary is post-MVP.
 
 > **We do not compute trends.** The IMF, the European Commission and the World Bank already
 > publish projections with far more analysis behind them than we could justify. This criterion
@@ -2425,7 +2436,7 @@ supplies the comparison.
 | Rule | Level | Shape | Reads | Fires when | Outcome |
 |---|---|---|---|---|---|
 | `mild_now_brutal_later` | country | `AllConditionsHold` | `country.avg_annual_temperature` within a comfortable band, **and** `country.projected_summer_heat_days` above a floor | A comfortable annual mean hides a projected summer that is not. **Both bands TBD** | warning |
-| `cheap_but_taxed` | country | `AllConditionsHold` | `country.cost_of_living_index` below a ceiling, **and** `country.income_tax_effective` above a floor | Low prices are offset by an effective tax rate that removes the advantage. **Both bands TBD** | warning |
+| `cheap_but_taxed` | country | `AllConditionsHold` | `country.cost_of_living_index` below a ceiling, **and** `country.total_tax_rate_effective` above a floor | Low prices are offset by an effective tax rate that removes the advantage. **Both bands TBD** | warning |
 | `rent_vs_spend` | city | `ShareOfHouseholdField` | `city.rent_centre`, `household.target_monthly_spend` | Rent consumes more than `threshold_max` of total household spend. Provisionally 0.40 | warning |
 | `cost_of_living_vs_income` | city | `ShareOfHouseholdField` | `city.cost_of_living_monthly`, `household.net_income` | Total living costs consume more than `threshold_max` of net income. Provisionally 0.60 | warning |
 | `expat_bubble` | city | `AllConditionsHold` | `city.expat_community_size` above a floor, **and** `country.openness_to_foreigners` below a ceiling — **an input from the parent country** | A large expat community sits inside a country with low openness. **Both bands TBD** | warning |
@@ -2463,7 +2474,7 @@ than a genuinely undocumented place.
 > criterion and its weight, unanswered, and deriving it is post-MVP work.
 >
 > **Liechtenstein strains the second condition for three of the six** —
-> `cost_of_living_index`, `income_tax_effective` and `healthcare_system_quality` each come from
+> `cost_of_living_index`, `total_tax_rate_effective` and `healthcare_system_quality` each come from
 > a source that covers 31 of the 32, and Liechtenstein is the one. That is not a broken fetch:
 > no pan-European statistics office surveys it. Gate B's decision covers it — a Swiss figure
 > standing in, stored as a Swiss value at `low` confidence, the substitution visible
@@ -2472,7 +2483,7 @@ than a genuinely undocumented place.
 | Attribute | Share of the country score | Why |
 |---|---|---|
 | `country.cost_of_living_index` | 4.9% | Affordability is the question the app exists to answer |
-| `country.income_tax_effective` | 4.2% | Net income is unknowable without it |
+| `country.total_tax_rate_effective` | 4.2% | Net income is unknowable without it |
 | `country.homicide_rate` | 6.0% | Half the safety pillar |
 | `country.political_economic_stability` | 6.0% | The other half; WGI covers every country, so absence means failure |
 | `country.healthcare_system_quality` | 9.0% | The **entire** health pillar — missing it means health silently contributes nothing |
@@ -2964,4 +2975,5 @@ Recorded from a front-to-back read of this document.
 | Q202 | **`country.crime_safety_index` splits into `country.homicide_rate` and a Numbeo `ExternalScore`** (2026-09-09, migration `0442`) | It declared Numbeo's 0–100 bounds and named UNODC's homicide rate first — two quantities on two scales, so a figure from one would have been stored under the other's bounds, wrong in a way nothing downstream could detect. The split follows section 3.5a: the measured rate is scored, the crowdsourced composite is displayed. Eurostat `sdg_16_10` answers all 32 as a standardised death rate, which is more comparable than police-recorded offences because recording practice varies. The goal flips to `minimise`: a safety index rises as things improve and a homicide rate falls. The old attribute is retired, not deleted, and Numbeo's $50–500/month becomes optional rather than blocking |
 | Q203 | **`country.cost_of_living_index` is a `Quantity`, unit `eu27_average_100`** (2026-09-09, migration `0443`) | Typed `Index` with no bounds declared, it could hold no value at all, while being one of the seven attributes the shipped set will not score without. A price level index has a base, not a range — Romania 65.1, Iceland 173.5, no ceiling — so any `Index` bound wide enough would be invented, and `Ratio` is capped at 100. `Index` is reserved for figures whose bounds do the work. **It stays an attribute rather than an `ExternalScore`** although it is computed over a basket: its weights are within one dimension, all prices, and encode no view of what matters — the reading of section 3.5a's test this entry adopts |
 | Q204 | **`country.house_price_to_income_ratio` stops blocking, becomes a `Quantity`, and is derived post-MVP** (2026-09-11, migration `0444`) | No source publishes it as a cross-country figure. OECD, checked directly, has only an index with 2015 = 100 for every country and a percentage of each country's own long-run average — Portugal 133 and Germany 87 say which is further above its own history, not which is less affordable. It fails section 7.5's own condition that a blocking source cover all 32, so blocking could only ever make every candidate unscoreable. It keeps its criterion and weight, unanswered; the long-term answer is to **derive** it from an absolute house price level and median income (`devplan.md` 8). Retyped because a price-to-income ratio is a multiple with no ceiling, and `Ratio` means a share and is capped at 100 |
+| Q205 | **The tax attribute measures the total rate — every component, employee's and employer's, over total labour cost, at 167% of the average wage** (2026-09-11, migrations `0445`, `0446`) | The household's words: "what everybody needs to see is the total tax applied to their salary; whether it has three components in Romania and four in Lithuania is not important — compare apples to apples." The employee-side measure made Romania heaviest of 31 only because of how it splits contributions. Over labour cost rather than gross, because the employer's share sits on top of gross. At 167% because both publishers model it and a relocating skilled worker is above average; an effective rate, not a top bracket, so flat and progressive systems are measured the same way. A new attribute rather than a rename, since identifiers are immutable. Brackets applied to the household's own salary are post-MVP |
 
