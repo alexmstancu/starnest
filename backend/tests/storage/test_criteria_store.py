@@ -28,6 +28,16 @@ pytestmark = pytest.mark.storage
 
 MINIMAL = "minimal"
 SHIPPED = "local_employment"
+
+THE_ANCHORS_THE_HOUSEHOLD_CHOSE = {
+    "country.total_tax_rate_effective": ((Decimal(35), 100), (Decimal(55), 0)),
+}
+"""Every anchor the shipped set carries, each one decided against real figures (Q206).
+
+**The roster is the point.** "No anchor ships" held until `0447`, and it was never the real
+rule -- the rule is that no anchor ships that nobody chose. An anchor appearing here without a
+decision is the failure this catches, so adding one means changing this line deliberately.
+"""
 COUNTRY = "country"
 
 
@@ -104,12 +114,18 @@ class TestReadingASet:
 
         assert len(shipped.criteria) == 41
         assert shipped.enforced_match_rules
-        # Not an omission in the read: `reqs.md` 7.4 leaves every threshold TBD and no anchor
-        # ships, because both are the user's to set against real figures. A seeded one would be
-        # a plausible number nobody chose (`devplan.md` 0.3), and the catalog arithmetic tests
-        # check it stays that way.
+        # Not an omission in the read: `reqs.md` 7.4 leaves every threshold TBD, and an anchor
+        # ships only where the household chose it against real figures. A seeded one nobody
+        # chose would be a plausible number with no author (`devplan.md` 0.3).
         assert all(c.matching_threshold is None for c in shipped.criteria)
-        assert all(c.scale_anchors == () for c in shipped.criteria)
+        anchored = {
+            str(c.attribute): tuple((a.input_value, a.score) for a in c.scale_anchors)
+            for c in shipped.criteria
+            if c.scale_anchors
+        }
+        assert anchored == THE_ANCHORS_THE_HOUSEHOLD_CHOSE, (
+            "an anchor shipped that nobody chose, or a chosen one was lost on the way out"
+        )
 
     async def test_reading_a_set_that_does_not_exist_says_so(
         self, criteria: PostgresCriteriaStore

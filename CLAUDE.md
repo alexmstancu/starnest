@@ -35,11 +35,12 @@ Only `www.oecd.org` is Cloudflare-blocked. An earlier note here said no OECD ada
 work; that generalised one bad path to a whole organisation and is corrected in
 `docs/catalog-blockers.md` item 5.
 
-**The shipped set cannot score yet, and each country's reason is now true and names its own
-fix.** For 26, every figure is present and `country.total_tax_rate_effective` normalises
-`fixed`, which is not built — build it and choose anchors. For Romania, Bulgaria, Croatia,
-Cyprus and Malta, the total tax rate has no source yet — OECD does not cover them, and
-per-country sources are next. Liechtenstein waits on Gate B's Swiss proxy.
+**The shipped set ranks for the first time: 26 of 32 countries, at 36.4% coverage** (2026-09-11).
+`fixed` is built and the total tax rate carries the first anchors the catalog has shipped —
+35% → 100, 55% → 0, chosen against real figures (Q206). **Romania, Bulgaria, Croatia, Cyprus and
+Malta are unranked** because OECD does not cover them for the total tax rate; per-country sources
+are next. Liechtenstein waits on Gate B's Swiss proxy. Coverage is 36.4% because the other 25
+`fixed` criteria have no anchors and some attributes have no data — honest, and shown.
 
 **The total tax rate (Q205) counts every component, employee's and employer's, over the whole
 cost of employment, at 167% of the average wage** — so Romania, which moved contributions onto

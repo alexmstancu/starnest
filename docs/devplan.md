@@ -47,7 +47,7 @@ application, and where the two disagree, this one is right.
 | **P4** Adapter fan-out | **Under way.** Four adapters (Eurostat, World Bank, WHO, IMF), 9 of 11 pillars, 13 attributes. Ordered by pillar coverage per D7. The shipped set is two attributes from scoring, both OECD's |
 | **P5**-**P7** | Not started |
 
-**1,441 backend tests and 98 interface tests. 467 real values across 32 countries — 308 from Eurostat, 96 from the World Bank, 31 from WHO, 32 from the IMF, over 9 of 11 pillars. The shipped set has every figure it needs for 31 countries; what blocks it now is the unbuilt `fixed` method.**
+**1,476 backend tests and 98 interface tests. The shipped set `local_employment` ranks for the first time — 26 of 32 countries, at 36.4% coverage. Five sources, 9 of 11 pillars. Romania and four others wait on per-country tax sources.**
 
 ### GATE A — closed 2026-09-05
 

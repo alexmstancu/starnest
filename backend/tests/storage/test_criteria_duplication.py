@@ -31,12 +31,22 @@ A_COPY = "a_copy_of_the_seeded_set"
 A_BAND = (Decimal("500"), 100, "affordable")
 
 
-def _a_criterion_of_the_seeded_set(connection: psycopg.Connection) -> int:
-    """Any one of them. Which criterion carries the anchor is not what is under test."""
+def _a_criterion_of_the_seeded_set(connection: psycopg.Connection) -> tuple[int, str]:
+    """Any one that carries no anchors yet, with its attribute. Which one is not under test.
+
+    **Without anchors of its own** since `0447` shipped the first real ones, on the total tax
+    rate: the assertions below compare one criterion's anchors, and anchoring a criterion that
+    already had some would compare the test's band against the household's.
+    """
     return connection.execute(
-        "SELECT id FROM criterion WHERE criteria_set = %s ORDER BY id LIMIT 1",
+        """
+        SELECT c.id, c.attribute FROM criterion AS c
+        WHERE  c.criteria_set = %s
+          AND  NOT EXISTS (SELECT 1 FROM criterion_scale_anchor a WHERE a.criterion = c.id)
+        ORDER  BY c.id LIMIT 1
+        """,
         (THE_SEEDED_SET,),
-    ).fetchone()[0]
+    ).fetchone()
 
 
 def _anchor(connection: psycopg.Connection, criterion: int) -> None:
@@ -48,16 +58,21 @@ def _anchor(connection: psycopg.Connection, criterion: int) -> None:
     )
 
 
-def _anchors_of(connection: psycopg.Connection, criteria_set: str) -> list[tuple]:
+def _anchors_of(connection: psycopg.Connection, criteria_set: str, attribute: str) -> list[tuple]:
+    """One criterion's anchors, named by set and attribute -- the pair a copy preserves.
+
+    Scoped to one criterion rather than the whole set: the set as a whole now carries the
+    household's tax anchors too, and these tests are about the one band they wrote.
+    """
     return connection.execute(
         """
         SELECT anchor.input_value, anchor.score, anchor.label
         FROM   criterion_scale_anchor AS anchor
         JOIN   criterion AS c ON c.id = anchor.criterion
-        WHERE  c.criteria_set = %s
+        WHERE  c.criteria_set = %s AND c.attribute = %s
         ORDER  BY anchor.input_value
         """,
-        (criteria_set,),
+        (criteria_set, attribute),
     ).fetchall()
 
 
@@ -76,11 +91,12 @@ def test_a_duplicated_set_keeps_the_word_beside_the_number(
     as the original does, and only the reading of it goes missing -- which is a difference
     nobody would notice until the drill-down showed a number with nothing beside it.
     """
-    _anchor(connection, _a_criterion_of_the_seeded_set(connection))
+    criterion, attribute = _a_criterion_of_the_seeded_set(connection)
+    _anchor(connection, criterion)
 
     _duplicate(connection)
 
-    assert _anchors_of(connection, A_COPY) == [A_BAND]
+    assert _anchors_of(connection, A_COPY, attribute) == [A_BAND]
 
 
 def test_a_duplicated_set_carries_every_criterion_of_its_source(
@@ -110,7 +126,8 @@ def test_the_copy_and_its_source_hold_separate_anchors(
     connection: psycopg.Connection,
 ) -> None:
     """A full copy, not an overlay: editing one set may not reach the other (`reqs.md` Q191)."""
-    _anchor(connection, _a_criterion_of_the_seeded_set(connection))
+    criterion, attribute = _a_criterion_of_the_seeded_set(connection)
+    _anchor(connection, criterion)
     _duplicate(connection)
 
     connection.execute(
@@ -119,4 +136,4 @@ def test_the_copy_and_its_source_hold_separate_anchors(
         ("renamed", A_COPY),
     )
 
-    assert _anchors_of(connection, THE_SEEDED_SET) == [A_BAND]
+    assert _anchors_of(connection, THE_SEEDED_SET, attribute) == [A_BAND]

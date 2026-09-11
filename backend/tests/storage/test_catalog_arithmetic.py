@@ -408,3 +408,47 @@ def test_no_rule_judges_a_retired_attribute(connection: psycopg.Connection) -> N
     ).fetchall()
 
     assert stranded == [], f"rules judging retired attributes: {stranded}"
+
+
+# --- Which normalisation each value type allows (reqs.md 3.3a) -------------------------------
+
+
+def _legal_methods_reqs_declares() -> dict[str, set[str]]:
+    """The "Legal scales" column of `reqs.md` 3.3a, read from the document rather than restated.
+
+    A type whose column says "none" allows no method at all -- it is scored by membership, by
+    mapping, or after reduction, never by one of the three.
+    """
+    lines = REQS.read_text().split("\n")
+    row = re.compile(r"^\| `([A-Za-z]+)` \|[^|]*\| ([^|]*) \|")
+    legal: dict[str, set[str]] = {}
+    for line in lines:
+        m = row.match(line)
+        if m and m.group(1) in VALUE_TYPES:
+            legal[m.group(1)] = set(re.findall(r"`(fixed|percentile|as_is)`", m.group(2)))
+    return legal
+
+
+def test_every_scored_criterion_uses_a_method_its_value_type_allows(
+    connection: psycopg.Connection,
+) -> None:
+    """**Added 2026-09-11 after a criterion scored every country 97 to 100 on homicide.**
+
+    `0442` created `country.homicide_rate` and copied the retired attribute's method -- `as_is`,
+    right for Numbeo's 0-100 index -- onto a rate per 100,000. `as_is` treats a figure as already
+    being a score, so Romania's 1.12 was read as 1.12 out of 100 and inverted to 99. Plausible,
+    meaningless, and in the ranking. `reqs.md` 3.3a had always said a Quantity allows `fixed` and
+    `percentile` only; nothing read it.
+    """
+    legal = _legal_methods_reqs_declares()
+    assert set(legal) == VALUE_TYPES, "reqs.md 3.3a should give every value type a row"
+
+    illegal = [
+        (criteria_set, attribute, value_type, method)
+        for criteria_set, attribute, value_type, method in connection.execute(
+            "SELECT criteria_set, attribute, value_type, normalisation_method FROM criterion"
+            " WHERE is_scored ORDER BY 1, 2"
+        ).fetchall()
+        if method not in legal[value_type]
+    ]
+    assert illegal == [], f"methods reqs.md 3.3a does not allow: {illegal}"
