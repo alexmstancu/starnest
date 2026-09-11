@@ -62,7 +62,7 @@ class OecdAdapter(SourceAdapter):
         try:
             by_area = figures(await self._get(series), series.selection)
         except httpx.HTTPStatusError as refused:
-            return Acquired(failures=(_a_failure(attribute.id, str(refused)),))
+            return Acquired(failures=(_a_failure(attribute.id, _why(refused)),))
         except (httpx.HTTPError, OecdError) as unreachable:
             return Acquired(failures=(_a_failure(attribute.id, str(unreachable)),))
         return _values_from(by_area, series, attribute, candidates)
@@ -73,6 +73,23 @@ class OecdAdapter(SourceAdapter):
         )
         response.raise_for_status()
         return response.json()
+
+
+def _why(refused: httpx.HTTPStatusError) -> str:
+    """What went wrong, in words a retry can act on.
+
+    **OECD's Cloudflare front sometimes answers a script with a browser challenge** -- seen on
+    2026-09-11, two days after the same request had returned data. It is not a fault in the
+    request and not a withdrawn series, and "403 Forbidden" would send somebody looking for one.
+    The header is Cloudflare's own marker for it (`docs/catalog-blockers.md` item 5).
+    """
+    if refused.response.headers.get("cf-mitigated") == "challenge":
+        return (
+            "the oecd's cloudflare front answered with a browser challenge instead of data, as it "
+            "does intermittently for scripts; nothing is wrong with the request, and the figures "
+            "already stored are untouched"
+        )
+    return str(refused)
 
 
 def _values_from(

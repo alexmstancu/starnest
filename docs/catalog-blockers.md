@@ -152,6 +152,23 @@ on something outside the MVP boundary, not on an adapter.
 > offers `IX` and `PT_AVG_L_TERM` — an index and a percentage of the long-run average — so
 > whether it publishes the raw ratio the attribute wants still has to be checked.
 
+> **Addendum 2026-09-11: access is intermittent, so both readings were one observation each.**
+> On 2026-09-09 the OECD adapter fetched Taxing Wages from `sdmx.oecd.org` without trouble. On
+> 2026-09-11 the same request got **403 with `cf-mitigated: challenge`** — Cloudflare's
+> browser check, the block the original item described. Neither probe was wrong; each saw one
+> moment of a front door that sometimes lets a script through and sometimes does not.
+>
+> What that means in practice:
+>
+> - **Nothing already stored is lost.** OECD's 26 figures stay stored and active, and the run
+>   now says "browser challenge" rather than a bare 403 (the adapter reads Cloudflare's header).
+> - **They age.** Past `max_age` a stale OECD figure drops below the fresh estimate, so if OECD
+>   stays closed long enough the whole tax column quietly becomes the low-confidence estimate —
+>   visibly, because the confidence split on the ranking would show it.
+> - **Not worked around.** Getting past a bot check is the publisher saying no; the honest
+>   alternatives are retrying later, or OECD's own export from its Data Explorer as a file.
+>   Worth deciding only if the block persists.
+
 ### The original item, as filed
 
 Three family attributes plus `income_tax_effective` and `house_price_to_income_ratio` are

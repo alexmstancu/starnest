@@ -166,6 +166,32 @@ class TestTheShapesThatAreNotAnAnswer:
 
         assert "503" in (await adapter.fetch(an_attribute(), [BELGIUM])).failures[0].reason
 
+    async def test_a_cloudflare_challenge_is_named_as_one_not_as_a_bare_403(self) -> None:
+        """Seen live on 2026-09-11: `sdmx.oecd.org` answered a script two days earlier, then
+        served Cloudflare's browser challenge. "403 Forbidden" sends somebody looking for a
+        fault in a request that had none."""
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                403, headers={"cf-mitigated": "challenge"}, text="<title>Just a moment...</title>"
+            )
+
+        adapter = OecdAdapter(httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+        reason = (await adapter.fetch(an_attribute(), [BELGIUM])).failures[0].reason
+
+        assert "browser challenge" in reason
+        assert "already stored are untouched" in reason
+
+    async def test_a_403_without_the_challenge_header_stays_a_plain_http_error(self) -> None:
+        def respond(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(403, text="forbidden")
+
+        adapter = OecdAdapter(httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+        reason = (await adapter.fetch(an_attribute(), [BELGIUM])).failures[0].reason
+
+        assert "403" in reason
+        assert "challenge" not in reason
+
     async def test_a_transport_error_becomes_a_failure(self) -> None:
         def respond(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("no route to host")
