@@ -167,7 +167,7 @@ e2e-report:  ## Open the last Playwright report
 docker-build:  ## Build the backend and ui images
 	docker compose build
 
-docker-up: ## Start all three containers. Run `make docker-migrate` first, on a fresh database
+docker-up: ## Start the app (127.0.0.1:5173) and the schema diagram (127.0.0.1:4174). Migrate first
 	docker compose up -d
 
 docker-migrate:  ## Apply migrations inside the compose network

@@ -1,4 +1,4 @@
-# Three containers: database, backend, ui.
+# Four containers: database, backend, ui, and the schema diagram.
 #
 # Everything configurable comes from .env, which is never committed. .env.example documents
 # the shape with placeholder values; copy it and fill it in.
@@ -82,6 +82,32 @@ services:
     restart: unless-stopped
     # No backend URL is baked in. nginx proxies /v1 to the backend service, so the browser
     # makes same-origin requests and no CORS configuration exists anywhere.
+
+  # The ER diagram of the LIVE schema (Liam ERD, pinned like `make schema-diagram`), served at
+  # http://127.0.0.1:${SCHEMA_DIAGRAM_PORT}. Built from a schema-only dump when the container
+  # starts, so it shows the schema you are running -- after `make migrate`, refresh it with
+  #
+  #   docker compose restart schema-diagram
+  #
+  # yoyo's bookkeeping tables are left out: they record which migrations ran, a fact about this
+  # checkout rather than part of the model. The command is one line for the reason `backup`
+  # explains below. Node is installed at start rather than baked into an image of our own,
+  # because this is a viewing aid and not worth a Dockerfile to maintain.
+  schema-diagram:
+    image: postgres:17-alpine
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      PGHOST: database
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    working_dir: /diagram
+    ports:
+      - "127.0.0.1:${SCHEMA_DIAGRAM_PORT:-4174}:4173"
+    command: sh -c 'apk add --no-cache nodejs npm > /dev/null && pg_dump --schema-only --no-owner --no-privileges --exclude-table=_yoyo_log --exclude-table=_yoyo_migration --exclude-table=_yoyo_version --exclude-table=yoyo_lock > schema.sql && npx --yes @liam-hq/cli@0.7.24 erd build --input schema.sql --format postgres && exec npx --yes serve -l 4173 --no-clipboard dist'
+    restart: unless-stopped
 
   # -------------------------------------------------------------------------
   # One-shot services. Both are profile-gated so `docker compose up` never runs them.
