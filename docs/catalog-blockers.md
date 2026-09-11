@@ -1,5 +1,26 @@
 # What is blocked in the catalog rather than at the source
 
+> ## Update 2026-09-11 — the last two blocking attributes, verified against OECD
+>
+> **Neither can be answered as the catalog specifies it, and `reqs.md` 7.5's own rule says
+> neither should be blocking.** That rule chose the seven on two conditions together: the
+> score means little without them, **and the source covers all 32** -- "so a gap signals a
+> broken fetch rather than a genuinely undocumented place". Both fail the second condition.
+>
+> | Attribute | What OECD actually publishes | Covers |
+> |---|---|---|
+> | `house_price_to_income_ratio` | **No cross-country level.** `HPI_YDH` is an index with 2015 = 100 for *every* country; `HPI_YDH_AVG` is a percentage of *each country's own* long-run average. Portugal 133 and Germany 87 do not say Portugal is less affordable than Germany -- they say Portugal is further above its own history. Neither answers "price ÷ annual income" | 29 of 32 (not Cyprus, Liechtenstein, Malta) |
+> | `income_tax_effective` | **A real level.** Taxing Wages `AV_TW`, the average tax wedge as a percentage of gross earnings, by household type and income level -- which even matches the household record's shape | **26 of 32 -- not Bulgaria, Croatia, Cyprus, Liechtenstein, Malta or Romania** |
+>
+> So OECD coverage is per dataset: my first claim ("OECD omits Romania") was right for tax and
+> wrong for house prices, and the correction below is right about reachability and wrong to
+> have implied it settled coverage.
+>
+> **`house_price_to_income_ratio` is also mistyped**, the same class of fault as
+> `cost_of_living_index`: typed `Ratio`, which is capped at 100 and means "a share of
+> something", while a price-to-income ratio is a multiple -- "8.2 years of income" -- with no
+> ceiling.
+
 > **Items 1 and 2 were resolved on 2026-09-09** — migrations `0443` and `0442`. They are
 > kept below with their reasoning, because the account of why an attribute was wrong is
 > worth more than the record that it was fixed. Items 3, 4 and 5 are open.
