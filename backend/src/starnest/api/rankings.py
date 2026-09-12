@@ -18,10 +18,17 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from starnest.api.dependencies import Candidates, Criteria, Households, Values
+from starnest.api.dependencies import (
+    Candidates,
+    Catalog,
+    Criteria,
+    Households,
+    MatchRuleResults,
+    Values,
+)
 from starnest.candidates import Candidate
 from starnest.criteria import CriteriaSet
-from starnest.data import Value
+from starnest.data import MatchRuleResult, Value
 from starnest.evaluation import CandidateResult, rank_candidates
 
 router = APIRouter(tags=["rankings"])
@@ -34,6 +41,20 @@ class ConfidenceSplitBody(BaseModel):
     high: float
     medium: float
     low: float
+
+
+class WarningBody(BaseModel):
+    compound_rule: str
+    detail: str
+
+
+class NonMatchReasonBody(BaseModel):
+    """Exactly one of the three names the rule that said so (`reqs.md` 5.4)."""
+
+    reason_detail: str
+    criterion: str | None = None
+    match_rule: str | None = None
+    compound_rule: str | None = None
 
 
 class CandidateResultBody(BaseModel):
@@ -50,6 +71,8 @@ class CandidateResultBody(BaseModel):
     )
     match_status: str
     insufficient_reason: str | None = None
+    warnings: tuple[WarningBody, ...] = ()
+    non_match_reasons: tuple[NonMatchReasonBody, ...] = ()
 
 
 class RankingBody(BaseModel):
@@ -82,6 +105,8 @@ async def the_ranking(
     candidates: Candidates,
     values: Values,
     households: Households,
+    catalog: Catalog,
+    match_rule_results: MatchRuleResults,
 ) -> "TheRanking":
     """Score every candidate at this level, and hand back everything it took to do it.
 
@@ -113,12 +138,21 @@ async def the_ranking(
         str(candidate.id): await values.read_active_values(candidates=[str(candidate.id)])
         for candidate in roster
     }
+    # Both mechanisms that can rule a candidate out, and the rules that only warn (`reqs.md`
+    # 5.4). A gate nobody has answered leaves its candidate matching, which is what an
+    # unresearched question means.
+    answers: dict[str, list[MatchRuleResult]] = {}
+    for answer in await match_rule_results.read_results(level=level):
+        answers.setdefault(str(answer.candidate), []).append(answer)
+
     results = rank_candidates(
         criteria=criteria_set_read,
         level=level,
         values=active,
         score_scale_max=settings.score_scale_max,
         min_coverage=settings.min_coverage,
+        compound_rules=await catalog.read_compound_rules(level=level),
+        gate_answers=answers,
     )
     return TheRanking(
         criteria=criteria_set_read,
@@ -137,6 +171,8 @@ async def get_ranking(
     candidates: Candidates,
     values: Values,
     households: Households,
+    catalog: Catalog,
+    match_rule_results: MatchRuleResults,
 ) -> RankingBody:
     """Score every candidate at this level and return them in rank order.
 
@@ -144,7 +180,9 @@ async def get_ranking(
     recalculates from stored values, and an afternoon of tuning must not bury the few results
     worth keeping under hundreds nobody asked for. `POST /evaluations` is how one is kept.
     """
-    ranking = await the_ranking(criteria_set, level, criteria, candidates, values, households)
+    ranking = await the_ranking(
+        criteria_set, level, criteria, candidates, values, households, catalog, match_rule_results
+    )
     names = {str(candidate.id): candidate.name for candidate in ranking.roster}
     return RankingBody(
         criteria_set=criteria_set,
@@ -178,4 +216,17 @@ def _result_body(result: CandidateResult, names: dict[str, str]) -> CandidateRes
         ),
         match_status=str(result.match_status),
         insufficient_reason=result.insufficient_reason,
+        warnings=tuple(
+            WarningBody(compound_rule=str(flag.compound_rule), detail=flag.detail)
+            for flag in result.warnings
+        ),
+        non_match_reasons=tuple(
+            NonMatchReasonBody(
+                reason_detail=reason.reason_detail,
+                criterion=None if reason.criterion is None else str(reason.criterion),
+                match_rule=None if reason.match_rule is None else str(reason.match_rule),
+                compound_rule=(None if reason.compound_rule is None else str(reason.compound_rule)),
+            )
+            for reason in result.non_match_reasons
+        ),
     )

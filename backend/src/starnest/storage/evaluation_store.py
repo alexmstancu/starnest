@@ -26,12 +26,14 @@ from starnest.criteria import (
     PillarWeight,
     ScaleAnchor,
 )
-from starnest.data import AttributeId, PillarId, ValueType
+from starnest.data import AttributeId, CompoundRuleId, MatchRuleId, PillarId, ValueType
 from starnest.evaluation import (
     AttributeScore,
     CandidateResult,
     EvaluationStore,
     MatchStatus,
+    NonMatch,
+    RuleWarning,
     SavedEvaluation,
     UnknownEvaluationError,
 )
@@ -112,6 +114,36 @@ class PostgresEvaluationStore(EvaluationStore):
             if scores:
                 await self._queries.insert_candidate_attribute_scores(
                     connection, scores=json.dumps(scores)
+                )
+            reasons = [
+                {
+                    "candidate_result": identifiers[str(result.candidate)],
+                    "attribute": None if reason.criterion is None else str(reason.criterion),
+                    "match_rule": None if reason.match_rule is None else str(reason.match_rule),
+                    "compound_rule": (
+                        None if reason.compound_rule is None else str(reason.compound_rule)
+                    ),
+                    "reason_detail": reason.reason_detail,
+                }
+                for result in results
+                for reason in result.non_match_reasons
+            ]
+            if reasons:
+                await self._queries.insert_non_match_reasons(
+                    connection, reasons=json.dumps(reasons)
+                )
+            warnings = [
+                {
+                    "candidate_result": identifiers[str(result.candidate)],
+                    "compound_rule": str(flag.compound_rule),
+                    "detail": flag.detail,
+                }
+                for result in results
+                for flag in result.warnings
+            ]
+            if warnings:
+                await self._queries.insert_candidate_warnings(
+                    connection, warnings=json.dumps(warnings)
                 )
         return SavedEvaluation(
             id=evaluation,
@@ -243,6 +275,25 @@ def _result_from(row: Any, attribute_scores: tuple[AttributeScore, ...] = ()) ->
         match_status=MatchStatus(row.match_status),
         rank=row.rank,
         attribute_scores=attribute_scores,
+        warnings=tuple(
+            RuleWarning(compound_rule=CompoundRuleId(flag["compound_rule"]), detail=flag["detail"])
+            for flag in getattr(row, "warnings", []) or []
+        ),
+        non_match_reasons=tuple(
+            NonMatch(
+                reason_detail=reason["detail"],
+                criterion=None if reason["attribute"] is None else AttributeId(reason["attribute"]),
+                match_rule=(
+                    None if reason["match_rule"] is None else MatchRuleId(reason["match_rule"])
+                ),
+                compound_rule=(
+                    None
+                    if reason["compound_rule"] is None
+                    else CompoundRuleId(reason["compound_rule"])
+                ),
+            )
+            for reason in getattr(row, "non_match_reasons", []) or []
+        ),
     )
 
 

@@ -16,7 +16,14 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from starnest.api.bodies import ContractBody
-from starnest.api.dependencies import Candidates, Catalog, Criteria, Households, Values
+from starnest.api.dependencies import (
+    Candidates,
+    Catalog,
+    Criteria,
+    Households,
+    MatchRuleResults,
+    Values,
+)
 from starnest.api.rankings import CandidateResultBody, _result_body, the_ranking
 from starnest.api.values import ValueBody, _value_body
 from starnest.comparison import AttributeComparison, ComparatorCell, compare
@@ -76,6 +83,7 @@ async def get_comparison(
     values: Values,
     households: Households,
     catalog: Catalog,
+    match_rule_results: MatchRuleResults,
     comparators: Annotated[list[str], Query()] = [],  # noqa: B006  (FastAPI reads the default)
 ) -> ComparisonBody:
     """The focus against each comparator, attribute by attribute, with the synthesis.
@@ -83,7 +91,9 @@ async def get_comparison(
     A candidate at another level is simply not in this level's ranking and is refused by name,
     which is how "comparisons never mix levels" enforces itself rather than being remembered.
     """
-    ranking = await the_ranking(criteria_set, level, criteria, candidates, values, households)
+    ranking = await the_ranking(
+        criteria_set, level, criteria, candidates, values, households, catalog, match_rule_results
+    )
     settings = await households.get_settings()
     if settings.comparator_limit is None:
         raise HTTPException(

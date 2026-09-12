@@ -12,16 +12,27 @@ of the result whatever its status.
 weighting doing what it is for, rather than a shape invented for these tests.
 """
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 
 from starnest.criteria import Goal, NormalisationMethod
-from starnest.data import ConfidenceLevel, Count
+from starnest.data import (
+    CompoundRule,
+    CompoundRuleCondition,
+    CompoundRuleShape,
+    ConfidenceLevel,
+    Count,
+    MatchResult,
+    MatchRuleResult,
+    RuleOutcome,
+)
 from starnest.evaluation import MatchStatus, RankingError, rank_candidates
 
 from .builders import (
     A_SMALL_SCALE,
+    AN_ATTRIBUTE,
     RENT,
     a_criterion,
     a_pillar_weight,
@@ -34,13 +45,14 @@ from .builders import (
 HOUSING = "housing"
 
 
-def rank(criteria, values, *, scale: int = A_SMALL_SCALE, min_coverage=None):
+def rank(criteria, values, *, scale: int = A_SMALL_SCALE, min_coverage=None, **rules):
     return rank_candidates(
         criteria=criteria,
         level="country",
         values=values,
         score_scale_max=scale,
         min_coverage=min_coverage,
+        **rules,
     )
 
 
@@ -439,3 +451,91 @@ class TestEachContributionNamesTheValueBehindIt:
 
         (row,) = portugal.attribute_scores
         assert (row.normalised_score, row.used_value) == (None, None)
+
+
+class TestWhatTheRulesDoToARanking:
+    """`reqs.md` 5.4: a candidate that does not match keeps its score and stays visible, with
+    the reason beside it. A warning changes nothing at all."""
+
+    @staticmethod
+    def a_warning_rule() -> CompoundRule:
+        return CompoundRule(
+            id="cheap_but_taxed",
+            name="Cheap but taxed",
+            level="country",
+            shape=CompoundRuleShape.ALL_CONDITIONS_HOLD,
+            outcome=RuleOutcome.WARNING,
+            conditions=(
+                CompoundRuleCondition(ordinal=1, attribute=AN_ATTRIBUTE, threshold_min=Decimal(50)),
+            ),
+        )
+
+    @staticmethod
+    def a_failed_gate(candidate: str) -> MatchRuleResult:
+        return MatchRuleResult(
+            match_rule="uk_skilled_worker",
+            candidate=candidate,
+            match_result=MatchResult.NOT_MATCHING,
+            data_source="manual",
+            retrieval_date=datetime(2026, 9, 12, tzinfo=UTC),
+            reason="no sponsor",
+        )
+
+    def test_a_warning_flags_without_changing_the_score_or_the_status(self) -> None:
+        found = by_candidate(
+            rank(
+                a_set([a_criterion()]),
+                values_for(portugal=90, spain=10),
+                compound_rules=[self.a_warning_rule()],
+            )
+        )
+
+        portugal = found["country.portugal"]
+        assert [str(w.compound_rule) for w in portugal.warnings] == ["cheap_but_taxed"]
+        assert portugal.match_status is MatchStatus.MATCHING
+        assert portugal.score == found["country.portugal"].score
+        assert found["country.spain"].warnings == ()
+
+    def test_a_failed_gate_keeps_the_score_and_loses_the_rank(self) -> None:
+        criteria = a_set([a_criterion()])
+        enforced = criteria.model_copy(update={"enforced_match_rules": ("uk_skilled_worker",)})
+
+        found = by_candidate(
+            rank(
+                enforced,
+                values_for(portugal=90, spain=10),
+                gate_answers={"country.portugal": [self.a_failed_gate("country.portugal")]},
+            )
+        )
+
+        portugal = found["country.portugal"]
+        assert portugal.match_status is MatchStatus.NOT_MATCHING
+        assert portugal.score is not None, "a non-matching candidate keeps its score"
+        assert portugal.rank is None
+        assert portugal.non_match_reasons[0].reason_detail == "no sponsor"
+
+    def test_the_candidate_below_it_takes_the_first_rank(self) -> None:
+        """A rank is a position among the candidates still in the running."""
+        criteria = a_set([a_criterion()])
+        enforced = criteria.model_copy(update={"enforced_match_rules": ("uk_skilled_worker",)})
+
+        found = by_candidate(
+            rank(
+                enforced,
+                values_for(portugal=90, spain=10),
+                gate_answers={"country.portugal": [self.a_failed_gate("country.portugal")]},
+            )
+        )
+
+        assert found["country.spain"].rank == 1
+
+    def test_a_gate_the_set_does_not_enforce_leaves_the_candidate_matching(self) -> None:
+        found = by_candidate(
+            rank(
+                a_set([a_criterion()]),
+                values_for(portugal=90, spain=10),
+                gate_answers={"country.portugal": [self.a_failed_gate("country.portugal")]},
+            )
+        )
+
+        assert found["country.portugal"].match_status is MatchStatus.MATCHING

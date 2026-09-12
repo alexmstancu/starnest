@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.candidates import CandidateId
 from starnest.data import AttributeId, ConfidenceLevel, PillarId
+from starnest.evaluation.rules import NonMatch, RuleWarning
 
 
 class MatchStatus(StrEnum):
@@ -95,4 +96,19 @@ class CandidateResult(BaseModel):
     insufficient_reason: str | None = Field(
         default=None,
         description="Why this candidate could not be scored, in words, for the screen to show.",
+    )
+    warnings: tuple[RuleWarning, ...] = Field(
+        default=(),
+        description=(
+            "Flags that rule nothing out and never change the score: a compound rule whose "
+            "outcome is a warning (`reqs.md` 3.7a)."
+        ),
+    )
+    non_match_reasons: tuple[NonMatch, ...] = Field(
+        default=(),
+        description=(
+            "Why this candidate does not match, from either mechanism -- a gate or a compound "
+            "rule -- because both feed one reporting surface (`reqs.md` 5.4). A candidate that "
+            "does not match keeps its score and stays visible."
+        ),
     )

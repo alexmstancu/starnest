@@ -119,6 +119,12 @@ components:
         name:
           title: Name
           type: string
+        non_match_reasons:
+          default: []
+          items:
+            $ref: '#/components/schemas/NonMatchReasonBody'
+          title: Non Match Reasons
+          type: array
         rank:
           anyOf:
           - type: integer
@@ -130,6 +136,12 @@ components:
           - type: 'null'
           description: Null only when insufficient data. On the evaluation's scale.
           title: Score
+        warnings:
+          default: []
+          items:
+            $ref: '#/components/schemas/WarningBody'
+          title: Warnings
+          type: array
       required:
       - candidate
       - name
@@ -168,6 +180,12 @@ components:
         name:
           title: Name
           type: string
+        non_match_reasons:
+          default: []
+          items:
+            $ref: '#/components/schemas/NonMatchReasonBody'
+          title: Non Match Reasons
+          type: array
         rank:
           anyOf:
           - type: integer
@@ -179,6 +197,12 @@ components:
           - type: 'null'
           description: Null only when insufficient data. On the evaluation's scale.
           title: Score
+        warnings:
+          default: []
+          items:
+            $ref: '#/components/schemas/WarningBody'
+          title: Warnings
+          type: array
       required:
       - candidate
       - name
@@ -258,6 +282,111 @@ components:
       type: object
     ComparisonSideBody:
       additionalProperties: true
+      type: object
+    CompoundRuleBody:
+      description: 'A rule over more than one figure. **A null threshold is one nobody
+        has chosen yet**
+
+        (`reqs.md` 7.4): an undecided rule is stored, displayed and never fired.'
+      properties:
+        conditions:
+          default: []
+          items:
+            $ref: '#/components/schemas/CompoundRuleConditionBody'
+          title: Conditions
+          type: array
+        id:
+          title: Id
+          type: string
+        inputs:
+          default: []
+          items:
+            $ref: '#/components/schemas/CompoundRuleInputBody'
+          title: Inputs
+          type: array
+        level:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Level
+        name:
+          title: Name
+          type: string
+        outcome:
+          title: Outcome
+          type: string
+        shape:
+          title: Shape
+          type: string
+        threshold_max:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Threshold Max
+        threshold_min:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Threshold Min
+      required:
+      - id
+      - name
+      - shape
+      - outcome
+      title: CompoundRuleBody
+      type: object
+    CompoundRuleConditionBody:
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        ordinal:
+          title: Ordinal
+          type: integer
+        threshold_max:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Threshold Max
+        threshold_min:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Threshold Min
+      required:
+      - ordinal
+      - attribute
+      title: CompoundRuleConditionBody
+      type: object
+    CompoundRuleInputBody:
+      properties:
+        attribute:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Attribute
+        household_field:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Household Field
+        input_order:
+          title: Input Order
+          type: integer
+      required:
+      - input_order
+      title: CompoundRuleInputBody
+      type: object
+    CompoundRulesBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CompoundRuleBody'
+          title: Items
+          type: array
+      required:
+      - items
+      title: CompoundRulesBody
       type: object
     ConfidenceLevel:
       description: 'The four grades, strongest first.
@@ -812,6 +941,32 @@ components:
       - items
       title: MatchRulesBody
       type: object
+    NonMatchReasonBody:
+      description: Exactly one of the three names the rule that said so (`reqs.md`
+        5.4).
+      properties:
+        compound_rule:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Compound Rule
+        criterion:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Criterion
+        match_rule:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Match Rule
+        reason_detail:
+          title: Reason Detail
+          type: string
+      required:
+      - reason_detail
+      title: NonMatchReasonBody
+      type: object
     PillarBody:
       additionalProperties: true
       type: object
@@ -1191,6 +1346,19 @@ components:
       - total
       title: ValuesBody
       type: object
+    WarningBody:
+      properties:
+        compound_rule:
+          title: Compound Rule
+          type: string
+        detail:
+          title: Detail
+          type: string
+      required:
+      - compound_rule
+      - detail
+      title: WarningBody
+      type: object
 info:
   title: Starnest
   version: 1.0.0
@@ -1338,6 +1506,45 @@ paths:
       summary: Get Comparison
       tags:
       - evaluation
+  /v1/compound-rules:
+    get:
+      description: 'The rules that read more than one figure at once (`reqs.md` 3.7a).
+
+
+        Both the MVP ships are **undecided** -- every threshold in `reqs.md` 7.4 is
+        TBD -- so they
+
+        are listed with null bounds and fire nothing. That is the shipping state,
+        not an omission:
+
+        a rule fired on an invented number is the fabricated judgement this application
+        prevents.'
+      operationId: listCompoundRules
+      parameters:
+      - in: query
+        name: level
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Level
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompoundRulesBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List Compound Rules
+      tags:
+      - rules
   /v1/criteria-sets:
     get:
       description: 'Headers only. Reading 41 criteria per set to fill a dropdown would

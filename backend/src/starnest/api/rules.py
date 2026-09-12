@@ -74,6 +74,81 @@ class MatchRuleResultsBody(BaseModel):
     items: tuple[MatchRuleResultBody, ...]
 
 
+class CompoundRuleInputBody(BaseModel):
+    input_order: int
+    attribute: str | None = None
+    household_field: str | None = None
+
+
+class CompoundRuleConditionBody(BaseModel):
+    ordinal: int
+    attribute: str
+    threshold_min: float | None = None
+    threshold_max: float | None = None
+
+
+class CompoundRuleBody(BaseModel):
+    """A rule over more than one figure. **A null threshold is one nobody has chosen yet**
+    (`reqs.md` 7.4): an undecided rule is stored, displayed and never fired."""
+
+    id: str
+    name: str
+    level: str | None = None
+    shape: str
+    outcome: str
+    threshold_min: float | None = None
+    threshold_max: float | None = None
+    inputs: tuple[CompoundRuleInputBody, ...] = ()
+    conditions: tuple[CompoundRuleConditionBody, ...] = ()
+
+
+class CompoundRulesBody(BaseModel):
+    items: tuple[CompoundRuleBody, ...]
+
+
+@router.get("/compound-rules", operation_id="listCompoundRules", response_model=CompoundRulesBody)
+async def list_compound_rules(catalog: Catalog, level: str | None = None) -> CompoundRulesBody:
+    """The rules that read more than one figure at once (`reqs.md` 3.7a).
+
+    Both the MVP ships are **undecided** -- every threshold in `reqs.md` 7.4 is TBD -- so they
+    are listed with null bounds and fire nothing. That is the shipping state, not an omission:
+    a rule fired on an invented number is the fabricated judgement this application prevents.
+    """
+    return CompoundRulesBody(
+        items=tuple(
+            CompoundRuleBody(
+                id=str(rule.id),
+                name=rule.name,
+                level=None if rule.level is None else str(rule.level),
+                shape=str(rule.shape),
+                outcome=str(rule.outcome),
+                threshold_min=rule.threshold_min,
+                threshold_max=rule.threshold_max,
+                inputs=tuple(
+                    CompoundRuleInputBody(
+                        input_order=read.input_order,
+                        attribute=None if read.attribute is None else str(read.attribute),
+                        household_field=(
+                            None if read.household_field is None else str(read.household_field)
+                        ),
+                    )
+                    for read in rule.inputs
+                ),
+                conditions=tuple(
+                    CompoundRuleConditionBody(
+                        ordinal=condition.ordinal,
+                        attribute=str(condition.attribute),
+                        threshold_min=condition.threshold_min,
+                        threshold_max=condition.threshold_max,
+                    )
+                    for condition in rule.conditions
+                ),
+            )
+            for rule in await catalog.read_compound_rules(level=level)
+        )
+    )
+
+
 @router.get("/match-rules", operation_id="listMatchRules", response_model=MatchRulesBody)
 async def list_match_rules(catalog: Catalog, level: str | None = None) -> MatchRulesBody:
     """The gates, or those asked at one level. A gate with no level is asked at every level."""

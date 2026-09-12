@@ -16,6 +16,8 @@ from starnest.evaluation import (
     AttributeScore,
     CandidateResult,
     MatchStatus,
+    NonMatch,
+    RuleWarning,
     UnknownEvaluationError,
 )
 from starnest.storage import PostgresCriteriaStore, PostgresEvaluationStore
@@ -160,3 +162,40 @@ class TestWhatIsRefused:
 
         with pytest.raises(UnknownEvaluationError, match="no result"):
             await store.read_candidate(saved.id, "country.iceland")
+
+
+class TestTheRulesTravelWithTheResult:
+    """A saved evaluation reads the same later, which includes why a candidate did not match
+    and what it was flagged for (`reqs.md` 5.4, 3.7a)."""
+
+    async def test_a_warning_and_a_non_match_reason_come_back(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        store = PostgresEvaluationStore(pool)
+        flagged = a_result(
+            PORTUGAL,
+            71,
+            None,
+            match_status=MatchStatus.NOT_MATCHING,
+            warnings=(RuleWarning(compound_rule="cheap_but_taxed", detail="cheap and taxed"),),
+            non_match_reasons=(
+                NonMatch(match_rule="uk_skilled_worker", reason_detail="no sponsor"),
+            ),
+        )
+
+        saved = await store.save(
+            criteria=criteria,
+            level=COUNTRY,
+            results=[flagged],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+        )
+
+        (read,) = await store.read_results(saved.id)
+        assert read.match_status is MatchStatus.NOT_MATCHING
+        assert read.score == 71, "a candidate that does not match keeps its score"
+        assert [str(w.compound_rule) for w in read.warnings] == ["cheap_but_taxed"]
+        assert [str(r.match_rule) for r in read.non_match_reasons] == ["uk_skilled_worker"]
+        assert read.non_match_reasons[0].reason_detail == "no sponsor"
+        assert read.non_match_reasons[0].compound_rule is None

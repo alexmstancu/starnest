@@ -21,6 +21,7 @@ from starnest.evaluation.magnitudes import (
 from starnest.evaluation.normalisation import NormalisationError, scores_for
 from starnest.evaluation.ranking import RankingError, rank_candidates
 from starnest.evaluation.results import AttributeScore, CandidateResult, MatchStatus
+from starnest.evaluation.rules import NonMatch, RuleWarning, gates_that_rule_out, judgements_of
 from starnest.evaluation.store import EvaluationStore, SavedEvaluation, UnknownEvaluationError
 from starnest.evaluation.weighting import (
     WeightingError,
@@ -34,9 +35,11 @@ __all__ = [
     "CandidateResult",
     "EvaluationStore",
     "MatchStatus",
+    "NonMatch",
     "NormalisationError",
     "PublishedFigure",
     "RankingError",
+    "RuleWarning",
     "SavedEvaluation",
     "UnknownEvaluationError",
     "UnscoreableValueError",
@@ -44,7 +47,9 @@ __all__ = [
     "confidence_split",
     "coverage_of",
     "figure_of",
+    "gates_that_rule_out",
     "is_scoreable",
+    "judgements_of",
     "magnitude_of",
     "rank_candidates",
     "redistribute",

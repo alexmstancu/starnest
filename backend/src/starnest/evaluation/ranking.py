@@ -22,10 +22,11 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from starnest.candidates import CandidateId
 from starnest.criteria import TOTAL, CriteriaSet, Criterion
-from starnest.data import ConfidenceLevel, Value
+from starnest.data import CompoundRule, ConfidenceLevel, MatchRuleResult, Value
 from starnest.evaluation.magnitudes import PublishedFigure, UnscoreableValueError, figure_of
 from starnest.evaluation.normalisation import scores_for
 from starnest.evaluation.results import AttributeScore, CandidateResult, MatchStatus
+from starnest.evaluation.rules import gates_that_rule_out, judgements_of
 from starnest.evaluation.weighting import confidence_split, coverage_of, redistribute
 
 ValuesByCandidate = Mapping[str, Sequence[Value]]
@@ -42,6 +43,8 @@ def rank_candidates(
     values: ValuesByCandidate,
     score_scale_max: int,
     min_coverage: Decimal | None = None,
+    compound_rules: Sequence[CompoundRule] = (),
+    gate_answers: Mapping[str, Sequence[MatchRuleResult]] = {},
 ) -> tuple[CandidateResult, ...]:
     """Score every candidate, and put them in order.
 
@@ -73,6 +76,10 @@ def rank_candidates(
             readings=readings,
             scores=scores,
             min_coverage=min_coverage,
+            criteria=criteria,
+            compound_rules=compound_rules,
+            gate_answers=gate_answers.get(candidate, ()),
+            level=level,
         )
         for candidate in sorted(values)
     )
@@ -205,6 +212,10 @@ def _result_for(
     readings: Mapping[str, Mapping[str, Reading]],
     scores: Mapping[str, Mapping[str, int]],
     min_coverage: Decimal | None,
+    criteria: CriteriaSet,
+    compound_rules: Sequence[CompoundRule],
+    gate_answers: Sequence[MatchRuleResult],
+    level: str,
 ) -> CandidateResult:
     answered = {
         str(criterion.attribute)
@@ -245,13 +256,31 @@ def _result_for(
             insufficient_reason=refusal,
         )
     total = sum((row.contribution for row in breakdown), Decimal(0))
+    # The rules judge a candidate that *could* be scored. Applying them to one nobody could
+    # score would report "the tax is high here" about a country whose tax nobody has.
+    figures = {
+        attribute: readings[attribute][candidate].figure.magnitude
+        for attribute in readings
+        if candidate in readings[attribute]
+    }
+    warnings, ruled_out_by_a_rule = judgements_of(
+        rules=compound_rules, figures=figures, level=level
+    )
+    refusals = (
+        gates_that_rule_out(enforced=criteria.enforced_match_rules, answers=gate_answers)
+        + ruled_out_by_a_rule
+    )
     return CandidateResult(
         candidate=CandidateId(candidate),
         score=int(total.quantize(Decimal(1), rounding=ROUND_HALF_UP)),
         coverage=coverage,
         coverage_by_confidence=resting_on,
-        match_status=MatchStatus.MATCHING,
+        # A candidate that does not match keeps its score and stays visible, with the reason
+        # beside it (`reqs.md` 5.4).
+        match_status=MatchStatus.NOT_MATCHING if refusals else MatchStatus.MATCHING,
         attribute_scores=breakdown,
+        warnings=warnings,
+        non_match_reasons=refusals,
     )
 
 
@@ -347,7 +376,13 @@ def _ranked(results: Sequence[CandidateResult]) -> tuple[CandidateResult, ...]:
     show (`reqs.md` 5.4).
     """
     scored = sorted(
-        (result for result in results if result.score is not None),
+        (
+            result
+            for result in results
+            # A ranked candidate is one in the running: a non-matching one keeps its score and
+            # its place in the list, and carries no rank (`openapi.yaml`, CandidateResult.rank).
+            if result.score is not None and result.match_status is MatchStatus.MATCHING
+        ),
         key=lambda result: -(result.score or 0),
     )
     ranks: dict[str, int] = {}

@@ -14,7 +14,15 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from starnest.api.criteria import CriterionBody, _criterion_body
-from starnest.api.dependencies import Candidates, Criteria, Evaluations, Households, Values
+from starnest.api.dependencies import (
+    Candidates,
+    Catalog,
+    Criteria,
+    Evaluations,
+    Households,
+    MatchRuleResults,
+    Values,
+)
 from starnest.api.rankings import (
     CandidateResultBody,
     RankingBody,
@@ -93,6 +101,8 @@ async def save_evaluation(
     candidates: Candidates,
     values: Values,
     households: Households,
+    catalog: Catalog,
+    match_rule_results: MatchRuleResults,
 ) -> EvaluationSummaryBody:
     """Compute the ranking and keep it, with the criteria snapshot behind it.
 
@@ -100,7 +110,14 @@ async def save_evaluation(
     would let a saved evaluation differ from the ranking it was saved from.
     """
     ranking = await the_ranking(
-        body.criteria_set, body.level, criteria, candidates, values, households
+        body.criteria_set,
+        body.level,
+        criteria,
+        candidates,
+        values,
+        households,
+        catalog,
+        match_rule_results,
     )
     saved = await evaluations.save(
         criteria=ranking.criteria,

@@ -40,6 +40,7 @@ A_REQUEST_FOR = {
     "listMatchRules": ("get", "/v1/match-rules", {}),
     "listMatchRuleResults": ("get", "/v1/match-rule-results", {}),
     "listEvaluations": ("get", "/v1/evaluations", {}),
+    "listCompoundRules": ("get", "/v1/compound-rules", {}),
 }
 """One successful call per served GET, by operation id.
 

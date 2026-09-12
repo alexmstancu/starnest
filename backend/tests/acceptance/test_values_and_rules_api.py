@@ -10,6 +10,7 @@ import pytest
 
 pytestmark = pytest.mark.acceptance
 
+COUNTRY = "country"
 NATURALISATION = "country.naturalisation_pathway"
 """A Quantity in years that declares manual entry: no dataset publishes it (`reqs.md` 6.9)."""
 
@@ -217,3 +218,38 @@ class TestTheGates:
 
         assert response.status_code == 422
         assert response.json()["code"] == "unknown_data_source"
+
+
+class TestTheCompoundRules:
+    async def test_both_shipped_rules_come_back_undecided(self, api: httpx.AsyncClient) -> None:
+        """`reqs.md` 7.4 leaves every threshold TBD, so both are listed with no bounds and
+        fire nothing. A rule fired on a number nobody chose is the fabricated judgement this
+        application exists to prevent."""
+        body = (await api.get("/v1/compound-rules", params={"level": "country"})).json()
+
+        rules = {rule["id"]: rule for rule in body["items"]}
+        assert set(rules) == {"cheap_but_taxed", "mild_now_brutal_later"}
+        assert all(rule["outcome"] == "warning" for rule in rules.values())
+        assert all(
+            condition["threshold_min"] is None and condition["threshold_max"] is None
+            for rule in rules.values()
+            for condition in rule["conditions"]
+        )
+
+    async def test_each_rule_names_the_attributes_it_reads(self, api: httpx.AsyncClient) -> None:
+        body = (await api.get("/v1/compound-rules")).json()
+
+        cheap = next(rule for rule in body["items"] if rule["id"] == "cheap_but_taxed")
+        assert [condition["attribute"] for condition in cheap["conditions"]] == [
+            "country.cost_of_living_index",
+            "country.total_tax_rate_effective",
+        ]
+
+    async def test_an_undecided_rule_warns_nobody_in_a_ranking(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        body = (
+            await api.get("/v1/rankings", params={"criteria_set": "minimal", "level": COUNTRY})
+        ).json()
+
+        assert all(candidate["warnings"] == [] for candidate in body["candidates"])

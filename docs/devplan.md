@@ -363,7 +363,7 @@ P0 and P1 are single-agent phases sized to finish fast rather than to be complet
 | **P2** | Core policy | **Done for the MVP's needs** — `evaluation/` is cut to two normalisation methods | Checkpoint |
 | **P3** | The first vertical slice — API + Eurostat | **Done.** Gate A closed 2026-09-05 | **GATE A** |
 | **P4** | Adapter fan-out | **Under way** — four of six streams' worth of sources, 9 of 11 pillars | **GATE B** |
-| **P5** | Evaluation persistence, comparison, rules | Not started | Checkpoint |
+| **P5** | Evaluation persistence, comparison, rules | **Done 2026-09-12** | Checkpoint |
 | **P6** | The interface's four tabs | Two of four exist in skeleton | **GATE C** |
 | **P7** | Hardening: the LLM path, operations, failure modes | Not started | **GATE D — the MVP ships** |
 
@@ -652,7 +652,7 @@ only a human confirms it moved the *right* number.
 |---|---|---|
 | **W5-A** | ~~Evaluation persistence~~ **Done 2026-09-12.** `POST /evaluations` keeps a ranking with a frozen copy of its criteria, anchors and scale; `GET /evaluations`, the kept ranking, its criteria and one candidate's drill-down. `GET /rankings` still writes nothing, and an acceptance test says so. Each contribution now names the value row behind it, which closes the provenance chain | **M** |
 | **W5-B** | ~~`comparison/`~~ **Done 2026-09-12.** Focus and comparators, the gap in the attribute's own unit beside what it is worth, the templated synthesis ordered by weighted contribution, `GET /comparisons`. The comparator limit is read from settings and **refused when unset**, never defaulted. **Checkpoint C5 is met**: a 3,171 km coastline lead worth 0.3 of a point ranks below a 6.4-point tax lead worth 8 -- and the first version of that test could not tell, because the fixture had only one advantage to order | **M** |
-| **W5-C** | Rules end to end — `/match-rules`, `/match-rule-results` with audited overrides, `/compound-rules`, and the two country compound rules wired into the ranking as **warnings** | **M** |
+| **W5-C** | ~~Rules end to end~~ **Done 2026-09-12.** The gates and their audited answers came with W4-E; `/compound-rules` lists both shipped rules **undecided**, and the ranking now applies them. A warning flags and changes nothing; a gate answered `not_matching` makes a candidate not match, **keeping its score and losing its rank**, with the reason beside it. `unknown` rules nothing out, an unmeasured condition never counts as satisfied, and an undecided rule never fires. The two shapes that read a household field belong to the city level and stay silent | **M** |
 
 **Checkpoint C5.** The synthesis gets a specific test: a **large delta on a low-weight
 criterion must not outrank a small delta on a high-weight one** (`CLAUDE.md`, `reqs.md` 8.5).
