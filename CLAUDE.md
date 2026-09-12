@@ -15,7 +15,14 @@ implementation work.
 | `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. `target_range` scores its band and falls linearly to its zero points (built 2026-09-11). The rules are applied: a compound rule warns or rules out, a gate answered `not_matching` makes a candidate not match while keeping its score, and **an undecided rule never fires** -- which both shipped compound rules are. **The two compound-rule shapes that read a household field belong to the city level.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
 | `api/`, `data_acquisition/`, `data_sources/` | **Written.** **All 40 of the contract's operations**; seven source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, and an estimate from Eurostat's tax-benefit figures); values served with both dates, manual entry where the attribute permits it, and the gates' answers; runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | **Written.** Focus against comparators, deltas in the attribute's own unit, weighted contribution, and a synthesis templated from the numbers and ordered by what each gap is worth |
-| `ui/` | The shell and **all four tabs**: Configure, Run, Rank with its drill-down, Compare. 130 tests. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
+| `ui/` | The shell and **all four tabs**: Configure with its seven panels (household, settings, criteria sets, pillar weights, criteria, rules, source priority), Run, Rank with its drill-down, Compare. 167 unit tests and 15 browser tests. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
+
+**GATE C closed 2026-09-12** — `ui/e2e/gate-c.spec.ts` is the gate's table made executable:
+eight browser tests against the real stack, one per requirement, plus minE2E and the smoke
+tests. **Two of them arrange a decision the shipped data does not make** — nothing is
+`not_matching` until a gate is enforced and answered, nothing is `insufficient_data` until a
+coverage floor is set — and put it back afterwards. It found P18 (**a run accounts for fewer
+items than it has**, open, and a decision for Alex) and P19.
 
 **GATE B closed 2026-09-12** — all 32 countries ranked from seven sources, every blocking
 attribute answered for every country (proved live by `make live`), the four spot-checked figures
