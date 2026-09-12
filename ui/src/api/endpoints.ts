@@ -6,7 +6,13 @@
  * contract change visible instead of scattered.
  */
 
-import { getJson, patchJson, type PatchResult, type RequestOptions } from "./client";
+import {
+  getJson,
+  patchJson,
+  postJson,
+  type PatchResult,
+  type RequestOptions,
+} from "./client";
 import type { components } from "./schema";
 
 export type Level = components["schemas"]["Level"];
@@ -23,9 +29,12 @@ export type Criterion = components["schemas"]["Criterion"];
  * What a weight change answers with: the affected pillar and every criterion in it, already
  * rebalanced (`arch.md` 8.3). The client sends one number and is told what the others became.
  */
-export type RebalancedPillar = PatchResult<"/criteria-sets/{criteriaSetId}/criteria/{attributeId}">;
+export type RebalancedPillar =
+  PatchResult<"/criteria-sets/{criteriaSetId}/criteria/{attributeId}">;
 
-export function fetchLevels(options?: RequestOptions): Promise<{ items: Level[] }> {
+export function fetchLevels(
+  options?: RequestOptions,
+): Promise<{ items: Level[] }> {
   return getJson("/levels", undefined, options);
 }
 
@@ -89,4 +98,72 @@ export function updateCriterionWeight(
 
 export function fetchSettings(options?: RequestOptions): Promise<Settings> {
   return getJson("/settings", undefined, options);
+}
+
+export type Comparison = components["schemas"]["Comparison"];
+export type ComparisonAttributeRow =
+  components["schemas"]["ComparisonAttributeRow"];
+export type RunPlan = components["schemas"]["RunPlan"];
+export type RunDetail = components["schemas"]["RunDetail"];
+export type RunScope = components["schemas"]["RunScope"];
+
+/**
+ * A focus candidate against comparators (`reqs.md` 8.5).
+ *
+ * **The comparator limit is not enforced here.** It is a setting the server reads, and a copy
+ * of it in the interface would be a second bound that could disagree with the first; the screen
+ * shows the limit and the server refuses anything past it.
+ */
+export function fetchComparison(
+  criteriaSet: string,
+  level: string,
+  focus: string,
+  comparators: readonly string[],
+  options?: RequestOptions,
+): Promise<Comparison> {
+  return getJson(
+    "/comparisons",
+    { criteria_set: criteriaSet, level, focus, comparators: [...comparators] },
+    options,
+  );
+}
+
+/** What a run would do, before it does any of it (`reqs.md` 6.3). */
+export function planRun(
+  scope: RunScope,
+  options?: RequestOptions,
+): Promise<RunPlan> {
+  return postJson("/data-acquisition-runs/plan", scope, options);
+}
+
+export function startRun(
+  scope: RunScope,
+  options?: RequestOptions,
+): Promise<Run> {
+  return postJson("/data-acquisition-runs", scope, options);
+}
+
+export function fetchRun(
+  runId: number,
+  options?: RequestOptions,
+): Promise<RunDetail> {
+  return getJson("/data-acquisition-runs/{runId}", undefined, {
+    ...options,
+    pathParams: { runId },
+  });
+}
+
+/** A new run over only what failed (`reqs.md` 6.4). The old run keeps its record. */
+export function retryRun(
+  runId: number,
+  options?: RequestOptions,
+): Promise<Run> {
+  return postJson(
+    "/data-acquisition-runs/{runId}/retry",
+    undefined as never,
+    {
+      ...options,
+      pathParams: { runId },
+    },
+  );
 }

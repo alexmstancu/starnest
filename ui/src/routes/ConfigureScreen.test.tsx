@@ -14,7 +14,9 @@ import { renderShell } from "../testing/renderShell";
  */
 
 async function weightInput(attribute: string): Promise<HTMLInputElement> {
-  return await screen.findByRole("spinbutton", { name: `Weight for ${attribute}` });
+  return await screen.findByRole("spinbutton", {
+    name: `Weight for ${attribute}`,
+  });
 }
 
 /**
@@ -26,8 +28,9 @@ async function weightInput(attribute: string): Promise<HTMLInputElement> {
  * out under load. `getByRole` throws at once and lets `waitFor` poll at its own interval.
  */
 function shownWeight(attribute: string): number | string | string[] | null {
-  return screen.getByRole<HTMLInputElement>("spinbutton", { name: `Weight for ${attribute}` })
-    .value;
+  return screen.getByRole<HTMLInputElement>("spinbutton", {
+    name: `Weight for ${attribute}`,
+  }).value;
 }
 
 async function saveWeight(attribute: string, weight: string): Promise<void> {
@@ -47,7 +50,9 @@ describe("the criteria list", () => {
     expect(await weightInput("country.cost_of_living_index")).toHaveValue(50);
     expect(await weightInput("country.income_tax_effective")).toHaveValue(30);
     const row = (await weightInput("country.homicide_rate")).closest("tr")!;
-    expect(within(row).getByRole("rowheader")).toHaveTextContent("country.homicide_rate");
+    expect(within(row).getByRole("rowheader")).toHaveTextContent(
+      "country.homicide_rate",
+    );
     expect(row).toHaveTextContent("safety");
   });
 
@@ -63,7 +68,9 @@ describe("the criteria list", () => {
 
     expect(await weightInput("country.broadband_coverage")).toHaveValue(70);
     expect(
-      screen.queryByRole("spinbutton", { name: "Weight for country.cost_of_living_index" }),
+      screen.queryByRole("spinbutton", {
+        name: "Weight for country.cost_of_living_index",
+      }),
     ).not.toBeInTheDocument();
   });
 });
@@ -76,7 +83,9 @@ describe("changing a weight", () => {
 
     // The unlocked sibling absorbed the whole change; the locked one did not move. Both
     // figures came back from the PATCH.
-    await waitFor(() => expect(shownWeight("country.income_tax_effective")).toBe("40"));
+    await waitFor(() =>
+      expect(shownWeight("country.income_tax_effective")).toBe("40"),
+    );
     expect(shownWeight("country.cost_of_living_index")).toBe("40");
     expect(shownWeight("country.net_median_salary")).toBe("20");
   });
@@ -86,7 +95,9 @@ describe("changing a weight", () => {
 
     await saveWeight("country.cost_of_living_index", "40");
 
-    await waitFor(() => expect(shownWeight("country.income_tax_effective")).toBe("40"));
+    await waitFor(() =>
+      expect(shownWeight("country.income_tax_effective")).toBe("40"),
+    );
     expect(shownWeight("country.housing_cost_overburden_rate")).toBe("60");
   });
 
@@ -97,12 +108,16 @@ describe("changing a weight", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("weights_all_locked");
-    expect(alert).toHaveTextContent(/every other weight in this pillar is locked/i);
+    expect(alert).toHaveTextContent(
+      /every other weight in this pillar is locked/i,
+    );
 
     // Scoped to the list: every attribute id here is also a row heading in the table above, so
     // an unscoped query matches twice and proves nothing about the refusal.
     const locks = within(await screen.findByRole("list", { name: /locked/i }));
-    expect(locks.getByText("country.perceived_safety_index")).toBeInTheDocument();
+    expect(
+      locks.getByText("country.perceived_safety_index"),
+    ).toBeInTheDocument();
   });
 
   it("keeps showing the stored weight after a refusal, because it was not changed", async () => {
@@ -116,7 +131,9 @@ describe("changing a weight", () => {
 
   it("reports a failed save rather than letting it look like it worked", async () => {
     mockServer.use(
-      http.patch("/v1/criteria-sets/:id/criteria/:attribute", () => HttpResponse.error()),
+      http.patch("/v1/criteria-sets/:id/criteria/:attribute", () =>
+        HttpResponse.error(),
+      ),
     );
     renderShell("/configure");
 
@@ -134,14 +151,18 @@ describe("changing a weight", () => {
     await user.clear(input);
     await user.click(within(row).getByRole("button", { name: "Save" }));
 
-    expect(await within(row).findByRole("alert")).toHaveTextContent(/must be a number/i);
+    expect(await within(row).findByRole("alert")).toHaveTextContent(
+      /must be a number/i,
+    );
     // Nothing was sent, so nothing was rebalanced.
     expect(await weightInput("country.income_tax_effective")).toHaveValue(30);
   });
 
   it("offers nothing to save until the weight is actually changed", async () => {
     renderShell("/configure");
-    const row = (await weightInput("country.cost_of_living_index")).closest("tr")!;
+    const row = (await weightInput("country.cost_of_living_index")).closest(
+      "tr",
+    )!;
 
     expect(within(row).getByRole("button", { name: "Save" })).toBeDisabled();
   });
@@ -151,18 +172,25 @@ describe("when the criteria set cannot be shown", () => {
   it("reports the failure with its code, and retries when asked", async () => {
     mockServer.use(
       http.get("/v1/criteria-sets/:id", () =>
-        HttpResponse.json({ code: "not_found", message: "No such criteria set." }, { status: 404 }),
+        HttpResponse.json(
+          { code: "not_found", message: "No such criteria set." },
+          { status: 404 },
+        ),
       ),
     );
     renderShell("/configure");
 
-    const configure = within(await screen.findByRole("region", { name: "Configure" }));
+    const configure = within(
+      await screen.findByRole("region", { name: "Configure" }),
+    );
     expect(await configure.findByText("not_found")).toBeInTheDocument();
     expect(configure.getByText("No such criteria set.")).toBeInTheDocument();
 
     mockServer.resetHandlers();
     // A 404 is not retryable, so there is no button; reloading happens through the sidebar.
-    expect(configure.queryByRole("button", { name: /try again/i })).not.toBeInTheDocument();
+    expect(
+      configure.queryByRole("button", { name: /try again/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("says so plainly when the set has no criteria", async () => {
@@ -175,7 +203,9 @@ describe("when the criteria set cannot be shown", () => {
 
     // Scoped to the screen: the sidebar says "No criteria sets" while its own list is in
     // flight, which an unscoped /no criteria/i matches first and then loses when it re-renders.
-    const configure = within(await screen.findByRole("region", { name: "Configure" }));
+    const configure = within(
+      await screen.findByRole("region", { name: "Configure" }),
+    );
     expect(await configure.findByText(/has no criteria/i)).toBeInTheDocument();
   });
 
@@ -186,7 +216,9 @@ describe("when the criteria set cannot be shown", () => {
     );
     renderShell("/configure");
 
-    const configure = within(await screen.findByRole("region", { name: "Configure" }));
+    const configure = within(
+      await screen.findByRole("region", { name: "Configure" }),
+    );
     await waitFor(() =>
       expect(configure.getByText(/choose a criteria set/i)).toBeInTheDocument(),
     );

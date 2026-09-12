@@ -20,6 +20,9 @@ type CandidateResult = components["schemas"]["CandidateResult"];
 type Ranking = components["schemas"]["Ranking"];
 type Run = components["schemas"]["Run"];
 type Settings = components["schemas"]["Settings"];
+type Comparison = components["schemas"]["Comparison"];
+type RunPlan = components["schemas"]["RunPlan"];
+type RunDetail = components["schemas"]["RunDetail"];
 
 export const LEVELS: Level[] = [
   { id: "country", depth_order: 1, parent_level: null },
@@ -48,11 +51,20 @@ function defaultCriteria(): Criterion[] {
   return [
     criterion("country.cost_of_living_index", "economics", 50, "minimise"),
     criterion("country.income_tax_effective", "economics", 30, "minimise"),
-    criterion("country.net_median_salary", "economics", 20, "maximise", { weight_locked: true }),
-    criterion("country.housing_cost_overburden_rate", "housing", 60, "minimise"),
+    criterion("country.net_median_salary", "economics", 20, "maximise", {
+      weight_locked: true,
+    }),
+    criterion(
+      "country.housing_cost_overburden_rate",
+      "housing",
+      60,
+      "minimise",
+    ),
     criterion("country.overcrowding_rate", "housing", 40, "minimise"),
     criterion("country.homicide_rate", "safety", 65, "minimise"),
-    criterion("country.perceived_safety_index", "safety", 35, "maximise", { weight_locked: true }),
+    criterion("country.perceived_safety_index", "safety", 35, "maximise", {
+      weight_locked: true,
+    }),
   ];
 }
 
@@ -104,7 +116,9 @@ export function makeCriteriaSetDetails(): Record<string, CriteriaSet> {
     "remote-only": {
       id: "remote-only",
       name: "Remote only",
-      pillar_weights: [{ pillar: "connectivity", weight: 100, weight_locked: false }],
+      pillar_weights: [
+        { pillar: "connectivity", weight: 100, weight_locked: false },
+      ],
       criteria: remoteOnlyCriteria(),
       enforced_match_rules: [],
       applied_compound_rules: [],
@@ -113,15 +127,45 @@ export function makeCriteriaSetDetails(): Record<string, CriteriaSet> {
 }
 
 export const COUNTRY_CANDIDATES: Candidate[] = [
-  { id: "country.portugal", name: "Portugal", level: "country", parent_candidate: null },
-  { id: "country.spain", name: "Spain", level: "country", parent_candidate: null },
-  { id: "country.netherlands", name: "Netherlands", level: "country", parent_candidate: null },
-  { id: "country.estonia", name: "Estonia", level: "country", parent_candidate: null },
+  {
+    id: "country.portugal",
+    name: "Portugal",
+    level: "country",
+    parent_candidate: null,
+  },
+  {
+    id: "country.spain",
+    name: "Spain",
+    level: "country",
+    parent_candidate: null,
+  },
+  {
+    id: "country.netherlands",
+    name: "Netherlands",
+    level: "country",
+    parent_candidate: null,
+  },
+  {
+    id: "country.estonia",
+    name: "Estonia",
+    level: "country",
+    parent_candidate: null,
+  },
 ];
 
 export const CITY_CANDIDATES: Candidate[] = [
-  { id: "city.lisbon", name: "Lisbon", level: "city", parent_candidate: "country.portugal" },
-  { id: "city.porto", name: "Porto", level: "city", parent_candidate: "country.portugal" },
+  {
+    id: "city.lisbon",
+    name: "Lisbon",
+    level: "city",
+    parent_candidate: "country.portugal",
+  },
+  {
+    id: "city.porto",
+    name: "Porto",
+    level: "city",
+    parent_candidate: "country.portugal",
+  },
 ];
 
 const COUNTRY_RESULTS: CandidateResult[] = [
@@ -233,4 +277,110 @@ export const SETTINGS: Settings = {
   score_scale_max: 100,
   comparator_limit: 5,
   run_spend_cap_eur: 10,
+};
+
+/**
+ * One comparison: Portugal against the Netherlands, with a gap that matters and one that does
+ * not. The synthesis is the server's, never assembled here -- the interface prints the
+ * sentences it is given (`reqs.md` 8.5).
+ */
+export function comparisonFor(
+  criteriaSet: string,
+  level: string,
+  focus: string,
+  comparators: string[],
+): Comparison {
+  const named = (candidate: string): CandidateResult => {
+    const found = COUNTRY_RESULTS.find(
+      (result) => result.candidate === candidate,
+    );
+    // A candidate the mock has no result for still gets a row, named after itself: the screen
+    // under test should render what it is given rather than depend on this fixture's roster.
+    return (
+      found ?? {
+        candidate,
+        name: candidate,
+        rank: null,
+        score: null,
+        coverage: 0,
+        match_status: "insufficient_data",
+        parent_not_matching: false,
+      }
+    );
+  };
+  return {
+    criteria_set: criteriaSet,
+    level,
+    focus: named(focus),
+    comparators: comparators.map(named),
+    attributes: [
+      {
+        attribute: "country.cost_of_living_index",
+        pillar: "economics",
+        focus: { normalised_score: 82 },
+        comparators: comparators.map((candidate) => ({
+          candidate,
+          normalised_score: 41,
+          delta: -13.4,
+          weighted_contribution: 4.9,
+        })),
+      },
+      {
+        attribute: "country.coastline_access",
+        pillar: "nature",
+        focus: { normalised_score: 70 },
+        comparators: comparators.map((candidate) => ({
+          candidate,
+          normalised_score: 64,
+          delta: 1341,
+          weighted_contribution: 0.2,
+        })),
+      },
+    ],
+    synthesis: comparators.map((candidate) => ({
+      comparator: candidate,
+      score_delta: 7,
+      advantages: [
+        "Cost of living: 82 against 41, worth +4.9 points",
+        "Coastline access: 70 against 64, worth +0.2 points",
+      ],
+      disadvantages: ["Broadband coverage: 61 against 88, worth -1.8 points"],
+    })),
+  };
+}
+
+export const RUN_PLAN: RunPlan = {
+  items_total: 96,
+  llm_call_count: 0,
+  estimated_cost_eur: 0,
+  by_source: [
+    { data_source: "eurostat", items: 64 },
+    { data_source: "world_bank", items: 32 },
+  ],
+};
+
+/** A run that finished with one thing left undone, so the retry path is always exercised. */
+export const STARTED_RUN: Run = {
+  id: 8,
+  run_status: "completed",
+  triggered_by: "user",
+  started_at: "2026-09-12T09:00:00Z",
+  finished_at: "2026-09-12T09:00:12Z",
+  llm_call_count: 0,
+  cost_eur: 0,
+};
+
+export const STARTED_RUN_DETAIL: RunDetail = {
+  ...STARTED_RUN,
+  scope: { level: "country", candidates: null, attributes: null },
+  progress: { items_total: 96, items_completed: 95, items_failed: 1 },
+  failures: [
+    {
+      data_source: "oecd",
+      candidate: "country.liechtenstein",
+      attribute: "country.total_tax_rate_effective",
+      error_message:
+        "the oecd's cloudflare front answered with a browser challenge",
+    },
+  ],
 };

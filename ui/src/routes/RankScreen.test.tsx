@@ -47,9 +47,13 @@ describe("the ranking table", () => {
     renderShell("/rank");
 
     const rank = within(await screen.findByRole("region", { name: "Rank" }));
-    expect((await rank.findByText("Criteria set")).nextSibling).toHaveTextContent("default");
+    expect(
+      (await rank.findByText("Criteria set")).nextSibling,
+    ).toHaveTextContent("default");
     expect(rank.getByText("Level").nextSibling).toHaveTextContent("country");
-    expect(rank.getByText("Computed").nextSibling).toHaveTextContent("30 Aug 2026, 09:15");
+    expect(rank.getByText("Computed").nextSibling).toHaveTextContent(
+      "30 Aug 2026, 09:15",
+    );
   });
 });
 
@@ -68,7 +72,9 @@ describe("a candidate that does not match", () => {
 
     const cells = within(await rankingRow("Spain")).getAllByRole("cell");
 
-    expect(cells[4]).toHaveTextContent("No visa route this household qualifies for.");
+    expect(cells[4]).toHaveTextContent(
+      "No visa route this household qualifies for.",
+    );
   });
 
   it("has no rank, and nothing is invented to fill the column", async () => {
@@ -110,7 +116,9 @@ describe("when the ranking cannot be shown", () => {
     expect(alert).toHaveTextContent("client.unreachable");
 
     mockServer.resetHandlers();
-    await userEvent.setup().click(within(alert).getByRole("button", { name: /try again/i }));
+    await userEvent
+      .setup()
+      .click(within(alert).getByRole("button", { name: /try again/i }));
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
   });
@@ -129,7 +137,9 @@ describe("when the ranking cannot be shown", () => {
     );
     renderShell("/rank");
 
-    expect(await screen.findByText(/no candidate has been evaluated/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/no candidate has been evaluated/i),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
@@ -142,7 +152,9 @@ describe("when the ranking cannot be shown", () => {
 
     const rank = within(await screen.findByRole("region", { name: "Rank" }));
     await waitFor(() =>
-      expect(rank.getByText(/choose a criteria set and a level/i)).toBeInTheDocument(),
+      expect(
+        rank.getByText(/choose a criteria set and a level/i),
+      ).toBeInTheDocument(),
     );
     expect(rank.queryByText("Loading…")).not.toBeInTheDocument();
   });

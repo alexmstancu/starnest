@@ -16,8 +16,12 @@ import {
   CRITERIA_SETS,
   LEVELS,
   RUNS,
+  RUN_PLAN,
   SETTINGS,
+  STARTED_RUN,
+  STARTED_RUN_DETAIL,
   candidatesForLevel,
+  comparisonFor,
   makeCriteriaSetDetails,
   rankingFor,
 } from "./fixtures";
@@ -42,7 +46,9 @@ export function resetMockData(): void {
 export const handlers = [
   http.get(`${BASE}/levels`, () => HttpResponse.json({ items: LEVELS })),
 
-  http.get(`${BASE}/criteria-sets`, () => HttpResponse.json({ items: CRITERIA_SETS })),
+  http.get(`${BASE}/criteria-sets`, () =>
+    HttpResponse.json({ items: CRITERIA_SETS }),
+  ),
 
   http.get(`${BASE}/settings`, () => HttpResponse.json(SETTINGS)),
 
@@ -82,7 +88,9 @@ export const handlers = [
       if (!set) return notFound(String(params["criteriaSetId"]));
 
       const attributeId = String(params["attributeId"]);
-      const criterion = (set.criteria ?? []).find((entry) => entry.attribute === attributeId);
+      const criterion = (set.criteria ?? []).find(
+        (entry) => entry.attribute === attributeId,
+      );
       if (!criterion) return notFound(attributeId);
 
       const body = (await request.json()) as { weight?: number };
@@ -102,9 +110,65 @@ export const handlers = [
   ),
 
   http.get(`${BASE}/data-acquisition-runs`, ({ request }) => {
-    const limit = Number(new URL(request.url).searchParams.get("limit") ?? RUNS.length);
-    return HttpResponse.json({ items: RUNS.slice(0, limit), total: RUNS.length });
+    const limit = Number(
+      new URL(request.url).searchParams.get("limit") ?? RUNS.length,
+    );
+    return HttpResponse.json({
+      items: RUNS.slice(0, limit),
+      total: RUNS.length,
+    });
   }),
+
+  http.get(`${BASE}/comparisons`, ({ request }) => {
+    const query = new URL(request.url).searchParams;
+    const focus = query.get("focus");
+    const comparators = query.getAll("comparators");
+    if (!focus || comparators.length === 0) {
+      return HttpResponse.json(
+        {
+          code: "invalid_comparison",
+          message: "a comparison needs a focus and a comparator",
+        },
+        { status: 409 },
+      );
+    }
+    if (comparators.length > (SETTINGS.comparator_limit ?? 0)) {
+      return HttpResponse.json(
+        {
+          code: "invalid_comparison",
+          message: `${comparators.length} comparators is more than the configured limit`,
+        },
+        { status: 409 },
+      );
+    }
+    return HttpResponse.json(
+      comparisonFor(
+        query.get("criteria_set") ?? "minimal",
+        query.get("level") ?? "country",
+        focus,
+        comparators,
+      ),
+    );
+  }),
+
+  http.post(`${BASE}/data-acquisition-runs/plan`, () =>
+    HttpResponse.json(RUN_PLAN),
+  ),
+
+  http.post(`${BASE}/data-acquisition-runs`, () =>
+    HttpResponse.json(STARTED_RUN, { status: 202 }),
+  ),
+
+  http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+    HttpResponse.json({ ...STARTED_RUN_DETAIL, id: Number(params["runId"]) }),
+  ),
+
+  http.post(`${BASE}/data-acquisition-runs/:runId/retry`, () =>
+    HttpResponse.json(
+      { ...STARTED_RUN, id: STARTED_RUN.id + 1 },
+      { status: 202 },
+    ),
+  ),
 
   http.all(`${BASE}/*`, ({ request }) => {
     const path = new URL(request.url).pathname;
@@ -120,7 +184,10 @@ export const handlers = [
 ];
 
 function notFound(id: string) {
-  return HttpResponse.json({ code: "not_found", message: `No such resource: ${id}.` }, { status: 404 });
+  return HttpResponse.json(
+    { code: "not_found", message: `No such resource: ${id}.` },
+    { status: 404 },
+  );
 }
 
 /**
@@ -131,7 +198,11 @@ function notFound(id: string) {
  * deciding what a score is made of. The rule it keeps is the only one that matters: the pillar
  * sums to 100 afterwards, and locked weights do not move.
  */
-function rebalancePillar(criteria: Criterion[], edited: Criterion, weight: number) {
+function rebalancePillar(
+  criteria: Criterion[],
+  edited: Criterion,
+  weight: number,
+) {
   const pillar = criteria.filter((entry) => entry.pillar === edited.pillar);
   const siblings = pillar.filter((entry) => entry !== edited);
   const unlocked = siblings.filter((entry) => !entry.weight_locked);
@@ -144,20 +215,29 @@ function rebalancePillar(criteria: Criterion[], edited: Criterion, weight: numbe
     return HttpResponse.json(
       {
         code: "weights_all_locked",
-        message: "The change cannot be absorbed: the other weights in this pillar are locked.",
-        details: { locked: siblings.filter((entry) => entry.weight_locked).map((entry) => entry.attribute) },
+        message:
+          "The change cannot be absorbed: the other weights in this pillar are locked.",
+        details: {
+          locked: siblings
+            .filter((entry) => entry.weight_locked)
+            .map((entry) => entry.attribute),
+        },
       },
       { status: 409 },
     );
   }
 
-  const before = unlocked.reduce((total, entry) => total + (entry.weight ?? 0), 0);
+  const before = unlocked.reduce(
+    (total, entry) => total + (entry.weight ?? 0),
+    0,
+  );
   edited.weight = weight;
 
   let distributed = 0;
   unlocked.forEach((sibling, index) => {
     const isLast = index === unlocked.length - 1;
-    const share = before > 0 ? (sibling.weight ?? 0) / before : 1 / unlocked.length;
+    const share =
+      before > 0 ? (sibling.weight ?? 0) / before : 1 / unlocked.length;
     // The last sibling takes the residual, so rounding can never leave the pillar off 100.
     sibling.weight = isLast ? round(room - distributed) : round(room * share);
     distributed += sibling.weight;

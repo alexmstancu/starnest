@@ -1,29 +1,39 @@
 import { useEffect, type ComponentType } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAppConfig } from "../config/AppConfigContext";
+import { CompareScreen } from "../routes/CompareScreen";
 import { ConfigureScreen } from "../routes/ConfigureScreen";
-import { PlaceholderScreen } from "../routes/PlaceholderScreen";
 import { RankScreen } from "../routes/RankScreen";
+import { RunScreen } from "../routes/RunScreen";
 import { Sidebar } from "../shell/Sidebar";
 import { SelectionProvider } from "../shell/SelectionContext";
-import { DEFAULT_ROUTE, ROUTES, findRouteByPath, type RouteDefinition } from "./routes";
+import {
+  DEFAULT_ROUTE,
+  ROUTES,
+  findRouteByPath,
+  type RouteDefinition,
+  type RoutePath,
+} from "./routes";
 
 /**
- * Which routes have a real screen. The route table stays the single list of paths, and a tab
- * that is not in here still renders its placeholder -- so building the next screen is one
- * entry, not a change to the routing.
+ * The screen each route renders. **Keyed by the route table's own paths**, so a tab added
+ * there without a screen here fails to compile -- which is what the placeholder screen used to
+ * cover, less well, at runtime (removed with the last unbuilt tab, P6 W6-C).
  */
-const SCREENS: Record<string, ComponentType<{ route: RouteDefinition }>> = {
+const SCREENS: Record<RoutePath, ComponentType<{ route: RouteDefinition }>> = {
   "/configure": ConfigureScreen,
   "/rank": RankScreen,
+  "/run": RunScreen,
+  "/compare": CompareScreen,
 };
 
 /**
  * The shell: a persistent sidebar beside one of four routes (`reqs.md` 8).
  *
  * The routes are generated from the one route table, so a tab cannot exist in the navigation
- * without existing in the router. A route with no screen yet renders a placeholder that says
- * so, rather than an empty table that would look like an answer.
+ * without existing in the router -- and `SCREENS` is typed to require every one of them, so a
+ * route added to the table without a screen fails to compile rather than rendering nothing.
+ * The placeholder that stood in for the unbuilt tabs is gone with the last of them (P6 W6-C).
  */
 export function App() {
   return (
@@ -35,8 +45,16 @@ export function App() {
           <Routes>
             <Route path="/" element={<Navigate to={DEFAULT_ROUTE} replace />} />
             {ROUTES.map((route) => {
-              const Screen = SCREENS[route.path] ?? PlaceholderScreen;
-              return <Route key={route.path} path={route.path} element={<Screen route={route} />} />;
+              // Total by construction: `SCREENS` is keyed by the route table's own paths.
+              // `noUncheckedIndexedAccess` cannot see that, hence the assertion.
+              const Screen = SCREENS[route.path]!;
+              return (
+                <Route
+                  key={route.path}
+                  path={route.path}
+                  element={<Screen route={route} />}
+                />
+              );
             })}
             <Route path="*" element={<NotFound />} />
           </Routes>
@@ -67,7 +85,9 @@ function NotFound() {
   return (
     <section className="screen">
       <h2 className="screen__heading">No such screen</h2>
-      <p className="screen__summary">The address does not match any of the four tabs.</p>
+      <p className="screen__summary">
+        The address does not match any of the four tabs.
+      </p>
     </section>
   );
 }

@@ -670,7 +670,7 @@ build the screens of `reqs.md` 8 against the now-real backend.
 |---|---|---|
 | **W6-A** | **Configure** — the two-level criteria tree with sliders and lock toggles, live 100% indicators, criteria sets, thresholds, source priority, household, settings. The largest screen in the product | **L** |
 | **W6-B** | **Rank** — ranking table with coverage and status, the **always-visible non-matching section**, attribute drill-down, candidate detail with **all** stored values not merely the active one, and the visually distinct external-scores panel | **L** |
-| **W6-C** | **Run** and **Compare** — scope selector, dry-run confirmation, live polling, failures with one-click retry, run history; and the comparison table with per-attribute weighted contribution | **M** |
+| **W6-C** | ~~**Run** and **Compare**~~ **Done 2026-09-12.** Run: estimate first and confirm before anything is fetched, the run's progress, failures listed with the source that failed, one action retrying only those, and run history. Compare: focus and comparators within the configured limit, the per-attribute table with each gap and what it is worth, and the server's synthesis printed in its order. The placeholder screen is gone with the last unbuilt tab, and the screen map is keyed by the route table's own paths so a tab without a screen fails to compile | **M** |
 
 **One rule governs all three:** the interface holds no domain logic (`arch.md` 8.1). No
 scoring, no rebalancing arithmetic, no coverage calculation in TypeScript. A reviewer who finds

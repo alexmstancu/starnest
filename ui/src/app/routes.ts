@@ -38,7 +38,10 @@ export const ROUTES: readonly RouteDefinition[] = [
     summary:
       "One focus candidate against its comparators: aggregate deltas, the per-attribute table with weighted contributions, and the templated synthesis.",
   },
-] as const;
+] as const satisfies readonly RouteDefinition[];
+
+/** Every path the shell routes, as literals, so `App` must name a screen for each of them. */
+export type RoutePath = (typeof ROUTES)[number]["path"];
 
 /** Where `/` lands. The household is configured first on a fresh installation (`reqs.md` 8.2). */
 export const DEFAULT_ROUTE = ROUTES[0]!.path;

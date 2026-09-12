@@ -20,7 +20,9 @@ export const API_PREFIX = "/v1";
 
 type ApiPaths = paths;
 
-type JsonBody<Response> = Response extends { content: { "application/json": infer Body } }
+type JsonBody<Response> = Response extends {
+  content: { "application/json": infer Body };
+}
   ? Body
   : never;
 
@@ -35,7 +37,9 @@ type SuccessBody<Operation> = Operation extends { responses: infer Responses }
         : never
   : never;
 
-type QueryOf<Operation> = Operation extends { parameters: { query?: infer Query } }
+type QueryOf<Operation> = Operation extends {
+  parameters: { query?: infer Query };
+}
   ? Query
   : never;
 
@@ -43,7 +47,9 @@ type QueryOf<Operation> = Operation extends { parameters: { query?: infer Query 
  * The `{name}` placeholders a templated path declares, e.g. `{ criteriaSetId: string }`.
  * `never` for a path that has none, which is why `pathParams` may simply be omitted there.
  */
-type PathValuesOf<Operation> = Operation extends { parameters: { path?: infer Params } }
+type PathValuesOf<Operation> = Operation extends {
+  parameters: { path?: infer Params };
+}
   ? Params
   : never;
 
@@ -54,37 +60,60 @@ type RequestBodyOf<Operation> = Operation extends {
   : never;
 
 export type GetPath = {
-  [Path in keyof ApiPaths]: ApiPaths[Path] extends { get: unknown } ? Path : never;
+  [Path in keyof ApiPaths]: ApiPaths[Path] extends { get: unknown }
+    ? Path
+    : never;
 }[keyof ApiPaths];
 
 export type PostPath = {
-  [Path in keyof ApiPaths]: ApiPaths[Path] extends { post: unknown } ? Path : never;
+  [Path in keyof ApiPaths]: ApiPaths[Path] extends { post: unknown }
+    ? Path
+    : never;
 }[keyof ApiPaths];
 
 export type PatchPath = {
-  [Path in keyof ApiPaths]: ApiPaths[Path] extends { patch: unknown } ? Path : never;
+  [Path in keyof ApiPaths]: ApiPaths[Path] extends { patch: unknown }
+    ? Path
+    : never;
 }[keyof ApiPaths];
 
-type GetOperation<Path extends GetPath> = ApiPaths[Path] extends { get: infer Operation }
+type GetOperation<Path extends GetPath> = ApiPaths[Path] extends {
+  get: infer Operation;
+}
   ? Operation
   : never;
 
-type PostOperation<Path extends PostPath> = ApiPaths[Path] extends { post: infer Operation }
+type PostOperation<Path extends PostPath> = ApiPaths[Path] extends {
+  post: infer Operation;
+}
   ? Operation
   : never;
 
-type PatchOperation<Path extends PatchPath> = ApiPaths[Path] extends { patch: infer Operation }
+type PatchOperation<Path extends PatchPath> = ApiPaths[Path] extends {
+  patch: infer Operation;
+}
   ? Operation
   : never;
 
 export type GetResult<Path extends GetPath> = SuccessBody<GetOperation<Path>>;
 export type GetQuery<Path extends GetPath> = QueryOf<GetOperation<Path>>;
-export type PostResult<Path extends PostPath> = SuccessBody<PostOperation<Path>>;
-export type PostBody<Path extends PostPath> = RequestBodyOf<PostOperation<Path>>;
-export type PatchResult<Path extends PatchPath> = SuccessBody<PatchOperation<Path>>;
-export type PatchBody<Path extends PatchPath> = RequestBodyOf<PatchOperation<Path>>;
+export type PostResult<Path extends PostPath> = SuccessBody<
+  PostOperation<Path>
+>;
+export type PostBody<Path extends PostPath> = RequestBodyOf<
+  PostOperation<Path>
+>;
+export type PatchResult<Path extends PatchPath> = SuccessBody<
+  PatchOperation<Path>
+>;
+export type PatchBody<Path extends PatchPath> = RequestBodyOf<
+  PatchOperation<Path>
+>;
 
-export type QueryValues = Record<string, string | number | boolean | undefined>;
+export type QueryValues = Record<
+  string,
+  string | number | boolean | readonly string[] | undefined
+>;
 export type PathValues = Record<string, string | number>;
 
 export interface RequestOptions {
@@ -97,14 +126,28 @@ export interface RequestOptions {
  */
 export type CallOptions<Params> = RequestOptions & { pathParams?: Params };
 
-export function buildUrl(path: string, query?: QueryValues, pathParams?: PathValues): string {
+export function buildUrl(
+  path: string,
+  query?: QueryValues,
+  pathParams?: PathValues,
+): string {
   const parameters = new URLSearchParams();
   for (const [name, value] of Object.entries(query ?? {})) {
-    if (value !== undefined) parameters.set(name, String(value));
+    if (value === undefined) continue;
+    // A list repeats its name, which is how the contract types an array parameter: a
+    // comparison names several comparators, and joining them with commas would send one
+    // candidate called "country.spain,country.greece".
+    if (Array.isArray(value)) {
+      for (const item of value) parameters.append(name, String(item));
+    } else {
+      parameters.set(name, String(value));
+    }
   }
   const search = parameters.toString();
   const filled = fillPathParams(path, pathParams);
-  return search === "" ? `${API_PREFIX}${filled}` : `${API_PREFIX}${filled}?${search}`;
+  return search === ""
+    ? `${API_PREFIX}${filled}`
+    : `${API_PREFIX}${filled}?${search}`;
 }
 
 /**
@@ -116,7 +159,9 @@ function fillPathParams(template: string, values?: PathValues): string {
   return template.replace(/\{([^}]+)\}/g, (_placeholder, name: string) => {
     const value = values?.[name];
     if (value === undefined) {
-      throw new Error(`${template} needs a value for the path parameter {${name}}.`);
+      throw new Error(
+        `${template} needs a value for the path parameter {${name}}.`,
+      );
     }
     return encodeURIComponent(String(value));
   });
@@ -127,23 +172,40 @@ export async function getJson<Path extends GetPath>(
   query?: GetQuery<Path> & QueryValues,
   options: CallOptions<PathValuesOf<GetOperation<Path>>> = {},
 ): Promise<GetResult<Path>> {
-  return request(buildUrl(path as string, query, options.pathParams as PathValues | undefined), {
-    method: "GET",
-    signal: options.signal,
-  });
+  return request(
+    buildUrl(
+      path as string,
+      query,
+      options.pathParams as PathValues | undefined,
+    ),
+    {
+      method: "GET",
+      signal: options.signal,
+    },
+  );
 }
 
 export async function postJson<Path extends PostPath>(
   path: Path,
   body: PostBody<Path>,
-  options: RequestOptions = {},
+  options: CallOptions<PathValuesOf<PostOperation<Path>>> = {},
 ): Promise<PostResult<Path>> {
-  return request(buildUrl(path as string), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: options.signal,
-  });
+  // Path parameters are filled here as they are for GET and PATCH. Until the Run tab needed
+  // `/data-acquisition-runs/{runId}/retry`, no POST took one, and the placeholder went to the
+  // server verbatim -- which fails as a request that was merely built wrong.
+  return request(
+    buildUrl(
+      path as string,
+      undefined,
+      options.pathParams as PathValues | undefined,
+    ),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: options.signal,
+    },
+  );
 }
 
 /**
@@ -157,7 +219,11 @@ export async function patchJson<Path extends PatchPath>(
   options: CallOptions<PathValuesOf<PatchOperation<Path>>> = {},
 ): Promise<PatchResult<Path>> {
   return request(
-    buildUrl(path as string, undefined, options.pathParams as PathValues | undefined),
+    buildUrl(
+      path as string,
+      undefined,
+      options.pathParams as PathValues | undefined,
+    ),
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -181,10 +247,16 @@ function isAbort(cause: unknown): boolean {
   );
 }
 
-async function request<Result>(url: string, init: RequestInit): Promise<Result> {
+async function request<Result>(
+  url: string,
+  init: RequestInit,
+): Promise<Result> {
   let response: Response;
   try {
-    response = await fetch(url, { ...init, headers: { Accept: "application/json", ...init.headers } });
+    response = await fetch(url, {
+      ...init,
+      headers: { Accept: "application/json", ...init.headers },
+    });
   } catch (cause) {
     if (isAbort(cause)) throw cause;
     throw new ApiError({
