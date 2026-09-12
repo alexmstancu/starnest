@@ -61,22 +61,27 @@ test.describe.serial("the minimum end to end", () => {
     await expect(scored).toContainText("Matching");
   });
 
-  test("a country nobody has figures for says so rather than showing a zero", async ({
+  test("a country almost nobody publishes about says how thin its evidence is", async ({
     page,
   }) => {
     await openTheRanking(page);
 
-    // Eurostat publishes nothing for Liechtenstein, so it is the honest gap the whole coverage
-    // mechanism exists to make visible (`reqs.md` 5.3). It must still be in the table:
-    // non-matching candidates stay visible (`reqs.md` 5.4).
-    const gap = page.getByRole("row").filter({ hasText: "Liechtenstein" });
+    // Eurostat publishes almost nothing for Liechtenstein. Until Gate B it was unscoreable and
+    // said so; it is now scored from **declared stand-ins** -- a neighbour's figure, stored
+    // under its own source at `low` confidence (`reqs.md` 3.6a). The honesty moved rather than
+    // disappeared: the row must say how much of the score rests on those.
+    const sparse = page.getByRole("row").filter({ hasText: "Liechtenstein" });
 
-    await expect(gap).toHaveCount(1);
-    await expect(gap).toContainText("Insufficient data");
-    // And it says WHY. An unscoreable candidate with an empty reason cell is a candidate the
-    // user cannot act on.
-    await expect(gap).toContainText(/no figure/i);
-    await expect(gap).toContainText("No score");
+    await expect(sparse).toHaveCount(1);
+    // Coverage below the others, and a visible share of it low-confidence. Neither number is
+    // pinned: they move when a source publishes, and pinning them would make this test fail for
+    // being right about a different year.
+    const cells = await sparse.getByRole("cell").allTextContents();
+    const coverage = Number((cells[2] ?? "").replace("%", ""));
+    const lowConfidence = Number((cells[3] ?? "").replace("%", ""));
+    expect(coverage).toBeGreaterThan(0);
+    expect(coverage).toBeLessThan(100);
+    expect(lowConfidence).toBeGreaterThan(0);
   });
 
   test("changing a weight changes the ranking", async ({ page }) => {

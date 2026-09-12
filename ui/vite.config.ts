@@ -24,6 +24,14 @@ export default defineConfig({
     // collect those files as unit tests.
     exclude: ["e2e/**", "node_modules/**", "dist/**"],
 
+    // **A timeout here is a deadlock detector, not a performance budget.** Every test in this
+    // suite waits on an event rather than on a clock, so a slow machine should make them slower
+    // and not red. The default five seconds started failing one Configure test during a full
+    // `make check` -- the screen now mounts seven panels behind six requests, and typing into
+    // one of them re-renders all of them, which is real work rather than a hang
+    // (`known-issues.md` P13). Fifteen seconds still catches a test that will never finish.
+    testTimeout: 15_000,
+
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],

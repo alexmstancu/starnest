@@ -80,12 +80,15 @@ describe("a candidate that does not match", () => {
     );
   });
 
-  it("has no rank, and nothing is invented to fill the column", async () => {
+  it("has no rank, and says so rather than leaving the cell blank", async () => {
     renderShell("/rank");
 
     const cells = within(await rankingRow("Spain")).getAllByRole("cell");
 
-    expect(cells[0]).toHaveTextContent("");
+    // The dash this screen prints wherever a number is genuinely absent. An empty cell reads
+    // as a table that failed to render -- and the previous assertion here was
+    // `toHaveTextContent("")`, which matches any content at all and so checked nothing.
+    expect(cells[0]?.textContent).toBe("—");
   });
 });
 

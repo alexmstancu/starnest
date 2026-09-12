@@ -681,6 +681,23 @@ it does the most damage.
 
 ## GATE C — the product, driven by a browser
 
+**Closed 2026-09-12.** `ui/e2e/gate-c.spec.ts` is the table below made executable: eight tests
+against the real API, the real database and the figures Gate B fetched, plus the four of
+`minimum-end-to-end.spec.ts` and the three smoke tests -- 15, green twice running.
+
+**Two of the seven describe states the shipped data does not reach on its own.** Nothing is
+`not_matching` until a gate is enforced and answered, and nothing is `insufficient_data` until a
+coverage floor is set; both are decisions rather than defaults (`reqs.md` 3.10). Those tests
+arrange the decision -- one through the Configure screen itself -- assert what the screen says,
+and put it back.
+
+**What it found:** an unranked candidate showed an empty cell rather than a dash (P19), and the
+unit test that should have caught it asserted nothing; a run accounts for fewer items than it
+has, with no category for an item no source could answer (P18, open, and a decision). The
+`minE2E` test asserting Liechtenstein is unscoreable was stale -- Gate B's stand-ins score it
+now, at 53% coverage with a third of that low-confidence -- and asserts the honesty that
+replaced it.
+
 **All development stops.** Master agent writes the full Playwright suite. Each of these is a
 requirement made executable:
 

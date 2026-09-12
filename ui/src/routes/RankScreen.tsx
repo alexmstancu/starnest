@@ -7,6 +7,7 @@ import {
 import { useResource } from "../api/useResource";
 import type { RouteDefinition } from "../app/routes";
 import {
+  ABSENT,
   formatDateTime,
   formatMatchStatus,
   formatPercentage,
@@ -159,7 +160,10 @@ function CandidateRow({
         matching ? "table__row" : "table__row table__row--not-matching"
       }
     >
-      <td>{result.rank ?? ""}</td>
+      {/* A candidate a gate ruled out has no rank, and an empty cell does not say that --
+          it reads as a table that failed to render. The dash is what the rest of this screen
+          prints where a number is genuinely absent. */}
+      <td>{result.rank ?? ABSENT}</td>
       <th scope="row">{result.name}</th>
       <ScoreCell result={result} />
       <td className="table__cell--numeric">
