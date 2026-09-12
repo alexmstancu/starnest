@@ -24,6 +24,7 @@ from starnest.data import (
     AttributeId,
     ConfidenceLevel,
     DataSourceId,
+    Measurements,
     Quantity,
     ReferencePeriod,
     Value,
@@ -96,7 +97,15 @@ class ImfAdapter(SourceAdapter):
         attribute: Attribute,
         candidates: Sequence[Candidate],
     ) -> Acquired:
-        retrieved = datetime.now(UTC)
+        measuring = Measurements(
+            attribute=attribute,
+            data_source=IMF,
+            retrieved=datetime.now(UTC),
+            # A forecast is not a measurement, whoever made it. `medium` says so without
+            # pretending the IMF's is unreliable (`reqs.md` 5.7), and it belongs here rather
+            # than on each figure: every projection in this fetch is worth exactly the same.
+            confidence_level=ConfidenceLevel.MEDIUM,
+        )
         forecast_year = (self._today or date.today()).year + YEARS_AHEAD
         unit = _the_unit_of(attribute)
 
@@ -123,9 +132,8 @@ class ImfAdapter(SourceAdapter):
                     _a_value(
                         projected,
                         unit=unit,
-                        attribute=attribute,
+                        measuring=measuring,
                         candidate=candidate,
-                        retrieved=retrieved,
                     )
                 )
             except ValidationError as refused:
@@ -162,23 +170,13 @@ def _a_value(
     projected: Projection,
     *,
     unit: str,
-    attribute: Attribute,
+    measuring: Measurements,
     candidate: Candidate,
-    retrieved: datetime,
 ) -> Value:
-    return Value(
-        candidate=candidate.id,
-        attribute=attribute.id,
-        value_type=attribute.value_type,
-        data_source=IMF,
+    return measuring.figure(
+        candidate=candidate,
         # The year forecast, not the year of the forecast. A projection for 2027 describes 2027.
-        reference_period=ReferencePeriod(
-            start=date(projected.year, 1, 1), end=date(projected.year, 12, 31)
-        ),
-        retrieval_date=retrieved,
-        # A forecast is not a measurement, whoever made it. `medium` says so without pretending
-        # the IMF's is unreliable (`reqs.md` 5.7).
-        confidence_level=ConfidenceLevel.MEDIUM,
+        period=ReferencePeriod(start=date(projected.year, 1, 1), end=date(projected.year, 12, 31)),
         payload=Quantity(magnitude=projected.figure, unit=unit),
         quote=f"IMF World Economic Outlook projection for {projected.year}: {projected.figure}%",
     )

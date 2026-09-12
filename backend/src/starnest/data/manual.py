@@ -19,6 +19,7 @@ from starnest.candidates import CandidateId
 from starnest.data.attribute import Attribute
 from starnest.data.confidence import MANUAL_ENTRY_DEFAULT_CONFIDENCE, ConfidenceLevel
 from starnest.data.identifiers import BreakdownOptionId, DataSourceId
+from starnest.data.measurements import Measurements
 from starnest.data.payloads import payload_class_for
 from starnest.data.reference_period import ReferencePeriod
 from starnest.data.value import Value
@@ -62,17 +63,17 @@ def a_manual_value(
         shaped = payload_class_for(attribute.value_type).model_validate(
             {**payload, "value_type": attribute.value_type}
         )
-        return Value(
-            candidate=candidate,
-            attribute=attribute.id,
-            value_type=attribute.value_type,
+        return Measurements(
+            attribute=attribute,
             data_source=MANUAL,
-            reference_period=reference_period,
-            retrieval_date=retrieval_date,
+            retrieved=retrieval_date,
             confidence_level=confidence_level,
+        ).figure(
+            candidate=candidate,
             payload=shaped,
+            period=reference_period,
             quote=quote,
-            citations=tuple(citations),
+            citations=citations,
             breakdown_option=breakdown_option,
         )
     except ValidationError as refused:

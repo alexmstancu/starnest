@@ -20,8 +20,8 @@ from starnest.candidates import Candidate
 from starnest.data import (
     Attribute,
     AttributeId,
-    ConfidenceLevel,
     DataSourceId,
+    Measurements,
     Ratio,
     ReferencePeriod,
     Value,
@@ -98,7 +98,7 @@ def _values_from(
     attribute: Attribute,
     candidates: Sequence[Candidate],
 ) -> Acquired:
-    retrieved = datetime.now(UTC)
+    measuring = Measurements(attribute=attribute, data_source=OECD, retrieved=datetime.now(UTC))
     basis = _the_basis_of(attribute)
 
     values: list[Value] = []
@@ -122,14 +122,9 @@ def _values_from(
         period = max(by_period)
         try:
             values.append(
-                Value(
-                    candidate=candidate.id,
-                    attribute=attribute.id,
-                    value_type=attribute.value_type,
-                    data_source=OECD,
-                    reference_period=_whole_year(period),
-                    retrieval_date=retrieved,
-                    confidence_level=ConfidenceLevel.HIGH,
+                measuring.figure(
+                    candidate=candidate,
+                    period=_whole_year(period),
                     payload=Ratio(value=by_period[period], basis=basis),
                     quote=f"OECD {series.dataflow} {period}: {by_period[period]}",
                 )

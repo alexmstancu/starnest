@@ -82,6 +82,7 @@ from starnest.data.manual import (
     ManualEntryNotPermittedError,
     a_manual_value,
 )
+from starnest.data.measurements import Measurements
 from starnest.data.payloads import (
     FX_CONVERSION_TOLERANCE,
     PAYLOAD_CLASSES,
@@ -185,6 +186,7 @@ __all__ = [
     "MatchRule",
     "MatchRuleId",
     "MatchRuleResult",
+    "Measurements",
     "MismatchedAttributeError",
     "Monetary",
     "Payload",

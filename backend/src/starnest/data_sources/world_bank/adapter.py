@@ -28,10 +28,10 @@ from starnest.candidates import Candidate
 from starnest.data import (
     Attribute,
     AttributeId,
-    ConfidenceLevel,
     DataSourceId,
     Index,
     IndexParameters,
+    Measurements,
     ReferencePeriod,
     Value,
 )
@@ -120,7 +120,9 @@ class WorldBankAdapter(SourceAdapter):
         attribute: Attribute,
         candidates: Sequence[Candidate],
     ) -> Acquired:
-        retrieved = datetime.now(UTC)
+        measuring = Measurements(
+            attribute=attribute, data_source=WORLD_BANK, retrieved=datetime.now(UTC)
+        )
         by_country: dict[str, dict[str, Reading]] = {}
         for reading in reported:
             by_country.setdefault(reading.country, {})[reading.series] = reading
@@ -145,9 +147,8 @@ class WorldBankAdapter(SourceAdapter):
                             sources=series.get(indicator.source_count),
                             standard_error=series.get(indicator.standard_error),
                         ),
-                        attribute=attribute,
+                        measuring=measuring,
                         candidate=candidate,
-                        retrieved=retrieved,
                     )
                 )
             except ValidationError as outside_its_scale:
@@ -219,18 +220,12 @@ def _a_value(
     *,
     bounds: IndexParameters,
     certainty: _Certainty,
-    attribute: Attribute,
+    measuring: Measurements,
     candidate: Candidate,
-    retrieved: datetime,
 ) -> Value:
-    return Value(
-        candidate=candidate.id,
-        attribute=attribute.id,
-        value_type=attribute.value_type,
-        data_source=WORLD_BANK,
-        reference_period=_whole_year(estimate.period),
-        retrieval_date=retrieved,
-        confidence_level=ConfidenceLevel.HIGH,
+    return measuring.figure(
+        candidate=candidate,
+        period=_whole_year(estimate.period),
         payload=Index(
             value=estimate.figure,
             provider=bounds.provider,

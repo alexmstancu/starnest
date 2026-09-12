@@ -40,6 +40,7 @@ from starnest.data import (
     AttributeId,
     ConfidenceLevel,
     DataSourceId,
+    Measurements,
     Ratio,
     ReferencePeriod,
     Value,
@@ -155,7 +156,14 @@ def _estimates(
     attribute: Attribute,
     candidates: Sequence[Candidate],
 ) -> Acquired:
-    retrieved = datetime.now(UTC)
+    measuring = Measurements(
+        attribute=attribute,
+        data_source=EUROSTAT_ESTIMATE,
+        retrieved=datetime.now(UTC),
+        # An estimate assembled from seven series is ours, not Eurostat's, and `low` says so --
+        # which is also what keeps it ranked below the published rate (`reqs.md` Q207).
+        confidence_level=ConfidenceLevel.LOW,
+    )
     basis = _the_basis_of(attribute)
 
     values: list[Value] = []
@@ -189,16 +197,11 @@ def _estimates(
             continue
         try:
             values.append(
-                Value(
-                    candidate=candidate.id,
-                    attribute=attribute.id,
-                    value_type=attribute.value_type,
-                    data_source=EUROSTAT_ESTIMATE,
-                    reference_period=ReferencePeriod(
+                measuring.figure(
+                    candidate=candidate,
+                    period=ReferencePeriod(
                         start=date(int(key[1]), 1, 1), end=date(int(key[1]), 12, 31)
                     ),
-                    retrieval_date=retrieved,
-                    confidence_level=ConfidenceLevel.LOW,
                     payload=Ratio(value=workings.rate, basis=basis),
                     quote=workings.quote(),
                 )

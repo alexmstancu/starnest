@@ -32,6 +32,7 @@ from starnest.data import (
     CatalogStore,
     ConfidenceLevel,
     DataSourceId,
+    Measurements,
     PopulationCentre,
     Quantity,
     ReferencePeriod,
@@ -179,14 +180,16 @@ def _the_national_figure(
         f"({place.population:,})"
         for place, mean in complete
     )
-    return Value(
-        candidate=places[0].candidate,
-        attribute=attribute.id,
-        value_type=attribute.value_type,
+    return Measurements(
+        attribute=attribute,
         data_source=OPEN_METEO,
-        reference_period=ReferencePeriod(start=window[0], end=window[1]),
-        retrieval_date=datetime.now(UTC),
+        retrieved=datetime.now(UTC),
+        # Derived rather than published: a population-weighted mean of five places is our
+        # arithmetic over Open-Meteo's figures, and `medium` says so (`reqs.md` Q210).
         confidence_level=ConfidenceLevel.MEDIUM,
+    ).figure(
+        candidate=places[0].candidate,
+        period=ReferencePeriod(start=window[0], end=window[1]),
         payload=Quantity(magnitude=figure, unit=unit),
         quote=(
             f"Open-Meteo archive (ERA5) {_named(window)}, weighted by population: "

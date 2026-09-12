@@ -28,6 +28,7 @@ from starnest.data import (
     Attribute,
     ConfidenceLevel,
     DataSourceId,
+    Measurements,
     Quantity,
     Ratio,
     ReferencePeriod,
@@ -211,7 +212,9 @@ class EurostatAdapter(SourceAdapter):
         *,
         describe: Callable[[Observation], str],
     ) -> Acquired:
-        retrieved = datetime.now(UTC)
+        measuring = Measurements(
+            attribute=attribute, data_source=EUROSTAT, retrieved=datetime.now(UTC)
+        )
         by_geo: dict[str, list[Observation]] = {}
         for observation in reported:
             by_geo.setdefault(observation.geo, []).append(observation)
@@ -237,9 +240,8 @@ class EurostatAdapter(SourceAdapter):
             values.append(
                 _a_value(
                     newest,
-                    attribute=attribute,
+                    measuring=measuring,
                     candidate=candidate,
-                    retrieved=retrieved,
                     quote=describe(newest),
                 )
             )
@@ -269,23 +271,20 @@ def _as_published(observation: Observation) -> str:
 def _a_value(
     observation: Observation,
     *,
-    attribute: Attribute,
+    measuring: Measurements,
     candidate: Candidate,
-    retrieved: datetime,
     quote: str,
 ) -> Value:
-    return Value(
-        candidate=candidate.id,
-        attribute=attribute.id,
-        value_type=attribute.value_type,
-        data_source=EUROSTAT,
-        reference_period=_whole_year(observation.period),
-        retrieval_date=retrieved,
+    return measuring.figure(
+        candidate=candidate,
+        period=_whole_year(observation.period),
+        payload=_payload_for(measuring.attribute, observation.figure),
+        quote=quote,
+        # Per figure, not per fetch: Eurostat flags individual observations as provisional or
+        # estimated, so two countries in one response can be worth different amounts.
         confidence_level=(
             ConfidenceLevel.MEDIUM if observation.flag in UNSETTLED_FLAGS else ConfidenceLevel.HIGH
         ),
-        payload=_payload_for(attribute, observation.figure),
-        quote=quote,
     )
 
 
