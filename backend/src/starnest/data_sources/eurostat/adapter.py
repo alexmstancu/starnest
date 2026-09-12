@@ -49,6 +49,7 @@ from starnest.data_sources.eurostat.manifest import (
     EurostatDensity,
     EurostatShare,
 )
+from starnest.data_sources.transport import JsonOverHttp, SourceUnavailableError, a_failure
 
 EUROSTAT = DataSourceId("eurostat")
 
@@ -75,8 +76,7 @@ class EurostatAdapter(SourceAdapter):
     """
 
     def __init__(self, client: httpx.AsyncClient, *, base_url: str = BASE_URL) -> None:
-        self._client = client
-        self._base_url = base_url
+        self._endpoint = JsonOverHttp(client, base_url=base_url, explain=_why)
 
     @property
     def data_source(self) -> DataSourceId:
@@ -105,14 +105,10 @@ class EurostatAdapter(SourceAdapter):
             else:
                 reported = observations(await self._get(query.dataset, dict(query.filters)))
                 describe = _as_published
-        except httpx.HTTPStatusError as refused:
-            return Acquired(
-                failures=(AcquisitionFailure(attribute=attribute.id, reason=_why(refused)),)
-            )
-        except (httpx.HTTPError, JsonStatError) as unreachable:
-            return Acquired(
-                failures=(AcquisitionFailure(attribute=attribute.id, reason=str(unreachable)),)
-            )
+        # One clause for the transport and one for the JSON-stat decoder: Eurostat's own
+        # explanation of a 413 comes through `_why`, which the transport calls.
+        except (SourceUnavailableError, JsonStatError) as unavailable:
+            return Acquired(failures=(a_failure(attribute.id, str(unavailable)),))
         return self._values_from(reported, attribute, candidates, describe=describe)
 
     async def _shares(
@@ -197,12 +193,10 @@ class EurostatAdapter(SourceAdapter):
         return densities, describe
 
     async def _get(self, dataset: str, filters: dict[str, str]) -> dict:
-        response = await self._client.get(
-            f"{self._base_url}/{dataset}",
-            params={"format": "JSON", "lang": "EN", **filters},
+        answered = await self._endpoint.get(
+            f"/{dataset}", params={"format": "JSON", "lang": "EN", **filters}
         )
-        response.raise_for_status()
-        return response.json()
+        return dict(answered)
 
     def _values_from(
         self,

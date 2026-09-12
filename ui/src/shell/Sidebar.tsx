@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useAppConfig } from "../config/AppConfigContext";
 import { formatCount, formatDateTime, formatMoney } from "../format/display";
-import { ROUTES } from "../app/routes";
+import { ROUTES } from "../navigation/routes";
 import { ErrorNotice } from "./ErrorNotice";
 import { useSelection } from "./SelectionContext";
 import { useShellSummary } from "./useShellSummary";

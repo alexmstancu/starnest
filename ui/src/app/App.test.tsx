@@ -4,7 +4,7 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { mockServer } from "../mocks/server";
 import { TEST_CONFIG, renderShell } from "../testing/renderShell";
-import { ROUTES } from "./routes";
+import { ROUTES } from "../navigation/routes";
 
 /**
  * Waits until the sidebar has adopted its defaults. The catalog arrives in one render and the

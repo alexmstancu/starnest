@@ -18,7 +18,15 @@ import tseslint from "typescript-eslint";
  * from `schema.ts` read as though it were always there.
  */
 export default tseslint.config(
-  { ignores: ["dist", "coverage", "playwright-report", "test-results", "src/api/schema.ts"] },
+  {
+    ignores: [
+      "dist",
+      "coverage",
+      "playwright-report",
+      "test-results",
+      "src/api/schema.ts",
+    ],
+  },
 
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -26,6 +34,59 @@ export default tseslint.config(
   // Carries the plugin and its TypeScript resolver, which is what lets `no-cycle` follow an
   // import through a path alias and a `.tsx` extension rather than giving up on it.
   importX.flatConfigs.typescript,
+
+  {
+    // **The design is a plugin, and this is what keeps it one** (`CLAUDE.md`: behaviour first,
+    // appearance later). Styling lives in `styles.css`, which the entry point imports once, and
+    // the msw handlers and the render helper are scaffolding for the tests. A component that
+    // reached for either would be a piece of the plugin outside the plugin -- and post-MVP the
+    // design is replaced, with nothing above it expected to change.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: [
+      "src/**/*.test.{ts,tsx}",
+      "src/mocks/**",
+      "src/testing/**",
+      "src/main.tsx",
+      // The vitest setup file registers the mock server for the whole suite: the one place
+      // outside a test that is meant to know the scaffolding exists.
+      "src/test-setup.ts",
+    ],
+    rules: {
+      // **Matched on the import specifier, not on a directory zone.** `no-restricted-paths`
+      // compares directories, and every zone shape tried here -- `./src` as the target, then a
+      // glob over the product directories -- matched nothing, because `mocks/` and `testing/`
+      // live inside the same tree they are being kept out of. A pattern on the path a file
+      // actually writes is the check that fires.
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["*.css", "**/*.css"],
+              message:
+                "Styling belongs in styles.css, imported once by main.tsx. A component that " +
+                "imports a stylesheet is a piece of the design outside the design.",
+            },
+            {
+              group: ["**/mocks/**", "**/testing/**"],
+              message:
+                "The msw handlers and the render helper are test scaffolding. Product code " +
+                "importing them would ship the mock.",
+            },
+          ],
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXAttribute[name.name='style']",
+          message:
+            "No inline styles: put a class in styles.css. An inline style is design in a " +
+            "component, which is what makes a redesign a rewrite.",
+        },
+      ],
+    },
+  },
 
   {
     files: ["**/*.{ts,tsx}"],
@@ -55,11 +116,87 @@ export default tseslint.config(
       "import-x/no-cycle": ["error", { maxDepth: Infinity }],
       "import-x/no-self-import": "error",
 
+      // **The interface's layers, as something the gate fails on.** The backend has this as
+      // four `import-linter` contracts (`backend/pyproject.toml`); this is the same rule for
+      // the client, and `src/app/architecture.test.ts` checks that every directory under
+      // `src/` appears below -- a layer nobody listed is a layer nobody constrains.
+      //
+      // Highest first: `main.tsx` composes, `app/` wires the shell to the routes, `routes/`
+      // and `shell/` are the screens, and `api/`, `format/` and `config/` are the three
+      // things they rest on. Each zone's `target` is the side that may not import; `from` is
+      // what it may not reach.
+      "import-x/no-restricted-paths": [
+        "error",
+        {
+          zones: [
+            // `api/` is the port to the contract. A screen is not its business, and the moment
+            // it knows about one, "the interface renders what the API returns" has a hole in it.
+            {
+              target: "./src/api",
+              from: [
+                "./src/app",
+                "./src/routes",
+                "./src/shell",
+                "./src/config",
+                "./src/format",
+                "./src/navigation",
+              ],
+            },
+            // `navigation/` is the route table: the paths, their labels, and the type of a
+            // route. **It is data, not composition** -- the sidebar renders it and every screen
+            // reads its own label from it, so it sits beneath both. It lived in `app/` and made
+            // five files depend upwards on the module that wires them, which is what the zone
+            // below caught on the day it was written.
+            {
+              target: "./src/navigation",
+              from: [
+                "./src/api",
+                "./src/app",
+                "./src/routes",
+                "./src/shell",
+                "./src/config",
+                "./src/format",
+              ],
+            },
+            // `format/` turns a number into text and imports nothing of ours: it is the one
+            // place with no dependencies at all, which is what makes it safe to call anywhere.
+            {
+              target: "./src/format",
+              from: [
+                "./src/api",
+                "./src/app",
+                "./src/routes",
+                "./src/shell",
+                "./src/config",
+                "./src/navigation",
+              ],
+            },
+            {
+              target: "./src/config",
+              from: [
+                "./src/api",
+                "./src/app",
+                "./src/routes",
+                "./src/shell",
+                "./src/navigation",
+              ],
+            },
+            // The shell is beneath the screens: it holds what every screen reads, and a
+            // sidebar reaching into one screen would make the other three depend on it too.
+            { target: "./src/shell", from: ["./src/app", "./src/routes"] },
+            { target: "./src/routes", from: ["./src/app"] },
+          ],
+        },
+      ],
+
       // The stale-draft defect fixed in cbef101 was exactly this rule's quarry: an effect that
       // read a value it had not declared. An error, not a warning.
       "react-hooks/exhaustive-deps": "error",
 
-      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
+      "react-refresh/only-export-components": [
+        "warn",
+        { allowConstantExport: true },
+      ],
 
       // `tsconfig.json` sets `noPropertyAccessFromIndexSignature`, so a lookup into a free-form
       // bag -- `process.env`, an `Error.details` the contract types as an open object -- must be

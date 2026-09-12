@@ -29,6 +29,7 @@ from starnest.data import (
 from starnest.data_acquisition import Acquired, AcquisitionFailure, SourceAdapter
 from starnest.data_sources.oecd.manifest import BASE_URL, SERIES, OecdSeries
 from starnest.data_sources.oecd.response import OecdError, figures
+from starnest.data_sources.transport import JsonOverHttp, SourceUnavailableError, a_failure
 
 OECD = DataSourceId("oecd")
 
@@ -37,8 +38,9 @@ class OecdAdapter(SourceAdapter):
     """The legacy SDMX-JSON service, which is free, unauthenticated and answers a script."""
 
     def __init__(self, client: httpx.AsyncClient, *, base_url: str = BASE_URL) -> None:
-        self._client = client
-        self._base_url = base_url
+        # The client is still the argument, so nothing outside this module knows the transport
+        # exists: the composition root wires one pool for every source (`arch.md` 7.5).
+        self._endpoint = JsonOverHttp(client, base_url=base_url, explain=_why)
 
     @property
     def data_source(self) -> DataSourceId:
@@ -53,26 +55,22 @@ class OecdAdapter(SourceAdapter):
         if series is None:
             return Acquired(
                 failures=(
-                    _a_failure(
+                    a_failure(
                         attribute.id,
                         f"the oecd publishes no series for {attribute.id} in this adapter",
                     ),
                 )
             )
         try:
-            by_area = figures(await self._get(series), series.selection)
-        except httpx.HTTPStatusError as refused:
-            return Acquired(failures=(_a_failure(attribute.id, _why(refused)),))
-        except (httpx.HTTPError, OecdError) as unreachable:
-            return Acquired(failures=(_a_failure(attribute.id, str(unreachable)),))
+            answered = await self._endpoint.get(
+                f"/{series.dataflow}/", params={"format": "jsondata"}
+            )
+            by_area = figures(answered, series.selection)
+        # One clause for the transport and one for this source's own decoder: what an
+        # SDMX-JSON body means is OECD's business and stays in `response.py`.
+        except (SourceUnavailableError, OecdError) as unavailable:
+            return Acquired(failures=(a_failure(attribute.id, str(unavailable)),))
         return _values_from(by_area, series, attribute, candidates)
-
-    async def _get(self, series: OecdSeries) -> object:
-        response = await self._client.get(
-            f"{self._base_url}/{series.dataflow}/", params={"format": "jsondata"}
-        )
-        response.raise_for_status()
-        return response.json()
 
 
 def _why(refused: httpx.HTTPStatusError) -> str:
@@ -106,7 +104,7 @@ def _values_from(
     for candidate in candidates:
         if candidate.country_code_alpha3 is None:
             failures.append(
-                _a_failure(
+                a_failure(
                     attribute.id,
                     "the candidate carries no alpha-3 country code, which is the only form the "
                     "oecd answers to",
@@ -131,7 +129,7 @@ def _values_from(
             )
         except ValidationError as refused:
             failures.append(
-                _a_failure(attribute.id, _the_reason(refused), candidate=str(candidate.id))
+                a_failure(attribute.id, _the_reason(refused), candidate=str(candidate.id))
             )
     return Acquired(values=tuple(values), failures=tuple(failures))
 
@@ -152,9 +150,3 @@ def _the_reason(refused: ValidationError) -> str:
     first = refused.errors()[0]
     original = first.get("ctx", {}).get("error")
     return str(original) if original is not None else str(first.get("msg", refused))
-
-
-def _a_failure(
-    attribute: AttributeId, reason: str, candidate: str | None = None
-) -> AcquisitionFailure:
-    return AcquisitionFailure(attribute=attribute, reason=reason, candidate=candidate)

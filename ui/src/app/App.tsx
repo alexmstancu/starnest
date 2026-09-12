@@ -13,7 +13,7 @@ import {
   findRouteByPath,
   type RouteDefinition,
   type RoutePath,
-} from "./routes";
+} from "../navigation/routes";
 
 /**
  * The screen each route renders. **Keyed by the route table's own paths**, so a tab added

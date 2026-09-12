@@ -1,4 +1,4 @@
-import type { RouteDefinition } from "../app/routes";
+import type { RouteDefinition } from "../navigation/routes";
 import { ErrorNotice } from "../shell/ErrorNotice";
 import { useSelection } from "../shell/SelectionContext";
 import { CriteriaPanel } from "./configure/CriteriaPanel";

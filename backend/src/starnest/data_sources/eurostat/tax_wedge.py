@@ -49,6 +49,7 @@ from starnest.data_acquisition import Acquired, AcquisitionFailure, SourceAdapte
 from starnest.data_sources.eurostat.geography import eurostat_code_for
 from starnest.data_sources.eurostat.jsonstat import JsonStatError, observations
 from starnest.data_sources.eurostat.manifest import BASE_URL
+from starnest.data_sources.transport import JsonOverHttp, SourceUnavailableError, a_failure
 
 EUROSTAT_ESTIMATE = DataSourceId("eurostat_estimate")
 TOTAL_TAX_RATE = AttributeId("country.total_tax_rate_effective")
@@ -68,8 +69,7 @@ class TaxWedgeEstimateAdapter(SourceAdapter):
     """Seven Eurostat series in, one estimated rate per country out."""
 
     def __init__(self, client: httpx.AsyncClient, *, base_url: str = BASE_URL) -> None:
-        self._client = client
-        self._base_url = base_url
+        self._endpoint = JsonOverHttp(client, base_url=base_url)
 
     @property
     def data_source(self) -> DataSourceId:
@@ -82,14 +82,14 @@ class TaxWedgeEstimateAdapter(SourceAdapter):
     async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
         if attribute.id != TOTAL_TAX_RATE:
             return Acquired(
-                failures=(_a_failure(attribute.id, f"this estimate answers only {TOTAL_TAX_RATE}"),)
+                failures=(a_failure(attribute.id, f"this estimate answers only {TOTAL_TAX_RATE}"),)
             )
         try:
+            # One clause for the transport and one for the JSON-stat decoder, as in the
+            # adapter beside this one -- seven slices, any of which can fail.
             series = await self._series()
-        except httpx.HTTPError as unreachable:
-            return Acquired(failures=(_a_failure(attribute.id, str(unreachable)),))
-        except JsonStatError as unreadable:
-            return Acquired(failures=(_a_failure(attribute.id, str(unreadable)),))
+        except (SourceUnavailableError, JsonStatError) as unavailable:
+            return Acquired(failures=(a_failure(attribute.id, str(unavailable)),))
         return _estimates(series, attribute, candidates)
 
     async def _series(self) -> dict[str, dict[tuple[str, str], Decimal]]:
@@ -108,11 +108,10 @@ class TaxWedgeEstimateAdapter(SourceAdapter):
         return found
 
     async def _slice(self, dataset: str, **filters: str) -> dict[tuple[str, str], Decimal]:
-        response = await self._client.get(
-            f"{self._base_url}/{dataset}", params={"format": "JSON", "lang": "EN", **filters}
+        answered = await self._endpoint.get(
+            f"/{dataset}", params={"format": "JSON", "lang": "EN", **filters}
         )
-        response.raise_for_status()
-        return {(o.geo, o.period): o.figure for o in observations(response.json())}
+        return {(o.geo, o.period): o.figure for o in observations(answered)}
 
 
 class _Workings:
@@ -171,7 +170,7 @@ def _estimates(
     for candidate in candidates:
         if candidate.country_code is None:
             failures.append(
-                _a_failure(
+                a_failure(
                     attribute.id,
                     "the candidate carries no country code to ask Eurostat for",
                     candidate=str(candidate.id),
@@ -186,7 +185,7 @@ def _estimates(
         workings = _Workings(series, key)
         if not Decimal(0) <= workings.employer_rate < 1:
             failures.append(
-                _a_failure(
+                a_failure(
                     attribute.id,
                     f"the employer rate backed out for {key[1]} is "
                     f"{workings.employer_rate * 100:.1f}% of gross, which no contribution system "
@@ -207,7 +206,7 @@ def _estimates(
                 )
             )
         except ValidationError as refused:
-            failures.append(_a_failure(attribute.id, str(refused), candidate=str(candidate.id)))
+            failures.append(a_failure(attribute.id, str(refused), candidate=str(candidate.id)))
     return Acquired(values=tuple(values), failures=tuple(failures))
 
 
@@ -229,9 +228,3 @@ def _the_basis_of(attribute: Attribute) -> str:
     if attribute.ratio_parameters is None:
         raise ValueError(f"{attribute.id} is a Ratio and the catalog gives it no basis")
     return attribute.ratio_parameters.basis
-
-
-def _a_failure(
-    attribute: AttributeId, reason: str, candidate: str | None = None
-) -> AcquisitionFailure:
-    return AcquisitionFailure(attribute=attribute, reason=reason, candidate=candidate)

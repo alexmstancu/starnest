@@ -7,7 +7,7 @@ import {
   type Comparison,
 } from "../api/endpoints";
 import { useResource } from "../api/useResource";
-import type { RouteDefinition } from "../app/routes";
+import type { RouteDefinition } from "../navigation/routes";
 import { formatScore } from "../format/display";
 import { ErrorNotice } from "../shell/ErrorNotice";
 import { useSelection } from "../shell/SelectionContext";

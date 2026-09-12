@@ -48,6 +48,7 @@ from starnest.data_sources.open_meteo.manifest import (
     ClimateSeries,
 )
 from starnest.data_sources.open_meteo.response import OpenMeteoError, daily_series
+from starnest.data_sources.transport import JsonOverHttp, SourceUnavailableError
 
 OPEN_METEO = DataSourceId("open_meteo")
 
@@ -64,11 +65,11 @@ class OpenMeteoAdapter(SourceAdapter):
         today: Callable[[], date] = lambda: datetime.now(UTC).date(),
         pause: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
-        self._client = client
+        # The transport carries the pacing as well as the request, because the free tier's
+        # rate limit is part of how this source is spoken to rather than part of what it says.
+        self._endpoint = JsonOverHttp(client, base_url=base_url, explain=_why, pause=pause)
         self._places = places
-        self._base_url = base_url
         self._today = today
-        self._pause = pause
 
     @property
     def data_source(self) -> DataSourceId:
@@ -108,15 +109,14 @@ class OpenMeteoAdapter(SourceAdapter):
                 )
                 continue
             if asked:
-                await self._pause(_seconds_for(len(places), series_of, year))
+                await self._endpoint.wait(_seconds_for(len(places), series_of, year))
             asked = True
             try:
                 series = await self._daily(places, series_of, year)
-            except httpx.HTTPStatusError as refused:
-                failures.append(_a_failure(attribute.id, candidate, _why(refused)))
-                continue
-            except (httpx.HTTPError, OpenMeteoError) as unreadable:
-                failures.append(_a_failure(attribute.id, candidate, str(unreadable)))
+            # One clause for the transport, one for this source's own decoder: Open-Meteo's
+            # own sentence about a refusal comes through `_why`, which the transport calls.
+            except (SourceUnavailableError, OpenMeteoError) as unavailable:
+                failures.append(_a_failure(attribute.id, candidate, str(unavailable)))
                 continue
             value = _the_national_figure(
                 places, series, attribute=attribute, unit=unit, window=series_of.window(year)
@@ -137,8 +137,7 @@ class OpenMeteoAdapter(SourceAdapter):
         self, places: Sequence[PopulationCentre], series_of: ClimateSeries, year: int
     ) -> list[list[Decimal | None]]:
         first, last = series_of.window(year)
-        response = await self._client.get(
-            self._base_url,
+        answered = await self._endpoint.get(
             params={
                 "latitude": ",".join(str(place.latitude) for place in places),
                 "longitude": ",".join(str(place.longitude) for place in places),
@@ -148,8 +147,7 @@ class OpenMeteoAdapter(SourceAdapter):
                 "timezone": "GMT",
             },
         )
-        response.raise_for_status()
-        return daily_series(response.json(), series_of.variable, len(places))
+        return daily_series(answered, series_of.variable, len(places))
 
 
 def _the_national_figure(

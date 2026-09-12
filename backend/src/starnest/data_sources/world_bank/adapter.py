@@ -36,6 +36,7 @@ from starnest.data import (
     Value,
 )
 from starnest.data_acquisition import Acquired, AcquisitionFailure, SourceAdapter
+from starnest.data_sources.transport import JsonOverHttp, SourceUnavailableError, a_failure
 from starnest.data_sources.world_bank.manifest import (
     BASE_URL,
     INDICATORS,
@@ -55,8 +56,7 @@ class WorldBankAdapter(SourceAdapter):
     """The v2 indicator API, which is free, unauthenticated and returns JSON."""
 
     def __init__(self, client: httpx.AsyncClient, *, base_url: str = BASE_URL) -> None:
-        self._client = client
-        self._base_url = base_url
+        self._endpoint = JsonOverHttp(client, base_url=base_url)
 
     @property
     def data_source(self) -> DataSourceId:
@@ -84,12 +84,11 @@ class WorldBankAdapter(SourceAdapter):
             return Acquired(failures=tuple(failures))
 
         try:
-            document = await self._get(indicator, askable)
-            reported = readings(document)
-        except httpx.HTTPStatusError as refused:
-            return Acquired(failures=(*failures, _a_failure(attribute.id, str(refused))))
-        except (httpx.HTTPError, WorldBankError) as unreachable:
-            return Acquired(failures=(*failures, _a_failure(attribute.id, str(unreachable))))
+            # One clause for the transport, one for this source's own decoder, which is where
+            # a truncated page is caught.
+            reported = readings(await self._get(indicator, askable))
+        except (SourceUnavailableError, WorldBankError) as unavailable:
+            return Acquired(failures=(*failures, a_failure(attribute.id, str(unavailable))))
 
         found = self._values_from(reported, indicator, attribute, askable)
         return Acquired(values=found.values, failures=(*failures, *found.failures))
@@ -101,8 +100,8 @@ class WorldBankAdapter(SourceAdapter):
         refuses a split result -- between them, a response cannot come back quietly truncated.
         """
         countries = ";".join(str(candidate.country_code) for candidate in candidates)
-        response = await self._client.get(
-            f"{self._base_url}/country/{countries}/indicator/{';'.join(indicator.series)}",
+        return await self._endpoint.get(
+            f"/country/{countries}/indicator/{';'.join(indicator.series)}",
             params={
                 "format": "JSON",
                 "source": WGI_DATABANK,
@@ -110,8 +109,6 @@ class WorldBankAdapter(SourceAdapter):
                 "per_page": str(len(candidates) * ROWS_PER_COUNTRY),
             },
         )
-        response.raise_for_status()
-        return response.json()
 
     def _values_from(
         self,
@@ -157,7 +154,7 @@ class WorldBankAdapter(SourceAdapter):
                 # something its documentation did not promise, not a fault of ours. Recorded and
                 # the run continues, because one odd country must not cost the other 31.
                 failures.append(
-                    _a_failure(
+                    a_failure(
                         attribute.id, _the_reason(outside_its_scale), candidate=str(candidate.id)
                     )
                 )
@@ -198,7 +195,7 @@ def _split_by_whether_we_can_ask(
     """
     askable = tuple(c for c in candidates if c.country_code is not None)
     unaskable = tuple(
-        _a_failure(
+        a_failure(
             attribute,
             "the candidate carries no country code to ask the world bank for",
             candidate=str(c.id),
@@ -207,12 +204,6 @@ def _split_by_whether_we_can_ask(
         if c.country_code is None
     )
     return askable, unaskable
-
-
-def _a_failure(
-    attribute: AttributeId, reason: str, candidate: str | None = None
-) -> AcquisitionFailure:
-    return AcquisitionFailure(attribute=attribute, reason=reason, candidate=candidate)
 
 
 def _a_value(

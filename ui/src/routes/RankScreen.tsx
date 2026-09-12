@@ -5,7 +5,7 @@ import {
   type Ranking,
 } from "../api/endpoints";
 import { useResource } from "../api/useResource";
-import type { RouteDefinition } from "../app/routes";
+import type { RouteDefinition } from "../navigation/routes";
 import {
   ABSENT,
   formatDateTime,

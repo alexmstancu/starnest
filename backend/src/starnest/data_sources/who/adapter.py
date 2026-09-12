@@ -33,6 +33,7 @@ from starnest.data import (
     Value,
 )
 from starnest.data_acquisition import Acquired, AcquisitionFailure, SourceAdapter
+from starnest.data_sources.transport import JsonOverHttp, SourceUnavailableError, a_failure
 from starnest.data_sources.who.manifest import BASE_URL, INDICATORS
 from starnest.data_sources.who.response import Reading, WhoError, readings
 
@@ -43,8 +44,7 @@ class WhoAdapter(SourceAdapter):
     """The Global Health Observatory, which is free, unauthenticated and returns OData JSON."""
 
     def __init__(self, client: httpx.AsyncClient, *, base_url: str = BASE_URL) -> None:
-        self._client = client
-        self._base_url = base_url
+        self._endpoint = JsonOverHttp(client, base_url=base_url)
 
     @property
     def data_source(self) -> DataSourceId:
@@ -67,17 +67,12 @@ class WhoAdapter(SourceAdapter):
                 )
             )
         try:
-            reported = readings(await self._get(indicator))
-        except httpx.HTTPStatusError as refused:
-            return Acquired(failures=(_a_failure(attribute.id, str(refused)),))
-        except (httpx.HTTPError, WhoError) as unreachable:
-            return Acquired(failures=(_a_failure(attribute.id, str(unreachable)),))
+            # One clause for the transport, one for this source's own decoder: what an OData
+            # envelope means is WHO's business and stays in `response.py`.
+            reported = readings(await self._endpoint.get(f"/{indicator}"))
+        except (SourceUnavailableError, WhoError) as unavailable:
+            return Acquired(failures=(a_failure(attribute.id, str(unavailable)),))
         return self._values_from(reported, attribute, candidates)
-
-    async def _get(self, indicator: str) -> object:
-        response = await self._client.get(f"{self._base_url}/{indicator}")
-        response.raise_for_status()
-        return response.json()
 
     def _values_from(
         self,
@@ -94,7 +89,7 @@ class WhoAdapter(SourceAdapter):
         for candidate in candidates:
             if candidate.country_code_alpha3 is None:
                 failures.append(
-                    _a_failure(
+                    a_failure(
                         attribute.id,
                         "the candidate carries no alpha-3 country code, which is the only form "
                         "the global health observatory answers to",
@@ -119,7 +114,7 @@ class WhoAdapter(SourceAdapter):
                 )
             except ValidationError as outside_its_scale:
                 failures.append(
-                    _a_failure(
+                    a_failure(
                         attribute.id,
                         _the_reason(outside_its_scale),
                         candidate=str(candidate.id),
@@ -161,12 +156,6 @@ def _the_reason(refused: ValidationError) -> str:
     first = refused.errors()[0]
     original = first.get("ctx", {}).get("error")
     return str(original) if original is not None else str(first.get("msg", refused))
-
-
-def _a_failure(
-    attribute: AttributeId, reason: str, candidate: str | None = None
-) -> AcquisitionFailure:
-    return AcquisitionFailure(attribute=attribute, reason=reason, candidate=candidate)
 
 
 def _a_value(

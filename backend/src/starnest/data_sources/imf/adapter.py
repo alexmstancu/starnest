@@ -32,6 +32,7 @@ from starnest.data import (
 from starnest.data_acquisition import Acquired, AcquisitionFailure, SourceAdapter
 from starnest.data_sources.imf.manifest import BASE_URL, INDICATORS, YEARS_AHEAD
 from starnest.data_sources.imf.response import ImfError, Projection, projections
+from starnest.data_sources.transport import JsonOverHttp, SourceUnavailableError, a_failure
 
 IMF = DataSourceId("imf")
 
@@ -46,8 +47,7 @@ class ImfAdapter(SourceAdapter):
         base_url: str = BASE_URL,
         today: date | None = None,
     ) -> None:
-        self._client = client
-        self._base_url = base_url
+        self._endpoint = JsonOverHttp(client, base_url=base_url)
         # Injected so a test can pin the forecast year. Left alone it is the real clock, because
         # which year counts as "next" is a fact about when the fetch happened.
         self._today = today
@@ -72,12 +72,10 @@ class ImfAdapter(SourceAdapter):
                 )
             )
         try:
-            document = await self._get(indicator)
-            reported = projections(document, indicator)
-        except httpx.HTTPStatusError as refused:
-            return Acquired(failures=(_a_failure(attribute.id, str(refused)),))
-        except (httpx.HTTPError, ImfError) as unreachable:
-            return Acquired(failures=(_a_failure(attribute.id, str(unreachable)),))
+            # One clause for the transport, one for this source's own decoder.
+            reported = projections(await self._get(indicator), indicator)
+        except (SourceUnavailableError, ImfError) as unavailable:
+            return Acquired(failures=(a_failure(attribute.id, str(unavailable)),))
         return self._values_from(reported, attribute, candidates)
 
     async def _get(self, indicator: str) -> object:
@@ -87,9 +85,7 @@ class ImfAdapter(SourceAdapter):
         with every economy the IMF publishes. Asking for all of it is therefore honest about
         what arrives, and one request rather than thirty-two.
         """
-        response = await self._client.get(f"{self._base_url}/{indicator}")
-        response.raise_for_status()
-        return response.json()
+        return await self._endpoint.get(f"/{indicator}")
 
     def _values_from(
         self,
@@ -114,7 +110,7 @@ class ImfAdapter(SourceAdapter):
         for candidate in candidates:
             if candidate.country_code_alpha3 is None:
                 failures.append(
-                    _a_failure(
+                    a_failure(
                         attribute.id,
                         "the candidate carries no alpha-3 country code, which is the only form "
                         "the imf answers to",
@@ -138,7 +134,7 @@ class ImfAdapter(SourceAdapter):
                 )
             except ValidationError as refused:
                 failures.append(
-                    _a_failure(attribute.id, _the_reason(refused), candidate=str(candidate.id))
+                    a_failure(attribute.id, _the_reason(refused), candidate=str(candidate.id))
                 )
         return Acquired(values=tuple(values), failures=tuple(failures))
 
@@ -158,12 +154,6 @@ def _the_reason(refused: ValidationError) -> str:
     first = refused.errors()[0]
     original = first.get("ctx", {}).get("error")
     return str(original) if original is not None else str(first.get("msg", refused))
-
-
-def _a_failure(
-    attribute: AttributeId, reason: str, candidate: str | None = None
-) -> AcquisitionFailure:
-    return AcquisitionFailure(attribute=attribute, reason=reason, candidate=candidate)
 
 
 def _a_value(

@@ -10,7 +10,7 @@ import {
   type RunPlan,
 } from "../api/endpoints";
 import { useResource } from "../api/useResource";
-import type { RouteDefinition } from "../app/routes";
+import type { RouteDefinition } from "../navigation/routes";
 import { formatCount, formatDateTime, formatMoney } from "../format/display";
 import { ErrorNotice } from "../shell/ErrorNotice";
 import { useSelection } from "../shell/SelectionContext";
