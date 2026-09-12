@@ -11,6 +11,7 @@ from decimal import Decimal
 from starnest.data import (
     CompoundRule,
     CompoundRuleCondition,
+    CompoundRuleInput,
     CompoundRuleShape,
     MatchResult,
     MatchRuleResult,
@@ -109,7 +110,13 @@ class TestACompoundRule:
     def test_a_shape_that_is_not_built_stays_silent(self) -> None:
         """`ShareOfHouseholdField` and `SumBelowFloor` read a household field and a sum of
         inputs; they belong to the city level and arrive with it. Silence is the same answer an
-        undecided rule gets, rather than a guess."""
+        undecided rule gets, rather than a guess.
+
+        **Fully decided on purpose**, which this test did not used to be: with no inputs the
+        rule was undecided, so it was filtered out before the shape was ever looked at and the
+        test passed without touching the branch it names. It has inputs and a ceiling now, so
+        the only thing that can keep it silent is the shape.
+        """
         other = CompoundRule(
             id="rent_against_spend",
             name="Rent against spend",
@@ -117,8 +124,12 @@ class TestACompoundRule:
             shape=CompoundRuleShape.SHARE_OF_HOUSEHOLD_FIELD,
             outcome=RuleOutcome.WARNING,
             threshold_max=Decimal("40"),
-            inputs=(),
+            inputs=(
+                CompoundRuleInput(input_order=1, attribute="country.average_rent"),
+                CompoundRuleInput(input_order=2, household_field="target_monthly_spend"),
+            ),
         )
+        assert other.is_decided
 
         assert judgements_of(rules=[other], figures=FIGURES, level="country") == ((), ())
 

@@ -228,3 +228,33 @@ dispatch that looked total and was not.**
 |---|---|---|
 | **P20** | **A `target_range` goal scored something else under two of the three methods.** `scores_for` chooses its branch in an order -- `percentile` first, `as_is` second, the band only under what remains -- so a band with `percentile` was silently ignored and ranked by standing, and a band with `as_is` was **inverted**: `_already_a_score` inverts unless the goal is `maximise`, so 26 °C in an 18-26 band scored 74 rather than 100. A plausible number meaning the opposite of what was asked for is the exact failure `reqs.md` 10 exists to prevent. Nothing refused the combination: not the schema, not the domain, not the scoring. Unreachable through the API by accident rather than by design -- `updateCriterion` ignored `goal` (P21) -- and reachable by any migration, script or `psql` session | **Fixed 2026-09-12 (`0468`).** Refused in three places, deliberately: a CHECK on `criterion` and on the frozen `evaluation_criterion`, a validator on `Criterion`, and a refusal in `scores_for` itself -- because the branch order is not a rule anybody can see. Nine tests: two unit refusals, three DB (including the control row and the frozen copy), and the combination is now unreachable from every direction |
 | **P21** | **`updateCriterion` accepted two fields it declared and dropped them.** `is_scored` and `weight_locked` were on the request body; `_applied` read `weight` and nothing else, so excluding a criterion from scoring or locking its weight answered **200 and changed nothing**. Every further field of the contract's `CriterionInput` -- `goal`, `normalisation_method`, `scale_anchors`, the thresholds -- was dropped as an unknown extra, because Pydantic ignores them by default. The body's own docstring said "an endpoint that silently ignored a field a client sent would be worse than one that refuses it" | **Fixed 2026-09-12.** Both flags are applied, through a new `CriteriaSet.with_criterion_flags` that revalidates the criterion and rebalances nothing -- `is_scored` is redistributed at scoring time, and `weight_locked` only decides who absorbs the next change. `extra="forbid"` turns the rest into a 422 rather than silence; the contract stays deliberately ahead of the code, and the code stops pretending to have caught up. **The criterion editor proper -- goal, method, anchors, thresholds -- is still unbuilt and is now the open decision**: build it, or narrow the contract |
+
+---
+
+## The test audit — 2026-09-12
+
+Asked for after the refactoring: run everything, check coverage, and find tests that assert
+nothing. **1,287 backend tests and 173 interface tests were scanned with the AST rather than
+with a grep** -- the first attempt used a regex, reported 321 tests with no assertion, and was
+wrong about every one of them because it stopped at the docstring.
+
+**No dummy tests were found.** Nine backend candidates survived the scan and all nine are
+sound: four are *controls* whose refusing counterpart sits beside them (a scale that fits is one
+the call survives, and the call that refuses an unfitting one is the test above it), three
+compare two calls rather than a thing to itself, and one reports through `pytest.fail`, which
+the scanner did not know about. The interface's single hit was a comment quoting a pattern it
+had removed.
+
+**Three real gaps were found and closed, plus one test that passed for the wrong reason.**
+
+| # | Finding | State |
+|---|---|---|
+| **P22** | **A test named for the shape guard never reached it.** `test_a_shape_that_is_not_built_stays_silent` built a `ShareOfHouseholdField` rule with no inputs -- which makes it *undecided*, so `judgements_of` filtered it out before the shape was looked at. The test passed, the branch it names stayed uncovered, and a change to the shape guard would not have failed it | **Fixed 2026-09-12.** The rule is fully decided now and asserts so before the act, so silence can only come from the shape. `evaluation/rules.py` is at 100% |
+| **P23** | **Three of the four threshold shapes were written and read by untested code.** `storage/criteria_store.py` sat at 81.3%, the lowest in the codebase, and the gap was the label, boolean and share threshold branches: the shipped catalog uses range thresholds only. This is the shape of P15, where the store silently failed to write the rule lists nobody read back | **Partly fixed 2026-09-12.** The label round trip is tested with a control, and the store is at 89.6%. **The boolean and share branches stay uncovered, on purpose**: no attribute in the catalog is a `Boolean` or a `ShareComposition` at any level, so a criterion carrying one cannot be built without inventing an attribute -- and an attribute invented by a test is a catalog this application does not ship. The reason is written beside the test rather than papered over |
+| **P24** | **`transport.py` carried a `base_url` property nobody read**, whose docstring claimed adapters read it. The coverage gap was the only thing that noticed | **Fixed 2026-09-12.** Deleted rather than tested |
+
+**Every one of the 40 implemented operations is exercised by an acceptance test** (checked by
+walking `openapi.implemented.yaml` against the suite), and the conformance suite already fails
+when a served read has no case. Coverage after the audit: **98.0% of statements** backend-wide,
+every package above its 85% floor, and 177 interface tests with `src/routes`, `src/api` and
+`src/shell` above 95%.

@@ -204,6 +204,87 @@ class TestWritingASet:
             await criteria.read_criteria_set("deleted_by_a_test")
 
 
+class TestTheThresholdShapesTheStoreCanWrite:
+    """Three of the four threshold shapes were written and read by code no test ran.
+
+    Found in the coverage audit of 2026-09-12: `criteria_store.py` sat at 81.3%, and the gap
+    was the threshold branches. The shipped catalog uses range thresholds only, so the label,
+    boolean and share paths were exercised by nothing -- which is exactly the shape of `P15`,
+    where the store quietly failed to write the rule lists nobody read back.
+
+    **A label threshold is testable and the other two are not, honestly.** No attribute in the
+    catalog is a `Boolean` or a `ShareComposition` at any level, so a criterion carrying one of
+    those thresholds cannot be built without inventing an attribute -- and an attribute invented
+    by a test is a catalog this application does not ship. The branches stay uncovered and the
+    reason is written here rather than papered over with a fixture that proves nothing.
+    """
+
+    async def test_a_label_threshold_survives_the_round_trip(
+        self, criteria: PostgresCriteriaStore
+    ) -> None:
+        """`country.climate_zone` is a `LabelSet`, so its threshold names a label and how it
+        must be contained -- and a `LabelSet` criterion may not be scored (`0122`)."""
+        from starnest.criteria import LabelThreshold
+
+        await criteria.create_criteria_set(
+            _a_label_set(
+                "label_threshold_round_trip",
+                threshold=LabelThreshold(label="Cfb", containment_rule="must_contain"),
+            )
+        )
+        try:
+            read_back = await criteria.read_criteria_set(
+                "label_threshold_round_trip", level=COUNTRY
+            )
+        finally:
+            await criteria.delete_criteria_set("label_threshold_round_trip")
+
+        threshold = read_back.criteria[0].matching_threshold
+        assert isinstance(threshold, LabelThreshold)
+        assert threshold.label == "Cfb"
+        assert threshold.containment_rule == "must_contain"
+
+    async def test_a_criterion_with_no_threshold_reads_back_with_none(
+        self, criteria: PostgresCriteriaStore
+    ) -> None:
+        """The control: the same criterion, no threshold. Without it the test above passes for
+        two reasons -- the threshold survived, or every read returns something label-shaped."""
+        await criteria.create_criteria_set(_a_label_set("no_threshold_round_trip"))
+        try:
+            read_back = await criteria.read_criteria_set("no_threshold_round_trip", level=COUNTRY)
+        finally:
+            await criteria.delete_criteria_set("no_threshold_round_trip")
+
+        assert read_back.criteria[0].matching_threshold is None
+
+
+def _a_label_set(identifier: str, *, threshold: object = None) -> CriteriaSet:
+    """One unscored criterion on a `LabelSet` attribute, which is the only shape the catalog
+    offers for a label threshold."""
+    from starnest.criteria import Criterion
+    from starnest.data import ValueType
+
+    return CriteriaSet(
+        id=identifier,
+        name=identifier,
+        criteria=(
+            Criterion(
+                criteria_set=identifier,
+                attribute="country.climate_zone",
+                pillar="climate",
+                value_type=ValueType.LABEL_SET,
+                weight=Decimal(100),
+                goal=Goal.MAXIMISE,
+                normalisation_method=NormalisationMethod.PERCENTILE,
+                # A `LabelSet` carries no magnitude, so it can be matched and never scored.
+                is_scored=False,
+                matching_threshold=threshold,
+            ),
+        ),
+        pillar_weights=(PillarWeight(pillar="climate", level=COUNTRY, weight=Decimal(100)),),
+    )
+
+
 def _a_set(
     identifier: str,
     *,
