@@ -1340,8 +1340,28 @@ silently ends up inside a sum.
 
 **The general rule this creates:** *raw indicators become attributes; composite scores become
 ExternalScores.* Eurostat's life-satisfaction survey figure is an attribute; the World Happiness
-Report's weighted composite of six factors is an ExternalScore. The test is whether someone
-else has already applied weights to it.
+Report's weighted composite of six factors is an ExternalScore.
+
+**The test is whether the formula encodes a view of what matters** (Q223). Weights that trade one
+good against another -- income against health against community, as the World Happiness Report
+does -- are somebody else's answer to the question this application exists to let the household
+answer for itself, and ingesting them would contradict *nothing hardcoded*. Weights **within a
+single dimension** do not: a price index weights a basket of prices, the WGI model weights ~30
+expert surveys of the same question, WHO's UHC index weights 14 tracers of one health system.
+Each of those produces a better measurement of **one** thing rather than a ranking of things
+against each other, so each is an attribute.
+
+**The cases this settles**, all measured and scored rather than displayed beside the score:
+`cost_of_living_index` (a basket of prices, Q203), `rule_of_law`, `control_of_corruption` and
+`political_economic_stability` (one model over expert surveys of governance), and
+`healthcare_system_quality` (WHO's 14 tracers). On the other side, and unchanged: the WhereNext
+composite, Numbeo Quality of Life, the OECD Better Life Index and the World Happiness Report --
+each trades pillars against each other, so each is an `ExternalScore`.
+
+**An earlier wording asked only "has someone already applied weights?"**, which classified the
+four above as things we may never ingest while section 7.1 named their sources as scored. That
+is the drift Q223 closes, and the four are written out here because a test needing judgement is
+only usable next to its worked examples.
 
 **Providers to carry:** WhereNext composite (country), OECD Better Life Index (country),
 EIU Global Liveability (city), Mercer Quality of Living rank (city), Numbeo Quality of Life
@@ -3033,4 +3053,6 @@ Recorded from a front-to-back read of this document.
 | Q220 | **A run that can spend refuses without a cap, and the refusal can be accepted past** (2026-09-12) | The household's decision: refuse by default, and allow an explicit bypass in the request rather than a setting -- "accept an uncapped run" is a sentence about one run, and remembering it would turn a deliberate act into a default. **And a paid source is asked only when a run names its attributes**, so a sweep over a level is free by construction and spending is always something somebody chose |
 | Q221 | **The `international_employers` type is a `LabelSet`, as section 7.1 always said** (2026-09-12) | Section 6.10's summary line called it an `AssignedScore` plus a list. The catalog table in 7.1 and the database both say `LabelSet` -- named firms -- and the catalog wins, as it did for Q215. Named firms are checkable and a score is not: a list can be looked up, "7 out of 10" cannot, and the household can strike a name it disagrees with |
 | Q222 | **The LLM's prices are configured in US dollars and converted by a named rate** (2026-09-12) | Anthropic publishes and bills in USD; this application works in euro. Both halves are configuration: the three prices exactly as the pricing page states them, and `EUR_USD_RATE` as the ECB quotes it (1 EUR = *n* USD). **What is in `.env` is what is on the page** -- no mental arithmetic between reading a price and setting it, and no silent drift when one changes. The conversion names its rate, which is the rule section 5.5 applies to every monetary value, and the boot log prints it: a spend measured with an unknown rate is a spend nobody can check. The rate is a setting rather than a fetch because this is a spend guard and not a stored measurement -- being within a percent of today's rate is the whole requirement |
+| Q223 | **A composite is barred when its formula trades one good against another** (2026-09-12) | Section 3.5a's test -- "has someone already applied weights to it?" -- classified four attributes that rank all 32 countries today as figures this application may never ingest: the three WGI governance indices (an unobserved-components model over ~30 expert surveys) and `healthcare_system_quality` (WHO's composite of 14 tracer indicators), both of whose sources section 7.1 names as **scored**. A rule that contradicts the catalog it governs is not yet a rule: the next attribute would be typed by whichever document its author read first (`known-issues.md` P2). The narrowing generalises the reading Q203 already adopted for `cost_of_living_index` -- weights **within** one dimension make a better measurement of one thing, weights **across** dimensions encode somebody's answer to the question the household is here to answer for itself. Applying the old test literally was the alternative, and it would have emptied the governance and health pillars with no raw pan-European measure to put in their place. The cost is that the test now asks for judgement, so the four settled cases are written into 3.5a as worked examples |
+| Q224 | **Spend outside a run is reported but not yet ledgered** (2026-09-12) | Gate research spends money and writes gate answers rather than values, and a run is defined as a pass that writes values (section 3.8) -- so its cost reaches the response and the log, and no table: "what has this month cost?" cannot be answered from the database (`known-issues.md` P28). Deferred deliberately rather than overlooked. The per-request cap already bounds every spend, and there is exactly one paid source, so a ledger built now would be a second home for money beside the run row designed against a single caller. Revisit when a second paid source exists -- which is also when the choice between a ledger and widening the run record stops being a coin toss |
 

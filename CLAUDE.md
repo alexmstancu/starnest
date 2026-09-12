@@ -42,8 +42,10 @@ what answers "why did it refuse to start".
 eight browser tests against the real stack, one per requirement, plus minE2E and the smoke
 tests. **Two of them arrange a decision the shipped data does not make** — nothing is
 `not_matching` until a gate is enforced and answered, nothing is `insufficient_data` until a
-coverage floor is set — and put it back afterwards. It found P18 (**a run accounts for fewer
-items than it has**, open, and a decision for Alex) and P19.
+coverage floor is set — and put it back afterwards. It found P18 (**a run accounted for fewer
+items than it has** — closed by Q217: `items_unanswered` completes the arithmetic and a retry
+reaches those items, **derived in SQL rather than stored**, so the three counts cannot drift) and
+P19.
 
 **GATE B closed 2026-09-12** — all 32 countries ranked from seven sources, every blocking
 attribute answered for every country (proved live by `make live`), the four spot-checked figures
@@ -291,7 +293,7 @@ These are cross-cutting rules from `docs/reqs.md`. Violating one silently breaks
 - **Two distinct dates per stored value**, never merged or conflated: the **reference date** (what period the data point describes) and the **retrieval date** (when the app fetched it). Both must be displayable together.
 - **Full provenance on every displayed number**: source, reference date, retrieval date, and a quote/summary where applicable.
 - **Never fabricate a score from missing data.** Sparse coverage (common for small towns on Numbeo/WhereNext) must be flagged as "insufficient data".
-- **Data quality is the product.** Raw indicators only. Published composite scores are displayed alongside as `ExternalScore` and **never ingested as inputs** — we do not recycle another product's interpretation. Where no credible measurement exists, the honest answer is "insufficient data", never a plausible-looking number.
+- **Data quality is the product.** Raw indicators only. Published composite scores are displayed alongside as `ExternalScore` and **never ingested as inputs** — we do not recycle another product's interpretation. **A composite is barred when its formula trades one good against another** (Q223); weights within a single dimension -- a basket of prices, expert surveys of one question, tracers of one health system -- still make an attribute. Where no credible measurement exists, the honest answer is "insufficient data", never a plausible-looking number.
 - **The LLM inventory in `reqs.md` 6.10 is exhaustive.** Four permitted uses, all `low` confidence, all ranked last in source priority, all required to store and display the pages the model actually read. If a use is not listed there, it is not permitted — adding one is a decision recorded in that section, not a convenience adopted mid-implementation. The LLM is never used for scoring arithmetic or comparison synthesis, and never where a structured source already answers.
 - **No authentication or authorisation, ever.** One household, running locally. No accounts, no permissions, no multi-tenancy.
 - **Non-matching candidates stay visible**, keeping their computed score, with the reason shown. Do not filter them out of the results view.

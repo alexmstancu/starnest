@@ -224,6 +224,12 @@ exclude a usable one, depending on which document they read first.
 Either `reqs.md`'s named sources override the test, or the test narrows to say what it really
 means. It should say which.
 
+> **Answered 2026-09-12 (Q223): the test narrows.** It asks whether the formula **encodes a view
+> of what matters** -- weights across dimensions bar a figure, weights within one dimension do
+> not. All five attributes above stay scored, and section 3.5a now carries the settled cases as
+> worked examples. The alternative, applying the old wording literally, would have emptied the
+> governance and health pillars with no raw pan-European measure to put in their place.
+
 ---
 
 ## What I would do, in order

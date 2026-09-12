@@ -693,7 +693,8 @@ and put it back.
 
 **What it found:** an unranked candidate showed an empty cell rather than a dash (P19), and the
 unit test that should have caught it asserted nothing; a run accounts for fewer items than it
-has, with no category for an item no source could answer (P18, open, and a decision). The
+has, with no category for an item no source could answer (P18, decided as Q217 and built:
+`items_unanswered`, **derived** rather than stored, and a retry that asks about it). The
 `minE2E` test asserting Liechtenstein is unscoreable was stale -- Gate B's stand-ins score it
 now, at 53% coverage with a third of that low-confidence -- and asserts the honesty that
 replaced it.
