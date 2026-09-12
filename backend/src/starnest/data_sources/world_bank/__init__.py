@@ -15,7 +15,9 @@ from starnest.data_sources.world_bank.adapter import WORLD_BANK, WorldBankAdapte
 from starnest.data_sources.world_bank.manifest import (
     BASE_URL,
     INDICATORS,
+    DevelopmentIndicator,
     GovernanceIndicator,
+    WorldBankIndicator,
 )
 from starnest.data_sources.world_bank.response import Reading, WorldBankError, readings
 
@@ -23,9 +25,11 @@ __all__ = [
     "BASE_URL",
     "INDICATORS",
     "WORLD_BANK",
+    "DevelopmentIndicator",
     "GovernanceIndicator",
     "Reading",
     "WorldBankAdapter",
     "WorldBankError",
+    "WorldBankIndicator",
     "readings",
 ]

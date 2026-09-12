@@ -18,8 +18,9 @@ scale anchors).
 no last year's number, no neighbour's. That gap travels to the ranking as coverage.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import httpx
 from pydantic import ValidationError
@@ -30,10 +31,12 @@ from starnest.data import (
     AttributeId,
     DataSourceId,
     Index,
-    IndexParameters,
     Measurements,
+    Payload,
+    Ratio,
     ReferencePeriod,
     Value,
+    ValueType,
 )
 from starnest.data_acquisition import Acquired, AcquisitionFailure, SourceAdapter
 from starnest.data_sources.transport import JsonOverHttp, SourceUnavailableError, a_failure
@@ -41,15 +44,15 @@ from starnest.data_sources.world_bank.manifest import (
     BASE_URL,
     INDICATORS,
     MOST_RECENT_NON_EMPTY,
-    WGI_DATABANK,
     GovernanceIndicator,
+    WorldBankIndicator,
 )
 from starnest.data_sources.world_bank.response import Reading, WorldBankError, readings
 
 WORLD_BANK = DataSourceId("world_bank")
 
-ROWS_PER_COUNTRY = 3
-"""Estimate, source count, standard error. Used to size the request so it comes back whole."""
+ShapedAs = Callable[[Decimal], Payload]
+"""How a figure becomes this attribute's payload. Resolved once per fetch -- see `_shaped_by`."""
 
 
 class WorldBankAdapter(SourceAdapter):
@@ -93,27 +96,28 @@ class WorldBankAdapter(SourceAdapter):
         found = self._values_from(reported, indicator, attribute, askable)
         return Acquired(values=found.values, failures=(*failures, *found.failures))
 
-    async def _get(self, indicator: GovernanceIndicator, candidates: Sequence[Candidate]) -> object:
-        """All three series for every country, in one request.
+    async def _get(self, indicator: WorldBankIndicator, candidates: Sequence[Candidate]) -> object:
+        """Every series for every country, in one request.
 
-        `per_page` is sized to the answer rather than left at the default 50, and the decoder
-        refuses a split result -- between them, a response cannot come back quietly truncated.
+        `per_page` is sized to the answer -- one row per country per series -- rather than left
+        at the default 50, and the decoder refuses a split result. Between them, a response
+        cannot come back quietly truncated.
         """
         countries = ";".join(str(candidate.country_code) for candidate in candidates)
         return await self._endpoint.get(
             f"/country/{countries}/indicator/{';'.join(indicator.series)}",
             params={
                 "format": "JSON",
-                "source": WGI_DATABANK,
+                "source": indicator.databank,
                 "mrnev": MOST_RECENT_NON_EMPTY,
-                "per_page": str(len(candidates) * ROWS_PER_COUNTRY),
+                "per_page": str(len(candidates) * len(indicator.series)),
             },
         )
 
     def _values_from(
         self,
         reported: Sequence[Reading],
-        indicator: GovernanceIndicator,
+        indicator: WorldBankIndicator,
         attribute: Attribute,
         candidates: Sequence[Candidate],
     ) -> Acquired:
@@ -124,7 +128,7 @@ class WorldBankAdapter(SourceAdapter):
         for reading in reported:
             by_country.setdefault(reading.country, {})[reading.series] = reading
 
-        bounds = _the_scale_of(attribute)
+        shaped = _shaped_by(attribute)
 
         values: list[Value] = []
         failures: list[AcquisitionFailure] = []
@@ -139,11 +143,9 @@ class WorldBankAdapter(SourceAdapter):
                 values.append(
                     _a_value(
                         estimate,
-                        bounds=bounds,
-                        certainty=_Certainty(
-                            sources=series.get(indicator.source_count),
-                            standard_error=series.get(indicator.standard_error),
-                        ),
+                        shaped=shaped,
+                        publication=indicator.publication,
+                        certainty=_certainty_of(indicator, series),
                         measuring=measuring,
                         candidate=candidate,
                     )
@@ -206,10 +208,26 @@ def _split_by_whether_we_can_ask(
     return askable, unaskable
 
 
+def _certainty_of(indicator: WorldBankIndicator, series: dict[str, Reading]) -> "_Certainty":
+    """The publisher's own statement of how solid this estimate is, where it makes one.
+
+    Only WGI does. A measurement published on its own carries no such series, and asking for
+    attributes it does not have would be this module assuming every World Bank product is shaped
+    like the first one it met.
+    """
+    if not isinstance(indicator, GovernanceIndicator):
+        return _Certainty(sources=None, standard_error=None)
+    return _Certainty(
+        sources=series.get(indicator.source_count),
+        standard_error=series.get(indicator.standard_error),
+    )
+
+
 def _a_value(
     estimate: Reading,
     *,
-    bounds: IndexParameters,
+    shaped: ShapedAs,
+    publication: str,
     certainty: _Certainty,
     measuring: Measurements,
     candidate: Candidate,
@@ -217,13 +235,8 @@ def _a_value(
     return measuring.figure(
         candidate=candidate,
         period=_whole_year(estimate.period),
-        payload=Index(
-            value=estimate.figure,
-            provider=bounds.provider,
-            scale_min=bounds.scale_min,
-            scale_max=bounds.scale_max,
-        ),
-        quote=f"World Bank WGI {estimate.period}: {estimate.figure}{certainty.described()}",
+        payload=shaped(estimate.figure),
+        quote=f"{publication} {estimate.period}: {estimate.figure}{certainty.described()}",
     )
 
 
@@ -237,18 +250,38 @@ def _whole_year(period: str) -> ReferencePeriod:
     return ReferencePeriod(start=date(year, 1, 1), end=date(year, 12, 31))
 
 
-def _the_scale_of(attribute: Attribute) -> IndexParameters:
-    """The bounds the catalog publishes this attribute on, resolved once for the whole fetch.
+def _shaped_by(attribute: Attribute) -> ShapedAs:
+    """How a figure becomes this attribute's payload, resolved once for the whole fetch.
 
-    **Before the loop, not inside it.** An `Index` attribute with no bounds is a broken catalog
-    rather than a failed fetch, so it raises -- loudly, and once -- instead of being recorded 32
-    times as though the World Bank had done something wrong. Reading it here also keeps the
-    per-candidate `except ValueError` narrow enough to mean one thing.
+    **The shape is the catalog's to declare, not this adapter's to decide** (`arch.md` 1.2). An
+    `Index` carries the bounds it is published on because 0.72 means nothing without them; a
+    `Ratio` carries what it is a share of, because 23.4% of the land area and 23.4% of the
+    workforce are different facts. Both come off the `Attribute`, so a new World Bank series of
+    either kind is a manifest entry and a catalog row.
+
+    **Before the loop, not inside it.** A missing declaration is a broken catalog rather than a
+    failed fetch, so it raises loudly and once instead of being recorded 32 times as though the
+    World Bank had done something wrong.
     """
-    bounds = attribute.index_parameters
-    if bounds is None:
-        raise ValueError(f"{attribute.id} is an Index and the catalog gives it no scale")
-    return bounds
+    if attribute.value_type is ValueType.INDEX:
+        bounds = attribute.index_parameters
+        if bounds is None:
+            raise ValueError(f"{attribute.id} is an Index and the catalog gives it no scale")
+        return lambda figure: Index(
+            value=figure,
+            provider=bounds.provider,
+            scale_min=bounds.scale_min,
+            scale_max=bounds.scale_max,
+        )
+    if attribute.value_type is ValueType.RATIO:
+        share = attribute.ratio_parameters
+        if share is None:
+            raise ValueError(f"{attribute.id} is a Ratio and the catalog names no basis for it")
+        return lambda figure: Ratio(value=figure, basis=share.basis)
+    raise ValueError(
+        f"{attribute.id} is a {attribute.value_type}, and this adapter reads the World Bank's "
+        "index and ratio series only"
+    )
 
 
 def _the_reason(refused: ValidationError) -> str:

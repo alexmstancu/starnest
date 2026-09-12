@@ -15,13 +15,46 @@ presenting two unequally solid numbers as though they were equally solid, which 
 failure "data quality is the product" exists to prevent.
 """
 
+from abc import ABC, abstractmethod
 from types import MappingProxyType
 from typing import Final
 
 from starnest.data import AttributeId
 
 
-class GovernanceIndicator:
+class WorldBankIndicator(ABC):
+    """One of our attributes, as the World Bank publishes it.
+
+    **Three facts vary between their collections and nothing else does.** Which series carry the
+    figure, which databank holds them, and what the publication is called -- the request shape,
+    the envelope and the decoder are the same for all of it (`response.py`). So this is an
+    abstraction over the World Bank's own filing, not over "a data source": a second publisher
+    would be a second adapter, because how a publisher answers is its own business
+    (`arch.md` 6.3).
+    """
+
+    @property
+    @abstractmethod
+    def estimate(self) -> str:
+        """The series carrying the figure that is scored. Exactly one, always."""
+
+    @property
+    @abstractmethod
+    def series(self) -> tuple[str, ...]:
+        """Every series to request, the estimate among them, in request order."""
+
+    @property
+    @abstractmethod
+    def databank(self) -> str:
+        """Which collection holds it. The API answers a 200 carrying a refusal for the wrong one."""
+
+    @property
+    @abstractmethod
+    def publication(self) -> str:
+        """What to call it in a value's quote, so a reader knows which World Bank product it is."""
+
+
+class GovernanceIndicator(WorldBankIndicator):
     """One WGI dimension, and the three series the World Bank publishes it as.
 
     Built from the two-letter dimension code because the suffixes are a naming convention rather
@@ -49,12 +82,55 @@ class GovernanceIndicator:
         return f"GOV_WGI_{self.dimension}.SE"
 
     @property
-    def series(self) -> tuple[str, str, str]:
+    def series(self) -> tuple[str, ...]:
         """All three, in the order the request asks for them."""
         return (self.estimate, self.source_count, self.standard_error)
 
+    @property
+    def databank(self) -> str:
+        return WGI_DATABANK
+
+    @property
+    def publication(self) -> str:
+        return "World Bank WGI"
+
     def __repr__(self) -> str:
         return f"GovernanceIndicator({self.dimension!r})"
+
+
+class DevelopmentIndicator(WorldBankIndicator):
+    """One World Development Indicators series -- a measurement, published on its own.
+
+    **Nothing accompanies it, and that is the honest shape.** A WGI estimate ships with its
+    source count and standard error because it is a model over surveys and the publisher says
+    how solid each one is; forest area as a share of land area is a measurement, and inventing a
+    second series to keep the code symmetrical would be pretending it carries an uncertainty the
+    World Bank does not publish.
+    """
+
+    __slots__ = ("code",)
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+
+    @property
+    def estimate(self) -> str:
+        return self.code
+
+    @property
+    def series(self) -> tuple[str, ...]:
+        return (self.code,)
+
+    @property
+    def databank(self) -> str:
+        return WDI_DATABANK
+
+    @property
+    def publication(self) -> str:
+        return "World Bank WDI"
+
+    def __repr__(self) -> str:
+        return f"DevelopmentIndicator({self.code!r})"
 
 
 INDICATORS: Final = MappingProxyType(
@@ -62,9 +138,14 @@ INDICATORS: Final = MappingProxyType(
         AttributeId("country.rule_of_law"): GovernanceIndicator("RL"),
         AttributeId("country.control_of_corruption"): GovernanceIndicator("CC"),
         AttributeId("country.political_economic_stability"): GovernanceIndicator("PV"),
+        # Forest area as a share of land area. **A measurement rather than an aggregate**, which
+        # is why it needs no exception to section 3.5a's test: nobody has weighted anything to
+        # produce it. It answers a `nature` attribute that was in no P4 stream at all, though it
+        # has declared a source since the catalog was written (`devplan.md`, Gate B).
+        AttributeId("country.forest_cover"): DevelopmentIndicator("AG.LND.FRST.ZS"),
     }
 )
-"""The three governance attributes `reqs.md` 7.1 names the World Bank for.
+"""The attributes `reqs.md` 7.1 names the World Bank for.
 
 Three rather than six: WGI also publishes government effectiveness, regulatory quality, and
 voice and accountability, and the catalog has no attribute for any of them. An adapter offering
@@ -76,6 +157,13 @@ a series nothing asks for would be code written to be exported.
 
 BASE_URL: Final = "https://api.worldbank.org/v2"
 """Free, unauthenticated, no documented quota. No key reaches this file."""
+
+WDI_DATABANK: Final = "2"
+"""The World Development Indicators -- the API's default, named anyway.
+
+Spelled out rather than left to the default because the request says which databank it wants for
+WGI, and a reader comparing the two should not have to know that one of them is implicit.
+"""
 
 WGI_DATABANK: Final = "3"
 """The WGI lives in databank 3, and the request must say so.

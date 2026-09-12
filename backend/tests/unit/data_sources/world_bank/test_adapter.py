@@ -21,7 +21,13 @@ import httpx
 import pytest
 
 from starnest.candidates import Candidate
-from starnest.data import Attribute, ConfidenceLevel, IndexParameters, ValueType
+from starnest.data import (
+    Attribute,
+    ConfidenceLevel,
+    IndexParameters,
+    RatioParameters,
+    ValueType,
+)
 from starnest.data_sources.world_bank import WorldBankAdapter
 
 CAPTURED = Path(__file__).parent / "captured"
@@ -41,6 +47,23 @@ def an_attribute(**overrides: object) -> Attribute:
         "value_type": ValueType.INDEX,
         "pillar": "governance",
         "index_parameters": WGI_BOUNDS,
+    }
+    return Attribute(**(fields | overrides))  # type: ignore[arg-type]
+
+
+FOREST_COVER = "country.forest_cover"
+FOREST_SERIES = "AG.LND.FRST.ZS"
+
+
+def a_forest_attribute(**overrides: object) -> Attribute:
+    """The other collection's shape: a `Ratio` that names what it is a share of."""
+    fields: dict[str, object] = {
+        "id": FOREST_COVER,
+        "name": "Forest cover",
+        "level": "country",
+        "value_type": ValueType.RATIO,
+        "pillar": "nature",
+        "ratio_parameters": RatioParameters(basis="land_area"),
     }
     return Attribute(**(fields | overrides))  # type: ignore[arg-type]
 
@@ -217,6 +240,7 @@ class TestWhatCannotBeAsked:
             "country.rule_of_law",
             "country.control_of_corruption",
             "country.political_economic_stability",
+            "country.forest_cover",
         }
 
 
@@ -324,6 +348,96 @@ class TestTheRequestItself:
         request = await _the_request_for([a_country("romania", "RO"), a_country("atlantis", None)])
 
         assert "/country/RO/" in str(request.url)
+
+
+class TestASeriesFromTheOtherCollection:
+    """Forest cover: one series, a different databank, and a `Ratio` rather than an `Index`.
+
+    **The same publisher answering a different question.** The envelope, the decoder and the
+    request shape are identical -- what differs is which collection holds the series and what
+    the catalog says the figure *is*. So this class is the evidence that the generalisation went
+    to the right place: the manifest gained a second kind of indicator, and the adapter reads
+    the payload's shape off the `Attribute` instead of assuming every figure is an index.
+    """
+
+    async def test_a_share_of_land_area_becomes_a_ratio_with_its_basis(self) -> None:
+        """A bare 32.7% is not a measurement: 32.7% of the land area and 32.7% of the workforce
+        are different facts, and only the basis distinguishes them."""
+        adapter = adapter_returning(
+            [{"pages": 1}, [_row("DE", 32.685482024273, series=FOREST_SERIES)]]
+        )
+
+        acquired = await adapter.fetch(a_forest_attribute(), [a_country("germany", "DE")])
+
+        (value,) = acquired.values
+        assert value.payload.value_type is ValueType.RATIO
+        assert value.payload.basis == "land_area"
+        assert value.payload.value == Decimal("32.685482024273")
+
+    async def test_it_names_the_publication_rather_than_the_wgi(self) -> None:
+        """The quote is what a reader checks the figure against, so it must not say WGI about a
+        series the WGI does not contain."""
+        adapter = adapter_returning([{"pages": 1}, [_row("DE", 32.7, series=FOREST_SERIES)]])
+
+        acquired = await adapter.fetch(a_forest_attribute(), [a_country("germany", "DE")])
+
+        (value,) = acquired.values
+        assert value.quote is not None
+        assert "World Bank WDI" in value.quote
+        assert "WGI" not in value.quote
+
+    async def test_it_carries_no_uncertainty_the_publisher_does_not_state(self) -> None:
+        """A WGI estimate's quote names its source count and standard error. Forest area has
+        neither, and printing "0 underlying sources" would be a claim about solidity that
+        nobody published."""
+        adapter = adapter_returning([{"pages": 1}, [_row("DE", 32.7, series=FOREST_SERIES)]])
+
+        acquired = await adapter.fetch(a_forest_attribute(), [a_country("germany", "DE")])
+
+        (value,) = acquired.values
+        assert value.quote is not None
+        assert "underlying source" not in value.quote
+        assert "standard error" not in value.quote
+
+    async def test_it_asks_the_default_databank_and_for_one_series(self) -> None:
+        """Asking databank 3 for forest cover answers a 200 carrying a refusal, which would be
+        recorded as "the World Bank has nothing" for a series it publishes."""
+        asked: list[httpx.Request] = []
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            asked.append(request)
+            return httpx.Response(200, json=[{"pages": 1}, []])
+
+        adapter = WorldBankAdapter(httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+        await adapter.fetch(
+            a_forest_attribute(), [a_country("germany", "DE"), a_country("romania", "RO")]
+        )
+
+        assert asked[0].url.params["source"] == "2"
+        assert FOREST_SERIES in str(asked[0].url)
+        # One row per country, not three: the page is sized to what this indicator returns.
+        assert asked[0].url.params["per_page"] == "2"
+
+    async def test_an_attribute_of_a_type_it_cannot_shape_is_refused_loudly(self) -> None:
+        """A broken catalog rather than a failed fetch, so it raises once instead of being
+        recorded 32 times as though the World Bank had done something wrong."""
+        adapter = adapter_returning([{"pages": 1}, []])
+
+        with pytest.raises(ValueError, match="index and ratio series only"):
+            await adapter.fetch(
+                a_forest_attribute(value_type=ValueType.COUNT, ratio_parameters=None),
+                [a_country("germany", "DE")],
+            )
+
+    async def test_a_ratio_with_no_basis_in_the_catalog_is_refused(self) -> None:
+        """The basis is required on the payload, so an absent one would fail 32 times over. It
+        is a catalog fault and says so once."""
+        adapter = adapter_returning([{"pages": 1}, []])
+
+        with pytest.raises(ValueError, match="names no basis"):
+            await adapter.fetch(
+                a_forest_attribute(ratio_parameters=None), [a_country("germany", "DE")]
+            )
 
 
 async def _the_request_for(candidates: list[Candidate]) -> httpx.Request:
