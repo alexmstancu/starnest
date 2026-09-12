@@ -1290,6 +1290,30 @@ components:
       - halted_on_spend_cap
       title: ResearchOutcomeBody
       type: object
+    ResearchPlanBody:
+      description: What a research pass would ask and what it would cost (`reqs.md`
+        6.3).
+      properties:
+        estimate_basis:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Estimate Basis
+        estimated_cost_eur:
+          title: Estimated Cost Eur
+          type: number
+        gates_total:
+          title: Gates Total
+          type: integer
+        llm_call_count:
+          title: Llm Call Count
+          type: integer
+      required:
+      - gates_total
+      - llm_call_count
+      - estimated_cost_eur
+      title: ResearchPlanBody
+      type: object
     ResearchRequestBody:
       description: Which gates to research, and whether an uncapped spend is accepted
         (`reqs.md` 6.3).
@@ -1346,6 +1370,11 @@ components:
             $ref: '#/components/schemas/BySourceBody'
           title: By Source
           type: array
+        estimate_basis:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Estimate Basis
         estimated_cost_eur:
           title: Estimated Cost Eur
           type: number
@@ -2842,6 +2871,53 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Research Match Rules
+      tags:
+      - rules
+  /v1/match-rule-research/plan:
+    post:
+      description: 'What researching the gates would cost, without asking anything.
+
+
+        **The estimate before the spend** (`reqs.md` 6.3, Q22): research is the most
+        expensive thing
+
+        this application does -- one call per gate per candidate -- and the household
+        should see the
+
+        bill before agreeing to it rather than after. It counts the same pairs the
+        pass would ask
+
+        about, through the same function (`gates_to_ask`), so the two cannot disagree:
+        a gate asked
+
+        only at another level, or one somebody has already confirmed, is in neither.
+
+
+        Nothing is stored and nothing is charged. With no model configured this is
+        a 501, as the
+
+        pass itself is: an estimate of zero would read as "this would cost nothing".'
+      operationId: planMatchRuleResearch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResearchRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResearchPlanBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Plan Match Rule Research
       tags:
       - rules
   /v1/match-rule-results:

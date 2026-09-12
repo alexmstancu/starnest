@@ -2,6 +2,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
+import { PAID_RUN_PLAN } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -33,6 +34,33 @@ describe("estimating a run", () => {
       screen.getByRole("table", { name: /per source/i }),
     ).toBeInTheDocument();
     expect(screen.getByText("96")).toBeInTheDocument();
+  });
+
+  it("says what a cost rests on, because a free plan has nothing to explain", async () => {
+    renderShell("/run");
+
+    await estimate();
+
+    await screen.findByText(/what this run would do/i);
+    expect(screen.queryByText(/a ceiling, not a forecast/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the cost and its assumptions when the run would spend", async () => {
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, () =>
+        HttpResponse.json(PAID_RUN_PLAN),
+      ),
+    );
+    renderShell("/run");
+
+    await estimate();
+
+    await screen.findByText(/what this run would do/i);
+    // The money, which is the only figure on this plan that is not also a count of items.
+    expect(screen.getByText(/2\.10/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/a ceiling, not a forecast/i),
+    ).toHaveTextContent(/12,000 input tokens per call/);
   });
 
   it("does not start a run until the estimate is accepted", async () => {

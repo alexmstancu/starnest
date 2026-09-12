@@ -23,6 +23,7 @@ from typing import Protocol
 
 from starnest.candidates import Candidate
 from starnest.data import MatchResult, MatchRule, MatchRuleResult
+from starnest.data_acquisition.estimate import NOTHING, Estimate
 from starnest.data_acquisition.spend import CostMeter, refuse_unless_capped
 
 _log = logging.getLogger("starnest.research")
@@ -70,6 +71,10 @@ class GateResearcher(ABC):
     def costs_money(self) -> bool:
         """Whether asking it charges. True for a model; the cap question turns on it."""
         return True
+
+    def estimate_for(self, calls: int) -> Estimate:
+        """What `calls` questions would cost. Nothing unless the implementation prices itself."""
+        return NOTHING
 
     @abstractmethod
     async def research(
@@ -120,63 +125,51 @@ async def research_gates(
         uncapped_is_accepted=uncapped_is_accepted,
     )
     meter = CostMeter(cap_eur=spend_cap_eur)
-    confirmed = {
-        (str(answer.match_rule), str(answer.candidate))
-        for answer in already_answered
-        if not answer.is_proposal
-    }
 
     proposals: list[MatchRuleResult] = []
     refusals: list[str] = []
-    for rule in rules:
-        for candidate in candidates:
-            if not rule.applies_at(str(candidate.id.level_id)):
-                continue
-            if (str(rule.id), str(candidate.id)) in confirmed:
-                continue
-            if meter.is_exhausted:
-                _log.warning("research halted on its spend cap: %s", meter.describe())
-                return ResearchOutcome(
-                    proposals=tuple(proposals),
-                    refusals=tuple(refusals),
-                    cost_eur=meter.spent_eur,
-                    calls=meter.calls,
-                    halted_on_spend_cap=True,
-                )
-
-            found = await researcher.research(
-                rule=rule, candidate=candidate, citizenships=citizenships
+    for rule, candidate in gates_to_ask(rules, candidates, already_answered):
+        if meter.is_exhausted:
+            _log.warning("research halted on its spend cap: %s", meter.describe())
+            return ResearchOutcome(
+                proposals=tuple(proposals),
+                refusals=tuple(refusals),
+                cost_eur=meter.spent_eur,
+                calls=meter.calls,
+                halted_on_spend_cap=True,
             )
-            meter.spent(cost_eur=found.cost_eur, calls=found.calls)
 
-            if not found.citations:
-                # The whole point of asking is the pages. An answer with none is an opinion,
-                # and an opinion about a visa route is worth less than an open question.
-                refusals.append(
-                    f"{rule.id} for {candidate.id}: the model cited nothing, so there is "
-                    "nothing to confirm"
-                )
-                continue
+        found = await researcher.research(rule=rule, candidate=candidate, citizenships=citizenships)
+        meter.spent(cost_eur=found.cost_eur, calls=found.calls)
 
-            proposal = MatchRuleResult(
-                match_rule=rule.id,
-                candidate=candidate.id,
-                match_result=found.match_result,
-                data_source="llm",
-                retrieval_date=datetime.now(tz=UTC),
-                reason=found.reason,
-                citations=found.citations,
-                is_proposal=True,
+        if not found.citations:
+            # The whole point of asking is the pages. An answer with none is an opinion, and an
+            # opinion about a visa route is worth less than an open question.
+            refusals.append(
+                f"{rule.id} for {candidate.id}: the model cited nothing, so there is "
+                "nothing to confirm"
             )
-            await results.record(proposal)
-            proposals.append(proposal)
-            _log.info(
-                "proposed %s for %s: %s (%s)",
-                rule.id,
-                candidate.id,
-                found.match_result,
-                meter.describe(),
-            )
+            continue
+
+        proposal = MatchRuleResult(
+            match_rule=rule.id,
+            candidate=candidate.id,
+            match_result=found.match_result,
+            data_source="llm",
+            retrieval_date=datetime.now(tz=UTC),
+            reason=found.reason,
+            citations=found.citations,
+            is_proposal=True,
+        )
+        await results.record(proposal)
+        proposals.append(proposal)
+        _log.info(
+            "proposed %s for %s: %s (%s)",
+            rule.id,
+            candidate.id,
+            found.match_result,
+            meter.describe(),
+        )
 
     return ResearchOutcome(
         proposals=tuple(proposals),
@@ -184,3 +177,49 @@ async def research_gates(
         cost_eur=meter.spent_eur,
         calls=meter.calls,
     )
+
+
+def gates_to_ask(
+    rules: Sequence[MatchRule],
+    candidates: Sequence[Candidate],
+    already_answered: Sequence[MatchRuleResult] = (),
+) -> tuple[tuple[MatchRule, Candidate], ...]:
+    """Every (gate, candidate) a pass would ask about, in the order it would ask.
+
+    **One function, because the pass and its estimate must not disagree.** An estimate that
+    counted pairs the pass would skip -- a gate asked only at another level, or one somebody has
+    already confirmed -- would promise work that never happens, which is worse than no estimate
+    at all (`reqs.md` 6.3).
+
+    A previous *proposal* is asked again, because nothing about it was settled; a confirmed
+    answer never is, because paying a model to disagree with somebody who looked is noise with
+    a bill.
+    """
+    confirmed = {
+        (str(answer.match_rule), str(answer.candidate))
+        for answer in already_answered
+        if not answer.is_proposal
+    }
+    return tuple(
+        (rule, candidate)
+        for rule in rules
+        for candidate in candidates
+        if rule.applies_at(str(candidate.id.level_id))
+        and (str(rule.id), str(candidate.id)) not in confirmed
+    )
+
+
+def plan_research(
+    *,
+    researcher: GateResearcher,
+    rules: Sequence[MatchRule],
+    candidates: Sequence[Candidate],
+    already_answered: Sequence[MatchRuleResult] = (),
+) -> Estimate:
+    """What a research pass would cost, without asking anything.
+
+    The count is exact -- one question per gate per candidate, which is how the researcher is
+    built -- and the money is the researcher's own arithmetic, because it is the only thing that
+    knows what it charges.
+    """
+    return researcher.estimate_for(len(gates_to_ask(rules, candidates, already_answered)))

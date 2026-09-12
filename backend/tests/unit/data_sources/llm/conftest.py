@@ -76,7 +76,14 @@ class StubMessages:
         return answer
 
 
-def a_model(*answers: Any, pricing: LlmPricing | None = None) -> LlmWithSearch:
+def a_model(
+    *answers: Any, pricing: LlmPricing | None = None, input_tokens_per_call: int = 10_000
+) -> LlmWithSearch:
+    """A priced model over a queue of recorded answers.
+
+    `input_tokens_per_call` is a round number rather than a realistic one: what it feeds is the
+    *estimate*, and a test about an estimate should be able to do the arithmetic in its head.
+    """
     return LlmWithSearch(
         StubMessages(*answers),
         model="a-model-under-test",
@@ -87,4 +94,5 @@ def a_model(*answers: Any, pricing: LlmPricing | None = None) -> LlmWithSearch:
             usd_per_web_search=Decimal("0.01"),
             eur_usd_rate=Decimal(1),
         ),
+        input_tokens_per_call=input_tokens_per_call,
     )

@@ -195,3 +195,50 @@ class TestWhatItRefuses:
     async def test_an_answer_with_no_text_at_all_is_refused(self) -> None:
         with pytest.raises(LlmUnavailableError, match="no text"):
             await a_model({"content": [], "usage": {}}).ask("q")
+
+
+class TestWhatOneCallWouldCost:
+    """Pricing a call **before** making it, which is what a dry-run estimate is (`reqs.md` 6.3).
+
+    **Two of the three figures are ceilings the client already imposes**: `max_tokens` caps the
+    output and `max_searches` caps the searches, and both are sent with every request. The input
+    side is the one thing that cannot be known in advance -- the provider injects the pages it
+    searched into the context -- so it is configured and named rather than guessed.
+    """
+
+    def test_it_prices_the_ceilings_it_actually_sends(self) -> None:
+        """At 1 USD per million tokens and 1 EUR = 1 USD: 10,000 input and a 1,000-token output
+        ceiling is 0.011, plus two searches at a cent is 0.031."""
+        model = a_model(input_tokens_per_call=10_000)
+        model._max_tokens = 1_000
+        model._max_searches = 2
+
+        assert model.cost_of_a_call_at_most == Decimal("0.0310")
+
+    def test_a_bigger_assumed_call_costs_more(self) -> None:
+        """The guard against the figure being ignored: a test that only asserted one number
+        would pass with the input side dropped from the arithmetic."""
+        smaller = a_model(input_tokens_per_call=10_000).cost_of_a_call_at_most
+        larger = a_model(input_tokens_per_call=100_000).cost_of_a_call_at_most
+
+        assert larger > smaller
+
+    def test_what_it_says_it_rests_on_names_every_assumption(self) -> None:
+        """A cost with no stated assumptions can only be trusted, never judged."""
+        described = a_model(input_tokens_per_call=12_345).a_call_described
+
+        assert "12,345 input tokens per call" in described
+        assert "make live-llm" in described
+        assert "1,024 output tokens" in described
+        assert "5 searches" in described
+        # The prices and the rate travel too, because the same call shape costs differently
+        # under a different price list.
+        assert "per MTok" in described
+
+    async def test_what_it_billed_is_reported_beside_what_it_assumed(self) -> None:
+        """`make live-llm` prints both, which is how `LLM_INPUT_TOKENS_PER_CALL` gets set from a
+        measurement rather than from somebody's guess."""
+        answered = await a_model(an_answer("{}", input_tokens=4_321, output_tokens=99)).ask("q")
+
+        assert answered.input_tokens == 4_321
+        assert answered.output_tokens == 99

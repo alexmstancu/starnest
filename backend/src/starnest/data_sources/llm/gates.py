@@ -17,7 +17,7 @@ from collections.abc import Sequence
 
 from starnest.candidates import Candidate
 from starnest.data import MatchResult, MatchRule
-from starnest.data_acquisition import GateResearcher, Researched
+from starnest.data_acquisition import Estimate, GateResearcher, Researched
 from starnest.data_sources.llm.client import LlmUnavailableError, LlmWithSearch
 from starnest.data_sources.llm.reading import a_json_object
 
@@ -47,6 +47,14 @@ class LlmGateResearcher(GateResearcher):
 
     def __init__(self, llm: LlmWithSearch) -> None:
         self._llm = llm
+
+    def estimate_for(self, calls: int) -> Estimate:
+        """One question per gate per candidate, which is what `research` does."""
+        return Estimate(
+            calls=calls,
+            cost_eur=calls * self._llm.cost_of_a_call_at_most,
+            basis=self._llm.a_call_described,
+        )
 
     async def research(
         self, *, rule: MatchRule, candidate: Candidate, citizenships: Sequence[str]

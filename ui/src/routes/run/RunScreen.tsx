@@ -104,6 +104,11 @@ function PlannedRun({
           value={formatMoney(plan.estimated_cost_eur, "EUR")}
         />
       </dl>
+      {plan.estimate_basis && (
+        <p className="screen__note">
+          The cost is a ceiling, not a forecast: {plan.estimate_basis}
+        </p>
+      )}
       <table className="table">
         <caption>
           Per source. Where two sources answer one attribute, both are asked.

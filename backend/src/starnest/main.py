@@ -86,6 +86,14 @@ class Environment(BaseSettings):
         default=None,
         description="US dollars per web search. The page publishes it per 1,000 searches.",
     )
+    llm_input_tokens_per_call: int | None = Field(
+        default=None,
+        description="How many input tokens one call bills, measured from a real one -- "
+        "`make live-llm` prints it. Used only to estimate a run before it happens (reqs.md "
+        "6.3). **No default**: the provider injects the pages it searched into the context, so "
+        "this cannot be derived from the prompt, and a guess would be exactly the invented "
+        "number a dry-run estimate exists to prevent.",
+    )
     eur_usd_rate: Decimal | None = Field(
         default=None,
         description="How many US dollars one euro buys, as the ECB quotes it (1 EUR = n USD). "
@@ -380,12 +388,22 @@ def _the_model(environment: "Environment") -> object | None:
         boot.warning("the llm path is off: %s", unpriced)
         return None
 
+    if not environment.llm_input_tokens_per_call:
+        # Same rule as the prices (Q219), for the same reason: a path that cannot estimate its
+        # own cost cannot warn before spending. Off, and the boot log says why.
+        boot.warning(
+            "the llm path is off: LLM_INPUT_TOKENS_PER_CALL is not set, so a run could not be "
+            "estimated before it spent (reqs.md 6.3)"
+        )
+        return None
+
     # On the record, because a spend measured with an unknown rate is a spend nobody can check.
     boot.info("llm prices: %s", pricing.describe())
     return LlmWithSearch(
         AsyncAnthropic(api_key=environment.anthropic_api_key).messages,
         model=environment.llm_model,
         pricing=pricing,
+        input_tokens_per_call=environment.llm_input_tokens_per_call,
     )
 
 

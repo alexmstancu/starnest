@@ -170,6 +170,18 @@ def _routed_paths() -> set[str]:
     return set(app.openapi()["paths"])
 
 
+FULLY_CONFIGURED: dict[str, object] = {
+    "anthropic_api_key": "sk-ant-not-a-real-key",
+    "llm_input_usd_per_mtok": Decimal(2),
+    "llm_output_usd_per_mtok": Decimal(10),
+    "llm_usd_per_web_search": Decimal("0.01"),
+    "eur_usd_rate": Decimal("1.1592"),
+    "llm_input_tokens_per_call": 12_000,
+}
+"""Every variable the LLM path needs before it will join (Q219, `reqs.md` 6.3). Named once, so a
+test about one missing piece is that piece removed rather than five lines retyped."""
+
+
 class TestWiringTheLlmPath:
     """**The path joins only when it is fully configured**, and says why when it does not.
 
@@ -194,6 +206,7 @@ class TestWiringTheLlmPath:
             "LLM_OUTPUT_USD_PER_MTOK",
             "LLM_USD_PER_WEB_SEARCH",
             "EUR_USD_RATE",
+            "LLM_INPUT_TOKENS_PER_CALL",
         ):
             monkeypatch.delenv(name, raising=False)
 
@@ -204,6 +217,10 @@ class TestWiringTheLlmPath:
             "_env_file": None,
         }
         return Environment(**(fields | overrides))  # type: ignore[arg-type]
+
+    def a_configured_environment(self, **overrides: object) -> Environment:
+        """Everything the LLM path requires, so a test about one missing piece removes one."""
+        return self.an_environment(**(FULLY_CONFIGURED | overrides))
 
     def test_no_key_means_no_model_and_a_line_in_the_log(
         self, caplog: pytest.LogCaptureFixture
@@ -225,29 +242,24 @@ class TestWiringTheLlmPath:
         assert model is None
         assert "LLM_INPUT_USD_PER_MTOK" in caplog.text
 
+    def test_prices_without_the_call_size_are_refused_too(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The same rule as the prices, for the same reason: a path that cannot estimate a run
+        cannot warn before spending (`reqs.md` 6.3). Off, with the variable named."""
+        with caplog.at_level("WARNING", logger="starnest.boot"):
+            model = _the_model(self.a_configured_environment(llm_input_tokens_per_call=None))
+
+        assert model is None
+        assert "LLM_INPUT_TOKENS_PER_CALL" in caplog.text
+
     def test_a_key_and_every_price_makes_a_model(self) -> None:
-        model = _the_model(
-            self.an_environment(
-                anthropic_api_key="sk-ant-not-a-real-key",
-                llm_input_usd_per_mtok=Decimal(2),
-                llm_output_usd_per_mtok=Decimal(10),
-                llm_usd_per_web_search=Decimal("0.01"),
-                eur_usd_rate=Decimal("1.1592"),
-            )
-        )
+        model = _the_model(self.a_configured_environment())
 
         assert model is not None
 
     def test_the_configured_path_registers_the_employers_source(self) -> None:
-        sources = _the_paid_sources(
-            self.an_environment(
-                anthropic_api_key="sk-ant-not-a-real-key",
-                llm_input_usd_per_mtok=Decimal(2),
-                llm_output_usd_per_mtok=Decimal(10),
-                llm_usd_per_web_search=Decimal("0.01"),
-                eur_usd_rate=Decimal("1.1592"),
-            )
-        )
+        sources = _the_paid_sources(self.a_configured_environment())
 
         assert [str(source.data_source) for source in sources] == ["llm"]
         assert all(source.costs_money for source in sources)
@@ -257,18 +269,31 @@ class TestWiringTheLlmPath:
 
     def test_the_researcher_follows_the_same_rule(self) -> None:
         assert _the_researcher(self.an_environment()) is None
-        assert (
-            _the_researcher(
-                self.an_environment(
-                    anthropic_api_key="sk-ant-not-a-real-key",
-                    llm_input_usd_per_mtok=Decimal(2),
-                    llm_output_usd_per_mtok=Decimal(10),
-                    llm_usd_per_web_search=Decimal("0.01"),
-                    eur_usd_rate=Decimal("1.1592"),
-                )
-            )
-            is not None
-        )
+        assert _the_researcher(self.a_configured_environment()) is not None
+
+    def test_every_source_that_charges_can_say_what_it_would_cost(self) -> None:
+        """**The two declarations have to agree.** A source that charges and estimates nothing
+        would report a paid run as free -- the plan would say zero, the household would agree to
+        it, and the bill would arrive anyway. Asserted over the registry this application ships
+        rather than over a class written by a test, because that is where the mistake would be.
+        """
+        paid = _the_paid_sources(self.a_configured_environment())
+
+        assert paid, "nothing paid was registered, so this asserts nothing"
+        for source in paid:
+            estimate = source.estimate_for(10)
+            assert source.costs_money
+            assert estimate.calls == 10, f"{source.data_source} counted no calls"
+            assert estimate.cost_eur > 0, f"{source.data_source} priced a paid run at nothing"
+            assert estimate.basis, f"{source.data_source} priced a run without saying how"
+
+    def test_the_researcher_can_say_what_a_pass_would_cost(self) -> None:
+        """The same rule for the thing that spends the most (`reqs.md` 6.10 use 3)."""
+        researcher = _the_researcher(self.a_configured_environment())
+
+        assert researcher is not None
+        assert researcher.costs_money
+        assert researcher.estimate_for(128).cost_eur > 0
 
     def test_the_key_is_never_in_what_the_log_would_print(
         self, caplog: pytest.LogCaptureFixture
@@ -276,13 +301,7 @@ class TestWiringTheLlmPath:
         """`arch.md` 9.4: never the API key. The boot log names the model, not the credential."""
         with caplog.at_level("INFO", logger="starnest.boot"):
             _the_paid_sources(
-                self.an_environment(
-                    anthropic_api_key="sk-ant-a-key-that-must-not-appear",
-                    llm_input_usd_per_mtok=Decimal(2),
-                    llm_output_usd_per_mtok=Decimal(10),
-                    llm_usd_per_web_search=Decimal("0.01"),
-                    eur_usd_rate=Decimal("1.1592"),
-                )
+                self.a_configured_environment(anthropic_api_key="sk-ant-a-key-that-must-not-appear")
             )
 
         assert "sk-ant-a-key-that-must-not-appear" not in caplog.text
@@ -300,11 +319,7 @@ class TestTheFallbackDeclaration:
         environment = Environment(
             _env_file=None,
             database_url="postgresql://localhost/starnest",
-            anthropic_api_key="sk-ant-not-a-real-key",
-            llm_input_usd_per_mtok=Decimal(2),
-            llm_output_usd_per_mtok=Decimal(10),
-            llm_usd_per_web_search=Decimal("0.01"),
-            eur_usd_rate=Decimal("1.1592"),
+            **FULLY_CONFIGURED,  # type: ignore[arg-type]
         )
 
         (fallback,) = await _the_fallback(environment, _ACatalogOfThree(), [_AnsweringOne()])

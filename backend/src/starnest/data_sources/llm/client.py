@@ -48,6 +48,11 @@ class Answered:
     cost_eur: Decimal
     calls: int = 1
     web_searches: int = 0
+    # What the provider billed, as opposed to what was estimated. Carried because the input
+    # count is the one figure an estimate cannot derive, and `make live-llm` prints it so
+    # `LLM_INPUT_TOKENS_PER_CALL` can be set from a measurement (`reqs.md` 6.3).
+    input_tokens: int = 0
+    output_tokens: int = 0
 
     @property
     def is_grounded(self) -> bool:
@@ -75,14 +80,43 @@ class LlmWithSearch:
         *,
         model: str,
         pricing: LlmPricing,
+        input_tokens_per_call: int,
         max_searches: int = 5,
         max_tokens: int = 1024,
     ) -> None:
         self._messages = messages
         self._model = model
         self._pricing = pricing
+        self._input_tokens_per_call = input_tokens_per_call
         self._max_searches = max_searches
         self._max_tokens = max_tokens
+
+    @property
+    def cost_of_a_call_at_most(self) -> Decimal:
+        """What one call cannot cost more than, for an estimate made before asking.
+
+        **Two of the three figures are ceilings this class already imposes** -- `max_tokens` caps
+        the output and `max_searches` caps the searches, and both are sent with every request, so
+        neither is a guess. The input side is the one thing that cannot be known in advance: the
+        provider injects the pages it searched into the context, so the prompt's own length says
+        little about what is billed. It is therefore configured rather than assumed here
+        (`main.py`), measured from a real call by `make live-llm`, and named in
+        `a_call_described` so a reader can judge the total instead of trusting it.
+        """
+        return self._pricing.cost_of(
+            input_tokens=self._input_tokens_per_call,
+            output_tokens=self._max_tokens,
+            web_searches=self._max_searches,
+        )
+
+    @property
+    def a_call_described(self) -> str:
+        """The assumptions behind `cost_of_a_call_at_most`, as a sentence an estimate carries."""
+        return (
+            f"a ceiling: {self._input_tokens_per_call:,} input tokens per call (configured, "
+            f"measured by make live-llm), at most {self._max_tokens:,} output tokens and "
+            f"{self._max_searches} searches, {self._pricing.describe()}"
+        )
 
     async def ask(self, prompt: str) -> Answered:
         """One question, answered with the pages it rested on.
@@ -112,16 +146,17 @@ class LlmWithSearch:
             raise LlmUnavailableError("the model answered with no text at all")
 
         searches = _web_searches(answer)
+        billed_in, billed_out = _usage(answer, "input_tokens"), _usage(answer, "output_tokens")
         cost = self._pricing.cost_of(
-            input_tokens=_usage(answer, "input_tokens"),
-            output_tokens=_usage(answer, "output_tokens"),
-            web_searches=searches,
+            input_tokens=billed_in, output_tokens=billed_out, web_searches=searches
         )
         answered = Answered(
             text=text,
             citations=_pages_read(answer),
             cost_eur=cost,
             web_searches=searches,
+            input_tokens=billed_in,
+            output_tokens=billed_out,
         )
         _log.info(
             "asked %s: %d search(es), %d citation(s), %s EUR",

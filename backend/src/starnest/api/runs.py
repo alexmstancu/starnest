@@ -28,6 +28,7 @@ from starnest.api.dependencies import (
     Values,
 )
 from starnest.data_acquisition import (
+    NOTHING,
     Run,
     ask_again,
     asked_this_run,
@@ -66,6 +67,9 @@ class RunPlanBody(BaseModel):
     llm_call_count: int
     estimated_cost_eur: float
     by_source: tuple[BySourceBody, ...] = ()
+    # What the euro figure rests on, when there is one. A cost with no stated assumptions is the
+    # plausible-looking number this application exists to avoid (`estimate.py`).
+    estimate_basis: str | None = None
 
 
 class RunBody(ContractBody):
@@ -142,20 +146,22 @@ async def plan_run(
     # does not promise paid work that would not happen.
     planned = asked_this_run(adapters, attributes_named=scope.attributes is not None)
     by_source = []
+    # Each source prices its own share, because each is the only thing that knows what it
+    # charges -- and a free one prices nothing, which is every structured source.
+    estimate = NOTHING
     for adapter in planned:
         items = len([a for a in wanted if a.id in adapter.attributes]) * len(roster)
         if items:
             by_source.append(BySourceBody(data_source=str(adapter.data_source), items=items))
+            estimate = estimate + adapter.estimate_for(items)
     answerable = [a for a in wanted if any(a.id in adapter.attributes for adapter in planned)]
 
     return RunPlanBody(
         items_total=len(answerable) * len(roster),
-        # Both zero while every source is a free structured one. The LLM path is `reqs.md` 6.10
-        # and the city level, and reporting a guess here would be the invented number the
-        # estimate exists to prevent.
-        llm_call_count=0,
-        estimated_cost_eur=0,
+        llm_call_count=estimate.calls,
+        estimated_cost_eur=float(estimate.cost_eur),
         by_source=tuple(by_source),
+        estimate_basis=estimate.basis or None,
     )
 
 

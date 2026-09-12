@@ -328,6 +328,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/match-rule-research/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * What researching the gates would ask and cost, without asking
+         * @description `reqs.md` 6.3. Research is the most expensive thing this application does -- one call per
+         *     gate per candidate -- so the bill is shown before it is agreed to rather than after.
+         *
+         *     **It counts the same pairs the pass would ask about**: a gate asked only at another level
+         *     is in neither, and one a human has already confirmed is in neither. Nothing is stored and
+         *     nothing is charged.
+         *
+         *     `estimate_basis` names the assumptions behind the euro figure. The output tokens and the
+         *     searches per call are ceilings the client already imposes; the input tokens are
+         *     configured, because the provider injects the pages it searched into the context and they
+         *     cannot be derived from the prompt.
+         */
+        post: operations["planMatchRuleResearch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/match-rule-research": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask a model to research the gates nobody has confirmed
+         * @description `reqs.md` 6.10 use 3. For every gate and candidate in scope that no human has answered,
+         *     a model reads the official pages and **proposes** a result with the pages it read. A
+         *     proposal rules nothing out: it is displayed with its sources, and confirming it means
+         *     writing the same answer through `putMatchRuleResult`, which replaces it.
+         *
+         *     **This costs money**, so the spend cap applies exactly as it does to a run: refused when
+         *     no cap is set unless `accept_uncapped_spend` says otherwise, and it stops at the cap
+         *     keeping every proposal already found.
+         */
+        post: operations["researchMatchRules"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/match-rules": {
         parameters: {
             query?: never;
@@ -933,6 +990,8 @@ export interface components {
         MatchRuleResult: components["schemas"]["MatchRuleResultInput"] & {
             match_rule: string;
             candidate: string;
+            /** @description A model answered and nobody has confirmed it. A proposal is displayed with its sources and rules nothing out (reqs.md 6.10 use 3); confirming it means writing the same answer as `manual`, which replaces it. */
+            is_proposal?: boolean;
             /** @description The pages this verdict was read from. A gate decided by manual or LLM-assisted research carries the same obligation to show its sources that a value does (reqs.md 3.7, 6.9). */
             citations?: string[];
             /** Format: date-time */
@@ -962,6 +1021,13 @@ export interface components {
                 threshold_max?: number | null;
             }[];
         };
+        RunRequest: components["schemas"]["RunScope"] & {
+            /**
+             * @description Accept a run that can cost money while no spend cap is set. Not a setting and not remembered: it is a sentence about this one run, because the alternative to asking is inventing a ceiling (reqs.md 6.3). Ignored when a cap is set, and meaningless when every source in the run is free.
+             * @default false
+             */
+            accept_uncapped_spend: boolean;
+        };
         RunScope: {
             level: string;
             /** @description Null means every candidate at the level. */
@@ -977,6 +1043,16 @@ export interface components {
                 data_source?: string;
                 items?: number;
             }[];
+            /** @description What the euro figure rests on, when it is not zero. A cost with no stated assumptions cannot be judged, only trusted. */
+            estimate_basis?: string | null;
+        };
+        ResearchPlan: {
+            /** @description Gate-and-candidate pairs a pass would ask about. */
+            gates_total: number;
+            /** @description Equal to `gates_total` while one gate is one question, which is how the researcher asks. */
+            llm_call_count: number;
+            estimated_cost_eur: number;
+            estimate_basis?: string | null;
         };
         Run: {
             id: number;
@@ -1747,6 +1823,107 @@ export interface operations {
             };
         };
     };
+    planMatchRuleResearch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    level: string;
+                    /** @description Null means every gate asked at the level. */
+                    match_rules?: string[] | null;
+                    /** @description Null means every candidate at the level. */
+                    candidates?: string[] | null;
+                    /**
+                     * @description Ignored here; an estimate spends nothing.
+                     * @default false
+                     */
+                    accept_uncapped_spend?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description What a pass would ask, and what it would cost at most */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchPlan"];
+                };
+            };
+            /** @description No model is configured, so there is nothing to estimate. */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    researchMatchRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    level: string;
+                    /** @description Null means every gate asked at the level. */
+                    match_rules?: string[] | null;
+                    /** @description Null means every candidate at the level. */
+                    candidates?: string[] | null;
+                    /** @default false */
+                    accept_uncapped_spend?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description What it proposed, and what it cost */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        proposals: components["schemas"]["MatchRuleResult"][];
+                        /** @description Gates the model answered without citing anything, so nothing was stored. */
+                        refusals?: string[];
+                        cost_eur: number;
+                        calls: number;
+                        halted_on_spend_cap: boolean;
+                    };
+                };
+            };
+            /** @description The research would cost money and no spend cap is set. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No model is configured, so nothing can be researched. */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     listMatchRules: {
         parameters: {
             query?: {
@@ -1885,7 +2062,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RunScope"];
+                "application/json": components["schemas"]["RunRequest"];
             };
         };
         responses: {
@@ -1896,6 +2073,19 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Run"];
+                };
+            };
+            /**
+             * @description The run would ask a source that charges and no spend cap is set. Set
+             *     `run_spend_cap_eur`, or send `accept_uncapped_spend: true` to accept an uncapped
+             *     run — nothing invents a ceiling on the household's behalf (`reqs.md` 6.3).
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

@@ -14,7 +14,7 @@ import pytest
 
 from starnest.candidates import Candidate
 from starnest.data import MatchResult, MatchRule
-from starnest.data_acquisition import GateResearcher, Researched
+from starnest.data_acquisition import Estimate, GateResearcher, Researched
 
 from .conftest import a_stub_source, an_api
 
@@ -26,11 +26,16 @@ A_PAGE = "https://example.gov/skilled-worker"
 
 
 class StubResearcher(GateResearcher):
-    """Answers every gate the same way, citing one page."""
+    """Answers every gate the same way, citing one page, and prices itself per call."""
 
     def __init__(self, result: MatchResult = MatchResult.NOT_MATCHING) -> None:
         self._result = result
         self.asked = 0
+
+    def estimate_for(self, calls: int) -> Estimate:
+        return Estimate(
+            calls=calls, cost_eur=calls * Decimal("0.02"), basis="a stub's flat rate per gate"
+        )
 
     async def research(
         self, *, rule: MatchRule, candidate: Candidate, citizenships: Sequence[str]
@@ -147,6 +152,43 @@ class TestWhatMoneyRefuses:
 
         assert unscoped["items_total"] == 0
         assert scoped["items_total"] == 32
+
+    async def test_the_plan_prices_the_paid_work_and_says_what_the_price_rests_on(
+        self, database_url: str
+    ) -> None:
+        """**The estimate before the spend** (`reqs.md` 6.3, Q22). It reported zero for every run
+        until now, hardcoded from when every source was free -- so the one screen that exists to
+        answer "what will this cost?" answered "nothing", whatever the run was.
+
+        Thirty-two countries at the stub's five cents a call is 1.60, and the basis travels with
+        it: a euro figure whose assumptions are not stated can only be trusted, never checked.
+        """
+        async with an_api(database_url, (a_stub_source(charges=True),)) as api:
+            plan = (
+                await api.post(
+                    "/v1/data-acquisition-runs/plan",
+                    json={"level": COUNTRY, "attributes": [OVERBURDEN]},
+                )
+            ).json()
+
+        assert plan["llm_call_count"] == 32
+        assert plan["estimated_cost_eur"] == pytest.approx(1.60)
+        assert "0.05 EUR a call" in plan["estimate_basis"]
+
+    async def test_a_free_run_is_estimated_at_nothing_and_explains_nothing(
+        self, database_url: str
+    ) -> None:
+        """Zero because every source is free, which is the shipped state -- and no basis, because
+        there is nothing to explain about zero."""
+        async with an_api(database_url, (a_stub_source(),)) as api:
+            plan = (
+                await api.post("/v1/data-acquisition-runs/plan", json={"level": COUNTRY})
+            ).json()
+
+        assert plan["items_total"] == 64
+        assert plan["llm_call_count"] == 0
+        assert plan["estimated_cost_eur"] == 0
+        assert plan["estimate_basis"] is None
 
 
 class TestResearchingTheGates:
@@ -296,3 +338,75 @@ class TestResearchingTheGates:
             )
 
         assert researcher.asked == 0
+
+
+class TestEstimatingAResearchPassBeforeAgreeingToIt:
+    """`reqs.md` 6.3. **The bill before the spend, not after.**
+
+    Research is the most expensive thing this application does -- one call per gate per candidate
+    -- and until this existed the only way to learn the cost was to pay it. The estimate counts
+    the same pairs the pass would ask about, through the same function, so the two cannot
+    disagree about what a pass is.
+    """
+
+    async def test_it_prices_every_gate_against_every_candidate(self, database_url: str) -> None:
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            plan = (
+                await api.post(
+                    "/v1/match-rule-research/plan",
+                    json={"level": COUNTRY, "match_rules": ["uk_skilled_worker"]},
+                )
+            ).json()
+
+        assert plan["gates_total"] == 32
+        assert plan["llm_call_count"] == 32
+        assert plan["estimated_cost_eur"] == pytest.approx(0.64)
+        assert "flat rate per gate" in plan["estimate_basis"]
+
+    async def test_it_spends_nothing_and_stores_nothing(self, database_url: str) -> None:
+        """The whole point: it is asked *instead* of the pass, not before it."""
+        researcher = StubResearcher()
+        async with an_api(database_url, (a_stub_source(),), researcher=researcher) as api:
+            await api.post(
+                "/v1/match-rule-research/plan",
+                json={"level": COUNTRY, "match_rules": ["uk_skilled_worker"]},
+            )
+
+            stored = (await api.get("/v1/match-rule-results")).json()
+
+        assert researcher.asked == 0
+        assert stored["items"] == []
+
+    async def test_it_needs_no_cap_because_it_cannot_spend(self, database_url: str) -> None:
+        """A refusal here would be the estimate refusing to exist until the thing it estimates
+        was already permitted, which is backwards -- the estimate is how the household decides
+        what cap to set."""
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            planned = await api.post("/v1/match-rule-research/plan", json={"level": COUNTRY})
+
+        assert planned.status_code == 200
+
+    async def test_a_confirmed_gate_is_not_in_the_estimate(self, database_url: str) -> None:
+        """Because it is not in the pass either: paying a model to disagree with somebody who
+        looked is noise with a bill, and an estimate that counted it would overstate the work."""
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            await api.put(
+                "/v1/match-rule-results/uk_skilled_worker/country.portugal",
+                json={"match_result": "matching", "data_source": "manual"},
+            )
+
+            plan = (
+                await api.post(
+                    "/v1/match-rule-research/plan",
+                    json={"level": COUNTRY, "match_rules": ["uk_skilled_worker"]},
+                )
+            ).json()
+
+        assert plan["gates_total"] == 31
+
+    async def test_with_no_model_there_is_nothing_to_estimate(self, api: httpx.AsyncClient) -> None:
+        """501, as the pass itself answers: an estimate of zero would read as "this is free"."""
+        response = await api.post("/v1/match-rule-research/plan", json={"level": COUNTRY})
+
+        assert response.status_code == 501
+        assert response.json()["code"] == "llm_not_configured"

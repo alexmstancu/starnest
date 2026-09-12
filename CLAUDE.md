@@ -31,7 +31,12 @@ research whose answers are **proposals that rule nothing out until a human write
 Prices are required configuration with no defaults (Q219); a run that can spend **refuses**
 without a cap and the refusal can be accepted past in the request (Q220); **a paid source is
 asked only when a run names its attributes**, so a sweep over a level is free by construction.
-`make live-llm` is the only thing here that spends money and is never part of `make check`.
+`make live-llm` is the only thing here that spends money and is never part of `make check` --
+and it now **prints what one real call billed**, which is how `LLM_INPUT_TOKENS_PER_CALL` gets
+set from a measurement. **A run is estimated before it spends** (Q225): each source prices its
+own share, an LLM call is priced at the ceilings the client already sends, and the estimate
+carries the assumptions behind it. Gate research has its own estimate, because it is the most
+expensive thing here and the only way to learn the cost used to be paying it.
 
 **The startup sequence refuses rather than degrades** (P7 W7-B): the schema compared and the boot
 refused when the database is behind, every adapter declaration checked against the catalog, the

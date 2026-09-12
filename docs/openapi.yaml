@@ -437,6 +437,52 @@ paths:
       responses:
         "204": { description: Updated }
 
+  /match-rule-research/plan:
+    post:
+      tags: [rules]
+      summary: What researching the gates would ask and cost, without asking
+      description: |
+        `reqs.md` 6.3. Research is the most expensive thing this application does -- one call per
+        gate per candidate -- so the bill is shown before it is agreed to rather than after.
+
+        **It counts the same pairs the pass would ask about**: a gate asked only at another level
+        is in neither, and one a human has already confirmed is in neither. Nothing is stored and
+        nothing is charged.
+
+        `estimate_basis` names the assumptions behind the euro figure. The output tokens and the
+        searches per call are ceilings the client already imposes; the input tokens are
+        configured, because the provider injects the pages it searched into the context and they
+        cannot be derived from the prompt.
+      operationId: planMatchRuleResearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [level]
+              properties:
+                level: { type: string }
+                match_rules:
+                  type: [array, "null"]
+                  items: { type: string }
+                  description: Null means every gate asked at the level.
+                candidates:
+                  type: [array, "null"]
+                  items: { type: string }
+                  description: Null means every candidate at the level.
+                accept_uncapped_spend: { type: boolean, default: false, description: Ignored here; an estimate spends nothing. }
+      responses:
+        "200":
+          description: What a pass would ask, and what it would cost at most
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResearchPlan" }
+        "501":
+          description: No model is configured, so there is nothing to estimate.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+
   /match-rule-research:
     post:
       tags: [rules]
@@ -1370,6 +1416,22 @@ components:
           items:
             type: object
             properties: { data_source: { type: string }, items: { type: integer } }
+        estimate_basis:
+          type: [string, "null"]
+          description: "What the euro figure rests on, when it is not zero. A cost with no stated assumptions cannot be judged, only trusted."
+
+    ResearchPlan:
+      type: object
+      required: [gates_total, llm_call_count, estimated_cost_eur]
+      properties:
+        gates_total:
+          type: integer
+          description: Gate-and-candidate pairs a pass would ask about.
+        llm_call_count:
+          type: integer
+          description: "Equal to `gates_total` while one gate is one question, which is how the researcher asks."
+        estimated_cost_eur: { type: number }
+        estimate_basis: { type: [string, "null"] }
 
     Run:
       type: object

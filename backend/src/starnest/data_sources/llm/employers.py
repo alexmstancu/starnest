@@ -28,7 +28,7 @@ from starnest.data import (
     Measurements,
     Value,
 )
-from starnest.data_acquisition import Acquired, AcquisitionFailure, SourceAdapter
+from starnest.data_acquisition import Acquired, AcquisitionFailure, Estimate, SourceAdapter
 from starnest.data_sources.llm.client import Answered, LlmUnavailableError, LlmWithSearch
 from starnest.data_sources.llm.reading import a_json_object, the_period_now
 
@@ -68,6 +68,14 @@ class LlmEmployersAdapter(SourceAdapter):
     def costs_money(self) -> bool:
         """The only source in this application that charges, which is why the cap exists."""
         return True
+
+    def estimate_for(self, items: int) -> Estimate:
+        """One call per item, because an item is one country and this asks per country."""
+        return Estimate(
+            calls=items,
+            cost_eur=items * self._llm.cost_of_a_call_at_most,
+            basis=self._llm.a_call_described,
+        )
 
     @property
     def attributes(self) -> tuple[AttributeId, ...]:

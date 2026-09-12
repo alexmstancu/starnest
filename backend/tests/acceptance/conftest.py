@@ -286,6 +286,7 @@ def a_stub_source(
     unreachable: bool = False,
     no_row_for: tuple[str, ...] = (),
     charges: bool = False,
+    eur_per_call: str = "0.05",
 ) -> SourceAdapter:
     """A source that answers instantly with figures the test controls.
 
@@ -315,7 +316,7 @@ def a_stub_source(
         ReferencePeriod,
         Value,
     )
-    from starnest.data_acquisition import Acquired, AcquisitionFailure
+    from starnest.data_acquisition import NOTHING, Acquired, AcquisitionFailure, Estimate
 
     def a_figure_shaped_for(attribute: Attribute) -> Quantity | Ratio:
         if attribute.quantity_parameters is not None:
@@ -332,6 +333,20 @@ def a_stub_source(
             """Free unless a test says otherwise, as every structured source is. A run including
             a charging source refuses without a spend cap (`reqs.md` 6.3)."""
             return charges
+
+        def estimate_for(self, items: int) -> Estimate:
+            """A charging stub prices its own work, as the real paid sources do.
+
+            A free one estimates `NOTHING` by inheritance; this override exists so a test about
+            a plan's arithmetic has something to be right about.
+            """
+            if not charges:
+                return NOTHING
+            return Estimate(
+                calls=items,
+                cost_eur=items * Decimal(eur_per_call),
+                basis=f"a stub charging {eur_per_call} EUR a call",
+            )
 
         @property
         def attributes(self) -> tuple:

@@ -14,9 +14,13 @@ import pytest
 from starnest.candidates import Candidate
 from starnest.data import MatchResult, MatchRule, MatchRuleResult
 from starnest.data_acquisition import (
+    NOTHING,
+    Estimate,
     GateResearcher,
     Researched,
     SpendCapNotSetError,
+    gates_to_ask,
+    plan_research,
     research_gates,
 )
 
@@ -40,6 +44,11 @@ class StubResearcher(GateResearcher):
     @property
     def costs_money(self) -> bool:
         return self._charges
+
+    def estimate_for(self, calls: int) -> Estimate:
+        if not self._charges:
+            return NOTHING
+        return Estimate(calls=calls, cost_eur=calls * Decimal("0.05"), basis="a stub's flat rate")
 
     async def research(
         self, *, rule: MatchRule, candidate: Candidate, citizenships: Sequence[str]
@@ -204,3 +213,104 @@ class TestMoney:
         outcome, _ = await researching(StubResearcher(a_finding(cost="0"), charges=False), cap=None)
 
         assert len(outcome.proposals) == 1
+
+
+class TestPlanningAPassBeforePayingForIt:
+    """**The estimate the household sees before agreeing to spend** (`reqs.md` 6.3, Q22).
+
+    Research is the most expensive thing this application does -- one call per gate per candidate
+    -- so the whole value of the estimate is that it counts the *same* pairs the pass would ask
+    about. Both go through `gates_to_ask`, which is the only reason they cannot drift.
+    """
+
+    def test_it_counts_every_gate_against_every_candidate_it_applies_to(self) -> None:
+        estimate = plan_research(
+            researcher=StubResearcher(), rules=[THE_GATE], candidates=[PORTUGAL, SPAIN]
+        )
+
+        assert estimate.calls == 2
+        assert estimate.cost_eur == Decimal("0.10")
+        assert estimate.basis == "a stub's flat rate"
+
+    def test_a_gate_asked_at_another_level_is_in_neither_the_plan_nor_the_pass(self) -> None:
+        """An estimate promising work the pass would skip is worse than no estimate at all."""
+        estimate = plan_research(
+            researcher=StubResearcher(), rules=[A_CITY_GATE], candidates=[PORTUGAL, SPAIN]
+        )
+
+        assert estimate.calls == 0
+
+    def test_a_confirmed_answer_is_not_estimated_because_it_is_not_asked(self) -> None:
+        confirmed = MatchRuleResult(
+            match_rule="uk_skilled_worker",
+            candidate="country.portugal",
+            match_result=MatchResult.MATCHING,
+            data_source="manual",
+            retrieval_date=datetime.now(UTC),
+        )
+
+        estimate = plan_research(
+            researcher=StubResearcher(),
+            rules=[THE_GATE],
+            candidates=[PORTUGAL, SPAIN],
+            already_answered=[confirmed],
+        )
+
+        assert estimate.calls == 1
+
+    def test_a_previous_proposal_is_estimated_because_it_will_be_asked_again(self) -> None:
+        """Nothing about a proposal was settled, so it is asked again -- and an estimate that
+        skipped it would under-report the bill."""
+        proposal = MatchRuleResult(
+            match_rule="uk_skilled_worker",
+            candidate="country.portugal",
+            match_result=MatchResult.NOT_MATCHING,
+            data_source="llm",
+            retrieval_date=datetime.now(UTC),
+            is_proposal=True,
+        )
+
+        estimate = plan_research(
+            researcher=StubResearcher(),
+            rules=[THE_GATE],
+            candidates=[PORTUGAL, SPAIN],
+            already_answered=[proposal],
+        )
+
+        assert estimate.calls == 2
+
+    async def test_the_plan_and_the_pass_ask_about_the_same_pairs(self) -> None:
+        """The property the shared function exists for, asserted rather than assumed."""
+        researcher = StubResearcher(a_finding(), a_finding())
+        results = RecordingResults()
+        planned = plan_research(
+            researcher=researcher, rules=[THE_GATE, A_CITY_GATE], candidates=[PORTUGAL, SPAIN]
+        )
+
+        outcome = await research_gates(
+            researcher=researcher,
+            rules=[THE_GATE, A_CITY_GATE],
+            candidates=[PORTUGAL, SPAIN],
+            citizenships=["country.romania"],
+            results=results,
+            spend_cap_eur=Decimal(10),
+        )
+
+        assert planned.calls == len(researcher.asked) == outcome.calls
+
+    def test_a_free_researcher_plans_no_spend_at_all(self) -> None:
+        estimate = plan_research(
+            researcher=StubResearcher(charges=False), rules=[THE_GATE], candidates=[PORTUGAL]
+        )
+
+        assert estimate == NOTHING
+
+    def test_the_pairs_come_back_in_the_order_they_will_be_asked(self) -> None:
+        """Gate by gate, candidate by candidate -- so a pass halted on its cap has covered a
+        prefix of the plan rather than an arbitrary subset of it."""
+        pairs = gates_to_ask([THE_GATE], [PORTUGAL, SPAIN])
+
+        assert [(str(rule.id), str(candidate.id)) for rule, candidate in pairs] == [
+            ("uk_skilled_worker", "country.portugal"),
+            ("uk_skilled_worker", "country.spain"),
+        ]

@@ -34,7 +34,11 @@ from starnest.data import (
     UnknownDataSourceError,
     UnknownMatchRuleError,
 )
-from starnest.data_acquisition import NoResearcherConfiguredError, research_gates
+from starnest.data_acquisition import (
+    NoResearcherConfiguredError,
+    plan_research,
+    research_gates,
+)
 
 router = APIRouter(tags=["rules"])
 
@@ -85,6 +89,18 @@ class ResearchRequestBody(BaseModel):
     match_rules: tuple[str, ...] | None = None
     candidates: tuple[str, ...] | None = None
     accept_uncapped_spend: bool = False
+
+
+class ResearchPlanBody(BaseModel):
+    """What a research pass would ask and what it would cost (`reqs.md` 6.3)."""
+
+    gates_total: int
+    # Equal to `gates_total` while one gate is one question, which is how `LlmGateResearcher`
+    # asks. Both are reported because they answer different questions -- how much work, and how
+    # many billed calls -- and a researcher that batched gates would separate them.
+    llm_call_count: int
+    estimated_cost_eur: float
+    estimate_basis: str | None = None
 
 
 class ResearchOutcomeBody(BaseModel):
@@ -196,6 +212,59 @@ async def list_match_rule_results(
             _result_body(result)
             for result in await results.read_results(candidate=candidate, match_rule=match_rule)
         )
+    )
+
+
+@router.post(
+    "/match-rule-research/plan",
+    operation_id="planMatchRuleResearch",
+    response_model=ResearchPlanBody,
+)
+async def plan_match_rule_research(
+    body: ResearchRequestBody,
+    researcher: Researcher,
+    results: MatchRuleResults,
+    catalog: Catalog,
+    candidates: Candidates,
+) -> ResearchPlanBody:
+    """What researching the gates would cost, without asking anything.
+
+    **The estimate before the spend** (`reqs.md` 6.3, Q22): research is the most expensive thing
+    this application does -- one call per gate per candidate -- and the household should see the
+    bill before agreeing to it rather than after. It counts the same pairs the pass would ask
+    about, through the same function (`gates_to_ask`), so the two cannot disagree: a gate asked
+    only at another level, or one somebody has already confirmed, is in neither.
+
+    Nothing is stored and nothing is charged. With no model configured this is a 501, as the
+    pass itself is: an estimate of zero would read as "this would cost nothing".
+    """
+    if researcher is None:
+        raise NoResearcherConfiguredError(
+            "no model is configured, so there is nothing to estimate: set ANTHROPIC_API_KEY and "
+            "the LLM prices (reqs.md 6.10)"
+        )
+
+    wanted_rules = [
+        rule
+        for rule in await catalog.read_match_rules()
+        if body.match_rules is None or str(rule.id) in set(body.match_rules)
+    ]
+    roster = [
+        candidate
+        for candidate in await candidates.read_candidates(level=body.level)
+        if body.candidates is None or str(candidate.id) in set(body.candidates)
+    ]
+    estimate = plan_research(
+        researcher=researcher,
+        rules=wanted_rules,
+        candidates=roster,
+        already_answered=await results.read_results(),
+    )
+    return ResearchPlanBody(
+        gates_total=estimate.calls,
+        llm_call_count=estimate.calls,
+        estimated_cost_eur=float(estimate.cost_eur),
+        estimate_basis=estimate.basis or None,
     )
 
 

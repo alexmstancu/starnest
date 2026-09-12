@@ -37,7 +37,7 @@ from starnest.data import (
     ValuePayload,
     ValueType,
 )
-from starnest.data_acquisition import Acquired, AcquisitionFailure, SourceAdapter
+from starnest.data_acquisition import Acquired, AcquisitionFailure, Estimate, SourceAdapter
 from starnest.data_sources.llm.client import Answered, LlmUnavailableError, LlmWithSearch
 from starnest.data_sources.llm.reading import a_json_object, the_period_now
 
@@ -87,6 +87,14 @@ class LlmFallbackAdapter(SourceAdapter):
     @property
     def costs_money(self) -> bool:
         return True
+
+    def estimate_for(self, items: int) -> Estimate:
+        """One call per item: one question about one attribute for one country."""
+        return Estimate(
+            calls=items,
+            cost_eur=items * self._llm.cost_of_a_call_at_most,
+            basis=self._llm.a_call_described,
+        )
 
     @property
     def attributes(self) -> tuple[AttributeId, ...]:

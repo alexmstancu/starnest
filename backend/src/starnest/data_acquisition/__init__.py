@@ -4,10 +4,10 @@
 particular publisher answers. The interface is declared here and implemented there, so no
 policy module ever names a concrete source -- `import-linter` contract 1 enforces it.
 
-**Cut to one run** (`docs/mine2e.md` M2). The spend cap, the dry-run estimate and selective
-retry are `reqs.md` 6.3 and 6.4 and are not here yet; what is here is enough to ask every source
-for what it has across the candidates, keep what came back, and let a declared neighbour stand in
-where nothing did.
+**All of `reqs.md` 6.3 and 6.4 are here**: the dry-run estimate (`estimate.py`), the spend cap
+and its halt (`spend.py`), selective retry over what failed and over what nobody answered
+(`execution.py`), and the pass that asks every source for what it has, keeps what came back, and
+lets a declared neighbour stand in where nothing did.
 """
 
 from starnest.data_acquisition.adapter import (
@@ -16,6 +16,7 @@ from starnest.data_acquisition.adapter import (
     SourceAdapter,
 )
 from starnest.data_acquisition.declarations import declarations_that_disagree
+from starnest.data_acquisition.estimate import NOTHING, Estimate
 from starnest.data_acquisition.execution import (
     NothingToAskAgainError,
     NothingToFetchError,
@@ -30,6 +31,8 @@ from starnest.data_acquisition.research import (
     NoResearcherConfiguredError,
     Researched,
     ResearchOutcome,
+    gates_to_ask,
+    plan_research,
     research_gates,
 )
 from starnest.data_acquisition.run import RunOutcome, acquire
@@ -49,10 +52,12 @@ from starnest.data_acquisition.store import (
 )
 
 __all__ = [
+    "NOTHING",
     "STAND_IN",
     "Acquired",
     "AcquisitionFailure",
     "CostMeter",
+    "Estimate",
     "GateResearcher",
     "NoResearcherConfiguredError",
     "NothingToAskAgainError",
@@ -75,6 +80,8 @@ __all__ = [
     "declarations_that_disagree",
     "execute_run",
     "figures_standing_in",
+    "gates_to_ask",
+    "plan_research",
     "refuse_unless_capped",
     "research_gates",
     "retry_run",

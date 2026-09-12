@@ -21,6 +21,7 @@ from decimal import Decimal
 
 from starnest.candidates import Candidate
 from starnest.data import Attribute, AttributeId, DataSourceId, Value
+from starnest.data_acquisition.estimate import NOTHING, Estimate
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,16 @@ class SourceAdapter(ABC):
         cap set, unless the request accepts an uncapped run (`spend.py`).
         """
         return False
+
+    def estimate_for(self, items: int) -> Estimate:
+        """What asking this source about `items` candidate-attribute pairs would cost.
+
+        **Nothing by default, for the same reason `costs_money` is False by default**: every
+        structured source is free, and a source that charges should have to say so rather than
+        be assumed harmless. An adapter that overrides `costs_money` and not this one would
+        report a run as free and still spend -- which the plan's own test asserts cannot happen.
+        """
+        return NOTHING
 
     @property
     @abstractmethod

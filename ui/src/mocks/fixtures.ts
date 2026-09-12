@@ -361,6 +361,20 @@ export const RUN_PLAN: RunPlan = {
   ],
 };
 
+/**
+ * A plan that would spend, so the screen's cost path is exercised by a test rather than only by
+ * a configured environment. The basis is what the server says the figure rests on -- a euro
+ * amount with no stated assumptions can be trusted but not checked.
+ */
+export const PAID_RUN_PLAN: RunPlan = {
+  items_total: 32,
+  llm_call_count: 32,
+  estimated_cost_eur: 2.1,
+  by_source: [{ data_source: "llm", items: 32 }],
+  estimate_basis:
+    "a ceiling: 12,000 input tokens per call (configured, measured by make live-llm)",
+};
+
 /** A run that finished with one thing left undone, so the retry path is always exercised. */
 export const STARTED_RUN: Run = {
   id: 8,

@@ -138,11 +138,24 @@ export function planRun(
   return postJson("/data-acquisition-runs/plan", scope, options);
 }
 
+/**
+ * Start a run.
+ *
+ * `accept_uncapped_spend` is the bypass of `reqs.md` 6.3: a run that can cost money is refused
+ * while no spend cap is set, and this accepts one uncapped run. **Per request, never
+ * remembered** -- it is a sentence about this run, and storing it would turn a deliberate act
+ * into a default. Sent as `false` unless the caller says otherwise, so the refusal is what
+ * happens by default.
+ */
 export function startRun(
-  scope: RunScope,
+  scope: RunScope & { accept_uncapped_spend?: boolean },
   options?: RequestOptions,
 ): Promise<Run> {
-  return postJson("/data-acquisition-runs", scope, options);
+  return postJson(
+    "/data-acquisition-runs",
+    { accept_uncapped_spend: false, ...scope },
+    options,
+  );
 }
 
 export function fetchRun(
