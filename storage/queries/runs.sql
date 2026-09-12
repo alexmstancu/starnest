@@ -241,3 +241,17 @@ WHERE  (:level::text IS NULL OR c.level = :level)
   AND  (:attributes::text[] IS NULL OR v.attribute = ANY(:attributes))
 GROUP  BY v.candidate, v.attribute
 ORDER  BY v.candidate, v.attribute;
+
+-- name: sweep_abandoned_runs(finished_at)
+-- Anything still `running` when the application starts was abandoned: nothing else starts a run
+-- (reqs.md 10), so a run in flight at boot is one whose process died (arch.md 9.2 step 4).
+--
+-- Marked `failed` rather than `completed`: it did not finish, and the values it wrote before it
+-- died are intact and keep their run id. That is what makes a retry meaningful -- the run's
+-- record says what was asked for, the values say what arrived, and the difference is the work
+-- left to do.
+UPDATE data_acquisition_run
+SET    run_status  = 'failed',
+       finished_at = :finished_at
+WHERE  run_status = 'running'
+RETURNING id;

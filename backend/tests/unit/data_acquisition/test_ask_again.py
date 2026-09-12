@@ -137,6 +137,12 @@ class RecordingRunStore(RunStore):
     async def count_runs(self) -> int:
         return 0
 
+    async def sweep_abandoned_runs(self, *, finished_at: datetime) -> tuple[int, ...]:
+        """Nothing was abandoned here: this fake answers reads for one run, and the sweep is a
+        startup concern (`arch.md` 9.2). Implemented because the port declares it -- which is
+        the ABC earning its place: adding a method names every implementation that needs one."""
+        return ()
+
 
 THE_SCOPE = RunScope(
     level="country",

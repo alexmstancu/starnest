@@ -15,6 +15,7 @@ from starnest.data_acquisition.adapter import (
     AcquisitionFailure,
     SourceAdapter,
 )
+from starnest.data_acquisition.declarations import declarations_that_disagree
 from starnest.data_acquisition.execution import (
     NothingToAskAgainError,
     NothingToRetryError,
@@ -49,6 +50,7 @@ __all__ = [
     "UnknownRunError",
     "acquire",
     "ask_again",
+    "declarations_that_disagree",
     "execute_run",
     "figures_standing_in",
     "retry_run",

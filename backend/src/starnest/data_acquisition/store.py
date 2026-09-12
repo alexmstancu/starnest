@@ -123,6 +123,16 @@ class RunStore(ABC):
     async def count_runs(self) -> int:
         """How many runs there are, for the `total` beside a page."""
 
+    @abstractmethod
+    async def sweep_abandoned_runs(self, *, finished_at: datetime) -> tuple[int, ...]:
+        """Mark every run still `running` as `failed`, and say which (`arch.md` 9.2 step 4).
+
+        Called at startup, where "still running" can only mean a process that died: nothing
+        else starts a run (`reqs.md` 10). The values such a run wrote are untouched and keep
+        its id, which is what makes the difference between what was asked for and what arrived
+        readable afterwards.
+        """
+
 
 class UnknownRunError(LookupError):
     """No run has that identifier."""

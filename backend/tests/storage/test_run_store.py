@@ -16,7 +16,7 @@ import pytest
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.data import ConfidenceLevel, Ratio, ReferencePeriod, Value, ValueType
-from starnest.data_acquisition import AcquisitionFailure, RunScope
+from starnest.data_acquisition import AcquisitionFailure, RunScope, RunStatus
 from starnest.storage import PostgresRunStore, PostgresValueStore
 
 pytestmark = pytest.mark.storage
@@ -201,3 +201,65 @@ def a_figure(run: int, candidate: str, attribute: str) -> Value:
         payload=Ratio(value=Decimal("6.3"), basis="households"),
         data_acquisition_run=run,
     )
+
+
+class TestSweepingRunsAProcessAbandoned:
+    """`arch.md` 9.2 step 4. Nothing else starts a run (`reqs.md` 10), so a run still `running`
+    when the application boots is one whose process died.
+
+    **Marked `failed`, not `completed`:** it did not finish. The values it wrote before it died
+    keep its id, which is what makes the difference between what was asked for and what arrived
+    readable afterwards -- and what makes a retry meaningful.
+    """
+
+    async def test_a_run_left_running_is_failed_and_named(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        store = PostgresRunStore(pool)
+
+        swept = await store.sweep_abandoned_runs(finished_at=datetime.now(UTC))
+
+        assert a_run in swept
+        assert (await store.read_run(a_run)).status is RunStatus.FAILED
+
+    async def test_the_figures_it_wrote_before_it_died_are_untouched(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """The whole reason the sweep is safe: commits are per item (`arch.md` 7.1), so a run
+        that died halfway left real values behind and they are not the sweep's business."""
+        await PostgresValueStore(pool).append([a_figure(a_run, "country.portugal", OVERBURDEN)])
+
+        await PostgresRunStore(pool).sweep_abandoned_runs(finished_at=datetime.now(UTC))
+
+        run = await PostgresRunStore(pool).read_run(a_run)
+        assert run.items_completed == 1
+        assert run.status is RunStatus.FAILED
+
+    async def test_a_finished_run_is_left_alone(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """The control. A completed run swept to `failed` would rewrite history at every boot."""
+        store = PostgresRunStore(pool)
+        await store.finish_run(a_run, status=RunStatus.COMPLETED, finished_at=datetime.now(UTC))
+
+        swept = await store.sweep_abandoned_runs(finished_at=datetime.now(UTC))
+
+        assert a_run not in swept
+        assert (await store.read_run(a_run)).status is RunStatus.COMPLETED
+
+    async def test_an_ordinary_boot_sweeps_nothing(self, pool: AsyncConnectionPool) -> None:
+        """No run in flight, so nothing to report -- and the boot log says so rather than
+        staying silent, because "no abandoned run" is information."""
+        assert (
+            await PostgresRunStore(pool).sweep_abandoned_runs(finished_at=datetime.now(UTC)) == ()
+        )
+
+    async def test_the_sweep_records_when_it_gave_up_on_them(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """A run with no `finished_at` reads as still running, whatever its status says."""
+        moment = datetime.now(UTC)
+
+        await PostgresRunStore(pool).sweep_abandoned_runs(finished_at=moment)
+
+        assert (await PostgresRunStore(pool).read_run(a_run)).finished_at is not None

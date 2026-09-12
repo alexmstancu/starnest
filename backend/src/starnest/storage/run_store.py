@@ -134,6 +134,18 @@ class PostgresRunStore(RunStore):
         async with acquire(self._pool) as connection:
             return int(await self._queries.count_runs(connection))
 
+    async def sweep_abandoned_runs(self, *, finished_at: datetime) -> tuple[int, ...]:
+        async with acquire(self._pool) as connection:
+            # Read as a select rather than as an update, because `RETURNING id` gives one row
+            # per run swept -- or none at all on the ordinary boot, where nothing was in flight.
+            swept = [
+                int(row.id)
+                async for row in self._queries.sweep_abandoned_runs(
+                    connection, finished_at=finished_at
+                )
+            ]
+        return tuple(swept)
+
 
 def _run_from(row: Any, failures: Sequence[Any], unanswered: Sequence[Any]) -> Run:
     return Run(

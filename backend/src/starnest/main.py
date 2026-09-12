@@ -15,13 +15,23 @@ Two kinds of configuration are kept apart, deliberately:
 Confusing the two is how "nothing hardcoded" quietly stops being true.
 """
 
+import logging
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from starnest.data import CatalogStore
+from starnest.data_acquisition import RunStore, SourceAdapter, declarations_that_disagree
+from starnest.storage import refuse_if_behind
+
 if TYPE_CHECKING:
     from fastapi import FastAPI
+    from psycopg_pool import AsyncConnectionPool
 
 
 class Environment(BaseSettings):
@@ -87,16 +97,10 @@ def build() -> tuple[Environment, "FastAPI"]:
     connecting is not, and a composition root that awaited would have to be async for the
     benefit of one line.
     """
-    import httpx
+
     from psycopg_pool import AsyncConnectionPool
 
     from starnest.api import build_app
-    from starnest.data_sources.eurostat import EurostatAdapter, TaxWedgeEstimateAdapter
-    from starnest.data_sources.imf import ImfAdapter
-    from starnest.data_sources.oecd import OecdAdapter
-    from starnest.data_sources.open_meteo import OpenMeteoAdapter
-    from starnest.data_sources.who import WhoAdapter
-    from starnest.data_sources.world_bank import WorldBankAdapter
     from starnest.storage import (
         PostgresCandidateStore,
         PostgresCatalogStore,
@@ -109,42 +113,163 @@ def build() -> tuple[Environment, "FastAPI"]:
     )
 
     environment = Environment()  # type: ignore[call-arg]
+    # Configured here, at the top of the process, rather than inside the startup checks: it is
+    # global state and belongs to whoever owns the process.
+    _configure_logging(environment.log_level)
     pool = AsyncConnectionPool(environment.database_url, min_size=1, open=False)
 
     catalog = PostgresCatalogStore(pool)
+    runs = PostgresRunStore(pool)
+    adapters = _the_sources(catalog)
     app = build_app(
         households=PostgresHouseholdStore(pool),
         criteria_store=PostgresCriteriaStore(pool),
         candidates=PostgresCandidateStore(pool),
         values=PostgresValueStore(pool),
         catalog_store=catalog,
-        run_store=PostgresRunStore(pool),
+        run_store=runs,
         match_rule_results=PostgresMatchRuleResultStore(pool),
         evaluation_store=PostgresEvaluationStore(pool),
         # The one place a concrete source is named. `api/` holds only the interface, which is
         # what lets the acceptance suite drive the same endpoints against a stub.
-        adapters=(
-            EurostatAdapter(httpx.AsyncClient(timeout=60)),
-            WorldBankAdapter(httpx.AsyncClient(timeout=60)),
-            WhoAdapter(httpx.AsyncClient(timeout=60)),
-            ImfAdapter(httpx.AsyncClient(timeout=60)),
-            OecdAdapter(httpx.AsyncClient(timeout=120)),
-            TaxWedgeEstimateAdapter(httpx.AsyncClient(timeout=60)),
-            # Reads the places it measures at from the catalog (D4), so it holds the store.
-            OpenMeteoAdapter(httpx.AsyncClient(timeout=120), catalog),
-        ),
+        adapters=adapters,
         display_name=environment.app_display_name,
     )
 
     @app.on_event("startup")
-    async def _open_the_pool() -> None:
-        await pool.open(wait=True)
+    async def _start() -> None:
+        await start_up(
+            database_url=environment.database_url,
+            pool=pool,
+            catalog=catalog,
+            runs=runs,
+            adapters=adapters,
+        )
 
     @app.on_event("shutdown")
     async def _close_the_pool() -> None:
         await pool.close()
 
     return environment, app
+
+
+@dataclass(frozen=True)
+class Booted:
+    """What the startup checks found, so a caller can assert on the outcome rather than on a
+    log line -- and so the boot log has one thing to print."""
+
+    migrations_applied: int
+    sources_registered: tuple[str, ...]
+    runs_swept: tuple[int, ...]
+
+
+async def start_up(
+    *,
+    database_url: str,
+    pool: "AsyncConnectionPool",
+    catalog: CatalogStore,
+    runs: RunStore,
+    adapters: Sequence[SourceAdapter],
+    migrations: Path | None = None,
+) -> Booted:
+    """`arch.md` 9.2, in order, and it fails loudly rather than degrading.
+
+    The environment is read by `Environment`; everything here needs a connection. Compare the
+    schema and refuse if the database is behind, check every adapter declaration against the
+    catalog, and sweep the runs a dead process left behind.
+
+    **A function rather than a hook body**, so the sequence can be run without a server: the
+    thing worth testing is the order and the refusals, not FastAPI's event plumbing.
+
+    **Every decision is logged**, because the boot log is what answers "why did it refuse to
+    start" (`arch.md` 9.4) -- and nothing logged here is the API key, which `Environment` will
+    not render at all. **Configuring logging is not this function's business**: reaching into
+    the root logger from a function whose job is checking a schema would take the handlers off
+    whoever called it, which is exactly what it did to the test that read these lines.
+    """
+    boot = logging.getLogger("starnest.boot")
+
+    state = (
+        refuse_if_behind(database_url)
+        if migrations is None
+        else refuse_if_behind(database_url, migrations=migrations)
+    )
+    boot.info("schema is current: %d migrations applied", len(state.applied))
+
+    await pool.open(wait=True)
+
+    disagreements = declarations_that_disagree(adapters, await catalog.read_attributes())
+    if disagreements:
+        raise AdapterDeclarationError(
+            "the adapters and the catalog disagree, so a run would fail halfway through:\n"
+            + "\n".join(f"  - {complaint}" for complaint in disagreements)
+        )
+    registered = tuple(sorted(str(adapter.data_source) for adapter in adapters))
+    boot.info(
+        "%d sources registered, every declaration matched: %s",
+        len(adapters),
+        ", ".join(registered),
+    )
+
+    swept = await runs.sweep_abandoned_runs(finished_at=datetime.now(tz=UTC))
+    if swept:
+        boot.warning(
+            "%d run(s) were left running by a process that died and are now failed: %s",
+            len(swept),
+            ", ".join(str(run) for run in swept),
+        )
+    else:
+        boot.info("no abandoned run to sweep")
+
+    return Booted(
+        migrations_applied=len(state.applied), sources_registered=registered, runs_swept=swept
+    )
+
+
+def _the_sources(catalog: object) -> tuple:
+    """Every source, constructed. The registry the startup check validates.
+
+    Separate from `build` so that the check has something to be handed rather than something to
+    reach into, and so that "which sources does this application have?" is one function.
+    """
+    import httpx
+
+    from starnest.data_sources.eurostat import EurostatAdapter, TaxWedgeEstimateAdapter
+    from starnest.data_sources.imf import ImfAdapter
+    from starnest.data_sources.oecd import OecdAdapter
+    from starnest.data_sources.open_meteo import OpenMeteoAdapter
+    from starnest.data_sources.who import WhoAdapter
+    from starnest.data_sources.world_bank import WorldBankAdapter
+
+    return (
+        EurostatAdapter(httpx.AsyncClient(timeout=60)),
+        WorldBankAdapter(httpx.AsyncClient(timeout=60)),
+        WhoAdapter(httpx.AsyncClient(timeout=60)),
+        ImfAdapter(httpx.AsyncClient(timeout=60)),
+        OecdAdapter(httpx.AsyncClient(timeout=120)),
+        TaxWedgeEstimateAdapter(httpx.AsyncClient(timeout=60)),
+        # Reads the places it measures at from the catalog (D4), so it holds the store.
+        OpenMeteoAdapter(httpx.AsyncClient(timeout=120), catalog),  # type: ignore[arg-type]
+    )
+
+
+def _configure_logging(level: str) -> None:
+    """One format for the application's own log, at the level the environment names.
+
+    `force=True` because uvicorn configures the root logger too, and whichever ran last would
+    otherwise decide the format for both.
+    """
+    logging.basicConfig(
+        level=level.upper(),
+        format="%(asctime)s %(levelname)-8s %(name)s %(message)s",
+        force=True,
+    )
+
+
+class AdapterDeclarationError(RuntimeError):
+    """An adapter claims something the catalog does not bear out. A startup error, by design:
+    the alternative is a run that fails halfway through for a reason that reads like a source's
+    fault (`arch.md` 9.2 step 3)."""
 
 
 def create_app() -> "FastAPI":
@@ -166,10 +291,10 @@ def run() -> None:
     authentication and there never will be (`reqs.md` 10), so what the socket is bound to is
     the whole of it.
 
-    The startup checks `arch.md` 9.2 names -- refusing to start against a schema the code does
-    not recognise, validating adapter declarations against the catalog, sweeping abandoned runs
-    -- are not here yet. minE2E is the first thing that runs at all (`docs/mine2e.md` M3), and
-    each of those needs a thing that does not exist to check against.
+    The startup checks of `arch.md` 9.2 run in `build`'s startup hook, where a connection
+    exists: the schema comparison that refuses to start when the database is behind, the
+    adapter declarations checked against the catalog, and the sweep of runs a dead process left
+    behind.
     """
     import uvicorn
 
