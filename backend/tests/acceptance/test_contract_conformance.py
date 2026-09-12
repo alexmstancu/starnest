@@ -41,6 +41,7 @@ A_REQUEST_FOR = {
     "listMatchRuleResults": ("get", "/v1/match-rule-results", {}),
     "listEvaluations": ("get", "/v1/evaluations", {}),
     "listCompoundRules": ("get", "/v1/compound-rules", {}),
+    "listExternalScores": ("get", "/v1/external-scores", {}),
 }
 """One successful call per served GET, by operation id.
 

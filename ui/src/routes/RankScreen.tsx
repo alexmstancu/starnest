@@ -1,9 +1,19 @@
-import { useCallback } from "react";
-import { fetchRanking, type CandidateResult, type Ranking } from "../api/endpoints";
+import { useCallback, useState } from "react";
+import {
+  fetchRanking,
+  type CandidateResult,
+  type Ranking,
+} from "../api/endpoints";
 import { useResource } from "../api/useResource";
 import type { RouteDefinition } from "../app/routes";
-import { formatDateTime, formatMatchStatus, formatPercentage, formatScore } from "../format/display";
+import {
+  formatDateTime,
+  formatMatchStatus,
+  formatPercentage,
+  formatScore,
+} from "../format/display";
 import { ErrorNotice } from "../shell/ErrorNotice";
+import { CandidateDetail } from "./CandidateDetail";
 import { useSelection } from "../shell/SelectionContext";
 
 /**
@@ -33,7 +43,16 @@ export function RankScreen({ route }: { route: RouteDefinition }) {
     [criteriaSetId, levelId],
   );
 
-  const { resource, reload } = useResource(fetcher, criteriaSetId !== null && levelId !== null);
+  const { resource, reload } = useResource(
+    fetcher,
+    criteriaSetId !== null && levelId !== null,
+  );
+  // Which candidate's evidence is open. Client state in the sense `arch.md` 8.1 permits: it
+  // decides nothing, and the evidence itself is fetched.
+  const [chosen, setChosen] = useState<{
+    candidate: string;
+    name: string;
+  } | null>(null);
 
   return (
     <section className="screen" aria-labelledby="screen-heading">
@@ -42,16 +61,40 @@ export function RankScreen({ route }: { route: RouteDefinition }) {
       </h2>
 
       {resource.status === "idle" && (
-        <p className="screen__note">Choose a criteria set and a level to see the ranking.</p>
+        <p className="screen__note">
+          Choose a criteria set and a level to see the ranking.
+        </p>
       )}
-      {resource.status === "loading" && <p className="screen__note">Loading…</p>}
-      {resource.status === "error" && <ErrorNotice error={resource.error} onRetry={reload} />}
-      {resource.status === "ready" && <RankingTable ranking={resource.data} />}
+      {resource.status === "loading" && (
+        <p className="screen__note">Loading…</p>
+      )}
+      {resource.status === "error" && (
+        <ErrorNotice error={resource.error} onRetry={reload} />
+      )}
+      {resource.status === "ready" && (
+        <RankingTable
+          ranking={resource.data}
+          chosen={chosen}
+          onChoose={setChosen}
+        />
+      )}
+
+      {chosen && (
+        <CandidateDetail candidate={chosen.candidate} name={chosen.name} />
+      )}
     </section>
   );
 }
 
-function RankingTable({ ranking }: { ranking: Ranking }) {
+function RankingTable({
+  ranking,
+  chosen,
+  onChoose,
+}: {
+  ranking: Ranking;
+  chosen: { candidate: string; name: string } | null;
+  onChoose: (chosen: { candidate: string; name: string } | null) => void;
+}) {
   return (
     <>
       <dl className="stat-list stat-list--inline">
@@ -72,13 +115,20 @@ function RankingTable({ ranking }: { ranking: Ranking }) {
               <th scope="col">Candidate</th>
               <th scope="col">Score</th>
               <th scope="col">Coverage</th>
+              <th scope="col">Of it, low confidence</th>
               <th scope="col">Match status</th>
               <th scope="col">Reason</th>
+              <th scope="col"> </th>
             </tr>
           </thead>
           <tbody>
             {ranking.candidates.map((result) => (
-              <CandidateRow key={result.candidate} result={result} />
+              <CandidateRow
+                key={result.candidate}
+                result={result}
+                open={chosen?.candidate === result.candidate}
+                onChoose={onChoose}
+              />
             ))}
           </tbody>
         </table>
@@ -92,15 +142,34 @@ function RankingTable({ ranking }: { ranking: Ranking }) {
  * in the same table as the rest -- a separate "rejected" list would be a filter by another
  * name, and the ordering would stop meaning anything.
  */
-function CandidateRow({ result }: { result: CandidateResult }) {
+function CandidateRow({
+  result,
+  open,
+  onChoose,
+}: {
+  result: CandidateResult;
+  open: boolean;
+  onChoose: (chosen: { candidate: string; name: string } | null) => void;
+}) {
   const matching = result.match_status === "matching";
 
   return (
-    <tr className={matching ? "table__row" : "table__row table__row--not-matching"}>
+    <tr
+      className={
+        matching ? "table__row" : "table__row table__row--not-matching"
+      }
+    >
       <td>{result.rank ?? ""}</td>
       <th scope="row">{result.name}</th>
       <ScoreCell result={result} />
-      <td className="table__cell--numeric">{formatPercentage(result.coverage)}</td>
+      <td className="table__cell--numeric">
+        {formatPercentage(result.coverage)}
+      </td>
+      {/* A score is never discounted for resting on a weak figure (`reqs.md` 5.7), so the
+          disclosure is here: an estimate and a measurement land in the same column otherwise. */}
+      <td className="table__cell--numeric">
+        {formatPercentage(result.coverage_by_confidence?.low)}
+      </td>
       <td>{formatMatchStatus(result.match_status)}</td>
       <td>
         {/* Two kinds of reason, and they are not the same thing. `non_match_reasons` say why a
@@ -115,6 +184,29 @@ function CandidateRow({ result }: { result: CandidateResult }) {
         {result.insufficient_reason ? (
           <p className="table__reason">{result.insufficient_reason}</p>
         ) : null}
+        {/* A warning rules nothing out and changes no score; it sits with the reasons because
+            that is where a reader looks for what a rule had to say (`reqs.md` 3.7a). */}
+        {(result.warnings ?? []).map((warning) => (
+          <p
+            key={warning.compound_rule}
+            className="table__reason table__reason--warning"
+          >
+            {warning.detail}
+          </p>
+        ))}
+      </td>
+      <td>
+        <button
+          type="button"
+          className="button"
+          onClick={() =>
+            onChoose(
+              open ? null : { candidate: result.candidate, name: result.name },
+            )
+          }
+        >
+          {open ? "Hide figures" : "Show figures"}
+        </button>
       </td>
     </tr>
   );

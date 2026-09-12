@@ -37,6 +37,7 @@ WRITABLE_TABLES = (
     "settings",
     "data_acquisition_run",
     "match_rule_result",
+    "external_score",
     "evaluation",
 )
 """What an acceptance test may write and what is emptied afterwards.
@@ -207,6 +208,34 @@ async def stored_figures(database_url: str) -> AsyncIterator[None]:
                 a_figure("country.greece", "country.overcrowding_rate", "27"),
                 a_figure("country.greece", "country.life_satisfaction", "6.4"),
             ]
+        )
+    yield
+
+
+@pytest.fixture
+async def an_external_score(database_url: str) -> AsyncIterator[None]:
+    """One published composite, stored for the drill-down to show beside the score.
+
+    Never an input to anything: `reqs.md` 3.5a keeps outside indices out of the arithmetic, and
+    the only place one may appear is beside a number of our own.
+    """
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    from starnest.data import ExternalScore, ReferencePeriod
+
+    async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+        await pool.open(wait=True)
+        await PostgresValueStore(pool).append_external_score(
+            ExternalScore(
+                candidate="country.portugal",
+                data_source="numbeo",
+                published_scale="0-100, higher is safer",
+                published_value=Decimal("72.4"),
+                reference_period=ReferencePeriod(start=date(2026, 1, 1), end=date(2026, 6, 30)),
+                retrieval_date=datetime.now(UTC),
+                caveats="Crowdsourced, and its weighting is the publisher's own.",
+            )
         )
     yield
 

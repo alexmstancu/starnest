@@ -158,12 +158,37 @@ export function retryRun(
   runId: number,
   options?: RequestOptions,
 ): Promise<Run> {
-  return postJson(
-    "/data-acquisition-runs/{runId}/retry",
-    undefined as never,
-    {
-      ...options,
-      pathParams: { runId },
-    },
+  return postJson("/data-acquisition-runs/{runId}/retry", undefined as never, {
+    ...options,
+    pathParams: { runId },
+  });
+}
+
+export type StoredValue = components["schemas"]["Value"];
+export type ExternalScore = components["schemas"]["ExternalScore"];
+
+/**
+ * Every stored value for one candidate, superseded ones included (`reqs.md` 3.6).
+ *
+ * **Not only the active one.** The drill-down's job is to show that nothing was discarded: the
+ * figure being scored, the ones it beat, and any that were rejected, each with its source and
+ * both its dates.
+ */
+export function fetchValues(
+  candidate: string,
+  options?: RequestOptions,
+): Promise<{ items: StoredValue[]; total: number }> {
+  return getJson(
+    "/values",
+    { candidate, include_superseded: true, limit: 500 },
+    options,
   );
+}
+
+/** Published composites, shown beside our score and never fed into it (`reqs.md` 3.5a). */
+export function fetchExternalScores(
+  candidate: string,
+  options?: RequestOptions,
+): Promise<{ items: ExternalScore[] }> {
+  return getJson("/external-scores", { candidate }, options);
 }

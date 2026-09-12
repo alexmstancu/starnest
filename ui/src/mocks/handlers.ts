@@ -14,12 +14,14 @@ import { http, HttpResponse } from "msw";
 import type { components } from "../api/schema";
 import {
   CRITERIA_SETS,
+  EXTERNAL_SCORES,
   LEVELS,
   RUNS,
   RUN_PLAN,
   SETTINGS,
   STARTED_RUN,
   STARTED_RUN_DETAIL,
+  STORED_VALUES,
   candidatesForLevel,
   comparisonFor,
   makeCriteriaSetDetails,
@@ -169,6 +171,22 @@ export const handlers = [
       { status: 202 },
     ),
   ),
+
+  http.get(`${BASE}/values`, ({ request }) => {
+    const candidate = new URL(request.url).searchParams.get("candidate");
+    const items = STORED_VALUES.filter(
+      (value) => value.candidate === candidate,
+    );
+    return HttpResponse.json({ items, total: items.length });
+  }),
+
+  http.get(`${BASE}/external-scores`, ({ request }) => {
+    const candidate = new URL(request.url).searchParams.get("candidate");
+    const items = EXTERNAL_SCORES.filter(
+      (score) => score.candidate === candidate,
+    );
+    return HttpResponse.json({ items });
+  }),
 
   http.all(`${BASE}/*`, ({ request }) => {
     const path = new URL(request.url).pathname;

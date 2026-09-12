@@ -253,3 +253,27 @@ class TestTheCompoundRules:
         ).json()
 
         assert all(candidate["warnings"] == [] for candidate in body["candidates"])
+
+
+class TestExternalScores:
+    async def test_they_come_back_from_their_own_endpoint(
+        self, api: httpx.AsyncClient, an_external_score: None
+    ) -> None:
+        """Separate from `/values` deliberately: an external score is not a measurement of an
+        attribute, and a client that could confuse the two would eventually score one
+        (`reqs.md` 3.5a)."""
+        body = (
+            await api.get("/v1/external-scores", params={"candidate": "country.portugal"})
+        ).json()
+
+        (score,) = body["items"]
+        assert score["data_source"] == "numbeo"
+        assert score["published_scale"] == "0-100, higher is safer"
+        assert score["caveats"]
+
+    async def test_another_candidates_scores_are_not_returned(
+        self, api: httpx.AsyncClient, an_external_score: None
+    ) -> None:
+        body = (await api.get("/v1/external-scores", params={"candidate": "country.greece"})).json()
+
+        assert body["items"] == []

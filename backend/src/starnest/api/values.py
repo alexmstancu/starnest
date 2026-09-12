@@ -190,3 +190,56 @@ def _as_numbers(dumped: Any) -> Any:
     if isinstance(dumped, StrEnum):
         return dumped.value
     return dumped
+
+
+class ExternalScoreBody(BaseModel):
+    """A published composite, shown **beside** our score and never fed into it (`reqs.md` 3.5a)."""
+
+    candidate: str
+    data_source: str
+    published_scale: str
+    published_value: float | None = None
+    published_rank: int | None = None
+    published_rank_of: int | None = None
+    reference_period: ReferencePeriodBody
+    retrieval_date: datetime
+    methodology_url: str | None = None
+    caveats: str | None = None
+
+
+class ExternalScoresBody(BaseModel):
+    items: tuple[ExternalScoreBody, ...]
+
+
+@router.get(
+    "/external-scores", operation_id="listExternalScores", response_model=ExternalScoresBody
+)
+async def list_external_scores(values: Values, candidate: str | None = None) -> ExternalScoresBody:
+    """What outside indices published about a candidate.
+
+    **Displayed beside the score, never ingested as an input** (`reqs.md` 3.5a): we do not
+    recycle another product's interpretation of what matters. The endpoint is separate from
+    `/values` for the same reason the table is -- an external score is not a measurement of an
+    attribute, and a client that could confuse the two would eventually score one.
+    """
+    return ExternalScoresBody(
+        items=tuple(
+            ExternalScoreBody(
+                candidate=str(score.candidate),
+                data_source=str(score.data_source),
+                published_scale=score.published_scale,
+                published_value=(
+                    None if score.published_value is None else float(score.published_value)
+                ),
+                published_rank=score.published_rank,
+                published_rank_of=score.published_rank_of,
+                reference_period=ReferencePeriodBody(
+                    start=score.reference_period.start, end=score.reference_period.end
+                ),
+                retrieval_date=score.retrieval_date,
+                methodology_url=score.methodology_url,
+                caveats=score.caveats,
+            )
+            for score in await values.read_external_scores(candidate=candidate)
+        )
+    )

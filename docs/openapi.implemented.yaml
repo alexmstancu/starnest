@@ -619,6 +619,69 @@ components:
       - items
       title: EvaluationsBody
       type: object
+    ExternalScoreBody:
+      description: A published composite, shown **beside** our score and never fed
+        into it (`reqs.md` 3.5a).
+      properties:
+        candidate:
+          title: Candidate
+          type: string
+        caveats:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Caveats
+        data_source:
+          title: Data Source
+          type: string
+        methodology_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Methodology Url
+        published_rank:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Published Rank
+        published_rank_of:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Published Rank Of
+        published_scale:
+          title: Published Scale
+          type: string
+        published_value:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Published Value
+        reference_period:
+          $ref: '#/components/schemas/ReferencePeriodBody'
+        retrieval_date:
+          format: date-time
+          title: Retrieval Date
+          type: string
+      required:
+      - candidate
+      - data_source
+      - published_scale
+      - reference_period
+      - retrieval_date
+      title: ExternalScoreBody
+      type: object
+    ExternalScoresBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ExternalScoreBody'
+          title: Items
+          type: array
+      required:
+      - items
+      title: ExternalScoresBody
+      type: object
     FailureBody:
       properties:
         attribute:
@@ -2050,6 +2113,48 @@ paths:
       summary: Get Evaluation Criteria
       tags:
       - evaluation
+  /v1/external-scores:
+    get:
+      description: 'What outside indices published about a candidate.
+
+
+        **Displayed beside the score, never ingested as an input** (`reqs.md` 3.5a):
+        we do not
+
+        recycle another product''s interpretation of what matters. The endpoint is
+        separate from
+
+        `/values` for the same reason the table is -- an external score is not a measurement
+        of an
+
+        attribute, and a client that could confuse the two would eventually score
+        one.'
+      operationId: listExternalScores
+      parameters:
+      - in: query
+        name: candidate
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Candidate
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalScoresBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: List External Scores
+      tags:
+      - values
   /v1/household:
     get:
       description: Raises `HouseholdNotConfiguredError` -- a 404 -- when nothing has

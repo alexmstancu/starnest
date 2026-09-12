@@ -330,6 +330,30 @@ fieldset {
   color: var(--colour-text-muted);
 }
 
+/* A superseded figure is still there and still true of its period; it is simply not the one
+   being scored (`reqs.md` 3.6). Muted, never hidden. */
+.table__row--superseded {
+  color: var(--colour-text-muted);
+  font-style: italic;
+}
+
+/* A warning rules nothing out and changes no score (`reqs.md` 3.7a), so it reads as a note
+   rather than as a verdict. */
+.table__reason--warning::before {
+  content: "Note: ";
+  font-weight: 600;
+}
+
+/*
+ * Outside opinions, kept visibly apart from our own figures (`reqs.md` 3.5a). The border is
+ * the point: a published composite that looked like one of our measurements is the first step
+ * towards somebody scoring it.
+ */
+.table--external {
+  border-left: 3px solid var(--colour-text-muted);
+  padding-left: 0.75rem;
+}
+
 /*
  * Where a score would be if there were one. Italic rather than tabular, so it never reads as
  * a figure at a glance (`reqs.md` 5.3).

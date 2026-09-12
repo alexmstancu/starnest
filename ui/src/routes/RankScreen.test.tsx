@@ -14,7 +14,10 @@ import { renderShell } from "../testing/renderShell";
  * screen, so there is nothing else worth asserting.
  */
 
-/** Cells in document order: rank, score, coverage, match status, reason. The name is a rowheader. */
+/**
+ * Cells in document order: rank, score, coverage, low-confidence share, match status, reason,
+ * and the button that opens the figures. The candidate's name is a rowheader, not a cell.
+ */
 async function rankingRow(name: string): Promise<HTMLElement> {
   const table = await screen.findByRole("table");
   return within(table).getByRole("row", { name: new RegExp(name) });
@@ -40,7 +43,7 @@ describe("the ranking table", () => {
     expect(cells[0]).toHaveTextContent("1");
     expect(cells[1]).toHaveTextContent("78");
     expect(cells[2]).toHaveTextContent("92.4%");
-    expect(cells[3]).toHaveTextContent("Matching");
+    expect(cells[4]).toHaveTextContent("Matching");
   });
 
   it("names the criteria set and level the ranking was computed under", async () => {
@@ -64,7 +67,7 @@ describe("a candidate that does not match", () => {
     const cells = within(await rankingRow("Spain")).getAllByRole("cell");
 
     expect(cells[1]).toHaveTextContent("64");
-    expect(cells[3]).toHaveTextContent("Not matching");
+    expect(cells[4]).toHaveTextContent("Not matching");
   });
 
   it("shows why it does not match", async () => {
@@ -72,7 +75,7 @@ describe("a candidate that does not match", () => {
 
     const cells = within(await rankingRow("Spain")).getAllByRole("cell");
 
-    expect(cells[4]).toHaveTextContent(
+    expect(cells[5]).toHaveTextContent(
       "No visa route this household qualifies for.",
     );
   });
@@ -102,7 +105,7 @@ describe("a candidate with insufficient data", () => {
     const cells = within(await rankingRow("Estonia")).getAllByRole("cell");
 
     expect(cells[2]).toHaveTextContent("41%");
-    expect(cells[3]).toHaveTextContent("Insufficient data");
+    expect(cells[4]).toHaveTextContent("Insufficient data");
   });
 });
 
@@ -157,5 +160,271 @@ describe("when the ranking cannot be shown", () => {
       ).toBeInTheDocument(),
     );
     expect(rank.queryByText("Loading…")).not.toBeInTheDocument();
+  });
+});
+
+describe("the drill-down", () => {
+  it("shows every stored value for a candidate, the superseded ones included", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+
+    await userEvent.click(
+      within(row).getByRole("button", { name: /show figures/i }),
+    );
+
+    const table = await screen.findByRole("table", {
+      name: /every stored value/i,
+    });
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(3);
+    expect(within(table).getAllByText("Superseded")).toHaveLength(1);
+    expect(within(table).getAllByText("Scored")).toHaveLength(2);
+  });
+
+  it("shows each figure with its source, both dates and its confidence", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+
+    await userEvent.click(
+      within(row).getByRole("button", { name: /show figures/i }),
+    );
+
+    const table = await screen.findByRole("table", {
+      name: /every stored value/i,
+    });
+    const estimate = within(table).getByRole("row", {
+      name: /total_tax_rate_effective/i,
+    });
+    expect(estimate).toHaveTextContent("41.5");
+    expect(estimate).toHaveTextContent("eurostat_estimate");
+    expect(estimate).toHaveTextContent("low");
+  });
+
+  it("keeps outside opinions in their own table, not among the figures", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+
+    await userEvent.click(
+      within(row).getByRole("button", { name: /show figures/i }),
+    );
+
+    const outside = await screen.findByRole("table", {
+      name: /not part of any score/i,
+    });
+    expect(
+      within(outside).getByRole("rowheader", { name: "numbeo" }),
+    ).toBeInTheDocument();
+    const figures = screen.getByRole("table", { name: /every stored value/i });
+    expect(within(figures).queryByText("numbeo")).toBeNull();
+  });
+
+  it("closes again", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+
+    await userEvent.click(
+      within(row).getByRole("button", { name: /show figures/i }),
+    );
+    await userEvent.click(
+      within(row).getByRole("button", { name: /hide figures/i }),
+    );
+
+    expect(
+      screen.queryByRole("table", { name: /every stored value/i }),
+    ).toBeNull();
+  });
+
+  it("says so when a candidate has no stored figures", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Estonia");
+
+    await userEvent.click(
+      within(row).getByRole("button", { name: /show figures/i }),
+    );
+
+    expect(
+      await screen.findByText(/no figure has been stored/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/no outside index has been stored/i),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("what a stored figure looks like, whatever its type", () => {
+  /** One value of each payload shape the contract defines (`reqs.md` 3.3a). */
+  const everyShape = [
+    ["Quantity", { magnitude: 12.6, unit: "celsius" }, "12.6 celsius"],
+    [
+      "Monetary",
+      { amount: 1410, currency: "EUR", amount_eur: 1410 },
+      "1410 EUR",
+    ],
+    ["Ratio", { value: 26.4, basis: "households" }, "26.4"],
+    ["Count", { count: 42 }, "42"],
+    [
+      "Index",
+      { value: 1.07, provider: "World Bank", scale_min: -2.5, scale_max: 2.5 },
+      "1.07",
+    ],
+    ["LabelSet", { labels: ["Csb", "Csa"] }, "Csb, Csa"],
+    ["Text", { body: "a note" }, "a note"],
+    ["Boolean", { value: true }, "true"],
+    [
+      "ShareComposition",
+      { shares: [{ label: "rail", share: 40 }] },
+      "rail 40%",
+    ],
+  ] as const;
+
+  it("prints each one in its own terms, converting nothing", async () => {
+    mockServer.use(
+      http.get("/v1/values", () =>
+        HttpResponse.json({
+          items: everyShape.map(([valueType, payload], index) => ({
+            id: 900 + index,
+            candidate: "country.portugal",
+            attribute: `country.example_${index}`,
+            value_type: valueType,
+            payload,
+            data_source: "eurostat",
+            reference_period: { start: "2025-01-01", end: "2025-12-31" },
+            retrieval_date: "2026-09-11T08:00:00Z",
+            confidence_level: "high",
+            is_active: true,
+          })),
+          total: everyShape.length,
+        }),
+      ),
+    );
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+
+    await userEvent.click(
+      within(row).getByRole("button", { name: /show figures/i }),
+    );
+
+    const table = await screen.findByRole("table", {
+      name: /every stored value/i,
+    });
+    for (const [, , shown] of everyShape) {
+      expect(within(table).getByText(shown)).toBeInTheDocument();
+    }
+  });
+
+  it("reports a failure to read the figures rather than showing an empty table", async () => {
+    mockServer.use(
+      http.get("/v1/values", () =>
+        HttpResponse.json(
+          { code: "not_found", message: "no such candidate" },
+          { status: 404 },
+        ),
+      ),
+    );
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+
+    await userEvent.click(
+      within(row).getByRole("button", { name: /show figures/i }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /no such candidate/i,
+    );
+  });
+
+  it("reports a failure to read the outside opinions on its own", async () => {
+    mockServer.use(
+      http.get("/v1/external-scores", () =>
+        HttpResponse.json(
+          { code: "conflict", message: "cannot read outside scores" },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+
+    await userEvent.click(
+      within(row).getByRole("button", { name: /show figures/i }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /cannot read outside scores/i,
+    );
+    expect(
+      screen.getByRole("table", { name: /every stored value/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a rejected figure as rejected, not as merely superseded", async () => {
+    mockServer.use(
+      http.get("/v1/values", () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 950,
+              candidate: "country.portugal",
+              attribute: "country.cost_of_living_index",
+              value_type: "Quantity",
+              payload: { magnitude: 999, unit: "index_eu27_100" },
+              data_source: "eurostat",
+              reference_period: { start: "2025-01-01", end: "2025-12-31" },
+              retrieval_date: "2026-09-11T08:00:00Z",
+              confidence_level: "high",
+              is_active: false,
+              rejection_reason: "outside the attribute's allowed range",
+            },
+          ],
+          total: 1,
+        }),
+      ),
+    );
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+
+    await userEvent.click(
+      within(row).getByRole("button", { name: /show figures/i }),
+    );
+
+    const table = await screen.findByRole("table", {
+      name: /every stored value/i,
+    });
+    expect(within(table).getByText("Rejected")).toBeInTheDocument();
+  });
+
+  it("shows a warning beside the candidate it was raised for", async () => {
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        HttpResponse.json({
+          criteria_set: "default",
+          level: "country",
+          computed_at: "2026-09-12T09:00:00Z",
+          candidates: [
+            {
+              candidate: "country.portugal",
+              name: "Portugal",
+              rank: 1,
+              score: 78,
+              coverage: 92,
+              match_status: "matching",
+              warnings: [
+                {
+                  compound_rule: "cheap_but_taxed",
+                  detail: "cheap and heavily taxed",
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+    renderShell("/rank");
+
+    const row = await rankingRow("Portugal");
+
+    expect(
+      within(row).getByText(/cheap and heavily taxed/i),
+    ).toBeInTheDocument();
   });
 });

@@ -23,6 +23,8 @@ type Settings = components["schemas"]["Settings"];
 type Comparison = components["schemas"]["Comparison"];
 type RunPlan = components["schemas"]["RunPlan"];
 type RunDetail = components["schemas"]["RunDetail"];
+type StoredValue = components["schemas"]["Value"];
+type ExternalScore = components["schemas"]["ExternalScore"];
 
 export const LEVELS: Level[] = [
   { id: "country", depth_order: 1, parent_level: null },
@@ -384,3 +386,67 @@ export const STARTED_RUN_DETAIL: RunDetail = {
     },
   ],
 };
+
+/**
+ * Two values for one attribute and one for another: the drill-down's whole point is that a
+ * superseded figure is still there, with the source that produced it (`reqs.md` 3.6).
+ */
+export const STORED_VALUES: StoredValue[] = [
+  {
+    id: 501,
+    candidate: "country.portugal",
+    attribute: "country.cost_of_living_index",
+    value_type: "Quantity",
+    payload: { magnitude: 94.5, unit: "index_eu27_100" },
+    data_source: "eurostat",
+    reference_period: { start: "2025-01-01", end: "2025-12-31" },
+    retrieval_date: "2026-09-11T08:00:00Z",
+    confidence_level: "high",
+    is_active: true,
+    quote: "Eurostat 2025: 94.5",
+    citations: [],
+    data_acquisition_run: 7,
+  },
+  {
+    id: 502,
+    candidate: "country.portugal",
+    attribute: "country.cost_of_living_index",
+    value_type: "Quantity",
+    payload: { magnitude: 92.1, unit: "index_eu27_100" },
+    data_source: "eurostat",
+    reference_period: { start: "2024-01-01", end: "2024-12-31" },
+    retrieval_date: "2025-09-11T08:00:00Z",
+    confidence_level: "high",
+    is_active: false,
+    quote: "Eurostat 2024: 92.1",
+    citations: [],
+    data_acquisition_run: 5,
+  },
+  {
+    id: 503,
+    candidate: "country.portugal",
+    attribute: "country.total_tax_rate_effective",
+    value_type: "Ratio",
+    payload: { value: 41.5, basis: "labour_cost" },
+    data_source: "eurostat_estimate",
+    reference_period: { start: "2025-01-01", end: "2025-12-31" },
+    retrieval_date: "2026-09-11T08:00:00Z",
+    confidence_level: "low",
+    is_active: true,
+    quote: "Estimated from Eurostat's tax-benefit figures",
+    citations: [],
+    data_acquisition_run: 7,
+  },
+];
+
+export const EXTERNAL_SCORES: ExternalScore[] = [
+  {
+    candidate: "country.portugal",
+    data_source: "numbeo",
+    published_value: 72.4,
+    published_scale: "0-100, higher is safer",
+    reference_period: { start: "2026-01-01", end: "2026-06-30" },
+    retrieval_date: "2026-09-01T08:00:00Z",
+    caveats: "Crowdsourced, and its weighting is the publisher's own.",
+  },
+];

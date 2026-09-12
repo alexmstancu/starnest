@@ -9,7 +9,9 @@ import { fetchRanking } from "../api/endpoints";
  */
 describe("the mock server", () => {
   it("rejects a ranking request that is missing its required parameters", async () => {
-    const error = (await getJson("/rankings").catch((thrown: unknown) => thrown)) as ApiError;
+    const error = (await getJson("/rankings").catch(
+      (thrown: unknown) => thrown,
+    )) as ApiError;
 
     expect(error.code).toBe("missing_query_parameter");
     expect(error.status).toBe(400);
