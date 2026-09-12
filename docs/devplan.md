@@ -917,7 +917,7 @@ section 0.3 stop.
 |---|---|
 | **The city level** — cities, the city attribute catalog, city nomination and the `proposed → approved / rejected` state, and the **LLM-plus-search acquisition path** the city attributes depend on | **The second pass.** This is the bulk of it, and the reason a second pass exists at all |
 | The pillar expansions flagged in `reqs.md` 7 — health detail, seasonal climate, crime detail, rent outside the centre | The second pass, as catalog rows |
-| The `remote-only` criteria set | **Already satisfied by the MVP.** It is 74 re-weighted rows in a `CriteriaSet`, needing no new attributes and no new machinery — a different opinion about the same data. It waits because it is cheap, not because it is hard |
+| ~~The `remote-only` criteria set~~ | **Built 2026-09-13** (`0469`, Q226), and it was the claim this row made: 43 re-weighted rows, no new attributes, no new machinery. The criteria are copied by SELECT rather than retyped, so the copy cannot omit an attribute the catalog gains. It changes the answer -- Cyprus rises from 4th to 2nd -- which is what makes it a second opinion rather than decoration |
 | `relocation_window` | The second pass, as a match rule with its own requirements (`reqs.md` 1.3) |
 | Personal annotations, gradient maps, favourites, saved comparisons | The second pass |
 | Time-series reducers, derived attributes | The second pass. Both are recorded as open in `arch.md` 11 and neither needs a schema change |

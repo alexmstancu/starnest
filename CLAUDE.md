@@ -73,6 +73,14 @@ population-weighted mean over each country's five largest places, from GeoNames 
 for the year and for a summer day and a winter day (Q213: daytime highs, never the night);
 sunshine is deliberately not fetched, because Open-Meteo's runs 30% to 68% high, unevenly.
 
+**Two criteria sets ship, and they disagree** (Q226, `0469`): `local_employment` and
+`remote_only`, the same 43 attributes weighted for two scenarios. Switching re-ranks instantly
+from stored data and fetches nothing -- Cyprus rises from 4th to 2nd. **A set is a full copy,
+never a sparse overlay** (Q191), so `0469` copies the criteria by SELECT rather than retyping
+them. **An assertion in SQL that weights sum to 100 is stricter than the domain's own** (P33):
+`numeric` keeps a rebalance's last digits and Python's `Decimal` drops them, so a CHECK on
+`SUM(weight) = 100` would refuse the shipped set.
+
 **The shipped set ranks all 32 countries** (2026-09-11). `fixed` is built and the total tax
 rate carries the first anchors the catalog has shipped — 35% → 100, 55% → 0, chosen against real
 figures (Q206). **Romania, Bulgaria, Croatia, Cyprus and Malta are ranked on an estimated tax

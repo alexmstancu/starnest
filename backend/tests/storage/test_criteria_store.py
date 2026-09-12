@@ -28,6 +28,7 @@ pytestmark = pytest.mark.storage
 
 MINIMAL = "minimal"
 SHIPPED = "local_employment"
+REMOTE_ONLY = "remote_only"
 
 THE_ANCHORS_THE_HOUSEHOLD_CHOSE = {
     "country.total_tax_rate_effective": ((Decimal(35), 100), (Decimal(55), 0)),
@@ -137,6 +138,61 @@ class TestReadingASet:
         assert anchored == THE_ANCHORS_THE_HOUSEHOLD_CHOSE, (
             "an anchor shipped that nobody chose, or a chosen one was lost on the way out"
         )
+
+    async def test_the_remote_only_set_is_a_full_copy_and_not_an_overlay(
+        self, criteria: PostgresCriteriaStore
+    ) -> None:
+        """`0469`. **A set is a full copy, never a sparse overlay** (`reqs.md` Q191): weights
+        sum to 100 within a pillar, so a set holding only the rows it changed would carry a
+        handful of overrides beside inherited weights and sum to something else entirely.
+
+        Asserted as a *comparison* rather than as a roster: the same attributes and the same
+        anchors as the set it was copied from, which stays true the day the catalog grows. The
+        weights deliberately differ, and that is the only thing that may.
+        """
+        shipped = await criteria.read_criteria_set(SHIPPED, level=COUNTRY)
+        remote = await criteria.read_criteria_set(REMOTE_ONLY, level=COUNTRY)
+
+        assert {str(c.attribute) for c in remote.criteria} == {
+            str(c.attribute) for c in shipped.criteria
+        }
+        assert {str(w.pillar) for w in remote.pillar_weights} == {
+            str(w.pillar) for w in shipped.pillar_weights
+        }
+        # The anchors travel with the copy. Without them the eight `fixed` criteria the
+        # household anchored would score nothing at all, and the set would look like the
+        # shipped one while ranking on two thirds of it.
+        assert {
+            str(c.attribute): tuple((a.input_value, a.score) for a in c.scale_anchors)
+            for c in remote.criteria
+            if c.scale_anchors
+        } == THE_ANCHORS_THE_HOUSEHOLD_CHOSE
+
+    async def test_the_remote_only_set_weighs_the_same_attributes_differently(
+        self, criteria: PostgresCriteriaStore
+    ) -> None:
+        """The point of a second set, and the thing a copy could accidentally not do.
+
+        **`CriteriaSet` refuses to construct unless every pillar sums to 100**, so reading both
+        objects at all is the real assertion that the re-weighting is coherent; this one only
+        adds that it *is* a re-weighting rather than a duplicate under a new name.
+        """
+        shipped = await criteria.read_criteria_set(SHIPPED, level=COUNTRY)
+        remote = await criteria.read_criteria_set(REMOTE_ONLY, level=COUNTRY)
+
+        shipped_weights = {str(c.attribute): c.weight for c in shipped.criteria}
+        remote_weights = {str(c.attribute): c.weight for c in remote.criteria}
+
+        assert remote_weights != shipped_weights
+        # The scenario's own statement: the connection is the job (`0469`).
+        assert (
+            remote_weights["country.broadband_coverage"]
+            > shipped_weights["country.broadband_coverage"]
+        )
+        # And the local job market no longer decides where you may live.
+        remote_career = next(w for w in remote.pillar_weights if str(w.pillar) == "career")
+        shipped_career = next(w for w in shipped.pillar_weights if str(w.pillar) == "career")
+        assert remote_career.weight < shipped_career.weight
 
     async def test_reading_a_set_that_does_not_exist_says_so(
         self, criteria: PostgresCriteriaStore
