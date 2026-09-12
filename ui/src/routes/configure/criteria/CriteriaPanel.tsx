@@ -1,9 +1,11 @@
-import type { Criterion } from "../../../api/endpoints";
+import type { Criterion, CriterionRule } from "../../../api/endpoints";
 import { lockedAttributes } from "../../../api/errorPresentation";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { CriteriaEditor } from "../useCriteriaEditor";
 import { weightAsText, weightFrom } from "../weights";
+import { CriterionRuleFields } from "./CriterionRuleFields";
+import { useCriterionRule } from "./useCriterionRule";
 
 /**
  * The inner half of the two-level weighting: what each criterion is worth within its pillar.
@@ -24,7 +26,9 @@ export function CriteriaPanel({ editor }: { editor: CriteriaEditor }) {
       </h3>
       <p className="panel__hint">
         Weights are percentages within a pillar. Changing one rebalances the
-        others, which the backend computes and this panel reports.
+        others, which the backend computes and this panel reports. A
+        criterion&apos;s rule — its goal, scale and threshold — is edited per
+        row, and moves no weight.
       </p>
 
       {editor.saveError !== null && <SaveFailure error={editor.saveError} />}
@@ -38,6 +42,8 @@ export function CriteriaPanel({ editor }: { editor: CriteriaEditor }) {
               <th scope="col">Attribute</th>
               <th scope="col">Pillar</th>
               <th scope="col">Weight</th>
+              <th scope="col">Goal</th>
+              <th scope="col">Rule</th>
             </tr>
           </thead>
           <tbody>
@@ -47,6 +53,7 @@ export function CriteriaPanel({ editor }: { editor: CriteriaEditor }) {
                 criterion={criterion}
                 saving={editor.savingAttribute === criterion.attribute}
                 onSave={editor.setWeight}
+                onSaveRule={editor.setRule}
               />
             ))}
           </tbody>
@@ -60,14 +67,21 @@ function CriterionRow({
   criterion,
   saving,
   onSave,
+  onSaveRule,
 }: {
   criterion: Criterion;
   saving: boolean;
   onSave: (attribute: string, weight: number) => void;
+  onSaveRule: (attribute: string, rule: CriterionRule) => void;
 }) {
   const stored = weightAsText(criterion.weight);
   const [draft, setDraft] = useState(stored);
   const [notANumber, setNotANumber] = useState(false);
+  // Closed by default: forty-one criteria with their scales open at once is a screen nobody
+  // can read. Local state, because which row is open is this component's own business and
+  // nothing outside it needs to know.
+  const [editingRule, setEditingRule] = useState(false);
+  const rule = useCriterionRule(criterion, saving, onSaveRule);
 
   // A rebalance changes this row's weight without the row having been edited, so the input
   // follows the stored value rather than keeping whatever was last typed into it.
@@ -97,36 +111,62 @@ function CriterionRow({
   }
 
   return (
-    <tr className="table__row">
-      <th scope="row">{criterion.attribute}</th>
-      <td>{criterion.pillar}</td>
-      <td>
-        <form className="weight-form" onSubmit={submit}>
-          <input
-            className="field__control weight-form__input"
-            type="number"
-            min={0}
-            max={100}
-            step="any"
-            value={draft}
-            aria-label={`Weight for ${criterion.attribute}`}
-            onChange={(event) => setDraft(event.target.value)}
-          />
+    <>
+      <tr className="table__row">
+        <th scope="row">{criterion.attribute}</th>
+        <td>{criterion.pillar}</td>
+        <td>
+          <form className="weight-form" onSubmit={submit}>
+            <input
+              className="field__control weight-form__input"
+              type="number"
+              min={0}
+              max={100}
+              step="any"
+              value={draft}
+              aria-label={`Weight for ${criterion.attribute}`}
+              onChange={(event) => setDraft(event.target.value)}
+            />
+            <button
+              type="submit"
+              className="button"
+              disabled={saving || draft === stored}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            {notANumber && (
+              <p className="weight-form__problem" role="alert">
+                A weight must be a number.
+              </p>
+            )}
+          </form>
+        </td>
+        <td>{criterion.goal}</td>
+        <td>
           <button
-            type="submit"
+            type="button"
             className="button"
-            disabled={saving || draft === stored}
+            aria-expanded={editingRule}
+            onClick={() => setEditingRule((open) => !open)}
           >
-            {saving ? "Saving…" : "Save"}
+            {editingRule ? "Close" : "Edit"} the rule for {criterion.attribute}
           </button>
-          {notANumber && (
-            <p className="weight-form__problem" role="alert">
-              A weight must be a number.
-            </p>
-          )}
-        </form>
-      </td>
-    </tr>
+        </td>
+      </tr>
+      {editingRule && (
+        <tr className="table__row">
+          {/* One cell across the row, because the rule is about the criterion the row names
+              rather than about any one column of it. */}
+          <td colSpan={5}>
+            <CriterionRuleFields
+              form={rule}
+              attribute={criterion.attribute}
+              saving={saving}
+            />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

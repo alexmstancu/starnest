@@ -507,29 +507,84 @@ components:
         cannot change is refused.
 
 
-        **`extra="forbid"` is the point of this docstring''s own promise.** Pydantic
-        ignores unknown
+        **Every field the contract designs is now applied.** They used to be dropped:
+        Pydantic
 
-        fields by default, so `goal`, `normalisation_method`, `scale_anchors` and
-        the rest of
+        ignores unknown fields by default, so `goal`, `normalisation_method`, `scale_anchors`
+        and
 
-        `CriterionInput` in `openapi.yaml` were accepted with a 200 and silently dropped
-        -- a client
+        the rest were accepted with a 200 and changed nothing -- a client could set
+        a target band
 
-        could set a target band and be told it worked. The contract is deliberately
-        ahead of the
+        and be told it worked (`known-issues.md` P21). `extra="forbid"` keeps anything
+        genuinely
 
-        code (`CLAUDE.md`, "Two contracts"); what it must not do is let the code pretend
-        to have
+        unknown a 422 rather than a silence.
 
-        caught up. Those fields arrive with the criterion editor; until then sending
-        one is a 422.'
+
+        **Present, not merely non-null.** `model_fields_set` is what "only the fields
+        present are
+
+        changed" means in practice: sending `target_range_min: null` *clears* the
+        bound, and not
+
+        sending it leaves the bound alone. Reading `None` as "unchanged" would make
+        a bound
+
+        impossible to remove through the API.'
       properties:
+        blocks_if_missing:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Blocks If Missing
+        breakdown_option:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Breakdown Option
+        goal:
+          anyOf:
+          - $ref: '#/components/schemas/Goal'
+          - type: 'null'
         is_scored:
           anyOf:
           - type: boolean
           - type: 'null'
           title: Is Scored
+        matching_threshold:
+          anyOf:
+          - $ref: '#/components/schemas/ThresholdBody'
+          - type: 'null'
+        normalisation_method:
+          anyOf:
+          - $ref: '#/components/schemas/NormalisationMethod'
+          - type: 'null'
+        reducer_mode:
+          anyOf:
+          - $ref: '#/components/schemas/ReducerMode'
+          - type: 'null'
+        scale_anchors:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/ScaleAnchorBody'
+            type: array
+          - type: 'null'
+          title: Scale Anchors
+        target_range_max:
+          anyOf:
+          - type: number
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Target Range Max
+        target_range_min:
+          anyOf:
+          - type: number
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Target Range Min
         weight:
           anyOf:
           - maximum: 100.0
@@ -544,6 +599,20 @@ components:
           - type: boolean
           - type: 'null'
           title: Weight Locked
+        zero_score_above:
+          anyOf:
+          - type: number
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Zero Score Above
+        zero_score_below:
+          anyOf:
+          - type: number
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Zero Score Below
       title: CriterionInput
       type: object
     DataSourceBody:
@@ -769,6 +838,23 @@ components:
       - error_message
       title: FailureBody
       type: object
+    Goal:
+      description: 'Which direction is better, or which band is.
+
+
+        **This is a preference, not a property of the attribute** (`reqs.md` 3.4).
+        A large expat
+
+        community is a soft landing to one person and a bubble to another; fixing
+        it on the
+
+        attribute would encode one person''s taste as objective truth.'
+      enum:
+      - minimise
+      - maximise
+      - target_range
+      title: Goal
+      type: string
     HTTPValidationError:
       properties:
         detail:
@@ -825,6 +911,20 @@ components:
       - home_country_candidate
       - citizenships
       title: HouseholdBody
+      type: object
+    LabelThresholdBody:
+      additionalProperties: false
+      properties:
+        containment_rule:
+          title: Containment Rule
+          type: string
+        label:
+          title: Label
+          type: string
+      required:
+      - label
+      - containment_rule
+      title: LabelThresholdBody
       type: object
     LevelBody:
       properties:
@@ -1113,6 +1213,23 @@ components:
       - reason_detail
       title: NonMatchReasonBody
       type: object
+    NormalisationMethod:
+      description: 'How a measured figure becomes a score (`reqs.md` 5.1).
+
+
+        `FIXED` is stable -- a candidate''s score does not move when another candidate
+        is added.
+
+        `PERCENTILE` is relative by design, and is the reason a ranking of one candidate
+        needs a
+
+        sad-path test. `AS_IS` is for figures already on the score scale.'
+      enum:
+      - fixed
+      - percentile
+      - as_is
+      title: NormalisationMethod
+      type: string
     PillarBody:
       additionalProperties: true
       type: object
@@ -1237,6 +1354,20 @@ components:
       - criteria
       title: RebalancedPillar
       type: object
+    ReducerMode:
+      description: 'What to do with an attribute broken down into several options
+        (`reqs.md` 3.3b).
+
+
+        `SELECT` picks the one option that applies -- the two-bedroom rent for a household
+        of
+
+        three. `AGGREGATE` reads all of them together.'
+      enum:
+      - select
+      - aggregate
+      title: ReducerMode
+      type: string
     ReferencePeriodBody:
       properties:
         end:
@@ -1561,6 +1692,71 @@ components:
       required:
       - comparator
       title: SynthesisBody
+      type: object
+    ThresholdBody:
+      additionalProperties: false
+      description: 'One matching threshold, in whichever of the four shapes the attribute''s
+        type takes.
+
+
+        **One body for four shapes**, because the contract types it as a `oneOf` and
+        which one
+
+        applies is decided by the attribute rather than by the client. Sending fields
+        from two
+
+        shapes at once is refused rather than resolved by precedence: a threshold
+        that meant
+
+        something other than what was sent is the fabricated judgement this application
+        prevents.'
+      properties:
+        label:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Label
+        labels:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/LabelThresholdBody'
+            type: array
+          - type: 'null'
+          title: Labels
+        max_share:
+          anyOf:
+          - type: number
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Max Share
+        max_value:
+          anyOf:
+          - type: number
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Max Value
+        min_share:
+          anyOf:
+          - type: number
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Min Share
+        min_value:
+          anyOf:
+          - type: number
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Min Value
+        required_value:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Required Value
+      title: ThresholdBody
       type: object
     UnansweredBody:
       description: An item nobody answered. No source, because none failed -- see

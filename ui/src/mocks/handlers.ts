@@ -275,7 +275,20 @@ export const handlers = [
       );
       if (!criterion) return notFound(attributeId);
 
-      const body = (await request.json()) as { weight?: number };
+      const body = (await request.json()) as Partial<Criterion>;
+
+      // A rule change: the scoring fields, which move no weight. Applied in place, because
+      // the point of a mock here is that the screen can read back what it sent.
+      if (body.weight === undefined) {
+        Object.assign(criterion, body);
+        return HttpResponse.json({
+          pillar: criterion.pillar,
+          criteria: (set.criteria ?? []).filter(
+            (entry) => entry.pillar === criterion.pillar,
+          ),
+        });
+      }
+
       if (typeof body.weight !== "number" || !Number.isFinite(body.weight)) {
         return HttpResponse.json(
           {

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   fetchCriteriaSet,
+  updateCriterionRule,
   updateCriterionWeight,
   type CriteriaSet,
   type Criterion,
+  type CriterionRule,
 } from "../../api/endpoints";
 import { useResource, type Resource } from "../../api/useResource";
 
@@ -32,6 +34,14 @@ export interface CriteriaEditor {
   /** The failure of the last weight change. Shown; never swallowed. */
   saveError: unknown;
   setWeight: (attribute: string, weight: number) => void;
+  /**
+   * Change how one criterion judges: goal, method, band, anchors, threshold.
+   *
+   * Separate from `setWeight` because the server treats them differently -- a weight
+   * rebalances its pillar and a rule moves nothing -- and because the refusals differ: a
+   * weight is refused by locks, a rule by the ontology (`reqs.md` 3.4).
+   */
+  setRule: (attribute: string, rule: CriterionRule) => void;
   reload: () => void;
 }
 
@@ -78,6 +88,25 @@ export function useCriteriaEditor(
     [criteriaSetId],
   );
 
+  const setRule = useCallback(
+    (attribute: string, rule: CriterionRule) => {
+      if (criteriaSetId === null) return;
+
+      setSavingAttribute(attribute);
+      setSaveError(null);
+
+      void updateCriterionRule(criteriaSetId, attribute, rule)
+        .then((changed) => {
+          // The same response shape as a weight change, and applied the same way: the screen
+          // shows what the server decided rather than what was typed at it.
+          setCriteria((current) => applyRebalance(current, changed.criteria));
+        })
+        .catch((error: unknown) => setSaveError(error))
+        .finally(() => setSavingAttribute(null));
+    },
+    [criteriaSetId],
+  );
+
   return {
     status: resource.status,
     criteriaSet: resource.data,
@@ -86,6 +115,7 @@ export function useCriteriaEditor(
     savingAttribute,
     saveError,
     setWeight,
+    setRule,
     reload,
   };
 }

@@ -287,6 +287,239 @@ class TestUpdateCriterion:
         assert response.status_code == 422
 
 
+class TestEditingHowACriterionJudges:
+    """The criterion editor: goal, method, anchors, bands and thresholds (`reqs.md` 3.4).
+
+    **This is the subjective half of the ontology becoming editable.** Every one of these
+    fields was designed on `CriterionInput`, declared in the contract, and dropped on the floor
+    -- so a client could set a target band and be told it worked (P21). Until now a criterion's
+    direction could only be changed by a migration, which made it configuration in name and
+    code in practice.
+
+    Each test changes one field group and reads it back through `GET`, because an endpoint that
+    reports a change it did not store is the defect this class exists about.
+    """
+
+    async def test_the_direction_a_criterion_scores_in_can_be_changed(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """The field that decides whether a bigger number is better or worse -- which is to say,
+        the field that decides the ranking."""
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"goal": "maximise"},
+        )
+
+        assert response.status_code == 200
+        body = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+        overburden = next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)
+        assert overburden["goal"] == "maximise"
+
+    async def test_scale_anchors_are_replaced_whole_and_keep_their_labels(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """Anchors are where the tuning actually happens (Q206): 35% to 100 and 55% to 0 is how
+        the tax rate got its scale. A label lets a number display as a word without ceasing to
+        be a number (`reqs.md` 5.1), so the label has to survive the round trip."""
+        await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={
+                "normalisation_method": "fixed",
+                "scale_anchors": [
+                    {"input_value": 5, "score": 100, "label": "comfortable"},
+                    {"input_value": 25, "score": 0, "label": "overburdened"},
+                ],
+            },
+        )
+
+        body = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+
+        overburden = next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)
+        assert [
+            (a["input_value"], a["score"], a["label"]) for a in overburden["scale_anchors"]
+        ] == [
+            (5, 100, "comfortable"),
+            (25, 0, "overburdened"),
+        ]
+
+    async def test_a_target_band_and_its_zero_points_are_stored_together(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """`target_range` is the third goal: it scores its band and falls linearly to its zero
+        points. All four numbers are one decision, which is why they are sent together."""
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={
+                "goal": "target_range",
+                "normalisation_method": "fixed",
+                "target_range_min": 5,
+                "target_range_max": 10,
+                "zero_score_below": 0,
+                "zero_score_above": 30,
+            },
+        )
+
+        assert response.status_code == 200
+        body = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+        overburden = next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)
+        assert overburden["goal"] == "target_range"
+        assert (overburden["target_range_min"], overburden["target_range_max"]) == (5, 10)
+        assert (overburden["zero_score_below"], overburden["zero_score_above"]) == (0, 30)
+
+    async def test_a_band_with_a_method_that_would_score_something_else_is_refused(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """**The guard this endpoint makes reachable for the first time** (P20). A band with
+        `as_is` used to be *inverted* -- 26 degrees inside an 18-26 band scored 74, not 100 --
+        and the combination was unreachable through the API only because this endpoint ignored
+        `goal`. Refused in the domain, in two CHECKs and in the scoring itself.
+        """
+        refused = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={
+                "goal": "target_range",
+                "normalisation_method": "as_is",
+                "target_range_min": 5,
+                "target_range_max": 10,
+                "zero_score_below": 0,
+                "zero_score_above": 30,
+            },
+        )
+
+        assert refused.status_code == 422
+        assert refused.json()["code"] == "invalid_criterion"
+        assert "cannot express a band" in refused.json()["message"]
+
+    async def test_a_band_with_no_bounds_is_refused_rather_than_scoring_nothing(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """A goal of `target_range` with no range is not a rule, and the domain says so rather
+        than storing something that cannot score."""
+        refused = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"goal": "target_range"},
+        )
+
+        assert refused.status_code == 422
+
+    async def test_whether_a_missing_figure_blocks_can_be_changed(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """`blocks_if_missing` decides whether one absent figure makes a candidate unscoreable
+        rather than merely less covered (`reqs.md` 5.3)."""
+        await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"blocks_if_missing": True},
+        )
+
+        body = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+
+        overburden = next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)
+        assert overburden["blocks_if_missing"] is True
+
+
+class TestTheThresholdThatDecidesAMatch:
+    """A matching threshold is one of the two mechanisms that make a candidate `not_matching`
+    (`reqs.md` 3.0), and the endpoint could neither set one nor show one.
+
+    **It was never served either.** The contract has always described it on `Criterion`, which
+    inherits every field of `CriterionInput`; the response never carried it. Nothing noticed
+    because it is optional -- so the response stayed valid while the rule was invisible, and an
+    editor that cannot read the rule it edits overwrites it on the first save.
+    """
+
+    async def test_a_range_threshold_is_stored_and_read_back(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"matching_threshold": {"max_value": 12}},
+        )
+
+        body = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+
+        overburden = next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)
+        assert overburden["matching_threshold"] == {"min_value": None, "max_value": 12}
+
+    async def test_sending_null_clears_it_rather_than_leaving_it_alone(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """**Present, not merely non-null.** An explicit null removes the threshold; leaving the
+        field out leaves it alone. Reading null as "unchanged" would make a threshold impossible
+        to remove through the API."""
+        await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"matching_threshold": {"min_value": 2, "max_value": 12}},
+        )
+
+        await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"matching_threshold": None},
+        )
+
+        body = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+        overburden = next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)
+        assert overburden["matching_threshold"] is None
+
+    async def test_leaving_the_field_out_leaves_the_threshold_alone(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """The control for the test above: without it, "null clears" would also pass if every
+        request cleared the threshold."""
+        await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"matching_threshold": {"max_value": 12}},
+        )
+
+        await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"weight": 60},
+        )
+
+        body = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+        overburden = next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)
+        assert overburden["matching_threshold"] == {"min_value": None, "max_value": 12}
+
+    async def test_a_threshold_shape_the_attribute_cannot_take_is_refused(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """A label threshold cannot judge a `Ratio`. The domain refuses it, naming the types the
+        shape does apply to -- so the answer says what would have been legal."""
+        refused = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={
+                "matching_threshold": {
+                    "labels": [{"label": "tropical", "containment_rule": "must_not_contain"}]
+                }
+            },
+        )
+
+        assert refused.status_code == 422
+
+    async def test_a_threshold_naming_two_shapes_at_once_is_refused(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """Resolving it by precedence would store a threshold meaning something other than what
+        was sent, which is the fabricated judgement this application exists to prevent."""
+        refused = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"matching_threshold": {"max_value": 12, "required_value": True}},
+        )
+
+        assert refused.status_code == 422
+
+    async def test_an_empty_threshold_object_is_refused_rather_than_meaning_nothing(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """`{}` is not "no threshold" -- null is. An empty object names no shape at all."""
+        refused = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"matching_threshold": {}},
+        )
+
+        assert refused.status_code == 422
+
+
 class TestTheFlagsOnACriterion:
     """`is_scored` and `weight_locked`, which the endpoint declared and dropped on the floor.
 
@@ -357,17 +590,17 @@ class TestTheFlagsOnACriterion:
         assert Decimal(str(overburden["weight"])) == Decimal(60)
         assert overburden["is_scored"] is False
 
-    async def test_a_field_this_endpoint_cannot_change_is_refused_rather_than_ignored(
+    async def test_a_field_nobody_designed_is_refused_rather_than_ignored(
         self, api: httpx.AsyncClient, a_scratch_criteria_set: str
     ) -> None:
-        """`goal` is in the contract's `CriterionInput` and is not served yet. It used to be
-        accepted with a 200 and dropped, so a client could set a target band and be told it had
-        worked -- and a `target_range` goal under `percentile` scores something else entirely
-        (`0468`). The contract stays ahead of the code; the code stops pretending otherwise.
+        """`extra="forbid"` outlives the editor. It was added because every designed field was
+        being accepted with a 200 and dropped (P21); those fields are served now, and what it
+        still catches is a field the contract never described -- `pillar` belongs to the
+        attribute, and no request may move a criterion to another one.
         """
         response = await api.patch(
             f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
-            json={"goal": "target_range"},
+            json={"pillar": "economics"},
         )
 
         assert response.status_code == 422

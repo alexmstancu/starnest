@@ -506,3 +506,105 @@ def test_a_set_is_refused_when_any_one_of_its_criteria_overshoots() -> None:
 
     with pytest.raises(CriterionDeclarationError, match="house_price_to_income_ratio"):
         overshooting.refuse_unless_its_anchors_fit(A_SMALL_SCALE)
+
+
+# --- changing how a criterion judges ------------------------------------------
+
+
+class TestWithCriterionScoring:
+    """The subjective half of the ontology, edited (`reqs.md` 3.0, 3.4).
+
+    An attribute is what is knowable about a place and nobody edits it. A criterion is the rule
+    the household imposes on it -- direction, bands, anchors, threshold -- and until this method
+    existed, changing one meant writing a migration.
+    """
+
+    def test_the_direction_changes_and_nothing_else_does(self) -> None:
+        changed = one_pillar().with_criterion_scoring(
+            "country.rent_centre", {"goal": Goal.MAXIMISE}
+        )
+
+        rent = changed.criterion_for("country.rent_centre")
+        assert rent.goal is Goal.MAXIMISE
+        assert rent.weight == Decimal(20)
+
+    def test_no_sibling_weight_moves(self) -> None:
+        """None of these fields is a number that has to sum to anything, so rebalancing here
+        would move weights nobody asked to move."""
+        before = one_pillar()
+
+        after = before.with_criterion_scoring("country.rent_centre", {"goal": Goal.MAXIMISE})
+
+        assert {str(c.attribute): c.weight for c in after.criteria} == {
+            str(c.attribute): c.weight for c in before.criteria
+        }
+
+    def test_anchors_are_replaced_whole(self) -> None:
+        """A scale is one decision, not a list to append to: half an old scale beside half a new
+        one is a scale nobody chose."""
+        anchored = one_pillar().with_criterion_scoring(
+            "country.rent_centre",
+            {
+                "scale_anchors": (
+                    ScaleAnchor(input_value=Decimal(500), score=100, label="cheap"),
+                    ScaleAnchor(input_value=Decimal(1500), score=0, label="dear"),
+                )
+            },
+        )
+
+        replaced = anchored.with_criterion_scoring(
+            "country.rent_centre",
+            {
+                "scale_anchors": (
+                    ScaleAnchor(input_value=Decimal(900), score=100),
+                    ScaleAnchor(input_value=Decimal(1800), score=0),
+                )
+            },
+        )
+
+        anchors = replaced.criterion_for("country.rent_centre").scale_anchors
+        assert [(a.input_value, a.score, a.label) for a in anchors] == [
+            (Decimal(900), 100, None),
+            (Decimal(1800), 0, None),
+        ]
+
+    def test_a_weight_cannot_be_moved_down_this_path(self) -> None:
+        """**The reason `weight` is absent from `THE_SCORING_RULE`.** Moving one has to go
+        through `with_criterion_weight`, which rebalances the pillar; a weight written here
+        would leave the pillar summing to something other than 100, and the set would be
+        rejected on its next read -- or worse, produce a ranking from the wrong total.
+        """
+        with pytest.raises(CriteriaSetError, match="not part of a criterion's scoring rule"):
+            one_pillar().with_criterion_scoring("country.rent_centre", {"weight": Decimal(50)})
+
+    def test_a_field_that_does_not_exist_is_refused_rather_than_ignored(self) -> None:
+        """A typo in a field name is the defect P21 was: accepted, dropped, and reported as
+        success."""
+        with pytest.raises(CriteriaSetError, match="goal_direction"):
+            one_pillar().with_criterion_scoring("country.rent_centre", {"goal_direction": "up"})
+
+    def test_a_rule_the_criterion_refuses_is_not_stored(self) -> None:
+        """Revalidated rather than copied: a `target_range` with no band is not a rule, and the
+        criterion says so in a sentence the API passes on."""
+        with pytest.raises(CriterionDeclarationError, match="names no band"):
+            one_pillar().with_criterion_scoring("country.rent_centre", {"goal": Goal.TARGET_RANGE})
+
+    def test_the_set_is_unchanged_when_the_change_is_refused(self) -> None:
+        """The control for the test above. A refusal that had already mutated the set would
+        leave a criteria set nobody could read back."""
+        before = one_pillar()
+
+        with pytest.raises(CriterionDeclarationError):
+            before.with_criterion_scoring("country.rent_centre", {"goal": Goal.TARGET_RANGE})
+
+        assert before.criterion_for("country.rent_centre").goal is Goal.MINIMISE
+
+    def test_a_criterion_the_set_does_not_carry_is_a_lookup_error(self) -> None:
+        with pytest.raises(UnknownCriterionError):
+            one_pillar().with_criterion_scoring("country.not_here", {"goal": Goal.MAXIMISE})
+
+    def test_an_empty_change_is_the_set_unaltered(self) -> None:
+        """The contract says only the fields present are changed, and none is."""
+        before = one_pillar()
+
+        assert before.with_criterion_scoring("country.rent_centre", {}) == before

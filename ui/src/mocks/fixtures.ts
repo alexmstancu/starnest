@@ -62,7 +62,16 @@ function defaultCriteria(): Criterion[] {
       60,
       "minimise",
     ),
-    criterion("country.overcrowding_rate", "housing", 40, "minimise"),
+    // One criterion in the set the screen opens on carries a full rule, so a test can read an
+    // anchored scale and a threshold back rather than only the empty case.
+    criterion("country.overcrowding_rate", "housing", 40, "minimise", {
+      normalisation_method: "fixed",
+      scale_anchors: [
+        { input_value: 2, score: 100, label: "roomy" },
+        { input_value: 20, score: 0, label: "crowded" },
+      ],
+      matching_threshold: { min_value: null, max_value: 15 },
+    }),
     criterion("country.homicide_rate", "safety", 65, "minimise"),
     criterion("country.perceived_safety_index", "safety", 35, "maximise", {
       weight_locked: true,
@@ -508,8 +517,16 @@ export const HOUSEHOLD: Household = {
  * has to render that without calling it "null".
  */
 export const MATCH_RULES: MatchRule[] = [
-  { id: "country.visa_route_exists", name: "A visa route exists", level: "country" },
-  { id: "country.eu_free_movement", name: "Free movement applies", level: "country" },
+  {
+    id: "country.visa_route_exists",
+    name: "A visa route exists",
+    level: "country",
+  },
+  {
+    id: "country.eu_free_movement",
+    name: "Free movement applies",
+    level: "country",
+  },
   { id: "not_manually_excluded", name: "Not excluded by hand", level: null },
 ];
 
@@ -522,8 +539,16 @@ export const COMPOUND_RULES: CompoundRule[] = [
     outcome: "warning",
     threshold_max: 35,
     inputs: [
-      { input_order: 1, attribute: "country.average_rent", household_field: null },
-      { input_order: 2, attribute: null, household_field: "target_monthly_spend" },
+      {
+        input_order: 1,
+        attribute: "country.average_rent",
+        household_field: null,
+      },
+      {
+        input_order: 2,
+        attribute: null,
+        household_field: "target_monthly_spend",
+      },
     ],
   },
   {

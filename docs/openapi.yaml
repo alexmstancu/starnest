@@ -1238,10 +1238,14 @@ components:
                 max_share: { type: [number, "null"] }
 
     Criterion:
+      # A stored criterion always carries these: `CriterionInput` leaves them optional because
+      # a PATCH changes only what it names, while a criterion that has been *read* has a goal,
+      # a method and a weight whether anybody sent them or not. Typing them optional here made
+      # every client defend against an absence the server cannot produce.
       allOf:
         - $ref: "#/components/schemas/CriterionInput"
         - type: object
-          required: [attribute, pillar]
+          required: [attribute, pillar, is_scored, weight, weight_locked, goal, normalisation_method, blocks_if_missing]
           properties:
             attribute: { type: string }
             pillar: { type: string }

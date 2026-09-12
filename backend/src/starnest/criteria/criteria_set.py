@@ -13,17 +13,42 @@ an override means, and it necessarily touches the siblings, so the siblings must
 own rows.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from decimal import Decimal
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from starnest.candidates import LevelId
-from starnest.criteria.criterion import Criterion
+from starnest.criteria.criterion import Criterion, CriterionDeclarationError
 from starnest.criteria.identifiers import CriteriaSetId
 from starnest.criteria.rebalancing import TOTAL, WeightedItem, rebalance
 from starnest.data import AttributeId, CompoundRuleId, MatchRuleId, PillarId
+
+THE_SCORING_RULE = frozenset(
+    {
+        "goal",
+        "target_range_min",
+        "target_range_max",
+        "zero_score_below",
+        "zero_score_above",
+        "normalisation_method",
+        "scale_anchors",
+        "blocks_if_missing",
+        "breakdown_option",
+        "reducer_mode",
+        "matching_threshold",
+    }
+)
+"""Which of a criterion's fields say how it judges a figure -- the household's opinion about
+one attribute (`reqs.md` 3.4).
+
+**Declared as a set rather than as a parameter list**, for three reasons. Eleven keyword
+arguments would be a worse signature than one mapping; a typo in a field name fails loudly here
+instead of being silently ignored, which is the defect P21 was; and **`weight` is deliberately
+absent**, so no caller can move a weight down this path and skip the rebalancing that keeps a
+pillar summing to 100.
+"""
 
 
 class CriteriaSetError(ValueError):
@@ -292,7 +317,59 @@ class CriteriaSet(BaseModel):
             fields["is_scored"] = is_scored
         if weight_locked is not None:
             fields["weight_locked"] = weight_locked
-        revalidated = Criterion.model_validate(fields)
+        return self._with_revalidated(changed, fields)
+
+    def with_criterion_scoring(
+        self, attribute: AttributeId | str, changes: Mapping[str, object]
+    ) -> "CriteriaSet":
+        """Change how one criterion judges its attribute: its goal, bands, anchors, thresholds.
+
+        **This is the subjective half of the ontology becoming editable** (`reqs.md` 3.0). The
+        attribute is what is knowable about a place and nobody edits it; the criterion is the
+        rule the household imposes on it, and until now its direction and its scale anchors
+        could only be changed by a migration -- which made them configuration in name and code
+        in practice.
+
+        **No rebalancing, and no weight.** None of these fields is a number that has to sum to
+        anything: `weight` is not in `THE_SCORING_RULE`, so moving one still goes through
+        `with_criterion_weight` and still rebalances its pillar.
+
+        Revalidated rather than copied blind, which is the point of routing it through the
+        domain at all: `Criterion` refuses a `target_range` with no bounds, and refuses the
+        combination of a band with `percentile` or `as_is` that scored something else entirely
+        (`known-issues.md` P20). An endpoint writing these fields straight to the store would
+        reach none of that.
+        """
+        unknown = set(changes) - THE_SCORING_RULE
+        if unknown:
+            raise CriteriaSetError(
+                f"these are not part of a criterion's scoring rule: {sorted(unknown)}"
+            )
+
+        changed = self.criterion_for(attribute)
+        return self._with_revalidated(changed, changed.model_dump() | dict(changes))
+
+    def _with_revalidated(self, changed: Criterion, fields: Mapping[str, object]) -> "CriteriaSet":
+        """The set with one criterion rebuilt from `fields` and validated as a whole rule.
+
+        `model_copy` would write a field without asking the criterion whether what it produced
+        is still a rule, and a criterion that cannot score is worse than one that refuses to be
+        saved.
+
+        **The refusal is re-raised as the domain's own.** Pydantic wraps a validator's
+        `ValueError` in a `ValidationError`, which is neither a `ValueError` nor anything the
+        API's error table knows -- so a criterion refusing to be a rule reached the client as a
+        500 rather than as the sentence it wrote. What comes out is the sentence.
+        """
+        try:
+            revalidated = Criterion.model_validate(dict(fields))
+        except ValidationError as refused:
+            raise CriterionDeclarationError(
+                "; ".join(
+                    str(problem["msg"]).removeprefix("Value error, ")
+                    for problem in refused.errors()
+                )
+            ) from refused
         return self.model_copy(
             update={
                 "criteria": tuple(

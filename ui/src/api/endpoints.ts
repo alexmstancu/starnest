@@ -98,6 +98,33 @@ export function updateCriterionWeight(
   );
 }
 
+/** The scoring half of a criterion: how it judges, never how much it weighs. */
+export type CriterionRule = Omit<
+  components["schemas"]["CriterionInput"],
+  "weight" | "is_scored" | "weight_locked"
+>;
+
+/**
+ * Change how one criterion judges its attribute -- goal, method, band, anchors, threshold.
+ *
+ * **Separate from the weight** because the two mean different things to the server: a weight
+ * rebalances its pillar, and none of these fields moves a number that has to sum to anything.
+ * The response is the pillar either way, so the screen re-renders from what came back rather
+ * than from what it sent.
+ */
+export function updateCriterionRule(
+  criteriaSetId: string,
+  attributeId: string,
+  rule: CriterionRule,
+  options?: RequestOptions,
+): Promise<RebalancedPillar> {
+  return patchJson(
+    "/criteria-sets/{criteriaSetId}/criteria/{attributeId}",
+    rule,
+    { ...options, pathParams: { criteriaSetId, attributeId } },
+  );
+}
+
 export function fetchSettings(options?: RequestOptions): Promise<Settings> {
   return getJson("/settings", undefined, options);
 }
@@ -231,7 +258,10 @@ export function replaceHousehold(
   return putJson("/household", household, options);
 }
 
-export function replaceSettings(settings: Settings, options?: RequestOptions): Promise<Settings> {
+export function replaceSettings(
+  settings: Settings,
+  options?: RequestOptions,
+): Promise<Settings> {
   return putJson("/settings", settings, options);
 }
 
@@ -250,7 +280,9 @@ export function updatePillarWeight(
 ): Promise<{ items: components["schemas"]["PillarWeight"][] }> {
   return putJson(
     "/criteria-sets/{criteriaSetId}/pillar-weights/{pillarId}",
-    weightLocked === undefined ? { weight } : { weight, weight_locked: weightLocked },
+    weightLocked === undefined
+      ? { weight }
+      : { weight, weight_locked: weightLocked },
     { ...options, pathParams: { criteriaSetId, pillarId } },
   );
 }
@@ -275,14 +307,19 @@ export function renameCriteriaSet(
   );
 }
 
-export function deleteCriteriaSet(criteriaSetId: string, options?: RequestOptions): Promise<void> {
+export function deleteCriteriaSet(
+  criteriaSetId: string,
+  options?: RequestOptions,
+): Promise<void> {
   return deleteResource("/criteria-sets/{criteriaSetId}", {
     ...options,
     pathParams: { criteriaSetId },
   });
 }
 
-export function fetchDataSources(options?: RequestOptions): Promise<{ items: DataSource[] }> {
+export function fetchDataSources(
+  options?: RequestOptions,
+): Promise<{ items: DataSource[] }> {
   return getJson("/data-sources", undefined, options);
 }
 
