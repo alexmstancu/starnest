@@ -73,17 +73,25 @@ class Environment(BaseSettings):
         description="Which model the LLM path asks (reqs.md 6.10). A name rather than a "
         "hardcoded constant, because the best model for the money changes.",
     )
-    llm_input_eur_per_mtok: Decimal | None = Field(
+    llm_input_usd_per_mtok: Decimal | None = Field(
         default=None,
-        description="Euro per million input tokens, as Anthropic publishes it. **No default**: "
-        "a run that cannot measure its own cost cannot be capped, and a default of zero would "
-        "make the cap ornamental (reqs.md 6.3).",
+        description="US dollars per million input tokens, exactly as Anthropic's pricing page "
+        "states it. **No default**: a run that cannot measure its own cost cannot be capped, "
+        "and a default of zero would make the cap ornamental (reqs.md 6.3).",
     )
-    llm_output_eur_per_mtok: Decimal | None = Field(
-        default=None, description="Euro per million output tokens."
+    llm_output_usd_per_mtok: Decimal | None = Field(
+        default=None, description="US dollars per million output tokens."
     )
-    llm_eur_per_web_search: Decimal | None = Field(
-        default=None, description="Euro per web search the model performs."
+    llm_usd_per_web_search: Decimal | None = Field(
+        default=None,
+        description="US dollars per web search. The page publishes it per 1,000 searches.",
+    )
+    eur_usd_rate: Decimal | None = Field(
+        default=None,
+        description="How many US dollars one euro buys, as the ECB quotes it (1 EUR = n USD). "
+        "Anthropic bills in USD and this application works in euro, so a conversion is needed "
+        "-- and it names its rate, which is the rule reqs.md 5.5 applies to every monetary "
+        "value. The ECB publishes a daily reference rate.",
     )
 
     port: int = 8000
@@ -137,9 +145,6 @@ def build() -> tuple[Environment, "FastAPI"]:
     )
 
     environment = Environment()  # type: ignore[call-arg]
-    # Configured here, at the top of the process, rather than inside the startup checks: it is
-    # global state and belongs to whoever owns the process.
-    _configure_logging(environment.log_level)
     pool = AsyncConnectionPool(environment.database_url, min_size=1, open=False)
 
     catalog = PostgresCatalogStore(pool)
@@ -364,9 +369,10 @@ def _the_model(environment: "Environment") -> object | None:
 
     try:
         pricing = LlmPricing.configured(
-            input_eur_per_million_tokens=environment.llm_input_eur_per_mtok,
-            output_eur_per_million_tokens=environment.llm_output_eur_per_mtok,
-            eur_per_web_search=environment.llm_eur_per_web_search,
+            input_usd_per_million_tokens=environment.llm_input_usd_per_mtok,
+            output_usd_per_million_tokens=environment.llm_output_usd_per_mtok,
+            usd_per_web_search=environment.llm_usd_per_web_search,
+            eur_usd_rate=environment.eur_usd_rate,
         )
     except PricingNotConfiguredError as unpriced:
         # Not a startup failure: the application runs perfectly well without the LLM path, and
@@ -374,6 +380,8 @@ def _the_model(environment: "Environment") -> object | None:
         boot.warning("the llm path is off: %s", unpriced)
         return None
 
+    # On the record, because a spend measured with an unknown rate is a spend nobody can check.
+    boot.info("llm prices: %s", pricing.describe())
     return LlmWithSearch(
         AsyncAnthropic(api_key=environment.anthropic_api_key).messages,
         model=environment.llm_model,
@@ -385,7 +393,8 @@ def _configure_logging(level: str) -> None:
     """One format for the application's own log, at the level the environment names.
 
     `force=True` because uvicorn configures the root logger too, and whichever ran last would
-    otherwise decide the format for both.
+    otherwise decide the format for both. **Called only by `run`**, because evicting handlers is
+    a thing only the owner of a process may do.
     """
     logging.basicConfig(
         level=level.upper(),
@@ -427,6 +436,12 @@ def run() -> None:
     import uvicorn
 
     environment, app = build()
+    # **Configured here and nowhere else.** `basicConfig(force=True)` evicts whatever handlers
+    # are already on the root logger, which is right for a process that owns its own output and
+    # wrong everywhere else: called from `build`, it took pytest's log capture away and made two
+    # tests fail for a reason that had nothing to do with them. The entry point owns the
+    # process, so the entry point configures the logging.
+    _configure_logging(environment.log_level)
     uvicorn.run(
         app, host=environment.host, port=environment.port, log_level=environment.log_level.lower()
     )

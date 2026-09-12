@@ -103,11 +103,20 @@ class TestWhatIsActuallyWiredIn:
         written but never passed here is a source that silently fetches nothing -- no error,
         no failure row, just an attribute that stays empty for a reason nobody can see.
 
-        **The roster is deliberate.** P4 adds a source at a time, and each one should be a line
-        changed here rather than a thing that appeared."""
+        **The roster is deliberate.** P4 added a source at a time, and each one should be a line
+        changed here rather than a thing that appeared.
+
+        **The free seven are asserted exactly; the paid ones are asserted to be paid.** Whether
+        the LLM path is wired depends on whether a key and prices are configured, which is a
+        property of the machine rather than of the code -- this test asserted an exact set and
+        started failing the moment somebody pasted a key.
+        """
         _, app = build()
 
-        assert {str(adapter.data_source) for adapter in app.state.adapters} == {
+        wired = {str(adapter.data_source) for adapter in app.state.adapters}
+        paid = {str(a.data_source) for a in app.state.adapters if a.costs_money}
+
+        assert wired - paid == {
             "eurostat",
             "world_bank",
             "who",
@@ -116,6 +125,9 @@ class TestWhatIsActuallyWiredIn:
             "eurostat_estimate",
             "open_meteo",
         }
+        # Nothing but the LLM path charges, and it is the only thing that may appear here
+        # because of configuration rather than because of code.
+        assert paid <= {"llm"}
 
     def test_no_two_adapters_claim_to_be_the_same_source(self) -> None:
         """Two adapters sharing a `data_source` would write values indistinguishable in
@@ -167,8 +179,30 @@ class TestWiringTheLlmPath:
     unused feature would be worse than saying so in the log.
     """
 
+    @pytest.fixture(autouse=True)
+    def _without_the_developers_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """**These tests build their own environment and must read nothing else.**
+
+        They used to construct `Environment` with `.env` still in play, so they passed while the
+        key was blank and failed the moment somebody pasted a real one -- a test that depends on
+        a developer's private file is a test that breaks for the wrong reason.
+        """
+        for name in (
+            "ANTHROPIC_API_KEY",
+            "LLM_MODEL",
+            "LLM_INPUT_USD_PER_MTOK",
+            "LLM_OUTPUT_USD_PER_MTOK",
+            "LLM_USD_PER_WEB_SEARCH",
+            "EUR_USD_RATE",
+        ):
+            monkeypatch.delenv(name, raising=False)
+
     def an_environment(self, **overrides: object) -> Environment:
-        fields: dict[str, object] = {"database_url": "postgresql://localhost/starnest"}
+        fields: dict[str, object] = {
+            "database_url": "postgresql://localhost/starnest",
+            # `_env_file=None` for the same reason: what this test configures is all there is.
+            "_env_file": None,
+        }
         return Environment(**(fields | overrides))  # type: ignore[arg-type]
 
     def test_no_key_means_no_model_and_a_line_in_the_log(
@@ -189,15 +223,16 @@ class TestWiringTheLlmPath:
             model = _the_model(self.an_environment(anthropic_api_key="sk-ant-not-a-real-key"))
 
         assert model is None
-        assert "LLM_INPUT_EUR_PER_MTOK" in caplog.text
+        assert "LLM_INPUT_USD_PER_MTOK" in caplog.text
 
     def test_a_key_and_every_price_makes_a_model(self) -> None:
         model = _the_model(
             self.an_environment(
                 anthropic_api_key="sk-ant-not-a-real-key",
-                llm_input_eur_per_mtok=Decimal(3),
-                llm_output_eur_per_mtok=Decimal(15),
-                llm_eur_per_web_search=Decimal("0.01"),
+                llm_input_usd_per_mtok=Decimal(2),
+                llm_output_usd_per_mtok=Decimal(10),
+                llm_usd_per_web_search=Decimal("0.01"),
+                eur_usd_rate=Decimal("1.1592"),
             )
         )
 
@@ -207,9 +242,10 @@ class TestWiringTheLlmPath:
         sources = _the_paid_sources(
             self.an_environment(
                 anthropic_api_key="sk-ant-not-a-real-key",
-                llm_input_eur_per_mtok=Decimal(3),
-                llm_output_eur_per_mtok=Decimal(15),
-                llm_eur_per_web_search=Decimal("0.01"),
+                llm_input_usd_per_mtok=Decimal(2),
+                llm_output_usd_per_mtok=Decimal(10),
+                llm_usd_per_web_search=Decimal("0.01"),
+                eur_usd_rate=Decimal("1.1592"),
             )
         )
 
@@ -225,9 +261,10 @@ class TestWiringTheLlmPath:
             _the_researcher(
                 self.an_environment(
                     anthropic_api_key="sk-ant-not-a-real-key",
-                    llm_input_eur_per_mtok=Decimal(3),
-                    llm_output_eur_per_mtok=Decimal(15),
-                    llm_eur_per_web_search=Decimal("0.01"),
+                    llm_input_usd_per_mtok=Decimal(2),
+                    llm_output_usd_per_mtok=Decimal(10),
+                    llm_usd_per_web_search=Decimal("0.01"),
+                    eur_usd_rate=Decimal("1.1592"),
                 )
             )
             is not None
@@ -241,9 +278,10 @@ class TestWiringTheLlmPath:
             _the_paid_sources(
                 self.an_environment(
                     anthropic_api_key="sk-ant-a-key-that-must-not-appear",
-                    llm_input_eur_per_mtok=Decimal(3),
-                    llm_output_eur_per_mtok=Decimal(15),
-                    llm_eur_per_web_search=Decimal("0.01"),
+                    llm_input_usd_per_mtok=Decimal(2),
+                    llm_output_usd_per_mtok=Decimal(10),
+                    llm_usd_per_web_search=Decimal("0.01"),
+                    eur_usd_rate=Decimal("1.1592"),
                 )
             )
 
@@ -260,11 +298,13 @@ class TestTheFallbackDeclaration:
 
     async def test_it_declares_the_scoreable_attributes_nothing_else_answers(self) -> None:
         environment = Environment(
+            _env_file=None,
             database_url="postgresql://localhost/starnest",
             anthropic_api_key="sk-ant-not-a-real-key",
-            llm_input_eur_per_mtok=Decimal(3),
-            llm_output_eur_per_mtok=Decimal(15),
-            llm_eur_per_web_search=Decimal("0.01"),
+            llm_input_usd_per_mtok=Decimal(2),
+            llm_output_usd_per_mtok=Decimal(10),
+            llm_usd_per_web_search=Decimal("0.01"),
+            eur_usd_rate=Decimal("1.1592"),
         )
 
         (fallback,) = await _the_fallback(environment, _ACatalogOfThree(), [_AnsweringOne()])
@@ -272,7 +312,7 @@ class TestTheFallbackDeclaration:
         assert set(fallback.attributes) == {"country.uncovered_ratio"}
 
     async def test_with_no_model_there_is_no_fallback(self) -> None:
-        environment = Environment(database_url="postgresql://localhost/starnest")
+        environment = Environment(_env_file=None, database_url="postgresql://localhost/starnest")
 
         assert await _the_fallback(environment, _ACatalogOfThree(), []) == ()
 

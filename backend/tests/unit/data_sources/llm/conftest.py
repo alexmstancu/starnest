@@ -22,9 +22,12 @@ ANOTHER_PAGE = "https://example.gov/statistics/rent"
 def pricing() -> LlmPricing:
     """Prices that make the arithmetic easy to read: 1 EUR per million either way, 1 per search."""
     return LlmPricing(
-        input_eur_per_million_tokens=Decimal(1),
-        output_eur_per_million_tokens=Decimal(1),
-        eur_per_web_search=Decimal("0.01"),
+        input_usd_per_million_tokens=Decimal(1),
+        output_usd_per_million_tokens=Decimal(1),
+        usd_per_web_search=Decimal("0.01"),
+        # One euro to one dollar, so the arithmetic in the assertions is the arithmetic of the
+        # prices rather than of the conversion. The conversion has its own tests.
+        eur_usd_rate=Decimal(1),
     )
 
 
@@ -79,8 +82,9 @@ def a_model(*answers: Any, pricing: LlmPricing | None = None) -> LlmWithSearch:
         model="a-model-under-test",
         pricing=pricing
         or LlmPricing(
-            input_eur_per_million_tokens=Decimal(1),
-            output_eur_per_million_tokens=Decimal(1),
-            eur_per_web_search=Decimal("0.01"),
+            input_usd_per_million_tokens=Decimal(1),
+            output_usd_per_million_tokens=Decimal(1),
+            usd_per_web_search=Decimal("0.01"),
+            eur_usd_rate=Decimal(1),
         ),
     )

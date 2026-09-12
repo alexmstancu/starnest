@@ -27,16 +27,25 @@ class TestWhatItCosts:
 
     @pytest.mark.parametrize(
         "missing",
-        ["input_eur_per_million_tokens", "output_eur_per_million_tokens", "eur_per_web_search"],
+        [
+            "input_usd_per_million_tokens",
+            "output_usd_per_million_tokens",
+            "usd_per_web_search",
+            "eur_usd_rate",
+        ],
     )
-    def test_prices_are_required_and_the_refusal_names_what_is_missing(self, missing: str) -> None:
+    def test_every_number_is_required_and_the_refusal_names_what_is_missing(
+        self, missing: str
+    ) -> None:
         """A run that cannot measure its own cost cannot be capped, and a default of zero would
-        make the cap ornamental."""
+        make the cap ornamental. **The rate counts as one of the numbers**: prices in dollars
+        with no rate measure nothing this application can act on."""
         prices = dict.fromkeys(
             [
-                "input_eur_per_million_tokens",
-                "output_eur_per_million_tokens",
-                "eur_per_web_search",
+                "input_usd_per_million_tokens",
+                "output_usd_per_million_tokens",
+                "usd_per_web_search",
+                "eur_usd_rate",
             ],
             Decimal(1),
         )
@@ -46,14 +55,60 @@ class TestWhatItCosts:
             LlmPricing.configured(**prices)  # type: ignore[arg-type]
 
     def test_fully_configured_prices_are_accepted(self) -> None:
-        """The control for the refusals above."""
+        """The control for the refusals above, with the figures from the pricing page for the
+        model this application asks by default."""
         configured = LlmPricing.configured(
-            input_eur_per_million_tokens=Decimal(3),
-            output_eur_per_million_tokens=Decimal(15),
-            eur_per_web_search=Decimal("0.01"),
+            input_usd_per_million_tokens=Decimal(2),
+            output_usd_per_million_tokens=Decimal(10),
+            usd_per_web_search=Decimal("0.01"),
+            eur_usd_rate=Decimal("1.1592"),
         )
 
-        assert configured.output_eur_per_million_tokens == Decimal(15)
+        assert configured.output_usd_per_million_tokens == Decimal(10)
+
+    @pytest.mark.parametrize("rate", [Decimal(0), Decimal("-1.2")])
+    def test_a_rate_that_converts_nothing_is_refused(self, rate: Decimal) -> None:
+        """Zero divides by zero and a negative one turns every cost upside down."""
+        with pytest.raises(PricingNotConfiguredError, match="converts nothing"):
+            LlmPricing.configured(
+                input_usd_per_million_tokens=Decimal(2),
+                output_usd_per_million_tokens=Decimal(10),
+                usd_per_web_search=Decimal("0.01"),
+                eur_usd_rate=rate,
+            )
+
+    def test_the_cost_is_in_euro_at_the_configured_rate(self) -> None:
+        """Anthropic bills in dollars and this application works in euro, so the conversion is
+        the last thing that happens -- and the rate it used is on the boot log."""
+        in_dollars = LlmPricing(
+            input_usd_per_million_tokens=Decimal(2),
+            output_usd_per_million_tokens=Decimal(10),
+            usd_per_web_search=Decimal("0.01"),
+            eur_usd_rate=Decimal(1),
+        )
+        in_euro = LlmPricing(
+            input_usd_per_million_tokens=Decimal(2),
+            output_usd_per_million_tokens=Decimal(10),
+            usd_per_web_search=Decimal("0.01"),
+            eur_usd_rate=Decimal(2),
+        )
+
+        asked = {"input_tokens": 1_000_000, "output_tokens": 0, "web_searches": 0}
+        assert in_dollars.cost_of(**asked) == Decimal("2.0000")
+        # Twice as many dollars to the euro, so half the euro cost.
+        assert in_euro.cost_of(**asked) == Decimal("1.0000")
+
+    def test_the_rate_it_converted_with_is_in_what_it_says_about_itself(self) -> None:
+        """A spend measured with an unknown rate is a spend nobody can check."""
+        described = LlmPricing(
+            input_usd_per_million_tokens=Decimal(2),
+            output_usd_per_million_tokens=Decimal(10),
+            usd_per_web_search=Decimal("0.01"),
+            eur_usd_rate=Decimal("1.1592"),
+        ).describe()
+
+        assert "1 EUR = 1.1592 USD" in described
+        assert "$2/$10 per MTok" in described
 
 
 class TestWhatItAsks:
