@@ -728,6 +728,17 @@ Fix every bug. Only then does P7 start.
 
 ## GATE D — the MVP is done
 
+**Closed 2026-09-12.** `backend/tests/acceptance/test_gate_d.py` is the four failure modes made
+executable, and **the first one found a real defect**: `acquire` fetched every attribute a source
+could answer and appended the lot afterwards, so a process dying mid-source lost every figure it
+had already fetched -- while `arch.md` 7.1 claims per-item commits. It appends per attribute now,
+and the loss window is the one answer in flight (P30).
+
+The dump-and-restore is a real `pg_dump` and `pg_restore` inside the database container, and what
+it checks is specific: a **hand-typed** value written before the dump is found after the restore,
+because a structured figure could be re-fetched slowly, an LLM figure would cost money again, and
+a manually entered one cannot be re-fetched at any price (`arch.md` 9.5).
+
 Everything above, green, at once. Plus the failure modes, which are only testable now:
 
 - **Kill the process mid-run.** Restart. The run is marked `failed`, the values it already

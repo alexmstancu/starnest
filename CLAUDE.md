@@ -17,6 +17,27 @@ implementation work.
 | `comparison/` | **Written.** Focus against comparators, deltas in the attribute's own unit, weighted contribution, and a synthesis templated from the numbers and ordered by what each gap is worth |
 | `ui/` | The shell and **all four tabs**: Configure with its seven panels (household, settings, criteria sets, pillar weights, criteria, rules, source priority), Run, Rank with its drill-down, Compare. 167 unit tests and 15 browser tests. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
 
+**GATE D closed 2026-09-12** — the four failure modes, executable
+(`backend/tests/acceptance/test_gate_d.py`): a process that dies mid-run keeps every figure it
+had written and its run is recoverable, crossing the spend cap halts the run and loses nothing,
+a stale schema stops the boot and names the gap, and a **real `pg_dump` and `pg_restore`** proves
+a hand-typed value survives -- the one kind of value that cannot be re-fetched at any price. **It
+found a defect the moment it was written**: a source's figures were appended once at the end, so
+a death mid-source lost the lot (P30, fixed).
+
+**The LLM path is built** (P7 W7-A): all three permitted country-level uses of `reqs.md` 6.10 --
+named employers as a `LabelSet`, a fallback figure for an attribute no dataset covers, and gate
+research whose answers are **proposals that rule nothing out until a human writes them** (Q218).
+Prices are required configuration with no defaults (Q219); a run that can spend **refuses**
+without a cap and the refusal can be accepted past in the request (Q220); **a paid source is
+asked only when a run names its attributes**, so a sweep over a level is free by construction.
+`make live-llm` is the only thing here that spends money and is never part of `make check`.
+
+**The startup sequence refuses rather than degrades** (P7 W7-B): the schema compared and the boot
+refused when the database is behind, every adapter declaration checked against the catalog, the
+runs a dead process left behind swept to `failed`, and each decision logged -- the boot log is
+what answers "why did it refuse to start".
+
 **GATE C closed 2026-09-12** — `ui/e2e/gate-c.spec.ts` is the gate's table made executable:
 eight browser tests against the real stack, one per requirement, plus minE2E and the smoke
 tests. **Two of them arrange a decision the shipped data does not make** — nothing is

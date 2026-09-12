@@ -19,7 +19,7 @@ from decimal import Decimal
 
 from starnest.candidates import Candidate
 from starnest.data import Attribute, Value, ValueStore
-from starnest.data_acquisition.adapter import Acquired, AcquisitionFailure, SourceAdapter
+from starnest.data_acquisition.adapter import AcquisitionFailure, SourceAdapter
 
 
 @dataclass(frozen=True)
@@ -50,34 +50,47 @@ async def acquire(
     publish would come back as a failure per attribute and bury the failures that mean
     something, so the filter happens here rather than in each adapter.
 
-    The values are appended in one call at the end rather than per attribute: appending is
-    append-only and per-item transactional (`arch.md` 7.1), and one call keeps the ordering of
-    what was fetched in the ordering of what was stored.
+    **The figures are appended per attribute**, as each answer arrives, because a run that dies
+    halfway must keep what it already has (`arch.md` 7.1). Appending once at the end read more
+    tidily and lost a whole source's work to one exception.
     """
     answerable = [attribute for attribute in attributes if attribute.id in adapter.attributes]
-    acquired = Acquired()
-    for attribute in answerable:
-        acquired = acquired + await adapter.fetch(attribute, candidates)
 
-    # Every value carries the run that fetched it (`reqs.md` 3.8), stamped here rather than by
-    # each adapter: which occasion a figure came from is a fact about the run, and an adapter
-    # that had to be told its own run id could forget.
-    fetched = (
-        acquired.values
-        if run is None
-        else tuple(
-            value.model_copy(update={"data_acquisition_run": run}) for value in acquired.values
+    stored: list[Value] = []
+    failures: list[AcquisitionFailure] = []
+    cost, calls = Decimal(0), 0
+
+    # **Stored per attribute, not once at the end** (`arch.md` 7.1). The first version fetched
+    # every attribute this source could answer and appended the lot afterwards, which made a
+    # process dying mid-source lose every figure it had already fetched -- found by Gate D's
+    # first failure mode, which exists to ask exactly this. One append per attribute keeps the
+    # loss window to the attribute in flight.
+    for attribute in answerable:
+        acquired = await adapter.fetch(attribute, candidates)
+        cost += acquired.cost_eur
+        calls += acquired.calls
+
+        # Every value carries the run that fetched it (`reqs.md` 3.8), stamped here rather than
+        # by each adapter: which occasion a figure came from is a fact about the run, and an
+        # adapter that had to be told its own run id could forget.
+        fetched = (
+            acquired.values
+            if run is None
+            else tuple(
+                value.model_copy(update={"data_acquisition_run": run}) for value in acquired.values
+            )
         )
-    )
-    stored = await values.append(fetched) if fetched else ()
-    # Which source failed, stamped for the same reason as the run above: two sources answer the
-    # total tax rate, and a retry has to know which one to ask again.
-    failures = tuple(
-        replace(failure, data_source=adapter.data_source) for failure in acquired.failures
-    )
+        if fetched:
+            stored.extend(await values.append(fetched))
+        # Which source failed, stamped for the same reason as the run above: two sources answer
+        # the total tax rate, and a retry has to know which one to ask again.
+        failures.extend(
+            replace(failure, data_source=adapter.data_source) for failure in acquired.failures
+        )
+
     return RunOutcome(
         stored=tuple(stored),
-        failures=failures,
-        cost_eur=acquired.cost_eur,
-        calls=acquired.calls,
+        failures=tuple(failures),
+        cost_eur=cost,
+        calls=calls,
     )
