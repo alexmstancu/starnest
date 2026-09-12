@@ -49,9 +49,13 @@ application, and where the two disagree, this one is right.
 
 **1,635 backend tests (two of them `live`) and 98 interface tests. The shipped set `local_employment` ranks all 32 countries** (2026-09-11). Liechtenstein is ranked on Switzerland's figures for three attributes, visibly (Q208), and the ranking says how much of each score rests on low-confidence figures: 41% of Liechtenstein's, 7% for the five countries on the estimated tax rate, none for anyone else. **Coverage is 67%** (36% before Gate B's anchors); every remaining gap is a criterion with **no data**, not one waiting for an anchor.
 
-### GATE B — under way
+### GATE B — closed 2026-09-12
 
-What its section below asks for, against what exists on 2026-09-11.
+Every assertion below holds, and the live suite (`make live`, 14 minutes) proves the first of
+them against the real sources rather than against captured responses. **The family pillar is the
+one known gap**, and it is blocked rather than unfinished: OECD serves scripts a Cloudflare
+browser challenge (`catalog-blockers.md` item 5), probed repeatedly through the session. It is
+the first work after the gate, with the eight attributes no stream was ever given.
 
 | Assertion | State |
 |---|---|
@@ -61,7 +65,7 @@ What its section below asks for, against what exists on 2026-09-11.
 | Two sources for one attribute: both stored, the right one active | **Yes, and tested.** The tax rate (OECD beside the estimate) and Liechtenstein (a stand-in beside a real figure) — `test_runs_api.py` proves the real figure wins with the stand-in still stored |
 | Reference date distinct from retrieval date, both displayable | **Yes.** Both columns on every value since `0005`, and served by `GET /v1/values` since W4-E; a stand-in keeps the original's period and records its own retrieval |
 | `POST /data-acquisition-runs/{id}/retry` re-runs only what failed | **Yes, and tested** (2026-09-11). A new run asking only the sources that failed, only about the attributes each failed on. It needed failures to name their source first (`0461`) |
-| Every P4 stream has populated real values | **All but OECD's family pillar**: W4-A, W4-D and W4-F done; W4-C (temperature, 32 of 32) and W4-E (the machinery; values are the household's to type) done 2026-09-11; W4-B has the tax rate from OECD and nothing else, because OECD serves scripts a Cloudflare challenge. Probed between every task this session; still closed |
+| Every P4 stream has populated real values | **All but OECD's family pillar, which is blocked, not unfinished**: W4-A, W4-D and W4-F done; W4-C (temperature, 32 of 32) and W4-E (the machinery; values are the household's to type) done 2026-09-11; W4-B has the tax rate from OECD and nothing else, because OECD serves scripts a Cloudflare challenge. Probed between every task this session; still closed |
 
 **The spot-check, done by routes the adapters never use** (2026-09-12). The household asked the
 agent to do it rather than by hand, so each figure was read from somewhere other than where its

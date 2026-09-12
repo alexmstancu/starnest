@@ -17,7 +17,11 @@ implementation work.
 | `comparison/` | Empty. Post-Gate-A |
 | `ui/` | The shell plus the Rank and Configure screens. 98 tests. **It talks to the real backend**, and to a mock only in unit tests |
 
-**GATE A closed 2026-09-05** — `backend/tests/acceptance/test_gate_a.py` is the gate written
+**GATE B closed 2026-09-12** — all 32 countries ranked from seven sources, every blocking
+attribute answered for every country (proved live by `make live`), the four spot-checked figures
+matching their publishers by routes the adapters never use, and selective retry built. **The
+family pillar is the one known gap**: OECD blocks scripts, so it waits rather than being
+unfinished. **GATE A closed 2026-09-05** — `backend/tests/acceptance/test_gate_a.py` is the gate written
 down, seven steps in order against a real database plus two standing checks. 1,300 backend
 tests, 98 interface tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
 deliberately does not cover.
