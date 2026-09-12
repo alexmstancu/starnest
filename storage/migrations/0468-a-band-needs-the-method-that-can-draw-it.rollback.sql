@@ -1,0 +1,2 @@
+ALTER TABLE evaluation_criterion DROP CONSTRAINT evaluation_criterion_a_band_needs_a_fixed_scale;
+ALTER TABLE criterion DROP CONSTRAINT criterion_a_band_needs_a_fixed_scale;

@@ -348,3 +348,34 @@ class TestATargetRangeScoresTheBandAndFallsAwayFromIt:
         )
 
         assert with_anchors == (50,)
+
+
+@pytest.mark.parametrize(
+    "method",
+    [NormalisationMethod.PERCENTILE, NormalisationMethod.AS_IS],
+    ids=["percentile", "as_is"],
+)
+def test_a_band_is_refused_by_the_methods_that_cannot_draw_one(
+    method: NormalisationMethod,
+) -> None:
+    """`criteria/` refuses this combination where a criterion is declared, and this refuses it
+    again at the point of use -- because the branches here are chosen in an order, and an order
+    is not a rule anybody can see.
+
+    **What it did before.** `percentile` ignored the band and ranked by standing; `as_is` read
+    the figure as a score and inverted it, so a target range was scored as a minimisation. Both
+    produced a plausible number meaning something other than what was asked for.
+    """
+    with pytest.raises(NormalisationError, match="cannot draw one"):
+        scores_for(
+            [Decimal("22")],
+            method=method,
+            goal=Goal.TARGET_RANGE,
+            score_scale_max=100,
+            target=TargetRange(
+                minimum=Decimal("18"),
+                maximum=Decimal("26"),
+                zero_below=Decimal("5"),
+                zero_above=Decimal("38"),
+            ),
+        )

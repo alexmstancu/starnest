@@ -268,6 +268,43 @@ def test_a_malformed_new_identifier_is_refused() -> None:
         one_pillar().duplicated_as("Alex's Set", "Alex")
 
 
+# --- the two flags ------------------------------------------------------------
+
+
+def test_excluding_a_criterion_from_scoring_leaves_every_weight_where_it_was() -> None:
+    """`is_scored` decides whether a criterion contributes, not what anything weighs.
+
+    Its weight is redistributed at scoring time along with every other missing contribution
+    (`reqs.md` 5.3), so rebalancing here would move weights nobody asked to move -- and would
+    make excluding a criterion and then including it again a lossy round trip.
+    """
+    excluded = one_pillar().with_criterion_flags("country.rent_centre", is_scored=False)
+
+    assert excluded.criterion_for("country.rent_centre").is_scored is False
+    assert excluded.criterion_for("country.rent_centre").weight == Decimal("20")
+    assert excluded.criterion_for("country.house_price").weight == Decimal("40")
+
+
+def test_locking_a_weight_changes_only_who_absorbs_the_next_change() -> None:
+    locked = one_pillar().with_criterion_flags("country.rent_centre", weight_locked=True)
+
+    assert locked.criterion_for("country.rent_centre").weight_locked is True
+    assert sum(c.weight for c in locked.criteria) == Decimal("100")
+
+
+def test_setting_a_flag_leaves_the_old_set_alone() -> None:
+    original = one_pillar()
+
+    original.with_criterion_flags("country.rent_centre", is_scored=False)
+
+    assert original.criterion_for("country.rent_centre").is_scored is True
+
+
+def test_setting_a_flag_on_a_criterion_nobody_has_raises() -> None:
+    with pytest.raises(UnknownCriterionError):
+        one_pillar().with_criterion_flags("country.nobody_measures_this", is_scored=False)
+
+
 # --- moving a weight ----------------------------------------------------------
 
 

@@ -287,6 +287,106 @@ class TestUpdateCriterion:
         assert response.status_code == 422
 
 
+class TestTheFlagsOnACriterion:
+    """`is_scored` and `weight_locked`, which the endpoint declared and dropped on the floor.
+
+    Both were on the request body and neither was applied: excluding a criterion from scoring,
+    or locking its weight, answered 200 and changed nothing. An endpoint that reports success
+    for a change it did not make is worse than one that refuses the change.
+    """
+
+    async def test_excluding_a_criterion_from_scoring_is_stored(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"is_scored": False},
+        )
+
+        body = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+
+        overburden = next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)
+        assert overburden["is_scored"] is False
+
+    async def test_excluding_a_criterion_moves_no_weight(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """Its weight is redistributed when the ranking is computed (`reqs.md` 5.3), so moving
+        it here would change numbers nobody asked to change."""
+        before = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+
+        await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"is_scored": False},
+        )
+
+        after = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+        assert {c["attribute"]: c["weight"] for c in after["criteria"]} == {
+            c["attribute"]: c["weight"] for c in before["criteria"]
+        }
+
+    async def test_locking_a_weight_is_stored_and_then_refuses_a_rebalance(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """The flag is only worth storing if it does its job: with the one sibling locked, there
+        is nowhere for a change to the other to go, and the API says so (409)."""
+        await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERCROWDING}",
+            json={"weight_locked": True},
+        )
+
+        refused = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"weight": 90},
+        )
+
+        assert refused.status_code == 409
+        assert refused.json()["code"] == "weights_all_locked"
+
+    async def test_a_weight_and_a_flag_in_one_request_both_land(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        body = (
+            await api.patch(
+                f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+                json={"weight": 60, "is_scored": False},
+            )
+        ).json()
+
+        overburden = next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)
+        assert Decimal(str(overburden["weight"])) == Decimal(60)
+        assert overburden["is_scored"] is False
+
+    async def test_a_field_this_endpoint_cannot_change_is_refused_rather_than_ignored(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """`goal` is in the contract's `CriterionInput` and is not served yet. It used to be
+        accepted with a 200 and dropped, so a client could set a target band and be told it had
+        worked -- and a `target_range` goal under `percentile` scores something else entirely
+        (`0468`). The contract stays ahead of the code; the code stops pretending otherwise.
+        """
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"goal": "target_range"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_an_empty_change_changes_nothing_and_is_not_an_error(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """The contract says only the fields present are changed, and none is present."""
+        before = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}", json={}
+        )
+
+        after = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+        assert response.status_code == 200
+        assert after["criteria"] == before["criteria"]
+
+
 class TestGetRanking:
     async def test_a_ranking_of_real_countries_from_stored_figures(
         self, api: httpx.AsyncClient, database_url: str

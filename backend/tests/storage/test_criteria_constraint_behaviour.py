@@ -27,6 +27,9 @@ import psycopg
 import pytest
 from psycopg import errors
 
+from .evaluation_rows import A_SEEDED_ATTRIBUTE, record_an_evaluation
+from .evaluation_rows import ITS_PILLAR as A_SEEDED_PILLAR
+
 pytestmark = pytest.mark.storage
 
 A_SET = "criteria_constraint_behaviour"
@@ -204,3 +207,74 @@ def test_the_shipped_set_no_longer_asks_to_score_a_label_set(
     ).fetchall()
 
     assert asking == []
+
+
+# --- a band needs the method that can draw it (0468) ----------------------------------------
+
+
+def _aim_at_a_band(connection: psycopg.Connection, *, method: str) -> None:
+    """Judge the scoreable attribute with a target range, normalising as told."""
+    connection.execute(
+        """
+        INSERT INTO criterion (criteria_set, attribute, pillar, value_type, weight, goal,
+                               normalisation_method, target_range_min, target_range_max)
+        VALUES (%s, %s, %s, %s, %s, 'target_range', %s, 18, 26)
+        """,
+        (A_SET, A_SCORED_ATTRIBUTE, ITS_PILLAR, THEIR_TYPE, Decimal("10"), method),
+    )
+
+
+class TestATargetRangeNeedsAFixedScale:
+    """A band is a scale, and `fixed` is the only method that draws one.
+
+    **The combination scored, and scored something else.** `percentile` ranks a column by
+    standing and knows nothing of a band; `as_is` reads the figure as a score and inverts it
+    unless the goal is `maximise`, so a target range came out scored as a minimisation. The
+    domain refuses it now and so does this constraint -- the schema is where a migration, a
+    script or a hand-written `psql` session meets the same rule.
+    """
+
+    def test_a_band_under_the_fixed_method_is_accepted(
+        self, connection: psycopg.Connection
+    ) -> None:
+        """The control. Every column below is this row's; only the method differs."""
+        _record_the_catalog(connection)
+
+        _aim_at_a_band(connection, method="fixed")
+
+        stored = connection.execute(
+            "SELECT normalisation_method FROM criterion WHERE criteria_set = %s AND attribute = %s",
+            (A_SET, A_SCORED_ATTRIBUTE),
+        ).fetchone()
+        assert stored == ("fixed",)
+
+    @pytest.mark.parametrize("method", ["percentile", "as_is"], ids=["percentile", "as_is"])
+    def test_a_band_the_method_cannot_draw_is_refused(
+        self, connection: psycopg.Connection, method: str
+    ) -> None:
+        _record_the_catalog(connection)
+
+        with pytest.raises(errors.CheckViolation):
+            _aim_at_a_band(connection, method=method)
+
+    def test_the_frozen_copy_refuses_it_too(self, connection: psycopg.Connection) -> None:
+        """An evaluation stores the interpretation it scored with (`0107`). A combination the
+        live catalog refuses must not be storable as a record of what was scored, or the refusal
+        would only postpone the nonsense to the page that reads it back.
+
+        Written as a row rather than as a lookup in `pg_constraint`, for the reason at the top
+        of this file: a test that finds a constraint by name agrees with whoever typed the name.
+        """
+        evaluation = record_an_evaluation(connection)
+
+        with pytest.raises(errors.CheckViolation):
+            connection.execute(
+                """
+                INSERT INTO evaluation_criterion
+                       (evaluation, attribute, pillar, is_scored, weight, pillar_weight, goal,
+                        normalisation_method, blocks_if_missing, target_range_min,
+                        target_range_max)
+                VALUES (%s, %s, %s, true, 40, 30, 'target_range', 'percentile', false, 18, 26)
+                """,
+                (evaluation, A_SEEDED_ATTRIBUTE, A_SEEDED_PILLAR),
+            )

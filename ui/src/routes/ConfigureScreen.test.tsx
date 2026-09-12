@@ -33,9 +33,30 @@ function shownWeight(attribute: string): number | string | string[] | null {
   }).value;
 }
 
+/**
+ * Waits until every panel on the screen has finished loading.
+ *
+ * **Typing into a half-loaded screen is a race, not a slow test.** The Configure screen mounts
+ * seven panels behind six requests, and `CriterionRow` follows the stored weight with an effect
+ * -- so a response landing between `clear()` and `click()` refills the input, the click saves 50
+ * instead of nothing, and the assertion waits for an alert that will never come. It failed once
+ * inside a loaded `make check` and passed a thousand times alone, which is what a race looks
+ * like (`known-issues.md` P13).
+ *
+ * The source priority table is the last panel on the screen, so its arrival means the rest have
+ * arrived too.
+ */
+async function settled(): Promise<void> {
+  await screen.findByRole("region", { name: "Source priority" });
+  await waitFor(() =>
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument(),
+  );
+}
+
 async function saveWeight(attribute: string, weight: string): Promise<void> {
   const user = userEvent.setup();
   const input = await weightInput(attribute);
+  await settled();
   const row = input.closest("tr")!;
 
   await user.clear(input);
@@ -147,6 +168,7 @@ describe("changing a weight", () => {
     renderShell("/configure");
     const input = await weightInput("country.cost_of_living_index");
     const row = input.closest("tr")!;
+    await settled();
 
     await user.clear(input);
     await user.click(within(row).getByRole("button", { name: "Save" }));

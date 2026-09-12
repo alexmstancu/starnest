@@ -18,7 +18,7 @@ from decimal import Decimal
 from typing import ClassVar
 
 from fastapi import APIRouter, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.bodies import ContractBody
 from starnest.api.dependencies import Criteria
@@ -74,12 +74,17 @@ class CriteriaSetBody(BaseModel):
 
 
 class CriterionInput(BaseModel):
-    """Only the fields present are changed.
+    """Only the fields present are changed, and a field this endpoint cannot change is refused.
 
-    minE2E sends one of them. The rest are declared because the contract declares them, and an
-    endpoint that silently ignored a field a client sent would be worse than one that refuses
-    it.
+    **`extra="forbid"` is the point of this docstring's own promise.** Pydantic ignores unknown
+    fields by default, so `goal`, `normalisation_method`, `scale_anchors` and the rest of
+    `CriterionInput` in `openapi.yaml` were accepted with a 200 and silently dropped -- a client
+    could set a target band and be told it worked. The contract is deliberately ahead of the
+    code (`CLAUDE.md`, "Two contracts"); what it must not do is let the code pretend to have
+    caught up. Those fields arrive with the criterion editor; until then sending one is a 422.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     # `Decimal` on the way IN and `float` on the way out, deliberately. A JSON number parsed
     # into a Decimal is exact, and the weight then reaches the rebalancing arithmetic without
@@ -151,10 +156,19 @@ def _applied(current: CriteriaSet, attribute: str, change: CriterionInput) -> Cr
     `with_criterion_weight` is where rebalancing happens; nothing here decides where the weight
     goes. A change carrying no weight is not an error -- the contract says only the fields
     present are changed -- it simply produces the set unaltered.
+
+    **The two flags are applied, and used not to be.** Both were declared on the body and
+    dropped on the floor: excluding a criterion from scoring, or locking its weight, answered
+    200 and changed nothing. Neither rebalances -- see `with_criterion_flags`.
     """
-    if change.weight is None:
-        return current
-    return current.with_criterion_weight(attribute, change.weight)
+    changed = current
+    if change.weight is not None:
+        changed = changed.with_criterion_weight(attribute, change.weight)
+    if change.is_scored is not None or change.weight_locked is not None:
+        changed = changed.with_criterion_flags(
+            attribute, is_scored=change.is_scored, weight_locked=change.weight_locked
+        )
+    return changed
 
 
 def _set_body(criteria_set: CriteriaSet) -> CriteriaSetBody:

@@ -168,6 +168,7 @@ class Criterion(BaseModel):
     @model_validator(mode="after")
     def _reject_a_criterion_that_is_not_a_rule(self) -> Self:
         self._reject_a_target_range_that_names_no_band()
+        self._reject_a_target_range_the_method_cannot_draw()
         self._reject_a_zero_score_inside_the_band()
         self._reject_a_reducer_that_disagrees_with_its_option()
         self._reject_a_scale_that_cannot_be_read()
@@ -206,6 +207,30 @@ class Criterion(BaseModel):
             raise CriterionDeclarationError(
                 f"{self.attribute} aims at a target range but names no band; a target range "
                 "needs both a minimum and a maximum, in the attribute's own unit"
+            )
+
+    def _reject_a_target_range_the_method_cannot_draw(self) -> None:
+        """A band is a scale, and `fixed` is the only method that draws one.
+
+        **The combination used to score, and to score something else.** `percentile` ranks a
+        column by standing, so a band it knows nothing about was silently ignored and the
+        candidates were ordered as though higher were better. `as_is` reads the figure as a
+        score and inverts it unless the goal is `maximise`, so a target range came out scored as
+        a minimisation -- a plausible number meaning the opposite of what was asked for, which
+        is the exact failure `reqs.md` 10 forbids.
+
+        Refused here rather than clamped or ignored: the household asked for a band, and the
+        honest answer to "this method cannot express one" is to say so.
+        """
+        if self.goal is not Goal.TARGET_RANGE:
+            return
+        if self.normalisation_method is not NormalisationMethod.FIXED:
+            raise CriterionDeclarationError(
+                f"{self.attribute} aims at a target range and normalises "
+                f"`{self.normalisation_method}`, which cannot express a band: `percentile` "
+                "scores by standing among the candidates and `as_is` reads the figure as a "
+                "score. A target range is a `fixed` scale -- the band, and where the score "
+                "reaches zero on each side"
             )
 
     def _reject_a_zero_score_inside_the_band(self) -> None:

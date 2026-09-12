@@ -92,6 +92,35 @@ def test_a_full_target_range_is_accepted() -> None:
 
 
 @pytest.mark.parametrize(
+    "method",
+    [NormalisationMethod.PERCENTILE, NormalisationMethod.AS_IS],
+    ids=["percentile", "as_is"],
+)
+def test_a_target_range_the_method_cannot_draw_is_refused(method: NormalisationMethod) -> None:
+    """A band is a scale, and `fixed` is the only method that draws one.
+
+    **The combination used to score, and to score something else.** `percentile` ranks by
+    standing and ignored the band; `as_is` inverted the figure unless the goal was `maximise`,
+    so a target range came out scored as a minimisation -- 26 degrees in an 18-26 band scoring
+    74 rather than 100. Nothing refused it: not the schema, not the domain, not the scoring.
+    """
+    # `ValueError`, as every refusal in this file is asserted: Pydantic wraps what a
+    # model validator raises in a `ValidationError`, which is one.
+    with pytest.raises(ValueError, match="cannot express a band"):
+        criterion(
+            attribute="country.avg_annual_temperature",
+            value_type=ValueType.QUANTITY,
+            pillar="climate",
+            goal=Goal.TARGET_RANGE,
+            normalisation_method=method,
+            target_range_min=Decimal("18"),
+            target_range_max=Decimal("26"),
+            zero_score_below=Decimal("5"),
+            zero_score_above=Decimal("38"),
+        )
+
+
+@pytest.mark.parametrize(
     "field,value,complaint",
     [
         ("zero_score_below", "20", "inside its target band starting at"),

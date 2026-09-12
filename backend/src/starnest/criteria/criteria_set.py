@@ -269,6 +269,39 @@ class CriteriaSet(BaseModel):
             }
         )
 
+    def with_criterion_flags(
+        self,
+        attribute: AttributeId | str,
+        *,
+        is_scored: bool | None = None,
+        weight_locked: bool | None = None,
+    ) -> "CriteriaSet":
+        """Set whether a criterion counts, and whether its weight may be moved by a rebalance.
+
+        **No rebalancing.** Neither flag changes a number: `is_scored` decides whether a
+        criterion contributes at all, and its weight is redistributed at scoring time along with
+        every other missing contribution (`reqs.md` 5.3), while `weight_locked` only changes who
+        absorbs the *next* change. Rebalancing here would move weights nobody asked to move.
+
+        Revalidated rather than copied blind: a flag is still part of a criterion, and
+        `model_copy` would write it without asking the criterion whether it is still a rule.
+        """
+        changed = self.criterion_for(attribute)
+        fields = changed.model_dump()
+        if is_scored is not None:
+            fields["is_scored"] = is_scored
+        if weight_locked is not None:
+            fields["weight_locked"] = weight_locked
+        revalidated = Criterion.model_validate(fields)
+        return self.model_copy(
+            update={
+                "criteria": tuple(
+                    revalidated if criterion.attribute == changed.attribute else criterion
+                    for criterion in self.criteria
+                )
+            }
+        )
+
     def with_pillar_weight(
         self, pillar: PillarId | str, level: LevelId | str, weight: Decimal
     ) -> "CriteriaSet":

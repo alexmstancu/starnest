@@ -502,16 +502,28 @@ components:
       additionalProperties: true
       type: object
     CriterionInput:
-      description: 'Only the fields present are changed.
+      additionalProperties: false
+      description: 'Only the fields present are changed, and a field this endpoint
+        cannot change is refused.
 
 
-        minE2E sends one of them. The rest are declared because the contract declares
-        them, and an
+        **`extra="forbid"` is the point of this docstring''s own promise.** Pydantic
+        ignores unknown
 
-        endpoint that silently ignored a field a client sent would be worse than one
-        that refuses
+        fields by default, so `goal`, `normalisation_method`, `scale_anchors` and
+        the rest of
 
-        it.'
+        `CriterionInput` in `openapi.yaml` were accepted with a 200 and silently dropped
+        -- a client
+
+        could set a target band and be told it worked. The contract is deliberately
+        ahead of the
+
+        code (`CLAUDE.md`, "Two contracts"); what it must not do is let the code pretend
+        to have
+
+        caught up. Those fields arrive with the criterion editor; until then sending
+        one is a 422.'
       properties:
         is_scored:
           anyOf:

@@ -67,6 +67,17 @@ def scores_for(
         figure if isinstance(figure, PublishedFigure) else PublishedFigure(figure)
         for figure in figures
     )
+    # A band is a `fixed` scale, and the two relative methods cannot express one. `criteria/`
+    # refuses the combination where a criterion is declared; this refuses it again at the point
+    # of use, because the branches below are chosen in an order -- `percentile` first, the band
+    # only under `fixed` -- and an order is not a rule anybody can see. Before this, a
+    # `target_range` criterion normalising `as_is` was scored as a minimisation.
+    if goal is Goal.TARGET_RANGE and method is not NormalisationMethod.FIXED:
+        raise NormalisationError(
+            f"a target range is a band on a fixed scale, and `{method}` cannot draw one: "
+            "`percentile` scores by standing among the candidates, and `as_is` reads the "
+            "figure as a score already"
+        )
     if method is NormalisationMethod.PERCENTILE:
         return _by_standing(
             [figure.magnitude for figure in published],
