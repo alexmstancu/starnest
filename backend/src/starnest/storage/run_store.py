@@ -101,6 +101,15 @@ class PostgresRunStore(RunStore):
                     error_message=failure.reason,
                 )
 
+    async def add_spend(self, run: int, *, calls: int, cost_eur: Decimal) -> None:
+        async with acquire(self._pool) as connection:
+            await self._queries.add_run_spend(
+                connection,
+                data_acquisition_run=run,
+                llm_call_count=calls,
+                cost_eur=cost_eur,
+            )
+
     async def read_run(self, run: int) -> Run:
         async with acquire(self._pool) as connection:
             row = await self._queries.select_run(connection, data_acquisition_run=run)

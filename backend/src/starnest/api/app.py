@@ -26,7 +26,7 @@ from starnest.api.errors import domain_error_handler, refusal_handler
 from starnest.candidates import CandidateStore
 from starnest.criteria import CriteriaStore, MatchRuleResultStore
 from starnest.data import CatalogStore, ValueStore
-from starnest.data_acquisition import RunStore, SourceAdapter
+from starnest.data_acquisition import GateResearcher, RunStore, SourceAdapter
 from starnest.evaluation import EvaluationStore
 from starnest.household import HouseholdStore
 
@@ -44,6 +44,7 @@ def build_app(
     match_rule_results: MatchRuleResultStore,
     evaluation_store: EvaluationStore,
     adapters: tuple[SourceAdapter, ...] = (),
+    researcher: GateResearcher | None = None,
     display_name: str = "Starnest",
 ) -> FastAPI:
     """One application, wired to the stores it was given.
@@ -66,6 +67,9 @@ def build_app(
     app.state.match_rule_results = match_rule_results
     app.state.evaluations = evaluation_store
     app.state.adapters = adapters
+    # None is ordinary: the LLM path is off until a key and its prices are configured, and the
+    # research endpoint answers 501 rather than pretending there was nothing to research.
+    app.state.researcher = researcher
 
     for router in (
         settings.router,

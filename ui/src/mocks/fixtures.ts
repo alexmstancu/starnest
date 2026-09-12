@@ -553,7 +553,7 @@ export const DATA_SOURCES: DataSource[] = [
     reliability_tier: "declared",
   },
   {
-    id: "llm_search",
+    id: "llm",
     name: "LLM with web search",
     source_kind: "llm",
     default_priority: 90,

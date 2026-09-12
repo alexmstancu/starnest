@@ -15,7 +15,13 @@ from datetime import UTC, date, datetime
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from starnest.api.dependencies import Candidates, Catalog, MatchRuleResults
+from starnest.api.dependencies import (
+    Candidates,
+    Catalog,
+    Households,
+    MatchRuleResults,
+    Researcher,
+)
 from starnest.candidates import CandidateId, UnknownCandidateError
 from starnest.data import (
     MANUAL,
@@ -28,6 +34,7 @@ from starnest.data import (
     UnknownDataSourceError,
     UnknownMatchRuleError,
 )
+from starnest.data_acquisition import NoResearcherConfiguredError, research_gates
 
 router = APIRouter(tags=["rules"])
 
@@ -68,6 +75,24 @@ class MatchRuleResultBody(BaseModel):
     override_reason: str | None = None
     override_date: datetime | None = None
     citations: tuple[str, ...] = ()
+    is_proposal: bool = False
+
+
+class ResearchRequestBody(BaseModel):
+    """Which gates to research, and whether an uncapped spend is accepted (`reqs.md` 6.3)."""
+
+    level: str
+    match_rules: tuple[str, ...] | None = None
+    candidates: tuple[str, ...] | None = None
+    accept_uncapped_spend: bool = False
+
+
+class ResearchOutcomeBody(BaseModel):
+    proposals: tuple[MatchRuleResultBody, ...]
+    refusals: tuple[str, ...] = ()
+    cost_eur: float
+    calls: int
+    halted_on_spend_cap: bool
 
 
 class MatchRuleResultsBody(BaseModel):
@@ -174,6 +199,64 @@ async def list_match_rule_results(
     )
 
 
+@router.post(
+    "/match-rule-research", operation_id="researchMatchRules", response_model=ResearchOutcomeBody
+)
+async def research_match_rules(
+    body: ResearchRequestBody,
+    researcher: Researcher,
+    results: MatchRuleResults,
+    catalog: Catalog,
+    candidates: Candidates,
+    households: Households,
+) -> ResearchOutcomeBody:
+    """Ask a model to read the official pages about every gate nobody has confirmed.
+
+    `reqs.md` 6.10 use 3. **What comes back is a proposal**: stored with its sources, displayed,
+    and ruling nothing out until a human writes the same answer through `putMatchRuleResult`.
+
+    **It costs money**, so the cap applies as it does to a run: refused with 409 when none is set
+    unless this request accepts an uncapped one, and it halts at the cap keeping every proposal
+    already found. With no model configured there is nothing to ask, which is a 501 rather than
+    an empty success -- an empty success would read as "no gate needed researching".
+    """
+    if researcher is None:
+        raise NoResearcherConfiguredError(
+            "no model is configured, so no gate can be researched: set ANTHROPIC_API_KEY and "
+            "the three LLM prices (reqs.md 6.10)"
+        )
+
+    wanted_rules = [
+        rule
+        for rule in await catalog.read_match_rules()
+        if body.match_rules is None or str(rule.id) in set(body.match_rules)
+    ]
+    roster = [
+        candidate
+        for candidate in await candidates.read_candidates(level=body.level)
+        if body.candidates is None or str(candidate.id) in set(body.candidates)
+    ]
+    household = await households.get_household()
+
+    outcome = await research_gates(
+        researcher=researcher,
+        rules=wanted_rules,
+        candidates=roster,
+        citizenships=[str(citizenship) for citizenship in household.citizenships],
+        results=results,
+        already_answered=await results.read_results(),
+        spend_cap_eur=(await households.get_settings()).run_spend_cap_eur,
+        uncapped_is_accepted=body.accept_uncapped_spend,
+    )
+    return ResearchOutcomeBody(
+        proposals=tuple(_result_body(proposal) for proposal in outcome.proposals),
+        refusals=outcome.refusals,
+        cost_eur=float(outcome.cost_eur),
+        calls=outcome.calls,
+        halted_on_spend_cap=outcome.halted_on_spend_cap,
+    )
+
+
 @router.put(
     "/match-rule-results/{match_rule_id}/{candidate_id}",
     operation_id="putMatchRuleResult",
@@ -243,4 +326,7 @@ def _result_body(result: MatchRuleResult) -> MatchRuleResultBody:
         override_reason=result.override_reason,
         override_date=result.override_date,
         citations=result.citations,
+        # A model answered and nobody has confirmed it (`reqs.md` 6.10 use 3). Shown, so the
+        # screen can mark it as something to check rather than something decided.
+        is_proposal=result.is_proposal,
     )

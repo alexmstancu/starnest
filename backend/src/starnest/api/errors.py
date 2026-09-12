@@ -37,8 +37,11 @@ from starnest.data import (
     UnknownMatchRuleError,
 )
 from starnest.data_acquisition import (
+    NoResearcherConfiguredError,
     NothingToAskAgainError,
+    NothingToFetchError,
     NothingToRetryError,
+    SpendCapNotSetError,
     UnknownRunError,
 )
 from starnest.evaluation import NormalisationError, RankingError, UnknownEvaluationError
@@ -72,6 +75,9 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     CriteriaSetExistsError: _refusal(409, "criteria_set_exists"),
     NothingToRetryError: _refusal(409, "nothing_to_retry"),
     NothingToAskAgainError: _refusal(409, "nothing_to_ask_again"),
+    SpendCapNotSetError: _refusal(409, "spend_cap_not_set"),
+    NothingToFetchError: _refusal(409, "nothing_to_fetch"),
+    NoResearcherConfiguredError: _refusal(501, "llm_not_configured"),
     ManualEntryNotPermittedError: _refusal(409, "manual_entry_not_permitted"),
     InvalidManualValueError: _refusal(409, "invalid_value"),
     # 422 -- the request describes something the domain will not accept.

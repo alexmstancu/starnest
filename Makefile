@@ -90,6 +90,10 @@ test-storage:  ## Tests against a real PostgreSQL — the constraints ARE the be
 test-acceptance:  ## The HTTP contract, end to end against a live backend
 	cd $(BACKEND) && uv run pytest -m acceptance
 
+live-llm:  ## Ask the real Anthropic API one question. COSTS MONEY, never part of `make check`
+	@echo "This calls Anthropic and spends real money. Ctrl-C now if that is not what you meant."
+	cd $(BACKEND) && uv run pytest -m live_llm -s
+
 live:  ## Real third-party sources, on purpose: the fixtures still match, and Gate B's coverage holds
 	cd $(BACKEND) && uv run pytest -m live
 

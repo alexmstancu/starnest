@@ -128,6 +128,11 @@ class RecordingRunStore(RunStore):
     async def record_failures(self, run, failures) -> None:
         return None
 
+    async def add_spend(self, run: int, *, calls: int, cost_eur: Decimal) -> None:
+        """Nothing here charges: every source in this file is a stub. Implemented because the
+        port declares it."""
+        return None
+
     async def read_run(self, run: int) -> Run:
         return self._answers_with
 

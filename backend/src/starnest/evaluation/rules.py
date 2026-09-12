@@ -131,13 +131,19 @@ def gates_that_rule_out(
     researched yet, and treating it as a failure would exclude a candidate for what has not been
     looked into -- the opposite of what an unanswered question means.
 
+    **And only a confirmed answer.** A gate a model researched is a *proposal* until a human
+    writes it (`reqs.md` 6.10 use 3): it is displayed with its sources so somebody can check it,
+    and it rules nothing out in the meantime. Excluding a country because a model said so, with
+    nobody having looked, is the exact failure the whole inventory of permitted LLM uses exists
+    to prevent.
+
     A gate the criteria set does not enforce is not consulted: whether a gate counts is the
     set's preference, and the answer itself is a finding about the candidate (`arch.md` 3.6).
     """
     failed = {
         answer.match_rule: answer
         for answer in answers
-        if answer.match_result is MatchResult.NOT_MATCHING
+        if answer.match_result is MatchResult.NOT_MATCHING and not answer.is_proposal
     }
     return tuple(
         NonMatch(

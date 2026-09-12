@@ -14,16 +14,24 @@ that was never written is a gap nobody can see.
 screen say which pass produced it, and what makes "re-run just this" answerable later.
 """
 
+import logging
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from starnest.candidates import Candidate
 from starnest.data import Attribute, AttributeId, DataSourceId, StandIn, ValueStore
 from starnest.data_acquisition.adapter import Acquired, AcquisitionFailure, SourceAdapter
 from starnest.data_acquisition.run import acquire
+from starnest.data_acquisition.spend import CostMeter, refuse_unless_capped
 from starnest.data_acquisition.stand_in import stand_in
 from starnest.data_acquisition.store import Run, RunScope, RunStatus, RunStore
+
+_log = logging.getLogger("starnest.acquisition")
+"""The narrative behind a run record (`arch.md` 9.4): started, what each source produced, what
+failed and with what, and how it ended. **Never a full response body** -- a failure's reason is
+the source's own sentence, and the figures themselves are rows in `value`."""
 
 MANUAL = "user"
 """Who asked for it. One user running locally, so there is one answer until something else
@@ -40,6 +48,8 @@ async def execute_run(
     level: str,
     stand_ins: Sequence[StandIn] = (),
     triggered_by: str = MANUAL,
+    spend_cap_eur: Decimal | None = None,
+    uncapped_is_accepted: bool = False,
 ) -> Run:
     """Open a run, fetch everything in scope from every source, record what happened, close it.
 
@@ -57,6 +67,12 @@ async def execute_run(
     The run is closed `completed` even when items failed. A run completes for everything that
     works and reports the rest (`reqs.md` 6.4); `failed` is for a run that could not proceed at
     all, and treating a sparse indicator as a failed run would mean never completing one.
+
+    **Money, if any source charges** (`reqs.md` 6.3). Nothing is fetched until the cap question
+    is settled: a run that can spend and has no cap refuses unless this request accepts an
+    uncapped one. Afterwards the spend accumulates per source, and reaching the cap **halts**
+    the run -- in-flight work has already committed, everything fetched is kept, and the status
+    says why it stopped rather than pretending it finished.
     """
     answerable = [
         attribute
@@ -68,7 +84,27 @@ async def execute_run(
         candidates=tuple(str(candidate.id) for candidate in candidates),
         attributes=tuple(str(attribute.id) for attribute in answerable),
     )
+    if not answerable or not candidates:
+        raise NothingToFetchError(
+            "nothing in this run's scope can be answered by the sources it may ask: "
+            f"{len(candidates)} candidate(s) and {len(answerable)} answerable attribute(s)"
+        )
+    refuse_unless_capped(
+        costs_money=any(adapter.costs_money for adapter in adapters),
+        cap_eur=spend_cap_eur,
+        uncapped_is_accepted=uncapped_is_accepted,
+    )
+    meter = CostMeter(cap_eur=spend_cap_eur)
+
     run = await runs.start_run(scope, triggered_by=triggered_by)
+    _log.info(
+        "run %d started by %s over %d candidates and %d attributes, from %d source(s)",
+        run,
+        triggered_by,
+        len(candidates),
+        len(answerable),
+        len(adapters),
+    )
 
     failures: list[AcquisitionFailure] = []
     try:
@@ -81,6 +117,41 @@ async def execute_run(
                 run=run,
             )
             failures.extend(outcome.failures)
+            _log.info(
+                "run %d: %s answered %d figure(s) and failed on %d",
+                run,
+                adapter.data_source,
+                len(outcome.stored),
+                len(outcome.failures),
+            )
+            if outcome.calls or outcome.cost_eur:
+                meter.spent(cost_eur=outcome.cost_eur, calls=outcome.calls)
+                await runs.add_spend(run, calls=outcome.calls, cost_eur=outcome.cost_eur)
+                # Logged as it accumulates, so a halt is never a surprise (`arch.md` 9.4).
+                _log.info("run %d spend: %s", run, meter.describe())
+            if meter.is_exhausted:
+                # The cap is a stop, not a failure. What was fetched is stored and the status
+                # says why it stopped -- so a retry over the rest is the obvious next step.
+                _log.warning("run %d halted on its spend cap: %s", run, meter.describe())
+                await runs.record_failures(run, _item_by_item(failures, candidates))
+                await runs.finish_run(
+                    run,
+                    status=RunStatus.HALTED_ON_SPEND_CAP,
+                    finished_at=datetime.now(tz=UTC),
+                )
+                return await runs.read_run(run)
+
+            for failure in outcome.failures:
+                # The only way a parse failure is diagnosable (`arch.md` 9.4, 5.3): the source,
+                # the item, and the source's own words about it.
+                _log.warning(
+                    "run %d: %s could not answer %s for %s: %s",
+                    run,
+                    adapter.data_source,
+                    failure.attribute,
+                    failure.candidate or "any candidate",
+                    failure.reason,
+                )
         # Last, so a substitute's figure fetched in this same run is the one borrowed.
         borrowed = await stand_in(
             stand_ins=stand_ins,
@@ -94,12 +165,22 @@ async def execute_run(
         # The run stays visible as one that could not proceed, rather than as one still
         # running for ever. Re-raised because an unexpected failure is a bug, and a tidy
         # record of it is not a reason to swallow it.
+        _log.exception("run %d could not proceed and is recorded as failed", run)
         await runs.finish_run(run, status=RunStatus.FAILED, finished_at=datetime.now(tz=UTC))
         raise
 
     await runs.record_failures(run, _item_by_item(failures, candidates))
     await runs.finish_run(run, status=RunStatus.COMPLETED, finished_at=datetime.now(tz=UTC))
-    return await runs.read_run(run)
+    finished = await runs.read_run(run)
+    _log.info(
+        "run %d completed: %d of %d items answered, %d failed, %d unanswered",
+        run,
+        finished.items_completed,
+        finished.items_total,
+        finished.items_failed,
+        finished.items_unanswered,
+    )
+    return finished
 
 
 def _item_by_item(
@@ -122,6 +203,35 @@ def _item_by_item(
                 replace(failure, candidate=str(candidate.id)) for candidate in candidates
             )
     return itemised
+
+
+def asked_this_run(
+    adapters: Sequence[SourceAdapter], *, attributes_named: bool
+) -> tuple[SourceAdapter, ...]:
+    """The sources a run may ask, given whether it named the attributes it wants.
+
+    **A source that charges is asked only when the run names what it is for.** The free
+    structured sources answer whole indicators and a sweep of all of them costs nothing, so a
+    run over a level asks them all. The LLM path is per candidate and per attribute, so the same
+    sweep would be hundreds of paid calls nobody asked for -- it would halt on the cap, safely,
+    and having to explain that to somebody is not a design.
+
+    So an unscoped run is free by construction, and spending is something the household does on
+    purpose: name the attribute, and the paid source is asked about it.
+    """
+    if attributes_named:
+        return tuple(adapters)
+    return tuple(adapter for adapter in adapters if not adapter.costs_money)
+
+
+class NothingToFetchError(ValueError):
+    """A run whose sources, between them, can answer nothing in its scope.
+
+    Refused rather than opened: a run over an empty scope is a no-op recorded as though it were
+    work, and the run list is a record of what was actually asked. It happens for one honest
+    reason -- an unscoped run over a registry whose only source charges, which `asked_this_run`
+    declines to ask.
+    """
 
 
 class NothingToRetryError(ValueError):

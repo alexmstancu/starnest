@@ -109,6 +109,14 @@ class RunStore(ABC):
         """Attach what did not work, so a retry knows what to address."""
 
     @abstractmethod
+    async def add_spend(self, run: int, *, calls: int, cost_eur: Decimal) -> None:
+        """Accrue what a completed call cost (`reqs.md` 6.3).
+
+        An increment rather than a write of the total, because two sources may be in flight and
+        a read-modify-write would lose one of their costs.
+        """
+
+    @abstractmethod
     async def read_run(self, run: int) -> Run:
         """One run with its scope, progress, failures and unanswered items.
 

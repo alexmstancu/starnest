@@ -18,12 +18,26 @@ from starnest.data_acquisition.adapter import (
 from starnest.data_acquisition.declarations import declarations_that_disagree
 from starnest.data_acquisition.execution import (
     NothingToAskAgainError,
+    NothingToFetchError,
     NothingToRetryError,
     ask_again,
+    asked_this_run,
     execute_run,
     retry_run,
 )
+from starnest.data_acquisition.research import (
+    GateResearcher,
+    NoResearcherConfiguredError,
+    Researched,
+    ResearchOutcome,
+    research_gates,
+)
 from starnest.data_acquisition.run import RunOutcome, acquire
+from starnest.data_acquisition.spend import (
+    CostMeter,
+    SpendCapNotSetError,
+    refuse_unless_capped,
+)
 from starnest.data_acquisition.stand_in import STAND_IN, figures_standing_in, stand_in
 from starnest.data_acquisition.store import (
     Run,
@@ -38,21 +52,31 @@ __all__ = [
     "STAND_IN",
     "Acquired",
     "AcquisitionFailure",
+    "CostMeter",
+    "GateResearcher",
+    "NoResearcherConfiguredError",
     "NothingToAskAgainError",
+    "NothingToFetchError",
     "NothingToRetryError",
+    "ResearchOutcome",
+    "Researched",
     "Run",
     "RunOutcome",
     "RunScope",
     "RunStatus",
     "RunStore",
     "SourceAdapter",
+    "SpendCapNotSetError",
     "UnansweredItem",
     "UnknownRunError",
     "acquire",
     "ask_again",
+    "asked_this_run",
     "declarations_that_disagree",
     "execute_run",
     "figures_standing_in",
+    "refuse_unless_capped",
+    "research_gates",
     "retry_run",
     "stand_in",
 ]

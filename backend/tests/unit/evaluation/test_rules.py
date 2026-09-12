@@ -134,6 +134,37 @@ class TestACompoundRule:
         assert judgements_of(rules=[other], figures=FIGURES, level="country") == ((), ())
 
 
+class TestAProposalRulesNothingOut:
+    """A gate a model researched is a proposal until a human writes it (`reqs.md` 6.10 use 3).
+
+    **Excluding a country because a model said so, with nobody having looked, is the failure the
+    whole inventory of permitted LLM uses exists to prevent.** So the proposal is stored, shown
+    with its sources, and counted by nothing.
+    """
+
+    def test_a_proposed_failure_does_not_rule_the_candidate_out(self) -> None:
+        proposal = an_answer("uk_skilled_worker", MatchResult.NOT_MATCHING, "a model read a page")
+
+        assert (
+            gates_that_rule_out(
+                enforced=["uk_skilled_worker"],
+                answers=[proposal.model_copy(update={"is_proposal": True})],
+            )
+            == ()
+        )
+
+    def test_the_same_answer_confirmed_does_rule_it_out(self) -> None:
+        """The control, and the only difference between the two is who answered."""
+        confirmed = an_answer(
+            "uk_skilled_worker", MatchResult.NOT_MATCHING, "somebody read the page"
+        )
+
+        (non_match,) = gates_that_rule_out(enforced=["uk_skilled_worker"], answers=[confirmed])
+
+        assert str(non_match.match_rule) == "uk_skilled_worker"
+        assert non_match.reason_detail == "somebody read the page"
+
+
 def an_answer(rule: str, result: MatchResult, reason: str | None = None) -> MatchRuleResult:
     return MatchRuleResult(
         match_rule=rule,

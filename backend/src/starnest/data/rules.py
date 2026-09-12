@@ -124,6 +124,15 @@ class MatchRuleResult(BaseModel):
     reason: str | None = Field(
         default=None, description="Why, in words. What is displayed beside a candidate that is out."
     )
+    is_proposal: bool = Field(
+        default=False,
+        description=(
+            "Whether a model answered and nobody has confirmed it yet. An LLM may research a "
+            "gate and must always be confirmed by a human before it stands (`reqs.md` 6.10 use "
+            "3), so a proposal is displayed with its sources and rules nothing out. Confirming "
+            "it means writing the same answer as `manual`, which replaces it."
+        ),
+    )
     reference_period: ReferencePeriod | None = Field(
         default=None,
         description=(

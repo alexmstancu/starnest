@@ -437,6 +437,66 @@ paths:
       responses:
         "204": { description: Updated }
 
+  /match-rule-research:
+    post:
+      tags: [rules]
+      summary: Ask a model to research the gates nobody has confirmed
+      description: |
+        `reqs.md` 6.10 use 3. For every gate and candidate in scope that no human has answered,
+        a model reads the official pages and **proposes** a result with the pages it read. A
+        proposal rules nothing out: it is displayed with its sources, and confirming it means
+        writing the same answer through `putMatchRuleResult`, which replaces it.
+
+        **This costs money**, so the spend cap applies exactly as it does to a run: refused when
+        no cap is set unless `accept_uncapped_spend` says otherwise, and it stops at the cap
+        keeping every proposal already found.
+      operationId: researchMatchRules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [level]
+              properties:
+                level: { type: string }
+                match_rules:
+                  type: [array, "null"]
+                  items: { type: string }
+                  description: Null means every gate asked at the level.
+                candidates:
+                  type: [array, "null"]
+                  items: { type: string }
+                  description: Null means every candidate at the level.
+                accept_uncapped_spend: { type: boolean, default: false }
+      responses:
+        "200":
+          description: What it proposed, and what it cost
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [proposals, cost_eur, calls, halted_on_spend_cap]
+                properties:
+                  proposals:
+                    type: array
+                    items: { $ref: "#/components/schemas/MatchRuleResult" }
+                  refusals:
+                    type: array
+                    description: Gates the model answered without citing anything, so nothing was stored.
+                    items: { type: string }
+                  cost_eur: { type: number }
+                  calls: { type: integer }
+                  halted_on_spend_cap: { type: boolean }
+        "409":
+          description: The research would cost money and no spend cap is set.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "501":
+          description: No model is configured, so nothing can be researched.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+
   /match-rules:
     get:
       tags: [rules]
@@ -534,12 +594,19 @@ paths:
       requestBody:
         required: true
         content:
-          application/json: { schema: { $ref: "#/components/schemas/RunScope" } }
+          application/json: { schema: { $ref: "#/components/schemas/RunRequest" } }
       responses:
         "202":
           description: Accepted
           content:
             application/json: { schema: { $ref: "#/components/schemas/Run" } }
+        "409":
+          description: |
+            The run would ask a source that charges and no spend cap is set. Set
+            `run_spend_cap_eur`, or send `accept_uncapped_spend: true` to accept an uncapped
+            run — nothing invents a ceiling on the household's behalf (`reqs.md` 6.3).
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
 
   /data-acquisition-runs/plan:
     post:
@@ -1217,6 +1284,12 @@ components:
           properties:
             match_rule: { type: string }
             candidate: { type: string }
+            is_proposal:
+              type: boolean
+              description: >-
+                A model answered and nobody has confirmed it. A proposal is displayed with its
+                sources and rules nothing out (reqs.md 6.10 use 3); confirming it means writing
+                the same answer as `manual`, which replaces it.
             citations:
               type: array
               description: >-
@@ -1262,6 +1335,20 @@ components:
               attribute: { type: string }
               threshold_min: { type: [number, "null"] }
               threshold_max: { type: [number, "null"] }
+
+    RunRequest:
+      allOf:
+        - $ref: "#/components/schemas/RunScope"
+        - type: object
+          properties:
+            accept_uncapped_spend:
+              type: boolean
+              default: false
+              description: >-
+                Accept a run that can cost money while no spend cap is set. Not a setting and
+                not remembered: it is a sentence about this one run, because the alternative to
+                asking is inventing a ceiling (reqs.md 6.3). Ignored when a cap is set, and
+                meaningless when every source in the run is free.
 
     RunScope:
       type: object

@@ -16,10 +16,21 @@ a connection object, it does not connect -- which is what makes the composition 
 at all, and is asserted below rather than assumed.
 """
 
+from decimal import Decimal
+
 import pytest
 from fastapi import FastAPI
 
-from starnest.main import Environment, build, create_app
+from starnest.data import Attribute, RatioParameters, ValueType
+from starnest.main import (
+    Environment,
+    _the_fallback,
+    _the_model,
+    _the_paid_sources,
+    _the_researcher,
+    build,
+    create_app,
+)
 
 UNREACHABLE = "postgresql://nobody:nothing@127.0.0.1:1/no_such_database"
 """Port 1, a database nobody created. Anything that dials this fails loudly and immediately."""
@@ -145,3 +156,165 @@ def _routed_paths() -> set[str]:
     """
     _, app = build()
     return set(app.openapi()["paths"])
+
+
+class TestWiringTheLlmPath:
+    """**The path joins only when it is fully configured**, and says why when it does not.
+
+    Three states, all ordinary: no key at all (the MVP's figures come from structured sources), a
+    key with no prices (refused, because a run that cannot measure its own cost cannot be
+    capped), and both (registered). None of them is a startup failure -- refusing to boot over an
+    unused feature would be worse than saying so in the log.
+    """
+
+    def an_environment(self, **overrides: object) -> Environment:
+        fields: dict[str, object] = {"database_url": "postgresql://localhost/starnest"}
+        return Environment(**(fields | overrides))  # type: ignore[arg-type]
+
+    def test_no_key_means_no_model_and_a_line_in_the_log(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level("INFO", logger="starnest.boot"):
+            model = _the_model(self.an_environment())
+
+        assert model is None
+        assert "no anthropic api key" in caplog.text
+
+    def test_a_key_without_prices_is_refused_with_the_reason(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The refusal names the variables, because "the llm path is off" alone would send
+        somebody looking at the key."""
+        with caplog.at_level("WARNING", logger="starnest.boot"):
+            model = _the_model(self.an_environment(anthropic_api_key="sk-ant-not-a-real-key"))
+
+        assert model is None
+        assert "LLM_INPUT_EUR_PER_MTOK" in caplog.text
+
+    def test_a_key_and_every_price_makes_a_model(self) -> None:
+        model = _the_model(
+            self.an_environment(
+                anthropic_api_key="sk-ant-not-a-real-key",
+                llm_input_eur_per_mtok=Decimal(3),
+                llm_output_eur_per_mtok=Decimal(15),
+                llm_eur_per_web_search=Decimal("0.01"),
+            )
+        )
+
+        assert model is not None
+
+    def test_the_configured_path_registers_the_employers_source(self) -> None:
+        sources = _the_paid_sources(
+            self.an_environment(
+                anthropic_api_key="sk-ant-not-a-real-key",
+                llm_input_eur_per_mtok=Decimal(3),
+                llm_output_eur_per_mtok=Decimal(15),
+                llm_eur_per_web_search=Decimal("0.01"),
+            )
+        )
+
+        assert [str(source.data_source) for source in sources] == ["llm"]
+        assert all(source.costs_money for source in sources)
+
+    def test_an_unconfigured_path_registers_nothing(self) -> None:
+        assert _the_paid_sources(self.an_environment()) == ()
+
+    def test_the_researcher_follows_the_same_rule(self) -> None:
+        assert _the_researcher(self.an_environment()) is None
+        assert (
+            _the_researcher(
+                self.an_environment(
+                    anthropic_api_key="sk-ant-not-a-real-key",
+                    llm_input_eur_per_mtok=Decimal(3),
+                    llm_output_eur_per_mtok=Decimal(15),
+                    llm_eur_per_web_search=Decimal("0.01"),
+                )
+            )
+            is not None
+        )
+
+    def test_the_key_is_never_in_what_the_log_would_print(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """`arch.md` 9.4: never the API key. The boot log names the model, not the credential."""
+        with caplog.at_level("INFO", logger="starnest.boot"):
+            _the_paid_sources(
+                self.an_environment(
+                    anthropic_api_key="sk-ant-a-key-that-must-not-appear",
+                    llm_input_eur_per_mtok=Decimal(3),
+                    llm_output_eur_per_mtok=Decimal(15),
+                    llm_eur_per_web_search=Decimal("0.01"),
+                )
+            )
+
+        assert "sk-ant-a-key-that-must-not-appear" not in caplog.text
+
+
+class TestTheFallbackDeclaration:
+    """ "No dataset covers this" is literally "no adapter declares it" (`reqs.md` 6.10 use 1).
+
+    Derived from the registry rather than kept by hand, because a hand-kept list drifts the first
+    time an adapter gains an attribute -- and the drift would be silent, with a model quietly
+    answering something a real source had started publishing.
+    """
+
+    async def test_it_declares_the_scoreable_attributes_nothing_else_answers(self) -> None:
+        environment = Environment(
+            database_url="postgresql://localhost/starnest",
+            anthropic_api_key="sk-ant-not-a-real-key",
+            llm_input_eur_per_mtok=Decimal(3),
+            llm_output_eur_per_mtok=Decimal(15),
+            llm_eur_per_web_search=Decimal("0.01"),
+        )
+
+        (fallback,) = await _the_fallback(environment, _ACatalogOfThree(), [_AnsweringOne()])
+
+        assert set(fallback.attributes) == {"country.uncovered_ratio"}
+
+    async def test_with_no_model_there_is_no_fallback(self) -> None:
+        environment = Environment(database_url="postgresql://localhost/starnest")
+
+        assert await _the_fallback(environment, _ACatalogOfThree(), []) == ()
+
+
+class _AnsweringOne:
+    """A source that covers one of the catalog's three attributes."""
+
+    @property
+    def data_source(self) -> str:
+        return "eurostat"
+
+    @property
+    def attributes(self) -> tuple[str, ...]:
+        return ("country.covered_ratio",)
+
+
+class _ACatalogOfThree:
+    """Three attributes: one covered, one not, one that carries no magnitude."""
+
+    async def read_attributes(self, level: str | None = None) -> list[Attribute]:
+        return [
+            Attribute(
+                id="country.covered_ratio",
+                name="Covered",
+                level="country",
+                value_type=ValueType.RATIO,
+                pillar="housing",
+                ratio_parameters=RatioParameters(basis="households"),
+            ),
+            Attribute(
+                id="country.uncovered_ratio",
+                name="Uncovered",
+                level="country",
+                value_type=ValueType.RATIO,
+                pillar="housing",
+                ratio_parameters=RatioParameters(basis="households"),
+            ),
+            Attribute(
+                id="country.climate_zone",
+                name="A label set, which carries no magnitude",
+                level="country",
+                value_type=ValueType.LABEL_SET,
+                pillar="climate",
+            ),
+        ]

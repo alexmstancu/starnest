@@ -15,6 +15,7 @@ thing that can be judged before any figure exists.
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from decimal import Decimal
 
 from starnest.candidates import Candidate
 from starnest.data import Attribute, Value, ValueStore
@@ -27,6 +28,8 @@ class RunOutcome:
 
     stored: tuple[Value, ...]
     failures: tuple[AcquisitionFailure, ...]
+    cost_eur: Decimal = Decimal(0)
+    calls: int = 0
 
     @property
     def attempted(self) -> int:
@@ -72,4 +75,9 @@ async def acquire(
     failures = tuple(
         replace(failure, data_source=adapter.data_source) for failure in acquired.failures
     )
-    return RunOutcome(stored=tuple(stored), failures=failures)
+    return RunOutcome(
+        stored=tuple(stored),
+        failures=failures,
+        cost_eur=acquired.cost_eur,
+        calls=acquired.calls,
+    )

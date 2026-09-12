@@ -13,7 +13,7 @@ from fastapi import Depends, Request
 from starnest.candidates import CandidateStore
 from starnest.criteria import CriteriaStore, MatchRuleResultStore
 from starnest.data import CatalogStore, ValueStore
-from starnest.data_acquisition import RunStore, SourceAdapter
+from starnest.data_acquisition import GateResearcher, RunStore, SourceAdapter
 from starnest.evaluation import EvaluationStore
 from starnest.household import HouseholdStore
 
@@ -50,6 +50,15 @@ def _runs(request: Request) -> RunStore:
     return request.app.state.runs
 
 
+def _researcher(request: Request) -> GateResearcher | None:
+    """Whatever can research a gate, or nothing at all.
+
+    `None` is an ordinary state and the endpoint says so with a 501: the MVP's figures come from
+    structured sources, and the LLM path is off until a key and its prices are configured.
+    """
+    return getattr(request.app.state, "researcher", None)
+
+
 def _adapters(request: Request) -> tuple[SourceAdapter, ...]:
     """Every source this application can fetch from.
 
@@ -69,3 +78,4 @@ Values = Annotated[ValueStore, Depends(_values)]
 Catalog = Annotated[CatalogStore, Depends(_catalog)]
 Runs = Annotated[RunStore, Depends(_runs)]
 Adapters = Annotated[tuple[SourceAdapter, ...], Depends(_adapters)]
+Researcher = Annotated["GateResearcher | None", Depends(_researcher)]

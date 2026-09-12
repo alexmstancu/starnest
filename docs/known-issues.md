@@ -258,3 +258,15 @@ walking `openapi.implemented.yaml` against the suite), and the conformance suite
 when a served read has no case. Coverage after the audit: **98.0% of statements** backend-wide,
 every package above its 85% floor, and 177 interface tests with `src/routes`, `src/api` and
 `src/shell` above 95%.
+
+---
+
+## Found building P7 — 2026-09-12
+
+| # | Finding | State |
+|---|---|---|
+| **P25** | **`reqs.md` 6.10 and 7.1 disagreed about what `international_employers` is.** 6.10's inventory line called it "an `AssignedScore` plus the employer list behind it"; 7.1's catalog table and the database both say `LabelSet` -- named firms | **Fixed 2026-09-12 (Q221).** The catalog wins, as it did for Q215, and 6.10 is corrected. Named firms are checkable and a score is not: a list can be looked up, "7 out of 10" cannot, and the household can strike a name it disagrees with |
+| **P26** | **The seeded LLM source is `llm`, and three new modules wrote `llm_search`.** Caught by a foreign key on the first stored proposal -- the catalog refused a source that does not exist | **Fixed 2026-09-12.** An honest catch: the constraint did exactly what it is for, at the first write rather than in a report |
+| **P27** | **A run whose sources can answer nothing crashed instead of refusing.** With a paid source as the only one, an unscoped run asks nobody (`asked_this_run`), leaving an empty scope -- and `start_run` refuses an unresolved scope with a `ValueError` that reached the client as a 500 | **Fixed 2026-09-12.** `NothingToFetchError`, a 409 `nothing_to_fetch`: a run over an empty scope is a no-op recorded as though it were work, and the run list is a record of what was actually asked |
+| **P28** | **Gate research spends money that no run record carries.** A run row is a pass that writes *values* (`reqs.md` 3.8), and research writes gate answers, so its cost is reported in the response and logged but not accumulated anywhere durable. The cap still applies per request, so nothing is unbounded -- but "what has this month cost?" cannot be answered from the database | **Open, low.** Either research becomes a kind of run (schema and contract work), or a spend ledger exists beside runs. Worth deciding when there is a second paid source |
+| **P29** | **The interface has no surface for a proposal.** `POST /v1/match-rule-research` stores proposals and `GET /v1/match-rule-results` returns them with `is_proposal`, and nothing renders them: confirming one means calling the API by hand. P6 closed before the LLM path existed, so no screen was ever asked for | **Open, by scope.** The backend half is complete and tested; the screen is the first post-Gate-D interface task |

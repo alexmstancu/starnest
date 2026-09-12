@@ -17,6 +17,7 @@ downstream is only honest if this is (`reqs.md` 5.3).
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 from starnest.candidates import Candidate
 from starnest.data import Attribute, AttributeId, DataSourceId, Value
@@ -41,13 +42,26 @@ class AcquisitionFailure:
 
 @dataclass(frozen=True)
 class Acquired:
-    """What one fetch produced: the figures it found, and what it could not do."""
+    """What one fetch produced: the figures it found, what it could not do, and what it cost.
+
+    **The cost is here because the adapter is the only thing that knows it.** Six of the seven
+    shipped sources are free and leave it zero; the LLM path charges per call, and a run has to
+    accumulate that as it happens or a spend cap cannot halt anything (`reqs.md` 6.3).
+    """
 
     values: tuple[Value, ...] = ()
     failures: tuple[AcquisitionFailure, ...] = field(default=())
+    cost_eur: Decimal = Decimal(0)
+    calls: int = 0
+    """How many paid calls it took. Zero for a free source, which is every structured one."""
 
     def __add__(self, other: "Acquired") -> "Acquired":
-        return Acquired(self.values + other.values, self.failures + other.failures)
+        return Acquired(
+            self.values + other.values,
+            self.failures + other.failures,
+            self.cost_eur + other.cost_eur,
+            self.calls + other.calls,
+        )
 
 
 class SourceAdapter(ABC):
@@ -57,6 +71,17 @@ class SourceAdapter(ABC):
     @abstractmethod
     def data_source(self) -> DataSourceId:
         """Which `data_source` row every value from this adapter names as its origin."""
+
+    @property
+    def costs_money(self) -> bool:
+        """Whether asking this source can cost anything.
+
+        False by default, because every structured source is free and a cap means nothing to
+        them -- and because a source that charges should have to say so rather than be assumed
+        harmless. What it changes: a run including such a source refuses to start with no spend
+        cap set, unless the request accepts an uncapped run (`spend.py`).
+        """
+        return False
 
     @property
     @abstractmethod

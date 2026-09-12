@@ -19,6 +19,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,7 +27,12 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from starnest.data import CatalogStore
-from starnest.data_acquisition import RunStore, SourceAdapter, declarations_that_disagree
+from starnest.data_acquisition import (
+    GateResearcher,
+    RunStore,
+    SourceAdapter,
+    declarations_that_disagree,
+)
 from starnest.storage import refuse_if_behind
 
 if TYPE_CHECKING:
@@ -62,6 +68,24 @@ class Environment(BaseSettings):
         description="Only needed for the LLM acquisition path (reqs.md 6.10). Absent is "
         "valid: the MVP is country-level and uses it for one attribute.",
     )
+    llm_model: str = Field(
+        default="claude-sonnet-5",
+        description="Which model the LLM path asks (reqs.md 6.10). A name rather than a "
+        "hardcoded constant, because the best model for the money changes.",
+    )
+    llm_input_eur_per_mtok: Decimal | None = Field(
+        default=None,
+        description="Euro per million input tokens, as Anthropic publishes it. **No default**: "
+        "a run that cannot measure its own cost cannot be capped, and a default of zero would "
+        "make the cap ornamental (reqs.md 6.3).",
+    )
+    llm_output_eur_per_mtok: Decimal | None = Field(
+        default=None, description="Euro per million output tokens."
+    )
+    llm_eur_per_web_search: Decimal | None = Field(
+        default=None, description="Euro per web search the model performs."
+    )
+
     port: int = 8000
     host: str = Field(
         default="127.0.0.1",
@@ -120,7 +144,7 @@ def build() -> tuple[Environment, "FastAPI"]:
 
     catalog = PostgresCatalogStore(pool)
     runs = PostgresRunStore(pool)
-    adapters = _the_sources(catalog)
+    adapters = _the_sources(catalog, environment)
     app = build_app(
         households=PostgresHouseholdStore(pool),
         criteria_store=PostgresCriteriaStore(pool),
@@ -133,6 +157,9 @@ def build() -> tuple[Environment, "FastAPI"]:
         # The one place a concrete source is named. `api/` holds only the interface, which is
         # what lets the acceptance suite drive the same endpoints against a stub.
         adapters=adapters,
+        # The gate researcher is the third permitted LLM use and is not a `SourceAdapter`: it
+        # produces a proposed answer to a judgement, not a figure (`reqs.md` 6.10 use 3).
+        researcher=_the_researcher(environment),
         display_name=environment.app_display_name,
     )
 
@@ -145,6 +172,12 @@ def build() -> tuple[Environment, "FastAPI"]:
             runs=runs,
             adapters=adapters,
         )
+        # **The last source joins here, because its declaration is derived.** The fallback asks
+        # a model about attributes *no other source covers*, and which those are is a fact about
+        # the catalog and the registry together -- so it cannot be built before a connection
+        # exists. It is asked only by a run that names its attributes (`asked_this_run`), so a
+        # sweep of a level stays free.
+        app.state.adapters = (*adapters, *await _the_fallback(environment, catalog, adapters))
 
     @app.on_event("shutdown")
     async def _close_the_pool() -> None:
@@ -226,11 +259,16 @@ async def start_up(
     )
 
 
-def _the_sources(catalog: object) -> tuple:
+def _the_sources(catalog: object, environment: "Environment") -> tuple:
     """Every source, constructed. The registry the startup check validates.
 
     Separate from `build` so that the check has something to be handed rather than something to
     reach into, and so that "which sources does this application have?" is one function.
+
+    **The LLM path joins only when it is fully configured** -- a key and all three prices. A
+    missing key is an ordinary state (the MVP's figures come from structured sources), and a key
+    without prices is refused rather than run blind, because a run that cannot measure its own
+    cost cannot be capped.
     """
     import httpx
 
@@ -250,6 +288,96 @@ def _the_sources(catalog: object) -> tuple:
         TaxWedgeEstimateAdapter(httpx.AsyncClient(timeout=60)),
         # Reads the places it measures at from the catalog (D4), so it holds the store.
         OpenMeteoAdapter(httpx.AsyncClient(timeout=120), catalog),  # type: ignore[arg-type]
+        *_the_paid_sources(environment),
+    )
+
+
+def _the_researcher(environment: "Environment") -> GateResearcher | None:
+    """The model, as something that can read the official pages about a gate, or nothing."""
+    llm = _the_model(environment)
+    if llm is None:
+        return None
+
+    from starnest.data_sources.llm import LlmGateResearcher
+
+    return LlmGateResearcher(llm)  # type: ignore[arg-type]
+
+
+async def _the_fallback(
+    environment: "Environment", catalog: CatalogStore, registered: Sequence[SourceAdapter]
+) -> tuple:
+    """The LLM fallback, declaring every scoreable attribute nothing else answers.
+
+    "No dataset covers this" is literally "no adapter declares it" (`reqs.md` 6.10 use 1), so
+    the set is derived from the registry rather than kept by hand -- a hand-kept list would drift
+    the first time an adapter gained an attribute.
+    """
+    llm = _the_model(environment)
+    if llm is None:
+        return ()
+
+    from starnest.data_sources.llm import LlmFallbackAdapter
+    from starnest.data_sources.llm.fallback import ANSWERABLE
+
+    covered = {attribute for adapter in registered for attribute in adapter.attributes}
+    uncovered = tuple(
+        attribute.id
+        for attribute in await catalog.read_attributes()
+        if attribute.id not in covered
+        and attribute.value_type in ANSWERABLE
+        and not attribute.is_retired
+    )
+    if not uncovered:
+        return ()
+    logging.getLogger("starnest.boot").info(
+        "the llm may be asked about %d attribute(s) no other source covers", len(uncovered)
+    )
+    return (LlmFallbackAdapter(llm, answers=uncovered),)  # type: ignore[arg-type]
+
+
+def _the_paid_sources(environment: "Environment") -> tuple:
+    """The LLM adapters, or nothing at all, with the reason logged either way."""
+    boot = logging.getLogger("starnest.boot")
+    llm = _the_model(environment)
+    if llm is None:
+        return ()
+    from starnest.data_sources.llm import LlmEmployersAdapter
+
+    boot.info("the llm path is configured: model %s", environment.llm_model)
+    return (LlmEmployersAdapter(llm),)
+
+
+def _the_model(environment: "Environment") -> object | None:
+    """The model, priced, or `None` with the reason said out loud."""
+    boot = logging.getLogger("starnest.boot")
+    if not environment.anthropic_api_key:
+        boot.info("no anthropic api key: the llm path is off, and every other source is free")
+        return None
+
+    from anthropic import AsyncAnthropic
+
+    from starnest.data_sources.llm import (
+        LlmPricing,
+        LlmWithSearch,
+        PricingNotConfiguredError,
+    )
+
+    try:
+        pricing = LlmPricing.configured(
+            input_eur_per_million_tokens=environment.llm_input_eur_per_mtok,
+            output_eur_per_million_tokens=environment.llm_output_eur_per_mtok,
+            eur_per_web_search=environment.llm_eur_per_web_search,
+        )
+    except PricingNotConfiguredError as unpriced:
+        # Not a startup failure: the application runs perfectly well without the LLM path, and
+        # refusing to boot over an unused feature would be worse than saying so.
+        boot.warning("the llm path is off: %s", unpriced)
+        return None
+
+    return LlmWithSearch(
+        AsyncAnthropic(api_key=environment.anthropic_api_key).messages,
+        model=environment.llm_model,
+        pricing=pricing,
     )
 
 

@@ -80,9 +80,15 @@ A_SECOND_SOURCE_ANSWERS = "country.broadband_coverage"
 
 @asynccontextmanager
 async def an_api(
-    database_url: str, adapters: tuple[SourceAdapter, ...]
+    database_url: str,
+    adapters: tuple[SourceAdapter, ...],
+    researcher: object | None = None,
 ) -> AsyncIterator[httpx.AsyncClient]:
-    """The application over the sources given, emptied of what the test wrote when it closes."""
+    """The application over the sources given, emptied of what the test wrote when it closes.
+
+    `researcher` is the gate-research seam (`reqs.md` 6.10 use 3). `None` is the shipped state --
+    no model configured -- and the endpoint answers 501 rather than an empty success.
+    """
     async with AsyncConnectionPool(database_url, min_size=1, max_size=4, open=False) as pool:
         await pool.open(wait=True)
         app = build_app(
@@ -95,6 +101,7 @@ async def an_api(
             match_rule_results=PostgresMatchRuleResultStore(pool),
             evaluation_store=PostgresEvaluationStore(pool),
             adapters=adapters,
+            researcher=researcher,  # type: ignore[arg-type]
         )
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://api") as client:
@@ -278,6 +285,7 @@ def a_stub_source(
     silent_on: tuple[str, ...] | None = None,
     unreachable: bool = False,
     no_row_for: tuple[str, ...] = (),
+    charges: bool = False,
 ) -> SourceAdapter:
     """A source that answers instantly with figures the test controls.
 
@@ -318,6 +326,12 @@ def a_stub_source(
         @property
         def data_source(self) -> DataSourceId:
             return DataSourceId(data_source)
+
+        @property
+        def costs_money(self) -> bool:
+            """Free unless a test says otherwise, as every structured source is. A run including
+            a charging source refuses without a spend cap (`reqs.md` 6.3)."""
+            return charges
 
         @property
         def attributes(self) -> tuple:

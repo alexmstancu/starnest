@@ -972,6 +972,10 @@ components:
         data_source:
           title: Data Source
           type: string
+        is_proposal:
+          default: false
+          title: Is Proposal
+          type: boolean
         match_result:
           title: Match Result
           type: string
@@ -1257,6 +1261,64 @@ components:
       - name
       title: RenameBody
       type: object
+    ResearchOutcomeBody:
+      properties:
+        calls:
+          title: Calls
+          type: integer
+        cost_eur:
+          title: Cost Eur
+          type: number
+        halted_on_spend_cap:
+          title: Halted On Spend Cap
+          type: boolean
+        proposals:
+          items:
+            $ref: '#/components/schemas/MatchRuleResultBody'
+          title: Proposals
+          type: array
+        refusals:
+          default: []
+          items:
+            type: string
+          title: Refusals
+          type: array
+      required:
+      - proposals
+      - cost_eur
+      - calls
+      - halted_on_spend_cap
+      title: ResearchOutcomeBody
+      type: object
+    ResearchRequestBody:
+      description: Which gates to research, and whether an uncapped spend is accepted
+        (`reqs.md` 6.3).
+      properties:
+        accept_uncapped_spend:
+          default: false
+          title: Accept Uncapped Spend
+          type: boolean
+        candidates:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Candidates
+        level:
+          title: Level
+          type: string
+        match_rules:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Match Rules
+      required:
+      - level
+      title: ResearchRequestBody
+      type: object
     RetryBody:
       description: Which part of the run to go over again. Absent means the failures,
         as it always did.
@@ -1298,6 +1360,41 @@ components:
       - llm_call_count
       - estimated_cost_eur
       title: RunPlanBody
+      type: object
+    RunRequestBody:
+      description: 'A scope, and whether an uncapped run is accepted (`reqs.md` 6.3).
+
+
+        **Per request, never stored.** A cap is a setting; accepting the absence of
+        one is a
+
+        sentence about this one run. Remembering it would turn a deliberate act into
+        a default.'
+      properties:
+        accept_uncapped_spend:
+          default: false
+          title: Accept Uncapped Spend
+          type: boolean
+        attributes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Attributes
+        candidates:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Candidates
+        level:
+          title: Level
+          type: string
+      required:
+      - level
+      title: RunRequestBody
       type: object
     RunScopeBody:
       description: What a run is asked to cover. Null means everything at the level.
@@ -2264,6 +2361,15 @@ paths:
       description: 'Start a run, and answer with it.
 
 
+        **Money first, if any source charges.** A run that can spend with no cap set
+        is refused
+
+        with 409 unless the request accepts an uncapped one -- nothing here invents
+        a ceiling
+
+        (`reqs.md` 6.3).
+
+
         **It runs inline today, and the response carries a finished run.** 202 is
         still right --
 
@@ -2292,7 +2398,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RunScopeBody'
+              $ref: '#/components/schemas/RunRequestBody'
         required: true
       responses:
         '202':
@@ -2693,6 +2799,51 @@ paths:
       summary: List Levels
       tags:
       - catalog
+  /v1/match-rule-research:
+    post:
+      description: 'Ask a model to read the official pages about every gate nobody
+        has confirmed.
+
+
+        `reqs.md` 6.10 use 3. **What comes back is a proposal**: stored with its sources,
+        displayed,
+
+        and ruling nothing out until a human writes the same answer through `putMatchRuleResult`.
+
+
+        **It costs money**, so the cap applies as it does to a run: refused with 409
+        when none is set
+
+        unless this request accepts an uncapped one, and it halts at the cap keeping
+        every proposal
+
+        already found. With no model configured there is nothing to ask, which is
+        a 501 rather than
+
+        an empty success -- an empty success would read as "no gate needed researching".'
+      operationId: researchMatchRules
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResearchRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResearchOutcomeBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Research Match Rules
+      tags:
+      - rules
   /v1/match-rule-results:
     get:
       operationId: listMatchRuleResults

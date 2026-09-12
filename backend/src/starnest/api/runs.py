@@ -19,8 +19,21 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from starnest.api.bodies import ContractBody
-from starnest.api.dependencies import Adapters, Candidates, Catalog, Runs, Values
-from starnest.data_acquisition import Run, ask_again, execute_run, retry_run
+from starnest.api.dependencies import (
+    Adapters,
+    Candidates,
+    Catalog,
+    Households,
+    Runs,
+    Values,
+)
+from starnest.data_acquisition import (
+    Run,
+    ask_again,
+    asked_this_run,
+    execute_run,
+    retry_run,
+)
 
 router = APIRouter(tags=["acquisition"])
 
@@ -31,6 +44,16 @@ class RunScopeBody(BaseModel):
     level: str
     candidates: tuple[str, ...] | None = None
     attributes: tuple[str, ...] | None = None
+
+
+class RunRequestBody(RunScopeBody):
+    """A scope, and whether an uncapped run is accepted (`reqs.md` 6.3).
+
+    **Per request, never stored.** A cap is a setting; accepting the absence of one is a
+    sentence about this one run. Remembering it would turn a deliberate act into a default.
+    """
+
+    accept_uncapped_spend: bool = False
 
 
 class BySourceBody(BaseModel):
@@ -115,12 +138,15 @@ async def plan_run(
     roster = await _candidates_in(scope, candidates)
     wanted = await _attributes_in(scope, catalog)
 
+    # The plan counts the same sources the run would ask, so an estimate for an unscoped run
+    # does not promise paid work that would not happen.
+    planned = asked_this_run(adapters, attributes_named=scope.attributes is not None)
     by_source = []
-    for adapter in adapters:
+    for adapter in planned:
         items = len([a for a in wanted if a.id in adapter.attributes]) * len(roster)
         if items:
             by_source.append(BySourceBody(data_source=str(adapter.data_source), items=items))
-    answerable = [a for a in wanted if any(a.id in adapter.attributes for adapter in adapters)]
+    answerable = [a for a in wanted if any(a.id in adapter.attributes for adapter in planned)]
 
     return RunPlanBody(
         items_total=len(answerable) * len(roster),
@@ -137,14 +163,19 @@ async def plan_run(
     "/data-acquisition-runs", operation_id="startRun", status_code=202, response_model=RunBody
 )
 async def start_run(
-    scope: RunScopeBody,
+    scope: RunRequestBody,
     adapters: Adapters,
     candidates: Candidates,
     catalog: Catalog,
     values: Values,
     runs: Runs,
+    households: Households,
 ) -> RunBody:
     """Start a run, and answer with it.
+
+    **Money first, if any source charges.** A run that can spend with no cap set is refused
+    with 409 unless the request accepts an uncapped one -- nothing here invents a ceiling
+    (`reqs.md` 6.3).
 
     **It runs inline today, and the response carries a finished run.** 202 is still right --
     the work was accepted and the client polls the id either way -- but claiming the run is in
@@ -158,15 +189,24 @@ async def start_run(
     """
     roster = await _candidates_in(scope, candidates)
     wanted = await _attributes_in(scope, catalog)
+    # A source that charges is asked only when the run names the attributes it wants: a sweep
+    # over a level asks the free sources for whole indicators, and asking a paid one the same
+    # way would be hundreds of calls nobody chose (`asked_this_run`).
+    asked = asked_this_run(adapters, attributes_named=scope.attributes is not None)
+    # The cap is a setting the household edits (`reqs.md` 3.10) and is read per run, so a cap
+    # set after a refusal takes effect on the next request rather than at the next restart.
+    cap = (await households.get_settings()).run_spend_cap_eur
 
     started = await execute_run(
-        adapters=adapters,
+        adapters=asked,
         attributes=wanted,
         candidates=roster,
         values=values,
         runs=runs,
         level=scope.level,
         stand_ins=await catalog.read_stand_ins(level=scope.level),
+        spend_cap_eur=cap,
+        uncapped_is_accepted=scope.accept_uncapped_spend,
     )
     return _run_body(started)
 

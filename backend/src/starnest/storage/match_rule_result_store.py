@@ -46,6 +46,9 @@ class PostgresMatchRuleResultStore(MatchRuleResultStore):
                 data_source=DataSourceId(row.data_source),
                 retrieval_date=row.retrieval_date,
                 reason=row.reason,
+                # The query answers it from the source catalog: an answer a model gave is a
+                # proposal until a human writes the same answer as `manual`.
+                is_proposal=bool(row.is_proposal),
                 reference_period=(
                     ReferencePeriod(start=row.reference_period_start, end=row.reference_period_end)
                     if row.reference_period_start is not None

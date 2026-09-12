@@ -579,6 +579,13 @@ SELECT r.match_rule,
        r.retrieval_date,
        r.override_reason,
        r.override_date,
+       -- Whether this answer is a PROPOSAL rather than a finding. An LLM may research a gate
+       -- and must always be confirmed by a human before it stands (reqs.md 6.10 use 3), so the
+       -- kind of source that answered decides whether the ranking may act on it. Read from the
+       -- source catalog rather than stored on the row: "is this source a model?" is a fact
+       -- about the source, and two places recording it is one place too many.
+       (SELECT s.source_kind = 'llm' FROM data_source AS s WHERE s.id = r.data_source)
+           AS is_proposal,
        COALESCE(
            (SELECT jsonb_agg(citation.url ORDER BY citation.url)
             FROM   match_rule_result_citation AS citation

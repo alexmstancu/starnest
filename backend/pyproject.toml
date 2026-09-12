@@ -53,11 +53,13 @@ pythonpath = ["src"]
 asyncio_mode = "auto"
 # Coverage is deliberately NOT in addopts. A bare `pytest` stays fast during development;
 # `just coverage` and `just check` are what enforce the bar.
-addopts = "-q --strict-markers"
+# `live_llm` is excluded even from `make live`: every other live test costs nothing but time.
+addopts = "-q --strict-markers -m 'not live_llm'"
 markers = [
     "storage: needs a real PostgreSQL. The schema constraints are the behaviour under test (arch.md 6.7)",
     "acceptance: speaks HTTP to a live backend",
     "live: calls a real third-party source. Never run in the normal suite -- a failure here means the source was slow, not that we broke",
+    "live_llm: calls Anthropic and SPENDS MONEY. Only `make live-llm` runs it, and only when you ask",
 ]
 
 
