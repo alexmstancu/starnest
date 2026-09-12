@@ -209,6 +209,27 @@ Module layout, all under `backend/src/starnest/` (`arch.md` 6.1) — **named aft
 
 **The interface is built for behaviour first, appearance later.** Until the application is code-complete, `ui/` work goes into what the screens *do* — state, data flow, error handling, accessibility semantics — and not into how they look. There is no visual design yet and inventing one costs twice: once to write and once to undo. Keep the visuals shallow and easy to swap: semantic HTML, roles and labels that a test can find, and styling confined to `styles.css` rather than spread through components. A considered design pass happens with Claude Design once the behaviour is settled.
 
+**The interface's folders are the product's shape, not a filing cabinet.** `ui/src/routes/`
+holds one folder per screen -- `compare/`, `configure/`, `rank/`, `run/` -- and each keeps what
+only it uses; `configure/` holds one folder per panel. **Grouped by feature, never by kind:**
+there is no `components/`, `hooks/` or `utils/` directory, because a panel's markup, its hook
+and its pure module are one family and splitting them by file type would scatter every panel
+across three places. **Shared code lives at the nearest common ancestor** -- `weights.ts` sits in
+`configure/` because two panels read it. **No `index.ts` barrel files**: they hide which file a
+symbol came from and are the usual way an import cycle appears. `src/app/architecture.test.ts`
+fails on a barrel, on a loose file directly under `routes/`, and on a directory the layering
+does not name.
+
+**Markup and behaviour live in different files.** A `.tsx` file renders; what it renders is
+decided in a `useX.ts` hook beside it, and text becomes a number in a plain module with no React
+in it (`householdForm.ts`, `settingsForm.ts`, `weights.ts`). This is React's own answer -- custom
+hooks -- not the older container/presentational split, which stopped being recommended when
+hooks arrived. **Enforced narrowly**: a `.tsx` under `routes/` or `shell/` may not call `Number`,
+`parseInt`, `parseFloat` or `toFixed`. Local UI state stays in the component, because that is
+where React puts it. **The validation in those modules is parsing and presentational guards, not
+domain rules** -- the API remains the authority, and its refusal is still what appears when the
+two disagree.
+
 **The interface is a separate client, not a layer.** It reaches the backend only over HTTP, shares no code with it — not even DTO definitions — and appears nowhere in its dependency graph. The acceptance suite is another client of the same contract, which is what makes the API a real boundary rather than an intention.
 
 **The dependency rule is enforceable, not aspirational:** no policy module may import a plugin, the import table in `arch.md` 6.1 is exhaustive, and **`data/` may never import `criteria/`, `household/` or `evaluation/`** — that last one is the objective/subjective invariant expressed as imports.

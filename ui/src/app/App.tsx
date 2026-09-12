@@ -1,10 +1,10 @@
 import { useEffect, type ComponentType } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAppConfig } from "../config/AppConfigContext";
-import { CompareScreen } from "../routes/CompareScreen";
-import { ConfigureScreen } from "../routes/ConfigureScreen";
-import { RankScreen } from "../routes/RankScreen";
-import { RunScreen } from "../routes/RunScreen";
+import { CompareScreen } from "../routes/compare/CompareScreen";
+import { ConfigureScreen } from "../routes/configure/ConfigureScreen";
+import { RankScreen } from "../routes/rank/RankScreen";
+import { RunScreen } from "../routes/run/RunScreen";
 import { Sidebar } from "../shell/Sidebar";
 import { SelectionProvider } from "../shell/SelectionContext";
 import {

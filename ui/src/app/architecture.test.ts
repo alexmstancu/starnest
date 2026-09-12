@@ -84,6 +84,36 @@ describe("the layering", () => {
   });
 });
 
+describe("the folder structure", () => {
+  it("has no barrel files", () => {
+    /**
+     * An `index.ts` re-exporting a folder reads nicely and then hides which file a symbol came
+     * from -- and it is the usual way an import cycle appears, because two barrels importing
+     * each other is invisible at the call site. Every import here names the file it wants.
+     */
+    const barrels = sourceFiles()
+      .filter((path) => /\/index\.tsx?$/.test(path))
+      .map((path) => path.replace(`${SOURCE}/`, ""));
+
+    expect(barrels).toEqual([]);
+  });
+
+  it("gives each screen a folder of its own", () => {
+    /**
+     * `routes/` is a list of the four tabs, and each screen keeps what only it uses --
+     * `CandidateDetail` belongs to Rank, `useRunScreen` to Run. A file directly under
+     * `routes/` would be a fifth thing that is not a screen.
+     */
+    const looseFiles = readdirSync(join(SOURCE, "routes"), {
+      withFileTypes: true,
+    })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name);
+
+    expect(looseFiles).toEqual([]);
+  });
+});
+
 describe("the design is a plugin", () => {
   it("is imported by the entry point and by nothing else", () => {
     const importers = sourceFiles()
