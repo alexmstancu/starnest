@@ -101,6 +101,7 @@ def build() -> tuple[Environment, "FastAPI"]:
         PostgresCandidateStore,
         PostgresCatalogStore,
         PostgresCriteriaStore,
+        PostgresEvaluationStore,
         PostgresHouseholdStore,
         PostgresMatchRuleResultStore,
         PostgresRunStore,
@@ -119,6 +120,7 @@ def build() -> tuple[Environment, "FastAPI"]:
         catalog_store=catalog,
         run_store=PostgresRunStore(pool),
         match_rule_results=PostgresMatchRuleResultStore(pool),
+        evaluation_store=PostgresEvaluationStore(pool),
         # The one place a concrete source is named. `api/` holds only the interface, which is
         # what lets the acceptance suite drive the same endpoints against a stub.
         adapters=(

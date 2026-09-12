@@ -14,6 +14,7 @@ from starnest.candidates import CandidateStore
 from starnest.criteria import CriteriaStore, MatchRuleResultStore
 from starnest.data import CatalogStore, ValueStore
 from starnest.data_acquisition import RunStore, SourceAdapter
+from starnest.evaluation import EvaluationStore
 from starnest.household import HouseholdStore
 
 
@@ -27,6 +28,10 @@ def _criteria(request: Request) -> CriteriaStore:
 
 def _match_rule_results(request: Request) -> MatchRuleResultStore:
     return request.app.state.match_rule_results
+
+
+def _evaluations(request: Request) -> EvaluationStore:
+    return request.app.state.evaluations
 
 
 def _candidates(request: Request) -> CandidateStore:
@@ -58,6 +63,7 @@ def _adapters(request: Request) -> tuple[SourceAdapter, ...]:
 Households = Annotated[HouseholdStore, Depends(_household)]
 Criteria = Annotated[CriteriaStore, Depends(_criteria)]
 MatchRuleResults = Annotated[MatchRuleResultStore, Depends(_match_rule_results)]
+Evaluations = Annotated[EvaluationStore, Depends(_evaluations)]
 Candidates = Annotated[CandidateStore, Depends(_candidates)]
 Values = Annotated[ValueStore, Depends(_values)]
 Catalog = Annotated[CatalogStore, Depends(_catalog)]

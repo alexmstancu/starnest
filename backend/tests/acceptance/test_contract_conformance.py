@@ -39,6 +39,7 @@ A_REQUEST_FOR = {
     "listValues": ("get", "/v1/values", {"include_superseded": True}),
     "listMatchRules": ("get", "/v1/match-rules", {}),
     "listMatchRuleResults": ("get", "/v1/match-rule-results", {}),
+    "listEvaluations": ("get", "/v1/evaluations", {}),
 }
 """One successful call per served GET, by operation id.
 
@@ -56,7 +57,9 @@ def _served_get_operations() -> set[str]:
     }
 
 
-COVERED_BY_A_SEQUENCE = frozenset({"getRun"})
+COVERED_BY_A_SEQUENCE = frozenset(
+    {"getRun", "getEvaluation", "getEvaluationCriteria", "getCandidateScoreDetail"}
+)
 """Reads that need something to exist before they can be read.
 
 `getRun` needs a run, so it is checked in `test_the_run_endpoints_match_the_designed_shapes`
@@ -244,3 +247,30 @@ async def test_a_retry_matches_the_designed_shape(api: httpx.AsyncClient) -> Non
     assert retried.status_code == 202
     validate("retryRun", retried.json(), status=202)
     assert undeclared_fields("retryRun", retried.json(), status=202) == []
+
+
+async def test_the_evaluation_endpoints_match_the_designed_shapes(
+    api: httpx.AsyncClient, database_url: str, stored_figures: None
+) -> None:
+    """Keep a ranking, then read it back four ways -- the header, the ranking, the frozen
+    criteria and one candidate's drill-down. Checked as a sequence because none of the reads
+    exists until something has been kept."""
+    kept = await api.post(
+        "/v1/evaluations", json={"criteria_set": MINIMAL, "level": COUNTRY, "note": "a keeper"}
+    )
+    assert kept.status_code == 201
+    validate("saveEvaluation", kept.json(), status=201)
+    assert undeclared_fields("saveEvaluation", kept.json(), status=201) == []
+    evaluation = kept.json()["id"]
+
+    ranking = await api.get(f"/v1/evaluations/{evaluation}")
+    validate("getEvaluation", ranking.json())
+    assert undeclared_fields("getEvaluation", ranking.json()) == []
+
+    criteria = await api.get(f"/v1/evaluations/{evaluation}/criteria")
+    validate("getEvaluationCriteria", criteria.json())
+    assert undeclared_fields("getEvaluationCriteria", criteria.json()) == []
+
+    detail = await api.get(f"/v1/evaluations/{evaluation}/candidates/country.portugal")
+    validate("getCandidateScoreDetail", detail.json())
+    assert undeclared_fields("getCandidateScoreDetail", detail.json()) == []

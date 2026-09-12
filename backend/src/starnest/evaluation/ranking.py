@@ -17,6 +17,7 @@ with the thresholds, which `reqs.md` 7.4 leaves TBD on purpose.
 """
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 from starnest.candidates import CandidateId
@@ -61,16 +62,15 @@ def rank_candidates(
     criteria.refuse_unless_its_anchors_fit(score_scale_max)
 
     weights = _level_wide_weights(criteria, scored_criteria, level)
-    figures, confidences = _figures_by_criterion(scored_criteria, values)
-    scores = _scores_by_criterion(scored_criteria, figures, score_scale_max=score_scale_max)
+    readings = _readings_by_criterion(scored_criteria, values)
+    scores = _scores_by_criterion(scored_criteria, readings, score_scale_max=score_scale_max)
 
     results = tuple(
         _result_for(
             candidate,
             scored_criteria=scored_criteria,
             weights=weights,
-            figures=figures,
-            confidences=confidences,
+            readings=readings,
             scores=scores,
             min_coverage=min_coverage,
         )
@@ -119,41 +119,53 @@ def _level_wide_weights(
     }
 
 
-def _figures_by_criterion(
+@dataclass(frozen=True)
+class Reading:
+    """One value as scoring sees it: the figure, what it is worth, and which row it came from.
+
+    The three travel together because they are one value's three answers, and the last two stay
+    out of the arithmetic: normalisation never sees a confidence -- a low-confidence figure is
+    not discounted (`reqs.md` 5.7) -- and never sees an identifier. Both are needed afterwards.
+    The result says how much of a score rests on a weak figure, and a saved evaluation pins the
+    exact row behind every contribution, which closes the provenance chain from a total down to
+    a source and a date.
+    """
+
+    figure: PublishedFigure
+    confidence: ConfidenceLevel
+    value: int | None
+
+
+def _readings_by_criterion(
     scored: Sequence[Criterion], values: ValuesByCandidate
-) -> tuple[dict[str, dict[str, PublishedFigure]], dict[str, dict[str, ConfidenceLevel]]]:
-    """Every comparable figure, per criterion, per candidate -- and what each figure is worth.
+) -> dict[str, dict[str, Reading]]:
+    """Every comparable figure, per criterion, per candidate.
 
     A value that carries no figure -- rejected, or of a type nothing can compare -- is simply
     absent, which is the same state as never having been fetched. That is deliberate: from the
     point of view of a score there is no difference between a figure nobody found and a figure
     that could not be read, and coverage reports both the same way.
-
-    **The confidence travels beside the figure, not inside it.** Normalisation must never see
-    it -- a low-confidence figure is not discounted (`reqs.md` 5.7) -- but the result has to say
-    how much of a score rests on one, and after this point the value is gone.
     """
     by_attribute = {str(criterion.attribute): criterion for criterion in scored}
-    figures: dict[str, dict[str, PublishedFigure]] = {attribute: {} for attribute in by_attribute}
-    confidences: dict[str, dict[str, ConfidenceLevel]] = {
-        attribute: {} for attribute in by_attribute
-    }
+    readings: dict[str, dict[str, Reading]] = {attribute: {} for attribute in by_attribute}
     for candidate, candidate_values in values.items():
         for value in candidate_values:
             attribute = str(value.attribute)
             if attribute not in by_attribute:
                 continue
             try:
-                figures[attribute][candidate] = figure_of(value)
+                figure = figure_of(value)
             except UnscoreableValueError:
                 continue
-            confidences[attribute][candidate] = value.confidence_level
-    return figures, confidences
+            readings[attribute][candidate] = Reading(
+                figure=figure, confidence=value.confidence_level, value=value.id
+            )
+    return readings
 
 
 def _scores_by_criterion(
     scored: Sequence[Criterion],
-    figures: Mapping[str, Mapping[str, PublishedFigure]],
+    readings: Mapping[str, Mapping[str, Reading]],
     *,
     score_scale_max: int,
 ) -> dict[str, dict[str, int]]:
@@ -167,11 +179,11 @@ def _scores_by_criterion(
     columns: dict[str, dict[str, int]] = {}
     for criterion in scored:
         attribute = str(criterion.attribute)
-        answered = figures.get(attribute, {})
+        answered = readings.get(attribute, {})
         candidates = sorted(answered)
         try:
             column = scores_for(
-                [answered[candidate] for candidate in candidates],
+                [answered[candidate].figure for candidate in candidates],
                 method=criterion.normalisation_method,
                 goal=criterion.goal,
                 score_scale_max=score_scale_max,
@@ -190,8 +202,7 @@ def _result_for(
     *,
     scored_criteria: Sequence[Criterion],
     weights: Mapping[str, Decimal],
-    figures: Mapping[str, Mapping[str, PublishedFigure]],
-    confidences: Mapping[str, Mapping[str, ConfidenceLevel]],
+    readings: Mapping[str, Mapping[str, Reading]],
     scores: Mapping[str, Mapping[str, int]],
     min_coverage: Decimal | None,
 ) -> CandidateResult:
@@ -205,16 +216,19 @@ def _result_for(
     found = {
         str(criterion.attribute)
         for criterion in scored_criteria
-        if candidate in figures.get(str(criterion.attribute), {})
+        if candidate in readings.get(str(criterion.attribute), {})
     }
     coverage = coverage_of(weights, answered)
     resting_on = confidence_split(
-        weights, {attribute: confidences[attribute][candidate] for attribute in answered}
+        weights,
+        {attribute: readings[attribute][candidate].confidence for attribute in answered},
     )
     effective = redistribute(weights, answered)
 
     breakdown = tuple(
-        _attribute_score(criterion, candidate, effective=effective, scores=scores)
+        _attribute_score(
+            criterion, candidate, effective=effective, scores=scores, readings=readings
+        )
         for criterion in scored_criteria
     )
     refusal = _why_it_cannot_be_scored(
@@ -247,16 +261,21 @@ def _attribute_score(
     *,
     effective: Mapping[str, Decimal],
     scores: Mapping[str, Mapping[str, int]],
+    readings: Mapping[str, Mapping[str, Reading]],
 ) -> AttributeScore:
     attribute = str(criterion.attribute)
     score = scores.get(attribute, {}).get(candidate)
     weight = effective[attribute]
+    reading = readings.get(attribute, {}).get(candidate)
     return AttributeScore(
         attribute=criterion.attribute,
         pillar=criterion.pillar,
         normalised_score=score,
         effective_weight=weight,
         contribution=Decimal(0) if score is None else Decimal(score) * weight / TOTAL,
+        # Only where the figure was actually scored: a reading that no method could place
+        # contributed nothing, and naming the row it came from would suggest otherwise.
+        used_value=reading.value if reading is not None and score is not None else None,
     )
 
 

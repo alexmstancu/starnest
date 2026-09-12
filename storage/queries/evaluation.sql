@@ -153,6 +153,9 @@ SELECT e.id,
        e.criteria_set,
        e.level,
        e.computed_at,
+       -- The scale the scores are on, frozen with them (0107). Without it a score of 71 means
+       -- nothing later: settings.score_scale_max is the user's and may since have changed.
+       e.score_scale_max,
        e.note
 FROM   evaluation AS e
 ORDER  BY e.computed_at DESC, e.id DESC;
@@ -163,6 +166,9 @@ SELECT e.id,
        e.criteria_set,
        e.level,
        e.computed_at,
+       -- The scale the scores are on, frozen with them (0107). Without it a score of 71 means
+       -- nothing later: settings.score_scale_max is the user's and may since have changed.
+       e.score_scale_max,
        e.note
 FROM   evaluation AS e
 WHERE  e.id = :evaluation;
@@ -213,6 +219,9 @@ ORDER  BY r.rank NULLS LAST, r.score DESC NULLS LAST, c.name;
 -- stays editable, so this is the only record of what the weights and the scale actually were
 -- when the ranking was produced.
 SELECT ec.attribute,
+       -- The attribute's type is not frozen and does not need to be: a value type is immutable
+       -- for an attribute (arch.md 3.3b), and retyping one means retiring it and adding another.
+       a.value_type,
        ec.pillar,
        ec.is_scored,
        ec.weight,
@@ -237,6 +246,7 @@ SELECT ec.attribute,
               AND  anchor.attribute = ec.attribute),
            '[]'::jsonb) AS scale_anchors
 FROM   evaluation_criterion AS ec
+JOIN   attribute AS a ON a.id = ec.attribute
 WHERE  ec.evaluation = :evaluation
 ORDER  BY ec.pillar, ec.attribute;
 

@@ -22,6 +22,32 @@ components:
     AttributeBody:
       additionalProperties: true
       type: object
+    AttributeScoreBody:
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        contribution:
+          title: Contribution
+          type: number
+        effective_weight:
+          title: Effective Weight
+          type: number
+        normalised_score:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Normalised Score
+        pillar:
+          title: Pillar
+          type: string
+      required:
+      - attribute
+      - pillar
+      - effective_weight
+      - contribution
+      title: AttributeScoreBody
+      type: object
     AttributesBody:
       properties:
         items:
@@ -110,6 +136,55 @@ components:
       - coverage
       - match_status
       title: CandidateResultBody
+      type: object
+    CandidateScoreDetailBody:
+      properties:
+        attribute_scores:
+          default: []
+          items:
+            $ref: '#/components/schemas/AttributeScoreBody'
+          title: Attribute Scores
+          type: array
+        candidate:
+          title: Candidate
+          type: string
+        coverage:
+          title: Coverage
+          type: number
+        coverage_by_confidence:
+          anyOf:
+          - $ref: '#/components/schemas/ConfidenceSplitBody'
+          - type: 'null'
+          description: How the covered weight splits by confidence. Null when nothing
+            is covered.
+        insufficient_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Insufficient Reason
+        match_status:
+          title: Match Status
+          type: string
+        name:
+          title: Name
+          type: string
+        rank:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rank
+        score:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Null only when insufficient data. On the evaluation's scale.
+          title: Score
+      required:
+      - candidate
+      - name
+      - coverage
+      - match_status
+      title: CandidateScoreDetailBody
       type: object
     CandidatesBody:
       properties:
@@ -272,6 +347,86 @@ components:
       - id
       - name
       title: DuplicateRequest
+      type: object
+    EvaluationCriteriaBody:
+      properties:
+        criteria:
+          items:
+            $ref: '#/components/schemas/CriterionBody'
+          title: Criteria
+          type: array
+        pillar_weights:
+          items:
+            $ref: '#/components/schemas/EvaluationPillarWeightBody'
+          title: Pillar Weights
+          type: array
+      required:
+      - pillar_weights
+      - criteria
+      title: EvaluationCriteriaBody
+      type: object
+    EvaluationPillarWeightBody:
+      description: 'The contract''s `PillarWeight`, which names no level: the evaluation''s
+        header already
+
+        says which level it ran at, and an evaluation never spans two (`reqs.md` 3.4a).'
+      properties:
+        pillar:
+          title: Pillar
+          type: string
+        weight:
+          title: Weight
+          type: number
+        weight_locked:
+          title: Weight Locked
+          type: boolean
+      required:
+      - pillar
+      - weight
+      - weight_locked
+      title: EvaluationPillarWeightBody
+      type: object
+    EvaluationSummaryBody:
+      properties:
+        computed_at:
+          format: date-time
+          title: Computed At
+          type: string
+        criteria_set:
+          title: Criteria Set
+          type: string
+        id:
+          title: Id
+          type: integer
+        level:
+          title: Level
+          type: string
+        note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Note
+        score_scale_max:
+          title: Score Scale Max
+          type: integer
+      required:
+      - id
+      - criteria_set
+      - level
+      - computed_at
+      - score_scale_max
+      title: EvaluationSummaryBody
+      type: object
+    EvaluationsBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/EvaluationSummaryBody'
+          title: Items
+          type: array
+      required:
+      - items
+      title: EvaluationsBody
       type: object
     FailureBody:
       properties:
@@ -770,6 +925,24 @@ components:
       - items
       - total
       title: RunsBody
+      type: object
+    SaveEvaluationBody:
+      properties:
+        criteria_set:
+          title: Criteria Set
+          type: string
+        level:
+          title: Level
+          type: string
+        note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Note
+      required:
+      - criteria_set
+      - level
+      title: SaveEvaluationBody
       type: object
     ScaleAnchorBody:
       properties:
@@ -1391,6 +1564,141 @@ paths:
       summary: Retry
       tags:
       - acquisition
+  /v1/evaluations:
+    get:
+      description: The kept results, newest first.
+      operationId: listEvaluations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationsBody'
+          description: Successful Response
+      summary: List Evaluations
+      tags:
+      - evaluation
+    post:
+      description: 'Compute the ranking and keep it, with the criteria snapshot behind
+        it.
+
+
+        The same computation `GET /rankings` performs, called rather than repeated:
+        two code paths
+
+        would let a saved evaluation differ from the ranking it was saved from.'
+      operationId: saveEvaluation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveEvaluationBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationSummaryBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Save Evaluation
+      tags:
+      - evaluation
+  /v1/evaluations/{evaluation_id}:
+    get:
+      description: A kept ranking, in the order it was kept. Raises a 404 for an evaluation
+        nobody kept.
+      operationId: getEvaluation
+      parameters:
+      - in: path
+        name: evaluation_id
+        required: true
+        schema:
+          title: Evaluation Id
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RankingBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Evaluation
+      tags:
+      - evaluation
+  /v1/evaluations/{evaluation_id}/candidates/{candidate_id}:
+    get:
+      description: Why this candidate scored what it scored, attribute by attribute.
+      operationId: getCandidateScoreDetail
+      parameters:
+      - in: path
+        name: evaluation_id
+        required: true
+        schema:
+          title: Evaluation Id
+          type: integer
+      - in: path
+        name: candidate_id
+        required: true
+        schema:
+          title: Candidate Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateScoreDetailBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Candidate Score Detail
+      tags:
+      - evaluation
+  /v1/evaluations/{evaluation_id}/criteria:
+    get:
+      description: 'The frozen snapshot: what the weights, goals, bands and anchors
+        actually were.'
+      operationId: getEvaluationCriteria
+      parameters:
+      - in: path
+        name: evaluation_id
+        required: true
+        schema:
+          title: Evaluation Id
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationCriteriaBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Evaluation Criteria
+      tags:
+      - evaluation
   /v1/household:
     get:
       description: Raises `HouseholdNotConfiguredError` -- a 404 -- when nothing has
@@ -1587,14 +1895,14 @@ paths:
       description: 'Score every candidate at this level and return them in rank order.
 
 
-        `score_scale_max` comes from settings and has no default here. Substituting
-        100 where the
+        **Computes and returns; stores nothing** (`reqs.md` 5.6, Q155). Adjusting
+        a weight
 
-        user has set nothing is the plausible-looking fabrication `devplan.md` 0.3
-        forbids -- so an
+        recalculates from stored values, and an afternoon of tuning must not bury
+        the few results
 
-        unset scale is a refusal that names the setting, not a ranking on a scale
-        nobody chose.'
+        worth keeping under hundreds nobody asked for. `POST /evaluations` is how
+        one is kept.'
       operationId: getRanking
       parameters:
       - in: query

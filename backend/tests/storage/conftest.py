@@ -26,6 +26,7 @@ WRITABLE_TABLES = (
     "household_citizenship",
     "settings",
     "data_acquisition_run",
+    "evaluation",
 )
 """Everything a storage test may write.
 
@@ -35,8 +36,9 @@ not here and must not be: it is seeded by migration and read-only through this
 seam (`arch.md` 1.2), so a test that emptied it would be testing a database the application
 can never be in. CASCADE reaches the ten typed payload tables and the citation table, which
 have no rows of their own that outlive their parent value, and a run's scope and failure rows.
-`data_acquisition_run` joined when `test_run_store.py` began writing runs: the acceptance suite
-counts them, so one left behind here would fail a test there for no reason of its own.
+`evaluation` and `data_acquisition_run` joined when their stores began writing rows: the
+acceptance suite counts them, so one left behind here would fail a test there for no reason
+of its own.
 """
 
 

@@ -179,7 +179,7 @@ Recorded because these are the invariants most worth knowing hold:
 
 ## Found during P4 — 2026-09-09 to 2026-09-11
 
-Eleven findings from the adapter streams, all reproduced. **The first four are not defects in
+Thirteen findings from the adapter streams, all reproduced. **The first four are not defects in
 running code**: each is a place where two documents, or a document and the code, say different
 things -- the kind of fault that costs nothing today and misleads the next person to rely on
 either. **P5 and P7 were defects**, and live ones.
@@ -197,3 +197,5 @@ either. **P5 and P7 were defects**, and live ones.
 | **P9** | **`reqs.md` 6.5 lists different manual-entry attributes from 7.1 and the catalog.** 6.5 names `tech_software_jobs`, `tech_product_jobs`, `remote_work_tax_treaty` and `international_employers`; the catalog, following 7.1's sources column, permits `international_employers`, `naturalisation_pathway`, `pension_portability`, `remote_work_tax_treaty` and `residency_admin_ease`. `devplan.md` P4 also says the two tech-jobs attributes permit manual entry | **Open -- a decision for the household.** Whether a job-posting count may be typed by hand is a requirements question; the endpoints enforce the catalog as it stands |
 | **P10** | **A monetary payload's exchange rate is not served.** The contract describes it as rate, date and publisher, and the payload carries the first two only | **Open, low.** No monetary value is stored yet; serving half the provenance would be worse than serving none |
 | **P11** | **Cyprus, Malta and Iceland have no rail figure, because they have no railway.** Eurostat publishes nothing rather than zero, the adapter does not invent the zero, and `rail_network_density` does not permit manual entry, so all three show as missing and the criterion's weight is redistributed | **Open -- a catalog decision.** Permitting manual entry for rail would let the household record the 0 with a citation |
+| **P12** | **The evaluation header queries never returned the score scale they froze.** `0107` added `evaluation.score_scale_max` precisely so a saved score still means something after the setting changes, and `select_evaluation` and `select_evaluations` were not updated, though the contract marks `score_scale_max` required on `EvaluationSummary`. Nothing noticed because no code had read those queries until P5 | **Fixed 2026-09-12.** Both queries return it, and the store's round-trip test asserts the saved scale comes back |
+| **P13** | **One interface test times out under load.** `ConfigureScreen > refuses to send a weight that is not a number` hit its 5-second limit during a `make check` run with containers and a live fetch in flight, and passes in 0.4s on its own. The test waits on a debounce rather than on an event | **Open, low.** Not a product fault and not a fix to make while chasing something else; a waiting assertion rather than a timer would settle it |

@@ -407,3 +407,35 @@ class TestATargetRangeCriterion:
 
         assert found["country.portugal"].score == 100
         assert found["country.sweden"].score == 50
+
+
+class TestEachContributionNamesTheValueBehindIt:
+    """What closes the provenance chain: a total, down through one contribution, to the stored
+    row that produced it -- which a saved evaluation then freezes (`reqs.md` 3.4a)."""
+
+    def test_a_scored_attribute_names_the_value_it_used(self) -> None:
+        values = {
+            "country.portugal": (a_value(id=41, payload=Count(count=90)),),
+            "country.spain": (a_value(candidate="country.spain", id=42, payload=Count(count=10)),),
+        }
+
+        portugal = by_candidate(rank(a_set([a_criterion()]), values))["country.portugal"]
+
+        (row,) = portugal.attribute_scores
+        assert row.used_value == 41
+
+    def test_an_attribute_with_no_figure_names_none(self) -> None:
+        found = by_candidate(rank(two_pillars(), three_countries_one_missing_its_rent()))
+        spain = found["country.spain"]
+
+        unanswered = [row for row in spain.attribute_scores if row.normalised_score is None]
+        assert [row.used_value for row in unanswered] == [None]
+
+    def test_a_figure_that_could_not_be_placed_names_none(self) -> None:
+        """It contributed nothing, so naming the row it came from would suggest otherwise."""
+        lonely = {"country.portugal": (a_value(id=7),)}
+
+        portugal = by_candidate(rank(a_set([a_criterion()]), lonely))["country.portugal"]
+
+        (row,) = portugal.attribute_scores
+        assert (row.normalised_score, row.used_value) == (None, None)

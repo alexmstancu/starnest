@@ -21,6 +21,7 @@ from starnest.evaluation.magnitudes import (
 from starnest.evaluation.normalisation import NormalisationError, scores_for
 from starnest.evaluation.ranking import RankingError, rank_candidates
 from starnest.evaluation.results import AttributeScore, CandidateResult, MatchStatus
+from starnest.evaluation.store import EvaluationStore, SavedEvaluation, UnknownEvaluationError
 from starnest.evaluation.weighting import (
     WeightingError,
     confidence_split,
@@ -31,10 +32,13 @@ from starnest.evaluation.weighting import (
 __all__ = [
     "AttributeScore",
     "CandidateResult",
+    "EvaluationStore",
     "MatchStatus",
     "NormalisationError",
     "PublishedFigure",
     "RankingError",
+    "SavedEvaluation",
+    "UnknownEvaluationError",
     "UnscoreableValueError",
     "WeightingError",
     "confidence_split",

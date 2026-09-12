@@ -22,6 +22,7 @@ from starnest.storage.candidate_store import PostgresCandidateStore
 from starnest.storage.catalog_store import PostgresCatalogStore
 from starnest.storage.connections import acquire
 from starnest.storage.criteria_store import PostgresCriteriaStore
+from starnest.storage.evaluation_store import PostgresEvaluationStore
 from starnest.storage.household_store import PostgresHouseholdStore
 from starnest.storage.match_rule_result_store import PostgresMatchRuleResultStore
 from starnest.storage.queries import QUERY_DIRECTORY, load_queries
@@ -33,6 +34,7 @@ __all__ = [
     "PostgresCandidateStore",
     "PostgresCatalogStore",
     "PostgresCriteriaStore",
+    "PostgresEvaluationStore",
     "PostgresHouseholdStore",
     "PostgresMatchRuleResultStore",
     "PostgresRunStore",

@@ -35,7 +35,7 @@ from starnest.data import (
     UnknownMatchRuleError,
 )
 from starnest.data_acquisition import NothingToRetryError, UnknownRunError
-from starnest.evaluation import NormalisationError, RankingError
+from starnest.evaluation import NormalisationError, RankingError, UnknownEvaluationError
 from starnest.household import HouseholdNotConfiguredError, HouseholdPlaceError
 
 
@@ -57,6 +57,7 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     UnknownCriterionError: _refusal(404, "not_found"),
     UnknownAttributeError: _refusal(404, "not_found"),
     UnknownRunError: _refusal(404, "not_found"),
+    UnknownEvaluationError: _refusal(404, "not_found"),
     UnknownCandidateError: _refusal(404, "not_found"),
     UnknownMatchRuleError: _refusal(404, "not_found"),
     HouseholdNotConfiguredError: _refusal(404, "household_not_configured"),

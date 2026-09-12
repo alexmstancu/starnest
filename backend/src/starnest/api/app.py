@@ -10,13 +10,14 @@ database and a test's fakes without knowing which they have.
 
 from fastapi import FastAPI
 
-from starnest.api import catalog, criteria, household, rankings, rules, runs, settings
+from starnest.api import catalog, criteria, evaluations, household, rankings, rules, runs, settings
 from starnest.api import values as value_endpoints
 from starnest.api.errors import domain_error_handler
 from starnest.candidates import CandidateStore
 from starnest.criteria import CriteriaStore, MatchRuleResultStore
 from starnest.data import CatalogStore, ValueStore
 from starnest.data_acquisition import RunStore, SourceAdapter
+from starnest.evaluation import EvaluationStore
 from starnest.household import HouseholdStore
 
 API_PREFIX = "/v1"
@@ -31,6 +32,7 @@ def build_app(
     catalog_store: CatalogStore,
     run_store: RunStore,
     match_rule_results: MatchRuleResultStore,
+    evaluation_store: EvaluationStore,
     adapters: tuple[SourceAdapter, ...] = (),
     display_name: str = "Starnest",
 ) -> FastAPI:
@@ -52,6 +54,7 @@ def build_app(
     app.state.catalog = catalog_store
     app.state.runs = run_store
     app.state.match_rule_results = match_rule_results
+    app.state.evaluations = evaluation_store
     app.state.adapters = adapters
 
     for router in (
@@ -60,6 +63,7 @@ def build_app(
         catalog.router,
         criteria.router,
         rankings.router,
+        evaluations.router,
         runs.router,
         # Imported under another name: `values` is also this function's value store.
         value_endpoints.router,

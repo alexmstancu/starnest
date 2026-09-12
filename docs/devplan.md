@@ -650,7 +650,7 @@ only a human confirms it moved the *right* number.
 
 | Stream | Task | Size |
 |---|---|---|
-| **W5-A** | Evaluation persistence — `SaveEvaluation`, the snapshot, per-attribute detail, `/evaluations` and its sub-resources. **`GET /rankings` still writes nothing** | **M** |
+| **W5-A** | ~~Evaluation persistence~~ **Done 2026-09-12.** `POST /evaluations` keeps a ranking with a frozen copy of its criteria, anchors and scale; `GET /evaluations`, the kept ranking, its criteria and one candidate's drill-down. `GET /rankings` still writes nothing, and an acceptance test says so. Each contribution now names the value row behind it, which closes the provenance chain | **M** |
 | **W5-B** | `comparison/` — focus and comparators, deltas, weighted contribution, the **templated** synthesis, `GET /comparisons`. The comparator limit is **configurable, never hardcoded** | **M** |
 | **W5-C** | Rules end to end — `/match-rules`, `/match-rule-results` with audited overrides, `/compound-rules`, and the two country compound rules wired into the ranking as **warnings** | **M** |
 

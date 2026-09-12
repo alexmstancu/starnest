@@ -17,6 +17,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from starnest.api.dependencies import Candidates, Criteria, Households, Values
+from starnest.candidates import Candidate
+from starnest.criteria import CriteriaSet
 from starnest.evaluation import CandidateResult, rank_candidates
 
 router = APIRouter(tags=["rankings"])
@@ -54,25 +56,24 @@ class RankingBody(BaseModel):
     candidates: tuple[CandidateResultBody, ...]
 
 
-@router.get("/rankings", operation_id="getRanking", response_model=RankingBody)
-async def get_ranking(
+async def the_ranking(
     criteria_set: str,
     level: str,
     criteria: Criteria,
     candidates: Candidates,
     values: Values,
     households: Households,
-) -> RankingBody:
-    """Score every candidate at this level and return them in rank order.
+) -> tuple[CriteriaSet, tuple[Candidate, ...], tuple[CandidateResult, ...], int]:
+    """Score every candidate at this level: the criteria used, the roster, the results, the scale.
 
-    `score_scale_max` comes from settings and has no default here. Substituting 100 where the
-    user has set nothing is the plausible-looking fabrication `devplan.md` 0.3 forbids -- so an
-    unset scale is a refusal that names the setting, not a ranking on a scale nobody chose.
+    Shared with `POST /evaluations`, which keeps what this computes. Two code paths would mean a
+    saved evaluation could differ from the ranking it was saved from, in ways nothing would show.
+
+    **The named resource is read first.** Asked for a ranking of a criteria set that does not
+    exist, this used to answer "score_scale_max is not set" -- true, and not the reason the
+    request failed. A 404 is about the request; a 409 is about state, and a client told the
+    second when the first applies goes and changes a setting that was never the problem.
     """
-    # The named resource first. Asked for a ranking of a criteria set that does not exist, this
-    # used to answer "score_scale_max is not set" -- true, and not the reason the request
-    # failed. A 404 is about the request; a 409 is about state, and a client told the second
-    # when the first applies goes and changes a setting that was never the problem.
     criteria_set_read = await criteria.read_criteria_set(criteria_set, level=level)
 
     settings = await households.get_settings()
@@ -100,7 +101,27 @@ async def get_ranking(
         score_scale_max=settings.score_scale_max,
         min_coverage=settings.min_coverage,
     )
+    return criteria_set_read, roster, results, settings.score_scale_max
 
+
+@router.get("/rankings", operation_id="getRanking", response_model=RankingBody)
+async def get_ranking(
+    criteria_set: str,
+    level: str,
+    criteria: Criteria,
+    candidates: Candidates,
+    values: Values,
+    households: Households,
+) -> RankingBody:
+    """Score every candidate at this level and return them in rank order.
+
+    **Computes and returns; stores nothing** (`reqs.md` 5.6, Q155). Adjusting a weight
+    recalculates from stored values, and an afternoon of tuning must not bury the few results
+    worth keeping under hundreds nobody asked for. `POST /evaluations` is how one is kept.
+    """
+    _, roster, results, _ = await the_ranking(
+        criteria_set, level, criteria, candidates, values, households
+    )
     names = {str(candidate.id): candidate.name for candidate in roster}
     return RankingBody(
         criteria_set=criteria_set,

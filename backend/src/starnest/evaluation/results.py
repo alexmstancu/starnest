@@ -56,6 +56,14 @@ class AttributeScore(BaseModel):
     contribution: Decimal = Field(
         description="score x effective_weight / 100. Zero when nothing was scored."
     )
+    used_value: int | None = Field(
+        default=None,
+        description=(
+            "The stored value this contribution was computed from. Null where nothing was "
+            "scored -- it is what closes the provenance chain from a total to a source and a "
+            "date, and a saved evaluation freezes it."
+        ),
+    )
 
 
 class CandidateResult(BaseModel):

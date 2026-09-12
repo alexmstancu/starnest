@@ -23,6 +23,7 @@ from starnest.storage import (
     PostgresCandidateStore,
     PostgresCatalogStore,
     PostgresCriteriaStore,
+    PostgresEvaluationStore,
     PostgresHouseholdStore,
     PostgresMatchRuleResultStore,
     PostgresRunStore,
@@ -36,6 +37,7 @@ WRITABLE_TABLES = (
     "settings",
     "data_acquisition_run",
     "match_rule_result",
+    "evaluation",
 )
 """What an acceptance test may write and what is emptied afterwards.
 
@@ -90,6 +92,7 @@ async def an_api(
             catalog_store=PostgresCatalogStore(pool),
             run_store=PostgresRunStore(pool),
             match_rule_results=PostgresMatchRuleResultStore(pool),
+            evaluation_store=PostgresEvaluationStore(pool),
             adapters=adapters,
         )
         transport = httpx.ASGITransport(app=app)
@@ -121,6 +124,30 @@ async def a_scratch_criteria_set(database_url: str) -> AsyncIterator[str]:
         try:
             yield scratch
         finally:
+            # An evaluation keeps the identifier of the set it was computed from, so a saved
+            # one holds this set in place. The test that keeps one owns it, and this owns the
+            # set: dropping the evaluations first is what lets both be true.
+            async with pool.connection() as connection:
+                await connection.execute(
+                    "DELETE FROM candidate_attribute_score WHERE candidate_result IN"
+                    " (SELECT r.id FROM candidate_result AS r JOIN evaluation AS e"
+                    "  ON e.id = r.evaluation WHERE e.criteria_set = %s)",
+                    (scratch,),
+                )
+                await connection.execute(
+                    "DELETE FROM candidate_result WHERE evaluation IN"
+                    " (SELECT id FROM evaluation WHERE criteria_set = %s)",
+                    (scratch,),
+                )
+                for table in ("evaluation_scale_anchor", "evaluation_criterion"):
+                    await connection.execute(
+                        f"DELETE FROM {table} WHERE evaluation IN"
+                        " (SELECT id FROM evaluation WHERE criteria_set = %s)",
+                        (scratch,),
+                    )
+                await connection.execute(
+                    "DELETE FROM evaluation WHERE criteria_set = %s", (scratch,)
+                )
             await criteria.delete_criteria_set(scratch)
 
 
