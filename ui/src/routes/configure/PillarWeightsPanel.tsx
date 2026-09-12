@@ -3,6 +3,7 @@ import { updatePillarWeight, type CriteriaSet } from "../../api/endpoints";
 import type { components } from "../../api/schema";
 import { formatPercentage } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
+import { totalOf, weightFrom } from "./weights";
 
 type PillarWeight = components["schemas"]["PillarWeight"];
 
@@ -42,7 +43,7 @@ export function PillarWeightsPanel({
     [criteriaSet.id],
   );
 
-  const total = weights.reduce((sum, weight) => sum + weight.weight, 0);
+  const total = totalOf(weights);
 
   return (
     <section className="panel" aria-labelledby="pillar-weights-heading">
@@ -100,10 +101,10 @@ function PillarRow({
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    const asked = Number(typed);
     // A weight that is not a number is not sent: the server would refuse it, and the refusal
-    // would be about parsing rather than about weights.
-    if (!Number.isFinite(asked)) return;
+    // would be about parsing rather than about weights (`weights.ts`).
+    const asked = weightFrom(typed);
+    if (asked === null) return;
     void onMove(weight.pillar, asked);
   }
 

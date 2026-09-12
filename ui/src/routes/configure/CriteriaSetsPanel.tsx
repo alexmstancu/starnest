@@ -1,50 +1,17 @@
-import { useState, type FormEvent } from "react";
-import {
-  createCriteriaSet,
-  deleteCriteriaSet,
-  renameCriteriaSet,
-} from "../../api/endpoints";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
+import { useCriteriaSets } from "./useCriteriaSets";
 
 /**
  * The sets of priorities themselves: make one, rename one, discard one (`reqs.md` 3.4).
  *
- * **A new set is empty**, which the API decides and this screen says plainly: copying one would
- * mean starting from somebody else's priorities without being asked.
- *
- * **Discarding a set does not touch a saved evaluation**, which froze its own copy of the
- * criteria (`reqs.md` Q193). That is the difference between an opinion and a measurement.
+ * **Markup only.** What each action does is `useCriteriaSets.ts`.
  */
 export function CriteriaSetsPanel() {
   const { criteriaSets, criteriaSetId, reload, selectCriteriaSet } =
     useSelection();
-  const [newId, setNewId] = useState("");
-  const [newName, setNewName] = useState("");
-  const [rename, setRename] = useState("");
-  const [failure, setFailure] = useState<unknown>(null);
-
+  const form = useCriteriaSets({ reload, select: selectCriteriaSet });
   const chosen = criteriaSets.find((set) => set.id === criteriaSetId);
-
-  async function act(action: () => Promise<void>) {
-    setFailure(null);
-    try {
-      await action();
-      reload();
-    } catch (error) {
-      setFailure(error);
-    }
-  }
-
-  function create(event: FormEvent) {
-    event.preventDefault();
-    void act(async () => {
-      const created = await createCriteriaSet(newId.trim(), newName.trim());
-      setNewId("");
-      setNewName("");
-      selectCriteriaSet(created.id);
-    });
-  }
 
   return (
     <section className="panel" aria-labelledby="criteria-sets-heading">
@@ -56,33 +23,31 @@ export function CriteriaSetsPanel() {
         scores nothing until it has criteria.
       </p>
 
-      {/* No "try again" button: the way to retry a save is the save button, which is still
-          there. A second control that only cleared the message would offer a retry it does not
-          perform. */}
-      {failure !== null && <ErrorNotice error={failure} />}
+      {form.failure !== null && <ErrorNotice error={form.failure} />}
 
-      <form onSubmit={create}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          form.create();
+        }}
+      >
         <label className="field">
           <span className="field__label">Identifier</span>
           <input
             className="field__control"
-            value={newId}
-            onChange={(event) => setNewId(event.target.value)}
+            value={form.newId}
+            onChange={(event) => form.typeNewId(event.target.value)}
           />
         </label>
         <label className="field">
           <span className="field__label">Name</span>
           <input
             className="field__control"
-            value={newName}
-            onChange={(event) => setNewName(event.target.value)}
+            value={form.newName}
+            onChange={(event) => form.typeNewName(event.target.value)}
           />
         </label>
-        <button
-          type="submit"
-          className="button"
-          disabled={!newId.trim() || !newName.trim()}
-        >
+        <button type="submit" className="button" disabled={!form.canCreate}>
           Create set
         </button>
       </form>
@@ -91,27 +56,24 @@ export function CriteriaSetsPanel() {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void act(async () => {
-              await renameCriteriaSet(chosen.id, rename.trim());
-              setRename("");
-            });
+            form.renameTo(chosen.id);
           }}
         >
           <label className="field">
             <span className="field__label">Rename {chosen.name}</span>
             <input
               className="field__control"
-              value={rename}
-              onChange={(event) => setRename(event.target.value)}
+              value={form.rename}
+              onChange={(event) => form.typeRename(event.target.value)}
             />
           </label>
-          <button type="submit" className="button" disabled={!rename.trim()}>
+          <button type="submit" className="button" disabled={!form.canRename}>
             Rename
           </button>
           <button
             type="button"
             className="button"
-            onClick={() => void act(() => deleteCriteriaSet(chosen.id))}
+            onClick={() => form.discard(chosen.id)}
           >
             Discard {chosen.name}
           </button>

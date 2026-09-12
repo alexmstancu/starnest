@@ -8,7 +8,7 @@ import {
 } from "../api/endpoints";
 import { useResource } from "../api/useResource";
 import type { RouteDefinition } from "../navigation/routes";
-import { formatScore } from "../format/display";
+import { formatScore, formatSigned } from "../format/display";
 import { ErrorNotice } from "../shell/ErrorNotice";
 import { useSelection } from "../shell/SelectionContext";
 
@@ -276,8 +276,3 @@ function nameOf(comparison: Comparison, candidate: string): string {
   );
 }
 
-/** A signed number reads as a direction, which is what a delta is. */
-function formatSigned(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  return `${value > 0 ? "+" : ""}${value.toFixed(1)}`;
-}

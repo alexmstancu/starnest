@@ -89,6 +89,38 @@ export default tseslint.config(
   },
 
   {
+    // **Markup and behaviour live in different files.** A `.tsx` file renders; what it renders
+    // is decided in a `useX.ts` hook beside it, and text becomes a number in a plain module
+    // with no React in it. `HouseholdPanel.tsx` had fifteen conversions among its inputs.
+    //
+    // **Deliberately narrow.** Local UI state -- a disclosure toggle, a `useRef` on a DOM node,
+    // a `useId` for an aria attribute -- stays in the component, because that is where React
+    // puts it and a rule against it would earn a hook per checkbox. What is banned is the thing
+    // that was actually wrong: arithmetic and parsing in a file whose job is markup.
+    files: ["src/routes/**/*.tsx", "src/shell/**/*.tsx"],
+    ignores: ["src/**/*.test.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXAttribute[name.name='style']",
+          message:
+            "No inline styles: put a class in styles.css. An inline style is design in a " +
+            "component, which is what makes a redesign a rewrite.",
+        },
+        {
+          selector:
+            "CallExpression[callee.name=/^(Number|parseInt|parseFloat)$/], " +
+            "MemberExpression[property.name='toFixed']",
+          message:
+            "Parsing and formatting belong outside the markup: a number becomes text in " +
+            "format/display.ts, and text becomes a number in the panel's own module.",
+        },
+      ],
+    },
+  },
+
+  {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       ecmaVersion: 2022,

@@ -35,6 +35,22 @@ export function formatScore(value: number | null | undefined): string {
   return new Intl.NumberFormat(DISPLAY_LOCALE, { maximumFractionDigits: 0 }).format(value);
 }
 
+/**
+ * A delta, signed, because a signed number reads as a direction -- which is what a delta is.
+ *
+ * It lived in `CompareScreen.tsx` until the markup and the arithmetic were separated: a
+ * `toFixed` among the JSX is formatting in the wrong place, and this is the file formatting
+ * lives in.
+ */
+export function formatSigned(value: number | null | undefined, fractionDigits = 1): string {
+  if (!isFiniteNumber(value)) return ABSENT;
+  const formatted = new Intl.NumberFormat(DISPLAY_LOCALE, {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value);
+  return value > 0 ? `+${formatted}` : formatted;
+}
+
 export function formatCount(value: number | null | undefined): string {
   if (!isFiniteNumber(value)) return ABSENT;
   return new Intl.NumberFormat(DISPLAY_LOCALE).format(value);

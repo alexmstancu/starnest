@@ -3,6 +3,7 @@ import { lockedAttributes } from "../../api/errorPresentation";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { CriteriaEditor } from "../useCriteriaEditor";
+import { weightAsText, weightFrom } from "./weights";
 
 /**
  * The inner half of the two-level weighting: what each criterion is worth within its pillar.
@@ -85,8 +86,8 @@ function CriterionRow({
   function submit(event: FormEvent) {
     event.preventDefault();
 
-    const weight = Number(draft);
-    if (draft.trim() === "" || !Number.isFinite(weight)) {
+    const weight = weightFrom(draft);
+    if (weight === null) {
       setNotANumber(true);
       return;
     }
@@ -158,9 +159,4 @@ function SaveFailure({ error }: { error: unknown }) {
       )}
     </div>
   );
-}
-
-/** An absent weight shows an empty input, never a zero standing in for "not set". */
-function weightAsText(weight: number | undefined): string {
-  return weight === undefined ? "" : String(weight);
 }
