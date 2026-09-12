@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from starnest.api.bodies import ContractBody
 from starnest.api.dependencies import Candidates, Catalog, Criteria
+from starnest.candidates import UnknownCandidateError
 from starnest.data import Attribute
 
 router = APIRouter(tags=["catalog"])
@@ -238,3 +239,64 @@ def _months_of(max_age: timedelta | None) -> int | None:
     if max_age is None:
         return None
     return round(max_age.days / _DAYS_IN_A_MONTH)
+
+
+class DataSourceBody(BaseModel):
+    id: str
+    name: str
+    source_kind: str
+    default_priority: int
+    reliability_tier: str
+
+
+class DataSourcesBody(BaseModel):
+    items: tuple[DataSourceBody, ...]
+
+
+@router.get("/data-sources", operation_id="listDataSources", response_model=DataSourcesBody)
+async def list_data_sources(catalog: Catalog) -> DataSourcesBody:
+    """Every source, in the global priority order (`reqs.md` 6.6).
+
+    Reading this list top to bottom is reading the order the active-value rule applies, which is
+    what makes a per-attribute override legible: an override names the sources somebody has an
+    opinion about, and every other source keeps its place beneath them.
+    """
+    return DataSourcesBody(
+        items=tuple(
+            DataSourceBody(
+                id=str(source.id),
+                name=source.name,
+                source_kind=str(source.source_kind),
+                default_priority=source.default_priority,
+                reliability_tier=str(source.reliability_tier),
+            )
+            for source in await catalog.read_data_sources()
+        )
+    )
+
+
+@router.get("/attributes/{attribute_id}", operation_id="getAttribute", response_model=AttributeBody)
+async def get_attribute(attribute_id: str, catalog: Catalog) -> AttributeBody:
+    """One attribute with its declarations. Raises a 404 for one the catalog does not hold."""
+    return _attribute_body(await catalog.read_attribute(attribute_id))
+
+
+@router.get("/candidates/{candidate_id}", operation_id="getCandidate", response_model=CandidateBody)
+async def get_candidate(candidate_id: str, candidates: Candidates) -> CandidateBody:
+    """One candidate. Raises a 404 for one the catalog does not hold."""
+    found = next(
+        (
+            candidate
+            for candidate in await candidates.read_candidates()
+            if str(candidate.id) == candidate_id
+        ),
+        None,
+    )
+    if found is None:
+        raise UnknownCandidateError(f"there is no candidate {candidate_id!r}")
+    return CandidateBody(
+        id=str(found.id),
+        name=found.name,
+        level=str(found.level.id),
+        parent_candidate=str(found.parent_candidate) if found.parent_candidate else None,
+    )

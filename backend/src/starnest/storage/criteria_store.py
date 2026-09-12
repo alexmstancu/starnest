@@ -124,7 +124,28 @@ class PostgresCriteriaStore(CriteriaStore):
             await self._queries.delete_criteria_set(connection, criteria_set=str(criteria_set))
 
     async def _write_contents(self, connection: AsyncConnection, criteria_set: CriteriaSet) -> None:
-        """Every criterion with its children, and every pillar weight."""
+        """Every criterion with its children, every pillar weight, and the rules the set applies.
+
+        **The rule lists are written here because the replace clears them.** A set is written
+        whole, and `delete_criteria_set_contents` empties `criteria_set_match_rule` and
+        `criteria_set_compound_rule` along with everything else; until 2026-09-12 nothing wrote
+        them back, so editing a single weight silently released every gate the set enforced
+        (`known-issues.md` P15).
+        """
+        for rule in sorted(criteria_set.enforced_match_rules):
+            await self._queries.upsert_criteria_set_match_rule(
+                connection,
+                criteria_set=str(criteria_set.id),
+                match_rule=str(rule),
+                is_enforced=True,
+            )
+        for rule in sorted(criteria_set.applied_compound_rules):
+            await self._queries.upsert_criteria_set_compound_rule(
+                connection,
+                criteria_set=str(criteria_set.id),
+                compound_rule=str(rule),
+                is_applied=True,
+            )
         for weight in criteria_set.pillar_weights:
             await self._queries.upsert_pillar_weight(
                 connection,

@@ -19,6 +19,15 @@ components:
           title: Min Value
       title: AllowedRangeBody
       type: object
+    ApplicationBody:
+      properties:
+        is_applied:
+          title: Is Applied
+          type: boolean
+      required:
+      - is_applied
+      title: ApplicationBody
+      type: object
     AttributeBody:
       additionalProperties: true
       type: object
@@ -525,6 +534,42 @@ components:
           title: Weight Locked
       title: CriterionInput
       type: object
+    DataSourceBody:
+      properties:
+        default_priority:
+          title: Default Priority
+          type: integer
+        id:
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+        reliability_tier:
+          title: Reliability Tier
+          type: string
+        source_kind:
+          title: Source Kind
+          type: string
+      required:
+      - id
+      - name
+      - source_kind
+      - default_priority
+      - reliability_tier
+      title: DataSourceBody
+      type: object
+    DataSourcesBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/DataSourceBody'
+          title: Items
+          type: array
+      required:
+      - items
+      title: DataSourcesBody
+      type: object
     DuplicateRequest:
       description: What the copy will be called, and what to call it.
       properties:
@@ -538,6 +583,15 @@ components:
       - id
       - name
       title: DuplicateRequest
+      type: object
+    EnforcementBody:
+      properties:
+        is_enforced:
+          title: Is Enforced
+          type: boolean
+      required:
+      - is_enforced
+      title: EnforcementBody
       type: object
     EvaluationCriteriaBody:
       properties:
@@ -1004,6 +1058,19 @@ components:
       - items
       title: MatchRulesBody
       type: object
+    NewCriteriaSetBody:
+      properties:
+        id:
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+      required:
+      - id
+      - name
+      title: NewCriteriaSetBody
+      type: object
     NonMatchReasonBody:
       description: Exactly one of the three names the rule that said so (`reqs.md`
         5.4).
@@ -1053,6 +1120,33 @@ components:
       - weight
       - weight_locked
       title: PillarWeightBody
+      type: object
+    PillarWeightInput:
+      properties:
+        weight:
+          maximum: 100.0
+          minimum: 0.0
+          title: Weight
+          type: number
+        weight_locked:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Weight Locked
+      required:
+      - weight
+      title: PillarWeightInput
+      type: object
+    PillarWeightsBody:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/PillarWeightBody'
+          title: Items
+          type: array
+      required:
+      - items
+      title: PillarWeightsBody
       type: object
     PillarsBody:
       properties:
@@ -1137,6 +1231,15 @@ components:
       - start
       - end
       title: ReferencePeriodBody
+      type: object
+    RenameBody:
+      properties:
+        name:
+          title: Name
+          type: string
+      required:
+      - name
+      title: RenameBody
       type: object
     RunBody:
       additionalProperties: true
@@ -1244,7 +1347,17 @@ components:
       type: object
     SettingsBody:
       description: '`SettingsInput` from the contract, which `Settings` is defined
-        as.'
+        as.
+
+
+        **The two percentages travel as numbers, not as `Decimal`.** The contract
+        types them
+
+        `number`, and Pydantic renders a `Decimal` as a JSON string -- which is lossless,
+        and not
+
+        what the design says. It went unnoticed while every setting was null (`known-issues.md`
+        P16).'
       properties:
         comparator_limit:
           anyOf:
@@ -1253,14 +1366,12 @@ components:
           title: Comparator Limit
         min_coverage:
           anyOf:
-          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
-            type: string
+          - type: number
           - type: 'null'
           title: Min Coverage
         run_spend_cap_eur:
           anyOf:
-          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
-            type: string
+          - type: number
           - type: 'null'
           title: Run Spend Cap Eur
         score_scale_max:
@@ -1469,6 +1580,34 @@ paths:
       summary: List Attributes
       tags:
       - catalog
+  /v1/attributes/{attribute_id}:
+    get:
+      description: One attribute with its declarations. Raises a 404 for one the catalog
+        does not hold.
+      operationId: getAttribute
+      parameters:
+      - in: path
+        name: attribute_id
+        required: true
+        schema:
+          title: Attribute Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttributeBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Attribute
+      tags:
+      - catalog
   /v1/candidates:
     get:
       description: 'Every candidate, or every candidate at one level.
@@ -1511,6 +1650,33 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: List Candidates
+      tags:
+      - catalog
+  /v1/candidates/{candidate_id}:
+    get:
+      description: One candidate. Raises a 404 for one the catalog does not hold.
+      operationId: getCandidate
+      parameters:
+      - in: path
+        name: candidate_id
+        required: true
+        schema:
+          title: Candidate Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Candidate
       tags:
       - catalog
   /v1/comparisons:
@@ -1625,7 +1791,81 @@ paths:
       summary: List Criteria Sets
       tags:
       - catalog
+    post:
+      description: 'A new, empty set of priorities.
+
+
+        **Empty, not copied.** The design gives this an identifier and a name and
+        nothing else, and
+
+        choosing a set to copy from would be this endpoint deciding whose priorities
+        a new set
+
+        starts from. A set with no criteria scores nothing, and `GET /rankings` says
+        exactly that
+
+        rather than producing a ranking out of an empty opinion.
+
+
+        Refused with 409 when the identifier is taken: silently replacing a set somebody
+        built is
+
+        the worst kind of success (`criteria/store.py`).'
+      operationId: createCriteriaSet
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewCriteriaSetBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CriteriaSetBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Create Criteria Set
+      tags:
+      - criteria
   /v1/criteria-sets/{criteria_set_id}:
+    delete:
+      description: 'Discard a set of priorities.
+
+
+        **A saved evaluation froze its own copy** (`reqs.md` Q193), so deleting the
+        set it was
+
+        computed from leaves it readable -- which is why this store has a delete and
+        `ValueStore`
+
+        deliberately does not: an opinion may be withdrawn, a measurement may not.'
+      operationId: deleteCriteriaSet
+      parameters:
+      - in: path
+        name: criteria_set_id
+        required: true
+        schema:
+          title: Criteria Set Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Delete Criteria Set
+      tags:
+      - criteria
     get:
       description: 'One whole set. `level` narrows the criteria and the pillar weights
         together.
@@ -1668,6 +1908,76 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Get Criteria Set
+      tags:
+      - criteria
+    patch:
+      description: The name, and only the name. Weights move through their own endpoints.
+      operationId: renameCriteriaSet
+      parameters:
+      - in: path
+        name: criteria_set_id
+        required: true
+        schema:
+          title: Criteria Set Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CriteriaSetBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Rename Criteria Set
+      tags:
+      - criteria
+  /v1/criteria-sets/{criteria_set_id}/compound-rules/{compound_rule_id}:
+    put:
+      description: 'Whether this set applies a compound rule. An undecided rule fires
+        either way -- which is
+
+        to say, not at all (`reqs.md` 7.4).'
+      operationId: setCompoundRuleApplication
+      parameters:
+      - in: path
+        name: criteria_set_id
+        required: true
+        schema:
+          title: Criteria Set Id
+          type: string
+      - in: path
+        name: compound_rule_id
+        required: true
+        schema:
+          title: Compound Rule Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplicationBody'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Set Compound Rule Application
       tags:
       - criteria
   /v1/criteria-sets/{criteria_set_id}/criteria/{attribute_id}:
@@ -1777,6 +2087,97 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Duplicate Criteria Set
+      tags:
+      - criteria
+  /v1/criteria-sets/{criteria_set_id}/match-rules/{match_rule_id}:
+    put:
+      description: 'Whether this set enforces a gate.
+
+
+        **A preference, not a fact** (`arch.md` 3.6): the gate''s answer belongs to
+        the candidate and
+
+        stays stored either way; this decides only whether it counts against the score.'
+      operationId: setMatchRuleEnforcement
+      parameters:
+      - in: path
+        name: criteria_set_id
+        required: true
+        schema:
+          title: Criteria Set Id
+          type: string
+      - in: path
+        name: match_rule_id
+        required: true
+        schema:
+          title: Match Rule Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnforcementBody'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Set Match Rule Enforcement
+      tags:
+      - criteria
+  /v1/criteria-sets/{criteria_set_id}/pillar-weights/{pillar_id}:
+    put:
+      description: 'Move one pillar''s weight, and answer with every pillar weight
+        at that level.
+
+
+        The outer half of the two-level weighting, rebalanced by the same arithmetic
+        as the inner
+
+        half (`criteria/rebalancing.py`). The whole level comes back because the whole
+        level
+
+        changed; returning one number would leave the screen showing weights that
+        do not sum.'
+      operationId: updatePillarWeight
+      parameters:
+      - in: path
+        name: criteria_set_id
+        required: true
+        schema:
+          title: Criteria Set Id
+          type: string
+      - in: path
+        name: pillar_id
+        required: true
+        schema:
+          title: Pillar Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PillarWeightInput'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PillarWeightsBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Update Pillar Weight
       tags:
       - criteria
   /v1/data-acquisition-runs:
@@ -1978,6 +2379,29 @@ paths:
       summary: Retry
       tags:
       - acquisition
+  /v1/data-sources:
+    get:
+      description: 'Every source, in the global priority order (`reqs.md` 6.6).
+
+
+        Reading this list top to bottom is reading the order the active-value rule
+        applies, which is
+
+        what makes a per-attribute override legible: an override names the sources
+        somebody has an
+
+        opinion about, and every other source keeps its place beneath them.'
+      operationId: listDataSources
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataSourcesBody'
+          description: Successful Response
+      summary: List Data Sources
+      tags:
+      - catalog
   /v1/evaluations:
     get:
       description: The kept results, newest first.
@@ -2400,6 +2824,46 @@ paths:
                 $ref: '#/components/schemas/SettingsBody'
           description: Successful Response
       summary: Get Settings
+      tags:
+      - settings
+    put:
+      description: 'Store all four, and answer with what was stored.
+
+
+        **Replaced whole, never patched**, for the reason the household is: these
+        four decide what a
+
+        score means, and a partial write would leave a ranking computed half against
+        the old scale
+
+        and half against the new. **A null stays null** -- it is a decision the household
+        has not
+
+        made, and substituting a default here would be this application choosing what
+        "enough
+
+        coverage" means (`devplan.md` 0.3).'
+      operationId: replaceSettings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingsBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Replace Settings
       tags:
       - settings
   /v1/values:

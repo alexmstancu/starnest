@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from starnest.api.bodies import ContractBody
 from starnest.api.dependencies import Criteria
-from starnest.criteria import CriteriaSet, Criterion
+from starnest.criteria import CriteriaSet, CriteriaSetError, Criterion, UnknownCriterionError
 
 router = APIRouter(tags=["criteria"])
 
@@ -230,3 +230,186 @@ async def duplicate_criteria_set(
     await criteria.create_criteria_set(copy)
     response.headers["Location"] = f"/v1/criteria-sets/{wanted.id}"
     return _set_body(copy)
+
+
+class NewCriteriaSetBody(BaseModel):
+    id: str
+    name: str
+
+
+class RenameBody(BaseModel):
+    name: str
+
+
+class PillarWeightInput(BaseModel):
+    weight: float = Field(ge=0, le=100)
+    weight_locked: bool | None = None
+
+
+class PillarWeightsBody(BaseModel):
+    items: tuple[PillarWeightBody, ...]
+
+
+class EnforcementBody(BaseModel):
+    is_enforced: bool
+
+
+class ApplicationBody(BaseModel):
+    is_applied: bool
+
+
+@router.post(
+    "/criteria-sets",
+    operation_id="createCriteriaSet",
+    status_code=201,
+    response_model=CriteriaSetBody,
+)
+async def create_criteria_set(body: NewCriteriaSetBody, criteria: Criteria) -> CriteriaSetBody:
+    """A new, empty set of priorities.
+
+    **Empty, not copied.** The design gives this an identifier and a name and nothing else, and
+    choosing a set to copy from would be this endpoint deciding whose priorities a new set
+    starts from. A set with no criteria scores nothing, and `GET /rankings` says exactly that
+    rather than producing a ranking out of an empty opinion.
+
+    Refused with 409 when the identifier is taken: silently replacing a set somebody built is
+    the worst kind of success (`criteria/store.py`).
+    """
+    await criteria.create_criteria_set(CriteriaSet(id=body.id, name=body.name))
+    return _set_body(await criteria.read_criteria_set(body.id))
+
+
+@router.patch(
+    "/criteria-sets/{criteria_set_id}",
+    operation_id="renameCriteriaSet",
+    response_model=CriteriaSetBody,
+)
+async def rename_criteria_set(
+    criteria_set_id: str, body: RenameBody, criteria: Criteria
+) -> CriteriaSetBody:
+    """The name, and only the name. Weights move through their own endpoints."""
+    current = await criteria.read_criteria_set(criteria_set_id)
+    await criteria.replace_criteria_set(current.model_copy(update={"name": body.name}))
+    return _set_body(await criteria.read_criteria_set(criteria_set_id))
+
+
+@router.delete(
+    "/criteria-sets/{criteria_set_id}", operation_id="deleteCriteriaSet", status_code=204
+)
+async def delete_criteria_set(criteria_set_id: str, criteria: Criteria) -> Response:
+    """Discard a set of priorities.
+
+    **A saved evaluation froze its own copy** (`reqs.md` Q193), so deleting the set it was
+    computed from leaves it readable -- which is why this store has a delete and `ValueStore`
+    deliberately does not: an opinion may be withdrawn, a measurement may not.
+    """
+    await criteria.delete_criteria_set(criteria_set_id)
+    return Response(status_code=204)
+
+
+@router.put(
+    "/criteria-sets/{criteria_set_id}/pillar-weights/{pillar_id}",
+    operation_id="updatePillarWeight",
+    response_model=PillarWeightsBody,
+)
+async def update_pillar_weight(
+    criteria_set_id: str,
+    pillar_id: str,
+    body: PillarWeightInput,
+    criteria: Criteria,
+) -> PillarWeightsBody:
+    """Move one pillar's weight, and answer with every pillar weight at that level.
+
+    The outer half of the two-level weighting, rebalanced by the same arithmetic as the inner
+    half (`criteria/rebalancing.py`). The whole level comes back because the whole level
+    changed; returning one number would leave the screen showing weights that do not sum.
+    """
+    current = await criteria.read_criteria_set(criteria_set_id)
+    level = _the_level_of(current, pillar_id)
+    changed = current.with_pillar_weight(pillar_id, level, Decimal(str(body.weight)))
+    if body.weight_locked is not None:
+        changed = changed.model_copy(
+            update={
+                "pillar_weights": tuple(
+                    weight.model_copy(update={"weight_locked": body.weight_locked})
+                    if str(weight.pillar) == pillar_id and str(weight.level) == level
+                    else weight
+                    for weight in changed.pillar_weights
+                )
+            }
+        )
+    await criteria.replace_criteria_set(changed)
+    return PillarWeightsBody(
+        items=tuple(
+            PillarWeightBody(
+                pillar=str(weight.pillar),
+                level=str(weight.level),
+                weight=weight.weight,
+                weight_locked=weight.weight_locked,
+            )
+            for weight in changed.pillar_weights
+            if str(weight.level) == level
+        )
+    )
+
+
+def _the_level_of(criteria_set: CriteriaSet, pillar: str) -> str:
+    """Which level this pillar carries weight at, read from the set rather than assumed.
+
+    The design addresses a pillar weight by set and pillar, and a set may weigh the same pillar
+    at both levels. Naming `country` here would be the hardcoded level `reqs.md` 3.1 forbids --
+    nothing may assume there are exactly two, or which one is meant -- so the level comes from
+    the set, and a pillar weighted at more than one is refused rather than guessed at.
+    """
+    levels = {
+        str(weight.level) for weight in criteria_set.pillar_weights if str(weight.pillar) == pillar
+    }
+    if not levels:
+        raise UnknownCriterionError(f"{criteria_set.id} carries no weight for pillar {pillar!r}")
+    if len(levels) > 1:
+        raise CriteriaSetError(
+            f"{criteria_set.id} weighs {pillar!r} at {', '.join(sorted(levels))}; the design "
+            "addresses a pillar weight by set and pillar alone, so this one is ambiguous"
+        )
+    return levels.pop()
+
+
+@router.put(
+    "/criteria-sets/{criteria_set_id}/match-rules/{match_rule_id}",
+    operation_id="setMatchRuleEnforcement",
+    status_code=204,
+)
+async def set_match_rule_enforcement(
+    criteria_set_id: str, match_rule_id: str, body: EnforcementBody, criteria: Criteria
+) -> Response:
+    """Whether this set enforces a gate.
+
+    **A preference, not a fact** (`arch.md` 3.6): the gate's answer belongs to the candidate and
+    stays stored either way; this decides only whether it counts against the score.
+    """
+    current = await criteria.read_criteria_set(criteria_set_id)
+    enforced = set(current.enforced_match_rules)
+    enforced.add(match_rule_id) if body.is_enforced else enforced.discard(match_rule_id)
+    await criteria.replace_criteria_set(
+        current.model_copy(update={"enforced_match_rules": frozenset(enforced)})
+    )
+    return Response(status_code=204)
+
+
+@router.put(
+    "/criteria-sets/{criteria_set_id}/compound-rules/{compound_rule_id}",
+    operation_id="setCompoundRuleApplication",
+    status_code=204,
+)
+async def set_compound_rule_application(
+    criteria_set_id: str, compound_rule_id: str, body: ApplicationBody, criteria: Criteria
+) -> Response:
+    """Whether this set applies a compound rule. An undecided rule fires either way -- which is
+    to say, not at all (`reqs.md` 7.4)."""
+    current = await criteria.read_criteria_set(criteria_set_id)
+    applied = set(current.applied_compound_rules)
+    applied.add(compound_rule_id) if body.is_applied else applied.discard(compound_rule_id)
+    await criteria.replace_criteria_set(
+        current.model_copy(update={"applied_compound_rules": frozenset(applied)})
+    )
+    return Response(status_code=204)

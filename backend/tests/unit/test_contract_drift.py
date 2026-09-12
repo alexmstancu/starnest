@@ -129,12 +129,13 @@ def _shape_of(path: str) -> str:
     return "/".join("{}" if segment.startswith("{") else segment for segment in segments)
 
 
-def test_the_gap_between_design_and_code_is_visible(served: dict, designed: dict) -> None:
-    """Not an assertion about the size of the gap -- an assertion that there IS one, and that
-    the design is the larger.
+def test_the_design_is_never_the_smaller_of_the_two(served: dict, designed: dict) -> None:
+    """The design leads and the code follows, however small the gap becomes.
 
-    If the served set ever exceeded the design, the two files would have swapped roles without
-    anyone deciding to, which is the state `CLAUDE.md` described for weeks while the opposite
-    was true.
+    It was 24 operations for most of the MVP and reached **zero on 2026-09-12**, when the last
+    ten were built. That is the intended end state, not an error -- but the direction still
+    matters: if the served set ever exceeded the design, the two files would have swapped roles
+    without anyone deciding to, and `openapi.yaml` would have stopped being the thing written
+    first.
     """
-    assert len(_operations(served)) < len(_operations(designed))
+    assert set(_operations(served)) <= set(_operations(designed))

@@ -42,6 +42,9 @@ A_REQUEST_FOR = {
     "listEvaluations": ("get", "/v1/evaluations", {}),
     "listCompoundRules": ("get", "/v1/compound-rules", {}),
     "listExternalScores": ("get", "/v1/external-scores", {}),
+    "listDataSources": ("get", "/v1/data-sources", {}),
+    "getAttribute": ("get", "/v1/attributes/country.cost_of_living_index", {}),
+    "getCandidate": ("get", "/v1/candidates/country.portugal", {}),
 }
 """One successful call per served GET, by operation id.
 
