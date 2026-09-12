@@ -1,4 +1,5 @@
 import { useCallback, useState, type FormEvent } from "react";
+import { isApiError } from "../../api/ApiError";
 import {
   fetchHousehold,
   replaceHousehold,
@@ -23,11 +24,41 @@ export function HouseholdPanel() {
   if (resource.status === "loading" || resource.status === "idle") {
     return <p className="screen__note">Loading the household…</p>;
   }
+  // **Nothing recorded yet is the opening state, not a failure.** This is the screen where the
+  // household is first written (`reqs.md` 3.9), so a 404 here means "start here" -- and an
+  // error notice with a Try again button would be a dead end on the first thing anyone does.
   if (resource.status === "error") {
-    return <ErrorNotice error={resource.error} onRetry={reload} />;
+    if (!isNotConfigured(resource.error)) {
+      return <ErrorNotice error={resource.error} onRetry={reload} />;
+    }
+    return (
+      <HouseholdForm
+        household={NOTHING_RECORDED}
+        note="Nothing has been recorded about the household yet. It is the first thing to fill in: several gates and criterion defaults read it."
+      />
+    );
   }
   return <HouseholdForm household={resource.data} />;
 }
+
+const HOUSEHOLD_NOT_CONFIGURED = "household_not_configured";
+
+function isNotConfigured(error: unknown): boolean {
+  return isApiError(error) && error.code === HOUSEHOLD_NOT_CONFIGURED;
+}
+
+/**
+ * An empty record to fill in, which is not a default household: every field is blank, so
+ * nothing here is a number somebody would have to notice and correct.
+ */
+const NOTHING_RECORDED: Household = {
+  net_income: Number.NaN,
+  number_adults: Number.NaN,
+  number_children: Number.NaN,
+  home_country_candidate: "",
+  home_city_candidate: null,
+  citizenships: [],
+};
 
 /**
  * The typed form, as text.
@@ -65,7 +96,13 @@ function draftOf(household: Household): Draft {
  * unmount this form mid-flight and lose the confirmation with it, to be told what the response
  * already said.
  */
-function HouseholdForm({ household }: { household: Household }) {
+function HouseholdForm({
+  household,
+  note,
+}: {
+  household: Household;
+  note?: string;
+}) {
   const [draft, setDraft] = useState<Draft>(draftOf(household));
   const [failure, setFailure] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
@@ -123,6 +160,8 @@ function HouseholdForm({ household }: { household: Household }) {
       {/* No "try again" button: the way to retry a save is the save button, which is still
           there. A second control that only cleared the message would offer a retry it does not
           perform. */}
+      {note !== undefined && <p className="screen__note">{note}</p>}
+
       {failure !== null && <ErrorNotice error={failure} />}
       {saved && <p className="panel__hint">Saved.</p>}
 
@@ -236,8 +275,11 @@ function splitList(typed: string): string[] {
     .filter((entry) => entry !== "");
 }
 
+/** A blank field, for anything that is not a number -- including the not-yet-recorded case. */
 function numberAsText(value: number | null | undefined): string {
-  return value === null || value === undefined ? "" : String(value);
+  return value === null || value === undefined || Number.isNaN(value)
+    ? ""
+    : String(value);
 }
 
 /** An empty optional field is absent, not zero -- a target spend of 0 would be a decision. */

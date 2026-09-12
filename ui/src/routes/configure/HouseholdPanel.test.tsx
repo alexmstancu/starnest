@@ -122,3 +122,71 @@ describe("the household panel", () => {
     expect(await screen.findByText(/no household/)).toBeInTheDocument();
   });
 });
+
+describe("a household nobody has recorded yet", () => {
+  /**
+   * The opening state of the whole application. The API answers 404
+   * `household_not_configured`, which is a "start here" rather than a fault -- and an error
+   * notice would be a dead end on the first thing anyone does.
+   */
+  function nothingRecorded() {
+    mockServer.use(
+      http.get("/v1/household", () =>
+        HttpResponse.json(
+          {
+            code: "household_not_configured",
+            message: "nothing has been recorded about the household yet",
+          },
+          { status: 404 },
+        ),
+      ),
+    );
+  }
+
+  it("offers an empty form rather than an error", async () => {
+    nothingRecorded();
+    renderShell("/configure");
+    const household = await panel();
+
+    expect(
+      await household.findByText(/Nothing has been recorded/),
+    ).toBeInTheDocument();
+    expect(field("Net annual income")).toHaveValue("");
+    expect(field("Citizenships")).toHaveValue("");
+    expect(household.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("writes the first household from that form", async () => {
+    nothingRecorded();
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const household = await panel();
+    await household.findByText(/Nothing has been recorded/);
+
+    await user.type(field("Net annual income"), "70000");
+    await user.type(field("Adults"), "2");
+    await user.type(field("Children under 18"), "0");
+    await user.type(field("Home country candidate"), "country.romania");
+    await user.type(field("Citizenships"), "country.romania");
+    await user.click(household.getByRole("button", { name: "Save household" }));
+
+    expect(await household.findByText("Saved.")).toBeInTheDocument();
+  });
+
+  it("still reports a failure that is not the missing household", async () => {
+    mockServer.use(
+      http.get("/v1/household", () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "the database is down" },
+          { status: 500 },
+        ),
+      ),
+    );
+    renderShell("/configure");
+
+    expect(await screen.findByText(/the database is down/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Save household" }),
+    ).not.toBeInTheDocument();
+  });
+});
