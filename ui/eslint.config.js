@@ -1,4 +1,5 @@
 import js from "@eslint/js";
+import importX from "eslint-plugin-import-x";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import globals from "globals";
@@ -22,6 +23,9 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,
+  // Carries the plugin and its TypeScript resolver, which is what lets `no-cycle` follow an
+  // import through a path alias and a `.tsx` extension rather than giving up on it.
+  importX.flatConfigs.typescript,
 
   {
     files: ["**/*.{ts,tsx}"],
@@ -39,6 +43,17 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+
+      // **No import cycles.** TypeScript compiles them happily and the bundler resolves them
+      // at runtime, usually -- until a module reads a binding that is still `undefined` because
+      // the other half of the cycle has not finished evaluating. The failure surfaces as a
+      // blank screen far from its cause. The backend has the same rule as a test over its
+      // import graph (`tests/unit/test_architecture.py`); this is that check for the client.
+      //
+      // It also keeps the interface's own layering honest: `shell/` and `routes/` read `api/`,
+      // and `api/` has no business reading either of them.
+      "import-x/no-cycle": ["error", { maxDepth: Infinity }],
+      "import-x/no-self-import": "error",
 
       // The stale-draft defect fixed in cbef101 was exactly this rule's quarry: an effect that
       // read a value it had not declared. An error, not a warning.

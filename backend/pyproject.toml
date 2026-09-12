@@ -167,10 +167,23 @@ forbidden_modules = [
     "starnest.storage",
 ]
 
+# Every module of arch.md 6.1 appears here, highest first, and `test_architecture.py` fails if
+# one is missing -- which is what makes "exhaustive" a check rather than a claim. A layers
+# contract forbids a lower layer importing a higher one, so a cycle BETWEEN these modules is
+# impossible by construction: every cycle needs one upward import.
+#
+# `storage` and `data_sources` sit in one layer as independent siblings: both are plugins
+# implementing interfaces the policy modules declare (arch.md 6.3), and neither has any business
+# knowing the other exists. `|` is how import-linter spells independent siblings -- `:` spells
+# the opposite, siblings that MAY import each other, and it was written that way here first:
+# `storage` importing `data_sources` passed, which is the whole point of the sibling rule.
 [[tool.importlinter.contracts]]
 name = "2. The dependency graph is layered, and the layering is exhaustive"
 type = "layers"
 layers = [
+    "starnest.main",
+    "starnest.api",
+    "starnest.storage | starnest.data_sources",
     "starnest.comparison",
     "starnest.evaluation",
     "starnest.criteria",
