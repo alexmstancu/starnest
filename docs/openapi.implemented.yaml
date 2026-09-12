@@ -197,6 +197,68 @@ components:
       - items
       title: CandidatesBody
       type: object
+    ComparatorCellBody:
+      additionalProperties: true
+      type: object
+    ComparisonAttributeRowBody:
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        comparators:
+          items:
+            $ref: '#/components/schemas/ComparatorCellBody'
+          title: Comparators
+          type: array
+        focus:
+          $ref: '#/components/schemas/ComparisonSideBody'
+        pillar:
+          title: Pillar
+          type: string
+      required:
+      - attribute
+      - pillar
+      - focus
+      - comparators
+      title: ComparisonAttributeRowBody
+      type: object
+    ComparisonBody:
+      properties:
+        attributes:
+          items:
+            $ref: '#/components/schemas/ComparisonAttributeRowBody'
+          title: Attributes
+          type: array
+        comparators:
+          items:
+            $ref: '#/components/schemas/CandidateResultBody'
+          title: Comparators
+          type: array
+        criteria_set:
+          title: Criteria Set
+          type: string
+        focus:
+          $ref: '#/components/schemas/CandidateResultBody'
+        level:
+          title: Level
+          type: string
+        synthesis:
+          default: []
+          items:
+            $ref: '#/components/schemas/SynthesisBody'
+          title: Synthesis
+          type: array
+      required:
+      - criteria_set
+      - level
+      - focus
+      - comparators
+      - attributes
+      title: ComparisonBody
+      type: object
+    ComparisonSideBody:
+      additionalProperties: true
+      type: object
     ConfidenceLevel:
       description: 'The four grades, strongest first.
 
@@ -990,6 +1052,32 @@ components:
           title: Score Scale Max
       title: SettingsBody
       type: object
+    SynthesisBody:
+      properties:
+        advantages:
+          default: []
+          items:
+            type: string
+          title: Advantages
+          type: array
+        comparator:
+          title: Comparator
+          type: string
+        disadvantages:
+          default: []
+          items:
+            type: string
+          title: Disadvantages
+          type: array
+        score_delta:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Score Delta
+      required:
+      - comparator
+      title: SynthesisBody
+      type: object
     ValidationError:
       properties:
         ctx:
@@ -1194,6 +1282,62 @@ paths:
       summary: List Candidates
       tags:
       - catalog
+  /v1/comparisons:
+    get:
+      description: 'The focus against each comparator, attribute by attribute, with
+        the synthesis.
+
+
+        A candidate at another level is simply not in this level''s ranking and is
+        refused by name,
+
+        which is how "comparisons never mix levels" enforces itself rather than being
+        remembered.'
+      operationId: getComparison
+      parameters:
+      - in: query
+        name: criteria_set
+        required: true
+        schema:
+          title: Criteria Set
+          type: string
+      - in: query
+        name: level
+        required: true
+        schema:
+          title: Level
+          type: string
+      - in: query
+        name: focus
+        required: true
+        schema:
+          title: Focus
+          type: string
+      - in: query
+        name: comparators
+        required: false
+        schema:
+          default: []
+          items:
+            type: string
+          title: Comparators
+          type: array
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComparisonBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Comparison
+      tags:
+      - evaluation
   /v1/criteria-sets:
     get:
       description: 'Headers only. Reading 41 criteria per set to fill a dropdown would

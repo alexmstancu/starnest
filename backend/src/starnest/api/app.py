@@ -8,11 +8,21 @@ already constructed and are put on the application state, so the same endpoints 
 database and a test's fakes without knowing which they have.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
-from starnest.api import catalog, criteria, evaluations, household, rankings, rules, runs, settings
+from starnest.api import (
+    catalog,
+    comparisons,
+    criteria,
+    evaluations,
+    household,
+    rankings,
+    rules,
+    runs,
+    settings,
+)
 from starnest.api import values as value_endpoints
-from starnest.api.errors import domain_error_handler
+from starnest.api.errors import domain_error_handler, refusal_handler
 from starnest.candidates import CandidateStore
 from starnest.criteria import CriteriaStore, MatchRuleResultStore
 from starnest.data import CatalogStore, ValueStore
@@ -64,6 +74,7 @@ def build_app(
         criteria.router,
         rankings.router,
         evaluations.router,
+        comparisons.router,
         runs.router,
         # Imported under another name: `values` is also this function's value store.
         value_endpoints.router,
@@ -80,6 +91,9 @@ def build_app(
     # two ARE the house contract: every fault the domain raises is one or the other, stated in
     # `criteria/` and asserted by its tests. Anything else is a bug, and a bug should reach the
     # logs as a 500 rather than be dressed as a tidy error body nobody investigates.
+    # A refusal an endpoint raises itself (an unset setting, say) in the same shape as a domain
+    # fault: one error shape, whichever half of the application said no (`arch.md` 7.6).
+    app.add_exception_handler(HTTPException, refusal_handler)
     app.add_exception_handler(ValueError, domain_error_handler)
     app.add_exception_handler(LookupError, domain_error_handler)
     return app

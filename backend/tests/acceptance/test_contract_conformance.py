@@ -58,7 +58,14 @@ def _served_get_operations() -> set[str]:
 
 
 COVERED_BY_A_SEQUENCE = frozenset(
-    {"getRun", "getEvaluation", "getEvaluationCriteria", "getCandidateScoreDetail"}
+    {
+        "getRun",
+        "getEvaluation",
+        "getEvaluationCriteria",
+        "getCandidateScoreDetail",
+        # Needs a comparator limit in settings and two candidates with figures.
+        "getComparison",
+    }
 )
 """Reads that need something to exist before they can be read.
 
@@ -274,3 +281,36 @@ async def test_the_evaluation_endpoints_match_the_designed_shapes(
     detail = await api.get(f"/v1/evaluations/{evaluation}/candidates/country.portugal")
     validate("getCandidateScoreDetail", detail.json())
     assert undeclared_fields("getCandidateScoreDetail", detail.json()) == []
+
+
+async def test_a_comparison_matches_the_designed_shape(
+    api: httpx.AsyncClient, database_url: str, stored_figures: None
+) -> None:
+    """With figures on both sides, so the value objects and the deltas are exercised rather
+    than a table of nulls."""
+    await _set_the_comparator_limit(database_url, 5)
+
+    response = await api.get(
+        "/v1/comparisons",
+        params={
+            "criteria_set": MINIMAL,
+            "level": COUNTRY,
+            "focus": "country.portugal",
+            "comparators": ["country.greece"],
+        },
+    )
+
+    assert response.status_code == 200
+    validate("getComparison", response.json())
+    assert undeclared_fields("getComparison", response.json()) == []
+
+
+async def _set_the_comparator_limit(database_url: str, limit: int) -> None:
+    async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+        await pool.open(wait=True)
+        async with pool.connection() as connection:
+            await connection.execute(
+                "INSERT INTO settings (id, score_scale_max, comparator_limit) VALUES (1, 100, %s)"
+                " ON CONFLICT (id) DO UPDATE SET comparator_limit = EXCLUDED.comparator_limit",
+                (limit,),
+            )

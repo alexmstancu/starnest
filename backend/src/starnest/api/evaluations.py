@@ -99,14 +99,14 @@ async def save_evaluation(
     The same computation `GET /rankings` performs, called rather than repeated: two code paths
     would let a saved evaluation differ from the ranking it was saved from.
     """
-    criteria_set, _, results, score_scale_max = await the_ranking(
+    ranking = await the_ranking(
         body.criteria_set, body.level, criteria, candidates, values, households
     )
     saved = await evaluations.save(
-        criteria=criteria_set,
+        criteria=ranking.criteria,
         level=body.level,
-        results=results,
-        score_scale_max=score_scale_max,
+        results=ranking.results,
+        score_scale_max=ranking.score_scale_max,
         computed_at=datetime.now(UTC),
         note=body.note,
     )

@@ -651,7 +651,7 @@ only a human confirms it moved the *right* number.
 | Stream | Task | Size |
 |---|---|---|
 | **W5-A** | ~~Evaluation persistence~~ **Done 2026-09-12.** `POST /evaluations` keeps a ranking with a frozen copy of its criteria, anchors and scale; `GET /evaluations`, the kept ranking, its criteria and one candidate's drill-down. `GET /rankings` still writes nothing, and an acceptance test says so. Each contribution now names the value row behind it, which closes the provenance chain | **M** |
-| **W5-B** | `comparison/` — focus and comparators, deltas, weighted contribution, the **templated** synthesis, `GET /comparisons`. The comparator limit is **configurable, never hardcoded** | **M** |
+| **W5-B** | ~~`comparison/`~~ **Done 2026-09-12.** Focus and comparators, the gap in the attribute's own unit beside what it is worth, the templated synthesis ordered by weighted contribution, `GET /comparisons`. The comparator limit is read from settings and **refused when unset**, never defaulted. **Checkpoint C5 is met**: a 3,171 km coastline lead worth 0.3 of a point ranks below a 6.4-point tax lead worth 8 -- and the first version of that test could not tell, because the fixture had only one advantage to order | **M** |
 | **W5-C** | Rules end to end — `/match-rules`, `/match-rule-results` with audited overrides, `/compound-rules`, and the two country compound rules wired into the ranking as **warnings** | **M** |
 
 **Checkpoint C5.** The synthesis gets a specific test: a **large delta on a low-weight

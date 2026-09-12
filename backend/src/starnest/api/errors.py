@@ -13,11 +13,13 @@ REST surface, and this module is the REST surface's opinion.
 from collections.abc import Mapping
 from typing import Any
 
-from fastapi import Request
+from fastapi import HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from starnest.candidates import UnknownCandidateError
+from starnest.comparison import ComparisonError
 from starnest.criteria import (
     CriteriaSetError,
     CriteriaSetExistsError,
@@ -73,6 +75,7 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     HouseholdPlaceError: _refusal(422, "unknown_place"),
     NormalisationError: _refusal(422, "cannot_be_scored"),
     RankingError: _refusal(422, "cannot_be_ranked"),
+    ComparisonError: _refusal(409, "invalid_comparison"),
     MalformedMatchRuleResultError: _refusal(422, "invalid_match_rule_result"),
     UnknownDataSourceError: _refusal(422, "unknown_data_source"),
 }
@@ -123,3 +126,18 @@ def _details_of(error: Exception) -> dict[str, Any] | None:
     if locked:
         return {"locked": [str(attribute) for attribute in locked]}
     return None
+
+
+async def refusal_handler(request: Request, error: Exception) -> JSONResponse:
+    """A refusal an endpoint raises itself, rendered in the one error shape.
+
+    `arch.md` 7.6 gives this API one error shape -- `code`, `message`, optional `details` -- and
+    `HTTPException` renders its payload under `detail` instead, so an endpoint raising one
+    answered in a shape no client was told about while every domain fault answered correctly.
+    A refusal whose payload already carries a `code` is re-rendered flat; anything else (a 404
+    from the framework, say) keeps FastAPI's own rendering.
+    """
+    assert isinstance(error, HTTPException)
+    if not isinstance(error.detail, dict) or "code" not in error.detail:
+        return await http_exception_handler(request, error)
+    return JSONResponse(status_code=error.status_code, content=dict(error.detail))
