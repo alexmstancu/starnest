@@ -53,11 +53,23 @@ type PathValuesOf<Operation> = Operation extends {
   ? Params
   : never;
 
+/**
+ * The JSON body an operation takes, whether the contract marks it required or optional.
+ *
+ * **Both forms, because the contract has both.** `retryRun` takes an optional body -- which
+ * part of the run to go over again, defaulting to the failures so a client that sends nothing
+ * keeps working -- and `openapi-typescript` renders that as `requestBody?`. Matching only the
+ * required form typed it `never`, so the one call that needed a body could not be written.
+ */
 type RequestBodyOf<Operation> = Operation extends {
   requestBody: { content: { "application/json": infer Body } };
 }
   ? Body
-  : never;
+  : Operation extends {
+        requestBody?: { content: { "application/json": infer Body } };
+      }
+    ? Body
+    : never;
 
 export type GetPath = {
   [Path in keyof ApiPaths]: ApiPaths[Path] extends { get: unknown }
@@ -308,7 +320,6 @@ async function request<Result>(
   }
 }
 
-
 /**
  * A whole-record write: settings, the household, one pillar's weight, whether a rule counts.
  *
@@ -322,7 +333,11 @@ export async function putJson<Path extends PutPath>(
   options: CallOptions<PathValuesOf<PutOperation<Path>>> = {},
 ): Promise<PutResult<Path>> {
   return request(
-    buildUrl(path as string, undefined, options.pathParams as PathValues | undefined),
+    buildUrl(
+      path as string,
+      undefined,
+      options.pathParams as PathValues | undefined,
+    ),
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -338,7 +353,11 @@ export async function deleteResource<Path extends DeletePath>(
   options: CallOptions<PathValuesOf<DeleteOperation<Path>>> = {},
 ): Promise<void> {
   await request(
-    buildUrl(path as string, undefined, options.pathParams as PathValues | undefined),
+    buildUrl(
+      path as string,
+      undefined,
+      options.pathParams as PathValues | undefined,
+    ),
     { method: "DELETE", signal: options.signal },
   );
 }

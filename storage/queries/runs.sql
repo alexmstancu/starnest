@@ -150,7 +150,27 @@ SELECT r.id,
           AND  NOT EXISTS (SELECT 1 FROM value AS v
                            WHERE  v.data_acquisition_run = r.id
                              AND  v.candidate = f.candidate
-                             AND  v.attribute = f.attribute)) AS items_failed
+                             AND  v.attribute = f.attribute)) AS items_failed,
+       -- items_unanswered closes the arithmetic (reqs.md Q217): a pair the scope names that
+       -- produced neither a value nor a failure. Eurostat answers with a whole indicator and
+       -- simply omits Liechtenstein, so the adapter records no figure and, rightly, no failure
+       -- either -- and before this the item belonged to none of the three counts.
+       --
+       -- Derived, not stored. It is the absence of two rows, and a table recording that absence
+       -- could disagree with the rows themselves.
+       (SELECT count(*)
+        FROM   data_acquisition_run_candidate AS scope_c
+        JOIN   data_acquisition_run_attribute AS scope_a
+               ON scope_a.data_acquisition_run = scope_c.data_acquisition_run
+        WHERE  scope_c.data_acquisition_run = r.id
+          AND  NOT EXISTS (SELECT 1 FROM value AS v
+                           WHERE  v.data_acquisition_run = r.id
+                             AND  v.candidate = scope_c.candidate
+                             AND  v.attribute = scope_a.attribute)
+          AND  NOT EXISTS (SELECT 1 FROM data_acquisition_failure AS f
+                           WHERE  f.data_acquisition_run = r.id
+                             AND  f.candidate = scope_c.candidate
+                             AND  f.attribute = scope_a.attribute)) AS items_unanswered
 FROM   data_acquisition_run AS r
 WHERE  r.id = :data_acquisition_run;
 
@@ -164,6 +184,30 @@ SELECT f.data_source,
 FROM   data_acquisition_failure AS f
 WHERE  f.data_acquisition_run = :data_acquisition_run
 ORDER  BY f.candidate, f.attribute, f.data_source;
+
+-- name: select_run_unanswered(data_acquisition_run)
+-- The items nobody answered, so the household can ask again about them (reqs.md Q217).
+--
+-- The same derivation items_unanswered counts, listed rather than counted: every pair the scope
+-- names with no value row and no failure row for this run. There is no source column because no
+-- source failed -- each one asked answered, with nothing for that candidate -- so asking again
+-- means asking whoever can answer the attribute, which the adapters declare and the database
+-- does not.
+SELECT scope_c.candidate,
+       scope_a.attribute
+FROM   data_acquisition_run_candidate AS scope_c
+JOIN   data_acquisition_run_attribute AS scope_a
+       ON scope_a.data_acquisition_run = scope_c.data_acquisition_run
+WHERE  scope_c.data_acquisition_run = :data_acquisition_run
+  AND  NOT EXISTS (SELECT 1 FROM value AS v
+                   WHERE  v.data_acquisition_run = :data_acquisition_run
+                     AND  v.candidate = scope_c.candidate
+                     AND  v.attribute = scope_a.attribute)
+  AND  NOT EXISTS (SELECT 1 FROM data_acquisition_failure AS f
+                   WHERE  f.data_acquisition_run = :data_acquisition_run
+                     AND  f.candidate = scope_c.candidate
+                     AND  f.attribute = scope_a.attribute)
+ORDER  BY scope_c.candidate, scope_a.attribute;
 
 -- name: select_run_values(data_acquisition_run)
 -- What a run produced, as ids and their pairs. The full values are read through values.sql;

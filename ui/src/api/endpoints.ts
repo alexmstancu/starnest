@@ -155,15 +155,23 @@ export function fetchRun(
   });
 }
 
-/** A new run over only what failed (`reqs.md` 6.4). The old run keeps its record. */
+/**
+ * A new run over part of an earlier one (`reqs.md` 6.4, Q217). The old run keeps its record.
+ *
+ * `failed` asks the sources that failed about what they failed on. `unanswered` asks again
+ * about the items that produced neither a figure nor a failure -- where there is no source to
+ * narrow to, because none failed.
+ */
 export function retryRun(
   runId: number,
+  items: "failed" | "unanswered" = "failed",
   options?: RequestOptions,
 ): Promise<Run> {
-  return postJson("/data-acquisition-runs/{runId}/retry", undefined as never, {
-    ...options,
-    pathParams: { runId },
-  });
+  return postJson(
+    "/data-acquisition-runs/{runId}/retry",
+    { items },
+    { ...options, pathParams: { runId } },
+  );
 }
 
 export type StoredValue = components["schemas"]["Value"];

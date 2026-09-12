@@ -12,6 +12,8 @@ import httpx
 import pytest
 from psycopg_pool import AsyncConnectionPool
 
+from starnest.data_acquisition import SourceAdapter
+
 from .conftest import A_SECOND_SOURCE_ANSWERS, a_stub_source, an_api
 
 pytestmark = pytest.mark.acceptance
@@ -467,3 +469,249 @@ class TestRetryingARun:
         response = await api.post("/v1/data-acquisition-runs/999999/retry")
 
         assert response.status_code == 404
+
+
+NO_SOURCE_COVERS = "country.liechtenstein"
+
+
+class TestWhatNobodyAnswered:
+    """`reqs.md` Q217. An item every source answered without having a row for that candidate.
+
+    It is not a failure -- nothing broke -- and it is not complete. Before the third count it
+    belonged to neither, so a run that learned nothing about a country reported that nothing had
+    failed.
+    """
+
+    async def test_the_three_counts_sum_to_the_total(self, database_url: str) -> None:
+        omitting = a_stub_source(silent_about=(), no_row_for=(NO_SOURCE_COVERS,))
+        async with an_api(database_url, (omitting,)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            progress = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()["progress"]
+
+        assert progress["items_total"] == 32 * 2
+        assert progress["items_completed"] == 31 * 2
+        assert progress["items_failed"] == 0
+        assert progress["items_unanswered"] == 2
+        assert (
+            progress["items_completed"] + progress["items_failed"] + progress["items_unanswered"]
+            == progress["items_total"]
+        )
+
+    async def test_the_items_are_named_so_they_can_be_asked_again(self, database_url: str) -> None:
+        omitting = a_stub_source(silent_about=(), no_row_for=(NO_SOURCE_COVERS,))
+        async with an_api(database_url, (omitting,)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        assert {item["candidate"] for item in detail["unanswered"]} == {NO_SOURCE_COVERS}
+        assert {item["attribute"] for item in detail["unanswered"]} == {
+            OVERBURDEN,
+            "country.overcrowding_rate",
+        }
+
+    async def test_an_item_a_second_source_answered_is_complete_not_unanswered(
+        self, database_url: str
+    ) -> None:
+        """Neither count overlaps `items_completed`: Eurostat omits Liechtenstein's overcrowding
+        and the World Bank answers it, so that item was answered."""
+        one_omitting = (
+            a_stub_source(silent_about=(), no_row_for=(NO_SOURCE_COVERS,)),
+            a_stub_source(
+                data_source="world_bank",
+                answers=("country.overcrowding_rate",),
+                silent_about=(),
+            ),
+        )
+        async with an_api(database_url, one_omitting) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        assert detail["progress"]["items_unanswered"] == 1
+        assert [item["attribute"] for item in detail["unanswered"]] == [OVERBURDEN]
+
+    async def test_a_failure_is_not_counted_as_unanswered(self, api: httpx.AsyncClient) -> None:
+        """The default stub declines for Portugal, which is a failure and nothing else."""
+        run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+        detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        assert detail["progress"]["items_failed"] == 2
+        assert detail["progress"]["items_unanswered"] == 0
+        assert detail["unanswered"] == []
+
+
+class TestAskingAgain:
+    """The second action on a run: ask again about what nobody answered (`reqs.md` Q217)."""
+
+    async def test_it_is_a_new_run_over_only_the_unanswered_items(self, database_url: str) -> None:
+        omitting = a_stub_source(silent_about=(), no_row_for=(NO_SOURCE_COVERS,))
+        async with an_api(database_url, (omitting,)) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+            asked = await api.post(
+                f"/v1/data-acquisition-runs/{first['id']}/retry", json={"items": "unanswered"}
+            )
+            scope = (await api.get(f"/v1/data-acquisition-runs/{asked.json()['id']}")).json()[
+                "scope"
+            ]
+
+        assert asked.status_code == 202
+        assert asked.json()["id"] != first["id"]
+        assert scope["candidates"] == [NO_SOURCE_COVERS]
+
+    async def test_a_source_that_never_failed_is_asked_again(self, database_url: str) -> None:
+        """**The difference from a retry.** Nothing failed, so there is no source to narrow to:
+        both sources had nothing for Liechtenstein the first time, and both are asked again --
+        which is how a figure that has since been published can arrive at all."""
+        stubborn = a_stub_source(silent_about=(), no_row_for=(NO_SOURCE_COVERS,))
+        relenting = _a_source_that_answers_the_second_time()
+        async with an_api(database_url, (stubborn, relenting)) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            unanswered_first = (await api.get(f"/v1/data-acquisition-runs/{first['id']}")).json()[
+                "progress"
+            ]["items_unanswered"]
+
+            asked = (
+                await api.post(
+                    f"/v1/data-acquisition-runs/{first['id']}/retry", json={"items": "unanswered"}
+                )
+            ).json()
+
+            from_the_second_source = await _count(
+                database_url,
+                "SELECT count(*) FROM value WHERE data_acquisition_run = %s"
+                " AND data_source = 'world_bank' AND candidate = %s",
+                asked["id"],
+                NO_SOURCE_COVERS,
+            )
+
+        # Both attributes for Liechtenstein: the first source omits it on both, and the second
+        # declares only one of them and had nothing that time either.
+        assert unanswered_first == 2
+        assert from_the_second_source == 1
+
+    async def test_the_earlier_run_keeps_its_account_of_what_it_asked(
+        self, database_url: str
+    ) -> None:
+        omitting = a_stub_source(silent_about=(), no_row_for=(NO_SOURCE_COVERS,))
+        async with an_api(database_url, (omitting,)) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            before = (await api.get(f"/v1/data-acquisition-runs/{first['id']}")).json()
+
+            await api.post(
+                f"/v1/data-acquisition-runs/{first['id']}/retry", json={"items": "unanswered"}
+            )
+
+            after = (await api.get(f"/v1/data-acquisition-runs/{first['id']}")).json()
+
+        assert after["unanswered"] == before["unanswered"]
+        assert after["progress"] == before["progress"]
+
+    async def test_a_second_silence_stores_nothing_and_invents_nothing(
+        self, database_url: str
+    ) -> None:
+        """The honest outcome for a country a dataset does not cover."""
+        omitting = a_stub_source(silent_about=(), no_row_for=(NO_SOURCE_COVERS,))
+        async with an_api(database_url, (omitting,)) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+            asked = (
+                await api.post(
+                    f"/v1/data-acquisition-runs/{first['id']}/retry", json={"items": "unanswered"}
+                )
+            ).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{asked['id']}")).json()
+
+        assert detail["progress"]["items_completed"] == 0
+        assert detail["progress"]["items_unanswered"] == 2
+
+    async def test_a_run_with_nothing_unanswered_is_refused(self, api: httpx.AsyncClient) -> None:
+        """A new run over an empty scope would be a no-op recorded as though it were work."""
+        run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+        refused = await api.post(
+            f"/v1/data-acquisition-runs/{run['id']}/retry", json={"items": "unanswered"}
+        )
+
+        assert refused.status_code == 409
+        assert refused.json()["code"] == "nothing_to_ask_again"
+
+    async def test_asking_again_about_a_run_that_does_not_exist_is_a_404(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.post(
+            "/v1/data-acquisition-runs/999999/retry", json={"items": "unanswered"}
+        )
+
+        assert response.status_code == 404
+
+    async def test_a_body_naming_no_kind_still_retries_the_failures(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """The default is what the endpoint always did, so an older client keeps working."""
+        first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+        retried = await api.post(f"/v1/data-acquisition-runs/{first['id']}/retry", json={})
+
+        assert retried.status_code == 202
+        scope = (await api.get(f"/v1/data-acquisition-runs/{retried.json()['id']}")).json()["scope"]
+        assert scope["candidates"] == [THE_STUB_DECLINES_FOR]
+
+
+def _a_source_that_answers_the_second_time() -> SourceAdapter:
+    """A source with no row for Liechtenstein on the first ask and one on the second.
+
+    Stateful on purpose, and it is the only stub here that is: what "ask again" is *for* is the
+    case where the answer has since appeared, and a stub that behaved identically both times
+    could not tell asking again from not bothering.
+    """
+    from collections.abc import Sequence
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    from starnest.candidates import Candidate
+    from starnest.data import (
+        Attribute,
+        ConfidenceLevel,
+        DataSourceId,
+        Ratio,
+        ReferencePeriod,
+        Value,
+    )
+    from starnest.data_acquisition import Acquired
+
+    class RelentingSource(SourceAdapter):
+        def __init__(self) -> None:
+            self._asked = 0
+
+        @property
+        def data_source(self) -> DataSourceId:
+            return DataSourceId("world_bank")
+
+        @property
+        def attributes(self) -> tuple:
+            return (OVERBURDEN,)
+
+        async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+            self._asked += 1
+            if self._asked == 1:
+                return Acquired()
+            return Acquired(
+                values=tuple(
+                    Value(
+                        candidate=candidate.id,
+                        attribute=attribute.id,
+                        value_type=attribute.value_type,
+                        data_source="world_bank",
+                        reference_period=ReferencePeriod(
+                            start=date(2025, 1, 1), end=date(2025, 12, 31)
+                        ),
+                        retrieval_date=datetime.now(UTC),
+                        confidence_level=ConfidenceLevel.HIGH,
+                        payload=Ratio(value=Decimal("5.1"), basis="households"),
+                    )
+                    for candidate in candidates
+                )
+            )
+
+    return RelentingSource()

@@ -375,7 +375,14 @@ export const STARTED_RUN: Run = {
 export const STARTED_RUN_DETAIL: RunDetail = {
   ...STARTED_RUN,
   scope: { level: "country", candidates: null, attributes: null },
-  progress: { items_total: 96, items_completed: 95, items_failed: 1 },
+  // The three counts sum to the total, which is the arithmetic Q217 closed: one item broke,
+  // two produced neither a figure nor a failure.
+  progress: {
+    items_total: 96,
+    items_completed: 93,
+    items_failed: 1,
+    items_unanswered: 2,
+  },
   failures: [
     {
       data_source: "oecd",
@@ -383,6 +390,16 @@ export const STARTED_RUN_DETAIL: RunDetail = {
       attribute: "country.total_tax_rate_effective",
       error_message:
         "the oecd's cloudflare front answered with a browser challenge",
+    },
+  ],
+  unanswered: [
+    {
+      candidate: "country.liechtenstein",
+      attribute: "country.housing_cost_overburden_rate",
+    },
+    {
+      candidate: "country.liechtenstein",
+      attribute: "country.overcrowding_rate",
     },
   ],
 };

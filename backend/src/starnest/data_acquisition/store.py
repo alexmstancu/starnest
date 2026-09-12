@@ -47,6 +47,23 @@ class RunScope:
 
 
 @dataclass(frozen=True)
+class UnansweredItem:
+    """One candidate and one attribute a run asked about and nobody answered.
+
+    **Not a failure.** Every source asked did answer; none of them had a row for that candidate
+    -- Eurostat publishes the whole indicator and simply omits Liechtenstein. Calling that a
+    failure would blame a source for not covering a country it never claimed to.
+
+    **Derived, never stored.** It is the absence of a value row and of a failure row for a pair
+    the scope names, so recording it separately would be a second account of an absence that
+    could disagree with the first (`reqs.md` Q217).
+    """
+
+    candidate: str
+    attribute: str
+
+
+@dataclass(frozen=True)
 class Run:
     """One pass, as it stands."""
 
@@ -63,7 +80,12 @@ class Run:
     # Items some source failed on and no source answered -- never `len(failures)`, which counts
     # each source's failure and so overlaps `items_completed` wherever a second source answered.
     items_failed: int = 0
+    # Asked about, and neither answered nor failed: every source asked had nothing for that
+    # candidate. `items_completed + items_failed + items_unanswered == items_total`, which is
+    # the arithmetic that did not close before Q217.
+    items_unanswered: int = 0
     failures: tuple[AcquisitionFailure, ...] = field(default=())
+    unanswered: tuple[UnansweredItem, ...] = field(default=())
 
 
 class RunStore(ABC):
@@ -88,7 +110,10 @@ class RunStore(ABC):
 
     @abstractmethod
     async def read_run(self, run: int) -> Run:
-        """One run with its scope, progress and failures. Raises `UnknownRunError`."""
+        """One run with its scope, progress, failures and unanswered items.
+
+        Raises `UnknownRunError`.
+        """
 
     @abstractmethod
     async def read_runs(self, *, limit: int = 20, offset: int = 0) -> tuple[Run, ...]:

@@ -345,11 +345,39 @@ export const handlers = [
     HttpResponse.json({ ...STARTED_RUN_DETAIL, id: Number(params["runId"]) }),
   ),
 
-  http.post(`${BASE}/data-acquisition-runs/:runId/retry`, () =>
-    HttpResponse.json(
-      { ...STARTED_RUN, id: STARTED_RUN.id + 1 },
-      { status: 202 },
-    ),
+  http.post(
+    `${BASE}/data-acquisition-runs/:runId/retry`,
+    async ({ request }) => {
+      // Which part of the run: the failures by default, the unanswered items on request
+      // (`reqs.md` Q217). The mock refuses the kind the run has none of, as the API does.
+      const body = (await request.json().catch(() => ({}))) as {
+        items?: "failed" | "unanswered";
+      };
+      const items = body.items ?? "failed";
+      const available =
+        items === "unanswered"
+          ? (STARTED_RUN_DETAIL.unanswered ?? [])
+          : (STARTED_RUN_DETAIL.failures ?? []);
+      if (available.length === 0) {
+        return HttpResponse.json(
+          {
+            code:
+              items === "unanswered"
+                ? "nothing_to_ask_again"
+                : "nothing_to_retry",
+            message: `this run has no ${items} items, so a new run would do nothing`,
+          },
+          { status: 409 },
+        );
+      }
+      return HttpResponse.json(
+        {
+          ...STARTED_RUN,
+          id: STARTED_RUN.id + (items === "unanswered" ? 2 : 1),
+        },
+        { status: 202 },
+      );
+    },
   ),
 
   http.get(`${BASE}/values`, ({ request }) => {

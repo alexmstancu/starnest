@@ -277,8 +277,15 @@ def a_stub_source(
     silent_about: tuple[str, ...] = ("country.portugal",),
     silent_on: tuple[str, ...] | None = None,
     unreachable: bool = False,
+    no_row_for: tuple[str, ...] = (),
 ) -> SourceAdapter:
     """A source that answers instantly with figures the test controls.
+
+    **`silent_about` fails; `no_row_for` says nothing.** The two are different facts and the run
+    counts them differently (`reqs.md` Q217): a source that declines has failed and can be asked
+    again, while a source with no row for a country answered perfectly well and simply does not
+    cover it -- which is Eurostat and Liechtenstein, and the case that used to be counted as
+    neither.
 
     **Not Eurostat.** An acceptance test that fetched from the real API would fail when Eurostat
     is slow, which says nothing about this application, and would put a network round trip in
@@ -325,6 +332,10 @@ def a_stub_source(
                 )
             values, failures = [], []
             for candidate in candidates:
+                if str(candidate.id) in no_row_for:
+                    # Answered, with nothing for this candidate. No figure and no failure --
+                    # which is exactly what a real indicator does for a country it omits.
+                    continue
                 if str(candidate.id) in silent_about and (
                     silent_on is None or str(attribute.id) in silent_on
                 ):

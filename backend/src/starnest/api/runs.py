@@ -13,13 +13,14 @@ and attributes are bounded by the catalog and come back whole (`arch.md` 7.6).
 """
 
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from starnest.api.bodies import ContractBody
 from starnest.api.dependencies import Adapters, Candidates, Catalog, Runs, Values
-from starnest.data_acquisition import Run, execute_run, retry_run
+from starnest.data_acquisition import Run, ask_again, execute_run, retry_run
 
 router = APIRouter(tags=["acquisition"])
 
@@ -58,6 +59,10 @@ class ProgressBody(BaseModel):
     items_total: int
     items_completed: int
     items_failed: int
+    # The three sum to `items_total`. Before Q217 they did not: an item every source answered
+    # without having a row for that candidate belonged to none of them, and the run reported
+    # nothing failed about a run that learned nothing.
+    items_unanswered: int
 
 
 class FailureBody(BaseModel):
@@ -67,10 +72,24 @@ class FailureBody(BaseModel):
     error_message: str
 
 
+class UnansweredBody(BaseModel):
+    """An item nobody answered. No source, because none failed -- see `store.UnansweredItem`."""
+
+    candidate: str
+    attribute: str
+
+
+class RetryBody(BaseModel):
+    """Which part of the run to go over again. Absent means the failures, as it always did."""
+
+    items: Literal["failed", "unanswered"] = "failed"
+
+
 class RunDetailBody(RunBody):
     scope: RunScopeBody | None = None
     progress: ProgressBody | None = None
     failures: tuple[FailureBody, ...] = ()
+    unanswered: tuple[UnansweredBody, ...] = ()
 
 
 class RunsBody(BaseModel):
@@ -165,23 +184,47 @@ async def retry(
     catalog: Catalog,
     values: Values,
     runs: Runs,
+    body: RetryBody | None = None,
 ) -> RunBody:
-    """A **new** run asking only the sources that failed, only about what they failed on.
+    """A **new** run over part of the run named, which keeps its own record either way.
 
-    `reqs.md` 6.4. The run retried keeps its record of what went wrong; the new one records what
-    happened this time. A run that failed on nothing is refused with 409, because a run over an
-    empty scope would be a no-op recorded as though it were work.
+    `reqs.md` 6.4 and Q217. **Two different acts through one resource**, because both create a
+    run over a subset of an earlier one's scope:
+
+    - `failed` (the default) asks only the sources that failed, only about what they failed on.
+    - `unanswered` asks again about the items that produced neither a figure nor a failure.
+      There is no source to narrow to -- none failed -- so every source that can answer those
+      attributes is asked.
+
+    A run with nothing of the kind asked for is refused with 409: a run over an empty scope
+    would be a no-op recorded as though it were work.
     """
-    failed = await runs.read_run(run_id)
-    level = failed.scope.level if failed.scope else None
+    earlier = await runs.read_run(run_id)
+    level = earlier.scope.level if earlier.scope else None
+    attributes = await catalog.read_attributes(level=level)
+    roster = await candidates.read_candidates(level=level)
+    stand_ins = await catalog.read_stand_ins(level=level)
+
+    if (body or RetryBody()).items == "unanswered":
+        asked = await ask_again(
+            run=earlier,
+            adapters=adapters,
+            attributes=attributes,
+            candidates=roster,
+            values=values,
+            runs=runs,
+            stand_ins=stand_ins,
+        )
+        return _run_body(asked)
+
     retried = await retry_run(
-        failed=failed,
+        failed=earlier,
         adapters=adapters,
-        attributes=await catalog.read_attributes(level=level),
-        candidates=await candidates.read_candidates(level=level),
+        attributes=attributes,
+        candidates=roster,
         values=values,
         runs=runs,
-        stand_ins=await catalog.read_stand_ins(level=level),
+        stand_ins=stand_ins,
     )
     return _run_body(retried)
 
@@ -214,6 +257,7 @@ async def get_run(run_id: int, runs: Runs) -> RunDetailBody:
             items_total=run.items_total,
             items_completed=run.items_completed,
             items_failed=run.items_failed,
+            items_unanswered=run.items_unanswered,
         ),
         failures=tuple(
             FailureBody(
@@ -223,6 +267,10 @@ async def get_run(run_id: int, runs: Runs) -> RunDetailBody:
                 error_message=failure.reason,
             )
             for failure in run.failures
+        ),
+        unanswered=tuple(
+            UnansweredBody(candidate=item.candidate, attribute=item.attribute)
+            for item in run.unanswered
         ),
     )
 

@@ -30,9 +30,9 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
   const { levelId } = useSelection();
   const [plan, setPlan] = useState<RunPlan | null>(null);
   const [current, setCurrent] = useState<RunDetail | null>(null);
-  const [busy, setBusy] = useState<"planning" | "running" | "retrying" | null>(
-    null,
-  );
+  const [busy, setBusy] = useState<
+    "planning" | "running" | "retrying" | "asking" | null
+  >(null);
   const [failure, setFailure] = useState<unknown>(null);
 
   const history = useResource(
@@ -41,7 +41,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
 
   const act = useCallback(
     async (
-      what: "planning" | "running" | "retrying",
+      what: "planning" | "running" | "retrying" | "asking",
       action: () => Promise<void>,
     ) => {
       setBusy(what);
@@ -124,8 +124,15 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           }
           onRetry={() =>
             void act("retrying", async () => {
-              const retried = await retryRun(current.id);
+              const retried = await retryRun(current.id, "failed");
               await watch(retried);
+            })
+          }
+          asking={busy === "asking"}
+          onAskAgain={() =>
+            void act("asking", async () => {
+              const asked = await retryRun(current.id, "unanswered");
+              await watch(asked);
             })
           }
         />
@@ -204,13 +211,18 @@ function RunReport({
   busy,
   onRefresh,
   onRetry,
+  asking,
+  onAskAgain,
 }: {
   run: RunDetail;
   busy: boolean;
   onRefresh: () => void;
   onRetry: () => void;
+  asking: boolean;
+  onAskAgain: () => void;
 }) {
   const failures = run.failures ?? [];
+  const unanswered = run.unanswered ?? [];
   return (
     <div className="panel">
       <h3 className="panel__heading">Run {run.id}</h3>
@@ -223,14 +235,52 @@ function RunReport({
           value={formatCount(run.progress?.items_completed)}
         />
         <Stat label="Of" value={formatCount(run.progress?.items_total)} />
+        <Stat label="Failed" value={formatCount(run.progress?.items_failed)} />
+        {/* The third count, and the one that closes the arithmetic: asked about, and neither
+            answered nor failed. Before `reqs.md` Q217 such an item was in no count at all, so
+            a run that learned nothing about a country reported that nothing had failed. */}
         <Stat
           label="Unanswered"
-          value={formatCount(run.progress?.items_failed)}
+          value={formatCount(run.progress?.items_unanswered)}
         />
       </dl>
       <button type="button" className="button" onClick={onRefresh}>
         Refresh
       </button>
+
+      {unanswered.length > 0 && (
+        <>
+          <table className="table">
+            <caption>
+              Asked about, and answered by nobody. Every source that could
+              answer did answer, and none of them had a figure for that
+              candidate -- which is not a failure and is not a score.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Candidate</th>
+                <th scope="col">Attribute</th>
+              </tr>
+            </thead>
+            <tbody>
+              {unanswered.map((item) => (
+                <tr key={`${item.candidate}-${item.attribute}`}>
+                  <th scope="row">{item.candidate}</th>
+                  <td>{item.attribute}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button
+            type="button"
+            className="button"
+            disabled={asking}
+            onClick={onAskAgain}
+          >
+            {asking ? "Asking…" : "Ask again"}
+          </button>
+        </>
+      )}
 
       {failures.length === 0 ? (
         <p className="panel__hint">Nothing failed in this run.</p>

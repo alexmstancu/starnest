@@ -205,3 +205,49 @@ class _AskedOnlyAbout(SourceAdapter):
 
     async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
         return await self._adapter.fetch(attribute, candidates)
+
+
+class NothingToAskAgainError(ValueError):
+    """A run where every item was either answered or failed. There is nothing unanswered to ask
+    about, and a new run over an empty scope would be a no-op recorded as work."""
+
+
+async def ask_again(
+    *,
+    run: Run,
+    adapters: Sequence[SourceAdapter],
+    attributes: Sequence[Attribute],
+    candidates: Sequence[Candidate],
+    values: ValueStore,
+    runs: RunStore,
+    stand_ins: Sequence[StandIn] = (),
+    triggered_by: str = MANUAL,
+) -> Run:
+    """A new run asking again about the items nobody answered (`reqs.md` Q217).
+
+    **No source is narrowed to, because no source failed.** A retry asks the source that broke;
+    this asks every source that can answer the attribute, because the previous run's silence
+    says only that none of the ones asked had a row. Where a dataset genuinely does not cover a
+    country, this will change nothing -- which is why it is a separate act the household chooses
+    rather than part of a retry.
+
+    **The old run is untouched**, as it is for a retry: it keeps its account of what it asked and
+    what came back.
+    """
+    if not run.unanswered or run.scope is None:
+        raise NothingToAskAgainError(
+            f"run {run.id} has no unanswered items, so there is nothing to ask again about"
+        )
+
+    wanted_candidates = {item.candidate for item in run.unanswered}
+    wanted_attributes = {item.attribute for item in run.unanswered}
+    return await execute_run(
+        adapters=adapters,
+        attributes=[a for a in attributes if str(a.id) in wanted_attributes],
+        candidates=[c for c in candidates if str(c.id) in wanted_candidates],
+        values=values,
+        runs=runs,
+        level=run.scope.level,
+        stand_ins=stand_ins,
+        triggered_by=triggered_by,
+    )

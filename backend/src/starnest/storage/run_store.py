@@ -23,6 +23,7 @@ from starnest.data_acquisition import (
     RunScope,
     RunStatus,
     RunStore,
+    UnansweredItem,
     UnknownRunError,
 )
 from starnest.storage.connections import acquire
@@ -111,7 +112,13 @@ class PostgresRunStore(RunStore):
                     connection, data_acquisition_run=run
                 )
             ]
-        return _run_from(row, failures)
+            unanswered = [
+                item
+                async for item in self._queries.select_run_unanswered(
+                    connection, data_acquisition_run=run
+                )
+            ]
+        return _run_from(row, failures, unanswered)
 
     async def read_runs(self, *, limit: int = 20, offset: int = 0) -> tuple[Run, ...]:
         async with acquire(self._pool) as connection:
@@ -128,7 +135,7 @@ class PostgresRunStore(RunStore):
             return int(await self._queries.count_runs(connection))
 
 
-def _run_from(row: Any, failures: Sequence[Any]) -> Run:
+def _run_from(row: Any, failures: Sequence[Any], unanswered: Sequence[Any]) -> Run:
     return Run(
         id=int(row.id),
         status=RunStatus(row.run_status),
@@ -145,6 +152,7 @@ def _run_from(row: Any, failures: Sequence[Any]) -> Run:
         items_total=int(row.items_total),
         items_completed=int(row.items_completed),
         items_failed=int(row.items_failed),
+        items_unanswered=int(row.items_unanswered),
         failures=tuple(
             AcquisitionFailure(
                 attribute=failure.attribute,
@@ -153,6 +161,10 @@ def _run_from(row: Any, failures: Sequence[Any]) -> Run:
                 data_source=DataSourceId(failure.data_source),
             )
             for failure in failures
+        ),
+        unanswered=tuple(
+            UnansweredItem(candidate=item.candidate, attribute=item.attribute)
+            for item in unanswered
         ),
     )
 

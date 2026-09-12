@@ -1170,10 +1170,14 @@ components:
         items_total:
           title: Items Total
           type: integer
+        items_unanswered:
+          title: Items Unanswered
+          type: integer
       required:
       - items_total
       - items_completed
       - items_failed
+      - items_unanswered
       title: ProgressBody
       type: object
     RankingBody:
@@ -1240,6 +1244,19 @@ components:
       required:
       - name
       title: RenameBody
+      type: object
+    RetryBody:
+      description: Which part of the run to go over again. Absent means the failures,
+        as it always did.
+      properties:
+        items:
+          default: failed
+          enum:
+          - failed
+          - unanswered
+          title: Items
+          type: string
+      title: RetryBody
       type: object
     RunBody:
       additionalProperties: true
@@ -1406,6 +1423,21 @@ components:
       required:
       - comparator
       title: SynthesisBody
+      type: object
+    UnansweredBody:
+      description: An item nobody answered. No source, because none failed -- see
+        `store.UnansweredItem`.
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        candidate:
+          title: Candidate
+          type: string
+      required:
+      - candidate
+      - attribute
+      title: UnansweredBody
       type: object
     ValidationError:
       properties:
@@ -2344,17 +2376,15 @@ paths:
       - acquisition
   /v1/data-acquisition-runs/{run_id}/retry:
     post:
-      description: 'A **new** run asking only the sources that failed, only about
-        what they failed on.
-
-
-        `reqs.md` 6.4. The run retried keeps its record of what went wrong; the new
-        one records what
-
-        happened this time. A run that failed on nothing is refused with 409, because
-        a run over an
-
-        empty scope would be a no-op recorded as though it were work.'
+      description: "A **new** run over part of the run named, which keeps its own\
+        \ record either way.\n\n`reqs.md` 6.4 and Q217. **Two different acts through\
+        \ one resource**, because both create a\nrun over a subset of an earlier one's\
+        \ scope:\n\n- `failed` (the default) asks only the sources that failed, only\
+        \ about what they failed on.\n- `unanswered` asks again about the items that\
+        \ produced neither a figure nor a failure.\n  There is no source to narrow\
+        \ to -- none failed -- so every source that can answer those\n  attributes\
+        \ is asked.\n\nA run with nothing of the kind asked for is refused with 409:\
+        \ a run over an empty scope\nwould be a no-op recorded as though it were work."
       operationId: retryRun
       parameters:
       - in: path
@@ -2363,6 +2393,14 @@ paths:
         schema:
           title: Run Id
           type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/RetryBody'
+              - type: 'null'
+              title: Body
       responses:
         '202':
           content:

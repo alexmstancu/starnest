@@ -36,7 +36,11 @@ from starnest.data import (
     UnknownDataSourceError,
     UnknownMatchRuleError,
 )
-from starnest.data_acquisition import NothingToRetryError, UnknownRunError
+from starnest.data_acquisition import (
+    NothingToAskAgainError,
+    NothingToRetryError,
+    UnknownRunError,
+)
 from starnest.evaluation import NormalisationError, RankingError, UnknownEvaluationError
 from starnest.household import HouseholdNotConfiguredError, HouseholdPlaceError
 
@@ -67,6 +71,7 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     WeightsAllLockedError: _refusal(409, "weights_all_locked"),
     CriteriaSetExistsError: _refusal(409, "criteria_set_exists"),
     NothingToRetryError: _refusal(409, "nothing_to_retry"),
+    NothingToAskAgainError: _refusal(409, "nothing_to_ask_again"),
     ManualEntryNotPermittedError: _refusal(409, "manual_entry_not_permitted"),
     InvalidManualValueError: _refusal(409, "invalid_value"),
     # 422 -- the request describes something the domain will not accept.

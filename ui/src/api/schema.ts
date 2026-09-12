@@ -466,12 +466,18 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Retry only what failed
-         * @description Creates a **new** run asking only the sources that failed, only about the attributes each
-         *     failed on, across the candidates that failed. Its scope is the smallest covering the
-         *     failures -- every failed candidate against every failed attribute -- because the scope is
-         *     recorded as two lists, and every pair in it is asked of at least one source. The run
-         *     retried keeps its own record of what went wrong.
+         * Run again over part of a run's scope
+         * @description Creates a **new** run over part of the run named, which keeps its own record either way.
+         *
+         *     `items: failed` (the default) asks only the sources that failed, only about the
+         *     attributes each failed on, across the candidates that failed. Its scope is the smallest
+         *     covering the failures -- every failed candidate against every failed attribute -- because
+         *     the scope is recorded as two lists, and every pair in it is asked of at least one source.
+         *
+         *     `items: unanswered` asks again about the items that produced neither a figure nor a
+         *     failure. There is no source to narrow to, because no source failed: every source that
+         *     can answer those attributes is asked. For a country a dataset simply does not cover this
+         *     will change nothing, which is why it is a separate request rather than part of a retry.
          */
         post: operations["retryRun"];
         delete?: never;
@@ -991,7 +997,14 @@ export interface components {
                 items_completed?: number;
                 /** @description Items some source failed on and no source answered. An item OECD failed on and the estimate answered is complete; the failure is still listed. */
                 items_failed?: number;
+                /** @description Items asked about that produced neither a figure nor a failure: every source asked answered, and none of them had a row for that candidate. The three counts sum to items_total. */
+                items_unanswered?: number;
             };
+            /** @description The items nobody answered, so they can be asked again. Derived rather than stored: an unanswered item is the absence of a value row and of a failure row, and a second record of that absence could disagree with the first. */
+            unanswered?: {
+                candidate: string;
+                attribute: string;
+            }[];
             failures?: {
                 /** @description Which source failed. Two may answer one attribute, and a retry asks only the one that failed. */
                 data_source: string;
@@ -1943,7 +1956,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default failed
+                     * @enum {string}
+                     */
+                    items?: "failed" | "unanswered";
+                };
+            };
+        };
         responses: {
             /** @description Accepted */
             202: {
@@ -1955,7 +1978,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
-            /** @description The run failed on nothing, so there is nothing to retry. */
+            /** @description The run has nothing of that kind, so the new run would be a no-op. */
             409: {
                 headers: {
                     [name: string]: unknown;
