@@ -450,3 +450,96 @@ export const EXTERNAL_SCORES: ExternalScore[] = [
     caveats: "Crowdsourced, and its weighting is the publisher's own.",
   },
 ];
+
+type Household = components["schemas"]["HouseholdInput"];
+type MatchRule = components["schemas"]["MatchRule"];
+type CompoundRule = components["schemas"]["CompoundRule"];
+type DataSource = components["schemas"]["DataSource"];
+
+/**
+ * One household, invented. Two adults, one child, a home country that is also a candidate --
+ * which is the shape `reqs.md` 1.1 describes, where staying put is one of the options being
+ * measured.
+ */
+export const HOUSEHOLD: Household = {
+  net_income: 90000,
+  number_adults: 2,
+  number_children: 1,
+  target_monthly_spend: 2800,
+  max_rent: 1500,
+  home_country_candidate: "country.romania",
+  home_city_candidate: null,
+  citizenships: ["country.romania"],
+};
+
+/**
+ * Gates. One is asked at every level, which is what a null level means -- the Configure screen
+ * has to render that without calling it "null".
+ */
+export const MATCH_RULES: MatchRule[] = [
+  { id: "country.visa_route_exists", name: "A visa route exists", level: "country" },
+  { id: "country.eu_free_movement", name: "Free movement applies", level: "country" },
+  { id: "not_manually_excluded", name: "Not excluded by hand", level: null },
+];
+
+export const COMPOUND_RULES: CompoundRule[] = [
+  {
+    id: "country.rent_within_budget",
+    name: "Rent fits the target spend",
+    level: "country",
+    shape: "ShareOfHouseholdField",
+    outcome: "warning",
+    threshold_max: 35,
+    inputs: [
+      { input_order: 1, attribute: "country.average_rent", household_field: null },
+      { input_order: 2, attribute: null, household_field: "target_monthly_spend" },
+    ],
+  },
+  {
+    id: "country.mild_and_connected",
+    name: "Mild and connected",
+    level: "country",
+    shape: "AllConditionsHold",
+    outcome: "not_matching",
+    inputs: [],
+    conditions: [
+      {
+        ordinal: 1,
+        attribute: "country.summer_daytime_high",
+        threshold_min: null,
+        threshold_max: 30,
+      },
+      {
+        ordinal: 2,
+        attribute: "country.broadband_coverage",
+        threshold_min: 90,
+        threshold_max: null,
+      },
+    ],
+  },
+];
+
+/** Priority order as the migrations ship it: a lower number wins, and the LLM ranks last. */
+export const DATA_SOURCES: DataSource[] = [
+  {
+    id: "eurostat",
+    name: "Eurostat",
+    source_kind: "structured",
+    default_priority: 10,
+    reliability_tier: "official",
+  },
+  {
+    id: "manual",
+    name: "Manual entry",
+    source_kind: "manual",
+    default_priority: 50,
+    reliability_tier: "declared",
+  },
+  {
+    id: "llm_search",
+    name: "LLM with web search",
+    source_kind: "llm",
+    default_priority: 90,
+    reliability_tier: "indicative",
+  },
+];

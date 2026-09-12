@@ -818,10 +818,10 @@ export interface components {
         Household: components["schemas"]["HouseholdInput"];
         SettingsInput: {
             /** @description Percentage, 0-100. Below this a candidate is insufficient_data rather than scored. */
-            min_coverage?: number;
-            score_scale_max?: number;
-            comparator_limit?: number;
-            run_spend_cap_eur?: number;
+            min_coverage?: number | null;
+            score_scale_max?: number | null;
+            comparator_limit?: number | null;
+            run_spend_cap_eur?: number | null;
         };
         Settings: components["schemas"]["SettingsInput"];
         /** @description Only the fields present are changed. */

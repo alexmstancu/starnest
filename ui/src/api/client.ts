@@ -77,6 +77,18 @@ export type PatchPath = {
     : never;
 }[keyof ApiPaths];
 
+export type PutPath = {
+  [Path in keyof ApiPaths]: ApiPaths[Path] extends { put: unknown }
+    ? Path
+    : never;
+}[keyof ApiPaths];
+
+export type DeletePath = {
+  [Path in keyof ApiPaths]: ApiPaths[Path] extends { delete: unknown }
+    ? Path
+    : never;
+}[keyof ApiPaths];
+
 type GetOperation<Path extends GetPath> = ApiPaths[Path] extends {
   get: infer Operation;
 }
@@ -94,6 +106,21 @@ type PatchOperation<Path extends PatchPath> = ApiPaths[Path] extends {
 }
   ? Operation
   : never;
+
+type PutOperation<Path extends PutPath> = ApiPaths[Path] extends {
+  put: infer Operation;
+}
+  ? Operation
+  : never;
+
+type DeleteOperation<Path extends DeletePath> = ApiPaths[Path] extends {
+  delete: infer Operation;
+}
+  ? Operation
+  : never;
+
+export type PutResult<Path extends PutPath> = SuccessBody<PutOperation<Path>>;
+export type PutBody<Path extends PutPath> = RequestBodyOf<PutOperation<Path>>;
 
 export type GetResult<Path extends GetPath> = SuccessBody<GetOperation<Path>>;
 export type GetQuery<Path extends GetPath> = QueryOf<GetOperation<Path>>;
@@ -279,4 +306,39 @@ async function request<Result>(
       status: response.status,
     });
   }
+}
+
+
+/**
+ * A whole-record write: settings, the household, one pillar's weight, whether a rule counts.
+ *
+ * PUT rather than PATCH wherever the design says so, and the reason is the same each time: a
+ * partial write would leave a record half in one state and half in another -- a household whose
+ * income moved without its target spend, or a score scale changed without the coverage floor.
+ */
+export async function putJson<Path extends PutPath>(
+  path: Path,
+  body: PutBody<Path>,
+  options: CallOptions<PathValuesOf<PutOperation<Path>>> = {},
+): Promise<PutResult<Path>> {
+  return request(
+    buildUrl(path as string, undefined, options.pathParams as PathValues | undefined),
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: options.signal,
+    },
+  );
+}
+
+/** A discard. Answers 204, so there is nothing to parse and nothing to return. */
+export async function deleteResource<Path extends DeletePath>(
+  path: Path,
+  options: CallOptions<PathValuesOf<DeleteOperation<Path>>> = {},
+): Promise<void> {
+  await request(
+    buildUrl(path as string, undefined, options.pathParams as PathValues | undefined),
+    { method: "DELETE", signal: options.signal },
+  );
 }

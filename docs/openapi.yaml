@@ -1044,11 +1044,15 @@ components:
 
     SettingsInput:
       type: object
+      # Every one of the four may be null, and null is the shipped state: the documents propose
+      # values and the household chooses them (reqs.md 3.10), so an unset setting is a decision
+      # not yet made rather than a fault. A ranking refuses to compute until the score scale is
+      # set instead of assuming 100 (devplan.md 0.3), which only works if "unset" is expressible.
       properties:
-        min_coverage: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. Below this a candidate is insufficient_data rather than scored." }
-        score_scale_max: { type: integer }
-        comparator_limit: { type: integer, minimum: 1 }
-        run_spend_cap_eur: { type: number, minimum: 0 }
+        min_coverage: { type: [number, "null"], minimum: 0, maximum: 100, description: "Percentage, 0-100. Below this a candidate is insufficient_data rather than scored." }
+        score_scale_max: { type: [integer, "null"] }
+        comparator_limit: { type: [integer, "null"], minimum: 1 }
+        run_spend_cap_eur: { type: [number, "null"], minimum: 0 }
     Settings:
       allOf: [ { $ref: "#/components/schemas/SettingsInput" } ]
 

@@ -19,6 +19,11 @@ import { useResource, type Resource } from "../api/useResource";
 
 export interface CriteriaEditor {
   status: Resource<CriteriaSet>["status"];
+  /**
+   * The set as fetched, for the panels that read what is on it rather than editing criteria:
+   * the pillar weights and which rules it lets act. Null until it has arrived.
+   */
+  criteriaSet: CriteriaSet | null;
   /** The failure of the fetch, if it failed. */
   error: unknown;
   criteria: Criterion[];
@@ -30,7 +35,9 @@ export interface CriteriaEditor {
   reload: () => void;
 }
 
-export function useCriteriaEditor(criteriaSetId: string | null): CriteriaEditor {
+export function useCriteriaEditor(
+  criteriaSetId: string | null,
+): CriteriaEditor {
   const fetcher = useCallback(
     async (signal: AbortSignal): Promise<CriteriaSet> => {
       // Not reachable while disabled; the guard is here so the type is honest.
@@ -61,7 +68,9 @@ export function useCriteriaEditor(criteriaSetId: string | null): CriteriaEditor 
 
       void updateCriterionWeight(criteriaSetId, attribute, weight)
         .then((rebalanced) => {
-          setCriteria((current) => applyRebalance(current, rebalanced.criteria));
+          setCriteria((current) =>
+            applyRebalance(current, rebalanced.criteria),
+          );
         })
         .catch((error: unknown) => setSaveError(error))
         .finally(() => setSavingAttribute(null));
@@ -71,6 +80,7 @@ export function useCriteriaEditor(criteriaSetId: string | null): CriteriaEditor 
 
   return {
     status: resource.status,
+    criteriaSet: resource.data,
     error: resource.error,
     criteria,
     savingAttribute,
@@ -86,9 +96,13 @@ export function useCriteriaEditor(criteriaSetId: string | null): CriteriaEditor 
  * A substitution, not a merge and not a recalculation: whatever the server sent for a
  * criterion is what that criterion now is.
  */
-function applyRebalance(current: Criterion[], rebalanced: Criterion[]): Criterion[] {
+function applyRebalance(
+  current: Criterion[],
+  rebalanced: Criterion[],
+): Criterion[] {
   return current.map(
     (criterion) =>
-      rebalanced.find((entry) => entry.attribute === criterion.attribute) ?? criterion,
+      rebalanced.find((entry) => entry.attribute === criterion.attribute) ??
+      criterion,
   );
 }

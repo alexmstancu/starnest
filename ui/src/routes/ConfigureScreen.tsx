@@ -1,24 +1,29 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { Criterion } from "../api/endpoints";
-import { lockedAttributes } from "../api/errorPresentation";
 import type { RouteDefinition } from "../app/routes";
 import { ErrorNotice } from "../shell/ErrorNotice";
 import { useSelection } from "../shell/SelectionContext";
+import { CriteriaPanel } from "./configure/CriteriaPanel";
+import { CriteriaSetsPanel } from "./configure/CriteriaSetsPanel";
+import { DataSourcesPanel } from "./configure/DataSourcesPanel";
+import { HouseholdPanel } from "./configure/HouseholdPanel";
+import { PillarWeightsPanel } from "./configure/PillarWeightsPanel";
+import { RulesPanel } from "./configure/RulesPanel";
+import { SettingsPanel } from "./configure/SettingsPanel";
 import { useCriteriaEditor } from "./useCriteriaEditor";
 
 /**
- * The criteria of the selected set, each with an editable weight.
+ * Everything that is a judgement rather than a measurement, on one screen (`reqs.md` 8.2).
  *
- * **The screen sends one weight and re-renders from the response.** Weights sum to 100 within
- * a pillar, and which siblings absorb a change depends on which are locked -- that arithmetic
- * is the server's (`arch.md` 8.3), and duplicating it here would put a second, quietly
- * different answer in front of the user.
+ * The panels are ordered the way the decisions depend on each other: the household first,
+ * because gates and criterion defaults read it; then the sets of priorities, the pillar
+ * weights, the criteria inside them, and the rules the set lets act. The source priority comes
+ * last and is read-only -- it is configuration, shown here only because it decides which
+ * figure a score used.
  *
- * A refusal is shown rather than absorbed. `409 weights_all_locked` means the weight was not
- * set; a screen that stayed silent would leave the user believing it had been.
+ * **Nothing on this screen computes.** Every weight, rebalance and refusal comes from the API;
+ * the panels send one change at a time and render the answer (`arch.md` 8.1).
  */
 export function ConfigureScreen({ route }: { route: RouteDefinition }) {
-  const { criteriaSetId } = useSelection();
+  const { criteriaSetId, levelId } = useSelection();
   const editor = useCriteriaEditor(criteriaSetId);
 
   return (
@@ -27,152 +32,42 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
         {route.label}
       </h2>
 
+      <HouseholdPanel />
+      <SettingsPanel />
+      <CriteriaSetsPanel />
+
       {editor.status === "idle" && (
-        <p className="screen__note">Choose a criteria set to see its criteria.</p>
+        <p className="screen__note">
+          Choose a criteria set to see its criteria.
+        </p>
       )}
       {editor.status === "loading" && <p className="screen__note">Loading…</p>}
-      {editor.status === "error" && <ErrorNotice error={editor.error} onRetry={editor.reload} />}
+      {editor.status === "error" && (
+        <ErrorNotice error={editor.error} onRetry={editor.reload} />
+      )}
 
-      {editor.status === "ready" && (
+      {editor.status === "ready" && editor.criteriaSet !== null && (
         <>
-          <p className="screen__summary">
-            Weights are percentages within a pillar. Changing one rebalances the others, which
-            the backend computes and this screen reports.
-          </p>
-
-          {editor.saveError !== null && <SaveFailure error={editor.saveError} />}
-
-          {editor.criteria.length === 0 ? (
-            <p className="screen__note">This criteria set has no criteria.</p>
-          ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th scope="col">Attribute</th>
-                  <th scope="col">Pillar</th>
-                  <th scope="col">Weight</th>
-                </tr>
-              </thead>
-              <tbody>
-                {editor.criteria.map((criterion) => (
-                  <CriterionRow
-                    key={criterion.attribute}
-                    criterion={criterion}
-                    saving={editor.savingAttribute === criterion.attribute}
-                    onSave={editor.setWeight}
-                  />
-                ))}
-              </tbody>
-            </table>
+          {/* Keyed by the set, because both panels hold what the set says -- its pillar
+              weights, the rules it enforces -- as state they then edit. Switching sets has to
+              start that state again from the new set rather than carry the old set's answers
+              into it. */}
+          <PillarWeightsPanel
+            key={editor.criteriaSet.id}
+            criteriaSet={editor.criteriaSet}
+          />
+          <CriteriaPanel editor={editor} />
+          {levelId !== null && (
+            <RulesPanel
+              key={`${editor.criteriaSet.id}-${levelId}`}
+              criteriaSet={editor.criteriaSet}
+              levelId={levelId}
+            />
           )}
         </>
       )}
+
+      <DataSourcesPanel />
     </section>
   );
-}
-
-function CriterionRow({
-  criterion,
-  saving,
-  onSave,
-}: {
-  criterion: Criterion;
-  saving: boolean;
-  onSave: (attribute: string, weight: number) => void;
-}) {
-  const stored = weightAsText(criterion.weight);
-  const [draft, setDraft] = useState(stored);
-  const [notANumber, setNotANumber] = useState(false);
-
-  // A rebalance changes this row's weight without the row having been edited, so the input
-  // follows the stored value rather than keeping whatever was last typed into it.
-  useEffect(() => setDraft(stored), [stored]);
-
-  // A refused change leaves the stored weight exactly where it was, so the input goes back to
-  // it once the attempt is over. Leaving the typed number on screen would have the same screen
-  // reporting the refusal in one place and showing the weight it refused in another -- and the
-  // number in the input is the one a reader takes for the weight being scored.
-  const wasSaving = useRef(false);
-  useEffect(() => {
-    if (wasSaving.current && !saving) setDraft(stored);
-    wasSaving.current = saving;
-  }, [saving, stored]);
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-
-    const weight = Number(draft);
-    if (draft.trim() === "" || !Number.isFinite(weight)) {
-      setNotANumber(true);
-      return;
-    }
-
-    setNotANumber(false);
-    onSave(criterion.attribute, weight);
-  }
-
-  return (
-    <tr className="table__row">
-      <th scope="row">{criterion.attribute}</th>
-      <td>{criterion.pillar}</td>
-      <td>
-        <form className="weight-form" onSubmit={submit}>
-          <input
-            className="field__control weight-form__input"
-            type="number"
-            min={0}
-            max={100}
-            step="any"
-            value={draft}
-            aria-label={`Weight for ${criterion.attribute}`}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-          <button type="submit" className="button" disabled={saving || draft === stored}>
-            {saving ? "Saving…" : "Save"}
-          </button>
-          {notANumber && (
-            <p className="weight-form__problem" role="alert">
-              A weight must be a number.
-            </p>
-          )}
-        </form>
-      </td>
-    </tr>
-  );
-}
-
-/**
- * A refused weight change, with the locks that refused it. `details.locked` names them
- * (`openapi.yaml`, `updateCriterion` 409) and they are the only thing the user can act on --
- * "it is locked somewhere" would be a dead end.
- */
-function SaveFailure({ error }: { error: unknown }) {
-  const locked = lockedAttributes(error);
-
-  return (
-    <div className="save-failure">
-      <ErrorNotice error={error} />
-      {locked.length > 0 && (
-        <>
-          <p className="screen__note" id="lock-list-heading">
-            Locked, so unable to absorb the change:
-          </p>
-          {/* Named, because these attribute ids also appear in the table above: a reader
-              arriving at the list out of context needs to be told which one it is. */}
-          <ul className="lock-list" aria-labelledby="lock-list-heading">
-            {locked.map((attribute) => (
-              <li key={attribute}>
-                <code>{attribute}</code>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** An absent weight shows an empty input, never a zero standing in for "not set". */
-function weightAsText(weight: number | undefined): string {
-  return weight === undefined ? "" : String(weight);
 }

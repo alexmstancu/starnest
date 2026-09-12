@@ -13,8 +13,12 @@
 import { http, HttpResponse } from "msw";
 import type { components } from "../api/schema";
 import {
+  COMPOUND_RULES,
   CRITERIA_SETS,
+  DATA_SOURCES,
   EXTERNAL_SCORES,
+  HOUSEHOLD,
+  MATCH_RULES,
   LEVELS,
   RUNS,
   RUN_PLAN,
@@ -29,6 +33,11 @@ import {
 } from "./fixtures";
 
 type Criterion = components["schemas"]["Criterion"];
+type CriteriaSet = components["schemas"]["CriteriaSet"];
+type CriteriaSetSummary = components["schemas"]["CriteriaSetSummary"];
+type PillarWeight = components["schemas"]["PillarWeight"];
+type Settings = components["schemas"]["Settings"];
+type Household = components["schemas"]["HouseholdInput"];
 
 const BASE = "/v1";
 
@@ -40,19 +49,190 @@ const BASE = "/v1";
  * anything they wrote.
  */
 let criteriaSetDetails = makeCriteriaSetDetails();
+let criteriaSetSummaries: CriteriaSetSummary[] = [...CRITERIA_SETS];
+let settings: Settings = { ...SETTINGS };
+let household: Household = { ...HOUSEHOLD };
 
 export function resetMockData(): void {
   criteriaSetDetails = makeCriteriaSetDetails();
+  criteriaSetSummaries = [...CRITERIA_SETS];
+  settings = { ...SETTINGS };
+  household = { ...HOUSEHOLD };
 }
 
 export const handlers = [
   http.get(`${BASE}/levels`, () => HttpResponse.json({ items: LEVELS })),
 
   http.get(`${BASE}/criteria-sets`, () =>
-    HttpResponse.json({ items: CRITERIA_SETS }),
+    HttpResponse.json({ items: criteriaSetSummaries }),
   ),
 
-  http.get(`${BASE}/settings`, () => HttpResponse.json(SETTINGS)),
+  http.post(`${BASE}/criteria-sets`, async ({ request }) => {
+    const body = (await request.json()) as { id: string; name: string };
+    if (criteriaSetDetails[body.id]) {
+      return HttpResponse.json(
+        {
+          code: "already_exists",
+          message: `A criteria set called ${body.id} already exists.`,
+        },
+        { status: 409 },
+      );
+    }
+    // Empty, as the contract says: copying another set's priorities would be deciding for the
+    // user. `POST /criteria-sets/{id}/duplicate` is how somebody asks for a copy.
+    const created: CriteriaSet = {
+      id: body.id,
+      name: body.name,
+      pillar_weights: [],
+      criteria: [],
+      enforced_match_rules: [],
+      applied_compound_rules: [],
+    };
+    criteriaSetDetails[body.id] = created;
+    criteriaSetSummaries = [
+      ...criteriaSetSummaries,
+      { id: body.id, name: body.name },
+    ];
+    return HttpResponse.json(created, { status: 201 });
+  }),
+
+  http.patch(
+    `${BASE}/criteria-sets/:criteriaSetId`,
+    async ({ params, request }) => {
+      const id = String(params["criteriaSetId"]);
+      const set = criteriaSetDetails[id];
+      if (!set) return notFound(id);
+      const body = (await request.json()) as { name?: string };
+      if (body.name !== undefined) {
+        set.name = body.name;
+        criteriaSetSummaries = criteriaSetSummaries.map((summary) =>
+          summary.id === id ? { ...summary, name: body.name! } : summary,
+        );
+      }
+      return HttpResponse.json(set);
+    },
+  ),
+
+  http.delete(`${BASE}/criteria-sets/:criteriaSetId`, ({ params }) => {
+    const id = String(params["criteriaSetId"]);
+    if (!criteriaSetDetails[id]) return notFound(id);
+    delete criteriaSetDetails[id];
+    criteriaSetSummaries = criteriaSetSummaries.filter(
+      (summary) => summary.id !== id,
+    );
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.put(
+    `${BASE}/criteria-sets/:criteriaSetId/pillar-weights/:pillarId`,
+    async ({ params, request }) => {
+      const set = criteriaSetDetails[String(params["criteriaSetId"])];
+      if (!set) return notFound(String(params["criteriaSetId"]));
+
+      const pillarId = String(params["pillarId"]);
+      const weights = set.pillar_weights ?? [];
+      const edited = weights.find((weight) => weight.pillar === pillarId);
+      if (!edited) return notFound(pillarId);
+
+      const body = (await request.json()) as {
+        weight: number;
+        weight_locked?: boolean;
+      };
+      if (body.weight_locked !== undefined)
+        edited.weight_locked = body.weight_locked;
+      return rebalancePillarWeights(weights, edited, body.weight);
+    },
+  ),
+
+  http.put(
+    `${BASE}/criteria-sets/:criteriaSetId/match-rules/:matchRuleId`,
+    async ({ params, request }) => {
+      const set = criteriaSetDetails[String(params["criteriaSetId"])];
+      if (!set) return notFound(String(params["criteriaSetId"]));
+      const body = (await request.json()) as { is_enforced: boolean };
+      set.enforced_match_rules = withMembership(
+        set.enforced_match_rules ?? [],
+        String(params["matchRuleId"]),
+        body.is_enforced,
+      );
+      return new HttpResponse(null, { status: 204 });
+    },
+  ),
+
+  http.put(
+    `${BASE}/criteria-sets/:criteriaSetId/compound-rules/:compoundRuleId`,
+    async ({ params, request }) => {
+      const set = criteriaSetDetails[String(params["criteriaSetId"])];
+      if (!set) return notFound(String(params["criteriaSetId"]));
+      const body = (await request.json()) as { is_applied: boolean };
+      set.applied_compound_rules = withMembership(
+        set.applied_compound_rules ?? [],
+        String(params["compoundRuleId"]),
+        body.is_applied,
+      );
+      return new HttpResponse(null, { status: 204 });
+    },
+  ),
+
+  http.get(`${BASE}/match-rules`, ({ request }) => {
+    const level = new URL(request.url).searchParams.get("level");
+    // A rule with no level is asked at every level, so it stays in every answer.
+    const items = MATCH_RULES.filter(
+      (rule) => rule.level === null || rule.level === level,
+    );
+    return HttpResponse.json({ items });
+  }),
+
+  http.get(`${BASE}/compound-rules`, ({ request }) => {
+    const level = new URL(request.url).searchParams.get("level");
+    return HttpResponse.json({
+      items: COMPOUND_RULES.filter((rule) => rule.level === level),
+    });
+  }),
+
+  http.get(`${BASE}/data-sources`, () =>
+    HttpResponse.json({ items: DATA_SOURCES }),
+  ),
+
+  http.get(`${BASE}/household`, () => HttpResponse.json(household)),
+
+  http.put(`${BASE}/household`, async ({ request }) => {
+    const body = (await request.json()) as Household;
+    if ((body.citizenships ?? []).length === 0) {
+      return HttpResponse.json(
+        {
+          code: "invalid_field",
+          message: "A household needs at least one citizenship.",
+          details: { field: "citizenships" },
+        },
+        { status: 400 },
+      );
+    }
+    household = body;
+    return HttpResponse.json(household);
+  }),
+
+  http.get(`${BASE}/settings`, () => HttpResponse.json(settings)),
+
+  http.put(`${BASE}/settings`, async ({ request }) => {
+    const body = (await request.json()) as Settings;
+    if (
+      body.score_scale_max !== null &&
+      body.score_scale_max !== undefined &&
+      body.score_scale_max < 1
+    ) {
+      return HttpResponse.json(
+        {
+          code: "invalid_field",
+          message: "The score scale maximum must be at least 1.",
+          details: { field: "score_scale_max" },
+        },
+        { status: 400 },
+      );
+    }
+    settings = body;
+    return HttpResponse.json(settings);
+  }),
 
   http.get(`${BASE}/candidates`, ({ request }) => {
     const level = new URL(request.url).searchParams.get("level");
@@ -134,7 +314,7 @@ export const handlers = [
         { status: 409 },
       );
     }
-    if (comparators.length > (SETTINGS.comparator_limit ?? 0)) {
+    if (comparators.length > (settings.comparator_limit ?? 0)) {
       return HttpResponse.json(
         {
           code: "invalid_comparison",
@@ -262,6 +442,65 @@ function rebalancePillar(
   });
 
   return HttpResponse.json({ pillar: edited.pillar, criteria: pillar });
+}
+
+/**
+ * The same rebalance one level up: pillar weights sum to 100 within a level.
+ *
+ * Written twice rather than generalised over "things with a weight and a lock". The two differ
+ * in what identifies a row and in what the refusal names, and a shared helper here would earn
+ * a parameter for each of those differences -- a little copy against a little dependency.
+ */
+function rebalancePillarWeights(
+  weights: PillarWeight[],
+  edited: PillarWeight,
+  weight: number,
+) {
+  const others = weights.filter((entry) => entry !== edited);
+  const unlocked = others.filter((entry) => !entry.weight_locked);
+  const lockedTotal = others
+    .filter((entry) => entry.weight_locked)
+    .reduce((total, entry) => total + entry.weight, 0);
+  const room = 100 - weight - lockedTotal;
+
+  if (unlocked.length === 0 || room < 0) {
+    return HttpResponse.json(
+      {
+        code: "weights_all_locked",
+        message:
+          "The change cannot be absorbed: the other pillar weights are locked.",
+        details: {
+          locked: others
+            .filter((entry) => entry.weight_locked)
+            .map((entry) => entry.pillar),
+        },
+      },
+      { status: 409 },
+    );
+  }
+
+  const before = unlocked.reduce((total, entry) => total + entry.weight, 0);
+  edited.weight = weight;
+
+  let distributed = 0;
+  unlocked.forEach((other, index) => {
+    const isLast = index === unlocked.length - 1;
+    const share = before > 0 ? other.weight / before : 1 / unlocked.length;
+    other.weight = isLast ? round(room - distributed) : round(room * share);
+    distributed += other.weight;
+  });
+
+  return HttpResponse.json({ items: weights });
+}
+
+/** Membership in a list of rule ids, which is what both enforcement toggles amount to. */
+function withMembership(
+  current: string[],
+  id: string,
+  wanted: boolean,
+): string[] {
+  if (wanted) return current.includes(id) ? current : [...current, id];
+  return current.filter((each) => each !== id);
 }
 
 function round(value: number): number {

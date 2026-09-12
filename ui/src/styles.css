@@ -188,6 +188,26 @@ fieldset {
   color: var(--colour-text);
 }
 
+/* A weight is at most three digits and a decimal; a full-width box for one invites the reader
+   to expect a sentence. */
+.field__control--narrow {
+  width: 6rem;
+}
+
+/* Available to a screen reader, absent from the layout. Used where a control's label would be
+   noise beside the row it sits in but a control with no name is unusable. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .toggle-group {
   display: flex;
   flex-direction: column;

@@ -7,9 +7,11 @@
  */
 
 import {
+  deleteResource,
   getJson,
   patchJson,
   postJson,
+  putJson,
   type PatchResult,
   type RequestOptions,
 } from "./client";
@@ -191,4 +193,124 @@ export function fetchExternalScores(
   options?: RequestOptions,
 ): Promise<{ items: ExternalScore[] }> {
   return getJson("/external-scores", { candidate }, options);
+}
+
+export type Household = components["schemas"]["HouseholdInput"];
+export type DataSource = components["schemas"]["DataSource"];
+
+export function fetchHousehold(options?: RequestOptions): Promise<Household> {
+  return getJson("/household", undefined, options);
+}
+
+/** Replaced whole: a change must reach criterion defaults and rules at once (`reqs.md` 3.9). */
+export function replaceHousehold(
+  household: Household,
+  options?: RequestOptions,
+): Promise<Household> {
+  return putJson("/household", household, options);
+}
+
+export function replaceSettings(settings: Settings, options?: RequestOptions): Promise<Settings> {
+  return putJson("/settings", settings, options);
+}
+
+/**
+ * Moves one pillar's weight, and is told what every pillar at that level became.
+ *
+ * The rebalance is the server's, as it is for a criterion: which siblings absorb the change
+ * depends on which are locked, and a second answer computed here would drift from the first.
+ */
+export function updatePillarWeight(
+  criteriaSetId: string,
+  pillarId: string,
+  weight: number,
+  weightLocked?: boolean,
+  options?: RequestOptions,
+): Promise<{ items: components["schemas"]["PillarWeight"][] }> {
+  return putJson(
+    "/criteria-sets/{criteriaSetId}/pillar-weights/{pillarId}",
+    weightLocked === undefined ? { weight } : { weight, weight_locked: weightLocked },
+    { ...options, pathParams: { criteriaSetId, pillarId } },
+  );
+}
+
+export function createCriteriaSet(
+  id: string,
+  name: string,
+  options?: RequestOptions,
+): Promise<CriteriaSet> {
+  return postJson("/criteria-sets", { id, name }, options);
+}
+
+export function renameCriteriaSet(
+  criteriaSetId: string,
+  name: string,
+  options?: RequestOptions,
+): Promise<CriteriaSet> {
+  return patchJson(
+    "/criteria-sets/{criteriaSetId}",
+    { name },
+    { ...options, pathParams: { criteriaSetId } },
+  );
+}
+
+export function deleteCriteriaSet(criteriaSetId: string, options?: RequestOptions): Promise<void> {
+  return deleteResource("/criteria-sets/{criteriaSetId}", {
+    ...options,
+    pathParams: { criteriaSetId },
+  });
+}
+
+export function fetchDataSources(options?: RequestOptions): Promise<{ items: DataSource[] }> {
+  return getJson("/data-sources", undefined, options);
+}
+
+export type MatchRule = components["schemas"]["MatchRule"];
+export type CompoundRule = components["schemas"]["CompoundRule"];
+
+/** The gates that exist at a level. Which of them a set enforces is the set's own business. */
+export function fetchMatchRules(
+  level: string,
+  options?: RequestOptions,
+): Promise<{ items: MatchRule[] }> {
+  return getJson("/match-rules", { level }, options);
+}
+
+export function fetchCompoundRules(
+  level: string,
+  options?: RequestOptions,
+): Promise<{ items: CompoundRule[] }> {
+  return getJson("/compound-rules", { level }, options);
+}
+
+/**
+ * Whether this set lets a gate rule a candidate out (`reqs.md` 3.7).
+ *
+ * A gate belongs to the catalog; **enforcing it is a judgement, so it belongs to the set** --
+ * which is why this is addressed under the criteria set and not under the rule.
+ */
+export function setMatchRuleEnforcement(
+  criteriaSetId: string,
+  matchRuleId: string,
+  isEnforced: boolean,
+  options?: RequestOptions,
+): Promise<void> {
+  return putJson(
+    "/criteria-sets/{criteriaSetId}/match-rules/{matchRuleId}",
+    { is_enforced: isEnforced },
+    { ...options, pathParams: { criteriaSetId, matchRuleId } },
+  );
+}
+
+export function setCompoundRuleApplication(
+  criteriaSetId: string,
+  compoundRuleId: string,
+  isApplied: boolean,
+  options?: RequestOptions,
+): Promise<void> {
+  return putJson(
+    "/criteria-sets/{criteriaSetId}/compound-rules/{compoundRuleId}",
+    { is_applied: isApplied },
+    { ...options, pathParams: { criteriaSetId, compoundRuleId } },
+  );
 }
