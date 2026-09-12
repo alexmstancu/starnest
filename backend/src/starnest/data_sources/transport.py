@@ -72,11 +72,6 @@ class JsonOverHttp:
         self._explain = explain
         self._pause = pause
 
-    @property
-    def base_url(self) -> str:
-        """Where this source answers. Read by the adapters that build a path per request."""
-        return self._base_url
-
     async def get(self, path: str = "", *, params: Mapping[str, str] | None = None) -> Any:
         """One GET, decoded. `Any`, because the body is whatever the source publishes and
         giving it a shape is `response.py`'s job, per source.
