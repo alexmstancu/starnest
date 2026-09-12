@@ -1,66 +1,23 @@
-import { useCallback, useState } from "react";
-import {
-  fetchRun,
-  fetchRuns,
-  planRun,
-  retryRun,
-  startRun,
-  type Run,
-  type RunDetail,
-  type RunPlan,
-} from "../api/endpoints";
-import { useResource } from "../api/useResource";
-import type { RouteDefinition } from "../navigation/routes";
+import { type Run, type RunDetail, type RunPlan } from "../api/endpoints";
 import { formatCount, formatDateTime, formatMoney } from "../format/display";
+import type { RouteDefinition } from "../navigation/routes";
 import { ErrorNotice } from "../shell/ErrorNotice";
 import { useSelection } from "../shell/SelectionContext";
+import { useRunScreen } from "./useRunScreen";
 
 /**
  * Data acquisition: what a run would do, then what it did (`reqs.md` 6.3, 6.4).
  *
- * **The estimate is shown before anything is fetched, and confirmed.** A run that started on a
- * click would be a run nobody chose to pay for -- and while every source today is free, the
- * confirmation is the mechanism the spend cap hangs off later.
- *
  * **A failure is a thing to act on, not a thing to read.** Each is listed with the source that
- * failed, and one action re-runs only what failed -- a new run, leaving the old one's record
- * intact (`reqs.md` 6.4).
+ * failed, and one action re-runs only what failed. An item nobody answered is listed too, and
+ * asked again separately, because nothing failed there (`reqs.md` Q217).
+ *
+ * **Markup only.** The estimate, the run, the watching and the going-again are
+ * `useRunScreen.ts`.
  */
 export function RunScreen({ route }: { route: RouteDefinition }) {
   const { levelId } = useSelection();
-  const [plan, setPlan] = useState<RunPlan | null>(null);
-  const [current, setCurrent] = useState<RunDetail | null>(null);
-  const [busy, setBusy] = useState<
-    "planning" | "running" | "retrying" | "asking" | null
-  >(null);
-  const [failure, setFailure] = useState<unknown>(null);
-
-  const history = useResource(
-    useCallback((signal: AbortSignal) => fetchRuns(10, { signal }), []),
-  );
-
-  const act = useCallback(
-    async (
-      what: "planning" | "running" | "retrying" | "asking",
-      action: () => Promise<void>,
-    ) => {
-      setBusy(what);
-      setFailure(null);
-      try {
-        await action();
-        history.reload();
-      } catch (error) {
-        setFailure(error);
-      } finally {
-        setBusy(null);
-      }
-    },
-    [history],
-  );
-
-  const watch = useCallback(async (run: Run) => {
-    setCurrent(await fetchRun(run.id));
-  }, []);
+  const run = useRunScreen();
 
   return (
     <section className="screen" aria-labelledby="screen-heading">
@@ -82,74 +39,46 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           <button
             type="button"
             className="button"
-            disabled={busy !== null}
-            onClick={() =>
-              void act("planning", async () => {
-                setCurrent(null);
-                setPlan(await planRun({ level: levelId }));
-              })
-            }
+            disabled={run.busy !== null}
+            onClick={() => run.estimate(levelId)}
           >
-            {busy === "planning" ? "Estimating…" : "Estimate a run"}
+            {run.busy === "planning" ? "Estimating…" : "Estimate a run"}
           </button>
 
-          {plan && (
+          {run.plan && (
             <PlannedRun
-              plan={plan}
-              busy={busy === "running"}
-              onStart={() =>
-                void act("running", async () => {
-                  const started = await startRun({ level: levelId });
-                  setPlan(null);
-                  await watch(started);
-                })
-              }
+              plan={run.plan}
+              busy={run.busy === "running"}
+              onStart={() => run.start(levelId)}
             />
           )}
         </div>
       )}
 
-      {failure !== null && (
-        <ErrorNotice error={failure} onRetry={() => setFailure(null)} />
+      {run.failure !== null && (
+        <ErrorNotice error={run.failure} onRetry={run.dismissFailure} />
       )}
 
-      {current && (
+      {run.current && (
         <RunReport
-          run={current}
-          busy={busy === "retrying"}
-          onRefresh={() =>
-            void act("planning", async () =>
-              setCurrent(await fetchRun(current.id)),
-            )
-          }
-          onRetry={() =>
-            void act("retrying", async () => {
-              const retried = await retryRun(current.id, "failed");
-              await watch(retried);
-            })
-          }
-          asking={busy === "asking"}
-          onAskAgain={() =>
-            void act("asking", async () => {
-              const asked = await retryRun(current.id, "unanswered");
-              await watch(asked);
-            })
-          }
+          run={run.current}
+          busy={run.busy === "retrying"}
+          onRefresh={run.refresh}
+          onRetry={() => run.again("failed")}
+          asking={run.busy === "asking"}
+          onAskAgain={() => run.again("unanswered")}
         />
       )}
 
       <h3 className="panel__heading">Recent runs</h3>
-      {history.resource.status === "loading" && (
+      {run.history.status === "loading" && (
         <p className="screen__note">Loading…</p>
       )}
-      {history.resource.status === "error" && (
-        <ErrorNotice error={history.resource.error} onRetry={history.reload} />
+      {run.history.status === "error" && (
+        <ErrorNotice error={run.history.error} onRetry={run.reloadHistory} />
       )}
-      {history.resource.status === "ready" && (
-        <RunHistory
-          runs={history.resource.data.items}
-          onOpen={(run) => void watch(run)}
-        />
+      {run.history.status === "ready" && (
+        <RunHistory runs={run.history.data.items} onOpen={run.open} />
       )}
     </section>
   );
