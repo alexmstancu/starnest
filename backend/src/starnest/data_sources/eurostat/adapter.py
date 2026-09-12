@@ -47,7 +47,6 @@ from starnest.data_sources.eurostat.manifest import (
     BASE_URL,
     QUERIES,
     EurostatDensity,
-    EurostatShare,
 )
 from starnest.data_sources.transport import JsonOverHttp, SourceUnavailableError, a_failure
 
@@ -98,9 +97,7 @@ class EurostatAdapter(SourceAdapter):
                 )
             )
         try:
-            if isinstance(query, EurostatShare):
-                reported, describe = await self._shares(query)
-            elif isinstance(query, EurostatDensity):
+            if isinstance(query, EurostatDensity):
                 reported, describe = await self._densities(query)
             else:
                 reported = observations(await self._get(query.dataset, dict(query.filters)))
@@ -110,48 +107,6 @@ class EurostatAdapter(SourceAdapter):
         except (SourceUnavailableError, JsonStatError) as unavailable:
             return Acquired(failures=(a_failure(attribute.id, str(unavailable)),))
         return self._values_from(reported, attribute, candidates, describe=describe)
-
-    async def _shares(
-        self, share: EurostatShare
-    ) -> tuple[list[Observation], Callable[[Observation], str]]:
-        """Every place-and-year for which all the components exist, as one share each.
-
-        A year missing any component is not a year we have -- dividing 2025 taxes by 2024
-        earnings would describe no year at all -- so it is skipped rather than approximated,
-        and the newest-year rule downstream then picks each country's newest *complete* year.
-        A flag on any component carries onto the share: a rate built from a provisional figure
-        is itself provisional.
-        """
-        components: dict[str, dict[tuple[str, str], Observation]] = {}
-        for component in (share.whole, *share.parts):
-            query = share.slice_for(component)
-            reported = observations(await self._get(query.dataset, dict(query.filters)))
-            components[component] = {(o.geo, o.period): o for o in reported}
-
-        shares: list[Observation] = []
-        workings: dict[tuple[str, str], str] = {}
-        for key, whole in components[share.whole].items():
-            parts = [components[part].get(key) for part in share.parts]
-            if whole.figure == 0 or any(part is None for part in parts):
-                continue
-            present = [part for part in parts if part is not None]
-            figure = sum(part.figure for part in present) / whole.figure * 100
-            flag = next((o.flag for o in (whole, *present) if o.flag in UNSETTLED_FLAGS), None)
-            shares.append(Observation(geo=key[0], period=key[1], figure=figure, flag=flag))
-            workings[key] = (
-                " + ".join(
-                    f"{name} {part.figure}" for name, part in zip(share.parts, present, strict=True)
-                )
-                + f" of {share.whole} {whole.figure} = {figure:.1f}%"
-            )
-
-        def describe(observation: Observation) -> str:
-            return (
-                f"Eurostat {share.dataset} {observation.period}: "
-                f"{workings[(observation.geo, observation.period)]}"
-            )
-
-        return shares, describe
 
     async def _densities(
         self, density: EurostatDensity

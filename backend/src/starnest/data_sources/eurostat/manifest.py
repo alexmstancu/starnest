@@ -34,44 +34,6 @@ class EurostatQuery:
         return f"EurostatQuery({self.dataset!r}, {dict(self.filters)!r})"
 
 
-class EurostatShare:
-    """A share assembled from components of one dataset: the parts over the whole, in percent.
-
-    **For a figure Eurostat publishes only in pieces.** The effective tax rate is not a series of
-    its own; `earn_nt_net` publishes gross earnings, taxes and social contributions separately,
-    and the rate is what they make together. Each component is fetched as its own slice -- the
-    JSON-stat decoder drops every dimension but place and period, so asking for all three at once
-    would return figures with nothing to say which was which.
-
-    **The components must come from the same year.** A country whose taxes are published for
-    2025 and whose gross earnings stop at 2024 has no 2025 rate: dividing one year by another
-    would produce a plausible number describing no year at all. The adapter only divides where
-    every component has the same period, which is the same rule `reqs.md` 3.6 applies to a
-    single figure's reference date.
-    """
-
-    __slots__ = ("dataset", "filters", "parts", "split_by", "whole")
-
-    def __init__(
-        self, dataset: str, *, split_by: str, parts: tuple[str, ...], whole: str, **filters: str
-    ) -> None:
-        self.dataset = dataset
-        self.split_by = split_by
-        self.parts = parts
-        self.whole = whole
-        self.filters = MappingProxyType(dict(filters))
-
-    def slice_for(self, component: str) -> EurostatQuery:
-        """The single-series query that fetches one component."""
-        return EurostatQuery(self.dataset, **dict(self.filters), **{self.split_by: component})
-
-    def __repr__(self) -> str:
-        return (
-            f"EurostatShare({self.dataset!r}, {' + '.join(self.parts)} of {self.whole}, "
-            f"{dict(self.filters)!r})"
-        )
-
-
 class EurostatDensity:
     """A length per 1,000 km² of land, from two datasets: the length over the land area.
 
@@ -158,18 +120,9 @@ QUERIES: Final = MappingProxyType(
         AttributeId("country.road_network_quality"): EurostatDensity(
             EurostatQuery("road_if_motorwa", freq="A", unit="KM", tra_infr="MWAY"), LAND_AREA
         ),
-        AttributeId("country.income_tax_effective"): EurostatShare(
-            "earn_nt_net",
-            split_by="estruct",
-            parts=("TAX", "SOC"),
-            whole="GRS",
-            freq="A",
-            currency="EUR",
-            ecase="P1_NCH_AW100",
-        ),
     }
 )
-"""Twelve attributes, two of which arrived by fixing the catalog rather than by finding a source.
+"""Eleven attributes, two of which arrived by fixing the catalog rather than by finding a source.
 
 **The three added at Gate B (2026-09-11)** close W4-F. `average_working_hours` reads the usual
 week of full-time employees aged 20-64 -- the week a household moving for work would be offered;
@@ -186,14 +139,14 @@ by real data rather than by a fixture invented to exercise them. The last three 
 chosen because each opens a pillar nothing had answered -- career, connectivity and nature --
 rather than deepening housing, which already had two of its three (`devplan.md` D7).
 
-**`income_tax_effective` is retired (`0445`, Q205) and this entry is inert** -- acquisition
-reads active attributes only. It measured the employee's side over gross, which penalised
-countries that put contributions on the employee; the total tax rate replaced it. The entry
-stays because its three components -- gross, taxes, employee contributions -- are what the total
-rate is computed from for the five EU members OECD does not cover, and it is rewired to that
-next.
+**`income_tax_effective` was retired (`0445`, Q205) and its entry is gone** -- with the rewiring
+its note promised: the components are read by `tax_wedge.py`, which computes the total tax rate
+for the five EU members OECD does not cover. The entry was left behind as "inert, because
+acquisition reads active attributes only", and **the startup check of `arch.md` 9.2 refused to
+boot over it on its first real run** (`known-issues.md` P31) -- correctly: a declaration nothing
+can answer is a declaration nobody should trust.
 
-**`earn_nt_net` answered `income_tax_effective` for 31 of 32, where OECD answers 26.** It is
+**`earn_nt_net` answers the total tax rate for 31 of 32, where OECD answers 26.** It is
 built on the same joint EU-OECD tax-benefit model as OECD's Taxing Wages, and it covers the
 five EU members OECD does not -- **including Romania**, which is the comparison anchor.
 The rate is income tax plus employee social contributions over gross earnings, for a single
