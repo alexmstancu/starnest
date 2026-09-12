@@ -113,8 +113,17 @@ test.describe("a candidate a gate ruled out", () => {
 });
 
 test.describe("insufficient data", () => {
+  // **Restored to whatever it was, never to null.** The floor is the household's decision
+  // (`reqs.md` Q214, currently 60) and a suite that reset it to "unset" would quietly undo that
+  // every time it ran -- a test with a side effect on the product's own configuration.
+  let floorBefore: number | null = null;
+
+  test.beforeEach(async ({ request }) => {
+    floorBefore = await coverageFloor(request);
+  });
+
   test.afterEach(async ({ request }) => {
-    await setCoverageFloor(request, null);
+    await setCoverageFloor(request, floorBefore);
   });
 
   test("is labelled and left unscored once a floor is set", async ({ page }) => {
@@ -309,6 +318,13 @@ async function enforceTheGate(request: APIRequestContext, enforced: boolean): Pr
     { data: { is_enforced: enforced } },
   );
   expect(response.ok()).toBe(true);
+}
+
+async function coverageFloor(request: APIRequestContext): Promise<number | null> {
+  const settings = (await (await request.get("/v1/settings")).json()) as {
+    min_coverage: number | null;
+  };
+  return settings.min_coverage;
 }
 
 /** The floor is the household's decision, so the suite leaves it exactly as it found it. */

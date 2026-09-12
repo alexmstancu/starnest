@@ -1908,14 +1908,24 @@ not declared it.
 > it. Making the permission explicit means a hand-typed value can only appear where someone
 > decided, in configuration, that no automated source exists.
 
-**The subset that allows it, at country level** — four attributes, each because no automated
-source answers them today:
+**The subset that allows it, at country level** — five attributes, each because no automated
+source answers them today, and each a *fact somebody can read off a published page* rather than
+a quantity that needs a counting method:
 
 | Attribute | Why |
 |---|---|
-| `country.tech_software_jobs`, `country.tech_product_jobs` | Source unresolved (section 9) |
 | `country.remote_work_tax_treaty` | Treaty lists are published but not offered as a queryable dataset |
 | `country.international_employers` | LLM-proposed, explicitly user-overridable, both values retained |
+| `country.naturalisation_pathway` | A statute, published per country and not as a dataset |
+| `country.pension_portability` | Bilateral agreements, published and not queryable |
+| `country.residency_admin_ease` | A judgement about published procedure |
+
+> **The two tech-jobs counts are deliberately not in this list** (Q215). An earlier version of
+> this section named them, and the catalog never did. A hand-typed "12,000 open software roles"
+> has no counting method behind it and is not comparable with another country's typed figure --
+> which is the failure section 10 forbids, arriving through the door section 6.5 exists to
+> guard. They stay unanswered until a source answers them, and their weight redistributes
+> visibly (`known-issues.md` P9).
 
 **Match rules are different and are manual by nature.** The UK Skilled Worker pathway, the Swiss
 EU/EFTA quota and `two_role_feasibility` (section 7.3) are judgements, not
@@ -3014,4 +3024,8 @@ Recorded from a front-to-back read of this document.
 | Q211 | **A fourth container: the live schema diagram** (2026-09-11) | Asked for by the household, to browse the schema beside the running app. Liam ERD built from a schema-only dump at start, on `127.0.0.1:4174`; a viewing aid that reads and never writes. Q182's three are unchanged |
 | Q212 | **Working hours, rail and motorway density anchored; the densities rethought after the MVP** (2026-09-11, `0465`) | From the household's notes against the real figures. Working hours 40 h → 100, 48 h → 0: the proposed 0 at 42 hours was "too aggressive", 40 being the standard and 42 "not too much", and 48 is the EU Working Time Directive's weekly maximum. Rail 0 → 0, 100 km per 1,000 km² → 100; motorways 0 → 0, 40 → 100, both kept for the MVP. Dividing a network by land area punishes empty land; the household's real question is whether the main places are connected, recorded as post-MVP work in `devplan.md` 8 |
 | Q213 | **Temperature: the yearly average keeps its 18–26 °C band, and a summer day and a winter day join it** (2026-09-11, `0466`, `0467`) | The household kept the band, knowing it reads most of Europe as cool. A yearly average hides the extremes a year is lived in -- Romania (12.6 °C) and Belgium (11.9 °C) read alike while Bucharest's summers pass 30 °C and its winters freeze -- so two measures were added beside it, **daytime, never the night**: the average daily high of June to August, scored comfortable at 20–26 °C with zero at 12 and 36 °C, and of December to February, scored the warmer the better, 0 °C → 0 and 15 °C → 100. The three temperatures weigh the same within climate. The yearly band favours the south where the summer band penalises it: a mild climate without scorching summers |
+| Q214 | **The coverage floor is 60%** (2026-09-12) | The household's choice, against the real spread: on the `minimal` set every country covers 89% or more except Liechtenstein at 53%, and on the shipped `local_employment` set the field sits between 62% and 67% with Liechtenstein at 47%. 60 isolates exactly the candidate whose score rests on borrowed figures and empties neither set. It is a round number rather than a measured one, and it sits close to the shipped set's floor: one more missing attribute and real countries stop being scored, which is the trade the household accepted in exchange for the invariant being switched on at all (section 5.3) |
+| Q215 | **The two tech-jobs counts do not permit manual entry** (2026-09-12) | Section 6.5 named them and the catalog never did (`known-issues.md` P9). The catalog wins and the section is corrected: manual entry is for a fact published on a page somebody can cite, not for a quantity whose meaning depends on how it was counted. Two counts typed by hand from different sources are not comparable, and in a ranking they would be indistinguishable from measured ones. The cost is accepted -- the career pillar's two counts stay unanswered until a source answers them |
+| Q216 | **Rail density stays missing for the three countries with no railway** (2026-09-12) | Cyprus, Malta and Iceland have no network, Eurostat publishes no row rather than a zero, and the household chose to leave it that way rather than permit manual entry or let the adapter write the zero. Redistribution is the mechanism section 5.3 designed for exactly this, and neither alternative is free: a typed zero needs maintaining, and an adapter that turns "absent" into "zero" has invented a figure its source did not publish. The measure itself is already recorded for a post-MVP rethink (Q212) |
+| Q217 | **A run reports what nobody answered, and a retry can ask again** (2026-09-12) | `RunProgress` counted completed and failed, and an item that every asked source simply had no row for belonged to neither: a one-item run for Liechtenstein reported one item, none completed, none failed, and the screen said nothing had failed (`known-issues.md` P18). The household chose both halves over either alone -- a third count so the arithmetic closes, and a record of the unanswered items so they can be asked again -- keeping "failed" meaning something went wrong while leaving nothing invisible. The cost is two actions on the Run screen where there was one |
 
