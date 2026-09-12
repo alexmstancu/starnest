@@ -324,6 +324,77 @@ export function fetchDataSources(
 }
 
 export type MatchRule = components["schemas"]["MatchRule"];
+export type MatchRuleResult = components["schemas"]["MatchRuleResult"];
+export type MatchRuleResultInput =
+  components["schemas"]["MatchRuleResultInput"];
+export type ResearchPlan = components["schemas"]["ResearchPlan"];
+export interface ResearchScope {
+  level: string;
+  match_rules?: string[] | null;
+}
+
+/**
+ * Every gate answer recorded, proposals included (`reqs.md` 3.7).
+ *
+ * A proposal carries `is_proposal: true` -- a model answered and nobody has confirmed it, so it
+ * rules nothing out (`reqs.md` 6.10 use 3). The screen needs both kinds in one list: a reader
+ * deciding whether to trust one wants to see what has already been settled beside it.
+ */
+export function fetchMatchRuleResults(
+  options?: RequestOptions,
+): Promise<{ items: MatchRuleResult[] }> {
+  return getJson("/match-rule-results", undefined, options);
+}
+
+/** What researching the gates would ask and cost, without asking (`reqs.md` 6.3). */
+export function planMatchRuleResearch(
+  scope: ResearchScope,
+  options?: RequestOptions,
+): Promise<ResearchPlan> {
+  return postJson("/match-rule-research/plan", scope, options);
+}
+
+/**
+ * Ask a model to read the official pages about every unconfirmed gate. **This spends money.**
+ *
+ * `accept_uncapped_spend` is the same bypass a run takes: refused while no cap is set, accepted
+ * per request and never remembered.
+ */
+export function researchMatchRules(
+  scope: ResearchScope & { accept_uncapped_spend?: boolean },
+  options?: RequestOptions,
+): Promise<{
+  proposals: MatchRuleResult[];
+  refusals?: string[];
+  cost_eur: number;
+  calls: number;
+  halted_on_spend_cap: boolean;
+}> {
+  return postJson(
+    "/match-rule-research",
+    { accept_uncapped_spend: false, ...scope },
+    options,
+  );
+}
+
+/**
+ * Record a gate's answer by hand -- and how a proposal is confirmed.
+ *
+ * **Confirming means writing the same answer as `manual`, which replaces the proposal**
+ * (`reqs.md` 6.10 use 3). One row, not two: a proposal and a finding can never disagree about
+ * the same gate, and it is the replacement that makes the gate start ruling candidates out.
+ */
+export function putMatchRuleResult(
+  matchRuleId: string,
+  candidateId: string,
+  answer: MatchRuleResultInput,
+  options?: RequestOptions,
+): Promise<MatchRuleResult> {
+  return putJson("/match-rule-results/{matchRuleId}/{candidateId}", answer, {
+    ...options,
+    pathParams: { matchRuleId, candidateId },
+  });
+}
 export type CompoundRule = components["schemas"]["CompoundRule"];
 
 /** The gates that exist at a level. Which of them a set enforces is the set's own business. */

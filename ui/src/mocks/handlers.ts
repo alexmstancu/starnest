@@ -19,6 +19,8 @@ import {
   EXTERNAL_SCORES,
   HOUSEHOLD,
   MATCH_RULES,
+  MATCH_RULE_RESULTS,
+  RESEARCH_PLAN,
   LEVELS,
   RUNS,
   RUN_PLAN,
@@ -33,6 +35,7 @@ import {
 } from "./fixtures";
 
 type Criterion = components["schemas"]["Criterion"];
+type MatchRuleResult = components["schemas"]["MatchRuleResult"];
 type CriteriaSet = components["schemas"]["CriteriaSet"];
 type CriteriaSetSummary = components["schemas"]["CriteriaSetSummary"];
 type PillarWeight = components["schemas"]["PillarWeight"];
@@ -52,12 +55,14 @@ let criteriaSetDetails = makeCriteriaSetDetails();
 let criteriaSetSummaries: CriteriaSetSummary[] = [...CRITERIA_SETS];
 let settings: Settings = { ...SETTINGS };
 let household: Household = { ...HOUSEHOLD };
+let matchRuleResults: MatchRuleResult[] = [...MATCH_RULE_RESULTS];
 
 export function resetMockData(): void {
   criteriaSetDetails = makeCriteriaSetDetails();
   criteriaSetSummaries = [...CRITERIA_SETS];
   settings = { ...SETTINGS };
   household = { ...HOUSEHOLD };
+  matchRuleResults = [...MATCH_RULE_RESULTS];
 }
 
 export const handlers = [
@@ -182,6 +187,62 @@ export const handlers = [
     );
     return HttpResponse.json({ items });
   }),
+
+  http.get(`${BASE}/match-rule-results`, () =>
+    HttpResponse.json({ items: matchRuleResults }),
+  ),
+
+  http.post(`${BASE}/match-rule-research/plan`, () =>
+    HttpResponse.json(RESEARCH_PLAN),
+  ),
+
+  /**
+   * A research pass. **No model is involved and none should be**: what a mock can be right
+   * about is the application's own rules -- a proposal is stored, it is marked unconfirmed, and
+   * it rules nothing out -- and those hold whoever answered.
+   */
+  http.post(`${BASE}/match-rule-research`, () =>
+    HttpResponse.json({
+      proposals: matchRuleResults.filter(
+        (answer) => answer.is_proposal === true,
+      ),
+      refusals: [],
+      cost_eur: 0.04,
+      calls: 2,
+      halted_on_spend_cap: false,
+    }),
+  ),
+
+  /**
+   * Confirming a proposal **replaces** it rather than sitting beside it (`reqs.md` 6.10 use 3):
+   * one row, so a proposal and a finding can never disagree about the same gate.
+   */
+  http.put(
+    `${BASE}/match-rule-results/:matchRuleId/:candidateId`,
+    async ({ params, request }) => {
+      const body = (await request.json()) as Partial<MatchRuleResult>;
+      const answer: MatchRuleResult = {
+        ...body,
+        match_result: body.match_result ?? "unknown",
+        data_source: body.data_source ?? "manual",
+        match_rule: String(params["matchRuleId"]),
+        candidate: String(params["candidateId"]),
+        retrieval_date: new Date().toISOString(),
+        is_proposal: false,
+      };
+      matchRuleResults = [
+        ...matchRuleResults.filter(
+          (stored) =>
+            !(
+              stored.match_rule === answer.match_rule &&
+              stored.candidate === answer.candidate
+            ),
+        ),
+        answer,
+      ];
+      return HttpResponse.json(answer);
+    },
+  ),
 
   http.get(`${BASE}/compound-rules`, ({ request }) => {
     const level = new URL(request.url).searchParams.get("level");

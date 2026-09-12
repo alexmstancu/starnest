@@ -493,6 +493,8 @@ export const EXTERNAL_SCORES: ExternalScore[] = [
 
 type Household = components["schemas"]["HouseholdInput"];
 type MatchRule = components["schemas"]["MatchRule"];
+type MatchRuleResult = components["schemas"]["MatchRuleResult"];
+type ResearchPlan = components["schemas"]["ResearchPlan"];
 type CompoundRule = components["schemas"]["CompoundRule"];
 type DataSource = components["schemas"]["DataSource"];
 
@@ -529,6 +531,43 @@ export const MATCH_RULES: MatchRule[] = [
   },
   { id: "not_manually_excluded", name: "Not excluded by hand", level: null },
 ];
+
+/**
+ * Gate answers as stored: one a model proposed and one a person settled.
+ *
+ * Both kinds, because the panel shows the proposals and counts the rest -- and because a
+ * fixture with only proposals would let "this is unconfirmed" pass while meaning nothing.
+ */
+export const MATCH_RULE_RESULTS: MatchRuleResult[] = [
+  {
+    match_rule: "country.visa_route_exists",
+    candidate: "country.portugal",
+    match_result: "not_matching",
+    data_source: "llm",
+    retrieval_date: "2026-09-12T09:00:00Z",
+    reason: "The official page lists no route for these citizenships.",
+    citations: ["https://example.gov/skilled-worker"],
+    is_proposal: true,
+  },
+  {
+    match_rule: "country.eu_free_movement",
+    candidate: "country.spain",
+    match_result: "matching",
+    data_source: "manual",
+    retrieval_date: "2026-09-10T09:00:00Z",
+    reason: "Checked the treaty text.",
+    is_proposal: false,
+  },
+];
+
+/** What a research pass would ask and cost, which is asked instead of the pass. */
+export const RESEARCH_PLAN: ResearchPlan = {
+  gates_total: 64,
+  llm_call_count: 64,
+  estimated_cost_eur: 4.2,
+  estimate_basis:
+    "a ceiling: 12,000 input tokens per call (configured, measured by make live-llm)",
+};
 
 export const COMPOUND_RULES: CompoundRule[] = [
   {

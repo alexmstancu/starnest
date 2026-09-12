@@ -6,6 +6,7 @@ import { CriteriaSetsPanel } from "./sets/CriteriaSetsPanel";
 import { DataSourcesPanel } from "./sources/DataSourcesPanel";
 import { HouseholdPanel } from "./household/HouseholdPanel";
 import { PillarWeightsPanel } from "./pillars/PillarWeightsPanel";
+import { ProposalsPanel } from "./proposals/ProposalsPanel";
 import { RulesPanel } from "./rules/RulesPanel";
 import { SettingsPanel } from "./settings/SettingsPanel";
 import { useCriteriaEditor } from "./useCriteriaEditor";
@@ -58,11 +59,17 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
           />
           <CriteriaPanel editor={editor} />
           {levelId !== null && (
-            <RulesPanel
-              key={`${editor.criteriaSet.id}-${levelId}`}
-              criteriaSet={editor.criteriaSet}
-              levelId={levelId}
-            />
+            <>
+              <RulesPanel
+                key={`${editor.criteriaSet.id}-${levelId}`}
+                criteriaSet={editor.criteriaSet}
+                levelId={levelId}
+              />
+              {/* Beside the gates, because that is where a gate is enforced and released: a
+                  proposal is an answer to one of the rules listed above it. Its own tab would
+                  give a feature that produces a handful of rows the same weight as Rank. */}
+              <ProposalsPanel key={`proposals-${levelId}`} levelId={levelId} />
+            </>
           )}
         </>
       )}
