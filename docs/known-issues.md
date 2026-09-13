@@ -21,8 +21,9 @@ the account of a defect outlives the defect.
 
 ## Status
 
-**32 findings: 21 closed, 11 open.** Everything high or medium is closed. What remains is
-documentation, test-quality, and one dead table — no open finding has a live effect today.
+**32 findings: 22 closed, 10 open.** Everything high or medium is closed. What remains is
+documentation and test-quality — no open finding has a live effect today. **The dead table is
+gone** (D9, `0472`).
 
 | Closed | When | Where |
 |---|---|---|
@@ -33,7 +34,7 @@ documentation, test-quality, and one dead table — no open finding has a live e
 
 | Open | Severity | Waiting on |
 |---|---|---|
-| **D9** | low | The catalog. `label_vocabulary` is dead — drop it or wire it |
+| ~~**D9**~~ | — | **Closed 2026-09-13 (Q229): dropped.** It was superseded before it was ever used, and its own COMMENT said so -- `attribute_allowed_label` arrived two migrations later and holds per-attribute vocabularies, while no two attributes share one. **The more useful half of the finding was the third table**: `attribute_allowed_label` was fully wired -- read by `catalog.sql`, carried on `Attribute.allowed_labels`, enforced in `refuse_unless_the_payload_suits` -- and completely empty, so `country.climate_zone` would have accepted any string. It now permits the 20 Köppen codes that occur in Europe |
 | **D14**-**D16** | low | Test-quality. Three tests assert less than their names claim, and `LevelHierarchy` accepts a branching tree |
 | **D17**-**D22** | low | Documentation and query drift between `reqs.md`, `openapi.yaml` and the SQL |
 | **D24** | low | Nine `set-state-in-effect` warnings in `ui/`, up from five: the criterion editor's draft follows the stored rule the same way `CriterionRow`'s input follows the stored weight. Each has a derived-state formulation; none is a bug |

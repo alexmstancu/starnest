@@ -26,7 +26,6 @@ REFERENCE_TABLES = [
     "currency",
     "confidence_level",
     "match_rule",
-    "label_vocabulary",
     "criteria_set",
     "evaluation",
     "data_acquisition_run",

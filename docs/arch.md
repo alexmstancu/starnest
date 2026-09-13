@@ -213,7 +213,7 @@ single row that refers to it.
 | `currency` | Currencies a `Monetary` may carry | `EUR`, `GBP`, `CHF` |
 | `confidence_level` | The four grades | `absolute`, `high`, `medium`, `low` |
 | `match_rule` | The named gates of `reqs.md` 7.3 | `uk_skilled_worker` |
-| `label_vocabulary` | Controlled vocabularies for `LabelSet` attributes | Köppen zone codes |
+| ~~`label_vocabulary`~~ | **Dropped `0472`** (Q229). Per-attribute vocabularies live in `attribute_allowed_label`, which arrived two migrations later and does the job; no two attributes share one, so the shared registry never earned a row | — |
 | `criteria_set` | Named criteria sets | `alex`, `remote_only` |
 | `evaluation` | One criteria set run against one level | surrogate |
 | `data_acquisition_run` | Data acquisition runs | surrogate |

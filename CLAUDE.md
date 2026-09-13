@@ -61,6 +61,15 @@ down, seven steps in order against a real database plus two standing checks. 1,3
 tests, 98 interface tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
 deliberately does not cover.
 
+**Two tables looked dead in the schema diagram and only one was** (Q229). `settings` is a
+singleton (`CHECK (id = 1)`) holding four global values that belong to no entity, so it has no
+foreign keys **by design** -- and `evaluation` deliberately *copies* the score scale rather than
+referencing it (`0107`), because an FK would silently reinterpret every score ever saved.
+`label_vocabulary` was genuinely dead, superseded by `attribute_allowed_label` before it was ever
+used, and is dropped. **The finding worth keeping is the third table**: `attribute_allowed_label`
+was fully wired and empty, so `climate_zone` would have accepted any string; it now carries the
+20 Köppen codes that occur in Europe.
+
 **A figure can be right and still not worth scoring** (Q228). `european_air_connectivity` is
 counted from Eurostat for all 31 candidates with an airport, and it spans 28 to 34 with Malta
 tying Germany -- six distinct values over 31 countries. Scoring that turns noise into rank

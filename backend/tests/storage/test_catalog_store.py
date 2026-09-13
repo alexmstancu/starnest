@@ -20,6 +20,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from starnest.data import (
     CompoundRuleShape,
+    LabelSet,
     LifecycleStatus,
     RuleOutcome,
     UnknownAttributeError,
@@ -32,6 +33,7 @@ pytestmark = pytest.mark.storage
 A_QUANTITY_ATTRIBUTE = "country.average_working_hours"
 AN_INDEX_ATTRIBUTE = "country.english_proficiency"
 A_RANGE_BOUNDED_ATTRIBUTE = "country.avg_annual_temperature"
+A_LABEL_SET_ATTRIBUTE = "country.climate_zone"
 A_LEVEL_WITH_NO_ATTRIBUTES_YET = "city"
 A_GATE_ASKED_AT_EVERY_LEVEL = "not_manually_excluded"
 
@@ -97,6 +99,44 @@ async def test_an_allowed_range_survives_as_a_range_and_absence_survives_as_none
     assert bounded.allowed_range is not None
     assert bounded.allowed_range.excludes(bounded.allowed_range.max_value + 1)
     assert unbounded.allowed_range is None
+
+
+async def test_a_seeded_vocabulary_reaches_the_attribute_that_enforces_it(
+    catalog: PostgresCatalogStore,
+) -> None:
+    """`0472`. **The mapper is the part that can silently do nothing here**, which is exactly
+    how H2 happened: `_overrides_from` returned empty and 956 tests passed.
+
+    So this asserts the codes arrive rather than that the column exists -- and asserts the
+    refusal they exist for, because a vocabulary that reaches the object and is never consulted
+    would pass a test about the object alone. The control is the pair it accepts.
+    """
+    zones = await catalog.read_attribute(A_LABEL_SET_ATTRIBUTE)
+
+    assert zones.value_type is ValueType.LABEL_SET
+    # The Köppen classification's own codes, not a shortlist of the ones seen so far: a
+    # vocabulary too narrow refuses a real figure (Q229).
+    assert {"Cfb", "Csa", "Dfc", "ET"} <= set(zones.allowed_labels)
+    assert "banana" not in zones.allowed_labels
+
+    # A reason rather than a raise: an unlisted label is recorded against the value as a
+    # `rejection_reason` and the run continues, because one bad label must not cost the other 31.
+    assert zones.rejection_reason_for(LabelSet(labels=("Cfb", "Csa"))) is None
+    refused = zones.rejection_reason_for(LabelSet(labels=("Cfb", "banana")))
+    assert refused is not None
+    assert "banana" in refused
+
+
+async def test_an_attribute_meant_to_stay_open_declares_no_vocabulary(
+    catalog: PostgresCatalogStore,
+) -> None:
+    """The control, and a decision rather than an omission (Q229, Q221). Named firms are the
+    whole point of asking for `international_employers`, and a fixed list would refuse every
+    real answer the LLM path exists to give."""
+    employers = await catalog.read_attribute("country.international_employers")
+
+    assert employers.value_type is ValueType.LABEL_SET
+    assert employers.allowed_labels == ()
 
 
 async def test_source_priority_overrides_come_back_ranked(catalog: PostgresCatalogStore) -> None:
