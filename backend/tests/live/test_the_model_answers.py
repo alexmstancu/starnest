@@ -9,58 +9,54 @@ It asks the smallest useful question and asserts the shape rather than the answe
 says about a visa route is not this suite's business, and pinning it would make the test fail for
 being right about a different week.
 
+**It is configured through `Environment`**, the same loader the application uses, because it read
+`os.environ` at first and therefore never ran at all -- the credentials live in `.env` (P34).
+
 **It also prints what the call actually billed**, because `LLM_INPUT_TOKENS_PER_CALL` is the one
 figure in the estimate that cannot be derived -- the provider injects the pages it searched into
 the context, so the prompt's own length says little. Run this, read the line, set the variable
 from a measurement rather than from a guess (`reqs.md` 6.3).
 """
 
-import os
 from decimal import Decimal
 
 import pytest
 
-from starnest.data_sources.llm import LlmPricing, LlmWithSearch
+from starnest.data_sources.llm import LlmWithSearch
 
 pytestmark = pytest.mark.live_llm
-
-PRICES = (
-    "LLM_INPUT_USD_PER_MTOK",
-    "LLM_OUTPUT_USD_PER_MTOK",
-    "LLM_USD_PER_WEB_SEARCH",
-    "EUR_USD_RATE",
-)
 
 
 @pytest.fixture
 def a_real_model() -> LlmWithSearch:
-    """The real SDK, priced from the environment, or a skip that says what is missing."""
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        pytest.skip("ANTHROPIC_API_KEY is not set, so there is nothing to ask")
+    """The real SDK, configured exactly as the application configures it.
 
-    prices = {name: os.environ.get(name) for name in PRICES}
-    if not all(prices.values()):
-        pytest.skip(f"prices are not configured: {prices}")
+    **Through `Environment`, not `os.environ`.** This test read the process environment for
+    three days and therefore never ran: the key and the prices live in `.env`, which only
+    pydantic-settings reads, so `make live-llm` skipped silently from any ordinary shell and the
+    one check that proves the SDK still returns the shape `client.py` reads proved nothing
+    (`known-issues.md` P34).
 
-    from anthropic import AsyncAnthropic
+    Reading it the application's way is also the more honest test: what is under test is the
+    configuration this machine would actually use, not a second copy of it assembled here.
+    """
+    from starnest.main import Environment, _the_model
 
-    return LlmWithSearch(
-        AsyncAnthropic(api_key=key).messages,
-        model=os.environ.get("LLM_MODEL", "claude-sonnet-5"),
-        pricing=LlmPricing.configured(
-            input_usd_per_million_tokens=Decimal(str(prices["LLM_INPUT_USD_PER_MTOK"])),
-            output_usd_per_million_tokens=Decimal(str(prices["LLM_OUTPUT_USD_PER_MTOK"])),
-            usd_per_web_search=Decimal(str(prices["LLM_USD_PER_WEB_SEARCH"])),
-            eur_usd_rate=Decimal(str(prices["EUR_USD_RATE"])),
-        ),
-        # Whatever is configured, so the printed measurement is comparable with the estimate
-        # this environment would actually produce. Absent, one token -- which makes the
-        # printed ratio read as "the configured figure is N times too small".
-        input_tokens_per_call=int(os.environ.get("LLM_INPUT_TOKENS_PER_CALL", 1)),
-        max_searches=2,
-        max_tokens=512,
-    )
+    environment = Environment()  # type: ignore[call-arg]
+    if not environment.anthropic_api_key:
+        pytest.skip("ANTHROPIC_API_KEY is not configured, so there is nothing to ask")
+
+    model = _the_model(environment)
+    if model is None:
+        pytest.skip("the llm path is not fully configured; the boot log names what is missing")
+
+    assert isinstance(model, LlmWithSearch)
+    # Two searches and a short answer: the smallest call that still exercises the whole shape.
+    # Reassigned rather than passed, because the point is the *configured* model with a cheaper
+    # ceiling, not a differently built one.
+    model._max_searches = 2
+    model._max_tokens = 512
+    return model
 
 
 async def test_the_shape_the_client_reads_is_the_shape_that_arrives(

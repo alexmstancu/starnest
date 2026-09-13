@@ -32,6 +32,11 @@ Prices are required configuration with no defaults (Q219); a run that can spend 
 without a cap and the refusal can be accepted past in the request (Q220); **a paid source is
 asked only when a run names its attributes**, so a sweep over a level is free by construction.
 `make live-llm` is the only thing here that spends money and is never part of `make check` --
+**and that is now enforced rather than defaulted** (P35): `pyproject.toml` excluded it in
+`addopts`, pytest lets the last `-m` win, and every explicit `-m` in the Makefile silently put
+the paid tests back in. A conftest guard skips anything marked `live_llm` unless the run selects
+it by name. It went unnoticed for days because the tests skipped for want of an API key until
+they were fixed to read the configuration properly (P34) --
 and it now **prints what one real call billed**, which is how `LLM_INPUT_TOKENS_PER_CALL` gets
 set from a measurement. **A run is estimated before it spends** (Q225): each source prices its
 own share, an LLM call is priced at the ceilings the client already sends, and the estimate

@@ -104,3 +104,28 @@ def connection(database_url: str) -> Iterator[psycopg.Connection]:
     with psycopg.connect(database_url) as conn:
         yield conn
         conn.rollback()
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip everything that spends money unless the run asked for it by name.
+
+    **A default exclusion that any explicit `-m` silently overrides is not an exclusion.**
+    `pyproject.toml` sets `-m 'not live_llm'` in `addopts`, and pytest lets the last `-m` win --
+    so `make test` (`-m "not storage and not acceptance and not live"`) and `make coverage`
+    (`-m "not live"`) both put the paid tests back in, and `make check` runs `coverage`. That
+    was true from the day the marker was added and nobody noticed, because the tests skipped for
+    want of an API key until they were fixed to read the configuration properly
+    (`known-issues.md` P34, P35).
+
+    This is the same fault as P8, where the gate called Eurostat: a marker nobody selected still
+    ran. The difference is what it costs. `make check` must never spend money (`arch.md` 6.7),
+    so the guard is here rather than in the marker expression -- one place, and no way to forget
+    it while writing a new `-m`.
+    """
+    asked_for_it = "live_llm" in (config.getoption("-m") or "")
+    if asked_for_it:
+        return
+    refusal = pytest.mark.skip(reason="spends money; run `make live-llm`, which selects it by name")
+    for item in items:
+        if "live_llm" in item.keywords:
+            item.add_marker(refusal)

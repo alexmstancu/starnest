@@ -82,7 +82,7 @@ backup:  ## pg_dump to ./backups
 # --- Backend tests -------------------------------------------------------------
 
 test:  ## Fast unit tests, no coverage
-	cd $(BACKEND) && uv run pytest -m "not storage and not acceptance and not live"
+	cd $(BACKEND) && uv run pytest -m "not storage and not acceptance and not live and not live_llm"
 
 test-storage:  ## Tests against a real PostgreSQL — the constraints ARE the behaviour
 	cd $(BACKEND) && uv run pytest -m storage
@@ -100,7 +100,10 @@ live:  ## Real third-party sources, on purpose: the fixtures still match, and Ga
 # `live` is excluded: those tests call real third-party sources, and a gate that fails because
 # Eurostat was slow says nothing about this code (arch.md 6.7). Until 2026-09-11 it ran them.
 coverage:  ## Full suite with coverage, live sources excluded. Fails below 85% lines and branches
-	cd $(BACKEND) && uv run pytest -m "not live" $(COV)
+	# `not live_llm` is stated as well as defaulted: pytest lets the last -m win, so this
+	# expression used to override the exclusion in pyproject.toml and put the paid tests back
+	# into the gate. A conftest guard now refuses them unless selected by name (P35).
+	cd $(BACKEND) && uv run pytest -m "not live and not live_llm" $(COV)
 	@echo ""
 	@echo "  HTML report: backend/htmlcov/index.html   (make coverage-open)"
 
