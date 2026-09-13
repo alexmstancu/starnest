@@ -61,6 +61,14 @@ down, seven steps in order against a real database plus two standing checks. 1,3
 tests, 98 interface tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
 deliberately does not cover.
 
+**A figure can be right and still not worth scoring** (Q228). `european_air_connectivity` is
+counted from Eurostat for all 31 candidates with an airport, and it spans 28 to 34 with Malta
+tying Germany -- six distinct values over 31 countries. Scoring that turns noise into rank
+differences, so it is **descriptive**: the category `reqs.md` 3.0 already has for an attribute
+with no criterion attached. It keeps its pillar, its source and its provenance, and is fetched
+and displayed as context. **Found by fetching it rather than by reasoning about it**, which is
+the argument for a live check on every new adapter.
+
 **Figures reach 10 of 11 pillars.** P4 was **ordered by pillar coverage, not adapter
 convenience** (`devplan.md` D7): World Bank WGI, then Eurostat extended (career, connectivity,
 nature), then WHO (health), the IMF (economics), OECD (tax) and Open-Meteo (climate). Seven

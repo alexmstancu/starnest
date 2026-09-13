@@ -120,11 +120,17 @@ class TestReadingASet:
     async def test_the_shipped_set_reads_with_its_anchors_and_thresholds(
         self, criteria: PostgresCriteriaStore
     ) -> None:
-        """44 criteria, four threshold shapes and the rules it enforces. The heavier read, and
-        the one that would expose a mapper that only handles the simple case."""
+        """43 criteria over the catalog's 44 attributes, four threshold shapes, and the rules
+        the set enforces. The heavier read, and the one that would expose a mapper that only
+        handles the simple case.
+
+        **43 rather than 44**: `european_air_connectivity` is descriptive and no set scores it
+        (Q228), which is the ontology's own category for a figure that is true and is not a
+        basis for ranking.
+        """
         shipped = await criteria.read_criteria_set(SHIPPED, level=COUNTRY)
 
-        assert len(shipped.criteria) == 44
+        assert len(shipped.criteria) == 43
         assert shipped.enforced_match_rules
         # Not an omission in the read: `reqs.md` 7.4 leaves every threshold TBD, and an anchor
         # ships only where the household chose it against real figures. A seeded one nobody
