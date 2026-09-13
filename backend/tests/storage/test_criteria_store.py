@@ -120,11 +120,11 @@ class TestReadingASet:
     async def test_the_shipped_set_reads_with_its_anchors_and_thresholds(
         self, criteria: PostgresCriteriaStore
     ) -> None:
-        """43 criteria, four threshold shapes and the rules it enforces. The heavier read, and
+        """44 criteria, four threshold shapes and the rules it enforces. The heavier read, and
         the one that would expose a mapper that only handles the simple case."""
         shipped = await criteria.read_criteria_set(SHIPPED, level=COUNTRY)
 
-        assert len(shipped.criteria) == 43
+        assert len(shipped.criteria) == 44
         assert shipped.enforced_match_rules
         # Not an omission in the read: `reqs.md` 7.4 leaves every threshold TBD, and an anchor
         # ships only where the household chose it against real figures. A seeded one nobody

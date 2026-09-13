@@ -35,7 +35,7 @@ class TestTheAttributes:
         """43 since `0466` added a summer day and a winter day (Q213)."""
         body = (await api.get("/v1/attributes", params={"level": COUNTRY})).json()
 
-        assert len(body["items"]) == 43
+        assert len(body["items"]) == 44
 
     async def test_each_declares_the_type_that_decides_what_a_value_may_be(
         self, api: httpx.AsyncClient

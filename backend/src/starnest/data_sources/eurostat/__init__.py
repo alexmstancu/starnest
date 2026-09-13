@@ -8,8 +8,18 @@ product's interpretation as a scoring input.
 
 from starnest.data_sources.eurostat.adapter import EurostatAdapter
 from starnest.data_sources.eurostat.geography import eurostat_code_for
-from starnest.data_sources.eurostat.jsonstat import JsonStatError, Observation, observations
-from starnest.data_sources.eurostat.manifest import BASE_URL, QUERIES
+from starnest.data_sources.eurostat.jsonstat import (
+    JsonStatError,
+    Observation,
+    observations,
+    partners_served,
+)
+from starnest.data_sources.eurostat.manifest import (
+    BASE_URL,
+    PARTNER_AGGREGATES,
+    QUERIES,
+    EurostatPartnerCount,
+)
 from starnest.data_sources.eurostat.tax_wedge import (
     EUROSTAT_ESTIMATE,
     TaxWedgeEstimateAdapter,
@@ -18,11 +28,14 @@ from starnest.data_sources.eurostat.tax_wedge import (
 __all__ = [
     "BASE_URL",
     "EUROSTAT_ESTIMATE",
+    "PARTNER_AGGREGATES",
     "QUERIES",
     "EurostatAdapter",
+    "EurostatPartnerCount",
     "JsonStatError",
     "Observation",
     "TaxWedgeEstimateAdapter",
     "eurostat_code_for",
     "observations",
+    "partners_served",
 ]

@@ -15,7 +15,7 @@ in the series, `e` estimated. They travel with the observation because a provisi
 a different thing to display than a settled one.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Container, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -65,6 +65,55 @@ def observations(document: Mapping[str, Any]) -> tuple[Observation, ...]:
             )
         )
     return tuple(found)
+
+
+def partners_served(
+    document: Mapping[str, Any], *, aggregates: Container[str]
+) -> tuple[Observation, ...]:
+    """How many distinct partners each place served, per period.
+
+    **A count over a dimension the figures are spread across**, rather than a figure read off
+    one. `observations` collapses everything but place and period, which is right for a series
+    where one place-and-period has one figure; here the answer *is* how many partner slices
+    carry one.
+
+    **Zero traffic is not a partner served.** Eurostat lists a partner for a reporting country
+    whether or not anybody flew there, and a route with no passengers in a year is a route
+    nobody can take.
+
+    **Aggregates are excluded by the caller.** `EU27_2020` sits in the same dimension as
+    Belgium, and counting it would add a phantom destination to every country. Which codes are
+    aggregates is a fact about the dataset, so the manifest names them (`arch.md` 6.3).
+    """
+    dimensions = _dimension_order(document)
+    sizes = _sizes(document, dimensions)
+    strides = _strides(sizes)
+    geo_axis, time_axis, partner_axis = (
+        _axis_of(name, dimensions) for name in ("geo", "time", "partner")
+    )
+    geo_codes = _codes_in_position_order(document, "geo")
+    periods = _codes_in_position_order(document, "time")
+    partner_codes = _codes_in_position_order(document, "partner")
+
+    served: dict[tuple[str, str], set[str]] = {}
+    for index, figure in _figures(document):
+        if figure <= 0:
+            continue
+        partner = partner_codes[index // strides[partner_axis] % sizes[partner_axis]]
+        if partner in aggregates:
+            continue
+        geo = geo_codes[index // strides[geo_axis] % sizes[geo_axis]]
+        # A country is not its own destination, and Eurostat reports domestic traffic in the
+        # same dimension as everyone else's.
+        if partner == geo:
+            continue
+        period = periods[index // strides[time_axis] % sizes[time_axis]]
+        served.setdefault((geo, period), set()).add(partner)
+
+    return tuple(
+        Observation(geo=geo, period=period, figure=Decimal(len(partners)))
+        for (geo, period), partners in sorted(served.items())
+    )
 
 
 def _figures(document: Mapping[str, Any]) -> list[tuple[int, Decimal]]:

@@ -57,6 +57,33 @@ class EurostatDensity:
         return f"EurostatDensity({self.length!r} per {self.per} of {self.area!r})"
 
 
+class EurostatPartnerCount:
+    """How many partners a place served, counted across a dimension the figures spread over.
+
+    **For a count Eurostat publishes as the rows themselves.** `avia_paocc` reports passengers
+    between each reporting country and each partner; nobody publishes "destinations served", and
+    it is exactly the number of those rows that carry traffic.
+
+    `aggregates` are the codes in the partner dimension that are not places -- `EU27_2020` sits
+    beside Belgium -- and counting one would add a phantom destination to every country. They
+    are named here because which codes are aggregates is a fact about Eurostat's dimension, not
+    about our attribute.
+    """
+
+    __slots__ = ("aggregates", "query")
+
+    def __init__(self, query: EurostatQuery, *, aggregates: frozenset[str]) -> None:
+        self.query = query
+        self.aggregates = aggregates
+
+    def __repr__(self) -> str:
+        return f"EurostatPartnerCount({self.query!r}, excluding {sorted(self.aggregates)})"
+
+
+PARTNER_AGGREGATES: Final = frozenset({"EU27_2020", "EU28", "EU27_2007"})
+"""The three codes in `avia_paocc`'s partner dimension that are not countries."""
+
+
 LAND_AREA: Final = EurostatQuery(
     "reg_area3", freq="A", unit="KM2", landuse="L0008", geoLevel="country"
 )
@@ -119,6 +146,21 @@ QUERIES: Final = MappingProxyType(
         ),
         AttributeId("country.road_network_quality"): EurostatDensity(
             EurostatQuery("road_if_motorwa", freq="A", unit="KM", tra_infr="MWAY"), LAND_AREA
+        ),
+        # **European, and the attribute says so** (Q227). Eurostat's partner dimension holds 35
+        # European countries and three aggregates -- no Brazil, no United States -- so a count
+        # from it answers `european_air_connectivity` and would have been a lie under the word
+        # "international". The scheduled-and-unscheduled total, because a household visiting
+        # family flies whichever is running.
+        AttributeId("country.european_air_connectivity"): EurostatPartnerCount(
+            EurostatQuery(
+                "avia_paocc",
+                freq="A",
+                unit="PAS",
+                tra_meas="PAS_CRD",
+                schedule="TOTAL",
+            ),
+            aggregates=PARTNER_AGGREGATES,
         ),
     }
 )

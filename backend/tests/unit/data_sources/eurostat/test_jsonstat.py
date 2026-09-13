@@ -14,7 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from starnest.data_sources.eurostat.jsonstat import JsonStatError, Observation, observations
+from starnest.data_sources.eurostat.jsonstat import (
+    JsonStatError,
+    Observation,
+    observations,
+    partners_served,
+)
 
 CAPTURED = Path(__file__).parent / "captured"
 
@@ -172,3 +177,82 @@ class TestAResponseThatCannotBeRead:
         """Better than storing the string: a value nobody can compare is not a measurement."""
         with pytest.raises(JsonStatError, match="not a figure"):
             observations(a_cube(values={"0": "not a number"}))
+
+
+def a_partner_cube(*, values: dict[str, float]) -> dict:
+    """One reporting country against four partners, two of which are real places.
+
+    `EU27_2020` sits in the same dimension as Belgium, and `PT` reporting about `PT` is domestic
+    traffic -- both are in the cube because both are in Eurostat's, and a counter that did not
+    know that would report phantom destinations.
+    """
+    return {
+        "id": ["unit", "partner", "geo", "time"],
+        "size": [1, 4, 1, 1],
+        "dimension": {
+            "unit": {"category": {"index": {"PAS": 0}}},
+            "partner": {"category": {"index": {"EU27_2020": 0, "BE": 1, "ES": 2, "PT": 3}}},
+            "geo": {"category": {"index": {"PT": 0}}},
+            "time": {"category": {"index": {"2025": 0}}},
+        },
+        "value": values,
+    }
+
+
+class TestCountingPartnersServed:
+    """How many distinct partners a place served, counted across the dimension they spread over.
+
+    **A count over rows rather than a figure read off one.** Nobody publishes "destinations
+    served"; what exists is passengers per partner, and the count is how many of those carry
+    traffic (Q227).
+    """
+
+    def test_it_counts_the_partners_with_traffic(self) -> None:
+        counted = partners_served(
+            a_partner_cube(values={"1": 400.0, "2": 1200.0}), aggregates=frozenset()
+        )
+
+        ((observation,)) = counted
+        assert observation.geo == "PT"
+        assert observation.period == "2025"
+        assert observation.figure == Decimal(2)
+
+    def test_an_aggregate_is_not_a_destination(self) -> None:
+        """`EU27_2020` is not a place you can fly to, and counting it would add a phantom
+        destination to every country in the dataset."""
+        counted = partners_served(
+            a_partner_cube(values={"0": 99_000.0, "1": 400.0}),
+            aggregates=frozenset({"EU27_2020"}),
+        )
+
+        ((observation,)) = counted
+        assert observation.figure == Decimal(1)
+
+    def test_a_country_is_not_its_own_destination(self) -> None:
+        """Eurostat reports domestic traffic in the same dimension as everyone else's."""
+        counted = partners_served(
+            a_partner_cube(values={"1": 400.0, "3": 2_000_000.0}), aggregates=frozenset()
+        )
+
+        ((observation,)) = counted
+        assert observation.figure == Decimal(1)
+
+    def test_a_route_nobody_flew_is_not_a_route(self) -> None:
+        """Eurostat lists a partner whether or not anybody flew there, and a year with no
+        passengers is a route that cannot be taken."""
+        counted = partners_served(
+            a_partner_cube(values={"1": 0.0, "2": 1200.0}), aggregates=frozenset()
+        )
+
+        ((observation,)) = counted
+        assert observation.figure == Decimal(1)
+
+    def test_a_place_with_no_traffic_at_all_gets_no_figure(self) -> None:
+        """Not a zero. Liechtenstein has no airport, and a zero would say it has one that
+        nobody uses -- which is the invented figure `reqs.md` 5.3 exists to prevent."""
+        assert partners_served(a_partner_cube(values={}), aggregates=frozenset()) == ()
+
+    def test_a_cube_without_a_partner_dimension_says_so(self) -> None:
+        """Counting a dimension that is not there would silently count something else."""
+        with pytest.raises(JsonStatError, match="partner"):
+            partners_served(a_cube(values={"0": 1.0}), aggregates=frozenset())

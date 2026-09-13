@@ -2253,7 +2253,8 @@ way by the active-value rule (section 3.6).
 | Attribute | Weight | Value type | Sources | Max age |
 |---|---|---|---|---|
 | `country.rail_network_density` | 30% | **Quantity** — km of line per 1,000 km² | Eurostat rail infrastructure statistics | 24 months |
-| `country.international_air_connectivity` | 25% | **Count** — international destinations served | Eurostat air transport, OpenFlights, airport authorities | 24 months |
+| `country.international_air_connectivity` | 12% | **Count** — international destinations served, worldwide | No dataset covers it; the LLM path answers it with the pages it read (6.10 use 1) | 24 months |
+| `country.european_air_connectivity` | 13% | **Count** — European countries served by direct passenger flights, 0-35 | Eurostat `avia_paocc`, counting partner countries with passenger traffic | 24 months |
 | `country.broadband_coverage` | 25% | **Ratio** — share of households with high-speed or fibre access | Eurostat DESI, national regulators | 24 months |
 | `country.road_network_quality` | 20% | **Quantity** — km of motorway per 1,000 km² | Eurostat road transport statistics | 24 months |
 

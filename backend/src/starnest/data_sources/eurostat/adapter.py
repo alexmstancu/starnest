@@ -27,6 +27,7 @@ from starnest.candidates import Candidate
 from starnest.data import (
     Attribute,
     ConfidenceLevel,
+    Count,
     DataSourceId,
     Measurements,
     Quantity,
@@ -42,11 +43,13 @@ from starnest.data_sources.eurostat.jsonstat import (
     JsonStatError,
     Observation,
     observations,
+    partners_served,
 )
 from starnest.data_sources.eurostat.manifest import (
     BASE_URL,
     QUERIES,
     EurostatDensity,
+    EurostatPartnerCount,
 )
 from starnest.data_sources.transport import JsonOverHttp, SourceUnavailableError, a_failure
 
@@ -99,6 +102,8 @@ class EurostatAdapter(SourceAdapter):
         try:
             if isinstance(query, EurostatDensity):
                 reported, describe = await self._densities(query)
+            elif isinstance(query, EurostatPartnerCount):
+                reported, describe = await self._partners_served(query)
             else:
                 reported = observations(await self._get(query.dataset, dict(query.filters)))
                 describe = _as_published
@@ -146,6 +151,30 @@ class EurostatAdapter(SourceAdapter):
             return workings[(observation.geo, observation.period)]
 
         return densities, describe
+
+    async def _partners_served(
+        self, counted: EurostatPartnerCount
+    ) -> tuple[list[Observation], Callable[[Observation], str]]:
+        """How many partner countries each place served, per year.
+
+        **The figure is derived, so the quote says how.** A reader seeing "23" needs to know it
+        is a count of partner countries with passenger traffic rather than a published
+        Eurostat indicator called "destinations", because no such indicator exists.
+        """
+        served = list(
+            partners_served(
+                await self._get(counted.query.dataset, dict(counted.query.filters)),
+                aggregates=counted.aggregates,
+            )
+        )
+
+        def describe(observation: Observation) -> str:
+            return (
+                f"Eurostat {counted.query.dataset} {observation.period}: "
+                f"{observation.figure:.0f} partner countries with passenger traffic"
+            )
+
+        return served, describe
 
     async def _get(self, dataset: str, filters: dict[str, str]) -> dict:
         answered = await self._endpoint.get(
@@ -264,6 +293,16 @@ def _payload_for(attribute: Attribute, figure: Decimal) -> ValuePayload:
         if attribute.quantity_parameters is None:
             raise ValueError(f"{attribute.id} is a Quantity and the catalog gives it no unit")
         return Quantity(magnitude=figure, unit=attribute.quantity_parameters.unit)
+    if attribute.value_type is ValueType.COUNT:
+        # **Only ever a whole number, and refused rather than rounded if it is not.** Every
+        # count this adapter produces is derived by counting rows (`partners_served`), so a
+        # fraction here would mean the counting itself went wrong -- and quietly rounding it
+        # would hide that behind a plausible integer.
+        if figure != figure.to_integral_value():
+            raise ValueError(
+                f"{attribute.id} is a Count and the figure is {figure}, which is not whole"
+            )
+        return Count(count=int(figure))
     raise ValueError(
         f"{attribute.id} is a {attribute.value_type}, which this adapter does not know how to "
         "build from a Eurostat figure"
