@@ -13,17 +13,10 @@ honest outcome the ranking has to show as coverage, and a failure is a thing to 
 import asyncio
 from pathlib import Path
 
-import httpx
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.data_acquisition import STAND_IN, SourceAdapter, acquire, stand_in
-from starnest.data_sources.eurostat import EurostatAdapter, TaxWedgeEstimateAdapter
-from starnest.data_sources.imf import ImfAdapter
-from starnest.data_sources.oecd import OecdAdapter
-from starnest.data_sources.open_meteo import OpenMeteoAdapter
-from starnest.data_sources.who import WhoAdapter
-from starnest.data_sources.world_bank import WorldBankAdapter
-from starnest.main import Environment
+from starnest.main import Environment, _the_sources
 from starnest.storage import (
     PostgresCandidateStore,
     PostgresCatalogStore,
@@ -35,22 +28,23 @@ REPO = Path(__file__).resolve().parents[2]
 COUNTRY = "country"
 
 
-def every_adapter(catalog: PostgresCatalogStore) -> tuple[SourceAdapter, ...]:
-    """The same sources `main.py` wires into the API, listed once more here.
+def every_adapter(
+    catalog: PostgresCatalogStore, environment: Environment
+) -> tuple[SourceAdapter, ...]:
+    """The free sources the application wires in, taken from the composition root itself.
 
-    Duplicated deliberately rather than imported from the composition root: that one builds a
-    FastAPI application and opens a pool, and importing it to borrow a tuple would drag all of
-    that into a script whose whole point is being smaller than it.
+    **This used to be a second copy of the list, and the copy drifted.** It was duplicated to
+    avoid importing `main` -- while this script already imported `Environment` from it -- and
+    when the transcribed tables joined the registry (Q230) they joined only the real one, so
+    `make acquire` reported success and stored nothing for three attributes. Same failure as
+    P5, where a run asked one source while its plan counted six.
+
+    **Free sources only, always.** A sweep over a level must never spend: the API refuses a paid
+    run without a cap, and this script checks no cap at all, so anything that charges is left
+    out here rather than trusted to behave.
     """
-    client = httpx.AsyncClient(timeout=60)
-    return (
-        EurostatAdapter(client),
-        WorldBankAdapter(client),
-        WhoAdapter(client),
-        ImfAdapter(client),
-        OecdAdapter(client),
-        TaxWedgeEstimateAdapter(client),
-        OpenMeteoAdapter(httpx.AsyncClient(timeout=120), catalog),
+    return tuple(
+        adapter for adapter in _the_sources(catalog, environment) if not adapter.costs_money
     )
 
 
@@ -68,7 +62,7 @@ async def main() -> int:
         values = PostgresValueStore(pool)
         print(f"{len(candidates)} candidates, {len(attributes)} attributes in the catalog")
 
-        for adapter in every_adapter(catalog):
+        for adapter in every_adapter(catalog, environment):
             print(
                 f"\n{adapter.data_source} answers {len(adapter.attributes)} of them: "
                 f"{', '.join(adapter.attributes)}"
