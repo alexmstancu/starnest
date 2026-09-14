@@ -1,0 +1,43 @@
+# data_source: mipex
+# attribute: country.openness_to_foreigners
+# publication: Migrant Integration Policy Index (MIPEX)
+# publisher_url: https://www.mipex.eu/
+# transcribed_on: 2026-09-14
+# confidence: high
+# editions: the household's decision (Q231). The 27 EU member states come from the MIPEX 2025 table, which describes 2023 ("Between 2019 and 2023, integration policies in the EU improved"). MIPEX 2025 covers only the EU, so Iceland, Norway, Switzerland and the United Kingdom carry their newest published score, from MIPEX 2020, describing 2019 -- older than the catalog's five-year max_age and shown as stale rather than hidden.
+# comparability: the 2025 table prints each score's change since 2019, and every implied 2019 score matches MIPEX 2020 (Ireland 64 then 59, Portugal 81 then 83), so the two editions are on one scale.
+# route: the EU table was parsed from the page's text rather than summarised, and every non-EU score read from the country's own page. All from the publisher.
+# not covered: LI is not in MIPEX, so it gets no figure rather than an estimate.
+# scale: the overall score with the Health strand, 0-100, the figure MIPEX headlines.
+country_code,figure,period,page,workings
+SE,86,2023,https://www.mipex.eu/key-findings-2025,
+FI,84,2023,https://www.mipex.eu/key-findings-2025,
+PT,83,2023,https://www.mipex.eu/key-findings-2025,
+BE,70,2023,https://www.mipex.eu/key-findings-2025,
+LU,64,2023,https://www.mipex.eu/key-findings-2025,"MIPEX 2025: 64 for 2023. Luxembourg's own country page shows 61 for 2024, a later update the edition's table does not carry; the table's figure is kept so all 27 EU scores describe the same year."
+ES,64,2023,https://www.mipex.eu/key-findings-2025,
+IE,59,2023,https://www.mipex.eu/key-findings-2025,
+DE,58,2023,https://www.mipex.eu/key-findings-2025,
+IT,58,2023,https://www.mipex.eu/key-findings-2025,
+NL,57,2023,https://www.mipex.eu/key-findings-2025,
+FR,56,2023,https://www.mipex.eu/key-findings-2025,
+SI,52,2023,https://www.mipex.eu/key-findings-2025,
+RO,52,2023,https://www.mipex.eu/key-findings-2025,
+EE,51,2023,https://www.mipex.eu/key-findings-2025,
+CZ,49,2023,https://www.mipex.eu/key-findings-2025,
+DK,49,2023,https://www.mipex.eu/key-findings-2025,
+GR,49,2023,https://www.mipex.eu/key-findings-2025,
+MT,48,2023,https://www.mipex.eu/key-findings-2025,
+AT,47,2023,https://www.mipex.eu/key-findings-2025,
+HR,44,2023,https://www.mipex.eu/key-findings-2025,
+PL,44,2023,https://www.mipex.eu/key-findings-2025,
+HU,41,2023,https://www.mipex.eu/key-findings-2025,
+CY,41,2023,https://www.mipex.eu/key-findings-2025,
+SK,39,2023,https://www.mipex.eu/key-findings-2025,
+BG,39,2023,https://www.mipex.eu/key-findings-2025,
+LT,37,2023,https://www.mipex.eu/key-findings-2025,
+LV,36,2023,https://www.mipex.eu/key-findings-2025,
+NO,69,2019,https://www.mipex.eu/norway,"MIPEX 2020: 69, describing 2019. MIPEX 2025 covers only the EU, so this is Norway's newest published score -- older than the five-year max_age, and stale on screen."
+GB,56,2019,https://www.mipex.eu/united-kingdom,"MIPEX 2020: 56, describing 2019. MIPEX 2025 covers only the EU, so this is the United Kingdom's newest published score -- older than the five-year max_age, and stale on screen."
+CH,50,2019,https://www.mipex.eu/switzerland,"MIPEX 2020: 50, describing 2019. MIPEX 2025 covers only the EU, so this is Switzerland's newest published score -- older than the five-year max_age, and stale on screen."
+IS,56,2019,https://www.mipex.eu/iceland,"MIPEX 2020: 56, describing 2019. MIPEX 2025 covers only the EU, so this is Iceland's newest published score -- older than the five-year max_age, and stale on screen."

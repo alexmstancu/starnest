@@ -289,6 +289,7 @@ def _the_sources(catalog: object, environment: "Environment") -> tuple:
     from starnest.data_sources.imf import ImfAdapter
     from starnest.data_sources.oecd import OecdAdapter
     from starnest.data_sources.open_meteo import OpenMeteoAdapter
+    from starnest.data_sources.published_tables import PublishedTableAdapter, every_published_table
     from starnest.data_sources.who import WhoAdapter
     from starnest.data_sources.world_bank import WorldBankAdapter
 
@@ -301,6 +302,9 @@ def _the_sources(catalog: object, environment: "Environment") -> tuple:
         TaxWedgeEstimateAdapter(httpx.AsyncClient(timeout=60)),
         # Reads the places it measures at from the catalog (D4), so it holds the store.
         OpenMeteoAdapter(httpx.AsyncClient(timeout=120), catalog),  # type: ignore[arg-type]
+        # One per transcribed table. Read here, at boot, so a slip in a file stops the start-up
+        # with the file and row named rather than surfacing mid-run as a publisher's fault.
+        *(PublishedTableAdapter(table) for table in every_published_table()),
         *_the_paid_sources(environment),
     )
 

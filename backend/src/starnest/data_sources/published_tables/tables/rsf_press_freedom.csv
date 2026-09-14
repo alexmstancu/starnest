@@ -1,0 +1,42 @@
+# data_source: rsf
+# attribute: country.press_freedom
+# publication: RSF World Press Freedom Index 2026
+# publisher_url: https://rsf.org/en/index
+# transcribed_on: 2026-09-14
+# confidence: medium
+# period: RSF describes each Index as "a snapshot of the situation during the calendar year (January-December) prior to its publication" (https://rsf.org/en/methodology-used-compiling-world-press-freedom-index-2026), so the 2026 Index describes 2025.
+# route: rsf.org refuses scripted reads, so the scores were read from Wikipedia's copy of the 2026 table. Medium rather than high for that reason; the scores were cross-checked against independent readings of the same Index before being kept.
+# scale: the score (0-100), never the rank. A rank moves when other countries move; the score is the country's own.
+country_code,figure,period,page,workings
+AT,79.43,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+BE,81.17,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+BG,60.28,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+HR,66.31,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+CY,56.91,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+CZ,83.01,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+DK,88.47,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+EE,88.54,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+FI,86.22,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+FR,76.68,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+DE,82.17,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+GR,55.05,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+HU,59.85,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+IS,82.77,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+IE,85.93,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+IT,65.16,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+LV,81.00,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+LI,82.62,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+LT,81.34,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+LU,84.14,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+MT,61.44,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+NL,88.92,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+NO,92.72,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+PL,75.52,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+PT,83.71,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+RO,67.71,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+SK,72.71,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+SI,72.88,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+ES,75.42,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+SE,87.61,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+CH,84.83,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
+GB,79.45,2025,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,

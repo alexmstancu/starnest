@@ -1,0 +1,35 @@
+# data_source: ef_epi
+# attribute: country.english_proficiency
+# publication: EF English Proficiency Index 2025
+# publisher_url: https://www.ef.com/wwen/epi/
+# transcribed_on: 2026-09-14
+# confidence: high
+# period: EF states the 2025 edition "is based on test data from more than 2,200,000 test takers around the world who took the EF SET in 2024" (https://www.ef.com/wwen/epi/about-epi/), so every figure describes 2024, not the edition year.
+# route: every figure was read from EF's own pages. 18 from the Europe region page; the 7 in lower bands, which that page did not list, from each country's own page.
+# not ranked: IS, IE, LI, LU, MT, SI, GB are absent from the 2025 edition, so they get no figure rather than an estimate. Wikipedia's copy gave Latvia 599; EF's page gives 598, and the publisher's figure is the one kept.
+country_code,figure,period,page,workings
+AT,616,2024,https://www.ef.com/wwen/epi/regions/europe/,
+BE,608,2024,https://www.ef.com/wwen/epi/regions/europe/,
+BG,594,2024,https://www.ef.com/wwen/epi/regions/europe/,
+HR,617,2024,https://www.ef.com/wwen/epi/regions/europe/,
+CZ,582,2024,https://www.ef.com/wwen/epi/regions/europe/,
+DK,611,2024,https://www.ef.com/wwen/epi/regions/europe/,
+FI,603,2024,https://www.ef.com/wwen/epi/regions/europe/,
+DE,615,2024,https://www.ef.com/wwen/epi/regions/europe/,
+GR,592,2024,https://www.ef.com/wwen/epi/regions/europe/,
+HU,590,2024,https://www.ef.com/wwen/epi/regions/europe/,
+LV,598,2024,https://www.ef.com/wwen/epi/regions/europe/,
+NL,624,2024,https://www.ef.com/wwen/epi/regions/europe/,
+NO,613,2024,https://www.ef.com/wwen/epi/regions/europe/,
+PL,600,2024,https://www.ef.com/wwen/epi/regions/europe/,
+PT,612,2024,https://www.ef.com/wwen/epi/regions/europe/,
+RO,605,2024,https://www.ef.com/wwen/epi/regions/europe/,
+SK,606,2024,https://www.ef.com/wwen/epi/regions/europe/,
+SE,609,2024,https://www.ef.com/wwen/epi/regions/europe/,
+CY,537,2024,https://www.ef.com/wwen/epi/regions/europe/cyprus/,
+EE,561,2024,https://www.ef.com/wwen/epi/regions/europe/estonia/,
+FR,539,2024,https://www.ef.com/wwen/epi/regions/europe/france/,
+IT,513,2024,https://www.ef.com/wwen/epi/regions/europe/italy/,
+LT,543,2024,https://www.ef.com/wwen/epi/regions/europe/lithuania/,
+ES,540,2024,https://www.ef.com/wwen/epi/regions/europe/spain/,
+CH,564,2024,https://www.ef.com/wwen/epi/regions/europe/switzerland/,

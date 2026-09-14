@@ -124,6 +124,11 @@ class TestWhatIsActuallyWiredIn:
             "oecd",
             "eurostat_estimate",
             "open_meteo",
+            # Transcribed tables, one per file in `published_tables/tables/` (Q230). Each is
+            # the publisher the catalog already ranks first for its attribute.
+            "rsf",
+            "ef_epi",
+            "mipex",
         }
         # Nothing but the LLM path charges, and it is the only thing that may appear here
         # because of configuration rather than because of code.

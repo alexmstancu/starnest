@@ -75,6 +75,21 @@ used, and is dropped. **The finding worth keeping is the third table**: `attribu
 was fully wired and empty, so `climate_zone` would have accepted any string; it now carries the
 20 Köppen codes that occur in Europe.
 
+**Where a publisher prints one table and no API, the table is transcribed** (Q230). RSF's
+press freedom index, EF's English Proficiency Index and MIPEX are CSVs in
+`data_sources/published_tables/tables/`, read strictly at boot and stored under the true
+publisher -- `rsf`, `ef_epi`, `mipex`, already ranked first -- never as `manual` or `llm`. Each
+row names the page it came from and the period the figure **describes**, which is not the edition
+year: the 2026 RSF Index describes 2025, EF EPI 2025 uses 2024 test data. **This beats the LLM
+fallback on accuracy, not just cost**: one table gives every country one edition, while the
+model's per-country answers read last year's RSF column for 7 of 24 countries under a "2026"
+quote, and gave Luxembourg an English score three times from an edition that does not rank it
+(P38). **The fallback also stamped every figure with the day it was fetched** (P37, fixed): with
+freshness the first term of the active-value order, a figure dated today outranked an honestly
+aged published one. The 156 such rows are rejected, not deleted (`0473`). **Elevation and
+coastline are postponed** (P39): the CIA World Factbook was discontinued in February 2026, and
+the reliable living routes are computations from EEA and Copernicus datasets.
+
 **A figure can be right and still not worth scoring** (Q228). `european_air_connectivity` is
 counted from Eurostat for all 31 candidates with an airport, and it spans 28 to 34 with Malta
 tying Germany -- six distinct values over 31 countries. Scoring that turns noise into rank
