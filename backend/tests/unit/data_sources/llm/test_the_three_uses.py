@@ -6,6 +6,7 @@ a substitute for evidence -- and a model will always produce a plausible answer 
 allowed to.
 """
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -128,7 +129,7 @@ class TestTheFallbackFigure:
         """The unit comes from the attribute. A figure in the wrong unit is the one kind of wrong
         answer that looks entirely reasonable."""
         acquired = await LlmFallbackAdapter(
-            a_model(an_answer('{"value": 1180.5, "note": "INE, 2025"}')),
+            a_model(an_answer('{"value": 1180.5, "period": "2025", "note": "INE, 2025"}')),
             answers=("country.average_rent",),
         ).fetch(a_quantity_attribute(), [PORTUGAL])
 
@@ -137,6 +138,68 @@ class TestTheFallbackFigure:
         assert value.payload.magnitude == Decimal("1180.5")
         assert value.payload.unit == "eur_per_month"
         assert value.confidence_level is ConfidenceLevel.LOW
+
+    async def test_the_period_is_the_one_the_publisher_chose_not_the_day_it_was_asked(
+        self,
+    ) -> None:
+        """`reqs.md` 3.6: the reference period is what the figure describes, and it is never the
+        retrieval date. **This used to be today, whatever the model said** (`known-issues.md`
+        P37) -- which made every LLM figure permanently fresh, and `is_fresh` is the first term
+        of the active-value order, so a figure the model dated as today could outrank a
+        published figure that had honestly aged. That is the reverse of 6.10's "any structured
+        source that can answer supersedes it automatically"."""
+        acquired = await LlmFallbackAdapter(
+            a_model(an_answer('{"value": 61.4, "period": "2019", "note": "RSF 2019"}')),
+            answers=("country.average_rent",),
+        ).fetch(a_quantity_attribute(), [PORTUGAL])
+
+        (value,) = acquired.values
+        assert value.reference_period.start == date(2019, 1, 1)
+        assert value.reference_period.end == date(2019, 12, 31)
+        assert value.reference_period.end < value.retrieval_date.date()
+
+    async def test_a_range_of_years_is_kept_as_the_range(self) -> None:
+        """A survey run over two years describes both, and collapsing it to either would move
+        the date the freshness rule counts from."""
+        acquired = await LlmFallbackAdapter(
+            a_model(an_answer('{"value": 7.5, "period": "2023-2024"}')),
+            answers=("country.average_rent",),
+        ).fetch(a_quantity_attribute(), [PORTUGAL])
+
+        (value,) = acquired.values
+        assert value.reference_period.start == date(2023, 1, 1)
+        assert value.reference_period.end == date(2024, 12, 31)
+
+    async def test_a_figure_with_no_period_is_refused_rather_than_dated_today(self) -> None:
+        """A figure whose year is unknown cannot be judged for freshness, and stamping today on
+        it is the fabrication P37 was. A gap with a reason is the honest answer."""
+        acquired = await LlmFallbackAdapter(
+            a_model(an_answer('{"value": 61.4, "note": "RSF"}')),
+            answers=("country.average_rent",),
+        ).fetch(a_quantity_attribute(), [PORTUGAL])
+
+        assert acquired.values == ()
+        assert "period" in acquired.failures[0].reason
+
+    async def test_a_period_in_prose_is_refused_rather_than_guessed(self) -> None:
+        """The prompt asks for four digits or a range. Fishing a year out of a sentence is the
+        guess this module exists not to make -- "the 2026 edition" may describe 2025."""
+        acquired = await LlmFallbackAdapter(
+            a_model(an_answer('{"value": 61.4, "period": "the 2026 edition"}')),
+            answers=("country.average_rent",),
+        ).fetch(a_quantity_attribute(), [PORTUGAL])
+
+        assert acquired.values == ()
+        assert "the 2026 edition" in acquired.failures[0].reason
+
+    async def test_a_period_that_has_not_happened_yet_is_refused(self) -> None:
+        acquired = await LlmFallbackAdapter(
+            a_model(an_answer('{"value": 61.4, "period": "2999"}')),
+            answers=("country.average_rent",),
+        ).fetch(a_quantity_attribute(), [PORTUGAL])
+
+        assert acquired.values == ()
+        assert "period" in acquired.failures[0].reason
 
     async def test_the_unit_is_named_in_the_prompt(self) -> None:
         model = a_model(an_answer('{"value": 1}'))
@@ -192,7 +255,7 @@ class TestTheFallbackFigure:
         )
 
         acquired = await LlmFallbackAdapter(
-            a_model(an_answer('{"value": 7.5}')), answers=(str(overburden.id),)
+            a_model(an_answer('{"value": 7.5, "period": "2024"}')), answers=(str(overburden.id),)
         ).fetch(overburden, [PORTUGAL])
 
         assert acquired.values[0].payload.basis == "households"  # type: ignore[union-attr]

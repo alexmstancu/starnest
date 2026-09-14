@@ -39,7 +39,7 @@ from starnest.data import (
 )
 from starnest.data_acquisition import Acquired, AcquisitionFailure, Estimate, SourceAdapter
 from starnest.data_sources.llm.client import Answered, LlmUnavailableError, LlmWithSearch
-from starnest.data_sources.llm.reading import a_json_object, the_period_now
+from starnest.data_sources.llm.reading import a_json_object, the_period_now, the_period_reported
 
 LLM = DataSourceId("llm")
 
@@ -66,8 +66,10 @@ Search official statistics and published sources before answering, and answer on
 you have read. Give the figure in {unit}, for the most recent period you found.
 
 Reply with one JSON object and nothing else:
-{{"value": <number>, "period": "<the year or period the figure describes>", \
-"note": "one sentence naming the publisher and the period"}}
+{{"value": <number>, "period": "<the year the figure describes, as four digits -- or a span \
+such as 2023-2024>", "note": "one sentence naming the publisher and the period"}}
+
+The period is the year the publisher says the figure describes, not the year you read it.
 
 If you found no published figure you can cite, reply {{"value": null, "note": "why"}} rather \
 than estimating one."""
@@ -215,10 +217,21 @@ def _the_figure_given(
             f"{measuring.attribute.id}, so the figure cannot be shaped"
         )
 
+    # The year the publisher chose, never the day it was read (`reqs.md` 3.6). Refused when it
+    # cannot be read, because a figure with no known year cannot be judged for freshness -- and
+    # dating it today made it look current forever, which let it outrank a published figure
+    # that had honestly aged (`known-issues.md` P37).
+    period = the_period_reported(reply.get("period"), today=measuring.retrieved.date())
+    if period is None:
+        return refused(
+            f"the model gave no usable period for the figure ({reply.get('period')!r}); a "
+            "figure whose year is unknown cannot be judged for freshness"
+        )
+
     return measuring.figure(
         candidate=candidate,
         payload=payload,
-        period=the_period_now().period,
+        period=period,
         quote=str(reply.get("note", ""))[:500] or None,
         citations=answered.citations,
     )
