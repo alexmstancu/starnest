@@ -21,7 +21,9 @@ the account of a defect outlives the defect.
 
 ## Status
 
-**62 findings: 44 closed, 18 open.** **Twenty-two arrived at once**, from the full review of
+**63 findings: 48 closed, 15 open.** **P63 was found by fixing one of the review's own low
+items** -- wiring up a property that had no caller, which turned out to be wrong as well as
+unused. See "Found while closing the review's low items". **Twenty-two arrived at once**, from the full review of
 2026-09-16 (P41-P62, the last section of this file): six high, thirteen medium, the rest low.
 **All six highs and all thirteen mediums are fixed**, each proved first by a test that failed
 against the old code and passes against the new one. **Read that section's opening first** -- the
@@ -380,20 +382,32 @@ red.
 | **P61** | **A criterion naming an attribute the catalog does not hold crashes instead of refusing.** `insert_criterion` is an `INSERT … SELECT … FROM attribute WHERE a.id = :attribute RETURNING id`, so an unknown attribute matches nothing, **zero rows insert and no constraint fires**; aiosql returns `None` and the next line reads `written.id`. `POST /v1/criteria-sets` with a criterion on an invented attribute -- which the interface's own fixtures already contain -- raises `AttributeError` and answers 500, **after the set row and its pillar weights have been written in the same transaction**. The docstring anticipates the neighbouring case, a pillar-less attribute failing on `NOT NULL`, but not this one: one fails loudly, the other silently and then crashes | **Fixed 2026-09-16.** `_write_contents` refuses with `UnknownAttributeError` -- already mapped to 404 -- when the insert returns no row, and says which attribute and which set. The transaction rolls back, which the test asserts: the set is not left behind. **Not reachable through the API today**, and that is by design rather than luck: a new set starts empty and users never add attributes (`reqs.md` roles), so the storage seam is where this can be provoked and where it is now tested |
 | **P62** | **19 of 101 query blocks have no caller, and one of them is the whole weight-edit path.** `update_criterion_weight`, `update_criterion_weights`, `update_pillar_weights`, `delete_criterion`, `select_criterion`, `select_attribute_coverage`, `delete_evaluation` and twelve more are called from neither `src` nor `tests`. `update_criterion_weight` is commented "a slider drag writes this"; the store rewrites the whole set instead, so **the atomicity argument written in the SQL describes a mechanism nothing uses** | **Open, medium.** `test_query_schema_conformance.py` PREPAREs all 101 against a real database, so dead SQL stays permanently green: it proves they *can* run, never that anything runs them. Each is either wanted or deletable, and the file should say which |
 
+### Found while closing the review's low items — 2026-09-17
+
+| # | Finding | State |
+|---|---|---|
+| **P63** | **`declares_a_readable_scale` was wrong, not merely uncalled.** It answered "has this criterion a scale a `fixed` method could read?" by counting anchors, and **a `target_range` criterion is scored from its band and its two zero points, never from anchors** -- 12-16 °C scoring 100 and falling to 0 at 4 and at 24 is a complete scale with no anchor in it. So the property said `False` about every target-range criterion, which includes both shipped temperature criteria (`0467`). Harmless only because nothing read it: the ranking reached the same answer by catching a `ValueError` out of `scores_for` instead | **Fixed 2026-09-17.** The property asks for a band when the goal is `target_range` and for two anchors otherwise, and `_scores_by_criterion` now reads it rather than discovering the gap inside the arithmetic. **Found by wiring up a property the review had filed as harmless drift**: the first thing the wiring did was stop every target-range criterion scoring, and the existing ranking test caught it immediately. A property nothing calls is not merely in the wrong place -- nothing has ever checked whether it is right |
+
 ### Low
 
-- **`_AskedOnlyAbout`'s siblings.** `counts_toward_coverage` and `declares_a_readable_scale` are
-  documented as the guards and have no production caller: `ranking.py` filters on `is_scored`
-  directly. Same outcome today, wrong place for tomorrow's change.
+- ~~**`_AskedOnlyAbout`'s siblings.**~~ `counts_toward_coverage` and `declares_a_readable_scale`
+  were documented as the guards and had no production caller: `ranking.py` filtered on
+  `is_scored` directly. **Fixed 2026-09-17, and wiring the second one uncovered P63 below** --
+  which is the argument for closing this kind of drift rather than filing it as harmless.
 - **No test pins coverage exactly at the floor.** `coverage < min_coverage` is correct; flipping it
   to `<=` would flag every at-floor candidate `insufficient_data` and the suite would still pass.
 - **An unsaved value's tiebreak collapses to 0**, so two otherwise-identical unsaved values tie on
   the one key the SQL view cannot express.
-- **WHO hardcodes one publication name into every value's quote**, so a second WHO indicator --
-  a manifest-and-catalog change elsewhere -- would mislabel every figure of it.
-- **`limit` exceeds the contract's own bound**: the contract declares `maximum: 1000` and the code
-  accepts `?limit=100000`. A negative `limit` reaching `LIMIT :limit_rows` would surface as a 500
-  rather than a refusal -- **unverified**, the database was not running.
+- ~~**WHO hardcodes one publication name into every value's quote**~~, so a second WHO indicator
+  -- a manifest-and-catalog change elsewhere -- would mislabel every figure of it. **Fixed
+  2026-09-17**: the quote names the GHO indicator code actually fetched, which is what identifies
+  a series. Proved by adding a second indicator in the test and watching an air-quality figure
+  come back labelled "WHO UHC Service Coverage Index".
+- ~~**`limit` exceeds the contract's own bound**~~: the contract declared `maximum: 1000` and the
+  code took a bare `int`, accepting `?limit=100000`. **Fixed 2026-09-17**: both listings take the
+  contract's bounds, and the contract gains the minimums it was missing. **The negative case was
+  filed as unverified and is confirmed** -- `?limit=-1` reached PostgreSQL and raised
+  `InvalidRowCountInLimitClause`, a 500 for a request that was merely wrong.
 - **Interface small change**: Refresh relabels the *Estimate* button; two external scores from one
   publisher collide on their key; external scores render blank while loading; the uncapped-spend
   acceptance persists across passes against "per request, never remembered"; the proposals panel

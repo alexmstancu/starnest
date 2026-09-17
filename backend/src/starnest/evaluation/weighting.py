@@ -17,7 +17,8 @@ one.
 **Excluding a criterion is not the same as missing one.** `is_scored = false` says the user
 decided it does not apply, so nothing is absent and coverage is unaffected (`reqs.md` 5.3).
 `Criterion.counts_toward_coverage` is the property that keeps the two apart, and it is read by
-the caller rather than here -- this module sees only the weights it is given.
+the caller rather than here -- `ranking._criteria_to_score` -- because this module sees only the
+weights it is given.
 """
 
 from collections.abc import Mapping, Set

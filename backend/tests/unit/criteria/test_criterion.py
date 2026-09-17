@@ -193,6 +193,27 @@ def test_a_single_anchor_is_refused() -> None:
         criterion(scale_anchors=(ScaleAnchor(input_value=Decimal("500"), score=100),))
 
 
+def test_a_target_range_is_a_readable_scale_without_any_anchors() -> None:
+    """**The band and its zero points are the scale** (P63).
+
+    12-16 C scores 100 and falls to 0 at 4 and at 24; there is nothing for an anchor to add,
+    and `criterion.py` refuses `target_range` under any method but `fixed`. Requiring anchors
+    of it was wrong, and this property had no production caller to reveal that -- wiring it
+    into the ranking stopped every target-range criterion scoring, which is how it surfaced.
+    """
+    banded = criterion(
+        goal=Goal.TARGET_RANGE,
+        normalisation_method=NormalisationMethod.FIXED,
+        target_range_min=Decimal(12),
+        target_range_max=Decimal(16),
+        zero_score_below=Decimal(4),
+        zero_score_above=Decimal(24),
+    )
+
+    assert banded.scale_anchors == ()
+    assert banded.declares_a_readable_scale
+
+
 def test_two_anchors_describe_a_readable_scale() -> None:
     scaled = criterion(
         scale_anchors=(

@@ -11,6 +11,7 @@ be a figure describing forty countries filed as the answer for one.
 import json
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -18,6 +19,8 @@ import pytest
 from starnest.candidates import Candidate
 from starnest.data import Attribute, ConfidenceLevel, IndexParameters, ValueType
 from starnest.data_sources.who import WhoAdapter
+from starnest.data_sources.who import adapter as who_adapter
+from starnest.data_sources.who.manifest import INDICATORS
 
 CAPTURED = Path(__file__).parent / "captured"
 COUNTRY = {"id": "country", "depth_order": 1}
@@ -97,6 +100,27 @@ class TestWhatComesBack:
 
         assert acquired.values[0].data_source == "who"
         assert acquired.values[0].confidence_level is ConfidenceLevel.HIGH
+
+    async def test_the_quote_names_the_indicator_that_was_actually_fetched(self) -> None:
+        """**Provenance has to survive a second indicator** (P58 low).
+
+        The quote was the literal string "WHO UHC Service Coverage Index" whatever was asked
+        for, which is true only while this manifest holds one entry. A second WHO indicator is
+        a manifest-and-catalog change with no code in it -- exactly the change this adapter
+        exists to make cheap -- and every figure of it would have carried the first one's name.
+        """
+        air_quality = an_attribute(
+            id="country.air_quality", name="Air quality", index_parameters=UHC_BOUNDS
+        )
+        with_a_second_indicator = {**INDICATORS, air_quality.id: "PM25_MEAN"}
+
+        with patch.object(who_adapter, "INDICATORS", with_a_second_indicator):
+            acquired = await the_captured_adapter().fetch(air_quality, [ROMANIA])
+
+        quote = acquired.values[0].quote
+        assert quote is not None
+        assert "PM25_MEAN" in quote
+        assert "UHC" not in quote, "the first indicator's name must not travel"
 
 
 class TestTheAggregatesThatLookLikeCountries:

@@ -72,13 +72,15 @@ class WhoAdapter(SourceAdapter):
             reported = readings(await self._endpoint.get(f"/{indicator}"))
         except (SourceUnavailableError, WhoError) as unavailable:
             return Acquired(failures=(a_failure(attribute.id, str(unavailable)),))
-        return self._values_from(reported, attribute, candidates)
+        return self._values_from(reported, attribute, candidates, indicator=indicator)
 
     def _values_from(
         self,
         reported: Sequence[Reading],
         attribute: Attribute,
         candidates: Sequence[Candidate],
+        *,
+        indicator: str,
     ) -> Acquired:
         retrieved = datetime.now(UTC)
         bounds = _the_scale_of(attribute)
@@ -110,6 +112,7 @@ class WhoAdapter(SourceAdapter):
                         attribute=attribute,
                         candidate=candidate,
                         retrieved=retrieved,
+                        indicator=indicator,
                     )
                 )
             except ValidationError as outside_its_scale:
@@ -165,6 +168,7 @@ def _a_value(
     attribute: Attribute,
     candidate: Candidate,
     retrieved: datetime,
+    indicator: str,
 ) -> Value:
     return Value(
         candidate=candidate.id,
@@ -182,5 +186,10 @@ def _a_value(
             scale_min=bounds.scale_min,
             scale_max=bounds.scale_max,
         ),
-        quote=f"WHO UHC Service Coverage Index {reading.year}: {reading.figure}",
+        # **The indicator actually fetched, not a publication name typed once.** This read
+        # "WHO UHC Service Coverage Index" whatever was asked for, which is true only while the
+        # manifest holds one entry -- and a second WHO indicator is a manifest-and-catalog
+        # change with no code in it, so every figure of it would have carried the first one's
+        # name. The code is what identifies a GHO series, so the code is what travels.
+        quote=f"WHO {indicator} {reading.year}: {reading.figure}",
     )

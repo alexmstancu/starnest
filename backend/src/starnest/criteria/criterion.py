@@ -377,9 +377,17 @@ class Criterion(BaseModel):
         A `fixed` criterion with no anchors is legal and is exactly what ships; it simply
         cannot be scored yet. Saying so here means the ranking reports it as undeclared
         rather than discovering an empty list mid-arithmetic.
+
+        **A `target_range` criterion is scored from its band, not from anchors** (P63). The band
+        and its two zero points *are* the scale -- 12-16 C scoring 100 and falling to 0 at 4 and
+        24 -- so requiring anchors of it was wrong, and this property had no production caller
+        to reveal it. Wiring it in without this clause stopped every target-range criterion
+        scoring at all, which is how the mistake surfaced.
         """
         if self.normalisation_method is not NormalisationMethod.FIXED:
             return True
+        if self.goal is Goal.TARGET_RANGE:
+            return self.target_range is not None
         return len(self.scale_anchors) >= _ANCHORS_NEEDED_TO_INTERPOLATE
 
     def band_label_for(self, figure: Decimal) -> str | None:

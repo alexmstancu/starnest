@@ -103,10 +103,15 @@ def _criteria_to_score(criteria: CriteriaSet, level: str) -> tuple[Criterion, ..
     leaves no gap -- it is absent from everything downstream rather than present at zero
     (`reqs.md` 5.3).
     """
+    # **Asked of the criterion rather than of its field.** `counts_toward_coverage` is the
+    # property `weighting.py` names as the one that keeps "excluded" and "missing" apart, and
+    # it had no caller: this filter read `is_scored` directly, so the two would have parted
+    # company the moment either question grew a second condition. Identical today -- the
+    # property is a one-line alias -- which is exactly when a drift like this is free to fix.
     return tuple(
         criterion
         for criterion in criteria.criteria
-        if criterion.attribute.level_id == level and criterion.is_scored
+        if criterion.attribute.level_id == level and criterion.counts_toward_coverage
     )
 
 
@@ -219,6 +224,14 @@ def _scores_by_criterion(
         attribute = str(criterion.attribute)
         answered = readings.get(attribute, {})
         candidates = sorted(answered)
+        # **Asked before the arithmetic rather than discovered inside it.** A `fixed` criterion
+        # with no anchors is legal and is what ships; `declares_a_readable_scale` says so, and
+        # had no caller -- the empty column arrived by way of `scores_for` raising instead. Same
+        # column either way, and the reason the candidates keep their coverage penalty for it
+        # is now stated where it happens.
+        if not criterion.declares_a_readable_scale:
+            columns[attribute] = {}
+            continue
         try:
             column = scores_for(
                 [answered[candidate].figure for candidate in candidates],

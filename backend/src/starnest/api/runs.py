@@ -15,7 +15,7 @@ and attributes are bounded by the catalog and come back whole (`arch.md` 7.6).
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from starnest.api.bodies import ContractBody
@@ -293,7 +293,14 @@ async def retry(
 
 
 @router.get("/data-acquisition-runs", operation_id="listRuns", response_model=RunsBody)
-async def list_runs(runs: Runs, limit: int = 20, offset: int = 0) -> RunsBody:
+async def list_runs(
+    runs: Runs,
+    # **The bounds the contract declares** (`openapi.yaml`'s `Limit` and `Offset`). A bare `int`
+    # served a page of 100,000 that the contract says cannot be asked for, and a negative one
+    # reached `LIMIT`, where PostgreSQL refuses it -- a 500 for a request that was merely wrong.
+    limit: int = Query(20, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+) -> RunsBody:
     """Recent runs, newest first. Headers only -- a scope and its failures are the detail read."""
     return RunsBody(
         items=tuple(_run_body(run) for run in await runs.read_runs(limit=limit, offset=offset)),

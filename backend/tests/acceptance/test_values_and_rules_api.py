@@ -28,6 +28,40 @@ A_TYPED_VALUE = {
 }
 
 
+class TestThePageBounds:
+    """**The page bounds the contract declares are the bounds the code enforces.**
+
+    `openapi.yaml` gives `limit` a maximum of 1000, and the code took a bare `int`: `?limit=
+    100000` served a page the contract says cannot be asked for, and a negative bound went
+    straight into `LIMIT`/`OFFSET`, where PostgreSQL refuses it -- a 500 for a request that was
+    merely wrong. Both listings take the same parameters and are checked together.
+    """
+
+    @pytest.mark.parametrize("path", ["/v1/values", "/v1/data-acquisition-runs"])
+    async def test_a_page_larger_than_the_contract_allows_is_refused(
+        self, api: httpx.AsyncClient, path: str
+    ) -> None:
+        response = await api.get(path, params={"limit": 100000})
+
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize("path", ["/v1/values", "/v1/data-acquisition-runs"])
+    async def test_a_negative_page_bound_is_refused_rather_than_reaching_the_database(
+        self, api: httpx.AsyncClient, path: str
+    ) -> None:
+        assert (await api.get(path, params={"limit": -1})).status_code == 422
+        assert (await api.get(path, params={"offset": -1})).status_code == 422
+
+    @pytest.mark.parametrize("path", ["/v1/values", "/v1/data-acquisition-runs"])
+    async def test_the_largest_page_the_contract_allows_is_served(
+        self, api: httpx.AsyncClient, path: str
+    ) -> None:
+        """The control: the bound refuses what is over it, and serves what is on it."""
+        response = await api.get(path, params={"limit": 1000, "offset": 0})
+
+        assert response.status_code == 200
+
+
 class TestReadingValues:
     async def test_both_dates_come_back_and_are_not_the_same_thing(
         self, api: httpx.AsyncClient, stored_figures: None

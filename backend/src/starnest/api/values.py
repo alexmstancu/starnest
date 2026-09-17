@@ -12,7 +12,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from starnest.api.dependencies import Candidates, Catalog, Values
@@ -80,8 +80,9 @@ async def list_values(
     candidate: str | None = None,
     attribute: str | None = None,
     include_superseded: bool = False,
-    limit: int = 100,
-    offset: int = 0,
+    # The contract's own bounds, enforced rather than described (see `list_runs`).
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
 ) -> ValuesBody:
     """The active value per attribute, or every value when `include_superseded` is set."""
     listings = await values.read_values(
