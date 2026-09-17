@@ -307,6 +307,27 @@ describe("the run history", () => {
       await screen.findByRole("heading", { name: /run 7/i }),
     ).toBeInTheDocument();
   });
+
+  it("says so when a past run cannot be opened", async () => {
+    // P45: `open` was the one action that ran outside the wrapper every other action uses, so
+    // its rejection went nowhere -- no notice, no busy state, no message. The click looked
+    // ignored and the browser logged an unhandled rejection.
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/7`, () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "The run could not be read." },
+          { status: 500 },
+        ),
+      ),
+    );
+    renderShell("/run");
+    const history = await screen.findByRole("table");
+    const row = within(history).getByRole("row", { name: /^7/ });
+
+    await userEvent.click(within(row).getByRole("button", { name: /open/i }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+  });
 });
 
 describe("when there is nothing to show", () => {

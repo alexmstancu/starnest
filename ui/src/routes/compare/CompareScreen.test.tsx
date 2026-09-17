@@ -54,6 +54,27 @@ describe("choosing what to compare", () => {
   });
 });
 
+describe("when the level changes underneath", () => {
+  it("clears the focus, the comparators and the comparison", async () => {
+    // P54: `focus`, `comparators` and `asked` survived a level change while the fetcher
+    // depended on `levelId`, so the screen immediately re-asked with candidate ids from the
+    // old level -- `level=city&focus=country.portugal`, which the contract answers 409
+    // "Levels mixed" -- and the picker showed the new roster with a stale focus selected.
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    expect(
+      await screen.findByRole("table", { name: /every attribute/i }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("radio", { name: "city" }));
+
+    expect(await screen.findByLabelText(/focus/i)).toHaveValue("");
+    expect(
+      screen.queryByRole("table", { name: /every attribute/i }),
+    ).toBeNull();
+  });
+});
+
 describe("the comparison", () => {
   it("shows each attribute with both sides and what the gap is worth", async () => {
     renderShell("/compare");

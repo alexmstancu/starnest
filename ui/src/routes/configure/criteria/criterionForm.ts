@@ -46,9 +46,25 @@ export interface RuleDraft {
   anchors: AnchorDraft[];
   threshold_min: string;
   threshold_max: string;
+  /**
+   * The stored threshold when it is a shape this form cannot edit, and `null` otherwise.
+   *
+   * **This form edits one of the contract's four threshold shapes** -- the numeric range. A
+   * label, boolean or share threshold is carried here untouched so that saving the rest of the
+   * rule leaves it exactly as it was (P52), and so the markup can say a threshold exists that
+   * it is not showing. Reading past it left both bound fields empty, which looks identical to
+   * "no threshold" and then cleared the real one on the next save.
+   */
+  threshold_this_form_cannot_edit: object | null;
 }
 
-/** What `PATCH` is sent: the scoring half of the contract's `CriterionInput`. */
+/**
+ * What `PATCH` is sent: the scoring half of the contract's `CriterionInput`.
+ *
+ * **`matching_threshold` is the one optional field**, because absent and `null` mean different
+ * things to a PATCH: absent says nothing about the threshold, and `null` clears it. A shape this
+ * form cannot edit is left alone by omitting the key (P52).
+ */
 export type Rule = Required<
   Pick<
     CriterionRule,
@@ -60,9 +76,9 @@ export type Rule = Required<
     | "zero_score_below"
     | "zero_score_above"
     | "scale_anchors"
-    | "matching_threshold"
   >
->;
+> &
+  Pick<CriterionRule, "matching_threshold">;
 
 /** A parsed rule, or the reasons it could not be read. Never both. */
 export type Parsed =
@@ -79,8 +95,8 @@ function textOf(figure: number | null | undefined): string {
  * chose, and "no lower bound" is not.
  */
 export function draftFrom(criterion: Criterion): RuleDraft {
-  const threshold = criterion.matching_threshold as
-    { min_value?: number | null; max_value?: number | null } | null | undefined;
+  const stored = criterion.matching_threshold;
+  const range: RangeThreshold | null = isARange(stored) ? stored ?? null : null;
 
   return {
     // `openapi.yaml` marks these required on `Criterion` and the server always sends them, but
@@ -100,9 +116,58 @@ export function draftFrom(criterion: Criterion): RuleDraft {
       score: String(anchor.score),
       label: anchor.label ?? "",
     })),
-    threshold_min: textOf(threshold?.min_value),
-    threshold_max: textOf(threshold?.max_value),
+    threshold_min: textOf(range?.min_value),
+    threshold_max: textOf(range?.max_value),
+    threshold_this_form_cannot_edit:
+      stored === null || stored === undefined || range !== null
+        ? null
+        : stored,
   };
+}
+
+/**
+ * Whether a stored threshold is the numeric range this form edits.
+ *
+ * Absent counts as a range: there is nothing to preserve and the form's two empty fields say
+ * the same thing. Keyed on the bound fields rather than on a type discriminator, because the
+ * contract's four shapes are distinguished by which fields they carry (`RangeThreshold`,
+ * `LabelThreshold`, `BooleanThreshold`, `ShareThreshold`).
+ */
+/**
+ * The `matching_threshold` entry a save should carry, which may be no entry at all.
+ *
+ * Three different statements, and the contract distinguishes all three: a range with bounds,
+ * `null` for "there is no threshold", and **absent** for "this save says nothing about the
+ * threshold" -- which is the only honest thing to send for a shape these two fields cannot
+ * express (P52).
+ */
+function thresholdToSend(
+  draft: RuleDraft,
+  minimum: number | null,
+  maximum: number | null,
+): Pick<Rule, "matching_threshold"> | Record<string, never> {
+  if (draft.threshold_this_form_cannot_edit !== null) return {};
+  // Both bounds empty means there is no threshold, which is a different statement from a
+  // threshold with no bounds -- the server refuses the second and this expresses the first.
+  return {
+    matching_threshold:
+      minimum === null && maximum === null
+        ? null
+        : { min_value: minimum, max_value: maximum },
+  };
+}
+
+function isARange(
+  threshold: object | null | undefined,
+): threshold is RangeThreshold | null | undefined {
+  if (threshold === null || threshold === undefined) return true;
+  return "min_value" in threshold || "max_value" in threshold;
+}
+
+/** The one threshold shape this form edits. */
+interface RangeThreshold {
+  min_value?: number | null;
+  max_value?: number | null;
 }
 
 /** An empty anchor row, for the button that adds one. */
@@ -196,12 +261,11 @@ export function ruleFrom(draft: RuleDraft): Parsed {
       blocks_if_missing: draft.blocks_if_missing,
       ...band,
       scale_anchors: anchors,
-      // Both bounds empty means there is no threshold, which is a different statement from a
-      // threshold with no bounds -- the server refuses the second and this expresses the first.
-      matching_threshold:
-        thresholdMin === null && thresholdMax === null
-          ? null
-          : { min_value: thresholdMin, max_value: thresholdMax },
+      // **A shape this form cannot edit is left alone by saying nothing about it** (P52). PATCH
+      // changes only the fields present, and the contract documents `matching_threshold: null`
+      // as "Null clears it" -- so sending null here to mean "I did not touch this" deleted a
+      // stored label rule the moment somebody changed the goal.
+      ...thresholdToSend(draft, thresholdMin, thresholdMax),
     },
     problems: [],
   };

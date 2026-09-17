@@ -92,6 +92,7 @@ function PillarRow({
 }) {
   const stored = String(weight.weight);
   const [typed, setTyped] = useState(stored);
+  const [notANumber, setNotANumber] = useState(false);
 
   // A rebalance moves this row's weight without this row having been edited, so the input
   // follows the stored weight. Without this, the two pillars that absorbed a change would keep
@@ -102,8 +103,12 @@ function PillarRow({
   function submit(event: FormEvent) {
     event.preventDefault();
     // A weight that is not a number is not sent: the server would refuse it, and the refusal
-    // would be about parsing rather than about weights (`weights.ts`).
+    // would be about parsing rather than about weights (`weights.ts`). **But it is reported**
+    // (P56): this used to `return` in silence, so typing `ten` and pressing Set did nothing
+    // at all, with nothing on screen saying the value had been rejected. The criterion rows
+    // beside these already say it, in these words.
     const asked = weightFrom(typed);
+    setNotANumber(asked === null);
     if (asked === null) return;
     void onMove(weight.pillar, asked);
   }
@@ -125,6 +130,11 @@ function PillarRow({
           <button type="submit" className="button">
             Set
           </button>
+          {notANumber && (
+            <p className="weight-form__problem" role="alert">
+              A weight must be a number.
+            </p>
+          )}
         </form>
       </td>
       <td>

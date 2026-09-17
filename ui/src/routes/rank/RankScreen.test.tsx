@@ -237,6 +237,50 @@ describe("the drill-down", () => {
     ).toBeNull();
   });
 
+  it("closes when the level changes under it", async () => {
+    // P53: `chosen` was component state nothing cleared, so the open provenance panel survived
+    // a switch to `city` while the table beneath it reloaded with cities. With no row matching
+    // it, no button read "Hide figures" -- a stale panel with no visible way to close it.
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(
+      within(row).getByRole("button", { name: /show figures/i }),
+    );
+    expect(
+      await screen.findByRole("table", { name: /every stored value/i }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("radio", { name: "city" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("table", { name: /every stored value/i }),
+      ).toBeNull(),
+    );
+  });
+
+  it("closes when the criteria set changes under it", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(
+      within(row).getByRole("button", { name: /show figures/i }),
+    );
+    expect(
+      await screen.findByRole("table", { name: /every stored value/i }),
+    ).toBeInTheDocument();
+
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: /active criteria set/i }),
+      "remote-only",
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("table", { name: /every stored value/i }),
+      ).toBeNull(),
+    );
+  });
+
   it("says so when a candidate has no stored figures", async () => {
     renderShell("/rank");
     const row = await rankingRow("Estonia");
@@ -266,9 +310,17 @@ describe("what a stored figure looks like, whatever its type", () => {
     ["Ratio", { value: 26.4, basis: "households" }, "26.4"],
     ["Count", { count: 42 }, "42"],
     [
+      // **An index means nothing without its bounds** (P57). This row used to expect the bare
+      // "1.07", which locked in a render indistinguishable from a percentage -- and `reqs.md`
+      // reserves `Index` for exactly the figures whose bounds do the work.
       "Index",
       { value: 1.07, provider: "World Bank", scale_min: -2.5, scale_max: 2.5 },
-      "1.07",
+      "1.07 on -2.5–2.5 (World Bank)",
+    ],
+    [
+      "AssignedScore",
+      { value: 7, range_min: 0, range_max: 10, assigned_by: "human" },
+      "7 on 0–10 (assigned by human)",
     ],
     ["LabelSet", { labels: ["Csb", "Csa"] }, "Csb, Csa"],
     ["Text", { body: "a note" }, "a note"],

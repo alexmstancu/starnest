@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fetchCriteriaSets, fetchLevels, type CriteriaSetSummary, type Level } from "../api/endpoints";
 import { useResource, type Resource } from "../api/useResource";
 
@@ -21,7 +21,7 @@ export interface Selection {
   levelId: string | null;
   criteriaSetId: string | null;
   selectLevel: (levelId: string) => void;
-  selectCriteriaSet: (criteriaSetId: string) => void;
+  selectCriteriaSet: (criteriaSetId: string | null) => void;
   status: "loading" | "ready" | "error";
   error: unknown;
   reload: () => void;
@@ -56,10 +56,29 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     if (levelId === null && orderedLevels.length > 0) setLevelId(orderedLevels[0]!.id);
   }, [levelId, orderedLevels]);
 
+  // **A set that disappears takes the selection with it** (P44). Adopting only while nothing was
+  // chosen left a discarded set selected: every screen went on requesting an id the server had
+  // deleted, Configure showed "No such criteria set.", and a 404 is not retryable, so there was
+  // no Try again to press either.
+  //
+  // **Keyed on disappearance, not on absence.** "Not in the list" alone is the wrong rule and
+  // broke creating a set: a new one is selected the moment the server confirms it, a beat before
+  // the refreshed list arrives, and absence-as-the-rule snapped the selection straight back to
+  // the first existing set. A set that was in the list and has left it is the real event, and it
+  // covers a set deleted from anywhere, not only from the panel below.
+  const lastSeenCriteriaSets = useRef<string[]>([]);
   useEffect(() => {
-    if (criteriaSetId === null && availableCriteriaSets.length > 0) {
-      setCriteriaSetId(availableCriteriaSets[0]!.id);
-    }
+    const available = availableCriteriaSets.map((set) => set.id);
+    const wasThere =
+      criteriaSetId !== null && lastSeenCriteriaSets.current.includes(criteriaSetId);
+    const isGone = criteriaSetId !== null && !available.includes(criteriaSetId);
+
+    // **An empty list is a reload in flight, not a list with nothing in it**, so it is not
+    // recorded: recording it forgot that the discarded set had ever been there, and the
+    // correction below then had nothing to recognise when the real list landed a moment later.
+    if (available.length === 0) return;
+    lastSeenCriteriaSets.current = available;
+    if (criteriaSetId === null || (wasThere && isGone)) setCriteriaSetId(available[0]!);
   }, [criteriaSetId, availableCriteriaSets]);
 
   const reload = useCallback(() => {

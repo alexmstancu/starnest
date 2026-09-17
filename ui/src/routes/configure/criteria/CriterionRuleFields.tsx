@@ -200,27 +200,40 @@ export function CriterionRuleFields({
 
       <fieldset className="rule-form__group">
         <legend>Matching threshold</legend>
-        <p className="panel__hint" id={`threshold-hint-${attribute}`}>
-          A candidate outside these bounds stops matching, keeping its score.
-          Leave both empty for no threshold.
-        </p>
-        <div
-          className="rule-form__row"
-          aria-describedby={`threshold-hint-${attribute}`}
-        >
-          <NumberField
-            attribute={attribute}
-            name="threshold_min"
-            label="Threshold minimum"
-            form={form}
-          />
-          <NumberField
-            attribute={attribute}
-            name="threshold_max"
-            label="Threshold maximum"
-            form={form}
-          />
-        </div>
+        {form.draft.threshold_this_form_cannot_edit !== null ? (
+          // **Says that a threshold is there rather than showing two empty fields** (P52).
+          // The contract has four threshold shapes and this form edits the numeric range; a
+          // label, boolean or share rule read as "no threshold" and was then cleared by the
+          // next save. Saving now says nothing about it, and this says why.
+          <p className="panel__hint" role="note">
+            This criterion has a matching threshold of a kind this form cannot
+            show. Saving the rule leaves it exactly as it is.
+          </p>
+        ) : (
+          <>
+            <p className="panel__hint" id={`threshold-hint-${attribute}`}>
+              A candidate outside these bounds stops matching, keeping its
+              score. Leave both empty for no threshold.
+            </p>
+            <div
+              className="rule-form__row"
+              aria-describedby={`threshold-hint-${attribute}`}
+            >
+              <NumberField
+                attribute={attribute}
+                name="threshold_min"
+                label="Threshold minimum"
+                form={form}
+              />
+              <NumberField
+                attribute={attribute}
+                name="threshold_max"
+                label="Threshold maximum"
+                form={form}
+              />
+            </div>
+          </>
+        )}
       </fieldset>
 
       {form.problems.length > 0 && (

@@ -53,11 +53,20 @@ export function useCriterionRule(
   // a reload, a different criteria set -- so the draft follows it.
   useEffect(() => setDraft(JSON.parse(asJson) as RuleDraft), [asJson]);
 
+  // **A refused change leaves the stored rule where it was, so the fields go back to it once
+  // the attempt is over** (P55) -- which this file's header promised and only half did: it
+  // cleared the problems and left the rejected draft on screen, so the Goal select read
+  // `target_range` while the rule being scored was still `minimise`. The rule a reader sees is
+  // the one they take for the rule doing the work, which is the argument the weight input
+  // beside this one already makes (`CriteriaPanel.tsx`).
   const wasSaving = useRef(false);
   useEffect(() => {
-    if (wasSaving.current && !saving) setProblems([]);
+    if (wasSaving.current && !saving) {
+      setProblems([]);
+      setDraft(JSON.parse(asJson) as RuleDraft);
+    }
     wasSaving.current = saving;
-  }, [saving]);
+  }, [saving, asJson]);
 
   return {
     draft,

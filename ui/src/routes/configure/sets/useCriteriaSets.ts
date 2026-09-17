@@ -32,7 +32,7 @@ export interface CriteriaSetsForm {
 
 export function useCriteriaSets(options: {
   reload: () => void;
-  select: (criteriaSetId: string) => void;
+  select: (criteriaSetId: string | null) => void;
 }): CriteriaSetsForm {
   const [newId, setNewId] = useState("");
   const [newName, setNewName] = useState("");
@@ -71,7 +71,8 @@ export function useCriteriaSets(options: {
         await renameCriteriaSet(criteriaSetId, rename.trim());
         setRename("");
       }),
-    discard: (criteriaSetId) =>
-      void act(() => deleteCriteriaSet(criteriaSetId)),
+    // Discarding says nothing about what to select next: `SelectionContext` holds the rule that
+    // the chosen set is one that exists, and applies it when the refreshed list arrives (P44).
+    discard: (criteriaSetId) => void act(() => deleteCriteriaSet(criteriaSetId)),
   };
 }

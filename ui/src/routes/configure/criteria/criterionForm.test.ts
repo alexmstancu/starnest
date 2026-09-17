@@ -38,6 +38,7 @@ function aDraft(overrides: Partial<RuleDraft> = {}): RuleDraft {
     anchors: [],
     threshold_min: "",
     threshold_max: "",
+    threshold_this_form_cannot_edit: null,
     ...overrides,
   };
 }
@@ -79,6 +80,26 @@ describe("the stored criterion as a draft", () => {
 
     expect(draft.threshold_min).toBe("");
     expect(draft.threshold_max).toBe("12");
+    expect(draft.threshold_this_form_cannot_edit).toBeNull();
+  });
+
+  it("keeps a threshold of a shape it cannot edit rather than reading past it", () => {
+    // P52: the cast to `{min_value, max_value}` was unconditional, so a label, boolean or
+    // share threshold read as two empty fields -- no sign a threshold existed at all. The
+    // contract defines four shapes and the backend implements all four, with a storage table
+    // each; this form edits one of them.
+    const draft = draftFrom({
+      ...A_CRITERION,
+      matching_threshold: {
+        labels: [{ label: "Csb", containment_rule: "must_contain" }],
+      },
+    });
+
+    expect(draft.threshold_min).toBe("");
+    expect(draft.threshold_max).toBe("");
+    expect(draft.threshold_this_form_cannot_edit).toEqual({
+      labels: [{ label: "Csb", containment_rule: "must_contain" }],
+    });
   });
 });
 
@@ -138,6 +159,26 @@ describe("the draft as something to send", () => {
       min_value: null,
       max_value: 12,
     });
+  });
+
+  it("says nothing about a threshold shape it cannot edit, rather than clearing it", () => {
+    // **Omitted, not null** (P52). The contract documents `matching_threshold: null` as "Null
+    // clears it", and PATCH changes only the fields present -- so saying nothing is the only
+    // way to leave a shape this form cannot show alone. Editing the goal of a criterion with
+    // a label threshold used to delete that threshold, with nothing on screen saying so.
+    const parsed = ruleFrom(
+      aDraft({
+        goal: "maximise",
+        threshold_this_form_cannot_edit: {
+          labels: [{ label: "Csb", containment_rule: "must_contain" }],
+        },
+      }),
+    );
+
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.rule).not.toBeNull();
+    expect("matching_threshold" in (parsed.rule ?? {})).toBe(false);
+    expect(parsed.rule?.goal).toBe("maximise");
   });
 
   it("drops an anchor row nobody filled in", () => {

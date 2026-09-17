@@ -22,7 +22,18 @@ import {
 } from "../../api/endpoints";
 import { useResource, type Resource } from "../../api/useResource";
 
-export type RunAct = "planning" | "running" | "retrying" | "asking";
+export type RunAct =
+  | "planning"
+  | "running"
+  | "retrying"
+  | "asking"
+  | "opening";
+/**
+ * `opening` covers reading a run back: opening one from the history, and refreshing the one on
+ * screen. Both used to be something else -- refreshing claimed to be `planning`, which relabelled
+ * the *Estimate* button "Estimating…", and opening claimed nothing at all because it ran outside
+ * `act` entirely (P45).
+ */
 
 export interface RunScreenState {
   plan: RunPlan | null;
@@ -90,13 +101,15 @@ export function useRunScreen(): RunScreenState {
         await watch(started);
       }),
     refresh: () =>
-      void act("planning", async () => {
+      void act("opening", async () => {
         if (current) setCurrent(await fetchRun(current.id));
       }),
     again: (items) =>
       void act(items === "failed" ? "retrying" : "asking", async () => {
         if (current) await watch(await retryRun(current.id, items));
       }),
-    open: (run) => void watch(run),
+    // Through `act` like everything else. A backend that is down or a run that cannot be read
+    // now says so, where before the promise rejected into nothing and the click looked ignored.
+    open: (run) => void act("opening", () => watch(run)),
   };
 }

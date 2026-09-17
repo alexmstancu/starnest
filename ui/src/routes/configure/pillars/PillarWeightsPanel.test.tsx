@@ -71,14 +71,23 @@ describe("the pillar weights panel", () => {
     expect(weightBox("housing")).toHaveValue("35");
   });
 
-  it("sends nothing when the weight is not a number", async () => {
+  it("says so when the weight is not a number, rather than dropping it in silence", async () => {
+    // P56: the submit read `if (asked === null) return;` and reported nothing, so typing
+    // `ten` and clicking Set did nothing at all with no way to tell the value was rejected.
+    // **This test used to assert the silence** -- `queryByRole("alert")` absent -- so it
+    // passed *because* of the defect it should have caught. The criterion rows beside these
+    // already report the same case ("A weight must be a number").
     renderShell("/configure");
     await screen.findByRole("textbox", { name: "economics weight" });
 
     await setWeight("economics", "ten");
 
     const pillars = await panel();
-    expect(pillars.queryByRole("alert")).not.toBeInTheDocument();
+    expect(await pillars.findByRole("alert")).toHaveTextContent(
+      /must be a number/i,
+    );
+    // Still not sent: the server would refuse it, and the refusal would be about parsing
+    // rather than about weights.
     expect(weightBox("housing")).toHaveValue("35");
   });
 

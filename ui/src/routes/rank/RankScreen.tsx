@@ -35,6 +35,35 @@ import { useSelection } from "../../shell/SelectionContext";
 export function RankScreen({ route }: { route: RouteDefinition }) {
   const { criteriaSetId, levelId } = useSelection();
 
+  return (
+    <section className="screen" aria-labelledby="screen-heading">
+      <h2 id="screen-heading" className="screen__heading">
+        {route.label}
+      </h2>
+
+      {/* Keyed by the selection, the way `ConfigureScreen` keys its panels: the open
+          drill-down is state about *this* ranking, and a switch of level or criteria set
+          makes it state about a ranking nobody is looking at (P53). It used to survive the
+          switch -- a provenance panel for Portugal sitting under a table of cities, with no
+          row matching it, so no button read "Hide figures" and nothing could close it. A
+          key rather than an effect, because React resets state on identity and clearing it
+          from an effect is a render the screen does not need. */}
+      <TheRanking
+        key={`${criteriaSetId}-${levelId}`}
+        criteriaSetId={criteriaSetId}
+        levelId={levelId}
+      />
+    </section>
+  );
+}
+
+function TheRanking({
+  criteriaSetId,
+  levelId,
+}: {
+  criteriaSetId: string | null;
+  levelId: string | null;
+}) {
   const fetcher = useCallback(
     async (signal: AbortSignal): Promise<Ranking> => {
       // Not reachable while disabled; the guard is here so the type is honest.
@@ -56,11 +85,7 @@ export function RankScreen({ route }: { route: RouteDefinition }) {
   } | null>(null);
 
   return (
-    <section className="screen" aria-labelledby="screen-heading">
-      <h2 id="screen-heading" className="screen__heading">
-        {route.label}
-      </h2>
-
+    <>
       {resource.status === "idle" && (
         <p className="screen__note">
           Choose a criteria set and a level to see the ranking.
@@ -83,7 +108,7 @@ export function RankScreen({ route }: { route: RouteDefinition }) {
       {chosen && (
         <CandidateDetail candidate={chosen.candidate} name={chosen.name} />
       )}
-    </section>
+    </>
   );
 }
 

@@ -25,6 +25,33 @@ import { useSelection } from "../../shell/SelectionContext";
  */
 export function CompareScreen({ route }: { route: RouteDefinition }) {
   const { criteriaSetId, levelId } = useSelection();
+
+  return (
+    <section className="screen" aria-labelledby="screen-heading">
+      <h2 id="screen-heading" className="screen__heading">
+        {route.label}
+      </h2>
+      {/* Keyed by the selection (P54). **A comparison never mixes levels** (`reqs.md`), and
+          the focus and comparators are candidate ids at one level, so they mean nothing at
+          another: keeping them across a switch re-asked for `level=city&focus=country.…`,
+          which the contract refuses with 409 "Levels mixed", while the picker showed the new
+          roster with a stale focus still selected and the button still enabled. */}
+      <TheComparison
+        key={`${criteriaSetId}-${levelId}`}
+        criteriaSetId={criteriaSetId}
+        levelId={levelId}
+      />
+    </section>
+  );
+}
+
+function TheComparison({
+  criteriaSetId,
+  levelId,
+}: {
+  criteriaSetId: string | null;
+  levelId: string | null;
+}) {
   const [focus, setFocus] = useState<string | null>(null);
   const [comparators, setComparators] = useState<string[]>([]);
   const [asked, setAsked] = useState<{
@@ -71,11 +98,7 @@ export function CompareScreen({ route }: { route: RouteDefinition }) {
       : null;
 
   return (
-    <section className="screen" aria-labelledby="screen-heading">
-      <h2 id="screen-heading" className="screen__heading">
-        {route.label}
-      </h2>
-
+    <>
       {criteriaSetId === null || levelId === null ? (
         <p className="screen__note">
           Choose a criteria set and a level to compare candidates.
@@ -110,7 +133,7 @@ export function CompareScreen({ route }: { route: RouteDefinition }) {
       {comparison.resource.status === "ready" && (
         <ComparisonTable comparison={comparison.resource.data} />
       )}
-    </section>
+    </>
   );
 }
 

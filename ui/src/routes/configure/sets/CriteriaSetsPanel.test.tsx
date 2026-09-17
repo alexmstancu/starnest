@@ -68,6 +68,35 @@ describe("the criteria sets panel", () => {
     );
   });
 
+  it("moves the selection to a surviving set when the selected one is discarded", async () => {
+    // P44: `discard` deleted the set and left the selection pointing at it, and the default is
+    // adopted only while nothing is chosen -- so every screen went on requesting an id that no
+    // longer existed, Configure showed "No such criteria set.", and a 404 is not retryable, so
+    // there was no Try again to press either.
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const sets = await panel();
+    expect(sidebarSets()).toHaveValue("default");
+
+    await user.click(
+      await sets.findByRole("button", { name: "Discard Default" }),
+    );
+
+    // **Asserted through the panel, not the `<select>`.** A select whose value matches no
+    // option falls back to the first one in jsdom, so `toHaveValue` passes whatever the
+    // application believes -- the first version of this test passed against the bug. The
+    // discard button is labelled with the *selected* set, so this fails unless the selection
+    // itself moved.
+    expect(
+      await sets.findByRole("button", { name: "Discard Remote only" }),
+    ).toBeInTheDocument();
+    // The screen settles on the surviving set rather than on an error. A request for the
+    // deleted id may already be in flight when it goes, so what matters is where this ends up.
+    await waitFor(() =>
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
+    );
+  });
+
   it("discards a set, and it leaves the sidebar", async () => {
     const user = userEvent.setup();
     renderShell("/configure");

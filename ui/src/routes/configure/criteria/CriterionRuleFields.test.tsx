@@ -225,6 +225,32 @@ describe("changing the rule", () => {
     ).toBeInTheDocument();
   });
 
+  it("puts the stored rule back on screen after the server refuses one", async () => {
+    // P55: `useCriterionRule`'s own header promises "a refused change leaves the criterion
+    // exactly as it was, so the draft goes back to it once the attempt is over", and the
+    // effect cleared the problems without restoring the draft. So the Goal select still read
+    // `target_range` while the rule being scored was still the stored one -- the rule in front
+    // of the reader was not the rule doing the work. The weight input beside it already
+    // restores, and says why: the value on screen is the one a reader takes for the truth.
+    const user = userEvent.setup();
+    mockServer.use(
+      http.patch(`/v1/criteria-sets/:criteriaSetId/criteria/:attributeId`, () =>
+        HttpResponse.json(
+          { code: "invalid_criterion", message: "cannot express a band" },
+          { status: 422 },
+        ),
+      ),
+    );
+
+    await openTheRuleFor(ANCHORED);
+    const stored = goalSelect().value;
+    await user.selectOptions(goalSelect(), "target_range");
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+    await screen.findByText(/cannot express a band/i);
+
+    await waitFor(() => expect(goalSelect()).toHaveValue(stored));
+  });
+
   it("discards a draft without sending it", async () => {
     const user = userEvent.setup();
     await openTheRuleFor(ANCHORED);
