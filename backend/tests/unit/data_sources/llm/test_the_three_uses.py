@@ -44,6 +44,16 @@ def employers_attribute() -> Attribute:
     )
 
 
+def a_count_attribute() -> Attribute:
+    return Attribute(
+        id="country.universities_ranked",
+        name="Universities ranked",
+        level="country",
+        value_type=ValueType.COUNT,
+        pillar="career",
+    )
+
+
 def a_quantity_attribute() -> Attribute:
     return Attribute(
         id="country.average_rent",
@@ -259,6 +269,32 @@ class TestTheFallbackFigure:
         ).fetch(overburden, [PORTUGAL])
 
         assert acquired.values[0].payload.basis == "households"  # type: ignore[union-attr]
+
+    async def test_a_count_that_is_not_whole_is_refused_rather_than_truncated(self) -> None:
+        """**A count is a whole number or it is a mistake** (P50).
+
+        `int(figure)` truncated 12.7 to 12 and stored it at low confidence with a quote and
+        citations, so a figure nobody could have published read exactly like one somebody had.
+        The Eurostat adapter already refuses this for the same type, in the same words: quietly
+        rounding hides the fault behind a plausible integer.
+        """
+        acquired = await LlmFallbackAdapter(
+            a_model(an_answer('{"value": 12.7, "period": "2025"}')),
+            answers=(str(a_count_attribute().id),),
+        ).fetch(a_count_attribute(), [PORTUGAL])
+
+        assert acquired.values == ()
+        assert "12.7" in acquired.failures[0].reason
+        assert "whole" in acquired.failures[0].reason
+
+    async def test_a_whole_count_is_stored(self) -> None:
+        """The control: the guard must refuse a fraction, not refuse counting."""
+        acquired = await LlmFallbackAdapter(
+            a_model(an_answer('{"value": 12, "period": "2025"}')),
+            answers=(str(a_count_attribute().id),),
+        ).fetch(a_count_attribute(), [PORTUGAL])
+
+        assert acquired.values[0].payload.count == 12  # type: ignore[union-attr]
 
 
 class TestResearchingAGate:

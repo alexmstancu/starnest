@@ -6,9 +6,11 @@ not its attribute's is a payload the store cannot place -- the composite key in 
 it, at write time, after a run has reported success -- so the derivation happens in one place
 now, and these tests are what hold it there.
 
-**It builds; it does not validate.** `Value` keeps refusing what contradicts itself, which the
-last test here proves rather than assumes: a builder that quietly widened what may be stored
-would be worse than the seven copies it replaced.
+**It builds, and it applies the attribute's own limits** (P59). `Value` keeps refusing what
+contradicts itself, which the tests here prove rather than assume: a builder that quietly widened
+what may be stored would be worse than the seven copies it replaced. The attribute-explicit layer
+-- the declared range and vocabulary of `reqs.md` 3.3a -- is applied here too, because this is
+the one place every stored figure passes through, and for eleven days it was applied nowhere.
 """
 
 from datetime import UTC, date, datetime
@@ -18,9 +20,11 @@ import pytest
 
 from starnest.candidates import Candidate
 from starnest.data import (
+    AllowedRange,
     Attribute,
     ConfidenceLevel,
     Count,
+    LabelSet,
     Measurements,
     Quantity,
     QuantityParameters,
@@ -176,3 +180,86 @@ def test_a_ratio_where_a_quantity_was_declared_is_refused() -> None:
             payload=Ratio(value=Decimal("7.5"), basis="households"),
             period=A_YEAR,
         )
+
+
+class TestTheAttributesOwnLimits:
+    """The attribute-explicit layer of `reqs.md` 3.3a, reached rather than merely written.
+
+    `Attribute.rejection_reason_for` applies the declared range and vocabulary, and until P59 it
+    had no caller at all: every adapter and manual entry builds through `figure`, so a figure of
+    62 °C for a summer temperature was stored, made active, and scored against a band of 20-26.
+
+    **The figure is kept, not refused.** `Value` says so itself -- "a figure that is merely
+    outside the attribute's credible range keeps its payload and carries a reason too" -- and
+    the active-value rule excludes anything with a `rejection_reason`. Nothing is discarded.
+    """
+
+    @staticmethod
+    def bounded(low: str, high: str) -> Attribute:
+        return an_attribute().model_copy(
+            update={"allowed_range": AllowedRange(min_value=Decimal(low), max_value=Decimal(high))}
+        )
+
+    def test_a_figure_outside_the_declared_range_is_stored_carrying_the_reason(self) -> None:
+        figure = measuring(attribute=self.bounded("0", "80")).figure(
+            candidate=PORTUGAL,
+            payload=Quantity(magnitude=Decimal("620"), unit="hours_per_week"),
+            period=A_YEAR,
+        )
+
+        assert figure.rejection_reason is not None
+        assert "620" in figure.rejection_reason
+        assert figure.payload is not None, "the figure is kept; only its credibility is denied"
+
+    def test_a_figure_inside_the_declared_range_carries_no_reason(self) -> None:
+        """The control. Without it the test above would pass on a builder that rejects
+        everything."""
+        figure = measuring(attribute=self.bounded("0", "80")).figure(
+            candidate=PORTUGAL, payload=an_hours_figure(), period=A_YEAR
+        )
+
+        assert figure.rejection_reason is None
+
+    def test_a_bound_is_inclusive_at_both_ends(self) -> None:
+        """A figure sitting exactly on a bound is credible: `excludes` counts either end as
+        inside, and a builder that disagreed would reject the catalog's own anchors."""
+        bounded = measuring(attribute=self.bounded("0", "80"))
+
+        at_the_top = bounded.figure(
+            candidate=PORTUGAL,
+            payload=Quantity(magnitude=Decimal("80"), unit="hours_per_week"),
+            period=A_YEAR,
+        )
+        at_the_bottom = bounded.figure(
+            candidate=SPAIN,
+            payload=Quantity(magnitude=Decimal("0"), unit="hours_per_week"),
+            period=A_YEAR,
+        )
+
+        assert at_the_top.rejection_reason is None
+        assert at_the_bottom.rejection_reason is None
+
+    def test_a_label_outside_the_attributes_vocabulary_is_stored_carrying_the_reason(self) -> None:
+        """The case migration `0472` seeded 20 Köppen codes to prevent, and the database cannot
+        catch: `value_labelset` has a foreign key to `value` and none to `attribute_allowed_label`.
+        """
+        zones = an_attribute(ValueType.LABEL_SET).model_copy(
+            update={"allowed_labels": ("Cfb", "Csa", "Dfb")}
+        )
+
+        figure = measuring(attribute=zones).figure(
+            candidate=PORTUGAL, payload=LabelSet(labels=("banana",)), period=A_YEAR
+        )
+
+        assert figure.rejection_reason is not None
+        assert "banana" in figure.rejection_reason
+
+    def test_an_attribute_declaring_no_limits_rejects_nothing(self) -> None:
+        """Most attributes declare neither, and the builder must stay out of their way."""
+        figure = measuring().figure(
+            candidate=PORTUGAL,
+            payload=Quantity(magnitude=Decimal("99999"), unit="hours_per_week"),
+            period=A_YEAR,
+        )
+
+        assert figure.rejection_reason is None

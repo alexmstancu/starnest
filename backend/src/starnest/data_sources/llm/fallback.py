@@ -210,7 +210,12 @@ def _the_figure_given(
     except (InvalidOperation, TypeError):
         return refused(f"the model's value {given!r} is not a number")
 
-    payload = _payload_for(measuring.attribute, figure)
+    try:
+        payload = _payload_for(measuring.attribute, figure)
+    except ValueError as unshapeable:
+        # A figure of the right type that the type cannot hold. Distinct from `None` below,
+        # which is the catalog not saying enough to shape it at all.
+        return refused(str(unshapeable))
     if payload is None:
         return refused(
             f"{measuring.attribute.value_type} needs parameters the catalog does not give "
@@ -249,6 +254,14 @@ def _payload_for(attribute: Attribute, figure: Decimal) -> ValuePayload | None:
     if attribute.value_type is ValueType.QUANTITY and attribute.quantity_parameters:
         return Quantity(magnitude=figure, unit=attribute.quantity_parameters.unit)
     if attribute.value_type is ValueType.COUNT:
+        # **Whole or refused, never rounded** (P50), which is the rule the Eurostat adapter
+        # states for the same type. `int(figure)` truncated 12.7 to 12 and stored it with a
+        # quote and citations, so a figure no publisher could have printed read exactly like
+        # one somebody had -- and nothing anywhere recorded that a fraction was discarded.
+        if figure != figure.to_integral_value():
+            raise ValueError(
+                f"{attribute.id} is a Count and the model gave {figure}, which is not whole"
+            )
         # `Count` names its own basis; the catalog declares no block for it, so the figure is
         # counted per country -- which is what a national figure is.
         return Count(count=int(figure), basis="per_country")

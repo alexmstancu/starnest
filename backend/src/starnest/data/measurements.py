@@ -12,8 +12,12 @@ is not its attribute's is a payload the store cannot place, and the composite ke
 would refuse it -- at write time, after a run had reported success. Here the derivation happens
 once and cannot be typed wrongly.
 
-**It builds; it does not validate.** `Value` refuses what contradicts itself (`MalformedValueError`)
-and that stays where it is. This only assembles.
+**It builds, and it asks the attribute whether the figure is credible.** `Value` refuses what
+contradicts itself (`MalformedValueError`) and that stays where it is. What is added here is the
+attribute-explicit layer of `reqs.md` 3.3a -- the declared range and vocabulary -- which had been
+written, unit-tested and **never called from anywhere** until P59 found it: every adapter and
+manual entry builds through this class, so 62 °C for a summer temperature was stored, made active
+and scored against a band of 20-26. A rejected figure is kept, with the reason beside it.
 """
 
 from collections.abc import Sequence
@@ -57,10 +61,16 @@ class Measurements:
         confidence_level: ConfidenceLevel | None = None,
         breakdown_option: BreakdownOptionId | str | None = None,
     ) -> Value:
-        """One figure, as a `Value`.
+        """One figure, as a `Value`, carrying the attribute's verdict on whether it is credible.
 
         `candidate` takes a `Candidate` or its id, because an adapter usually holds the record
         and the stand-in holds only the identifier.
+
+        **A figure outside the attribute's declared range or vocabulary is stored and marked, not
+        refused** (`reqs.md` 3.3a, P59). It keeps its payload and its provenance; the reason sits
+        beside it, and the active-value rule passes over anything carrying one. Refusing here
+        would discard a measurement somebody may need to look at -- a scraper reading the wrong
+        column is worth seeing, not deleting.
         """
         return Value(
             candidate=candidate.id if isinstance(candidate, Candidate) else candidate,
@@ -77,4 +87,16 @@ class Measurements:
             breakdown_option=(
                 None if breakdown_option is None else BreakdownOptionId(str(breakdown_option))
             ),
+            rejection_reason=self._why_it_is_not_credible(payload),
         )
+
+    def _why_it_is_not_credible(self, payload: ValuePayload) -> str | None:
+        """The attribute's own limits, applied to this payload.
+
+        **A payload of another type is not this question.** `rejection_reason_for` raises on one,
+        and `Value` refuses it a line later with the message it has always used, so the type
+        guard here keeps that refusal where it was rather than moving it.
+        """
+        if payload.value_type is not self.attribute.value_type:
+            return None
+        return self.attribute.rejection_reason_for(payload)
