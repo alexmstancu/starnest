@@ -23,9 +23,10 @@ from decimal import Decimal
 from starnest.candidates import Candidate
 from starnest.data import Attribute, AttributeId, DataSourceId, StandIn, ValueStore
 from starnest.data_acquisition.adapter import Acquired, AcquisitionFailure, SourceAdapter
+from starnest.data_acquisition.estimate import Estimate
 from starnest.data_acquisition.run import acquire
 from starnest.data_acquisition.spend import CostMeter, refuse_unless_capped
-from starnest.data_acquisition.stand_in import stand_in
+from starnest.data_acquisition.stand_in import STAND_IN, stand_in
 from starnest.data_acquisition.store import Run, RunScope, RunStatus, RunStore
 
 _log = logging.getLogger("starnest.acquisition")
@@ -50,6 +51,7 @@ async def execute_run(
     triggered_by: str = MANUAL,
     spend_cap_eur: Decimal | None = None,
     uncapped_is_accepted: bool = False,
+    may_borrow_alone: bool = False,
 ) -> Run:
     """Open a run, fetch everything in scope from every source, record what happened, close it.
 
@@ -79,15 +81,35 @@ async def execute_run(
         for attribute in attributes
         if any(attribute.id in adapter.attributes for adapter in adapters)
     ]
+    # **Borrowing is work too, and it is not work any source was asked for** (P51). A declared
+    # stand-in lends from a figure already stored, so it cannot be *asked* about anything -- and
+    # `stand_in` is not an adapter, so a retry of a stand-in failure narrows the source list to
+    # nothing and used to be refused with "nothing the sources can answer": true of the sources,
+    # and the sources were never what failed.
+    borrowable = [
+        attribute
+        for attribute in attributes
+        if any(attribute.id == declared.attribute for declared in stand_ins)
+    ]
+    # **A borrow is the whole of a run's scope only when somebody asked for the borrow**
+    # (`may_borrow_alone`, set by a retry of stand-in failures -- P51). Ordinary runs are left
+    # exactly as they were, which three earlier versions of this fix were not: putting
+    # borrowable attributes into every run's scope inflated `items_total` by candidates x
+    # attributes for work nobody asked a source to do, handing them to the borrow step alone
+    # attempted Liechtenstein's three declared borrows on every unrelated run and recorded each
+    # as a failure, and treating "no adapters" as borrow-only overturned P27 -- an unscoped
+    # sweep whose only source charges must still refuse rather than record a run for nothing.
+    in_scope = answerable or (borrowable if may_borrow_alone else [])
     scope = RunScope(
         level=level,
         candidates=tuple(str(candidate.id) for candidate in candidates),
-        attributes=tuple(str(attribute.id) for attribute in answerable),
+        attributes=tuple(str(attribute.id) for attribute in in_scope),
     )
-    if not answerable or not candidates:
+    if not in_scope or not candidates:
         raise NothingToFetchError(
-            "nothing in this run's scope can be answered by the sources it may ask: "
-            f"{len(candidates)} candidate(s) and {len(answerable)} answerable attribute(s)"
+            "nothing in this run's scope can be answered by the sources it may ask or borrowed "
+            f"from a declared stand-in: {len(candidates)} candidate(s), "
+            f"{len(answerable)} answerable and {len(borrowable)} borrowable attribute(s)"
         )
     refuse_unless_capped(
         costs_money=any(adapter.costs_money for adapter in adapters),
@@ -115,6 +137,10 @@ async def execute_run(
                 candidates=candidates,
                 values=values,
                 run=run,
+                # **The meter goes in, so the cap can stop a sweep partway through a source**
+                # (P47). It records each answer's cost itself, which is why nothing accumulates
+                # into it below.
+                meter=meter,
             )
             failures.extend(outcome.failures)
             _log.info(
@@ -125,7 +151,9 @@ async def execute_run(
                 len(outcome.failures),
             )
             if outcome.calls or outcome.cost_eur:
-                meter.spent(cost_eur=outcome.cost_eur, calls=outcome.calls)
+                # `acquire` has already metered this, per answer. Only the durable record is
+                # written here, and it is written per source rather than per call because that
+                # is a database round trip -- P36 is the finding about closing that gap.
                 await runs.add_spend(run, calls=outcome.calls, cost_eur=outcome.cost_eur)
                 # Logged as it accumulates, so a halt is never a surprise (`arch.md` 9.4).
                 _log.info("run %d spend: %s", run, meter.describe())
@@ -155,7 +183,7 @@ async def execute_run(
         # Last, so a substitute's figure fetched in this same run is the one borrowed.
         borrowed = await stand_in(
             stand_ins=stand_ins,
-            attributes=answerable,
+            attributes=in_scope,
             candidates=candidates,
             values=values,
             run=run,
@@ -249,6 +277,8 @@ async def retry_run(
     runs: RunStore,
     stand_ins: Sequence[StandIn] = (),
     triggered_by: str = MANUAL,
+    spend_cap_eur: Decimal | None = None,
+    uncapped_is_accepted: bool = False,
 ) -> Run:
     """A new run asking only the sources that failed, only about what they failed on.
 
@@ -286,6 +316,15 @@ async def retry_run(
         level=failed.scope.level,
         stand_ins=stand_ins,
         triggered_by=triggered_by,
+        # A retry is a run and spends like one. It reaches the sources that failed, which is
+        # where a paid source is most likely to be -- a source that charges fails more ways
+        # than one that serves a file (P42).
+        spend_cap_eur=spend_cap_eur,
+        uncapped_is_accepted=uncapped_is_accepted,
+        # **The borrow may be the only work this retry has** (P51). `stand_in` is not an
+        # adapter, so a run whose only failures came from borrowing narrows the source list to
+        # nothing -- and the borrow is exactly what the household asked to go back to.
+        may_borrow_alone=any(failure.data_source == STAND_IN for failure in failed.failures),
     )
 
 
@@ -299,7 +338,16 @@ def _what_each_source_failed_on(
 
 
 class _AskedOnlyAbout(SourceAdapter):
-    """A source, narrowed to the attributes a retry should ask it about again."""
+    """A source, narrowed to the attributes a retry should ask it about again.
+
+    **It forwards everything except the narrowing itself** (P41). This wrapper once forwarded
+    three members and inherited the rest, and `SourceAdapter`'s defaults -- `costs_money = False`
+    and an estimate of nothing -- are written for a *new* adapter, where a source that charges
+    should have to say so. Inherited by a wrapper they say the opposite of what the wrapped
+    source says, and they say it in the direction of spending money: a retry of a failed LLM run
+    reported itself free, so nothing asked for a spend cap and the meter it was given had none.
+    A delegating subclass forwards all of its subject or none of it.
+    """
 
     def __init__(self, adapter: SourceAdapter, attributes: frozenset[AttributeId]) -> None:
         self._adapter = adapter
@@ -308,6 +356,13 @@ class _AskedOnlyAbout(SourceAdapter):
     @property
     def data_source(self) -> DataSourceId:
         return self._adapter.data_source
+
+    @property
+    def costs_money(self) -> bool:
+        return self._adapter.costs_money
+
+    def estimate_for(self, items: int) -> Estimate:
+        return self._adapter.estimate_for(items)
 
     @property
     def attributes(self) -> tuple[AttributeId, ...]:
@@ -332,6 +387,8 @@ async def ask_again(
     runs: RunStore,
     stand_ins: Sequence[StandIn] = (),
     triggered_by: str = MANUAL,
+    spend_cap_eur: Decimal | None = None,
+    uncapped_is_accepted: bool = False,
 ) -> Run:
     """A new run asking again about the items nobody answered (`reqs.md` Q217).
 
@@ -360,4 +417,8 @@ async def ask_again(
         level=run.scope.level,
         stand_ins=stand_ins,
         triggered_by=triggered_by,
+        # It asks *every* source that can answer rather than the one that failed, so if
+        # anything it reaches a paid source more readily than a retry does.
+        spend_cap_eur=spend_cap_eur,
+        uncapped_is_accepted=uncapped_is_accepted,
     )

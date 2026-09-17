@@ -110,6 +110,13 @@ class RetryBody(BaseModel):
     """Which part of the run to go over again. Absent means the failures, as it always did."""
 
     items: Literal["failed", "unanswered"] = "failed"
+    accept_uncapped_spend: bool = False
+    """Agreement to a retry that can spend with no ceiling, for this request only (Q220).
+
+    **The same acceptance a first run takes, and asked for again.** A retry reaches the sources
+    that failed, which is where a paid source is most likely to be; inheriting the earlier run's
+    agreement would let one "yes" authorise every retry after it (P42).
+    """
 
 
 class RunDetailBody(RunBody):
@@ -230,6 +237,7 @@ async def retry(
     catalog: Catalog,
     values: Values,
     runs: Runs,
+    households: Households,
     body: RetryBody | None = None,
 ) -> RunBody:
     """A **new** run over part of the run named, which keeps its own record either way.
@@ -250,8 +258,13 @@ async def retry(
     attributes = await catalog.read_attributes(level=level)
     roster = await candidates.read_candidates(level=level)
     stand_ins = await catalog.read_stand_ins(level=level)
+    asked_for = body or RetryBody()
+    # Read here, as `start` reads it, and for the same reason: the cap is a setting the
+    # household edits, so a cap set after a refusal takes effect on the next request. This
+    # endpoint used to read nothing, and both acts below ran with `spend_cap_eur=None` (P42).
+    cap = (await households.get_settings()).run_spend_cap_eur
 
-    if (body or RetryBody()).items == "unanswered":
+    if asked_for.items == "unanswered":
         asked = await ask_again(
             run=earlier,
             adapters=adapters,
@@ -260,6 +273,8 @@ async def retry(
             values=values,
             runs=runs,
             stand_ins=stand_ins,
+            spend_cap_eur=cap,
+            uncapped_is_accepted=asked_for.accept_uncapped_spend,
         )
         return _run_body(asked)
 
@@ -271,6 +286,8 @@ async def retry(
         values=values,
         runs=runs,
         stand_ins=stand_ins,
+        spend_cap_eur=cap,
+        uncapped_is_accepted=asked_for.accept_uncapped_spend,
     )
     return _run_body(retried)
 

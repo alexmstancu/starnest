@@ -1478,6 +1478,10 @@ components:
       description: Which part of the run to go over again. Absent means the failures,
         as it always did.
       properties:
+        accept_uncapped_spend:
+          default: false
+          title: Accept Uncapped Spend
+          type: boolean
         items:
           default: failed
           enum:

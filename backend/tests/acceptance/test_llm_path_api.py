@@ -191,6 +191,73 @@ class TestWhatMoneyRefuses:
         assert plan["estimate_basis"] is None
 
 
+class TestWhatARetryMaySpend:
+    """A retry is a run and spends like one (P41, P42).
+
+    **The path nothing tested against a source that charges.** A retry reaches the sources that
+    failed, which is where a paid source is most likely to be, and it was reaching them with no
+    cap and no way to ask for one: `retry_run` took no cap at all, and the source it wrapped to
+    narrow its attributes reported itself free whatever it actually was.
+    """
+
+    @staticmethod
+    async def a_run_that_failed_on_a_paid_source(api: httpx.AsyncClient) -> int:
+        """Accepted uncapped once, which is how the real one went: the household agrees to a
+        first run, and the retry then has to ask again rather than inherit the agreement."""
+        started = await api.post(
+            "/v1/data-acquisition-runs",
+            json={"level": COUNTRY, "attributes": [OVERBURDEN], "accept_uncapped_spend": True},
+        )
+        assert started.status_code == 202
+        return int(started.json()["id"])
+
+    async def test_a_retry_is_refused_without_a_cap(self, database_url: str) -> None:
+        async with an_api(database_url, (a_stub_source(charges=True),)) as api:
+            first = await self.a_run_that_failed_on_a_paid_source(api)
+
+            refused = await api.post(f"/v1/data-acquisition-runs/{first}/retry")
+
+        assert refused.status_code == 409
+        assert refused.json()["code"] == "spend_cap_not_set"
+
+    async def test_a_retry_may_be_accepted_uncapped_in_its_own_request(
+        self, database_url: str
+    ) -> None:
+        """Per request, never remembered -- so the acceptance has to be repeated here, and there
+        has to be somewhere to say it."""
+        async with an_api(database_url, (a_stub_source(charges=True),)) as api:
+            first = await self.a_run_that_failed_on_a_paid_source(api)
+
+            accepted = await api.post(
+                f"/v1/data-acquisition-runs/{first}/retry",
+                json={"items": "failed", "accept_uncapped_spend": True},
+            )
+
+        assert accepted.status_code == 202
+
+    async def test_a_retry_proceeds_under_a_cap_the_household_has_set(
+        self, database_url: str
+    ) -> None:
+        async with an_api(database_url, (a_stub_source(charges=True),)) as api:
+            first = await self.a_run_that_failed_on_a_paid_source(api)
+            await _with_a_cap(api, 5)
+
+            retried = await api.post(f"/v1/data-acquisition-runs/{first}/retry")
+
+        assert retried.status_code == 202
+
+    async def test_a_retry_of_free_sources_needs_no_cap(self, database_url: str) -> None:
+        """The control. Every source shipped today is free, and this is the path they take."""
+        async with an_api(database_url, (a_stub_source(),)) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()[
+                "id"
+            ]
+
+            retried = await api.post(f"/v1/data-acquisition-runs/{first}/retry")
+
+        assert retried.status_code == 202
+
+
 class TestResearchingTheGates:
     async def test_with_no_model_configured_it_says_so_rather_than_succeeding_emptily(
         self, api: httpx.AsyncClient

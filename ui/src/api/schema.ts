@@ -2154,6 +2154,11 @@ export interface operations {
                      * @enum {string}
                      */
                     items?: "failed" | "unanswered";
+                    /**
+                     * @description Agreement to a retry that can spend with no ceiling, for this request only. A retry asks the sources that failed, which is where a paid source is most likely to be, so it takes the same acceptance a first run takes rather than inheriting the one already given.
+                     * @default false
+                     */
+                    accept_uncapped_spend?: boolean;
                 };
             };
         };
@@ -2168,7 +2173,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
-            /** @description The run has nothing of that kind, so the new run would be a no-op. */
+            /** @description The run has nothing of that kind, so the new run would be a no-op -- or the retry would reach a source that charges and no spend cap is set (`spend_cap_not_set`). */
             409: {
                 headers: {
                     [name: string]: unknown;
