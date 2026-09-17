@@ -31,6 +31,7 @@ from starnest.data import (
 from starnest.evaluation import MatchStatus, RankingError, rank_candidates
 
 from .builders import (
+    A_CANDIDATE,
     A_SMALL_SCALE,
     AN_ATTRIBUTE,
     RENT,
@@ -471,6 +472,20 @@ class TestWhatTheRulesDoToARanking:
         )
 
     @staticmethod
+    def a_disqualifying_rule() -> CompoundRule:
+        """The same rule with the outcome that costs something: a country leaves the ranking."""
+        return CompoundRule(
+            id="cheap_but_taxed",
+            name="Cheap but taxed",
+            level="country",
+            shape=CompoundRuleShape.ALL_CONDITIONS_HOLD,
+            outcome=RuleOutcome.NOT_MATCHING,
+            conditions=(
+                CompoundRuleCondition(ordinal=1, attribute=AN_ATTRIBUTE, threshold_min=Decimal(50)),
+            ),
+        )
+
+    @staticmethod
     def a_failed_gate(candidate: str) -> MatchRuleResult:
         return MatchRuleResult(
             match_rule="uk_skilled_worker",
@@ -482,9 +497,17 @@ class TestWhatTheRulesDoToARanking:
         )
 
     def test_a_warning_flags_without_changing_the_score_or_the_status(self) -> None:
+        """**The set has to apply the rule for this to be the question** (P43). It used to pass
+        with a set that applied nothing, which is what made the defect invisible: the test read
+        as "a warning flags" while asserting "any rule at this level flags".
+        """
+        applying = a_set([a_criterion()]).model_copy(
+            update={"applied_compound_rules": frozenset({"cheap_but_taxed"})}
+        )
+
         found = by_candidate(
             rank(
-                a_set([a_criterion()]),
+                applying,
                 values_for(portugal=90, spain=10),
                 compound_rules=[self.a_warning_rule()],
             )
@@ -495,6 +518,156 @@ class TestWhatTheRulesDoToARanking:
         assert portugal.match_status is MatchStatus.MATCHING
         assert portugal.score == found["country.portugal"].score
         assert found["country.spain"].warnings == ()
+
+    def test_a_rule_the_set_does_not_apply_never_fires(self) -> None:
+        """**Which compound rules a set applies is a preference** (`reqs.md` 3.7a, P43), on the
+        same footing as which gates it enforces -- "whether rent-against-spend concerns you".
+
+        The gate half of this function has always filtered on `enforced_match_rules`. The
+        compound half applied whatever the catalog held at the level, so a rule one set opted
+        out of still raised warnings in that set's ranking.
+        """
+        applies_nothing = a_set([a_criterion()])
+        assert applies_nothing.applied_compound_rules == frozenset(), "the state under test"
+
+        found = by_candidate(
+            rank(
+                applies_nothing,
+                values_for(portugal=90, spain=10),
+                compound_rules=[self.a_warning_rule()],
+            )
+        )
+
+        assert found["country.portugal"].warnings == ()
+
+    def test_a_rule_the_set_does_not_apply_cannot_rule_a_candidate_out(self) -> None:
+        """The half that costs something. A warning nobody asked for is noise; a `not_matching`
+        rule nobody asked for removes a country from the ranking."""
+        applies_nothing = a_set([a_criterion()])
+
+        found = by_candidate(
+            rank(
+                applies_nothing,
+                values_for(portugal=90, spain=10),
+                compound_rules=[self.a_disqualifying_rule()],
+            )
+        )
+
+        portugal = found["country.portugal"]
+        assert portugal.match_status is MatchStatus.MATCHING
+        assert portugal.non_match_reasons == ()
+
+    @staticmethod
+    def a_rule_reading(attribute: str) -> CompoundRule:
+        """A rule over whichever attribute the test names, applied by the set below."""
+        return CompoundRule(
+            id="cheap_but_taxed",
+            name="Cheap but taxed",
+            level="country",
+            shape=CompoundRuleShape.ALL_CONDITIONS_HOLD,
+            outcome=RuleOutcome.NOT_MATCHING,
+            conditions=(
+                CompoundRuleCondition(ordinal=1, attribute=attribute, threshold_min=Decimal(50)),
+            ),
+        )
+
+    @staticmethod
+    def applying(criteria: object) -> object:
+        return criteria.model_copy(  # type: ignore[attr-defined]
+            update={"applied_compound_rules": frozenset({"cheap_but_taxed"})}
+        )
+
+    @staticmethod
+    def two_countries_with_rents(portugal_rent: int | None = 90) -> dict[str, tuple]:
+        """Two candidates, because `percentile` needs two figures in a column to place either.
+        Portugal alone carries the rent the rule reads, so Spain is the contrast."""
+        portugal: tuple = (a_value(payload=Count(count=90)),)
+        if portugal_rent is not None:
+            portugal += (a_value(attribute=RENT, payload=Count(count=portugal_rent)),)
+        return {
+            A_CANDIDATE: portugal,
+            "country.spain": (a_value(candidate="country.spain", payload=Count(count=10)),),
+        }
+
+    def test_a_rule_reads_a_descriptive_attribute(self) -> None:
+        """**A rule may read an attribute no criterion judges** (P46).
+
+        `reqs.md` 3.0 has a category for exactly this -- an attribute with no criterion attached
+        is descriptive and never scored -- and `european_air_connectivity` is one (Q228). The
+        figures a rule could see were built from the *scored* criteria alone, so a rule over a
+        descriptive attribute read nothing, and a missing figure never satisfies a condition:
+        the rule went silent, with no warning and no refusal to say it had.
+        """
+        scored_on_something_else = self.applying(a_set([a_criterion()]))
+
+        found = by_candidate(
+            rank(
+                scored_on_something_else,
+                self.two_countries_with_rents(),
+                compound_rules=[self.a_rule_reading(RENT)],
+            )
+        )
+
+        portugal = found[A_CANDIDATE]
+        assert portugal.match_status is MatchStatus.NOT_MATCHING
+        assert [str(r.compound_rule) for r in portugal.non_match_reasons] == ["cheap_but_taxed"]
+        assert found["country.spain"].match_status is MatchStatus.MATCHING
+
+    def test_a_rule_reads_an_attribute_whose_criterion_is_not_scored(self) -> None:
+        """Unticking a criterion is a statement about scoring, not about the gates: it said this
+        attribute should not count toward the total, not that a rule reading it should stop."""
+        excluded = a_criterion(
+            attribute=RENT, pillar=HOUSING, weight=Decimal("100"), is_scored=False
+        )
+        criteria = self.applying(
+            a_set(
+                [a_criterion(weight=Decimal("100")), excluded],
+                [a_pillar_weight(weight="50"), a_pillar_weight(pillar=HOUSING, weight="50")],
+            )
+        )
+        portugal = by_candidate(
+            rank(
+                criteria,
+                self.two_countries_with_rents(),
+                compound_rules=[self.a_rule_reading(RENT)],
+            )
+        )[A_CANDIDATE]
+
+        assert portugal.match_status is MatchStatus.NOT_MATCHING
+
+    def test_a_rule_still_needs_a_figure_to_fire(self) -> None:
+        """The control. Reading more widely must not turn an absent figure into a satisfied
+        condition -- an unmeasured condition is not a met one."""
+        criteria = self.applying(a_set([a_criterion()]))
+
+        portugal = by_candidate(
+            rank(
+                criteria,
+                self.two_countries_with_rents(portugal_rent=None),
+                compound_rules=[self.a_rule_reading(RENT)],
+            )
+        )[A_CANDIDATE]
+
+        assert portugal.match_status is MatchStatus.MATCHING
+        assert portugal.non_match_reasons == ()
+
+    def test_a_rule_the_set_applies_fires_as_it_always_did(self) -> None:
+        """The control: the filter must narrow what a set applies, not stop rules working."""
+        applying = a_set([a_criterion()]).model_copy(
+            update={"applied_compound_rules": frozenset({"cheap_but_taxed"})}
+        )
+
+        found = by_candidate(
+            rank(
+                applying,
+                values_for(portugal=90, spain=10),
+                compound_rules=[self.a_warning_rule()],
+            )
+        )
+
+        assert [str(w.compound_rule) for w in found["country.portugal"].warnings] == [
+            "cheap_but_taxed"
+        ]
 
     def test_a_failed_gate_keeps_the_score_and_loses_the_rank(self) -> None:
         criteria = a_set([a_criterion()])

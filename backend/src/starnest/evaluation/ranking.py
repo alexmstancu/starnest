@@ -68,6 +68,15 @@ def rank_candidates(
     readings = _readings_by_criterion(scored_criteria, values)
     scores = _scores_by_criterion(scored_criteria, readings, score_scale_max=score_scale_max)
 
+    # **Which compound rules a set applies is a preference** (`reqs.md` 3.7a), on the same
+    # footing as which gates it enforces: "whether rent-against-spend concerns you". The gate
+    # half of `_result_for` has always filtered on `enforced_match_rules`; this half applied
+    # whatever the catalog held at the level, so a rule one set opted out of still raised
+    # warnings -- and, with an outcome of `not_matching`, still removed countries -- from every
+    # other set's ranking (P43). Narrowed once here rather than per candidate: it is a property
+    # of the set, and the answer is the same for all 32.
+    applied = tuple(rule for rule in compound_rules if rule.id in criteria.applied_compound_rules)
+
     results = tuple(
         _result_for(
             candidate,
@@ -77,7 +86,8 @@ def rank_candidates(
             scores=scores,
             min_coverage=min_coverage,
             criteria=criteria,
-            compound_rules=compound_rules,
+            compound_rules=applied,
+            figures=_magnitudes_of(values.get(candidate, ())),
             gate_answers=gate_answers.get(candidate, ()),
             level=level,
         )
@@ -170,6 +180,27 @@ def _readings_by_criterion(
     return readings
 
 
+def _magnitudes_of(values: Sequence[Value]) -> dict[str, Decimal]:
+    """Every figure this candidate has, by attribute -- whatever any criterion makes of it.
+
+    **What a compound rule reads, and deliberately wider than what scoring reads** (P46). The
+    rules used to be handed the *scored* readings, so a rule could only see an attribute that
+    carried a scored criterion: unticking a criterion silently disabled every rule reading it,
+    and a rule over a descriptive attribute -- which by definition has no criterion (`reqs.md`
+    3.0) -- could never fire at all. Both are things `reqs.md` 3.7a says a rule may do.
+
+    A value nothing can compare is absent rather than zero, and `_holds` treats an absent figure
+    as a condition that does not hold: an unmeasured condition is not a satisfied one.
+    """
+    magnitudes: dict[str, Decimal] = {}
+    for value in values:
+        try:
+            magnitudes[str(value.attribute)] = figure_of(value).magnitude
+        except UnscoreableValueError:
+            continue
+    return magnitudes
+
+
 def _scores_by_criterion(
     scored: Sequence[Criterion],
     readings: Mapping[str, Mapping[str, Reading]],
@@ -214,6 +245,7 @@ def _result_for(
     min_coverage: Decimal | None,
     criteria: CriteriaSet,
     compound_rules: Sequence[CompoundRule],
+    figures: Mapping[str, Decimal],
     gate_answers: Sequence[MatchRuleResult],
     level: str,
 ) -> CandidateResult:
@@ -256,13 +288,6 @@ def _result_for(
             insufficient_reason=refusal,
         )
     total = sum((row.contribution for row in breakdown), Decimal(0))
-    # The rules judge a candidate that *could* be scored. Applying them to one nobody could
-    # score would report "the tax is high here" about a country whose tax nobody has.
-    figures = {
-        attribute: readings[attribute][candidate].figure.magnitude
-        for attribute in readings
-        if candidate in readings[attribute]
-    }
     warnings, ruled_out_by_a_rule = judgements_of(
         rules=compound_rules, figures=figures, level=level
     )
