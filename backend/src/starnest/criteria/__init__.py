@@ -42,6 +42,7 @@ from starnest.criteria.rebalancing import (
 )
 from starnest.criteria.store import (
     CriteriaSetExistsError,
+    CriteriaSetInUseError,
     CriteriaStore,
     MatchRuleResultStore,
     UnknownCriteriaSetError,
@@ -64,6 +65,7 @@ __all__ = [
     "CriteriaSetError",
     "CriteriaSetExistsError",
     "CriteriaSetId",
+    "CriteriaSetInUseError",
     "CriteriaStore",
     "Criterion",
     "CriterionDeclarationError",

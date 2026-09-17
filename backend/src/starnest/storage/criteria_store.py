@@ -18,7 +18,7 @@ from decimal import Decimal
 from typing import Any
 
 from psycopg import AsyncConnection
-from psycopg.errors import UniqueViolation
+from psycopg.errors import ForeignKeyViolation, UniqueViolation
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.criteria import (
@@ -26,6 +26,7 @@ from starnest.criteria import (
     CriteriaSet,
     CriteriaSetExistsError,
     CriteriaSetId,
+    CriteriaSetInUseError,
     CriteriaStore,
     Criterion,
     Goal,
@@ -39,7 +40,7 @@ from starnest.criteria import (
     ShareThreshold,
     UnknownCriteriaSetError,
 )
-from starnest.data import ValueType
+from starnest.data import UnknownAttributeError, ValueType
 from starnest.storage.connections import acquire
 from starnest.storage.queries import load_queries
 
@@ -110,6 +111,22 @@ class PostgresCriteriaStore(CriteriaStore):
             await self._write_contents(connection, criteria_set)
 
     async def delete_criteria_set(self, criteria_set: CriteriaSetId | str) -> None:
+        """Discard a set, unless a saved evaluation is holding it in place.
+
+        **A `ForeignKeyViolation` here is a refusal, not a fault** (P60). `evaluation.criteria_set`
+        references the set with no `ON DELETE`, so this used to hand `api/` a driver exception and
+        a request that was merely refused became a 500. Translated for the same reason
+        `household_store` translates it: `psycopg` types belong to this module.
+        """
+        try:
+            await self._delete(criteria_set)
+        except ForeignKeyViolation as held:
+            raise CriteriaSetInUseError(
+                f"the criteria set {str(criteria_set)!r} cannot be discarded because a saved "
+                f"evaluation was computed from it: {held}"
+            ) from held
+
+    async def _delete(self, criteria_set: CriteriaSetId | str) -> None:
         async with acquire(self._pool) as connection:
             existing = await self._queries.select_criteria_set(
                 connection, criteria_set=str(criteria_set), level=None
@@ -174,6 +191,17 @@ class PostgresCriteriaStore(CriteriaStore):
                 reducer_mode=str(criterion.reducer_mode) if criterion.reducer_mode else None,
                 blocks_if_missing=criterion.blocks_if_missing,
             )
+            # **No row back means the attribute does not exist** (P61). `insert_criterion` is an
+            # `INSERT … SELECT … FROM attribute WHERE id = :attribute`, so an attribute the
+            # catalog does not hold matches nothing: no constraint fires and aiosql returns
+            # `None`. Reading `.id` off that made a well-formed request an `AttributeError` and
+            # a 500. The neighbouring case is already loud -- a pillar-less attribute trips a
+            # `NOT NULL` (`0106`) -- and this one now says the same kind of thing.
+            if written is None:
+                raise UnknownAttributeError(
+                    f"{criteria_set.id!r} names the attribute {str(criterion.attribute)!r}, "
+                    "which the catalog does not hold"
+                )
             # aiosql's insert-returning hands back the row, not the column. The id is what the
             # anchors and the threshold hang off, so it is unwrapped once here rather than in
             # each of them.

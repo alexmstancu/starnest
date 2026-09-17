@@ -45,6 +45,19 @@ class UnknownCriteriaSetError(LookupError):
     """
 
 
+class CriteriaSetInUseError(ValueError):
+    """A criteria set cannot be discarded while a saved evaluation names it (P60).
+
+    **A saved evaluation is a measurement and the set is an opinion**, but the evaluation keeps
+    the set's identifier to say which opinion it was measuring (`reqs.md` Q193), so discarding
+    the set would leave a snapshot naming nothing. Refused rather than cascaded: deleting
+    somebody's kept rankings as a side effect of tidying up a criteria set is not a tidy-up.
+
+    A state conflict, so the API answers 409 -- the request was well formed and is refused by
+    what exists, which is exactly the distinction `LookupError` above draws for 404.
+    """
+
+
 class CriteriaStore(ABC):
     """Read and write criteria sets, their criteria, their anchors and their weights."""
 

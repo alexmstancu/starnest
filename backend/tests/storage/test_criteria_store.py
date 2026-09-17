@@ -10,6 +10,7 @@ The `minimal` set (`0121`) is the one minE2E scores with, so it is read here as 
 catalog holds it rather than as a fixture invented to be convenient.
 """
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -17,12 +18,14 @@ from psycopg_pool import AsyncConnectionPool
 
 from starnest.criteria import (
     CriteriaSet,
+    CriteriaSetInUseError,
     Goal,
     NormalisationMethod,
     PillarWeight,
     UnknownCriteriaSetError,
 )
-from starnest.storage import PostgresCriteriaStore
+from starnest.data import UnknownAttributeError
+from starnest.storage import PostgresCriteriaStore, PostgresEvaluationStore
 
 pytestmark = pytest.mark.storage
 
@@ -264,6 +267,82 @@ class TestWritingASet:
 
         with pytest.raises(UnknownCriteriaSetError):
             await criteria.read_criteria_set("deleted_by_a_test")
+
+    async def test_deleting_a_set_a_saved_evaluation_used_is_refused(
+        self, criteria: PostgresCriteriaStore, pool: AsyncConnectionPool
+    ) -> None:
+        """**A saved evaluation holds its criteria set in place** (P60).
+
+        `evaluation.criteria_set` references the set with no `ON DELETE`, so the delete used to
+        reach the database and come back as a `ForeignKeyViolation` -- a driver type reaching
+        `api/`, where an untranslated one is a 500 for a request that was merely refused. What
+        should happen is a matter of design; a 500 is not one of the options. `household_store`
+        already translates exactly this exception for exactly this reason.
+        """
+        held = "held_by_an_evaluation"
+        await criteria.create_criteria_set(_a_set(held, weight="100"))
+        evaluations = PostgresEvaluationStore(pool)
+        await evaluations.save(
+            criteria=await criteria.read_criteria_set(held, level=COUNTRY),
+            level=COUNTRY,
+            results=[],
+            score_scale_max=100,
+            computed_at=datetime(2026, 9, 16, 9, 0, tzinfo=UTC),
+        )
+
+        try:
+            with pytest.raises(CriteriaSetInUseError, match=held):
+                await criteria.delete_criteria_set(held)
+            assert await criteria.read_criteria_set(held, level=COUNTRY) is not None
+        finally:
+            # The evaluation goes first, the way `conftest` empties it -- an evaluation has
+            # children of its own, and a plain DELETE trips their foreign keys. That the
+            # cleanup is this entangled is the argument for the refusal being tested: a
+            # criteria set with a saved evaluation behind it is not a loose end to tidy.
+            async with pool.connection() as connection:
+                await connection.execute("TRUNCATE evaluation RESTART IDENTITY CASCADE")
+            await criteria.delete_criteria_set(held)
+
+    async def test_a_criterion_on_an_attribute_the_catalog_does_not_hold_is_refused(
+        self, criteria: PostgresCriteriaStore
+    ) -> None:
+        """**Zero rows inserted is not success** (P61).
+
+        `insert_criterion` is an `INSERT … SELECT … FROM attribute WHERE id = :attribute`, so an
+        attribute the catalog does not hold matches nothing: no constraint fires, no row is
+        written, and aiosql hands back `None`. The next line read `.id` off it and the request
+        became an `AttributeError` -- a 500, after the set row and its pillar weights had already
+        been written in the same transaction.
+
+        The neighbouring case is already handled: a *pillar-less* attribute fails loudly on a
+        `NOT NULL` (`0106`). One fails loudly, the other silently and then crashes.
+        """
+        invented = _a_set("names_an_invented_attribute", weight="100").model_copy(
+            update={
+                "criteria": (
+                    _a_set("names_an_invented_attribute", weight="100")
+                    .criteria[0]
+                    .model_copy(update={"attribute": "country.net_median_salary"}),
+                )
+            }
+        )
+
+        with pytest.raises(UnknownAttributeError, match=r"country\.net_median_salary"):
+            await criteria.create_criteria_set(invented)
+
+        with pytest.raises(UnknownCriteriaSetError):
+            await criteria.read_criteria_set("names_an_invented_attribute")
+
+    async def test_a_set_no_evaluation_used_still_deletes(
+        self, criteria: PostgresCriteriaStore
+    ) -> None:
+        """The control: the refusal must protect a set an evaluation names, not every set."""
+        await criteria.create_criteria_set(_a_set("held_by_nothing", weight="100"))
+
+        await criteria.delete_criteria_set("held_by_nothing")
+
+        with pytest.raises(UnknownCriteriaSetError):
+            await criteria.read_criteria_set("held_by_nothing")
 
 
 class TestTheThresholdShapesTheStoreCanWrite:

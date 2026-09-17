@@ -23,6 +23,7 @@ from starnest.comparison import ComparisonError
 from starnest.criteria import (
     CriteriaSetError,
     CriteriaSetExistsError,
+    CriteriaSetInUseError,
     CriterionDeclarationError,
     UnknownCriteriaSetError,
     UnknownCriterionError,
@@ -73,6 +74,7 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     # 409 -- the request is well formed and the state refuses it.
     WeightsAllLockedError: _refusal(409, "weights_all_locked"),
     CriteriaSetExistsError: _refusal(409, "criteria_set_exists"),
+    CriteriaSetInUseError: _refusal(409, "criteria_set_in_use"),
     NothingToRetryError: _refusal(409, "nothing_to_retry"),
     NothingToAskAgainError: _refusal(409, "nothing_to_ask_again"),
     SpendCapNotSetError: _refusal(409, "spend_cap_not_set"),
