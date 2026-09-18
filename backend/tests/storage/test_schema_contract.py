@@ -47,20 +47,80 @@ PAYLOAD_TABLES = [
 ]
 
 # arch.md 3.6 — the split the whole ontology rests on.
+#
+# **Every table is on one side or the other, and a new one that is on neither fails the test
+# below** (D15). These two sets named 18 tables of the 60-odd that exist, so a foreign key from
+# an objective table into an unclassified subjective one -- `criterion_scale_anchor`,
+# `pillar_weight`, `non_match_reason` -- was not a violation as far as the guard was concerned.
+# A guard that covers a third of the schema reports on a third of the schema.
 OBJECTIVE = {
+    # What is true about a place, and the records of finding it out.
     "level",
     "candidate",
     "pillar",
     "attribute",
+    "attribute_allowed_label",
+    "attribute_allowed_range",
+    "attribute_index_parameter",
+    "attribute_quantity_parameter",
+    "attribute_ratio_parameter",
+    "attribute_source_priority",
+    "breakdown_option",
+    "breakdown_scheme",
+    "population_centre",
+    "stand_in",
     "value",
     *PAYLOAD_TABLES,
+    "value_citation",
     "data_source",
     "data_acquisition_run",
+    "data_acquisition_failure",
+    "data_acquisition_run_attribute",
+    "data_acquisition_run_candidate",
     "external_score",
+    "fx_rate",
+    # A gate's ANSWER is objective -- whether a visa route exists is a fact. Whether the gate
+    # is enforced is a preference, and that lives on the subjective side below.
     "match_rule",
     "match_rule_result",
+    "match_rule_result_citation",
+    "compound_rule",
+    "compound_rule_condition",
+    "compound_rule_input",
+    # Controlled vocabularies: what a figure may be, not what anyone wants it to be.
+    "confidence_level",
+    "currency",
+    "unit",
+    "value_type",
+    "reliability_tier",
+    "household_field",
 }
-SUBJECTIVE = {"criteria_set", "criterion", "evaluation", "candidate_result", "household"}
+SUBJECTIVE = {
+    # What the household wants, and what was computed from wanting it.
+    "criteria_set",
+    "criteria_set_compound_rule",
+    "criteria_set_match_rule",
+    "criterion",
+    "criterion_scale_anchor",
+    "criterion_threshold_boolean",
+    "criterion_threshold_label",
+    "criterion_threshold_range",
+    "criterion_threshold_share",
+    "pillar_weight",
+    "evaluation",
+    "evaluation_criterion",
+    "evaluation_scale_anchor",
+    "candidate_result",
+    "candidate_attribute_score",
+    "candidate_warning",
+    "non_match_reason",
+    "household",
+    "household_citizenship",
+    "settings",
+}
+
+UNCLASSIFIED = {"_yoyo_log", "_yoyo_migration", "_yoyo_version", "yoyo_lock"}
+"""yoyo's own bookkeeping, which belongs to neither side and to no part of the ontology."""
 
 
 def _tables(connection: psycopg.Connection) -> set[str]:
@@ -274,3 +334,32 @@ def test_a_later_re_fetch_of_the_same_period_is_still_stored(
     )
 
     assert connection.execute("SELECT count(*) FROM value").fetchone()[0] == 2
+
+
+def test_every_table_is_on_one_side_of_the_split_or_the_other(
+    connection: psycopg.Connection,
+) -> None:
+    """The guard on the guard above (D15).
+
+    **A classification that covers part of the schema checks part of the schema.** `OBJECTIVE`
+    and `SUBJECTIVE` named 18 tables between them, so a foreign key from an objective table into
+    an unclassified subjective one was not a violation as far as the check could tell -- and the
+    unclassified ones include every child of a criterion and every child of an evaluation, which
+    is exactly where such an edge would appear.
+
+    Failing here means a migration added a table and did not say which side it is on. That is a
+    question worth being asked once, in the commit that adds it, rather than discovered when
+    somebody wonders why the guard never fires.
+    """
+    unaccounted = _tables(connection) - OBJECTIVE - SUBJECTIVE - UNCLASSIFIED
+
+    assert unaccounted == set(), (
+        f"{sorted(unaccounted)} belong to neither side of the objective/subjective split. "
+        "Add each to OBJECTIVE (what is true about a place) or SUBJECTIVE (what the household "
+        "wants, and what was computed from wanting it) -- arch.md 3.6."
+    )
+
+
+def test_the_two_sides_do_not_overlap() -> None:
+    """A table on both sides would make the violation check above vacuous for it."""
+    assert not OBJECTIVE & SUBJECTIVE

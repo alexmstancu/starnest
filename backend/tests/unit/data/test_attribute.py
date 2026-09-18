@@ -85,8 +85,13 @@ class TestWhatACatalogRowHolds:
         assert retired.is_retired
 
     def test_a_broken_down_attribute_says_what_it_is_broken_down_by(self) -> None:
-        assert an_attribute(breakdown_scheme="bedroom_count").is_broken_down
+        """The name promises *what*, and the assertion only claimed *whether* (D16)."""
+        broken_down = an_attribute(breakdown_scheme="bedroom_count")
+
+        assert broken_down.is_broken_down
+        assert broken_down.breakdown_scheme == "bedroom_count"
         assert not an_attribute().is_broken_down
+        assert an_attribute().breakdown_scheme is None
 
     def test_is_immutable(self) -> None:
         with pytest.raises(ValidationError):

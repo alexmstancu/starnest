@@ -108,13 +108,34 @@ class TestRuleTwoFreshBeatsStale:
         assert chosen(stale) is stale
 
     def test_an_attribute_with_no_max_age_has_no_stale_values(self) -> None:
+        """**Nothing can age past a limit that was never set**, so rule 2 stands aside.
+
+        The pair differs only in the period it describes: same source, same confidence, same
+        retrieval moment. That is what makes this about freshness -- the earlier version put a
+        1900 numbeo figure against a manual one and let source priority decide, so it would
+        have passed with the freshness rule intact and failed if the two sources ever swapped
+        rank (D16). Here the only rule left to break the tie is the last one, the row written
+        last, and the ancient figure is given the higher id so that winning proves its age was
+        never consulted.
+        """
         ageless = RENT.model_copy(update={"max_age": None})
-        old = a_value(data_source="numbeo", reference_period=ReferencePeriod.covering_year(1900))
-        recent = a_value(data_source="manual")
+        ancient = a_value(reference_period=ReferencePeriod.covering_year(1900), id=2)
+        current = a_value(id=1)
+
         assert (
-            select_active_value([old, recent], attribute=ageless, priority=GLOBAL_ORDER, on=TODAY)
-            is old
+            select_active_value(
+                [ancient, current], attribute=ageless, priority=GLOBAL_ORDER, on=TODAY
+            )
+            is ancient
         )
+
+    def test_the_same_pair_goes_the_other_way_once_the_attribute_has_a_max_age(self) -> None:
+        """The control the test above needs to mean anything: with a limit declared, the same
+        two values are decided by age rather than by which row was written last."""
+        ancient = a_value(reference_period=ReferencePeriod.covering_year(1900), id=2)
+        current = a_value(id=1)
+
+        assert chosen(ancient, current) is current
 
 
 class TestRuleThreeSourcePriority:

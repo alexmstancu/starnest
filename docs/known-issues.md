@@ -21,7 +21,7 @@ the account of a defect outlives the defect.
 
 ## Status
 
-**63 findings: 59 closed, 4 open.** **P63 was found by fixing one of the review's own low
+**63 findings: 61 closed, 2 open.** **P63 was found by fixing one of the review's own low
 items** -- wiring up a property that had no caller, which turned out to be wrong as well as
 unused. See "Found while closing the review's low items". **Twenty-two arrived at once**, from the full review of
 2026-09-16 (P41-P62, the last section of this file): six high, thirteen medium, the rest low.
@@ -144,12 +144,21 @@ Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that s
   **Fixed 2026-09-18**: each rung must nest directly under the one above it. It matters because
   the code that walks a candidate's parents upwards assumes the walk has one answer, and
   `reqs.md` 3.1 only ever describes inserting a rung into one chain.
-- **D15** (low) The objective/subjective FK guard in `test_schema_contract.py` classifies only 5
-  subjective tables; ~13 are unclassified, so a violating FK into them would not be flagged. No
-  violation exists today.
-- **D16** (low) Three tests assert less than their names claim: an active-value `max_age` test
-  with no discriminating power, a breakdown-scheme assertion that is vacuously true over `{}`,
-  and the above.
+- ~~**D15**~~ (low) The objective/subjective FK guard classified 18 tables of the 60-odd that
+  exist, so a foreign key from an objective table into an unclassified subjective one -- every
+  child of a criterion, every child of an evaluation -- was not a violation as far as the guard
+  could tell. **Fixed 2026-09-18**: every table is on one side or the other, yoyo's own
+  bookkeeping excepted, and **a new table on neither side now fails a test** -- so the question
+  is asked in the migration that adds it. Proved by feeding the check a `value ->
+  criterion_scale_anchor` edge, which the old lists could not see.
+- ~~**D16**~~ (low) Three tests asserted less than their names claimed. **Fixed 2026-09-18**,
+  the third being D14 above. The `max_age` test put a 1900 numbeo figure against a manual one
+  and let *source priority* decide, so it would have passed with the freshness rule intact and
+  failed if those two sources ever swapped rank; it now varies only the period, and a control
+  test sends the same pair the other way once a `max_age` is declared. The breakdown-scheme test
+  promised to say *what* an attribute is broken down by and asserted only *whether*. Both were
+  checked by mutation: removing the freshness term fails the control and correctly leaves the
+  no-`max_age` case passing.
 
 ### Documentation
 
