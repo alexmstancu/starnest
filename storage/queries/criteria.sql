@@ -108,15 +108,25 @@ SELECT s.id,
             WHERE  w.criteria_set = s.id
               AND  (:level::text IS NULL OR w.level = :level)),
            '[]'::jsonb) AS pillar_weights,
+       -- **:level narrows the rules too** (D22's neighbour, D21). It narrowed the criteria and
+       -- the pillar weights and left these two alone, so a set read for one level came back
+       -- carrying gates and compound rules declared at another -- and `gates_that_rule_out`
+       -- consults exactly this list, so a city gate would have ruled out a country.
+       -- A match rule with no level applies at every level, which is what its nullable column
+       -- means; a compound rule always has one.
        COALESCE(
            (SELECT jsonb_agg(m.match_rule ORDER BY m.match_rule)
             FROM   criteria_set_match_rule AS m
-            WHERE  m.criteria_set = s.id AND m.is_enforced),
+            JOIN   match_rule AS mr ON mr.id = m.match_rule
+            WHERE  m.criteria_set = s.id AND m.is_enforced
+              AND  (:level::text IS NULL OR mr.level IS NULL OR mr.level = :level)),
            '[]'::jsonb) AS enforced_match_rules,
        COALESCE(
            (SELECT jsonb_agg(r.compound_rule ORDER BY r.compound_rule)
             FROM   criteria_set_compound_rule AS r
-            WHERE  r.criteria_set = s.id AND r.is_applied),
+            JOIN   compound_rule AS cr ON cr.id = r.compound_rule
+            WHERE  r.criteria_set = s.id AND r.is_applied
+              AND  (:level::text IS NULL OR cr.level = :level)),
            '[]'::jsonb) AS applied_compound_rules
 FROM   criteria_set AS s
 WHERE  s.id = :criteria_set;
@@ -495,7 +505,7 @@ ON CONFLICT (criteria_set, compound_rule) DO UPDATE SET is_applied = EXCLUDED.is
 -- forgotten is a scale nobody wrote, and the four threshold tables are mutually exclusive, so
 -- setting one means clearing whichever was there before.
 
--- name: replace_criterion_scale_anchors(criterion, input_values, scores, labels)!
+-- name: replace_criterion_scale_anchors(criterion, anchors)!
 -- The whole scale, replaced in one statement, so it is never momentarily empty and a concurrent
 -- reader cannot see half of it.
 --
@@ -506,16 +516,33 @@ ON CONFLICT (criteria_set, compound_rule) DO UPDATE SET is_applied = EXCLUDED.is
 -- a duplicate key. Splitting the keys between the two halves means neither touches the other's
 -- rows and there is nothing to conflict over.
 --
--- An empty scale is a legal argument: every point is unnamed, so every point is deleted.
-WITH cleared AS (
+-- An empty scale is a legal argument: no point is named, so every point is deleted.
+--
+-- **One array of anchors, not three parallel ones** (D22). It took `input_values`, `scores` and
+-- `labels` side by side, and `unnest` over several arrays pads the short ones with NULL instead
+-- of complaining -- so a `labels` array one entry short silently blanked every label it did not
+-- reach, and only `score` is `NOT NULL` to catch the equivalent mistake. A guard was tried
+-- first and could not work: `CAST('...' AS integer)` inside a `CASE` is a constant expression,
+-- so PostgreSQL folds it at plan time and raises whether the lengths agree or not. An anchor
+-- that arrives whole cannot be misaligned, which is the better answer than detecting it.
+--
+-- `input_value` is read as text and cast, because a JSON number would round-trip a `numeric`
+-- through a float and this is a figure somebody chose (`arch.md` 9.6).
+WITH given AS (
+    SELECT anchor.input_value::numeric AS input_value,
+           anchor.score,
+           anchor.label
+    FROM   jsonb_to_recordset(:anchors::jsonb)
+               AS anchor(input_value text, score integer, label text)
+),
+cleared AS (
     DELETE FROM criterion_scale_anchor
     WHERE  criterion = :criterion
-      AND  input_value <> ALL (:input_values::numeric[])
+      AND  input_value <> ALL (SELECT g.input_value FROM given AS g)
 )
 INSERT INTO criterion_scale_anchor (criterion, input_value, score, label)
-SELECT :criterion, anchor.input_value, anchor.score, anchor.label
-FROM   unnest(:input_values::numeric[], :scores::integer[], :labels::text[])
-           AS anchor(input_value, score, label)
+SELECT :criterion, g.input_value, g.score, g.label
+FROM   given AS g
 ON CONFLICT (criterion, input_value)
 DO UPDATE SET score = EXCLUDED.score, label = EXCLUDED.label;
 

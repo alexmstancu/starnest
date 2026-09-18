@@ -14,6 +14,7 @@ merely careful.
 set means writing the criteria first and hanging the rest off the ids that came back.
 """
 
+import json
 from decimal import Decimal
 from typing import Any
 
@@ -214,14 +215,24 @@ class PostgresCriteriaStore(CriteriaStore):
     ) -> None:
         if not criterion.scale_anchors:
             return
+        # **One anchor per object, so the three fields cannot come apart** (D22). This passed
+        # three parallel arrays, and `unnest` pads the short ones with NULL rather than
+        # complaining -- which `score` catches by being `NOT NULL` and `label` does not.
         await self._queries.replace_criterion_scale_anchors(
             connection,
             criterion=criterion_id,
-            input_values=[anchor.input_value for anchor in criterion.scale_anchors],
-            scores=[anchor.score for anchor in criterion.scale_anchors],
-            # Nullable, so a short array would silently blank labels rather than fail
-            # (known-issues D22). Built from the same list, so it cannot be short.
-            labels=[anchor.label for anchor in criterion.scale_anchors],
+            anchors=json.dumps(
+                [
+                    {
+                        # As text, because a JSON number would take a `numeric` through a float
+                        # on the way in and this is a figure somebody chose (`arch.md` 9.6).
+                        "input_value": str(anchor.input_value),
+                        "score": anchor.score,
+                        "label": anchor.label,
+                    }
+                    for anchor in criterion.scale_anchors
+                ]
+            ),
         )
 
     async def _write_threshold(

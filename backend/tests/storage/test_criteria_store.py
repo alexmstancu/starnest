@@ -515,3 +515,82 @@ class TestTheChildrenOfACriterion:
             ]
         finally:
             await criteria.delete_criteria_set("anchor_round_trip")
+
+    async def test_an_anchor_keeps_its_label_because_it_travels_whole(
+        self, criteria: PostgresCriteriaStore
+    ) -> None:
+        """**The three fields of an anchor cannot come apart any more** (D22).
+
+        They were written as three parallel arrays, and `unnest` over several arrays pads the
+        short ones with NULL rather than complaining -- caught for `score`, which is `NOT NULL`,
+        and silent for `label`, which is not. So a labels array one entry short blanked every
+        label it did not reach, and a blanked band label reads as a scale left deliberately
+        unnamed. One JSON object per anchor removes the alignment rather than checking it.
+
+        A guard was tried first and could not work: `CAST('...' AS integer)` inside a `CASE` is
+        a constant expression, so PostgreSQL folds it at plan time and raises whether the
+        lengths agree or not. Every anchor round trip in this file failed at once, which is the
+        cheapest way that lesson could have been learned.
+        """
+        from starnest.criteria import ScaleAnchor
+
+        built = _a_set(
+            "anchors_travel_whole",
+            weight="100",
+            anchors=(
+                ScaleAnchor(input_value=Decimal("4.5"), score=0, label="poor"),
+                ScaleAnchor(input_value=Decimal(8), score=100, label=None),
+            ),
+        )
+
+        await criteria.create_criteria_set(built)
+        try:
+            read_back = await criteria.read_criteria_set("anchors_travel_whole", level=COUNTRY)
+
+            anchors = read_back.criterion_for("country.life_satisfaction").scale_anchors
+            assert [(a.input_value, a.score, a.label) for a in anchors] == [
+                # The decimal survives as a decimal: passed as text, cast in the statement,
+                # never through a float (`arch.md` 9.6).
+                (Decimal("4.5"), 0, "poor"),
+                (Decimal(8), 100, None),
+            ]
+        finally:
+            await criteria.delete_criteria_set("anchors_travel_whole")
+
+    async def test_a_city_level_gate_does_not_reach_a_country_read(
+        self, criteria: PostgresCriteriaStore, pool: AsyncConnectionPool
+    ) -> None:
+        """**`:level` narrowed the criteria and the pillar weights and not the rules** (D21).
+
+        A set read at one level came back carrying every gate it enforces and every compound
+        rule it applies, whatever level those were declared at -- so a city gate would be
+        enforced against a country ranking, and `gates_that_rule_out` consults exactly this
+        list. No live effect while every shipped rule is country-level, which is why it needed
+        a city rule to show at all.
+        """
+        scratch = "rules_narrowed_by_level"
+        # The gate has to exist before a set may enforce it, which the foreign key says first.
+        async with pool.connection() as connection:
+            await connection.execute(
+                "INSERT INTO match_rule (id, level, name) VALUES"
+                " ('city_curfew', 'city', 'A gate that belongs to cities')"
+            )
+        try:
+            await criteria.create_criteria_set(
+                _a_set(scratch, weight="100").model_copy(
+                    update={"enforced_match_rules": frozenset({"eu_free_movement", "city_curfew"})}
+                )
+            )
+
+            at_country = await criteria.read_criteria_set(scratch, level=COUNTRY)
+            entire = await criteria.read_criteria_set(scratch)
+
+            assert "city_curfew" not in at_country.enforced_match_rules
+            assert "eu_free_movement" in at_country.enforced_match_rules
+            # Read without a level, the set is its whole self -- which is what the criteria
+            # screen shows and what a copy has to carry.
+            assert "city_curfew" in entire.enforced_match_rules
+        finally:
+            await criteria.delete_criteria_set(scratch)
+            async with pool.connection() as connection:
+                await connection.execute("DELETE FROM match_rule WHERE id = 'city_curfew'")

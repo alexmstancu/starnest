@@ -1054,8 +1054,11 @@ components:
       properties: { count: { type: integer }, basis: { type: [string, "null"] } }
     RatioPayload:
       type: object
-      required: [value]
-      properties: { value: { type: number }, basis: { type: [string, "null"] } }
+      # `basis` is required (D19). The column is NOT NULL and `payloads.py` says why in words:
+      # a bare "23.4%" is not a measurement, because 23.4% of the workforce and 23.4% of the
+      # land area are different facts and only the basis tells them apart.
+      required: [value, basis]
+      properties: { value: { type: number }, basis: { type: string } }
     IndexPayload:
       type: object
       required: [value, provider, scale_min, scale_max]

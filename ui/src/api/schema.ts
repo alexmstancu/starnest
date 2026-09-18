@@ -794,7 +794,7 @@ export interface components {
         };
         RatioPayload: {
             value: number;
-            basis?: string | null;
+            basis: string;
         };
         IndexPayload: {
             value: number;

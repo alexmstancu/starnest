@@ -1005,7 +1005,7 @@ temperature are both numbers and behave nothing alike. The type determines four 
 | `Quantity` | magnitude, unit (a dimension: °C, km, m, hours, Mbps, µg/m³, km², years, days) | `fixed`, `percentile` | temperature, distances, sunshine, internet speed, air quality, naturalisation years, statutory leave |
 | `Count` | integer, optional basis (per capita, per km²) | `fixed`, `percentile` | job counts, protected areas, subdivisions |
 | `Ratio` | value 0–100, and **what it is a share of** | `fixed`, `percentile`, `as_is` | tech employment share, forest cover, overcrowding rate |
-| `Index` | value, **provider**, **scale minimum and maximum**, polarity | `as_is` (rescaled from declared bounds), `percentile` | safety index, WGI stability, EF EPI, MIPEX, HDI |
+| `Index` | value, **provider**, **scale minimum and maximum** | `as_is` (rescaled from declared bounds), `percentile` | safety index, WGI stability, EF EPI, MIPEX, HDI |
 | `LabelSet` | list of labels, optional controlled vocabulary | none — scored by set membership or count | Köppen zone, international employers, tax treaties |
 | `ShareComposition` | label → share pairs summing to 100 | none directly — must be reduced first | religious composition, ethnic composition |
 | `Boolean` | true / false | none — scored by mapping | dual citizenship permitted, coastal |

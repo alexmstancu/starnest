@@ -21,7 +21,7 @@ the account of a defect outlives the defect.
 
 ## Status
 
-**63 findings: 54 closed, 9 open.** **P63 was found by fixing one of the review's own low
+**63 findings: 59 closed, 4 open.** **P63 was found by fixing one of the review's own low
 items** -- wiring up a property that had no caller, which turned out to be wrong as well as
 unused. See "Found while closing the review's low items". **Twenty-two arrived at once**, from the full review of
 2026-09-16 (P41-P62, the last section of this file): six high, thirteen medium, the rest low.
@@ -153,21 +153,35 @@ Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that s
 
 ### Documentation
 
-- **D17** (low) `reqs.md` `Index` specifies a `polarity` that **appears nowhere else** — not in
-  the schema, not in the contract. `criterion.goal` covers the need; stale word.
-- **D18** (low) `openapi.yaml` types `Attribute.max_age_days` as an integer; the column is an
-  `interval`. `interval '1 mon'` added to 31 January is not 30 days added to it.
-- **D19** (low) `RatioPayload.basis` is nullable and not required in the contract; the column is
-  `NOT NULL` and `payloads.py` says "the basis is required".
+- ~~**D17**~~ (low) `reqs.md` `Index` specified a `polarity` that appeared nowhere else — not in
+  the schema, not in the contract, not in the code. `criterion.goal` covers the need.
+  **Fixed 2026-09-18**: the word is gone.
+- ~~**D18**~~ (low) `openapi.yaml` typed `Attribute.max_age_days` as an integer while the column
+  is an `interval`, and `interval '1 mon'` added to 31 January is not 30 days added to it.
+  **Verified fixed 2026-09-18, by someone who did not update this line**: the contract serves
+  `max_age_months` and `api/catalog.py` converts through `_months_of`. Recorded because a
+  finding that was quietly fixed is indistinguishable from one nobody looked at.
+- ~~**D19**~~ (low) `RatioPayload.basis` was nullable and not required in the contract while the
+  column is `NOT NULL` and `payloads.py` says "the basis is required". **Fixed 2026-09-18**: the
+  contract was the outlier and now requires it. A bare "23.4%" is not a measurement -- 23.4% of
+  the workforce and 23.4% of the land area are different facts.
 - **D20** (low) `select_attribute_coverage` says "for each attribute" but groups over
   `active_value`, so **an attribute with zero coverage produces no row** — and a never-fetched
   attribute is the one the run planner most needs to see.
-- **D21** (low) `select_criteria_set` narrows criteria and pillar weights by `:level` but **not
-  the enforced match rules or applied compound rules**, so a city-level gate would reach a country
-  ranking. No live effect yet.
-- **D22** (low) `replace_criterion_scale_anchors` zips three parallel arrays; the file's defence
-  is that a length mismatch hits a `NOT NULL` — true for `scores`, but `label` is nullable, so a
-  short array **silently blanks labels**.
+- ~~**D21**~~ (low) `select_criteria_set` narrowed criteria and pillar weights by `:level` but
+  **not the enforced match rules or applied compound rules**, so a set read for one level came
+  back carrying gates declared at another -- and `gates_that_rule_out` consults exactly that
+  list, so a city gate would have ruled out a country. **Fixed 2026-09-18**: both aggregates
+  join their rule and narrow by level, a match rule with no level still applying everywhere as
+  its nullable column means. Proved with a city-level gate, since every shipped rule is
+  country-level and nothing else would have shown it.
+- ~~**D22**~~ (low) `replace_criterion_scale_anchors` zipped three parallel arrays; the file's
+  defence was that a length mismatch hits a `NOT NULL` — true for `scores`, and `label` is
+  nullable, so a short array **silently blanked labels**. **Fixed 2026-09-18 by removing the
+  alignment rather than checking it**: one JSON object per anchor, so the three fields cannot
+  come apart. **A guard was tried first and could not work** -- `CAST('...' AS integer)` inside
+  a `CASE` is a constant expression, so PostgreSQL folds it at plan time and raises whether the
+  lengths agree or not, which failed every anchor round trip at once.
 
 ### Tooling
 
