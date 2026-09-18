@@ -259,6 +259,22 @@ class TestWhenACandidateCannotBeScored:
         assert "60%" in (found["country.spain"].insufficient_reason or "")
         assert found["country.portugal"].match_status is MatchStatus.MATCHING
 
+    def test_coverage_exactly_on_the_floor_is_scored(self) -> None:
+        """**The floor is a floor, not a threshold to clear.** `coverage < min_coverage` is
+        right and nothing pinned it: flipping that to `<=` would make every at-floor candidate
+        `insufficient_data` and the whole suite would still have passed.
+
+        Spain answers one of two equally weighted criteria, so its coverage is exactly 50.
+        """
+        found = by_candidate(
+            rank(two_pillars(), three_countries_one_missing_its_rent(), min_coverage=Decimal(50))
+        )
+
+        spain = found["country.spain"]
+        assert spain.coverage == Decimal(50), "the case only bites at exactly the floor"
+        assert spain.match_status is MatchStatus.MATCHING
+        assert spain.insufficient_reason is None
+
     def test_no_floor_means_any_coverage_that_found_something_is_scored(self) -> None:
         """`settings.min_coverage` is nullable and unseeded, so this is the shipped state."""
         found = by_candidate(rank(two_pillars(), three_countries_one_missing_its_rent()))

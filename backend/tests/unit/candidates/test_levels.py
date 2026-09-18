@@ -128,3 +128,30 @@ class TestAHierarchyThatWouldNotHold:
 
         with pytest.raises(InconsistentHierarchyError, match="not wider"):
             LevelHierarchy([COUNTRY, inverted, deeper_parent])
+
+    def test_refuses_a_branching_tree(self) -> None:
+        """**A hierarchy is a chain, and it said so without checking** (D14).
+
+        `InconsistentHierarchyError` is documented as "a set of levels does not describe a
+        single, ordered containment chain", and `reqs.md` 3.1 describes inserting rungs into
+        one -- `county` between country and city, `neighbourhood` below city. A branch is a
+        different shape entirely: `country -> {city, province}` passed every check, because
+        each rung had a distinct ordinal, one widest level and a parent wider than itself.
+
+        It matters because scoring, comparison and the parent-not-matching flag all walk the
+        chain upwards and assume the walk is unambiguous.
+        """
+        province = Level(id="province", depth_order=3, parent_level="country")
+
+        with pytest.raises(InconsistentHierarchyError, match="branch"):
+            LevelHierarchy([COUNTRY, CITY, province])
+
+    def test_a_chain_three_deep_is_accepted(self) -> None:
+        """The control: the check refuses a branch, not a third level."""
+        hierarchy = LevelHierarchy([COUNTRY, CITY, NEIGHBOURHOOD])
+
+        assert [level.id for level in hierarchy.ordered] == [
+            "country",
+            "city",
+            "neighbourhood",
+        ]

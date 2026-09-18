@@ -21,7 +21,7 @@ the account of a defect outlives the defect.
 
 ## Status
 
-**63 findings: 51 closed, 12 open.** **P63 was found by fixing one of the review's own low
+**63 findings: 54 closed, 9 open.** **P63 was found by fixing one of the review's own low
 items** -- wiring up a property that had no caller, which turned out to be wrong as well as
 unused. See "Found while closing the review's low items". **Twenty-two arrived at once**, from the full review of
 2026-09-16 (P41-P62, the last section of this file): six high, thirteen medium, the rest low.
@@ -138,8 +138,12 @@ Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that s
 
 ### Test-quality
 
-- **D14** (low) `LevelHierarchy` **accepts a branching tree** while three docstrings claim it
-  validates "a single ordered containment chain". `country → {city, province}` is accepted.
+- ~~**D14**~~ (low) `LevelHierarchy` **accepted a branching tree** while its own error type
+  says it validates "a single, ordered containment chain". `country → {city, province}` passed
+  every other rule -- distinct ordinals, one widest level, each parent wider than its child.
+  **Fixed 2026-09-18**: each rung must nest directly under the one above it. It matters because
+  the code that walks a candidate's parents upwards assumes the walk has one answer, and
+  `reqs.md` 3.1 only ever describes inserting a rung into one chain.
 - **D15** (low) The objective/subjective FK guard in `test_schema_contract.py` classifies only 5
   subjective tables; ~13 are unclassified, so a violating FK into them would not be flagged. No
   violation exists today.
@@ -394,10 +398,15 @@ red.
   were documented as the guards and had no production caller: `ranking.py` filtered on
   `is_scored` directly. **Fixed 2026-09-17, and wiring the second one uncovered P63 below** --
   which is the argument for closing this kind of drift rather than filing it as harmless.
-- **No test pins coverage exactly at the floor.** `coverage < min_coverage` is correct; flipping it
-  to `<=` would flag every at-floor candidate `insufficient_data` and the suite would still pass.
-- **An unsaved value's tiebreak collapses to 0**, so two otherwise-identical unsaved values tie on
-  the one key the SQL view cannot express.
+- ~~**No test pins coverage exactly at the floor.**~~ **Fixed 2026-09-18.** A candidate at
+  exactly 50% against a floor of 50 is scored, because a floor is a floor and not a bar to
+  clear. Proved by mutation: flipping `<` to `<=` now fails that test and nothing else.
+- ~~**An unsaved value's tiebreak collapses to 0**~~, so two otherwise-identical unsaved values
+  tie on the one key the SQL view cannot express. **Fixed 2026-09-18**: two tests pin it -- the
+  order given decides between two unsaved values, and a stored row outranks an unstored one.
+  The question cannot arise in production, where the view ranks rows and a row has an id, but
+  this module exists to be checked against that view and an untested tie is where a silent
+  disagreement between them would hide.
 - ~~**WHO hardcodes one publication name into every value's quote**~~, so a second WHO indicator
   -- a manifest-and-catalog change elsewhere -- would mislabel every figure of it. **Fixed
   2026-09-17**: the quote names the GHO indicator code actually fetched, which is what identifies

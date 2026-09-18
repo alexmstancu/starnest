@@ -169,6 +169,27 @@ class TestRuleFiveRecency:
         second = a_value(id=9002)
         assert chosen(first, second) is second
 
+    def test_two_values_that_were_never_stored_are_settled_by_the_order_given(self) -> None:
+        """**The one key the SQL view cannot express, and the only place the two can differ.**
+
+        An unsaved value has no id, and this module maps that to 0, so two of them tie on every
+        rule and `min` keeps whichever came first. In production the question never arises --
+        the view ranks rows, and a row has an id -- but this module exists to be checked against
+        the view, and an untested tie is where a silent disagreement would hide.
+        """
+        first = a_value(id=None)
+        second = a_value(id=None)
+
+        assert chosen(first, second) is first
+        assert chosen(second, first) is second
+
+    def test_a_stored_value_outranks_one_that_was_never_stored(self) -> None:
+        """Between a row and something not yet written, the row is the figure that exists."""
+        unsaved = a_value(id=None)
+        stored = a_value(id=1)
+
+        assert chosen(unsaved, stored) is stored
+
 
 class TestSelectingForEveryCandidateAndOption:
     def test_each_candidate_gets_its_own_active_value(self) -> None:

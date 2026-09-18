@@ -8,6 +8,7 @@ hierarchy rather than an enum.
 """
 
 from collections.abc import Iterable, Iterator
+from itertools import pairwise
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -136,6 +137,27 @@ def _reject_an_ill_formed_set(ordered: tuple[Level, ...]) -> None:
             raise InconsistentHierarchyError(
                 f"level {level.id!r} nests under {parent.id!r}, which is not "
                 "wider than it -- containment and depth_order must agree"
+            )
+
+    _reject_a_branch(ordered)
+
+
+def _reject_a_branch(ordered: tuple[Level, ...]) -> None:
+    """Each rung nests directly under the one above it, so the set is a chain (D14).
+
+    **The type said "a single, ordered containment chain" and nothing checked the "single"**:
+    `country -> {city, province}` satisfied every other rule -- distinct ordinals, one widest
+    level, each parent wider than its child -- and describes a tree with two branches.
+    `reqs.md` 3.1 only ever describes inserting a rung into one chain, `county` between country
+    and city or `neighbourhood` below city, and the code that walks a candidate's parents
+    upwards assumes the walk has one answer.
+    """
+    for above, below in pairwise(ordered):
+        if below.parent_level != above.id:
+            raise InconsistentHierarchyError(
+                f"level {below.id!r} nests under {below.parent_level!r} rather than {above.id!r}, "
+                f"which is the level directly above it -- that is a branch, and a hierarchy is "
+                "a single ordered chain"
             )
 
 
