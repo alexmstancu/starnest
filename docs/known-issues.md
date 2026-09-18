@@ -21,7 +21,7 @@ the account of a defect outlives the defect.
 
 ## Status
 
-**63 findings: 61 closed, 2 open.** **P63 was found by fixing one of the review's own low
+**63 findings: 63 closed, 0 open from this review's list.** **P63 was found by fixing one of the review's own low
 items** -- wiring up a property that had no caller, which turned out to be wrong as well as
 unused. See "Found while closing the review's low items". **Twenty-two arrived at once**, from the full review of
 2026-09-16 (P41-P62, the last section of this file): six high, thirteen medium, the rest low.
@@ -174,9 +174,12 @@ Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that s
   column is `NOT NULL` and `payloads.py` says "the basis is required". **Fixed 2026-09-18**: the
   contract was the outlier and now requires it. A bare "23.4%" is not a measurement -- 23.4% of
   the workforce and 23.4% of the land area are different facts.
-- **D20** (low) `select_attribute_coverage` says "for each attribute" but groups over
-  `active_value`, so **an attribute with zero coverage produces no row** — and a never-fetched
-  attribute is the one the run planner most needs to see.
+- ~~**D20**~~ (low) `select_attribute_coverage` said "for each attribute" and grouped over
+  `active_value`, so **an attribute with zero coverage produced no row at all** — and a
+  never-fetched attribute is the one a run planner most needs to see. **Fixed 2026-09-18**: it
+  is driven from the catalog with a left join, so every attribute gets a row and an unfetched
+  one reports 0. Tested against the statement the file holds rather than a copy of it, which
+  is the only way to test a query nothing calls yet.
 - ~~**D21**~~ (low) `select_criteria_set` narrowed criteria and pillar weights by `:level` but
   **not the enforced match rules or applied compound rules**, so a set read for one level came
   back carrying gates declared at another -- and `gates_that_rule_out` consults exactly that
@@ -231,7 +234,7 @@ either. **P5 and P7 were defects**, and live ones.
 |---|---|---|
 | **P1** | **`reqs.md` 7.1 drifted from the catalog and no guard noticed.** `0442` and `0443` changed three attributes; the document went on describing all three the old way. The existing check walks `reqs.md` and looks each row up, so an attribute only the database has is never visited, and value types were never compared | **Fixed 2026-09-11.** `reqs.md` corrected, Q202 and Q203 logged, and two guards in `test_catalog_arithmetic.py` compare both directions and every value type. Both were watched failing against the stale document before it was fixed |
 | **P2** | **Section 3.5a's test cannot be applied by reading it.** "Has someone already applied weights?" classifies the WGI governance indices (a model over ~30 expert surveys) and WHO UHC (14 tracer indicators) as composites -- `ExternalScore`, never scored -- yet `reqs.md` 7.1 names both as scored sources. Q203 adopts a narrower reading for price indices ("does the formula encode a view of what matters?") but does not say whether it settles the other two | **Decided and fixed 2026-09-12 (Q223): the test narrows.** It now asks whether the formula **encodes a view of what matters** -- weights that trade one good against another bar a figure, weights within a single dimension do not -- which generalises the reading Q203 had already adopted for one attribute. WGI and WHO UHC stay scored, and section 3.5a names all four settled cases beside the rule, because a test that asks for judgement is only usable next to its worked examples. Applying the old test literally was the alternative, and it would have emptied two pillars with nothing raw to replace them |
-| **P3** | **The interface mock invents `country.net_median_salary`**, an attribute that does not exist in the catalog (`ui/src/mocks/fixtures.ts`). Mocks may be fictional; one naming a non-existent attribute id reads as documentation of what is available | **Open**, low. Rename to a real attribute when the fixtures are next touched |
+| **P3** | **The interface mock invents `country.net_median_salary`**, an attribute that does not exist in the catalog (`ui/src/mocks/fixtures.ts`). Mocks may be fictional; one naming a non-existent attribute id reads as documentation of what is available | **Fixed 2026-09-18.** It also weighed `country.income_tax_effective`, retired in `0445` when the total tax rate replaced it (Q205) -- and weighed it under *connectivity*, a pillar it never belonged to. Every attribute the fixtures name is now one the catalog holds. A mock may invent figures, which is what it is for; an attribute id it invents reads as a statement about what the product has |
 | **P4** | **The household's income is stored and never used.** `net_income`, `target_monthly_spend` and `max_rent` are persisted and served, and nothing in `evaluation/` reads them. Q84 says cost of living means something only against your own income; Q85 specifies rent-against-spend as a warning. Neither is built | **Open, by scope.** Confirmed out of MVP on 2026-09-11 along with rent by bedroom count, which is city-level. Recorded so the unused columns are not mistaken for dead ones |
 | **P5** | **`POST /data-acquisition-runs` fetched from the first source only.** The endpoint passed `adapters[0]` to the run while its plan counted all six, so a run through the API fetched Eurostat and nothing else, and reported itself `completed`. Every acceptance test ran against one stub source, where "the first" and "all of them" cannot differ. `make acquire` loops over every adapter itself, which is why the stored figures never showed it. Found reading the endpoint for Gate B | **Fixed 2026-09-11.** A run fans out over every source. The plan also counted an attribute twice when two sources answer it (the tax rate: OECD and the estimate); an item is now one candidate and one attribute, the unit progress counts and retry addresses. Four acceptance tests run against two sources, and failed before the fix |
 | **P6** | **OECD's API front door is intermittently closed to scripts.** `sdmx.oecd.org` answered on 2026-09-09 and served a Cloudflare browser challenge on 2026-09-11 to the identical request. The run recorded it as a bare "403 Forbidden", which reads as a fault in the request | **Open, watched.** The adapter now names the challenge (`cf-mitigated: challenge`), and OECD's stored figures are untouched. If the block persists past their `max_age`, the tax column falls to the low-confidence estimate, visibly. `catalog-blockers.md` item 5 has the options |

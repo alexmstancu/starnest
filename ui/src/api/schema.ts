@@ -696,7 +696,7 @@ export interface components {
          *       "message": "Every other weight in this pillar is locked.",
          *       "details": {
          *         "locked": [
-         *           "country.income_tax_effective"
+         *           "country.total_tax_rate_effective"
          *         ]
          *       }
          *     }

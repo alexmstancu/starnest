@@ -69,7 +69,7 @@ describe("the criteria list", () => {
     renderShell("/configure");
 
     expect(await weightInput("country.cost_of_living_index")).toHaveValue(50);
-    expect(await weightInput("country.income_tax_effective")).toHaveValue(30);
+    expect(await weightInput("country.total_tax_rate_effective")).toHaveValue(30);
     const row = (await weightInput("country.homicide_rate")).closest("tr")!;
     expect(within(row).getByRole("rowheader")).toHaveTextContent(
       "country.homicide_rate",
@@ -105,10 +105,10 @@ describe("changing a weight", () => {
     // The unlocked sibling absorbed the whole change; the locked one did not move. Both
     // figures came back from the PATCH.
     await waitFor(() =>
-      expect(shownWeight("country.income_tax_effective")).toBe("40"),
+      expect(shownWeight("country.total_tax_rate_effective")).toBe("40"),
     );
     expect(shownWeight("country.cost_of_living_index")).toBe("40");
-    expect(shownWeight("country.net_median_salary")).toBe("20");
+    expect(shownWeight("country.economic_outlook")).toBe("20");
   });
 
   it("leaves the other pillars alone", async () => {
@@ -117,7 +117,7 @@ describe("changing a weight", () => {
     await saveWeight("country.cost_of_living_index", "40");
 
     await waitFor(() =>
-      expect(shownWeight("country.income_tax_effective")).toBe("40"),
+      expect(shownWeight("country.total_tax_rate_effective")).toBe("40"),
     );
     expect(shownWeight("country.housing_cost_overburden_rate")).toBe("60");
   });
@@ -177,7 +177,7 @@ describe("changing a weight", () => {
       /must be a number/i,
     );
     // Nothing was sent, so nothing was rebalanced.
-    expect(await weightInput("country.income_tax_effective")).toHaveValue(30);
+    expect(await weightInput("country.total_tax_rate_effective")).toHaveValue(30);
   });
 
   it("offers nothing to save until the weight is actually changed", async () => {

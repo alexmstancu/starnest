@@ -51,9 +51,13 @@ export const CRITERIA_SETS: CriteriaSetSummary[] = [
  */
 function defaultCriteria(): Criterion[] {
   return [
+    // **Every attribute named here exists in the catalog** (P3). A mock may invent figures --
+    // that is what it is for -- but an attribute id it invents reads as documentation of what
+    // the product has. `country.net_median_salary` never existed, and
+    // `country.income_tax_effective` was retired in favour of the total tax rate (Q205).
     criterion("country.cost_of_living_index", "economics", 50, "minimise"),
-    criterion("country.income_tax_effective", "economics", 30, "minimise"),
-    criterion("country.net_median_salary", "economics", 20, "maximise", {
+    criterion("country.total_tax_rate_effective", "economics", 30, "minimise"),
+    criterion("country.economic_outlook", "economics", 20, "maximise", {
       weight_locked: true,
     }),
     criterion(
@@ -82,7 +86,7 @@ function defaultCriteria(): Criterion[] {
 function remoteOnlyCriteria(): Criterion[] {
   return [
     criterion("country.broadband_coverage", "connectivity", 70, "maximise"),
-    criterion("country.income_tax_effective", "connectivity", 30, "minimise"),
+    criterion("country.international_air_connectivity", "connectivity", 30, "maximise"),
   ];
 }
 

@@ -193,14 +193,23 @@ ORDER  BY v.id;
 -- data-acquisition screen reports as coverage of the catalog, and what a run plan compares
 -- against to decide what is worth fetching. Counting in the database keeps it one read
 -- instead of one per attribute.
-SELECT v.attribute,
+--
+-- **Driven from the catalog, not from the values** (D20). Grouping over `active_value` cannot
+-- say zero: an attribute nobody has fetched anything for produces no group, so it produced no
+-- row -- and a never-fetched attribute is precisely the one a planner most needs to see. The
+-- comment said "for each attribute" throughout while the statement could only answer for each
+-- attribute that already had a figure.
+SELECT a.id AS attribute,
        count(DISTINCT v.candidate) AS candidates_with_a_value
-FROM   active_value AS v
-JOIN   candidate AS c ON c.id = v.candidate
-WHERE  (:level::text IS NULL OR c.level = :level)
-  AND  (:attributes::text[] IS NULL OR v.attribute = ANY(:attributes))
-GROUP  BY v.attribute
-ORDER  BY v.attribute;
+FROM   attribute AS a
+LEFT   JOIN active_value AS v ON v.attribute = a.id
+LEFT   JOIN candidate AS c
+           ON c.id = v.candidate
+          AND (:level::text IS NULL OR c.level = :level)
+WHERE  (:level::text IS NULL OR a.level = :level)
+  AND  (:attributes::text[] IS NULL OR a.id = ANY(:attributes))
+GROUP  BY a.id
+ORDER  BY a.id;
 
 -- Appending. Insert the parent, then exactly one payload for its declared type.
 --
