@@ -59,8 +59,12 @@ def _share(payload: Ratio) -> Decimal:
 def _published_figure(payload: Index) -> Decimal:
     """The provider's own number, unrescaled.
 
-    Under `percentile` this settles nothing and needs to: every candidate is ranked on the one
-    provider's scale, so where that scale starts and stops cancels out.
+    Under `percentile` the bounds are read as well (P49), and the claim that stood here -- that
+    every candidate is ranked on the one provider's scale, so where it starts and stops cancels
+    out -- was the unsafe half of a contradiction with `PublishedFigure` below, which says
+    bounds travel with the figure precisely because two candidates may hold different
+    providers'. They cancel out only while there is one provider; `normalisation` now reads each
+    figure as a fraction of its own scale, which changes nothing when there is.
 
     Under `as_is` the figure is read as published here and rescaled by `normalisation`, from
     the bounds this returns. Decided 2026-09-05 (`docs/d6-scale-anchors.md`): rescaling from

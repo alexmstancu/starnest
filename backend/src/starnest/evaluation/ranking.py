@@ -63,6 +63,7 @@ def rank_candidates(
             f"{criteria.id} scores nothing at level {level}, so there is no ranking to produce"
         )
     criteria.refuse_unless_its_anchors_fit(score_scale_max)
+    _refuse_a_pillar_nothing_scores_into(criteria, level)
 
     weights = _level_wide_weights(criteria, scored_criteria, level)
     readings = _readings_by_criterion(scored_criteria, values)
@@ -94,6 +95,34 @@ def rank_candidates(
         for candidate in sorted(values)
     )
     return _ranked(results)
+
+
+def _refuse_a_pillar_nothing_scores_into(criteria: CriteriaSet, level: str) -> None:
+    """A pillar carrying weight that no criterion at this level claims (P48).
+
+    **Its share of the score has nowhere to go**, so the flattened weights sum to less than 100
+    and the total reads that reduced sum as the whole: pillar weights of 90/10 with an empty
+    10-pillar give a candidate answering every criterion perfectly a score of 90, and a coverage
+    of 100% -- because coverage is a share of the weights that exist. Nothing on screen could
+    explain the missing ten points.
+
+    **Refused rather than warned**, because the alternative is a number that is wrong in a way
+    the reader cannot see. `CriteriaSet.pillars_with_no_criteria` named this hazard and said it
+    "reports it instead", and had no caller at all -- the same shape as P63, and found the same
+    way.
+
+    Seeding a level's pillar weights before its criteria is how a level gets built, so this is
+    a state a set passes through legitimately. It is not a state anything may be scored in.
+    """
+    empty = [
+        pillar for pillar, its_level in criteria.pillars_with_no_criteria if its_level == level
+    ]
+    if empty:
+        raise RankingError(
+            f"{criteria.id} gives weight at level {level} to {sorted(empty)}, which no criterion "
+            "scores into, so the level would score out of less than 100. Give the pillar a "
+            "criterion or give it no weight."
+        )
 
 
 def _criteria_to_score(criteria: CriteriaSet, level: str) -> tuple[Criterion, ...]:

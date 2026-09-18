@@ -80,7 +80,7 @@ def scores_for(
         )
     if method is NormalisationMethod.PERCENTILE:
         return _by_standing(
-            [figure.magnitude for figure in published],
+            _comparable_across_publishers(published),
             goal=goal,
             score_scale_max=score_scale_max,
         )
@@ -210,6 +210,55 @@ def _mapped(figure: PublishedFigure, score_scale_max: int) -> Decimal:
     if highest <= lowest:
         return figure.magnitude
     return (figure.magnitude - lowest) / (highest - lowest) * Decimal(score_scale_max)
+
+
+def _comparable_across_publishers(
+    published: Sequence[PublishedFigure],
+) -> list[Decimal]:
+    """The column as numbers that may be ranked against each other (P49).
+
+    **Standing is a comparison, so what is compared has to be comparable.** Ranking raw
+    magnitudes is right while every figure comes from one publisher -- where the scale starts
+    and stops cancels out, which is what `magnitudes.py` says -- and wrong the moment two
+    candidates hold figures from different ones, which is what the multi-source design exists
+    for. A WHO figure of 72 on 0-100 and an OECD figure of 0.72 on -2.5..2.5 say something
+    similar, and the second ranked last of everything.
+
+    Where every figure declares its bounds, each is read as a fraction of its own scale. That
+    is **monotonic**, so a column sharing one scale keeps exactly the order it had -- which is
+    every shipped `percentile` criterion today, and why this is safe to do everywhere.
+
+    Where none declares bounds, the magnitudes are the figures: rent in euros has no scale to
+    be a fraction of. A column mixing the two is refused, because a fraction and a magnitude
+    are not the same kind of number and ranking them together would put one candidate's 0.8
+    beside another's 1,400 as though they meant something to each other.
+    """
+    bounded = [figure for figure in published if figure.published_bounds is not None]
+    if not bounded:
+        return [figure.magnitude for figure in published]
+    if len(bounded) != len(published):
+        raise NormalisationError(
+            "percentile cannot rank this column: some declare the scale they were published "
+            "on and some do not, and a fraction of a scale is not comparable with a bare "
+            "magnitude"
+        )
+    return [_as_a_fraction_of_its_own_scale(figure) for figure in published]
+
+
+def _as_a_fraction_of_its_own_scale(figure: PublishedFigure) -> Decimal:
+    """Where the figure sits between the bounds its publisher declared.
+
+    A scale of zero width is the publisher's own contradiction rather than this column's, and
+    `Index` refuses one on the way in; the guard is here so a division cannot be the way it is
+    discovered.
+    """
+    assert figure.published_bounds is not None
+    low, high = figure.published_bounds
+    if high == low:
+        raise NormalisationError(
+            f"a figure published on the scale {low} to {high} has no width to be read against"
+        )
+    return (figure.magnitude - low) / (high - low)
 
 
 def _by_standing(

@@ -728,3 +728,44 @@ class TestWhatTheRulesDoToARanking:
         )
 
         assert found["country.portugal"].match_status is MatchStatus.MATCHING
+
+
+class TestAPillarThatNothingScoresInto:
+    """**A pillar carrying weight that no criterion claims** (P48).
+
+    `_level_wide_weights` flattens each criterion's weight as `weight * pillar_weight / 100`,
+    so a pillar with weight and no criteria at this level contributes nothing -- and the
+    flattened weights then sum to less than 100, which the total reads as the whole. A
+    candidate answering *every* criterion perfectly scores 90 out of 100 with nothing on
+    screen explaining the missing ten points, and its coverage says 100%, because coverage is
+    a share of the weights that exist.
+
+    `CriteriaSet.pillars_with_no_criteria` names this exact hazard and had no production
+    caller, exactly as `declares_a_readable_scale` did (P63).
+    """
+
+    @staticmethod
+    def ninety_ten_with_an_empty_pillar():
+        """One criterion worth 90% of the level, and a housing pillar nothing scores into."""
+        return a_set(
+            [a_criterion(weight=Decimal("100"))],
+            [a_pillar_weight(weight="90"), a_pillar_weight(pillar=HOUSING, weight="10")],
+        )
+
+    def test_it_is_refused_rather_than_scored_out_of_less_than_a_hundred(self) -> None:
+        with pytest.raises(RankingError, match="housing"):
+            rank(self.ninety_ten_with_an_empty_pillar(), values_for(portugal=90, spain=10))
+
+    def test_the_refusal_says_what_to_do_about_it(self) -> None:
+        """Either the pillar gets a criterion or it gets no weight; the message names both,
+        because a refusal a reader cannot act on is barely better than a wrong number."""
+        with pytest.raises(RankingError) as refused:
+            rank(self.ninety_ten_with_an_empty_pillar(), values_for(portugal=90, spain=10))
+
+        assert "no criterion" in str(refused.value)
+
+    def test_a_set_whose_pillars_all_have_criteria_is_scored_as_before(self) -> None:
+        """The control. Every shipped set is in this state, and the check must not touch it."""
+        found = by_candidate(rank(two_pillars(), three_countries_one_missing_its_rent()))
+
+        assert found["country.portugal"].score is not None

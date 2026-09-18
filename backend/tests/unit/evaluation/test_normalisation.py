@@ -379,3 +379,73 @@ def test_a_band_is_refused_by_the_methods_that_cannot_draw_one(
                 zero_above=Decimal("38"),
             ),
         )
+
+
+class TestPercentileOverFiguresFromDifferentProviders:
+    """**Standing is a comparison, so the figures compared have to be comparable** (P49).
+
+    `percentile` ranked raw magnitudes. That is right while every figure comes from one
+    publisher -- where the scale starts and stops cancels out -- and wrong the moment two
+    candidates hold figures from different ones, which is what the multi-source design is for.
+    A WHO figure of 72 on 0-100 and an OECD figure of 0.72 on -2.5..2.5 say something similar,
+    and the second ranked dead last.
+
+    The two docstrings in `magnitudes.py` said both things: one that the scale cancels out,
+    one that bounds travel with the figure "because two candidates can legitimately hold values
+    from different providers". The code took the first, which is the unsafe half.
+    """
+
+    def test_a_figure_is_ranked_on_its_own_publishers_scale(self) -> None:
+        on_two_scales = [
+            published("72", bounds=("0", "100")),  # WHO: high on its scale
+            published("0.72", bounds=("-2.5", "2.5")),  # OECD: also high on its scale
+            published("10", bounds=("0", "100")),  # WHO: genuinely low
+        ]
+
+        scores = scores_for(
+            on_two_scales,
+            method=NormalisationMethod.PERCENTILE,
+            goal=Goal.MAXIMISE,
+            score_scale_max=A_SMALL_SCALE,
+        )
+
+        assert scores[2] < scores[1], "the OECD figure is not the worst of the three"
+        assert scores[0] > scores[2]
+
+    def test_one_publisher_ranks_exactly_as_it_always_did(self) -> None:
+        """The control, and the reason this is safe: reading each figure as a fraction of its
+        own bounds is monotonic, so a column that shares one scale keeps the order it had."""
+        one_scale = [
+            published("72", bounds=("0", "100")),
+            published("10", bounds=("0", "100")),
+            published("50", bounds=("0", "100")),
+        ]
+
+        assert scores_for(
+            one_scale,
+            method=NormalisationMethod.PERCENTILE,
+            goal=Goal.MAXIMISE,
+            score_scale_max=A_SMALL_SCALE,
+        ) == percentile(["72", "10", "50"])
+
+    def test_figures_with_no_declared_bounds_are_ranked_as_they_are(self) -> None:
+        """Most attributes are not indices and declare nothing. Rent in euros is a magnitude,
+        and there is no scale to read it as a fraction of."""
+        assert scores_for(
+            [published("1400"), published("900"), published("1100")],
+            method=NormalisationMethod.PERCENTILE,
+            goal=Goal.MINIMISE,
+            score_scale_max=A_SMALL_SCALE,
+        ) == percentile(["1400", "900", "1100"], goal=Goal.MINIMISE)
+
+    def test_a_column_mixing_bounded_and_unbounded_figures_is_refused(self) -> None:
+        """A fraction and a magnitude are not the same kind of number, and ranking them
+        together would put one candidate's 0.8 beside another's 1,400 as though they meant
+        something to each other."""
+        with pytest.raises(NormalisationError, match="some declare"):
+            scores_for(
+                [published("72", bounds=("0", "100")), published("1400")],
+                method=NormalisationMethod.PERCENTILE,
+                goal=Goal.MAXIMISE,
+                score_scale_max=A_SMALL_SCALE,
+            )
