@@ -92,3 +92,92 @@ def test_query_matches_the_schema(connection: psycopg.Connection, name: str, sql
         pytest.fail(f"{name} does not match the schema: {mismatch}")
     finally:
         connection.rollback()
+
+
+SOURCE = Path(__file__).resolve().parents[2] / "src" / "starnest"
+
+QUERIES_NOTHING_CALLS_YET = {
+    # **Superseded by writing a set whole.** `PostgresCriteriaStore` reads a set, asks the
+    # domain for the new one and writes the result back, so the per-weight statements below --
+    # and the reads that would feed them -- describe a mechanism nothing uses. The atomicity
+    # argument written into them is sound and is simply argued about something else now.
+    "update_criterion_weight": "the store writes a set whole; a slider drag goes through that",
+    "update_criterion_weights": "same: rebalancing arrives as a whole set, not a pillar",
+    "update_pillar_weights": "same: pillar weights are written with the set that holds them",
+    "select_criteria_in_pillar": "rebalancing reads the whole set, so the siblings come with it",
+    "select_criterion": "the PATCH path reads the set, not one criterion",
+    "clear_criterion_thresholds": "`delete_criteria_set_contents` clears them with everything else",
+    # **Waiting for an operation the contract does not have.** `openapi.yaml` is deliberately
+    # ahead of the code, and these are behind even that: no operation deletes a criterion, an
+    # evaluation or renames a candidate. Each is one endpoint away from being live.
+    "delete_criterion": "no operation detaches a criterion; `openapi.yaml` does not name one",
+    "delete_evaluation": "no operation discards a kept evaluation",
+    "update_candidate_name": "no operation corrects a display name",
+    # **Waiting for a feature that is planned and not built.** The run planner does not yet
+    # consider what is already fresh, and the acquisition screen does not yet report catalog
+    # coverage -- both are named in `reqs.md` and neither is written.
+    "clear_run_failure": "a failure that later succeeded in the same run is not yet unmarked",
+    "select_run_values": "nothing asks which items a run answered without their payloads",
+    "select_last_retrieval_dates": "the planner does not yet skip what is still fresh",
+    "select_attribute_coverage": "no screen reports coverage of the catalog per attribute",
+    "select_attribute_source_priority": "the overrides travel on the attribute, read with it",
+    # **Reference data nothing serves.** The four vocabularies are read from the catalog by
+    # migration and enforced by foreign keys; no endpoint lists them, and the payload dispatcher
+    # asserts against its own enum rather than against the database.
+    "select_value_types": "no endpoint lists the ten archetypes",
+    "select_units": "no endpoint lists the units a Quantity may carry",
+    "select_currencies": "no endpoint lists the currencies a Monetary may carry",
+    "select_confidence_levels": "no endpoint lists the four grades",
+    "select_household_fields": "no endpoint lists the household numbers a rule may read",
+}
+"""Queries that exist and nothing calls, each with the reason it is still here (P62).
+
+**A query nothing runs is not a failure, and being unable to tell is.** Every statement here is
+`PREPARE`d by the test above, so dead SQL stays permanently green: that proves it *can* run,
+never that anything runs it. Nineteen blocks had drifted out of use with nothing recording
+which were ahead of the code and which were simply forgotten -- including the whole weight-edit
+path, whose comment still says "a slider drag writes this".
+
+**This list is meant to shrink.** Adding a query without a caller now fails until somebody says
+why it is here, and deleting one that turns out to be forgotten is a two-line change: git
+remembers the SQL, and `Later Equals Never` says the list should not grow quietly.
+"""
+
+
+def _called_from_source(name: str) -> bool:
+    """Whether any Python under `src/` names this query.
+
+    A text search rather than an import graph, because aiosql attaches queries by name at
+    runtime: `self._queries.select_criteria_set(...)` is the only evidence there is, and it is
+    the same evidence a reader has.
+    """
+    return any(name in path.read_text() for path in SOURCE.rglob("*.py"))
+
+
+def test_every_query_is_either_called_or_accounted_for() -> None:
+    """The guard the `PREPARE` sweep above cannot be: is anything actually running this?
+
+    Two ways to fail, and the message says which. A query nothing calls and nothing explains is
+    a loose end; an entry in the exemption list that something now calls is an entry to delete.
+    """
+    # `aiosql` generates a `<name>_cursor` alias for every `select`, so those are the same
+    # statement under a second name rather than a query of their own.
+    uncalled = {
+        name
+        for name, _ in ALL_QUERIES
+        if not name.endswith("_cursor") and not _called_from_source(name)
+    }
+
+    unexplained = sorted(uncalled - set(QUERIES_NOTHING_CALLS_YET))
+    assert not unexplained, (
+        f"{len(unexplained)} quer(y|ies) nothing calls and nothing explains: "
+        f"{unexplained}. Either wire it up, delete it, or add it to "
+        "QUERIES_NOTHING_CALLS_YET with the reason it is still here."
+    )
+
+    now_called = sorted(set(QUERIES_NOTHING_CALLS_YET) - uncalled)
+    assert not now_called, (
+        f"{now_called} are called now and still listed as uncalled. Remove them from "
+        "QUERIES_NOTHING_CALLS_YET -- the list is the record of what is waiting, not a "
+        "list of everything that was ever waiting."
+    )

@@ -52,7 +52,14 @@ export function ProposalsPanel({ levelId }: { levelId: string }) {
             type="button"
             className="button"
             disabled={proposals.busy !== null}
-            onClick={() => proposals.research(levelId, acceptUncapped)}
+            onClick={() => {
+              proposals.research(levelId, acceptUncapped);
+              // **Per request, never remembered** -- which is what the comment below has
+              // always said and what the state did not do: left ticked, it authorised every
+              // later pass silently. The box is cleared as the pass is asked for, so agreeing
+              // again is a deliberate act again.
+              setAcceptUncapped(false);
+            }}
           >
             {proposals.busy === "researching"
               ? "Researching…"

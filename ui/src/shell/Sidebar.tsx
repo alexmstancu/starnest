@@ -2,6 +2,14 @@ import { NavLink } from "react-router-dom";
 import { useAppConfig } from "../config/AppConfigContext";
 import { formatCount, formatDateTime, formatMoney } from "../format/display";
 import { ROUTES } from "../navigation/routes";
+
+/**
+ * Where the Run screen lives, found once by name.
+ *
+ * The sidebar linked to `ROUTES[1]`, which meant Run only for as long as nobody reordered the
+ * list -- and reordering it is a change nothing would have failed on.
+ */
+const RUN = ROUTES.find((route) => route.label === "Run")!;
 import { ErrorNotice } from "./ErrorNotice";
 import { useSelection } from "./SelectionContext";
 import { useShellSummary } from "./useShellSummary";
@@ -144,7 +152,9 @@ function LastRunPanel({ summary }: { summary: ReturnType<typeof useShellSummary>
             <Stat label="Cost" value={formatMoney(lastRun.data.cost_eur, "EUR")} />
           </dl>
         ))}
-      <NavLink className="panel__link" to={ROUTES[1]!.path}>
+      {/* Found by label rather than by position: `ROUTES[1]` meant "Run" only for as long as
+          nobody reordered the list, and reordering it is a change nothing would have failed on. */}
+      <NavLink className="panel__link" to={RUN.path}>
         Run history
       </NavLink>
     </section>

@@ -67,6 +67,10 @@ export function CandidateDetail({
           onRetry={external.reload}
         />
       )}
+      {(external.resource.status === "loading" ||
+        external.resource.status === "idle") && (
+        <p className="screen__note">Loading…</p>
+      )}
       {external.resource.status === "ready" && (
         <ExternalScoreTable scores={external.resource.data.items} />
       )}
@@ -153,7 +157,17 @@ function ExternalScoreTable({ scores }: { scores: ExternalScore[] }) {
       </thead>
       <tbody>
         {scores.map((score) => (
-          <tr key={`${score.data_source}-${score.candidate}`}>
+          // A publisher may have more than one opinion of a candidate: the natural key in
+          // `external_score` is the publisher, the period and the moment it was read, so the
+          // key here is the same one. Keyed on publisher alone, two Numbeo indices for one
+          // country collided and React rendered one of them twice.
+          <tr
+            key={[
+              score.data_source,
+              score.reference_period?.start ?? "",
+              score.retrieval_date ?? "",
+            ].join("-")}
+          >
             <th scope="row">{score.data_source}</th>
             <td>
               {score.published_value ?? "—"}

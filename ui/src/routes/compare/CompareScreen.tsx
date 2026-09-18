@@ -216,8 +216,11 @@ function ComparisonTable({ comparison }: { comparison: Comparison }) {
         {comparators.map((each) => each.name).join(", ")}
       </h3>
 
-      {(comparison.synthesis ?? []).map((pair) => (
-        <section key={pair.comparator ?? "pair"} className="panel">
+      {/* Keyed by position as well as by name: `comparator` is optional in the contract, so
+          two pairs without one shared the key "pair" -- and a sentence can legitimately repeat
+          between pairs. A key has to be unique among siblings, not meaningful. */}
+      {(comparison.synthesis ?? []).map((pair, at) => (
+        <section key={`${pair.comparator ?? "pair"}-${at}`} className="panel">
           <h4 className="panel__heading">
             {nameOf(comparison, pair.comparator ?? "")}: {formatSigned(pair.score_delta)} points
           </h4>
@@ -230,8 +233,8 @@ function ComparisonTable({ comparison }: { comparison: Comparison }) {
               <dt className="stat__label">Ahead on</dt>
               <dd className="stat__value">
                 <ul>
-                  {(pair.advantages ?? []).map((line) => (
-                    <li key={line}>{line}</li>
+                  {(pair.advantages ?? []).map((line, at) => (
+                    <li key={`${at}-${line}`}>{line}</li>
                   ))}
                 </ul>
               </dd>
@@ -240,8 +243,8 @@ function ComparisonTable({ comparison }: { comparison: Comparison }) {
               <dt className="stat__label">Behind on</dt>
               <dd className="stat__value">
                 <ul>
-                  {(pair.disadvantages ?? []).map((line) => (
-                    <li key={line}>{line}</li>
+                  {(pair.disadvantages ?? []).map((line, at) => (
+                    <li key={`${at}-${line}`}>{line}</li>
                   ))}
                 </ul>
               </dd>

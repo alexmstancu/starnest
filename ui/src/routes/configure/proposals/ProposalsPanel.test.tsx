@@ -169,6 +169,39 @@ describe("spending money on research", () => {
     expect(sent[1]).toMatchObject({ accept_uncapped_spend: true });
   });
 
+  it("does not remember the acceptance into the next pass", async () => {
+    // **Per request, never remembered** -- which the panel's own comment claimed while the
+    // checkbox stayed ticked, so one agreement authorised every later pass in silence.
+    const sent: unknown[] = [];
+    const user = userEvent.setup();
+    mockServer.use(
+      http.post(`${BASE}/match-rule-research`, async ({ request }) => {
+        sent.push(await request.json());
+        return HttpResponse.json({
+          proposals: [],
+          cost_eur: 0,
+          calls: 0,
+          halted_on_spend_cap: false,
+        });
+      }),
+    );
+    renderShell("/configure");
+    await settled();
+    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
+    await screen.findByText(/64 gate answers to research/i);
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /accept an uncapped spend/i }),
+    );
+    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+    await waitFor(() => expect(sent).toHaveLength(2));
+
+    expect(sent[0]).toMatchObject({ accept_uncapped_spend: true });
+    expect(sent[1]).toMatchObject({ accept_uncapped_spend: false });
+  });
+
   it("shows the refusal when no spend cap is set", async () => {
     const user = userEvent.setup();
     mockServer.use(
