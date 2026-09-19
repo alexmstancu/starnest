@@ -134,13 +134,28 @@ class TestWhatIsActuallyWiredIn:
         # because of configuration rather than because of code.
         assert paid <= {"llm"}
 
-    def test_no_two_adapters_claim_to_be_the_same_source(self) -> None:
-        """Two adapters sharing a `data_source` would write values indistinguishable in
-        provenance, and the active-value rule picks between sources by name."""
+    def test_no_two_adapters_answer_one_attribute_as_the_same_source(self) -> None:
+        """Provenance has to say which adapter answered, and it names a source and an attribute.
+
+        **The pair is the grain, not the source alone.** This asserted that no two adapters
+        share a `data_source`, which was true only while every publisher had one route to it.
+        OECD now has two -- an API for the tax wedge, a workbook for the Family Database -- and
+        they answer disjoint attributes, so nothing is ambiguous: `run.py` asks an adapter only
+        about the attributes it declares, and a retry narrows by intersecting with them. Giving
+        the workbook a second source id to keep the old wording would put a falsehood in the
+        provenance, because an OECD figure read off OECD's own file is an OECD figure.
+
+        `check_declarations` enforces exactly this at boot and is the authority; this restates
+        it over what the composition root actually wires.
+        """
         _, app = build()
 
-        sources = [str(adapter.data_source) for adapter in app.state.adapters]
-        assert len(sources) == len(set(sources))
+        claims = [
+            (str(adapter.data_source), str(attribute))
+            for adapter in app.state.adapters
+            for attribute in adapter.attributes
+        ]
+        assert len(claims) == len(set(claims))
 
     def test_every_store_the_routers_read_is_present(self) -> None:
         """`api/` reads these off `app.state` by name, so a missing one is an `AttributeError`
