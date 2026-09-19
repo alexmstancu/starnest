@@ -5,6 +5,8 @@ served; `reqs.md` 6.5 that a value may be typed only where its attribute says so
 3.7 that a gate's answer carry its sources and an audited override.
 """
 
+from typing import ClassVar
+
 import httpx
 import pytest
 
@@ -255,19 +257,34 @@ class TestTheGates:
 
 
 class TestTheCompoundRules:
-    async def test_both_shipped_rules_come_back_undecided(self, api: httpx.AsyncClient) -> None:
-        """`reqs.md` 7.4 leaves every threshold TBD, so both are listed with no bounds and
-        fire nothing. A rule fired on a number nobody chose is the fabricated judgement this
-        application exists to prevent."""
+    async def test_the_decided_rule_carries_its_bounds_and_the_other_carries_none(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """One of the two has been decided, and the difference is visible over the wire.
+
+        `cheap_but_taxed` got its numbers on 2026-09-19 (`0474`): cheap is a cost of living at
+        or below 80 on an index where EU27 is 100, taxed a total rate at or above 40% of the
+        whole cost of employment. `mild_now_brutal_later` is still TBD in `reqs.md` 7.4 and
+        reads an attribute no source answers, so there is nothing to decide against -- and a
+        number invented for it would be the fabricated judgement this application prevents.
+        """
         body = (await api.get("/v1/compound-rules", params={"level": "country"})).json()
 
         rules = {rule["id"]: rule for rule in body["items"]}
         assert set(rules) == {"cheap_but_taxed", "mild_now_brutal_later"}
         assert all(rule["outcome"] == "warning" for rule in rules.values())
+
+        decided = {
+            condition["attribute"]: (condition["threshold_min"], condition["threshold_max"])
+            for condition in rules["cheap_but_taxed"]["conditions"]
+        }
+        assert decided == {
+            "country.cost_of_living_index": (None, 80),
+            "country.total_tax_rate_effective": (40, None),
+        }
         assert all(
             condition["threshold_min"] is None and condition["threshold_max"] is None
-            for rule in rules.values()
-            for condition in rule["conditions"]
+            for condition in rules["mild_now_brutal_later"]["conditions"]
         )
 
     async def test_each_rule_names_the_attributes_it_reads(self, api: httpx.AsyncClient) -> None:
@@ -311,3 +328,199 @@ class TestExternalScores:
         body = (await api.get("/v1/external-scores", params={"candidate": "country.greece"})).json()
 
         assert body["items"] == []
+
+
+class TestTheWarningTheHouseholdDecided:
+    """`cheap_but_taxed`, end to end: figures in, warning out (`0474`).
+
+    **A warning is the third thing a ranking can say.** It changes neither the score nor the
+    match status -- Romania keeps both -- and it says the one thing the score cannot: that the
+    cost advantage is partly taken back in tax. The cost-of-living criterion already rewards
+    being cheap; this is about the pair.
+    """
+
+    @staticmethod
+    async def figures_for(database_url: str, pairs: dict[str, tuple[str, str]]) -> None:
+        """A cost of living and a total tax rate per country, as the rule reads them."""
+        from datetime import UTC, date, datetime
+        from decimal import Decimal
+
+        from psycopg_pool import AsyncConnectionPool
+
+        from starnest.data import (
+            ConfidenceLevel,
+            Index,
+            Quantity,
+            Ratio,
+            ReferencePeriod,
+            Value,
+            ValueType,
+        )
+        from starnest.storage import PostgresValueStore
+
+        a_year = ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 12, 31))
+
+        def other(candidate: str, attribute: str, payload: object) -> Value:
+            return Value(
+                candidate=candidate,
+                attribute=attribute,
+                value_type=payload.value_type,  # type: ignore[attr-defined]
+                data_source="eurostat",
+                reference_period=a_year,
+                retrieval_date=datetime.now(UTC),
+                confidence_level=ConfidenceLevel.HIGH,
+                payload=payload,  # type: ignore[arg-type]
+            )
+
+        written = []
+        for candidate, (cost, tax) in pairs.items():
+            # **Six criteria block in the shipped set, and a blocked candidate is never
+            # judged by a rule** -- the rules judge a candidate that *could* be scored, so
+            # "the tax is high here" is never said about a country whose tax nobody has. Four
+            # of the six are nothing to do with this warning and are supplied so the fifth and
+            # sixth can be.
+            written.extend(
+                [
+                    other(
+                        candidate,
+                        "country.political_economic_stability",
+                        Index(
+                            value=Decimal("0.8"),
+                            provider="World Bank WGI",
+                            scale_min=Decimal("-2.5"),
+                            scale_max=Decimal("2.5"),
+                        ),
+                    ),
+                    other(
+                        candidate,
+                        "country.rule_of_law",
+                        Index(
+                            value=Decimal("0.7"),
+                            provider="World Bank WGI",
+                            scale_min=Decimal("-2.5"),
+                            scale_max=Decimal("2.5"),
+                        ),
+                    ),
+                    other(
+                        candidate,
+                        "country.healthcare_system_quality",
+                        Index(
+                            value=Decimal(78),
+                            provider="WHO UHC",
+                            scale_min=Decimal(0),
+                            scale_max=Decimal(100),
+                        ),
+                    ),
+                    other(
+                        candidate,
+                        "country.homicide_rate",
+                        Quantity(magnitude=Decimal("1.2"), unit="per_100000_population"),
+                    ),
+                ]
+            )
+            written.append(
+                Value(
+                    candidate=candidate,
+                    attribute="country.cost_of_living_index",
+                    value_type=ValueType.QUANTITY,
+                    data_source="eurostat",
+                    reference_period=a_year,
+                    retrieval_date=datetime.now(UTC),
+                    confidence_level=ConfidenceLevel.HIGH,
+                    payload=Quantity(magnitude=Decimal(cost), unit="eu27_average_100"),
+                )
+            )
+            written.append(
+                Value(
+                    candidate=candidate,
+                    attribute="country.total_tax_rate_effective",
+                    value_type=ValueType.RATIO,
+                    data_source="eurostat",
+                    reference_period=a_year,
+                    retrieval_date=datetime.now(UTC),
+                    confidence_level=ConfidenceLevel.HIGH,
+                    payload=Ratio(value=Decimal(tax), basis="labour_cost"),
+                )
+            )
+        async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+            await pool.open(wait=True)
+            async with pool.connection() as connection:
+                await connection.execute(
+                    "INSERT INTO settings (id, score_scale_max) VALUES (1, 100)"
+                    " ON CONFLICT (id) DO UPDATE SET score_scale_max = 100, min_coverage = NULL"
+                )
+            await PostgresValueStore(pool).append(written)
+
+    async def ranked(self, api: httpx.AsyncClient) -> dict:
+        body = (
+            await api.get(
+                "/v1/rankings", params={"criteria_set": "local_employment", "level": COUNTRY}
+            )
+        ).json()
+        return {candidate["candidate"]: candidate for candidate in body["candidates"]}
+
+    # Their own figures, and the four cases the pair of numbers has to tell apart. **Four
+    # countries rather than one, because `percentile` cannot place a single candidate**: a
+    # column of one has no standing to report, so the blocking criteria could not be scored
+    # and nothing was judged at all.
+    THE_ROSTER: ClassVar = {
+        "country.romania": ("65.1", "42.8"),  # cheap and taxed
+        "country.bulgaria": ("62.5", "33.0"),  # cheaper still, and lightly taxed
+        "country.poland": ("73.3", "39.2"),  # cheap, and just under the line
+        "country.belgium": ("116.2", "58.6"),  # taxed hardest of anybody, and expensive
+    }
+
+    async def test_a_cheap_country_taxed_heavily_is_warned(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """Romania's own figures: 65.1 on the index, 42.8% of the cost of employment."""
+        await self.figures_for(database_url, self.THE_ROSTER)
+
+        romania = (await self.ranked(api))["country.romania"]
+
+        assert [w["compound_rule"] for w in romania["warnings"]] == ["cheap_but_taxed"]
+        # The detail carries the figures that made it fire, so a reader can check the judgement
+        # rather than take it (`reqs.md` 3.7a).
+        assert "65.1" in romania["warnings"][0]["detail"]
+        assert "42.8" in romania["warnings"][0]["detail"]
+
+    async def test_it_changes_neither_the_score_nor_the_status(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """**A warning flags; it does not rule out** (`reqs.md` 5.4)."""
+        await self.figures_for(database_url, self.THE_ROSTER)
+
+        romania = (await self.ranked(api))["country.romania"]
+
+        assert romania["match_status"] == "matching", romania["insufficient_reason"]
+        assert romania["score"] is not None
+        assert romania["non_match_reasons"] == []
+
+    async def test_cheap_and_lightly_taxed_is_not_warned(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """**Bulgaria is the reason the rule takes two numbers.** It is the cheapest country on
+        the roster at 62.5 and taxes at 33%, so the advantage is not taken back -- and a rule
+        that warned here would only be saying "cheap", which the criterion already scores."""
+        await self.figures_for(database_url, self.THE_ROSTER)
+
+        assert (await self.ranked(api))["country.bulgaria"]["warnings"] == []
+
+    async def test_expensive_and_heavily_taxed_is_not_warned(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """Belgium taxes most of anybody at 58.6% and costs 116. Heavy tax alone is not this
+        warning: there is no cheapness being taken back."""
+        await self.figures_for(database_url, self.THE_ROSTER)
+
+        assert (await self.ranked(api))["country.belgium"]["warnings"] == []
+
+    async def test_a_country_just_under_the_tax_line_is_not_warned(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """Poland at 39.2% against a bound of 40. **The boundary is where a threshold either
+        means something or does not**, and 0.8 of a percentage point is the whole difference
+        between this country and Romania as far as this rule is concerned."""
+        await self.figures_for(database_url, self.THE_ROSTER)
+
+        assert (await self.ranked(api))["country.poland"]["warnings"] == []

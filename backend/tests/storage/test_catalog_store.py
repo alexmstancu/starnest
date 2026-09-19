@@ -13,6 +13,7 @@ test is expected to fail it loudly rather than quietly stop proving anything.
 """
 
 from collections.abc import Callable
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -319,21 +320,50 @@ async def test_a_rule_comes_back_reading_the_attributes_it_was_seeded_to_read(
     assert [condition.ordinal for condition in rule.conditions] == [1, 2]
 
 
-async def test_the_shipped_rules_come_back_undecided_rather_than_defaulted(
+async def test_the_rule_the_household_decided_comes_back_with_its_bounds(
     catalog: PostgresCatalogStore,
 ) -> None:
-    """Every threshold in `reqs.md` 7.4 is TBD, so a null bound must survive the read as one.
+    """`cheap_but_taxed` was decided on 2026-09-19, against the figures (`0474`).
 
-    A default invented here would be a rule firing on a number nobody chose, which is the
-    fabricated judgement the application exists to prevent (`devplan.md` 0.3 rule 2).
+    Cheap is a cost of living at or below 80 on an index where EU27 is 100; taxed is a total
+    rate at or above 40% of the whole cost of employment. Both were TBD until all 32 countries
+    had both figures, which is the point -- the numbers were chosen by looking at the roster
+    rather than in the abstract.
     """
     rules = await catalog.read_compound_rules(level="country")
 
-    assert not any(rule.is_decided for rule in rules)
+    rule = next(rule for rule in rules if rule.id == A_RULE_THAT_READS_TWO_ATTRIBUTES)
+
+    assert rule.is_decided
+    bounds = {
+        str(condition.attribute): (condition.threshold_min, condition.threshold_max)
+        for condition in rule.conditions
+    }
+    assert bounds == {
+        "country.cost_of_living_index": (None, Decimal(80)),
+        "country.total_tax_rate_effective": (Decimal(40), None),
+    }
+
+
+async def test_a_rule_nobody_has_decided_still_comes_back_undecided(
+    catalog: PostgresCatalogStore,
+) -> None:
+    """`mild_now_brutal_later` is still TBD in `reqs.md` 7.4, and reads an attribute no source
+    answers yet, so there is nothing to decide against.
+
+    A default invented here would be a rule firing on a number nobody chose, which is the
+    fabricated judgement the application exists to prevent (`devplan.md` 0.3 rule 2). **This
+    test used to assert it of every rule**, and said so in its name -- which was true until a
+    household made one of the two judgements it exists to make.
+    """
+    rules = await catalog.read_compound_rules(level="country")
+
+    undecided = next(rule for rule in rules if rule.id == "mild_now_brutal_later")
+
+    assert not undecided.is_decided
     assert all(
         condition.threshold_min is None and condition.threshold_max is None
-        for rule in rules
-        for condition in rule.conditions
+        for condition in undecided.conditions
     )
 
 
