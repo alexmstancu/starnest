@@ -1563,7 +1563,7 @@ floor — is exactly that, and belongs here rather than in section 3.7 once its 
 section 3.7 keeps the rules that carry a judgement with nothing to compute.
 
 **Which rules a criteria set applies is a preference**, held in `criteria_set_compound_rule`, on
-the same footing as match-rule enforcement. You may want the rent warning while Partner does not.
+the same footing as match-rule enforcement. You may want the rent warning while your partner does not.
 
 **Both mechanisms speak one vocabulary.** A criterion's `matching_threshold` and a `MatchRule`
 are different mechanisms — one reads a measured value, the other carries a judgement — but they
@@ -1882,7 +1882,7 @@ Liechtenstein + United Kingdom + Switzerland**, 32 countries.
 (section 7.3), recorded per candidate with a reason and a date. This costs no new structure and gets
 three things for free: the candidate keeps its score and stays visible in the non-matching
 section, the reason travels with it, and **whether the exclusion applies is a property of the
-criteria set** — you may rule out a country that Partner still wants scored.
+criteria set** — you may rule out a country that your partner still wants scored.
 
 > **Ruling a place out is a preference, not a fact about the place.** A flag on the candidate
 > would assert that nobody could consider it, which is a judgement wearing a fact's clothing, and
@@ -2983,7 +2983,7 @@ Recorded from a front-to-back read of this document.
 | Q149 | **The catalog is data in the database, not config files** | A file and a table holding the same rows are two stores that drift, with no link between them and no way for either to win in every code path. One store gives referential integrity for free, puts catalog changes under the same audit as every other table, and makes them transactional. Git remains the history, through migration scripts |
 | Q150 | **Auditing is PostgreSQL's own statement log**, not an audit table we maintain | `log_statement = 'mod'` records every statement that changes state, with no schema, no triggers and nothing to keep in sync. It logs statements rather than row states, which is enough because the three changes that could silently alter a result are each covered by something stronger: the catalog by migrations in git, a past ranking's criteria by the evaluation snapshot, and measurements by the value table never being overwritten. `'mod'` rather than `'all'` so reads do not bury writes |
 | Q151 | `Candidate` gains a `name` for display; official and alternate names stay descriptive attributes | The most common query in the application should not need a join to learn that `country.portugal` is called Portugal. The sourced official form remains an attribute with provenance |
-| Q152 | **Excluding a candidate is the `not_manually_excluded` match rule**, not a flag | Ruling a place out is a preference, so it belongs on the subjective side. As a match rule it costs no new structure and inherits visibility, a reason, dates, and per-criteria-set enforcement — Partner can still score a country you have ruled out |
+| Q152 | **Excluding a candidate is the `not_manually_excluded` match rule**, not a flag | Ruling a place out is a preference, so it belongs on the subjective side. As a match rule it costs no new structure and inherits visibility, a reason, dates, and per-criteria-set enforcement — your partner can still score a country you have ruled out |
 | Q153 | The level hierarchy is enforced by `LEVEL.parent_level` plus a composite key on the candidate | A city parented to a city becomes impossible to insert. Candidates are seeded by migration, where that mistake is easy and silent |
 | Q154 | **Exchange rates are a first-class table**, sourced and dated | Otherwise the rate is the only number in the system without provenance, and two values converted hours apart on the same day carry different rates, making a cost comparison quietly wrong |
 | Q155 | **An evaluation is written only when deliberately kept** | Adjusting a weight recalculates in memory; nothing is stored. Persisting every recalculation would write hundreds of near-identical snapshots from one afternoon of tuning, and bury the few that matter |
