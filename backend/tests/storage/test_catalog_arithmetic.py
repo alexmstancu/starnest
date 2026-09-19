@@ -452,3 +452,52 @@ def test_every_scored_criterion_uses_a_method_its_value_type_allows(
         if method not in legal[value_type]
     ]
     assert illegal == [], f"methods reqs.md 3.3a does not allow: {illegal}"
+
+
+def test_every_transcribed_attribute_has_a_criterion_that_can_actually_score_it(
+    connection: psycopg.Connection,
+) -> None:
+    """**Added 2026-09-19, after a transcription landed and changed nothing.**
+
+    OECD's parental-leave figures were stored for 31 countries and the ranking did not move by
+    a hundredth: the criterion is `fixed`, and a `fixed` criterion with fewer than two scale
+    anchors cannot place a figure, so `_scores_by_criterion` hands back an empty column. Nothing
+    failed and nothing said so. Coverage stayed honest -- it counts what scored, not what was
+    found -- which is exactly why the gap was silent: every number on screen was correct, and
+    the day's work had bought nothing.
+
+    So a transcription is only finished when its attribute can be scored. An attribute with no
+    criterion is descriptive and fine (`reqs.md` 3.0); an attribute a set scores and cannot
+    place is an unfinished job wearing the clothes of a complete one.
+
+    **The rule here mirrors `Criterion.declares_a_readable_scale`, which is the authority.**
+    It is restated in SQL because this check runs against the shipped catalog rather than
+    against objects, and the mirror is narrow: a non-`fixed` method carries its own scale, a
+    `target_range` goal is scored from its band (P63), and everything else needs two anchors.
+    """
+    from starnest.data_sources.published_tables import every_published_table
+
+    transcribed = sorted({table.attribute for table in every_published_table()})
+    assert transcribed, "no transcription found to check"
+
+    unscoreable = connection.execute(
+        """
+        SELECT c.criteria_set, c.attribute
+        FROM   criterion c
+        WHERE  c.is_scored
+          AND  c.attribute = ANY(%s)
+          AND  c.normalisation_method = 'fixed'
+          AND  NOT (
+                   (c.goal = 'target_range'
+                    AND c.target_range_min IS NOT NULL AND c.target_range_max IS NOT NULL)
+                OR (SELECT count(*) FROM criterion_scale_anchor a WHERE a.criterion = c.id) >= 2
+               )
+        ORDER  BY 1, 2
+        """,
+        (transcribed,),
+    ).fetchall()
+
+    assert unscoreable == [], (
+        "these attributes have transcribed figures and a criterion that cannot place them, "
+        f"so the figures score nothing: {unscoreable}"
+    )
