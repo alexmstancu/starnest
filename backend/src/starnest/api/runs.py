@@ -30,6 +30,7 @@ from starnest.api.dependencies import (
 from starnest.data_acquisition import (
     NOTHING,
     Run,
+    RunAlreadyInFlightError,
     ask_again,
     asked_this_run,
     execute_run,
@@ -190,12 +191,19 @@ async def start_run(
     with 409 unless the request accepts an uncapped one -- nothing here invents a ceiling
     (`reqs.md` 6.3).
 
+    **One run at a time** (P35). A start while a run is already going is refused with 409
+    `run_already_in_flight`, naming the run to poll instead. The rule is not new --
+    `sweep_abandoned_runs` already depends on it, turning whatever is still `running` at boot
+    into `failed` because a run in flight when nothing is running it is a run whose process
+    died -- but nothing enforced it at this end, and that is what made a second *paid* run
+    possible.
+
     **It runs inline today, and the response carries a finished run.** 202 is still right --
     the work was accepted and the client polls the id either way -- but claiming the run is in
     flight when it is not would be a lie a screen could act on. A full sweep of every source
-    fits in one request, and a background task would add a lifecycle to manage for no benefit
-    anybody can currently see. Making it genuinely asynchronous is a change here and nowhere else,
-    because the run record already holds everything the polling endpoint reads (`arch.md` 8.4).
+    fits in one request, and a background task would add a lifecycle to manage. Making it
+    genuinely asynchronous is a change here and nowhere else, because the run record already
+    holds everything the polling endpoint reads (`arch.md` 8.4).
 
     The run row exists before any figure is fetched, so a process that dies mid-run leaves a
     visibly unfinished run rather than nothing at all.
@@ -205,6 +213,15 @@ async def start_run(
     # A source that charges is asked only when the run names the attributes it wants: a sweep
     # over a level asks the free sources for whole indicators, and asking a paid one the same
     # way would be hundreds of calls nobody chose (`asked_this_run`).
+    # **One run at a time** (P35). Asked before anything is read or fetched, because the harm
+    # this prevents is a *second* paid run: starting one answers 202 and then blocks, so a
+    # client timeout looks like a failure, and trying again is what a failure invites.
+    in_flight = await runs.run_in_flight()
+    if in_flight is not None:
+        raise RunAlreadyInFlightError(
+            f"run {in_flight} is still going, and one household runs one pass at a time "
+            f"(reqs.md 10). Poll run {in_flight} rather than starting another."
+        )
     asked = asked_this_run(adapters, attributes_named=scope.attributes is not None)
     # The cap is a setting the household edits (`reqs.md` 3.10) and is read per run, so a cap
     # set after a refusal takes effect on the next request rather than at the next restart.

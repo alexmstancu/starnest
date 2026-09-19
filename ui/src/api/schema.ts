@@ -2076,9 +2076,16 @@ export interface operations {
                 };
             };
             /**
-             * @description The run would ask a source that charges and no spend cap is set. Set
-             *     `run_spend_cap_eur`, or send `accept_uncapped_spend: true` to accept an uncapped
-             *     run — nothing invents a ceiling on the household's behalf (`reqs.md` 6.3).
+             * @description Two refusals share this status and are told apart by `code`.
+             *
+             *     `spend_cap_not_set` — the run would ask a source that charges and no spend cap is
+             *     set. Set `run_spend_cap_eur`, or send `accept_uncapped_spend: true` to accept an
+             *     uncapped run; nothing invents a ceiling on the household's behalf (`reqs.md` 6.3).
+             *
+             *     `run_already_in_flight` — a run is already going, and one household runs one pass
+             *     at a time (`reqs.md` 10). The message names the run: poll it rather than starting
+             *     another. This is what stops a client timeout, which is indistinguishable from a
+             *     failure, from being retried into a second concurrent run.
              */
             409: {
                 headers: {

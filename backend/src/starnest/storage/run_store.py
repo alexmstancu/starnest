@@ -143,6 +143,11 @@ class PostgresRunStore(RunStore):
         async with acquire(self._pool) as connection:
             return int(await self._queries.count_runs(connection))
 
+    async def run_in_flight(self) -> int | None:
+        async with acquire(self._pool) as connection:
+            row = await self._queries.select_run_in_flight(connection)
+        return None if row is None else int(row.id)
+
     async def sweep_abandoned_runs(self, *, finished_at: datetime) -> tuple[int, ...]:
         async with acquire(self._pool) as connection:
             # Read as a select rather than as an update, because `RETURNING id` gives one row

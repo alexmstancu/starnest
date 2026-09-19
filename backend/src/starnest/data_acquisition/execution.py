@@ -262,6 +262,21 @@ class NothingToFetchError(ValueError):
     """
 
 
+class RunAlreadyInFlightError(ValueError):
+    """A run was asked for while one was already going (P35).
+
+    **One household on one machine runs one pass at a time** (`reqs.md` 10), and
+    `sweep_abandoned_runs` already depends on that: it turns whatever is still `running` at boot
+    into `failed`, because a run in flight when nothing is running it is a run whose process
+    died. Nothing enforced the rule at the other end.
+
+    That is what made the 2.70 EUR mistake possible. Starting a run answers 202 and then blocks
+    for the whole run, so a client timeout is indistinguishable from a failure -- and the
+    obvious response to a failure is to try again, which started a second paid run beside the
+    first. A state conflict, so the API answers 409 and names the run to poll instead.
+    """
+
+
 class NothingToRetryError(ValueError):
     """A retry of a run that failed on nothing. A new run over an empty scope would be a no-op
     recorded as though it were work."""

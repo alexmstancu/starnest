@@ -134,6 +134,11 @@ class RecordingRunStore(RunStore):
     async def count_runs(self) -> int:
         return 0
 
+    async def run_in_flight(self) -> int | None:
+        """Nothing is in flight here: these tests call the domain directly, and the one-run-at-
+        a-time rule is the API's to enforce (P35). Implemented because the port declares it."""
+        return None
+
     async def sweep_abandoned_runs(self, *, finished_at: datetime) -> tuple[int, ...]:
         return ()
 

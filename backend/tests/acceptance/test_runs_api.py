@@ -715,3 +715,68 @@ def _a_source_that_answers_the_second_time() -> SourceAdapter:
             )
 
     return RelentingSource()
+
+
+class TestOnlyOneRunAtATime:
+    """**A second run while one is in flight is refused** (P35).
+
+    The rule is already written down: `sweep_abandoned_runs` says "nothing else starts a run
+    (`reqs.md` 10), so a run in flight at boot is one whose process died". Nothing enforced it.
+
+    That is what made the 2.70 EUR mistake possible. `POST /data-acquisition-runs` answers 202
+    and then blocks for the whole run, so a 40-second client timeout is indistinguishable from
+    a failure -- and the obvious response to a failure is to try again, which started a second
+    paid run beside the first. Both were killed; neither finished; nothing was stored.
+    """
+
+    @staticmethod
+    async def a_run_left_in_flight(database_url: str) -> int:
+        """A `running` row, which is what a run genuinely in flight looks like."""
+        from starnest.data_acquisition import RunScope
+        from starnest.storage import PostgresRunStore
+
+        async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+            await pool.open(wait=True)
+            return await PostgresRunStore(pool).start_run(
+                RunScope(level=COUNTRY, candidates=("country.portugal",), attributes=(OVERBURDEN,)),
+                triggered_by="a run that is still going",
+            )
+
+    async def test_a_second_start_is_refused_while_one_is_running(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        in_flight = await self.a_run_left_in_flight(database_url)
+
+        refused = await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+
+        assert refused.status_code == 409
+        assert refused.json()["code"] == "run_already_in_flight"
+        # Naming it is the point: the client's next move is to poll that run, not to try again.
+        assert str(in_flight) in refused.json()["message"]
+
+    async def test_nothing_is_fetched_by_the_refused_request(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """A refusal that had already written values would be a second run in all but name."""
+        await self.a_run_left_in_flight(database_url)
+
+        await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+
+        assert (await api.get("/v1/values")).json()["total"] == 0
+
+    async def test_a_run_starts_normally_when_nothing_is_in_flight(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """The control. One at a time is a limit of one, not a limit of none."""
+        started = await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+
+        assert started.status_code == 202
+
+    async def test_a_finished_run_does_not_block_the_next_one(self, api: httpx.AsyncClient) -> None:
+        """The other control: a run that has ended is not in flight, whatever its outcome."""
+        first = await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+        assert first.status_code == 202
+
+        second = await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+
+        assert second.status_code == 202

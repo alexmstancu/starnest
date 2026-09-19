@@ -132,6 +132,17 @@ class RunStore(ABC):
         """How many runs there are, for the `total` beside a page."""
 
     @abstractmethod
+    async def run_in_flight(self) -> int | None:
+        """The run that is currently going, if one is.
+
+        **One run at a time** (P35). `reqs.md` 10 is one household on one machine, and
+        `sweep_abandoned_runs` already relies on that: it turns whatever is still `running` at
+        boot into `failed`, because a run in flight when nothing is running it is a run whose
+        process died. This is the same rule enforced at the other end, before a second run can
+        start beside the first.
+        """
+
+    @abstractmethod
     async def sweep_abandoned_runs(self, *, finished_at: datetime) -> tuple[int, ...]:
         """Mark every run still `running` as `failed`, and say which (`arch.md` 9.2 step 4).
 

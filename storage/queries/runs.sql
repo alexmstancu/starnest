@@ -242,6 +242,22 @@ WHERE  (:level::text IS NULL OR c.level = :level)
 GROUP  BY v.candidate, v.attribute
 ORDER  BY v.candidate, v.attribute;
 
+-- name: select_run_in_flight()^
+-- The run that is currently going, if one is. At most one row by design: nothing else starts a
+-- run (reqs.md 10), and `start_run` refuses while this returns anything (P35).
+--
+-- The same definition `sweep_abandoned_runs` below uses, from the other end -- that one turns
+-- what is still running at boot into `failed`, because a run in flight when nothing is running
+-- it is a run whose process died. Between them, `running` means exactly what it says.
+SELECT r.id,
+       r.run_status,
+       r.started_at,
+       r.triggered_by
+FROM   data_acquisition_run AS r
+WHERE  r.run_status = 'running'
+ORDER  BY r.started_at
+LIMIT  1;
+
 -- name: sweep_abandoned_runs(finished_at)
 -- Anything still `running` when the application starts was abandoned: nothing else starts a run
 -- (reqs.md 10), so a run in flight at boot is one whose process died (arch.md 9.2 step 4).
