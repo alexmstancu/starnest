@@ -780,3 +780,51 @@ class TestOnlyOneRunAtATime:
         second = await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
 
         assert second.status_code == 202
+
+
+class TestTheResponseComesBeforeTheWork:
+    """**202 means accepted, and now it means it** (P35).
+
+    The contract has always said "started, poll for progress", and `RunProgress` and `getRun`
+    exist precisely so a client can. The endpoint awaited the whole run inline, so a 160-item
+    LLM run held the connection for minutes: a client timeout was indistinguishable from a
+    failure, and retrying started a second concurrent run.
+
+    The fetching is a background task now, so the response is built and sent first. That is
+    what these assertions turn on -- the body reports a run still `running`, and polling the
+    same id afterwards shows it finished.
+    """
+
+    async def test_the_response_reports_a_run_that_is_still_going(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        started = await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+
+        assert started.status_code == 202
+        # Built before a single figure was fetched. If this said `completed`, the work had
+        # already happened and the 202 was a description of the past.
+        assert started.json()["run_status"] == "running"
+        assert started.json()["finished_at"] is None
+
+    async def test_the_same_run_is_finished_when_it_is_polled(self, api: httpx.AsyncClient) -> None:
+        """The other half: the client's id is good, and the record fills in behind it."""
+        started = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+        detail = (await api.get(f"/v1/data-acquisition-runs/{started['id']}")).json()
+
+        assert detail["id"] == started["id"]
+        assert detail["run_status"] == "completed"
+        assert detail["progress"]["items_total"] > 0
+
+    async def test_a_refusal_still_comes_back_as_a_refusal(self, database_url: str) -> None:
+        """**Every refusal is made before the response**, which is the whole reason `open_run`
+        is a separate half. A spend cap checked in the background would be checked after the
+        client had been told the run started."""
+        async with an_api(database_url, (a_stub_source(charges=True),)) as api:
+            refused = await api.post(
+                "/v1/data-acquisition-runs",
+                json={"level": COUNTRY, "attributes": [OVERBURDEN]},
+            )
+
+        assert refused.status_code == 409
+        assert refused.json()["code"] == "spend_cap_not_set"

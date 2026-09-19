@@ -16,7 +16,7 @@ screen say which pass produced it, and what makes "re-run just this" answerable 
 
 import logging
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -39,7 +39,27 @@ MANUAL = "user"
 starts runs (`reqs.md` 10)."""
 
 
-async def execute_run(
+@dataclass(frozen=True)
+class OpenedRun:
+    """A run whose row exists and whose refusals have all been made.
+
+    What `continue_run` needs and nothing more. Frozen because the fetching may happen after
+    the response that reported the run has gone, and a mutable plan changing underneath it
+    would be a second way for a run to stop meaning what it said.
+    """
+
+    id: int
+    adapters: Sequence[SourceAdapter]
+    answerable: Sequence[Attribute]
+    in_scope: Sequence[Attribute]
+    candidates: Sequence[Candidate]
+    values: ValueStore
+    runs: RunStore
+    stand_ins: Sequence[StandIn]
+    meter: CostMeter
+
+
+async def open_run(
     *,
     adapters: Sequence[SourceAdapter],
     attributes: Sequence[Attribute],
@@ -52,14 +72,21 @@ async def execute_run(
     spend_cap_eur: Decimal | None = None,
     uncapped_is_accepted: bool = False,
     may_borrow_alone: bool = False,
-) -> Run:
-    """Open a run, fetch everything in scope from every source, record what happened, close it.
+) -> "OpenedRun":
+    """Settle every refusal, write the run row, and hand back what the fetching will need.
+
+    **Split from the fetching so a caller may answer before the work is done** (P35). Everything
+    that can refuse a request happens here -- an empty scope, and the spend cap -- so a client
+    gets its 409 or its run id, and nothing after this point has anybody to answer to.
+
+    The run row exists before any figure is fetched, which is what makes a process that dies
+    mid-run leave a visibly unfinished run rather than nothing at all.
 
     **Every source, in one run.** A run is one pass, and the plan the household confirmed
     counted the work of all of them; an earlier version handed this the first adapter only,
     which fetched a sixth of what the plan promised while reporting the run completed. **Then
     the declared stand-ins**, visibly and at `low` confidence, where a neighbour's figure is the
-    least-bad answer for a place no source covers (`stand_in.py`).
+    least-bad answer for a place no source covers (`stand_in.py`). Both are `continue_run`'s.
 
     **The scope recorded is what was asked for, not what worked.** Every candidate and every
     attribute some source could answer goes in, so a country that produced nothing is
@@ -116,7 +143,6 @@ async def execute_run(
         cap_eur=spend_cap_eur,
         uncapped_is_accepted=uncapped_is_accepted,
     )
-    meter = CostMeter(cap_eur=spend_cap_eur)
 
     run = await runs.start_run(scope, triggered_by=triggered_by)
     _log.info(
@@ -127,15 +153,41 @@ async def execute_run(
         len(answerable),
         len(adapters),
     )
+    return OpenedRun(
+        id=run,
+        adapters=adapters,
+        answerable=answerable,
+        in_scope=in_scope,
+        candidates=candidates,
+        values=values,
+        runs=runs,
+        stand_ins=stand_ins,
+        meter=CostMeter(cap_eur=spend_cap_eur),
+    )
+
+
+async def continue_run(opened: OpenedRun) -> Run:
+    """Fetch everything the opened run covers, record what happened, and close it.
+
+    **The half that takes the time**, and the half a caller may choose not to wait for. Every
+    refusal has already been made by `open_run`, so nothing here answers a client: what it can
+    do is fail, and a failure is written onto the run rather than raised at anybody.
+
+    A process that dies partway leaves the run `running`, which the startup sweep turns into
+    `failed` (`arch.md` 9.2) -- the same state a killed run has always left, and the reason
+    that sweep exists.
+    """
+    run, runs, candidates = opened.id, opened.runs, opened.candidates
+    meter = opened.meter
 
     failures: list[AcquisitionFailure] = []
     try:
-        for adapter in adapters:
+        for adapter in opened.adapters:
             outcome = await acquire(
                 adapter=adapter,
-                attributes=answerable,
+                attributes=opened.answerable,
                 candidates=candidates,
-                values=values,
+                values=opened.values,
                 run=run,
                 # **The meter goes in, so the cap can stop a sweep partway through a source**
                 # (P47). It records each answer's cost itself, which is why nothing accumulates
@@ -182,10 +234,10 @@ async def execute_run(
                 )
         # Last, so a substitute's figure fetched in this same run is the one borrowed.
         borrowed = await stand_in(
-            stand_ins=stand_ins,
-            attributes=in_scope,
+            stand_ins=opened.stand_ins,
+            attributes=opened.in_scope,
             candidates=candidates,
-            values=values,
+            values=opened.values,
             run=run,
         )
         failures.extend(borrowed.failures)
@@ -209,6 +261,16 @@ async def execute_run(
         finished.items_unanswered,
     )
     return finished
+
+
+async def execute_run(**asked: object) -> Run:
+    """Open a run and see it through, in one call.
+
+    What every caller that *does* want to wait uses -- the retry, asking again, and the tests.
+    `api/runs.py` is the one caller that splits the two, because it has a client waiting for an
+    answer that should not depend on how long a sweep takes (P35).
+    """
+    return await continue_run(await open_run(**asked))  # type: ignore[arg-type]
 
 
 def _item_by_item(

@@ -15,7 +15,7 @@ and attributes are bounded by the catalog and come back whole (`arch.md` 7.6).
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, BackgroundTasks, Query
 from pydantic import BaseModel
 
 from starnest.api.bodies import ContractBody
@@ -33,7 +33,8 @@ from starnest.data_acquisition import (
     RunAlreadyInFlightError,
     ask_again,
     asked_this_run,
-    execute_run,
+    continue_run,
+    open_run,
     retry_run,
 )
 
@@ -178,6 +179,7 @@ async def plan_run(
 )
 async def start_run(
     scope: RunRequestBody,
+    background: BackgroundTasks,
     adapters: Adapters,
     candidates: Candidates,
     catalog: Catalog,
@@ -227,7 +229,10 @@ async def start_run(
     # set after a refusal takes effect on the next request rather than at the next restart.
     cap = (await households.get_settings()).run_spend_cap_eur
 
-    started = await execute_run(
+    # **Opened here, fetched afterwards** (P35). Everything that can refuse this request --
+    # an empty scope, and the spend cap -- happens inside `open_run`, so the client still gets
+    # its 409 where one is owed. What follows has nobody waiting on it.
+    opened = await open_run(
         adapters=asked,
         attributes=wanted,
         candidates=roster,
@@ -238,6 +243,12 @@ async def start_run(
         spend_cap_eur=cap,
         uncapped_is_accepted=scope.accept_uncapped_spend,
     )
+    # Starlette sends the response before running this, so the client has its run id and is
+    # free -- which is what 202 has always claimed and did not do. A sweep that takes minutes
+    # no longer holds a connection open, and a client timeout can no longer be mistaken for a
+    # failure and retried into a second run.
+    background.add_task(continue_run, opened)
+    started = await runs.read_run(opened.id)
     return _run_body(started)
 
 

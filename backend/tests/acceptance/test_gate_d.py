@@ -173,7 +173,13 @@ class TestCrossingTheSpendCap:
         assert values["total"] >= 1
 
     async def test_what_it_spent_is_recorded_on_the_run(self, database_url: str) -> None:
-        """So "why did this stop?" is answerable from the run record rather than from a log."""
+        """So "why did this stop?" is answerable from the run record rather than from a log.
+
+        **Read by polling, because the start response now describes a run that has just
+        opened** (P35). It reports what was accepted -- an id, and `running` -- and the spend
+        is something the run learns afterwards. Reading it from the response worked only while
+        the endpoint blocked until the run had finished, which is the thing that cost 2.70 EUR.
+        """
         async with an_api(database_url, (_a_source_that_charges(Decimal("2.50")),)) as api:
             await api.put(
                 "/v1/settings",
@@ -186,8 +192,11 @@ class TestCrossingTheSpendCap:
                     json={"level": COUNTRY, "attributes": [OVERBURDEN]},
                 )
             ).json()
+            assert started["cost_eur"] == 0, "nothing has been spent at the moment it opens"
 
-        assert started["cost_eur"] == pytest.approx(2.5)
+            recorded = (await api.get(f"/v1/data-acquisition-runs/{started['id']}")).json()
+
+        assert recorded["cost_eur"] == pytest.approx(2.5)
 
 
 def _a_source_that_charges(cost: Decimal) -> SourceAdapter:
