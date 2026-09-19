@@ -135,6 +135,22 @@ Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that s
 
 ### With the catalog
 
+- **TODO, decided 2026-09-19: no criteria set enforces a gate or applies a compound rule, and
+  that stays true for now.** All four match rules (`eu_free_movement`, `uk_skilled_worker`,
+  `ch_eu_efta_quota`, `not_manually_excluded`) and both compound rules exist in the catalog and
+  **no set has opted into any of them**, so nothing can be ruled out and all 31 scoreable
+  countries come back `matching`. That is a deliberate hold, not an oversight: the ranking
+  speaks to scores and says nothing about eligibility until the gates are answered and enforced.
+  Picked up when the household decides to research them -- the estimate comes first, and a
+  proposal rules nothing out until somebody confirms it (`reqs.md` 6.10 use 3).
+  **One stray row to clear when that happens**: `match_rule_result` holds a single manual answer
+  for `not_manually_excluded` / `country.greece`, which looks like test data rather than a
+  decision anybody made.
+- **Decided 2026-09-19: Liechtenstein stays `insufficient_data`.** 48% of the scored weight
+  against a floor of 60, with 40% of what it does have borrowed from Switzerland. No further
+  stand-ins: pushing it past the floor that way would produce a score resting mostly on another
+  country's figures, and the score would not say so -- only the coverage split would. Unscored
+  and visible with the reason is what `reqs.md` 5.3 asks for.
 - **D9** (low) **`label_vocabulary` is dead**: zero rows, zero query references, zero incoming
   foreign keys. Its own comment points at `attribute_allowed_label`, which does the real job.
   Drop it or wire it.
