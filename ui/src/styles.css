@@ -10,19 +10,58 @@
  * :root; it does not touch a single rule, and it does not touch a single component.
  */
 
+/* Public Sans, vendored rather than fetched -- see public/fonts/README.md. One variable file
+   per subset carries every weight, so there is no per-weight request and no flash of fallback
+   text on a machine with no network. */
+@font-face {
+  font-family: "Public Sans";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/public-sans-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Public Sans";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/public-sans-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0,
+    U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
-  /* Colour */
+  /* Colour -- the Starnest analyst design (claude.ai/design, "Starnest Product", synced
+     2026-09-19). A near-white ground, a teal accent, and one muted grey doing most of the
+     work. Nothing below is invented: every value is read off that file. */
   --colour-surface: #ffffff;
-  --colour-surface-sunken: #f4f5f7;
-  --colour-surface-raised: #fbfbfc;
-  --colour-border: #d9dde3;
-  --colour-border-strong: #b3bac4;
-  --colour-text: #1c2127;
-  --colour-text-muted: #5b6472;
-  --colour-accent: #2f5d8a;
+  --colour-surface-sunken: #f9fafb;
+  --colour-surface-raised: #fcfcfd;
+  --colour-border: #eaecf0;
+  --colour-border-strong: #d0d5dd;
+  --colour-text: #101828;
+  --colour-text-muted: #667085;
+  --colour-accent: #0f766e;
   --colour-accent-contrast: #ffffff;
-  --colour-danger: #8a2f33;
-  --colour-danger-surface: #fdf2f2;
+  --colour-danger: #b42318;
+  --colour-danger-surface: #fef3f2;
+
+  /* The design carries three status tints where this sheet had only danger. A ranking says
+     `matching`, `not_matching` and `insufficient_data`, and one red for all three was the
+     stylesheet being poorer than the domain. */
+  --colour-accent-surface: #f0fdfa;
+  --colour-accent-border: #99f6e4;
+  --colour-success: #067647;
+  --colour-success-surface: #ecfdf3;
+  --colour-success-border: #abefc6;
+  --colour-warning: #b54708;
+  --colour-warning-surface: #fffaeb;
+  --colour-warning-border: #fedf89;
+  --colour-danger-border: #fecdca;
 
   /* Space */
   --space-quarter: 0.25rem;
@@ -31,24 +70,26 @@
   --space-double: 1.5rem;
   --space-triple: 2rem;
 
-  /* Shape */
-  --radius-small: 3px;
-  --radius-medium: 6px;
+  /* Shape -- the design is tighter than this sheet was: 4px where there was 6. */
+  --radius-small: 2px;
+  --radius-medium: 4px;
   --border-width: 1px;
 
-  /* Type */
-  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Type. **`tnum` is the load-bearing one**: with proportional figures a column of scores
+     and coverage percentages does not line up, and every screen here is a column of numbers. */
+  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --font-size-small: 0.8125rem;
-  --font-size-base: 0.9375rem;
-  --font-size-large: 1.125rem;
-  --font-size-title: 1.375rem;
+  --font-features: "tnum" 1, "cv05" 1;
+  --font-size-small: 0.75rem;
+  --font-size-base: 0.875rem;
+  --font-size-large: 1.1875rem;
+  --font-size-title: 1.25rem;
   --line-height-body: 1.5;
   --weight-normal: 400;
   --weight-strong: 600;
 
   /* Layout */
-  --sidebar-width: 17rem;
+  --sidebar-width: 16.375rem;
   --content-max-width: 64rem;
 }
 
@@ -59,10 +100,21 @@
 body {
   margin: 0;
   font-family: var(--font-body);
+  /* Tabular figures, inherited by every control. Native inputs and buttons do not inherit
+     font settings from `body` on their own, so the rule below restates it for them. */
+  font-feature-settings: var(--font-features);
   font-size: var(--font-size-base);
   line-height: var(--line-height-body);
   color: var(--colour-text);
   background: var(--colour-surface-sunken);
+  -webkit-font-smoothing: antialiased;
+}
+
+input,
+select,
+button,
+textarea {
+  font-feature-settings: var(--font-features);
 }
 
 h1,
