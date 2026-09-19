@@ -136,14 +136,23 @@ Each is real, reproduced, and not fixed yet. Grouped by the chunk of work that s
 
 ### With the catalog
 
-- **TODO, decided 2026-09-19: no criteria set enforces a gate or applies a compound rule, and
-  that stays true for now.** All four match rules (`eu_free_movement`, `uk_skilled_worker`,
-  `ch_eu_efta_quota`, `not_manually_excluded`) and both compound rules exist in the catalog and
-  **no set has opted into any of them**, so nothing can be ruled out and all 31 scoreable
-  countries come back `matching`. That is a deliberate hold, not an oversight: the ranking
-  speaks to scores and says nothing about eligibility until the gates are answered and enforced.
-  Picked up when the household decides to research them -- the estimate comes first, and a
-  proposal rules nothing out until somebody confirms it (`reqs.md` 6.10 use 3).
+- **Done 2026-09-19: `cheap_but_taxed` is decided and applied** (`0474`). Cheap is a cost of
+  living at or below 80 where EU27 is 100; taxed is a total rate at or above 40% of the whole
+  cost of employment. Chosen against the figures rather than in the abstract, which is why it
+  could not happen until all 32 countries had both. It warns **Romania, Hungary and Croatia**,
+  and deliberately spares Bulgaria (cheapest on the roster, taxes 33%) and Poland (39.2%, just
+  under the line) -- a rule that warned on every cheap country would only be saying "cheap",
+  which the cost-of-living criterion already scores.
+- **TODO: no criteria set enforces a *gate*, and `mild_now_brutal_later` is still undecided.**
+  All four match rules (`eu_free_movement`, `uk_skilled_worker`, `ch_eu_efta_quota`,
+  `not_manually_excluded`) exist in the catalog and **no set enforces any of them**, so nothing
+  can be ruled out and all 31 scoreable countries come back `matching`. That is a deliberate
+  hold, not an oversight: the ranking speaks to scores and says nothing about eligibility until
+  the gates are answered and enforced. Picked up when the household decides to research them --
+  the estimate comes first, and a proposal rules nothing out until somebody confirms it
+  (`reqs.md` 6.10 use 3). **`mild_now_brutal_later` reads `projected_summer_heat_days`, which no
+  source answers**, so it could not fire whatever bounds it were given: the decision is to get
+  that figure first, then choose the bounds, then apply it.
   **One stray row to clear when that happens**: `match_rule_result` holds a single manual answer
   for `not_manually_excluded` / `country.greece`, which looks like test data rather than a
   decision anybody made.
