@@ -43,13 +43,21 @@ test.describe("the weight change, end to end", () => {
     await page.goto("/configure");
     await chooseScoringSet(page);
 
+    // **A target different from whatever is there, and put back afterwards.** This set a fixed
+    // 75 and restored nothing, while minE2E moved the same criterion to a fixed 80 and restored
+    // to a constant -- so whichever ran second eventually found the weight already at its
+    // target, changed nothing, and failed asserting that the ranking had changed. A test that
+    // only works on a clean database is a test that works once.
+    const shipped = await currentWeight(page, A_CRITERION);
+    const target = shipped === A_DIFFERENT_WEIGHT ? "70" : A_DIFFERENT_WEIGHT;
+
     // The PATCH is the interaction the product turns on (`arch.md` 8.3): one weight goes out,
     // the whole rebalanced pillar comes back.
     const patch = page.waitForResponse(
       (response) =>
         response.request().method() === "PATCH" && response.url().includes("/criteria/"),
     );
-    await setCriterionWeight(page, A_CRITERION, A_DIFFERENT_WEIGHT);
+    await setCriterionWeight(page, A_CRITERION, target);
     expect((await patch).ok()).toBe(true);
 
     // Every weight in that pillar, as the table shows them after the response. A pillar that
@@ -59,6 +67,10 @@ test.describe("the weight change, end to end", () => {
     expect(total).toBeCloseTo(100, 2);
 
     expect(await rankedOrder(page)).not.toEqual(before);
+
+    // Left as it was found, so the next run starts where this one did.
+    await page.goto("/configure");
+    await setCriterionWeight(page, A_CRITERION, shipped);
   });
 });
 
@@ -299,6 +311,13 @@ async function scoreOf(page: Page, country: string): Promise<string> {
   // Taken together with the rowheader, so the row lines up with its headings.
   const cells = await row.locator("th,td").allTextContents();
   return (cells[at] ?? "").trim();
+}
+
+/** What a criterion's weight is right now, so a test can move it somewhere else. */
+async function currentWeight(page: Page, attribute: string): Promise<string> {
+  const input = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
+  await input.waitFor();
+  return input.inputValue();
 }
 
 async function setCriterionWeight(page: Page, attribute: string, weight: string): Promise<void> {

@@ -34,4 +34,20 @@ is implemented across all four tabs. Two things it does not specify are still ou
       the figures below them, which the design's own caption offers ("select one to filter the
       figures below").
 
+- [ ] **The browser suite is order-coupled, and it always was.** `gate-c.spec.ts` and
+      `minimum-end-to-end.spec.ts` both mutate **the same criterion**
+      (`country.housing_cost_overburden_rate`) in **the same criteria set** (`minimal`), and
+      both assert on the whole ranking afterwards. Each now restores what it found and picks a
+      target different from the current value, which fixed the common case -- but roughly one
+      full-suite run in three still fails on one of the two, because a gate answer and a weight
+      edit are both global and the assertions are about a global ranking.
+
+      Fixed already: parallelism (one worker, in order), non-idempotent targets, and missing
+      restores. What remains is **isolation**, and the clean answer is to give each mutating
+      spec its own criteria set rather than sharing `minimal` -- a set is a full copy (Q191),
+      so this is cheap and would remove the coupling at its source rather than sequencing
+      around it.
+
+      `sanity.spec.ts` is unaffected and stable: it mutates only one setting and puts it back.
+
 ## TODOs for Alex

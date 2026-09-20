@@ -245,30 +245,101 @@ fieldset {
   color: var(--colour-text-muted);
 }
 
-.nav-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-quarter);
+
+/* ══════════════════════════════════════════════════════════════════════════════════════
+   Interaction states
+   ══════════════════════════════════════════════════════════════════════════════════════
+
+   **Not invented here.** `Starnest Product` draws three hover states and nothing else -- a
+   static mockup renders one moment, and cannot show a pressed key or a focus ring. The rule
+   below is the one the same designer wrote down in the Nocturne design system's `readme.md`,
+   applied with this palette:
+
+     "give every interactive element a `:hover` tint and a pressed state from the accent ramp
+      (one step past the base ...), and style keyboard focus with `:focus-visible { outline:
+      2px solid var(--color-accent); outline-offset: 2px; }` -- never leave the default blue
+      focus ring [...] disabled controls drop to 45% opacity."
+
+   One step past `#0f766e` is `#115e56`, which this design already uses for a filled button's
+   hover, so the pressed step for outlined controls is a tint of the accent rather than a
+   fourth green nobody chose.
+   ══════════════════════════════════════════════════════════════════════════════════════ */
+
+/* The browser's ring is removed only where a themed one replaces it, and `:focus-visible`
+   rather than `:focus` so a mouse click does not leave a ring behind. */
+:focus-visible {
+  outline: 2px solid var(--colour-accent);
+  outline-offset: 2px;
 }
 
-.nav-link {
-  display: block;
-  padding: var(--space-half) var(--space-single);
-  border-radius: var(--radius-medium);
-  color: var(--colour-text);
-  text-decoration: none;
+::selection {
+  background: color-mix(in srgb, var(--colour-accent) 22%, transparent);
 }
 
-.nav-link:hover {
-  background: var(--colour-surface-sunken);
+a {
+  color: var(--colour-accent);
+  text-underline-offset: 3px;
 }
 
-.nav-link--active {
-  background: var(--colour-accent);
-  color: var(--colour-accent-contrast);
+a:hover {
+  color: var(--colour-accent-strong);
+}
+
+/* A row lifts under the pointer. The table is the screen's subject and every row is a link to
+   its own evidence, so it has to look reachable. */
+.table tbody tr:hover {
+  background: var(--colour-surface-raised);
+}
+
+/* Pressed: one step past the base for a filled control, a tint of it for an outlined one. */
+.button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--colour-accent) 14%, var(--colour-surface));
+  border-color: var(--colour-accent);
+}
+
+.button--primary:active:not(:disabled) {
+  background: var(--colour-accent-strong);
+  border-color: var(--colour-accent-strong);
+}
+
+.tabbar__tab:hover {
+  color: var(--colour-accent-strong);
+}
+
+/* Inset, because a tab sits on the border it underlines and a 2px offset ring would be
+   clipped by the strip above the content. */
+.tabbar__tab:focus-visible {
+  outline-offset: -2px;
+}
+
+.field__control:hover:not(:disabled) {
+  border-color: var(--colour-text-muted);
+}
+
+/* The border carries the focus as well as the ring: a control that is being typed into should
+   read as active from its own edge, not only from a halo. */
+.field__control:focus-visible {
+  border-color: var(--colour-accent);
+  outline-offset: 0;
+}
+
+.toggle:hover:not(:has(input:checked)) {
+  border-color: var(--colour-text-muted);
+  background: var(--colour-surface-raised);
+}
+
+.toggle:active {
+  background: color-mix(in srgb, var(--colour-accent) 14%, var(--colour-surface));
+}
+
+/* The input covers its label, so the ring belongs on the label the reader sees. */
+.toggle:has(input:focus-visible) {
+  outline: 2px solid var(--colour-accent);
+  outline-offset: 2px;
+}
+
+.toggle input:focus-visible {
+  outline: none;
 }
 
 /* Panels */

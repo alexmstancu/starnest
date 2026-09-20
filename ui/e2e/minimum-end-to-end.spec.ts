@@ -96,8 +96,22 @@ test.describe.serial("the minimum end to end", () => {
 
     const before = await scoresInOrder(page);
 
-    await page.goto("/configure");
-    await setWeight(page, HOUSING_OVERBURDEN, A_DIFFERENT_WEIGHT);
+    // A target different from whatever is there. A fixed one is a no-op the moment another
+    // spec has already moved this criterion to it, and then this fails asserting that the
+    // ranking changed -- which it would have, had anything changed.
+    // The weights belong to a criteria set, so the set is chosen before one can be read --
+    // `setWeight` does this itself, which is why reading first needs it too.
+    await selectTheScoringSet(page);
+    const input = page.getByRole("spinbutton", {
+      name: `Weight for ${HOUSING_OVERBURDEN}`,
+    });
+    await input.waitFor();
+    const now = await input.inputValue();
+    await setWeight(
+      page,
+      HOUSING_OVERBURDEN,
+      now === A_DIFFERENT_WEIGHT ? "60" : A_DIFFERENT_WEIGHT,
+    );
 
     const after = await scoresInOrder(page);
 
