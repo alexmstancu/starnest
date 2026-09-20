@@ -129,6 +129,10 @@ class TestWhatIsActuallyWiredIn:
             "rsf",
             "ef_epi",
             "mipex",
+            # Statutory paid leave is national law in 31 jurisdictions and no publisher prints
+            # it as one table, so the transcription is stored under `national_law` -- the
+            # source the catalog already ranks for it.
+            "national_law",
         }
         # Nothing but the LLM path charges, and it is the only thing that may appear here
         # because of configuration rather than because of code.

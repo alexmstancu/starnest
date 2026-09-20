@@ -1,0 +1,42 @@
+# data_source: national_law
+# attribute: country.statutory_paid_leave
+# publication: Statutory minimum paid annual leave, by national law
+# publisher_url: https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country
+# transcribed_on: 2026-09-20
+# confidence: medium
+# period: the entitlement in force in 2025. A statutory minimum is a legal constant, not a measurement, so it describes the year of the law rather than a survey period.
+# route: no publisher prints this as one comparative table. It is national law in 31 jurisdictions, and the choices were 31 statute lookups or one table that has already done them with a citation per row. The table's own "paid vacation days (five-day workweek)" column was read, and its four ranges resolved to the statutory minimum by reading the note beside each: Denmark 25/30 -> 25, Luxembourg 26-36 -> 26 (the private-sector legal duration), Poland 26/20 -> 20, Slovakia 20-25 -> 20 ("at least four weeks"). Medium confidence for the route, not for the figures.
+# scale: working days of paid annual leave, public holidays excluded. The United Kingdom's 28 is its 5.6 weeks, which its own statute permits to absorb bank holidays -- the table counts it as leave and shows the UK with none separately, which is one methodology applied consistently rather than a figure that means something different.
+# coverage: 31 of 32. Liechtenstein is not in the table and is left unanswered rather than assumed to follow Switzerland.
+country_code,figure,period,page,workings
+AT,25,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+BE,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+BG,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+CH,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+CY,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+CZ,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+DE,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+DK,25,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,table gives 25/30; 25 is the statutory entitlement
+EE,28,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+ES,22,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+FI,25,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+FR,25,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+GB,28,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,5.6 weeks capped at 28, which may absorb bank holidays
+GR,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+HR,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+HU,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+IE,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+IS,24,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+IT,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+LT,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+LU,26,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,table gives 26-36; 26 is the private-sector legal duration
+LV,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+MT,27,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+NL,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+NO,25,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+PL,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,table gives 26/20; 20 is the statutory minimum
+PT,22,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+RO,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+SE,25,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+SI,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
+SK,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,table gives 20-25; the statute says at least four weeks

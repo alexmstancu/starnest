@@ -139,7 +139,10 @@ class TestReadingASet:
         """
         shipped = await criteria.read_criteria_set(SHIPPED, level=COUNTRY)
 
-        assert len(shipped.criteria) == 43
+        # 42, not 43: `statutory_paid_leave` became descriptive on 2026-09-20 (`0476`), the
+        # second attribute to do so after `european_air_connectivity` (Q228). An attribute
+        # with no criterion is not missing -- it is not scored.
+        assert len(shipped.criteria) == 42
         assert shipped.enforced_match_rules
         # Not an omission in the read: `reqs.md` 7.4 leaves every threshold TBD, and an anchor
         # ships only where the household chose it against real figures. A seeded one nobody
