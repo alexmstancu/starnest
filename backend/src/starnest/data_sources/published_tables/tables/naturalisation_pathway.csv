@@ -1,0 +1,43 @@
+# data_source: national_law
+# attribute: country.naturalisation_pathway
+# publication: Ordinary naturalisation: years of lawful residence required, by national law
+# publisher_url: https://en.wikipedia.org/wiki/Naturalization
+# transcribed_on: 2026-09-21
+# confidence: medium
+# period: the law in force in 2025. A residence requirement is a legal constant, not a measurement, so the period is the year of the law.
+# route: GLOBALCIT holds the authoritative dataset and serves its downloads through JavaScript, so a script cannot reach them; its v3.0 file is also 191 states of qualitative text, from which "years of residence" would have to be interpreted rather than read. One comparative table with a citation per country was preferred to 32 statute lookups or an interpretation of prose. Medium confidence for the route.
+# scale: years of lawful residence for **ordinary** naturalisation -- the general path, not the shortened one a spouse, a refugee or a person of recognised descent may take. Those exist nearly everywhere and differ in kind, so mixing them in would compare different questions.
+# coverage: 32 of 32. The only attribute in the catalog so far that every candidate answers.
+country_code,figure,period,page,workings
+AT,10,2025,https://en.wikipedia.org/wiki/Naturalization,
+BE,5,2025,https://en.wikipedia.org/wiki/Naturalization,
+BG,5,2025,https://en.wikipedia.org/wiki/Naturalization,
+CH,10,2025,https://en.wikipedia.org/wiki/Naturalization,
+CY,7,2025,https://en.wikipedia.org/wiki/Naturalization,
+CZ,10,2025,https://en.wikipedia.org/wiki/Naturalization,
+DE,5,2025,https://en.wikipedia.org/wiki/Naturalization,
+DK,8,2025,https://en.wikipedia.org/wiki/Naturalization,
+EE,8,2025,https://en.wikipedia.org/wiki/Naturalization,
+ES,10,2025,https://en.wikipedia.org/wiki/Naturalization,
+FI,8,2025,https://en.wikipedia.org/wiki/Naturalization,
+FR,5,2025,https://en.wikipedia.org/wiki/Naturalization,
+GB,5,2025,https://en.wikipedia.org/wiki/Naturalization,
+GR,7,2025,https://en.wikipedia.org/wiki/Naturalization,
+HR,8,2025,https://en.wikipedia.org/wiki/Naturalization,
+HU,8,2025,https://en.wikipedia.org/wiki/Naturalization,
+IE,5,2025,https://en.wikipedia.org/wiki/Naturalization,
+IS,7,2025,https://en.wikipedia.org/wiki/Naturalization,
+IT,10,2025,https://en.wikipedia.org/wiki/Naturalization,
+LI,10,2025,https://en.wikipedia.org/wiki/Naturalization,
+LT,10,2025,https://en.wikipedia.org/wiki/Naturalization,
+LU,5,2025,https://en.wikipedia.org/wiki/Naturalization,
+LV,10,2025,https://en.wikipedia.org/wiki/Naturalization,
+MT,5,2025,https://en.wikipedia.org/wiki/Naturalization,
+NL,5,2025,https://en.wikipedia.org/wiki/Naturalization,
+NO,8,2025,https://en.wikipedia.org/wiki/Naturalization,
+PL,10,2025,https://en.wikipedia.org/wiki/Naturalization,
+PT,10,2025,https://en.wikipedia.org/wiki/Naturalization,
+RO,8,2025,https://en.wikipedia.org/wiki/Naturalization,
+SE,8,2025,https://en.wikipedia.org/wiki/Naturalization,
+SI,10,2025,https://en.wikipedia.org/wiki/Naturalization,
+SK,8,2025,https://en.wikipedia.org/wiki/Naturalization,

@@ -47,6 +47,7 @@ THE_ANCHORS_THE_HOUSEHOLD_CHOSE = {
     "country.road_network_quality": ((Decimal(0), 0), (Decimal(40), 100)),
     "country.winter_daytime_temperature": ((Decimal(0), 0), (Decimal(15), 100)),
     "country.parental_leave_policy": ((Decimal(8), 0), (Decimal(90), 100)),
+    "country.naturalisation_pathway": ((Decimal(5), 100), (Decimal(10), 0)),
 }
 """Every anchor the shipped set carries, each decided against real figures (Q206, Q209, Q212, Q213).
 
@@ -54,6 +55,10 @@ THE_ANCHORS_THE_HOUSEHOLD_CHOSE = {
 Switzerland 8.05 weeks at the bottom, Romania 88.68 at the top. The pair is rounded outward to
 8 and 90 rather than set on those two figures, so a refresh of the data cannot quietly move
 what 0 and 100 mean.
+
+**Naturalisation joined on 2026-09-21** (`0479`), and there its two numbers are the observed
+legal extremes rather than a rounding of them: every jurisdiction on the roster requires 5, 7,
+8 or 10 years, so there is nothing between the ends to invent.
 
 **The roster is the point.** "No anchor ships" held until `0447`, and it was never the real
 rule -- the rule is that no anchor ships that nobody chose. An anchor appearing here without a
