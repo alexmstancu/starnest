@@ -117,6 +117,13 @@ components:
           - type: 'null'
           description: How the covered weight splits by confidence. Null when nothing
             is covered.
+        delta_vs_home:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: This candidate's score minus the home country's. Null for home
+            itself, and null when either score is absent.
+          title: Delta Vs Home
         insufficient_reason:
           anyOf:
           - type: string
@@ -133,6 +140,12 @@ components:
           items:
             $ref: '#/components/schemas/NonMatchReasonBody'
           title: Non Match Reasons
+          type: array
+        pillar_scores:
+          default: []
+          items:
+            $ref: '#/components/schemas/PillarScoreBody'
+          title: Pillar Scores
           type: array
         rank:
           anyOf:
@@ -178,6 +191,13 @@ components:
           - type: 'null'
           description: How the covered weight splits by confidence. Null when nothing
             is covered.
+        delta_vs_home:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: This candidate's score minus the home country's. Null for home
+            itself, and null when either score is absent.
+          title: Delta Vs Home
         insufficient_reason:
           anyOf:
           - type: string
@@ -194,6 +214,12 @@ components:
           items:
             $ref: '#/components/schemas/NonMatchReasonBody'
           title: Non Match Reasons
+          type: array
+        pillar_scores:
+          default: []
+          items:
+            $ref: '#/components/schemas/PillarScoreBody'
+          title: Pillar Scores
           type: array
         rank:
           anyOf:
@@ -1232,6 +1258,31 @@ components:
       type: string
     PillarBody:
       additionalProperties: true
+      type: object
+    PillarScoreBody:
+      description: One pillar's part in a candidate's total (`reqs.md` 5.2).
+      properties:
+        contribution:
+          title: Contribution
+          type: number
+        pillar:
+          title: Pillar
+          type: string
+        score:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Null when nothing in it scored.
+          title: Score
+        weight:
+          description: Its share of the level after redistribution.
+          title: Weight
+          type: number
+      required:
+      - pillar
+      - weight
+      - contribution
+      title: PillarScoreBody
       type: object
     PillarWeightBody:
       properties:

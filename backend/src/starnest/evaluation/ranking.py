@@ -22,10 +22,15 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from starnest.candidates import CandidateId
 from starnest.criteria import TOTAL, CriteriaSet, Criterion
-from starnest.data import CompoundRule, ConfidenceLevel, MatchRuleResult, Value
+from starnest.data import CompoundRule, ConfidenceLevel, MatchRuleResult, PillarId, Value
 from starnest.evaluation.magnitudes import PublishedFigure, UnscoreableValueError, figure_of
 from starnest.evaluation.normalisation import scores_for
-from starnest.evaluation.results import AttributeScore, CandidateResult, MatchStatus
+from starnest.evaluation.results import (
+    AttributeScore,
+    CandidateResult,
+    MatchStatus,
+    PillarScore,
+)
 from starnest.evaluation.rules import gates_that_rule_out, judgements_of
 from starnest.evaluation.weighting import confidence_split, coverage_of, redistribute
 
@@ -45,6 +50,7 @@ def rank_candidates(
     min_coverage: Decimal | None = None,
     compound_rules: Sequence[CompoundRule] = (),
     gate_answers: Mapping[str, Sequence[MatchRuleResult]] = {},
+    home_candidate: str | None = None,
 ) -> tuple[CandidateResult, ...]:
     """Score every candidate, and put them in order.
 
@@ -56,6 +62,11 @@ def rank_candidates(
     `min_coverage` and `score_scale_max` are settings the user edits (`reqs.md` 3.10). Both
     arrive as arguments, and `score_scale_max` has no default: substituting 100 where the user
     has set nothing is the plausible-looking fabrication `devplan.md` 0.3 exists to forbid.
+
+    `home_candidate` is the household's own country (`reqs.md` 1.2), which is scored like any
+    other and additionally anchors the difference column, so "stay put" stays measurable beside
+    every alternative. Absent when no household has been recorded, and then no candidate carries
+    a difference -- there is nothing to be different from.
     """
     scored_criteria = _criteria_to_score(criteria, level)
     if not scored_criteria:
@@ -94,7 +105,34 @@ def rank_candidates(
         )
         for candidate in sorted(values)
     )
-    return _ranked(results)
+    return _ranked(_against_home(results, home_candidate))
+
+
+def _against_home(
+    results: Sequence[CandidateResult], home_candidate: str | None
+) -> tuple[CandidateResult, ...]:
+    """Attach each candidate's difference from home, once home's own score is known.
+
+    **A second pass, because it has to be.** The difference is against a score that is itself
+    being computed, so it cannot be known while the candidates are scored one at a time. Home
+    not being in this ranking -- a different level, or a household that named a country nobody
+    fetched -- leaves every difference null rather than measuring against nothing.
+    """
+    if home_candidate is None:
+        return tuple(results)
+    home = next((r for r in results if str(r.candidate) == home_candidate), None)
+    if home is None:
+        return tuple(results)
+    return tuple(
+        result.model_copy(
+            update={
+                "delta_vs_home": delta_against(
+                    result.score, home.score, is_home=str(result.candidate) == home_candidate
+                )
+            }
+        )
+        for result in results
+    )
 
 
 def _refuse_a_pillar_nothing_scores_into(criteria: CriteriaSet, level: str) -> None:
@@ -327,6 +365,7 @@ def _result_for(
             coverage_by_confidence=resting_on,
             match_status=MatchStatus.INSUFFICIENT_DATA,
             attribute_scores=breakdown,
+            pillar_scores=pillars_of(breakdown),
             insufficient_reason=refusal,
         )
     total = sum((row.contribution for row in breakdown), Decimal(0))
@@ -346,9 +385,72 @@ def _result_for(
         # beside it (`reqs.md` 5.4).
         match_status=MatchStatus.NOT_MATCHING if refusals else MatchStatus.MATCHING,
         attribute_scores=breakdown,
+        pillar_scores=pillars_of(breakdown),
         warnings=warnings,
         non_match_reasons=refusals,
     )
+
+
+def pillars_of(breakdown: Sequence[AttributeScore]) -> tuple[PillarScore, ...]:
+    """The attribute breakdown rolled up to the eleven pillars.
+
+    **A rollup, never a second calculation.** The contributions are summed as they are, so the
+    eleven add up to the total exactly; a pillar's score is then read back out of its own
+    contribution and weight. Computing the score any other way would put a number on screen
+    that does not reconcile with the one beside it.
+
+    **A pillar with weight and nothing scored keeps a null score**, and is present rather than
+    absent. Zero would read as "measured, and badly", and leaving it out would hide the thing a
+    reader most needs to see -- that a whole vertical of the decision has no evidence behind it.
+
+    The order is the breakdown's own, so the pillars come back in the order the criteria set
+    lists them rather than alphabetically.
+    """
+    weights: dict[str, Decimal] = {}
+    contributions: dict[str, Decimal] = {}
+    scored: dict[str, bool] = {}
+    for row in breakdown:
+        pillar = str(row.pillar)
+        weights[pillar] = weights.get(pillar, Decimal(0)) + row.effective_weight
+        contributions[pillar] = contributions.get(pillar, Decimal(0)) + row.contribution
+        scored[pillar] = scored.get(pillar, False) or row.normalised_score is not None
+
+    return tuple(
+        PillarScore(
+            pillar=PillarId(pillar),
+            score=_pillar_score(contributions[pillar], weights[pillar], scored[pillar]),
+            weight=weights[pillar],
+            contribution=contributions[pillar],
+        )
+        for pillar in weights
+    )
+
+
+def _pillar_score(contribution: Decimal, weight: Decimal, anything_scored: bool) -> int | None:
+    """What the pillar scored, or None when nothing in it did.
+
+    A pillar whose weight redistributed away to zero has no score either: dividing by it is
+    undefined, and there is no evidence to report.
+    """
+    if not anything_scored or weight == 0:
+        return None
+    return int((contribution / weight * _WHOLE).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+_WHOLE = Decimal(100)
+"""Contributions are `score x weight / 100`, so reading a score back multiplies by 100."""
+
+
+def delta_against(score: int | None, home: int | None, *, is_home: bool) -> Decimal | None:
+    """A candidate's score minus the home country's (`reqs.md` 1.2).
+
+    None for home itself -- a candidate is not ahead of or behind itself, and a zero there
+    would sit in a column of real differences looking like one. None when either score is
+    absent, because a difference against a candidate nobody could score is unanswerable.
+    """
+    if is_home or score is None or home is None:
+        return None
+    return Decimal(score - home)
 
 
 def _attribute_score(

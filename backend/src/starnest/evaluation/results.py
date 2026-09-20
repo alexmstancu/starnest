@@ -67,6 +67,31 @@ class AttributeScore(BaseModel):
     )
 
 
+class PillarScore(BaseModel):
+    """One pillar's part in one candidate's total.
+
+    **The rollup of `AttributeScore`, not a second calculation.** A pillar's score is the
+    weighted mean of the criteria that scored inside it, so the eleven contributions sum to the
+    total exactly -- deriving it any other way would put a number on screen that does not add
+    up to the one beside it.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    pillar: PillarId
+    score: int | None = Field(
+        default=None,
+        description=(
+            "The weighted mean of what scored in this pillar, or None when nothing did. Zero "
+            "would read as 'measured, and bad', which is the fabrication a null exists to avoid."
+        ),
+    )
+    weight: Decimal = Field(
+        ge=0, description="What the pillar counted for after redistribution, as a percentage."
+    )
+    contribution: Decimal = Field(description="What this pillar put into the total.")
+
+
 class CandidateResult(BaseModel):
     """One candidate, as one criteria set sees it.
 
@@ -93,6 +118,15 @@ class CandidateResult(BaseModel):
         default=None, description="Position among the scored candidates. None when unscored."
     )
     attribute_scores: tuple[AttributeScore, ...] = ()
+    pillar_scores: tuple[PillarScore, ...] = ()
+    delta_vs_home: Decimal | None = Field(
+        default=None,
+        description=(
+            "This candidate's score minus the home country's. None for home itself, and None "
+            "when either score is absent -- a difference against a candidate nobody could score "
+            "is unanswerable rather than zero."
+        ),
+    )
     insufficient_reason: str | None = Field(
         default=None,
         description="Why this candidate could not be scored, in words, for the screen to show.",

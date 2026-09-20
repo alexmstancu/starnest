@@ -1112,6 +1112,10 @@ export interface components {
             insufficient_reason?: string | null;
             /** @description Percentage, 0-100. The share of active weight actually backed by data. */
             coverage: number;
+            /** @description This candidate's total broken down by pillar -- what each of the eleven verticals scored, what it was worth after redistribution, and what it put into the total. Enough to read a score's shape without asking for the attribute-level breakdown, which is 43 rows per candidate where this is 11. A pillar with no figure at all is present with a null score rather than absent, because "nothing was found here" is the thing a reader most needs to see. */
+            pillar_scores?: components["schemas"]["PillarScore"][];
+            /** @description This candidate's score minus the home country's (`reqs.md` 1.2, section 3.9), so "stay put" stays measurable beside every alternative. Null for the home country itself, and null when either score is absent -- a difference against an unscoreable candidate is not zero, it is unanswerable. */
+            delta_vs_home?: number | null;
             /** @description How the covered weight splits by confidence (`reqs.md` 5.7), as percentages of the covered weight summing to 100. Coverage alone cannot show that a candidate reached 100% entirely on extrapolation; this can. Null when nothing is covered: a split of nothing is not a split, and four zeros would read as one. */
             coverage_by_confidence?: {
                 absolute?: number;
@@ -1159,6 +1163,15 @@ export interface components {
             value?: components["schemas"]["Value"];
             /** @description Every other stored value for this attribute — superseded, rejected, from other sources. */
             alternative_values?: components["schemas"]["Value"][];
+        };
+        PillarScore: {
+            pillar: string;
+            /** @description What this pillar scored, as a weighted mean of its criteria. Null when no criterion in it was scored -- zero would read as "measured, and bad". */
+            score: number | null;
+            /** @description Percentage, 0-100. What this pillar counted for across the level AFTER redistribution, so the eleven sum to the weight that actually scored rather than to the weight that was configured. */
+            weight: number;
+            /** @description score x weight / 100 -- what this pillar put into the total. Zero when nothing scored. */
+            contribution: number;
         };
         CandidateScoreDetail: components["schemas"]["CandidateResult"] & {
             attribute_scores?: components["schemas"]["AttributeScore"][];

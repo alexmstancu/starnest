@@ -30,6 +30,7 @@ from starnest.candidates import Candidate
 from starnest.criteria import CriteriaSet
 from starnest.data import MatchRuleResult, Value
 from starnest.evaluation import CandidateResult, rank_candidates
+from starnest.household import HouseholdNotConfiguredError
 
 router = APIRouter(tags=["rankings"])
 
@@ -57,6 +58,15 @@ class NonMatchReasonBody(BaseModel):
     compound_rule: str | None = None
 
 
+class PillarScoreBody(BaseModel):
+    """One pillar's part in a candidate's total (`reqs.md` 5.2)."""
+
+    pillar: str
+    score: int | None = Field(default=None, description="Null when nothing in it scored.")
+    weight: float = Field(description="Its share of the level after redistribution.")
+    contribution: float
+
+
 class CandidateResultBody(BaseModel):
     candidate: str
     name: str
@@ -68,6 +78,14 @@ class CandidateResultBody(BaseModel):
     coverage_by_confidence: ConfidenceSplitBody | None = Field(
         default=None,
         description="How the covered weight splits by confidence. Null when nothing is covered.",
+    )
+    pillar_scores: tuple[PillarScoreBody, ...] = ()
+    delta_vs_home: float | None = Field(
+        default=None,
+        description=(
+            "This candidate's score minus the home country's. Null for home itself, and null "
+            "when either score is absent."
+        ),
     )
     match_status: str
     insufficient_reason: str | None = None
@@ -153,6 +171,7 @@ async def the_ranking(
         min_coverage=settings.min_coverage,
         compound_rules=await catalog.read_compound_rules(level=level),
         gate_answers=answers,
+        home_candidate=await _home_country(households),
     )
     return TheRanking(
         criteria=criteria_set_read,
@@ -202,6 +221,21 @@ def _in_rank_order(results: tuple[CandidateResult, ...]) -> tuple[CandidateResul
     return tuple(sorted(results, key=lambda result: (result.rank is None, result.rank or 0)))
 
 
+async def _home_country(households: Households) -> str | None:
+    """The household's own country, or None when no household has been recorded.
+
+    **A ranking must not 404 for want of a household.** Reading one raises when nothing has been
+    configured, and the home country is only ever the anchor of one column: without it the
+    difference is null everywhere and the other nine columns are unaffected. Refusing the whole
+    ranking over an optional column would be the tail wagging the dog.
+    """
+    try:
+        household = await households.get_household()
+    except HouseholdNotConfiguredError:
+        return None
+    return str(household.home_country_candidate)
+
+
 def _result_body(result: CandidateResult, names: dict[str, str]) -> CandidateResultBody:
     return CandidateResultBody(
         candidate=str(result.candidate),
@@ -214,6 +248,16 @@ def _result_body(result: CandidateResult, names: dict[str, str]) -> CandidateRes
             if (split := result.coverage_by_confidence)
             else None
         ),
+        pillar_scores=tuple(
+            PillarScoreBody(
+                pillar=str(pillar.pillar),
+                score=pillar.score,
+                weight=pillar.weight,
+                contribution=pillar.contribution,
+            )
+            for pillar in result.pillar_scores
+        ),
+        delta_vs_home=result.delta_vs_home,
         match_status=str(result.match_status),
         insufficient_reason=result.insufficient_reason,
         warnings=tuple(
