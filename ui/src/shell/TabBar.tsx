@@ -21,7 +21,9 @@ export function TabBar() {
         <NavLink
           key={route.path}
           to={route.path}
-          className={({ isActive }) => (isActive ? "tabbar__tab tabbar__tab--current" : "tabbar__tab")}
+          className={({ isActive }) =>
+            isActive ? "tabbar__tab tabbar__tab--current" : "tabbar__tab"
+          }
         >
           {route.label}
         </NavLink>

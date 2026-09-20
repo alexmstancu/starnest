@@ -46,19 +46,22 @@ export function App() {
           <TabBar />
           <div className="content">
             <Routes>
-            <Route path="/" element={<Navigate to={DEFAULT_ROUTE} replace />} />
-            {ROUTES.map((route) => {
-              // Total by construction: `SCREENS` is keyed by the route table's own paths.
-              // `noUncheckedIndexedAccess` cannot see that, hence the assertion.
-              const Screen = SCREENS[route.path]!;
-              return (
-                <Route
-                  key={route.path}
-                  path={route.path}
-                  element={<Screen route={route} />}
-                />
-              );
-            })}
+              <Route
+                path="/"
+                element={<Navigate to={DEFAULT_ROUTE} replace />}
+              />
+              {ROUTES.map((route) => {
+                // Total by construction: `SCREENS` is keyed by the route table's own paths.
+                // `noUncheckedIndexedAccess` cannot see that, hence the assertion.
+                const Screen = SCREENS[route.path]!;
+                return (
+                  <Route
+                    key={route.path}
+                    path={route.path}
+                    element={<Screen route={route} />}
+                  />
+                );
+              })}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </div>

@@ -17,7 +17,7 @@ household chooses their numbers, and that silence is the intended state rather t
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from starnest.data import (
     AttributeId,
@@ -110,14 +110,38 @@ def _within(figure: Decimal | None, minimum: Decimal | None, maximum: Decimal | 
 def _detail(rule: CompoundRule, figures: Mapping[str, Decimal]) -> str:
     """Why it fired, in the figures that made it fire, so the reader can check it."""
     return f"{rule.name}: " + ", ".join(
-        f"{condition.attribute} {figures.get(str(condition.attribute))}"
+        f"{condition.attribute} {_figure(figures.get(str(condition.attribute)))}"
         f" within {_bound(condition.threshold_min)} to {_bound(condition.threshold_max)}"
         for condition in rule.conditions
     )
 
 
+_READABLE_DECIMALS = 4
+"""Past anything the catalog measures, and short enough to read in a table cell."""
+
+
 def _bound(bound: Decimal | None) -> str:
     return "any" if bound is None else f"{bound:g}"
+
+
+def _figure(figure: Decimal | None) -> str:
+    """The figure that fired the rule, at a precision a person can read.
+
+    **The bounds were formatted and the figures were not**, which only showed once a derived
+    figure reached a rule: the estimated tax rate is a division, so it arrives as
+    `43.32847052546540994843612212` and the warning printed all 26 digits.
+
+    **It only ever shortens.** A figure already at a sane precision is printed exactly as it
+    arrived -- 52.0 stays "52.0", not "52" -- because how many decimals a publisher printed is
+    itself information. Only a figure carrying more than four is rounded. `normalize()` is
+    deliberately not used to tidy trailing zeros: it renders 60 as `6E+1`.
+    """
+    if figure is None:
+        return "no figure"
+    decimals = -figure.as_tuple().exponent
+    if isinstance(decimals, int) and decimals > _READABLE_DECIMALS:
+        figure = figure.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    return f"{figure:f}"
 
 
 def gates_that_rule_out(

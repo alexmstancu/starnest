@@ -487,25 +487,39 @@ fieldset {
 
 /* Tables -- the ranking and the criteria list */
 
+/* The table sits in a card that scrolls sideways rather than squeezing its columns. The
+   design gives this one surface a second, wider shadow -- it is the screen's subject, and the
+   only element that lifts off the page. */
+.table-card {
+  background: var(--colour-surface);
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-medium);
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.06),
+    0 10px 24px -8px rgba(16, 24, 40, 0.14);
+  overflow-x: auto;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--font-size-small);
+  font-size: 13px;
 }
 
 .table th,
 .table td {
-  padding: var(--space-half);
+  padding: 10px 14px;
   text-align: left;
-  vertical-align: top;
-  border-bottom: var(--border-width) solid var(--colour-border);
+  vertical-align: middle;
+  border-bottom: var(--border-width) solid var(--colour-surface-hair);
 }
 
 .table thead th {
-  font-size: var(--font-size-small);
+  padding: 9px 14px;
+  background: var(--colour-surface-raised);
+  border-bottom: var(--border-width) solid var(--colour-border);
+  font-size: 11px;
   font-weight: var(--weight-strong);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--colour-text-muted);
 }
 
@@ -514,12 +528,172 @@ fieldset {
   font-weight: var(--weight-strong);
 }
 
+/* The design lays this table out as a CSS grid with fixed columns. A real `<table>` reaches the
+   same pixels with `table-layout: fixed` and keeps the row and column semantics that the tests
+   and a screen reader both depend on -- the grid in the mockup was standing in for a table, not
+   arguing against one. The widths are the design's, less the two columns whose data the API
+   does not serve. */
+.table--ranking {
+  table-layout: fixed;
+  min-width: 962px;
+}
+
+.table--ranking th:nth-child(1),
+.table--ranking td:nth-child(1) {
+  width: 44px;
+  color: var(--colour-text-muted);
+}
+
+.table--ranking th:nth-child(3),
+.table--ranking td:nth-child(3) {
+  width: 70px;
+  text-align: right;
+}
+
+.table--ranking th:nth-child(4),
+.table--ranking td:nth-child(4) {
+  width: 116px;
+}
+
+.table--ranking th:nth-child(5),
+.table--ranking td:nth-child(5) {
+  width: 132px;
+}
+
+.table--ranking th:nth-child(6),
+.table--ranking td:nth-child(6) {
+  width: 116px;
+}
+
+/* The reason column takes what is left, and is the only one that wraps. */
+.table--ranking th:nth-child(7),
+.table--ranking td:nth-child(7) {
+  width: auto;
+  min-width: 180px;
+}
+
+.table--ranking th:nth-child(8),
+.table--ranking td:nth-child(8) {
+  width: 104px;
+  text-align: right;
+}
+
+/* The candidate's own name, and the one cell that may not wrap. */
+.table--ranking th[scope="row"] {
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The score is the number the screen exists to show, so it is the largest thing in the row. */
+.table--ranking .table__cell--numeric:nth-child(3) {
+  font-size: 15px;
+}
+
+.table__cell--absent {
+  font-size: 12px;
+  font-weight: var(--weight-normal);
+  color: var(--colour-text-muted);
+  text-align: right;
+}
+
+/* A meter: a track, a fill and a reading under it. Used for coverage and for the confidence
+   split, which differ only in how many fills share the track. */
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The track is an `<svg>`: the fills carry their geometry as SVG attributes, so a bar's width
+   is data while every colour stays here. */
+.meter__track {
+  display: block;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--colour-border);
+  overflow: hidden;
+}
+
+.meter__fill {
+  stroke: none;
+}
+
+/* The design's four readings of a figure. `strong` is this sheet's, for the `absolute`
+   confidence grade the design's own data never carried. */
+.meter__fill--strong {
+  fill: var(--colour-accent);
+}
+
+.meter__fill--good {
+  fill: #12b76a;
+}
+
+.meter__fill--fair {
+  fill: #5eead4;
+}
+
+.meter__fill--weak {
+  fill: #fdb022;
+}
+
+.meter__reading {
+  font-size: 11.5px;
+  color: var(--colour-text-label);
+}
+
+/* A chip: a small tinted label. One shape, four tints, and the tint is the only thing that
+   changes between them. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: var(--border-width) solid transparent;
+  border-radius: 9px;
+  font-size: 10.5px;
+  font-weight: var(--weight-strong);
+  white-space: nowrap;
+}
+
+.chip--matching {
+  background: var(--colour-success-surface);
+  border-color: var(--colour-success-border);
+  color: var(--colour-success);
+}
+
+.chip--not_matching {
+  background: var(--colour-danger-surface);
+  border-color: var(--colour-danger-border);
+  color: var(--colour-danger);
+}
+
+.chip--insufficient_data,
+.chip--warning {
+  background: var(--colour-warning-surface);
+  border-color: var(--colour-warning-border);
+  color: var(--colour-warning);
+}
+
+.chip--accent {
+  background: var(--colour-accent-surface);
+  border-color: var(--colour-accent-border);
+  color: var(--colour-accent);
+}
+
 /*
  * `reqs.md` 5.4: a non-matching candidate keeps its score, greyed out. Muted, not hidden --
  * the row is still readable, and still says what it would have scored.
  */
 .table__row--not-matching {
   color: var(--colour-text-muted);
+  background: var(--colour-surface-raised);
+}
+
+.table__row--open {
+  background: var(--colour-accent-surface);
 }
 
 /* A superseded figure is still there and still true of its period; it is simply not the one
@@ -529,8 +703,23 @@ fieldset {
   font-style: italic;
 }
 
+.table__reason {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--colour-text-label);
+  /* `table-layout: fixed` will not break an unbroken token, and a rule's detail names
+     attributes like `country.total_tax_rate_effective` -- without this one long identifier
+     runs out of its column and over the button beside it. */
+  overflow-wrap: anywhere;
+}
+
 /* A warning rules nothing out and changes no score (`reqs.md` 3.7a), so it reads as a note
-   rather than as a verdict. */
+   rather than as a verdict. Kept for the external-scores table, which still prefixes rather
+   than chips. */
 .table__reason--warning::before {
   content: "Note: ";
   font-weight: 600;

@@ -15,6 +15,12 @@ import {
 } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { CandidateDetail } from "./CandidateDetail";
+import {
+  type ConfidenceSplit,
+  confidenceBands,
+  confidenceLabel,
+  coverageBar,
+} from "./rankTable";
 import { useSelection } from "../../shell/SelectionContext";
 
 /**
@@ -134,30 +140,32 @@ function RankingTable({
           No candidate has been evaluated under this criteria set at this level.
         </p>
       ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th scope="col">Rank</th>
-              <th scope="col">Candidate</th>
-              <th scope="col">Score</th>
-              <th scope="col">Coverage</th>
-              <th scope="col">Of it, low confidence</th>
-              <th scope="col">Match status</th>
-              <th scope="col">Reason</th>
-              <th scope="col"> </th>
-            </tr>
-          </thead>
-          <tbody>
-            {ranking.candidates.map((result) => (
-              <CandidateRow
-                key={result.candidate}
-                result={result}
-                open={chosen?.candidate === result.candidate}
-                onChoose={onChoose}
-              />
-            ))}
-          </tbody>
-        </table>
+        <div className="table-card">
+          <table className="table table--ranking">
+            <thead>
+              <tr>
+                <th scope="col">Rank</th>
+                <th scope="col">Candidate</th>
+                <th scope="col">Score</th>
+                <th scope="col">Coverage</th>
+                <th scope="col">Confidence</th>
+                <th scope="col">Match status</th>
+                <th scope="col">Reason</th>
+                <th scope="col"> </th>
+              </tr>
+            </thead>
+            <tbody>
+              {ranking.candidates.map((result) => (
+                <CandidateRow
+                  key={result.candidate}
+                  result={result}
+                  open={chosen?.candidate === result.candidate}
+                  onChoose={onChoose}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
   );
@@ -191,15 +199,21 @@ function CandidateRow({
       <td>{result.rank ?? ABSENT}</td>
       <th scope="row">{result.name}</th>
       <ScoreCell result={result} />
-      <td className="table__cell--numeric">
-        {formatPercentage(result.coverage)}
+      <td>
+        <CoverageBar coverage={result.coverage} />
       </td>
       {/* A score is never discounted for resting on a weak figure (`reqs.md` 5.7), so the
-          disclosure is here: an estimate and a measurement land in the same column otherwise. */}
-      <td className="table__cell--numeric">
-        {formatPercentage(result.coverage_by_confidence?.low)}
+          disclosure is here: an estimate and a measurement land in the same column otherwise.
+          The bar shows the whole split rather than the low grade alone -- the column used to
+          say "of it, low confidence", which answered only half the question it raised. */}
+      <td>
+        <ConfidenceBar split={result.coverage_by_confidence} />
       </td>
-      <td>{formatMatchStatus(result.match_status)}</td>
+      <td>
+        <span className={`chip chip--${result.match_status}`}>
+          {formatMatchStatus(result.match_status)}
+        </span>
+      </td>
       <td>
         {/* Two kinds of reason, and they are not the same thing. `non_match_reasons` say why a
             candidate that COULD be scored does not match; `insufficient_reason` says why one
@@ -216,10 +230,8 @@ function CandidateRow({
         {/* A warning rules nothing out and changes no score; it sits with the reasons because
             that is where a reader looks for what a rule had to say (`reqs.md` 3.7a). */}
         {(result.warnings ?? []).map((warning) => (
-          <p
-            key={warning.compound_rule}
-            className="table__reason table__reason--warning"
-          >
+          <p key={warning.compound_rule} className="table__reason">
+            <span className="chip chip--warning">warning</span>
             {warning.detail}
           </p>
         ))}
@@ -227,7 +239,7 @@ function CandidateRow({
       <td>
         <button
           type="button"
-          className="button"
+          className={open ? "button button--current" : "button"}
           onClick={() =>
             onChoose(
               open ? null : { candidate: result.candidate, name: result.name },
@@ -238,6 +250,58 @@ function CandidateRow({
         </button>
       </td>
     </tr>
+  );
+}
+
+/**
+ * Coverage as a track and a reading, the way the design draws it.
+ *
+ * The width and the tone are decided in `rankTable.ts`; this renders what it is handed.
+ */
+function CoverageBar({ coverage }: { coverage: number | null | undefined }) {
+  const bar = coverageBar(coverage);
+
+  return (
+    <div className="meter">
+      {/* **SVG, not a styled div.** A bar's width is a datum, and `styles.css` is where design
+          lives (the lint rule says so). An SVG geometry attribute carries the number without a
+          `style` attribute, and the colour still comes from a class -- so changing how a meter
+          looks is still a change to one stylesheet. */}
+      <svg className="meter__track" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">
+        <rect className={`meter__fill meter__fill--${bar.tone}`} width={bar.width} height="6" />
+      </svg>
+      <span className="meter__reading">{formatPercentage(coverage)} covered</span>
+    </div>
+  );
+}
+
+/**
+ * The confidence split as one stacked track.
+ *
+ * **Every band carries a `title`**, because a 6px stripe of colour is not self-explaining and
+ * this is the disclosure `reqs.md` 5.7 requires rather than decoration. The reading beside it
+ * says the same thing in text, for anyone who cannot hover.
+ */
+function ConfidenceBar({ split }: { split: ConfidenceSplit | null | undefined }) {
+  const bands = confidenceBands(split);
+
+  return (
+    <div className="meter">
+      <svg className="meter__track" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">
+        {bands.map((band) => (
+          <rect
+            key={band.grade}
+            className={`meter__fill meter__fill--${band.tone}`}
+            x={band.x}
+            width={band.width}
+            height="6"
+          >
+            <title>{band.title}</title>
+          </rect>
+        ))}
+      </svg>
+      <span className="meter__reading">{confidenceLabel(split)}</span>
+    </div>
   );
 }
 

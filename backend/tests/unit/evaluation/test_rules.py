@@ -73,6 +73,32 @@ class TestACompoundRule:
         assert "52.0" in warning.detail
         assert warning.detail.startswith("Cheap but taxed:")
 
+    def test_a_derived_figure_is_read_at_a_readable_precision(self) -> None:
+        """**Found on screen, 2026-09-20.** The estimated tax rate is a division, so it arrives
+        as `43.32847052546540994843612212`, and the detail interpolated it whole: a warning that
+        is correct and unreadable, sitting in a ranking beside figures printed to one decimal.
+        The bounds were already formatted; the figures were not.
+        """
+        derived = {PRICES: Decimal("65.1"), TAX: Decimal("52.32847052546540994843612212")}
+
+        (warning,), _ = judged(a_rule(), derived)
+
+        assert "52.3285" in warning.detail
+        assert "52.32847052546540994843612212" not in warning.detail
+
+    def test_a_figure_already_readable_is_printed_exactly_as_it_arrived(self) -> None:
+        """**The formatting only ever shortens.** How many decimals a publisher printed is
+        itself information, and `Decimal.normalize()` -- the obvious way to tidy a trailing
+        zero -- renders 60 as `6E+1`, so neither is done.
+        """
+        whole = {PRICES: Decimal("60.00"), TAX: Decimal("52.0")}
+
+        (warning,), _ = judged(a_rule(), whole)
+
+        assert "60.00" in warning.detail
+        assert "52.0" in warning.detail
+        assert "6E+1" not in warning.detail
+
     def test_one_condition_failing_is_enough_to_stay_silent(self) -> None:
         """AND is the only connective, and it is implicit in the shape (`reqs.md` 3.7a)."""
         expensive = {PRICES: Decimal("108.3"), TAX: Decimal("52.0")}
