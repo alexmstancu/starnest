@@ -229,7 +229,7 @@ test.describe("a run", () => {
       }
     });
 
-    await page.goto("/run");
+    await page.goto("/acquire");
     await page.getByRole("button", { name: "Estimate a run" }).click();
 
     const plan = page.getByRole("heading", { name: "What this run would do" });
@@ -246,7 +246,7 @@ test.describe("a run", () => {
     // country, which is a real cost to pay for a test of a screen.
     const run = await startNarrowRun(request);
 
-    await page.goto("/run");
+    await page.goto("/acquire");
     const row = page.getByRole("row").filter({ hasText: String(run) }).first();
     await row.getByRole("button", { name: "Open" }).click();
 

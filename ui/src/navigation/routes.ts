@@ -21,8 +21,8 @@ export const ROUTES: readonly RouteDefinition[] = [
       "Criteria and weights, criteria sets, matching thresholds and match rules, source priority, candidates, household and settings.",
   },
   {
-    path: "/run",
-    label: "Run",
+    path: "/acquire",
+    label: "Acquire",
     summary:
       "Scope selector, dry-run estimate, spend cap, live progress, failures with one-click retry, and run history.",
   },

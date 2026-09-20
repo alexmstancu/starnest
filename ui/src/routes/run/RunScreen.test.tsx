@@ -23,7 +23,7 @@ async function estimate() {
 
 describe("estimating a run", () => {
   it("shows what the run would do before anything is fetched", async () => {
-    renderShell("/run");
+    renderShell("/acquire");
 
     await estimate();
 
@@ -37,7 +37,7 @@ describe("estimating a run", () => {
   });
 
   it("says what a cost rests on, because a free plan has nothing to explain", async () => {
-    renderShell("/run");
+    renderShell("/acquire");
 
     await estimate();
 
@@ -51,7 +51,7 @@ describe("estimating a run", () => {
         HttpResponse.json(PAID_RUN_PLAN),
       ),
     );
-    renderShell("/run");
+    renderShell("/acquire");
 
     await estimate();
 
@@ -71,7 +71,7 @@ describe("estimating a run", () => {
         return HttpResponse.json({ id: 9 }, { status: 202 });
       }),
     );
-    renderShell("/run");
+    renderShell("/acquire");
 
     await estimate();
 
@@ -90,7 +90,7 @@ describe("estimating a run", () => {
         ),
       ),
     );
-    renderShell("/run");
+    renderShell("/acquire");
 
     await estimate();
 
@@ -100,7 +100,7 @@ describe("estimating a run", () => {
 
 describe("running and retrying", () => {
   it("shows the run's progress and what it could not answer", async () => {
-    renderShell("/run");
+    renderShell("/acquire");
     await estimate();
 
     await userEvent.click(
@@ -127,7 +127,7 @@ describe("running and retrying", () => {
         return HttpResponse.json({ id: 12 }, { status: 202 });
       }),
     );
-    renderShell("/run");
+    renderShell("/acquire");
     await estimate();
     await userEvent.click(
       screen.getByRole("button", { name: /start this run/i }),
@@ -156,7 +156,7 @@ describe("running and retrying", () => {
         }),
       ),
     );
-    renderShell("/run");
+    renderShell("/acquire");
     await estimate();
 
     await userEvent.click(
@@ -181,7 +181,7 @@ describe("what nobody answered", () => {
    * nothing about that country and said so nowhere.
    */
   async function openTheRun() {
-    renderShell("/run");
+    renderShell("/acquire");
     await estimate();
     await userEvent.click(
       screen.getByRole("button", { name: /start this run/i }),
@@ -285,7 +285,7 @@ describe("what nobody answered", () => {
 
 describe("the run history", () => {
   it("lists recent runs with their status and cost", async () => {
-    renderShell("/run");
+    renderShell("/acquire");
 
     const history = await screen.findByRole("table");
     expect(
@@ -299,7 +299,7 @@ describe("the run history", () => {
   });
 
   it("opens a past run's detail", async () => {
-    renderShell("/run");
+    renderShell("/acquire");
     const history = await screen.findByRole("table");
     const row = within(history).getByRole("row", { name: /^7/ });
 
@@ -322,7 +322,7 @@ describe("the run history", () => {
         ),
       ),
     );
-    renderShell("/run");
+    renderShell("/acquire");
     const history = await screen.findByRole("table");
     const row = within(history).getByRole("row", { name: /^7/ });
 
@@ -337,7 +337,7 @@ describe("when there is nothing to show", () => {
     mockServer.use(
       http.get(`${BASE}/levels`, () => HttpResponse.json({ items: [] })),
     );
-    renderShell("/run");
+    renderShell("/acquire");
 
     expect(
       await screen.findByText(/choose a level to plan a run/i),
@@ -353,7 +353,7 @@ describe("when there is nothing to show", () => {
         HttpResponse.json({ items: [], total: 0 }),
       ),
     );
-    renderShell("/run");
+    renderShell("/acquire");
 
     expect(
       await screen.findByText(/no run has been started yet/i),
@@ -375,7 +375,7 @@ describe("when there is nothing to show", () => {
         });
       }),
     );
-    renderShell("/run");
+    renderShell("/acquire");
     await estimate();
     await userEvent.click(
       screen.getByRole("button", { name: /start this run/i }),

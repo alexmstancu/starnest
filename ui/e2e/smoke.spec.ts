@@ -14,7 +14,7 @@ import { expect, test } from "@playwright/test";
  * prove the mock works.
  */
 
-const TABS = ["Configure", "Run", "Rank", "Compare"] as const;
+const TABS = ["Configure", "Acquire", "Rank", "Compare"] as const;
 
 test("the shell boots and shows the configured display name", async ({ page }) => {
   await page.goto("/");

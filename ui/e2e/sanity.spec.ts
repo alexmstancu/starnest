@@ -28,7 +28,7 @@ import { type Locator, type Page, expect, test } from "@playwright/test";
  * being right about a different year.
  */
 
-const TABS = ["Configure", "Run", "Rank", "Compare"] as const;
+const TABS = ["Configure", "Acquire", "Rank", "Compare"] as const;
 
 test.describe("the shell", () => {
   test("opens each tab, and each one renders its own screen", async ({ page }) => {
@@ -126,7 +126,7 @@ test.describe("configuring", () => {
 
 test.describe("a run", () => {
   test("can be estimated without fetching anything", async ({ page }) => {
-    await page.goto("/run");
+    await page.goto("/acquire");
     await page.getByRole("button", { name: /Estimate a run/ }).click();
 
     // The estimate is the whole point: what it would cost, before it costs it.
@@ -139,7 +139,7 @@ test.describe("a run", () => {
   });
 
   test("lists past runs with what each one did", async ({ page }) => {
-    await page.goto("/run");
+    await page.goto("/acquire");
     const history = page.getByRole("table").last();
 
     await expect(history.getByRole("row")).not.toHaveCount(0);

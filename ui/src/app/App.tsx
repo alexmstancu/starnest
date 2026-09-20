@@ -24,7 +24,7 @@ import {
 const SCREENS: Record<RoutePath, ComponentType<{ route: RouteDefinition }>> = {
   "/configure": ConfigureScreen,
   "/rank": RankScreen,
-  "/run": RunScreen,
+  "/acquire": RunScreen,
   "/compare": CompareScreen,
 };
 

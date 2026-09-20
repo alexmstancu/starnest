@@ -9,7 +9,7 @@ import { ROUTES } from "../navigation/routes";
  * The sidebar linked to `ROUTES[1]`, which meant Run only for as long as nobody reordered the
  * list -- and reordering it is a change nothing would have failed on.
  */
-const RUN = ROUTES.find((route) => route.label === "Run")!;
+const ACQUIRE = ROUTES.find((route) => route.label === "Acquire")!;
 import { ErrorNotice } from "./ErrorNotice";
 import { useSelection } from "./SelectionContext";
 import { useShellSummary } from "./useShellSummary";
@@ -147,7 +147,7 @@ function LastRunPanel({ summary }: { summary: ReturnType<typeof useShellSummary>
         ))}
       {/* Found by label rather than by position: `ROUTES[1]` meant "Run" only for as long as
           nobody reordered the list, and reordering it is a change nothing would have failed on. */}
-      <NavLink className="panel__link" to={RUN.path}>
+      <NavLink className="panel__link" to={ACQUIRE.path}>
         Run history
       </NavLink>
     </section>

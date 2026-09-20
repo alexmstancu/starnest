@@ -2604,7 +2604,7 @@ everywhere; each tab owns one stage of the workflow and nests its detail views i
   read from here.
 - **Settings.** Score scale, `min_coverage`, comparator limit and run spend cap.
 
-### 8.3 Tab 2 — Run
+### 8.3 Tab 2 — Acquire
 
 - **Scope selector** — level, which candidates, which criteria.
 - **Dry-run estimate** — planned call count and cost range, with explicit confirmation.
@@ -2858,6 +2858,7 @@ not only *what*.
 | Q32 | Subdivisions descriptive only | A third tier would break the two-level architecture |
 | Q33 | Catalog at name/type/direction/source/weight detail | Scale bands and thresholds can only be set sensibly after real data |
 | Q34 | Four tabs plus sidebar | One tab per stage of the workflow; newer surfaces nest inside |
+| Q231 | **The second tab is "Acquire", not "Run"** (2026-09-20) | Every other tab names the work -- Configure, Rank, Compare. "Run" named the mechanism, and the mechanism is the application's, not the reader's. The tab is where figures are fetched, so it says so, and it matches the vocabulary the rest of the system already uses: a `data_acquisition` module, `POST /v1/data-acquisition-runs`, "data acquisition run" throughout this document. The route moves with the label -- a tab called Acquire living at `/run` is the same drift under a different name. **The runs themselves stay runs**: the entity is unchanged, which is why the sidebar still links to "Run history" |
 | Q35 | Per-value confidence: display and source priority only | Coverage says how much data exists; confidence says what it is worth. Discounting the score would absorb uncertainty rather than disclose it |
 | Q36 | Confidence derived from source, age and geography, with override | Reuses `max_age` and `DataSource.kind`; no field anyone must remember to fill |
 | Q37 | `country.openness_to_foreigners` moved to country level | MIPEX, Eurobarometer and InterNations are country-level only |
