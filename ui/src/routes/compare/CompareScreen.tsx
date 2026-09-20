@@ -233,21 +233,25 @@ function ComparisonTable({ comparison }: { comparison: Comparison }) {
             Ordered by what each difference is worth to the score, not by how
             large it looks.
           </p>
-          <dl className="stat-list">
-            <div className="stat">
+          {/* Stacked, not label-and-value: a list is not a figure, and pushing it to the
+              right of its own label left a column of text hard against the card's edge. The
+              design colours the two labels instead -- ahead in the success green, behind in
+              the danger red -- so the direction is readable before the words are. */}
+          <dl className="stat-list stat-list--stacked">
+            <div className="stat stat--ahead">
               <dt className="stat__label">Ahead on</dt>
               <dd className="stat__value">
-                <ul>
+                <ul className="line-list">
                   {(pair.advantages ?? []).map((line, at) => (
                     <li key={`${at}-${line}`}>{line}</li>
                   ))}
                 </ul>
               </dd>
             </div>
-            <div className="stat">
+            <div className="stat stat--behind">
               <dt className="stat__label">Behind on</dt>
               <dd className="stat__value">
-                <ul>
+                <ul className="line-list">
                   {(pair.disadvantages ?? []).map((line, at) => (
                     <li key={`${at}-${line}`}>{line}</li>
                   ))}

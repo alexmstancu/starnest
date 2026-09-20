@@ -501,6 +501,43 @@ fieldset {
   font-size: var(--font-size-small);
 }
 
+/* A stat whose value is a list, not a figure. */
+.stat-list--stacked .stat {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+
+.stat-list--stacked .stat__value {
+  font-size: inherit;
+  font-weight: var(--weight-normal);
+}
+
+.stat--ahead .stat__label {
+  font-size: 11px;
+  font-weight: var(--weight-strong);
+  color: var(--colour-success);
+}
+
+.stat--behind .stat__label {
+  font-size: 11px;
+  font-weight: var(--weight-strong);
+  color: var(--colour-danger);
+}
+
+/* Lines of prose, not bullets: each already reads as a sentence. */
+.line-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--colour-text-label);
+}
+
 .stat__label {
   font-size: 12.5px;
   color: var(--colour-text-muted);
