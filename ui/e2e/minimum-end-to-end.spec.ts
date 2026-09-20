@@ -1,4 +1,7 @@
 import { type Locator, type Page, expect, test } from "@playwright/test";
+/** Where the API lives for these setup calls -- the same origin the config gives the browser. */
+const BASE_URL = process.env["UI_ORIGIN"] ?? "http://localhost:5173";
+
 
 /**
  * minE2E's acceptance test, and the only one that counts (`docs/mine2e.md`):
@@ -18,7 +21,35 @@ import { type Locator, type Page, expect, test } from "@playwright/test";
  * table.
  */
 
-const MINIMAL_SET = "minimal";
+/**
+ * A criteria set this spec owns outright, duplicated from `minimal` before the first test
+ * and deleted after the last.
+ *
+ * **Sharing one was the flake.** This spec and `gate-c.spec.ts` both moved the same criterion in
+ * `minimal` and then asserted on the whole ranking, so each could land inside the other's
+ * before-and-after. Restoring what they found made that rarer; owning the set removes it. A
+ * set is a full copy, never a sparse overlay (`reqs.md` Q191), so a duplicate is a complete
+ * and independent opinion about the same attributes -- which is what a mutating test needs
+ * and what sharing cannot give it.
+ */
+const MINIMAL_SET = "e2e_min";
+const SHIPPED_SOURCE = "minimal";
+
+test.beforeAll(async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: BASE_URL });
+  await api.delete(`/v1/criteria-sets/${MINIMAL_SET}`);
+  const made = await api.post(`/v1/criteria-sets/${SHIPPED_SOURCE}/duplicate`, {
+    data: { id: MINIMAL_SET, name: MINIMAL_SET },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
+  await api.dispose();
+});
+
+test.afterAll(async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: BASE_URL });
+  await api.delete(`/v1/criteria-sets/${MINIMAL_SET}`);
+  await api.dispose();
+});
 const HOUSING_OVERBURDEN = "country.housing_cost_overburden_rate";
 const SHIPPED_WEIGHT = "50";
 const A_DIFFERENT_WEIGHT = "80";
@@ -99,19 +130,7 @@ test.describe.serial("the minimum end to end", () => {
     // A target different from whatever is there. A fixed one is a no-op the moment another
     // spec has already moved this criterion to it, and then this fails asserting that the
     // ranking changed -- which it would have, had anything changed.
-    // The weights belong to a criteria set, so the set is chosen before one can be read --
-    // `setWeight` does this itself, which is why reading first needs it too.
-    await selectTheScoringSet(page);
-    const input = page.getByRole("spinbutton", {
-      name: `Weight for ${HOUSING_OVERBURDEN}`,
-    });
-    await input.waitFor();
-    const now = await input.inputValue();
-    await setWeight(
-      page,
-      HOUSING_OVERBURDEN,
-      now === A_DIFFERENT_WEIGHT ? "60" : A_DIFFERENT_WEIGHT,
-    );
+    await moveTheWeight(page, HOUSING_OVERBURDEN);
 
     const after = await scoresInOrder(page);
 
@@ -141,6 +160,27 @@ async function selectTheScoringSet(page: import("@playwright/test").Page): Promi
   await page.getByLabel("Active criteria set").selectOption(MINIMAL_SET);
 }
 
+/**
+ * Move a weight to something other than where it is, and say where it went.
+ *
+ * **A fixed target is a no-op the moment anything already set it** -- another spec, or an
+ * earlier run of this one -- and then Save never enables, because Save is disabled until the
+ * value actually changes. The test that follows asserts the ranking moved, so it needs the
+ * weight to have moved, not to have been assigned.
+ */
+async function moveTheWeight(
+  page: import("@playwright/test").Page,
+  attribute: string,
+): Promise<void> {
+  // The weights live on Configure, and the caller has just read the ranking.
+  await page.goto("/configure");
+  await selectTheScoringSet(page);
+  const input = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
+  await input.waitFor();
+  const now = await input.inputValue();
+  await setWeight(page, attribute, now === A_DIFFERENT_WEIGHT ? "60" : A_DIFFERENT_WEIGHT);
+}
+
 async function setWeight(
   page: import("@playwright/test").Page,
   attribute: string,
@@ -151,8 +191,7 @@ async function setWeight(
   await input.waitFor();
 
   // Nothing to do, and nothing the screen would let us do: Save is disabled until the weight
-  // actually changes. The restore in `afterEach` hits this whenever the test it follows never
-  // got as far as changing anything.
+  // actually changes. A restore hits this whenever the test it follows changed nothing.
   if ((await input.inputValue()) === weight) return;
 
   await input.fill(weight);

@@ -1,4 +1,7 @@
 import { expect, test, type Page, type APIRequestContext } from "@playwright/test";
+/** Where the API lives for these setup calls -- the same origin the config gives the browser. */
+const BASE_URL = process.env["UI_ORIGIN"] ?? "http://localhost:5173";
+
 
 /**
  * GATE C -- the product, driven by a browser (`devplan.md`).
@@ -14,7 +17,35 @@ import { expect, test, type Page, type APIRequestContext } from "@playwright/tes
  * tests arrange the decision, assert what the screen says, and put it back.
  */
 
-const SCORING_SET = "minimal";
+/**
+ * A criteria set this spec owns outright, duplicated from `minimal` before the first test
+ * and deleted after the last.
+ *
+ * **Sharing one was the flake.** This spec and `minimum-end-to-end.spec.ts` both moved the same criterion in
+ * `minimal` and then asserted on the whole ranking, so each could land inside the other's
+ * before-and-after. Restoring what they found made that rarer; owning the set removes it. A
+ * set is a full copy, never a sparse overlay (`reqs.md` Q191), so a duplicate is a complete
+ * and independent opinion about the same attributes -- which is what a mutating test needs
+ * and what sharing cannot give it.
+ */
+const SCORING_SET = "e2e_gate_c";
+const SHIPPED_SOURCE = "minimal";
+
+test.beforeAll(async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: BASE_URL });
+  await api.delete(`/v1/criteria-sets/${SCORING_SET}`);
+  const made = await api.post(`/v1/criteria-sets/${SHIPPED_SOURCE}/duplicate`, {
+    data: { id: SCORING_SET, name: SCORING_SET },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
+  await api.dispose();
+});
+
+test.afterAll(async ({ playwright }) => {
+  const api = await playwright.request.newContext({ baseURL: BASE_URL });
+  await api.delete(`/v1/criteria-sets/${SCORING_SET}`);
+  await api.dispose();
+});
 const A_CRITERION = "country.housing_cost_overburden_rate";
 const SHIPPED_WEIGHT = "50";
 const A_DIFFERENT_WEIGHT = "75";

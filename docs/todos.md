@@ -34,20 +34,16 @@ is implemented across all four tabs. Two things it does not specify are still ou
       the figures below them, which the design's own caption offers ("select one to filter the
       figures below").
 
-- [ ] **The browser suite is order-coupled, and it always was.** `gate-c.spec.ts` and
-      `minimum-end-to-end.spec.ts` both mutate **the same criterion**
-      (`country.housing_cost_overburden_rate`) in **the same criteria set** (`minimal`), and
-      both assert on the whole ranking afterwards. Each now restores what it found and picks a
-      target different from the current value, which fixed the common case -- but roughly one
-      full-suite run in three still fails on one of the two, because a gate answer and a weight
-      edit are both global and the assertions are about a global ranking.
-
-      Fixed already: parallelism (one worker, in order), non-idempotent targets, and missing
-      restores. What remains is **isolation**, and the clean answer is to give each mutating
-      spec its own criteria set rather than sharing `minimal` -- a set is a full copy (Q191),
-      so this is cheap and would remove the coupling at its source rather than sequencing
-      around it.
-
-      `sanity.spec.ts` is unaffected and stable: it mutates only one setting and puts it back.
+- [x] **The browser suite was order-coupled.** `gate-c.spec.ts` and
+      `minimum-end-to-end.spec.ts` both moved the same criterion in the same criteria set
+      (`minimal`) and then asserted on the whole ranking, so each could land inside the other's
+      before-and-after -- about one full run in three.
+      Done: each spec now duplicates `minimal` into a set it owns (`e2e_gate_c`, `e2e_min`) in
+      `beforeAll` and deletes it in `afterAll`. A set is a full copy, never a sparse overlay
+      (Q191), so a duplicate is a complete and independent opinion about the same attributes.
+      Also: one worker rather than parallel, restores of what each test found, and a weight
+      target computed from the current value instead of a fixed one.
+      Six consecutive clean runs, and the suite went from ~48s to ~14s -- the tests had been
+      waiting on each other's writes.
 
 ## TODOs for Alex
