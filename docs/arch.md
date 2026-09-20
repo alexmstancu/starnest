@@ -998,8 +998,8 @@ The four tabs of `reqs.md` 8, each a route, plus the persistent sidebar:
 | Route | Reads | Writes |
 |---|---|---|
 | `/configure` | criteria sets, attributes, pillars, match rules, compound rules, household, settings | criteria sets and their criteria, household, settings, match-rule overrides |
-| `/run` | data acquisition runs and their failures | starts runs, retries failures |
-| `/rank` | rankings, candidate detail, values with provenance, external scores | saves evaluations |
+| `/acquire` | data acquisition runs and their failures | starts runs, retries failures |
+| `/rank` | rankings, candidate detail, values with provenance, external scores | — (saving an evaluation is served but the interface does not yet call it) |
 | `/compare` | comparisons | — |
 
 ### 8.3 Adjusting a weight, end to end

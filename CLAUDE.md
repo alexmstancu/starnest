@@ -4,10 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**A vertical slice runs end to end: four containers, a real database, 31 European countries
-ranked from real Eurostat figures in a browser.** **`docs/reqs.md` is authoritative for
-requirements and the ontology — read it first**, and `docs/devplan.md` 0 before doing
-implementation work.
+**All four gates are closed and the MVP is functionally complete.** Four containers, a real
+database, 32 European countries ranked from seven publishers in a browser, carrying a finished
+visual design. **`docs/reqs.md` is authoritative for requirements and the ontology — read it
+first**, and `docs/devplan.md` 0 before doing implementation work.
+
+**What is left is data, not code** (2026-09-20). 25% of the score has no figure for any
+country, concentrated in career (7.6%), nature (4.8%), family (4.0%) and governance (3.6%).
+Every one of those criteria already exists as a row with a weight and a pillar, so a figure
+arriving is a row rather than a change — which is the "nothing hardcoded" invariant paying out.
+`docs/todos.md` tracks what is open.
 
 | Module | State |
 |---|---|
@@ -15,7 +21,7 @@ implementation work.
 | `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. `target_range` scores its band and falls linearly to its zero points (built 2026-09-11). The rules are applied: a compound rule warns or rules out, a gate answered `not_matching` makes a candidate not match while keeping its score, and **an undecided rule never fires** -- which both shipped compound rules are. **The two compound-rule shapes that read a household field belong to the city level.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
 | `api/`, `data_acquisition/`, `data_sources/` | **Written.** **All 40 of the contract's operations**; seven source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, and an estimate from Eurostat's tax-benefit figures); values served with both dates, manual entry where the attribute permits it, and the gates' answers; runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | **Written.** Focus against comparators, deltas in the attribute's own unit, weighted contribution, and a synthesis templated from the numbers and ordered by what each gap is worth |
-| `ui/` | The shell and **all four tabs**: Configure with its eight panels (household, settings, criteria sets, pillar weights, criteria, rules, gate proposals, source priority), Acquire, Rank with its drill-down, Compare. **A criterion's rule is editable per row** -- goal, normalisation method, target band, scale anchors, matching threshold -- which is the subjective half of the ontology becoming data rather than migration. 167 unit tests and 15 browser tests. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
+| `ui/` | The shell and **all four tabs**: Configure with its eight panels (household, settings, criteria sets, pillar weights, criteria, rules, gate proposals, source priority), Acquire, Rank with its drill-down, Compare. **A criterion's rule is editable per row** -- goal, normalisation method, target band, scale anchors, matching threshold -- which is the subjective half of the ontology becoming data rather than migration. 297 unit tests and 23 browser tests, the latter including a functional sanity suite that walks all four tabs. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
 
 **GATE D closed 2026-09-12** — the four failure modes, executable
 (`backend/tests/acceptance/test_gate_d.py`): a process that dies mid-run keeps every figure it
@@ -62,8 +68,8 @@ attribute answered for every country (proved live by `make live`), the four spot
 matching their publishers by routes the adapters never use, and selective retry built. **The
 family pillar is the one known gap**: OECD blocks scripts, so it waits rather than being
 unfinished. **GATE A closed 2026-09-05** — `backend/tests/acceptance/test_gate_a.py` is the gate written
-down, seven steps in order against a real database plus two standing checks. 1,300 backend
-tests, 98 interface tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
+down, seven steps in order against a real database plus two standing checks. 2,135 backend
+tests, 297 interface tests and 23 browser tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
 deliberately does not cover.
 
 **Two tables looked dead in the schema diagram and only one was** (Q229). `settings` is a
@@ -280,7 +286,25 @@ Module layout, all under `backend/src/starnest/` (`arch.md` 6.1) — **named aft
 | `api/` | The REST surface. **This is the presenter** — use cases return DTOs, `api/` serialises them |
 | `data_sources/`, `storage/` | **Plugins.** Implement interfaces the policy modules declare; no policy lives here |
 
-**The interface is built for behaviour first, appearance later.** Until the application is code-complete, `ui/` work goes into what the screens *do* — state, data flow, error handling, accessibility semantics — and not into how they look. There is no visual design yet and inventing one costs twice: once to write and once to undo. Keep the visuals shallow and easy to swap: semantic HTML, roles and labels that a test can find, and styling confined to `styles.css` rather than spread through components. A considered design pass happens with Claude Design once the behaviour is settled.
+**The design pass has happened** (2026-09-20). `ui/` was built behaviour-first on purpose --
+semantic HTML, roles and labels a test can find, and every colour, space and size a custom
+property in `styles.css` -- and that bet paid: reproducing the design moved one `:root` block
+and touched no component, because there was no hard-coded colour outside it to find.
+
+**The design lives at `claude.ai/design`, project "Starnest design", file
+`Starnest Product.dc.html`** -- a white ground, a teal `#0f766e` accent, Public Sans with
+tabular numerals, 4px radii. Claude Design **reads this repository**, so `docs/design-brief.md`
+is the return channel for anything the mockup cannot express. Two things it could not: the
+interaction states, taken instead from the rule the same designer wrote into their Nocturne
+system's readme, and behaviour below the design's width, decided here as **desktop only down to
+1280px, mobile post-MVP**.
+
+**The rules that made it cheap still hold, and are enforced.** Styling stays in `styles.css` --
+eslint refuses a `style` attribute anywhere under `routes/` or `shell/`, with the reason in the
+message: "An inline style is design in a component, which is what makes a redesign a rewrite."
+A data-driven bar is drawn as SVG, whose geometry is an attribute rather than a style. And a
+`.tsx` under those folders may not call `Number`, `parseInt`, `parseFloat` or `toFixed`, so the
+arithmetic behind a bar lives in a plain module beside it.
 
 **The interface's folders are the product's shape, not a filing cabinet.** `ui/src/routes/`
 holds one folder per screen -- `compare/`, `configure/`, `rank/`, `run/` -- and each keeps what

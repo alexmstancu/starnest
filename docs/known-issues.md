@@ -21,7 +21,7 @@ the account of a defect outlives the defect.
 
 ## Status
 
-**63 findings: 58 closed, 5 open, and every one of the five is open by decision rather than by
+**68 findings: 63 closed, 5 open, and every one of the five is open by decision rather than by
 neglect**: P36's spend record and P28's deferred ledger, P38's mitigated LLM editions, P6's
 Cloudflare block, P10's unstored exchange rates, and P39's postponed geography. P4 is recorded
 as out of scope rather than open. **P35 closed 2026-09-19** -- the last finding that was a
@@ -499,3 +499,18 @@ red.
 - **Documentation drift**: `CLAUDE.md` says the contract has 40 operations where both files now
   hold 42, and `pyproject.toml` still explains a 75% coverage bar that was raised to 85 on
   2026-09-05.
+
+### Found while reproducing the design — 2026-09-20
+
+The design pass ran the application in a browser rather than reading it, which is why these
+five are all faults no unit test could see. None was a design question; each was something
+already broken that a restyle made visible.
+
+| # | Finding | Status |
+|---|---|---|
+| **P64** | **A compound rule's detail printed its figure raw.** The estimated tax rate is a division, so a warning read `country.total_tax_rate_effective 43.32847052546540994843612212` beside bounds that were already formatted. Tolerable in plain text, glaring in a table of tabular figures | **Fixed 2026-09-20.** Shortened to four decimals **and only ever shortened** -- 52.0 stays "52.0", because how many decimals a publisher printed is itself information, and `normalize()` is avoided because it renders 60 as `6E+1`. Proved by a test that failed on the 26 digits first |
+| **P65** | **A checkbox nobody could click.** The comparator chips hid their input with `pointer-events: none`, leaving only the label clickable. Fine for a mouse; `locator.check()` timed out, and anything driving the real control had nothing to hit | **Fixed 2026-09-20.** The input covers its label instead of being shrunk to nothing, so the whole chip is the input. Found by the browser suite, invisible to every component test |
+| **P66** | **Three end-to-end tests indexed table cells by position.** Inserting a `Pillars` column shifted them, and `scoreOf` silently began comparing the pillar chart's tooltip text instead of the score -- which differs between criteria sets often enough that it kept passing, and failed about one run in three | **Fixed 2026-09-20.** Every cell lookup goes by its column's *heading*. A heading is what a column means; where it sits is an accident of layout, and layout is what a design pass changes |
+| **P67** | **The browser suite mutated shared state in parallel.** Gate C and minE2E moved the same criterion in the same criteria set and both asserted on the whole ranking, so each could land inside the other's before-and-after | **Fixed 2026-09-20.** One worker in order, restores of what each test found, targets computed from the current value, and each mutating spec now duplicates `minimal` into a set it owns. Six consecutive clean runs, and the suite fell from ~48s to ~14s -- the tests had been waiting on each other's writes |
+| **P68** | **A run's end state was asserted immediately after starting it.** P35 made the 202 true that morning, so the run was still `running`; the test had been failing since and nothing had noticed | **Fixed 2026-09-20.** It polls through the Refresh button that exists for it, and the run report became a labelled region -- the unscoped lookup had been finding the sidebar's candidate count |
+

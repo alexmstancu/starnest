@@ -77,7 +77,19 @@ in `CandidateDetail.tsx`, deltas and contributions in `CompareScreen.tsx`, run h
 
 ## Where the implementation has got to
 
-`ui/src/styles.css` carries the design's tokens; the whole interface is styled from that one
-block of custom properties and nothing else, so a value changed there reaches every screen.
-Wave 1 (tokens, Public Sans vendored into `ui/public/fonts/`) is done. Wave 2 (tables, controls,
-sidebar) is waiting on the states above.
+**The design is implemented across all four tabs** (2026-09-20) -- chrome, the ranking table,
+the drill-down, Configure's two columns, Acquire and Compare. `ui/src/styles.css` carries every
+token, and the whole interface is styled from that one block, so a value changed there reaches
+every screen.
+
+**Both gaps above are now answered, and neither needed this file in the end.** The interaction
+states were taken from the rule the same designer wrote into the Nocturne system's own readme
+-- a hover tint, a pressed step past the accent, `outline: 2px solid <accent>; outline-offset:
+2px` for `:focus-visible`, disabled at 45% -- so nothing was invented. Narrow-desktop behaviour
+was decided by the household: **1280px, mobile post-MVP**, with `Δ home` giving way at 1440 and
+`Pillars` at 1280, and the sidebar narrowing to 200px rather than collapsing, because the
+active criteria set is what every number on screen is relative to.
+
+**What would still help**, if the design is revised again: loading, empty and error states.
+`useResource` distinguishes idle, loading, ready and error on every screen, and the mockup
+draws only the last.

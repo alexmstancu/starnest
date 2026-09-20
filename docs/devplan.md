@@ -30,11 +30,15 @@ section it cites.
 
 ---
 
-## 0.0 Where this plan actually stands — 2026-09-05
+## 0.0 Where this plan actually stands — 2026-09-05, refreshed 2026-09-20
 
 Written after minE2E (`docs/mine2e.md`) landed a working vertical slice. Everything below this
 section was reasoned from documents; this section is the first part written from a running
 application, and where the two disagree, this one is right.
+
+**All four gates have since closed and the MVP is functionally complete** -- the tables below
+are refreshed to 2026-09-20. What remains is data rather than code, and the design pass of
+2026-09-20 is in (`CLAUDE.md`, "the interface").
 
 ### What is built
 
@@ -45,9 +49,11 @@ application, and where the two disagree, this one is right.
 | **P2** Core policy | **Done for the MVP's needs.** `evaluation/` has all three normalisation methods -- `fixed` added 2026-09-11, anchored on the eight criteria whose data has landed (Q206, Q209). The ranking reports how its covered weight splits by confidence (`reqs.md` 5.7). `target_range` built 2026-09-11 for the climate stream. The compound-rule shapes and match rules are not built |
 | **P3** First vertical slice | **Done. Gate A closed 2026-09-05.** 16 of 40 operations, one source adapter, two screens, a browser test against the real stack, and the gate itself as an acceptance test |
 | **P4** Adapter fan-out | **Done but for the family pillar.** Seven adapters (Eurostat, World Bank, WHO, IMF, OECD, Open-Meteo, and an estimate from Eurostat's tax-benefit figures) plus declared stand-ins and manual entry, 10 of 11 pillars. Family waits on OECD, which blocks scripts |
-| **P5**-**P7** | Not started |
+| **P5** Evaluation, comparison, rules | **Done 2026-09-12** |
+| **P6** The four tabs | **Done. Gate C closed 2026-09-12**, and the visual design landed 2026-09-20 |
+| **P7** Hardening | **Done. Gate D closed 2026-09-12** — the four failure modes, executable |
 
-**1,635 backend tests (two of them `live`) and 98 interface tests. The shipped set `local_employment` ranks all 32 countries** (2026-09-11). Liechtenstein is ranked on Switzerland's figures for three attributes, visibly (Q208), and the ranking says how much of each score rests on low-confidence figures: 41% of Liechtenstein's, 7% for the five countries on the estimated tax rate, none for anyone else. **Coverage is 67%** (36% before Gate B's anchors); every remaining gap is a criterion with **no data**, not one waiting for an anchor.
+**2,135 backend tests (two of them `live`), 297 interface tests and 23 browser tests. The shipped set `local_employment` ranks all 32 countries** (2026-09-11). Liechtenstein is ranked on Switzerland's figures for three attributes, visibly (Q208), and the ranking says how much of each score rests on low-confidence figures: 41% of Liechtenstein's, 7% for the five countries on the estimated tax rate, none for anyone else. **Coverage is 73%** at its best (67% before parental leave was anchored on 2026-09-20, 36% before Gate B's); every remaining gap is a criterion with **no data**, not one waiting for an anchor. **25% of the score has no figure for any country** -- career 7.6%, nature 4.8%, family 4.0%, governance 3.6%, connectivity 2.0%, climate 1.8%, housing 1.5%.
 
 ### GATE B — closed 2026-09-12
 
@@ -356,16 +362,16 @@ P0 and P1 are single-agent phases sized to finish fast rather than to be complet
 
 **All eight phases are MVP scope.** Nothing below reaches past Gate D (section 8).
 
-| Phase | What | State (2026-09-05) | Ends with |
+| Phase | What | State (2026-09-20) | Ends with |
 |---|---|---|---|
 | **P0** | Ground: scaffold, schema, catalog | **Done** | Checkpoint |
 | **P1** | The shared vocabulary, and all nine seam interfaces | **Done** | Checkpoint |
 | **P2** | Core policy | **Done for the MVP's needs** — `evaluation/` is cut to two normalisation methods | Checkpoint |
 | **P3** | The first vertical slice — API + Eurostat | **Done.** Gate A closed 2026-09-05 | **GATE A** |
-| **P4** | Adapter fan-out | **Under way** — four of six streams' worth of sources, 9 of 11 pillars | **GATE B** |
+| **P4** | Adapter fan-out | **Done but for the family pillar** — seven adapters, 10 of 11 pillars | **GATE B — closed 2026-09-12** |
 | **P5** | Evaluation persistence, comparison, rules | **Done 2026-09-12** | Checkpoint |
-| **P6** | The interface's four tabs | Two of four exist in skeleton | **GATE C** |
-| **P7** | Hardening: the LLM path, operations, failure modes | Not started | **GATE D — the MVP ships** |
+| **P6** | The interface's four tabs | **Done.** All four, plus the design pass of 2026-09-20 | **GATE C — closed 2026-09-12** |
+| **P7** | Hardening: the LLM path, operations, failure modes | **Done 2026-09-12** | **GATE D — closed; the MVP is functionally complete** |
 
 The **Agents** column is gone. Work is sequential (section 0.0), so a phase's shape is what it
 contains and what it depends on, not how many things run at once.
