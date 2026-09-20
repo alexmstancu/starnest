@@ -2308,7 +2308,7 @@ way by the active-value rule (section 3.6).
 
 | Attribute | Weight | Value type | Sources | Max age |
 |---|---|---|---|---|
-| `country.school_system_quality` | 45% | **Index** — OECD PISA mean score | OECD PISA, UNESCO | 72 months |
+| `country.school_system_quality` | 45% | **Quantity** — OECD PISA mathematics mean score, in PISA points (`0478`, 2026-09-21). Typed `Index` until then, with no bounds declared, so it could hold no value at all — the `cost_of_living_index` fault of `0443`: a PISA score is centred on 500 with a standard deviation of 100, which is a base rather than a range. **Mathematics only**, the major domain of the 2022 cycle: averaging the three domains would be permitted by Q223, since they are tracers of one school system, but it would be *our* composite and derived attributes are deferred (section 8) | OECD PISA, UNESCO | 72 months |
 | `country.parental_leave_policy` | 30% | **Quantity** — weeks paid | OECD Family Database | 24 months |
 | `country.child_benefit_policy` | 25% | **Monetary** — EUR/month per child | OECD, national social-security bodies | 24 months |
 

@@ -1,0 +1,42 @@
+# data_source: oecd
+# attribute: country.school_system_quality
+# publication: OECD PISA 2022, mathematics mean score
+# publisher_url: https://www.oecd.org/en/publications/pisa-2022-results-volume-i_53f23881-en.html
+# transcribed_on: 2026-09-21
+# confidence: medium
+# period: the 2022 assessment cycle. PISA tests 15-year-olds in one year and publishes the following one, so the figure describes 2022 rather than its 2023 publication.
+# route: oecd.org answers a script with 403 and Cloudflare's browser challenge -- the same block `catalog-blockers.md` item 5 records against their API -- so the scores were read from Wikipedia's copy of OECD's table. Medium rather than high for that reason, exactly as the RSF transcription is.
+# scale: **mathematics only**, which was the major domain of the 2022 cycle. PISA reports mathematics, reading and science separately; averaging them would be permitted by Q223 (they are tracers of one school system, as WHO's fourteen are of one health system) but it would be *our* composite, and derived attributes are deferred to the second pass. A published figure is preferred to a derivation of published figures.
+# coverage: 31 of 32. Liechtenstein participates in PISA but is not in the table this was read from, and is left unanswered rather than filled from a neighbour.
+country_code,figure,period,page,workings
+AT,487,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+BE,489,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+BG,417,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+CH,508,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+CY,418,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+CZ,487,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+DE,475,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+DK,489,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+EE,510,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+ES,473,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+FI,484,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+FR,474,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+GB,489,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+GR,430,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+HR,463,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+HU,473,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+IE,492,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+IS,459,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+IT,471,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+LT,475,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+LU,483,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+LV,483,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+MT,466,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+NL,493,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+NO,468,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+PL,489,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+PT,472,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+RO,428,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+SE,482,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+SI,485,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
+SK,464,2022,https://en.wikipedia.org/wiki/Programme_for_International_Student_Assessment,
