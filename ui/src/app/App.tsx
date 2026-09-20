@@ -6,6 +6,7 @@ import { ConfigureScreen } from "../routes/configure/ConfigureScreen";
 import { RankScreen } from "../routes/rank/RankScreen";
 import { RunScreen } from "../routes/run/RunScreen";
 import { Sidebar } from "../shell/Sidebar";
+import { TabBar } from "../shell/TabBar";
 import { SelectionProvider } from "../shell/SelectionContext";
 import {
   DEFAULT_ROUTE,
@@ -41,8 +42,10 @@ export function App() {
       <DocumentTitle />
       <div className="layout">
         <Sidebar />
-        <main className="content">
-          <Routes>
+        <main className="main">
+          <TabBar />
+          <div className="content">
+            <Routes>
             <Route path="/" element={<Navigate to={DEFAULT_ROUTE} replace />} />
             {ROUTES.map((route) => {
               // Total by construction: `SCREENS` is keyed by the route table's own paths.
@@ -56,8 +59,9 @@ export function App() {
                 />
               );
             })}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </div>
         </main>
       </div>
     </SelectionProvider>

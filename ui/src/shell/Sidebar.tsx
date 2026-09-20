@@ -28,24 +28,17 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <header className="sidebar__header">
-        <h1 className="sidebar__title">{displayName}</h1>
+      <header className="sidebar__brand">
+        {/* The initial, not a logo: the product name is configuration (`CLAUDE.md`), so the
+            badge derives from it rather than being an asset that would have to be redrawn. */}
+        <span className="sidebar__badge" aria-hidden="true">
+          {displayName.slice(0, 1)}
+        </span>
+        <span className="sidebar__identity">
+          <h1 className="sidebar__title">{displayName}</h1>
+          <span className="sidebar__subtitle">Local instance</span>
+        </span>
       </header>
-
-      <nav className="sidebar__nav" aria-label="Sections">
-        <ul className="nav-list">
-          {ROUTES.map((route) => (
-            <li key={route.path}>
-              <NavLink
-                to={route.path}
-                className={({ isActive }) => (isActive ? "nav-link nav-link--active" : "nav-link")}
-              >
-                {route.label}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-      </nav>
 
       {selection.status === "error" ? (
         <ErrorNotice error={selection.error} onRetry={selection.reload} />

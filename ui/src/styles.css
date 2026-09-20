@@ -43,7 +43,17 @@
   --colour-surface-raised: #fcfcfd;
   --colour-border: #eaecf0;
   --colour-border-strong: #d0d5dd;
+  /* HAIR in the design -- the faintest fill, under a table header. */
+  --colour-surface-hair: #f2f4f7;
+  /* The design's two elevations, and there are only two: a card and a control. Both are a
+     single hairline shadow rather than a blur stack. */
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-control: 0 1px 2px rgba(16, 24, 40, 0.08);
   --colour-text: #101828;
+  /* The design names five text weights, not two: INK #101828, TXT #344054, SUB #475467,
+     MUT and DIM both #667085. A label is SUB, a secondary value is TXT. */
+  --colour-text-strong: #344054;
+  --colour-text-label: #475467;
   --colour-text-muted: #667085;
   --colour-accent: #0f766e;
   /* One step darker. The design carries it as the hover for a filled button and for a link,
@@ -140,29 +150,99 @@ fieldset {
 
 .layout {
   display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-height: 100vh;
+  background: var(--colour-surface-raised);
+}
+
+/* `minmax(0, 1fr)` above and `min-width: 0` here are the same guard twice: a grid item's
+   default `min-width: auto` lets a wide table push the column open instead of scrolling. */
+.main {
+  min-width: 0;
 }
 
 .content {
-  padding: var(--space-triple);
-  max-width: var(--content-max-width);
+  padding: 22px 24px 56px;
+}
+
+/* The tab strip, sticky over the content it belongs to rather than over the page. */
+.tabbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 0 24px;
+  background: var(--colour-surface);
+  border-bottom: var(--border-width) solid var(--colour-border);
+}
+
+.tabbar__tab {
+  padding: 13px 14px 11px;
+  border-bottom: 2px solid transparent;
+  color: var(--colour-text-muted);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.tabbar__tab--current {
+  border-bottom-color: var(--colour-accent);
+  color: var(--colour-accent);
+  font-weight: var(--weight-strong);
 }
 
 /* Sidebar */
 
 .sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-double);
-  padding: var(--space-double) var(--space-single);
+  gap: 20px;
+  padding: 20px 18px;
   background: var(--colour-surface);
   border-right: var(--border-width) solid var(--colour-border);
 }
 
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.sidebar__badge {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-medium);
+  background: var(--colour-accent);
+  color: var(--colour-accent-contrast);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sidebar__identity {
+  display: flex;
+  flex-direction: column;
+}
+
 .sidebar__title {
-  font-size: var(--font-size-title);
+  margin: 0;
+  font-size: 15px;
   font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+
+.sidebar__subtitle {
+  font-size: 11px;
+  color: var(--colour-text-muted);
 }
 
 .nav-list {
@@ -196,19 +276,20 @@ fieldset {
 .panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-half);
-  padding: var(--space-single);
-  background: var(--colour-surface-raised);
+  gap: 8px;
+  padding: 12px;
+  background: var(--colour-surface);
   border: var(--border-width) solid var(--colour-border);
   border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-card);
 }
 
+/* Sentence case, not uppercase. The design sets every card and field label the same way --
+   11.5px, 600, SUB #475467 -- and uppercasing was this sheet's own invention. */
 .panel__heading {
-  font-size: var(--font-size-small);
+  font-size: 11.5px;
   font-weight: var(--weight-strong);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--colour-text-muted);
+  color: var(--colour-text-label);
 }
 
 .panel__hint {
@@ -230,9 +311,9 @@ fieldset {
 }
 
 .field__label {
-  font-size: var(--font-size-small);
+  font-size: 11.5px;
   font-weight: var(--weight-strong);
-  color: var(--colour-text-muted);
+  color: var(--colour-text-label);
 }
 
 .field__control {
@@ -264,16 +345,49 @@ fieldset {
   border: 0;
 }
 
+/* The design draws the level as a segmented pair of buttons. **The radios stay**: this is a
+   single choice from a named set, which is what a radio group is, and a screen reader is told
+   "2 of 2" rather than being handed two unrelated buttons. The input is taken out of the
+   layout and the label carries the appearance, so the pixels are the design's and the
+   semantics are the platform's. */
 .toggle-group {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-quarter);
+  gap: 6px;
 }
 
 .toggle {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: var(--space-half);
+  justify-content: center;
+  padding: 6px 0;
+  border: var(--border-width) solid var(--colour-border-strong);
+  border-radius: var(--radius-medium);
+  background: var(--colour-surface);
+  color: var(--colour-text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.toggle input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle:has(input:checked) {
+  border-color: var(--colour-accent);
+  background: var(--colour-accent-surface);
+  color: var(--colour-accent);
+  font-weight: var(--weight-strong);
+}
+
+.toggle:has(input:focus-visible) {
+  outline: 2px solid var(--colour-accent);
+  outline-offset: 2px;
 }
 
 .button {
@@ -307,10 +421,12 @@ fieldset {
 }
 
 .stat__label {
+  font-size: 12.5px;
   color: var(--colour-text-muted);
 }
 
 .stat__value {
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   font-weight: var(--weight-strong);
 }
