@@ -267,10 +267,21 @@ function CoverageBar({ coverage }: { coverage: number | null | undefined }) {
           lives (the lint rule says so). An SVG geometry attribute carries the number without a
           `style` attribute, and the colour still comes from a class -- so changing how a meter
           looks is still a change to one stylesheet. */}
-      <svg className="meter__track" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">
-        <rect className={`meter__fill meter__fill--${bar.tone}`} width={bar.width} height="6" />
+      <svg
+        className="meter__track"
+        viewBox="0 0 100 6"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <rect
+          className={`meter__fill meter__fill--${bar.tone}`}
+          width={bar.width}
+          height="6"
+        />
       </svg>
-      <span className="meter__reading">{formatPercentage(coverage)} covered</span>
+      <span className="meter__reading">
+        {formatPercentage(coverage)} covered
+      </span>
     </div>
   );
 }
@@ -282,12 +293,21 @@ function CoverageBar({ coverage }: { coverage: number | null | undefined }) {
  * this is the disclosure `reqs.md` 5.7 requires rather than decoration. The reading beside it
  * says the same thing in text, for anyone who cannot hover.
  */
-function ConfidenceBar({ split }: { split: ConfidenceSplit | null | undefined }) {
+function ConfidenceBar({
+  split,
+}: {
+  split: ConfidenceSplit | null | undefined;
+}) {
   const bands = confidenceBands(split);
 
   return (
     <div className="meter">
-      <svg className="meter__track" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">
+      <svg
+        className="meter__track"
+        viewBox="0 0 100 6"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
         {bands.map((band) => (
           <rect
             key={band.grade}

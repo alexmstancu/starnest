@@ -128,9 +128,12 @@ function PlannedRun({
           ))}
         </tbody>
       </table>
+      {/* The one filled button in the application. The design reserves the primary for the
+          action a screen exists to take, and this screen exists to start a run -- everything
+          else here reads, retries or navigates. */}
       <button
         type="button"
-        className="button"
+        className="button button--primary"
         disabled={busy}
         onClick={onStart}
       >

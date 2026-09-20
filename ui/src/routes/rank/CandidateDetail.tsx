@@ -87,52 +87,63 @@ function ValueTable({ values }: { values: StoredValue[] }) {
     );
   }
   return (
-    <table className="table">
-      <caption>
-        Every stored value, the active one marked. A superseded figure is kept,
-        never deleted.
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">Attribute</th>
-          <th scope="col">Figure</th>
-          <th scope="col">Source</th>
-          <th scope="col">Describes</th>
-          <th scope="col">Fetched</th>
-          <th scope="col">Confidence</th>
-          <th scope="col">In use</th>
-        </tr>
-      </thead>
-      <tbody>
-        {values.map((value) => (
-          <tr
-            key={value.id}
-            className={
-              value.is_active
-                ? "table__row"
-                : "table__row table__row--superseded"
-            }
-          >
-            <th scope="row">{value.attribute}</th>
-            <td title={value.quote ?? undefined}>{describeFigure(value)}</td>
-            <td>{value.data_source}</td>
-            <td>
-              {formatDate(value.reference_period.start)} to{" "}
-              {formatDate(value.reference_period.end)}
-            </td>
-            <td>{formatDateTime(value.retrieval_date)}</td>
-            <td>{value.confidence_level}</td>
-            <td>
-              {value.is_active
-                ? "Scored"
-                : value.rejection_reason
-                  ? "Rejected"
-                  : "Superseded"}
-            </td>
+    <div className="table-card">
+      <table className="table">
+        <caption>
+          Every stored value, the active one marked. A superseded figure is
+          kept, never deleted.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Attribute</th>
+            <th scope="col">Figure</th>
+            <th scope="col">Source</th>
+            <th scope="col">Describes</th>
+            <th scope="col">Fetched</th>
+            <th scope="col">Confidence</th>
+            <th scope="col">In use</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {values.map((value) => (
+            <tr
+              key={value.id}
+              className={
+                value.is_active
+                  ? "table__row"
+                  : "table__row table__row--superseded"
+              }
+            >
+              <th scope="row">{value.attribute}</th>
+              <td title={value.quote ?? undefined}>{describeFigure(value)}</td>
+              <td>{value.data_source}</td>
+              <td>
+                {formatDate(value.reference_period.start)} to{" "}
+                {formatDate(value.reference_period.end)}
+              </td>
+              <td>{formatDateTime(value.retrieval_date)}</td>
+              <td>
+                <span className={`chip chip--${value.confidence_level}`}>
+                  {value.confidence_level}
+                </span>
+              </td>
+              {/* Three states, and the design gives each its own tint: a figure being scored, one
+                a better source displaced, and one the catalog refused. They are not degrees of
+                the same thing, which one column of plain words made them look like. */}
+              <td>
+                {value.is_active ? (
+                  <span className="chip chip--accent">Scored</span>
+                ) : value.rejection_reason ? (
+                  <span className="chip chip--not_matching">Rejected</span>
+                ) : (
+                  <span className="chip chip--neutral">Superseded</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

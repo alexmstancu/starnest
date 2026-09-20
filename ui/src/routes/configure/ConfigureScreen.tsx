@@ -28,7 +28,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   const editor = useCriteriaEditor(criteriaSetId);
 
   return (
-    <section className="screen" aria-labelledby="screen-heading">
+    <section className="screen screen--configure" aria-labelledby="screen-heading">
       <h2 id="screen-heading" className="screen__heading">
         {route.label}
       </h2>

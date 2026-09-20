@@ -273,6 +273,8 @@ fieldset {
 
 /* Panels */
 
+/* The design has two cards, and they differ only in scale: a compact one in the sidebar and a
+   larger one on a screen. **The context decides**, so no panel has to be told which it is. */
 .panel {
   display: flex;
   flex-direction: column;
@@ -282,6 +284,19 @@ fieldset {
   border: var(--border-width) solid var(--colour-border);
   border-radius: var(--radius-medium);
   box-shadow: var(--shadow-card);
+}
+
+.screen .panel {
+  gap: 14px;
+  padding: 16px;
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.06),
+    0 10px 24px -8px rgba(16, 24, 40, 0.14);
+}
+
+.screen .panel__heading {
+  font-size: 15px;
+  color: var(--colour-text);
 }
 
 /* Sentence case, not uppercase. The design sets every card and field label the same way --
@@ -318,11 +333,18 @@ fieldset {
 
 .field__control {
   font: inherit;
-  padding: var(--space-quarter) var(--space-half);
+  padding: 7px 9px;
   border: var(--border-width) solid var(--colour-border-strong);
-  border-radius: var(--radius-small);
+  border-radius: var(--radius-medium);
   background: var(--colour-surface);
   color: var(--colour-text);
+  font-size: 13px;
+  box-shadow: var(--shadow-card);
+}
+
+.field__control:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* A weight is at most three digits and a decimal; a full-width box for one invites the reader
@@ -390,14 +412,51 @@ fieldset {
   outline-offset: 2px;
 }
 
+/* The design has two buttons and no more: a secondary, which is most of them, and a filled
+   primary for the one action a screen exists to take. Both carry the control elevation. */
 .button {
   font: inherit;
-  padding: var(--space-quarter) var(--space-half);
+  padding: 5px 10px;
   border: var(--border-width) solid var(--colour-border-strong);
-  border-radius: var(--radius-small);
+  border-radius: var(--radius-medium);
   background: var(--colour-surface);
-  color: var(--colour-text);
+  color: var(--colour-text-strong);
+  font-size: 12px;
+  font-weight: var(--weight-strong);
   cursor: pointer;
+  white-space: nowrap;
+  box-shadow: var(--shadow-card);
+}
+
+.button:hover:not(:disabled) {
+  background: var(--colour-surface-raised);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* A disclosure that is open, and the design tints it rather than relabelling it alone. */
+.button--current {
+  border-color: var(--colour-accent);
+  background: var(--colour-accent-surface);
+  color: var(--colour-accent);
+}
+
+.button--primary {
+  padding: 7px 13px;
+  border-color: var(--colour-accent);
+  background: var(--colour-accent);
+  color: var(--colour-accent-contrast);
+  font-size: 13px;
+  box-shadow: var(--shadow-control);
+}
+
+.button--primary:hover:not(:disabled) {
+  border-color: var(--colour-accent-strong);
+  background: var(--colour-accent-strong);
 }
 
 /* Statistics */
@@ -433,19 +492,34 @@ fieldset {
 
 /* Screens */
 
+/* **A screen is not a card.** It used to be one big bordered box holding smaller boxes, and
+   the design has no such wrapper: the screen is a column of cards on the page's own ground. */
 .screen {
   display: flex;
   flex-direction: column;
-  gap: var(--space-single);
-  padding: var(--space-double);
-  background: var(--colour-surface);
-  border: var(--border-width) solid var(--colour-border);
-  border-radius: var(--radius-medium);
+  gap: 16px;
+}
+
+/* Configure is the one screen the design lays out in two columns -- eight panels in a single
+   column would be a page of scrolling. The heading spans both. */
+.screen--configure {
+  display: grid;
+  grid-template-columns: minmax(380px, 1fr) minmax(340px, 0.95fr);
+  align-items: start;
+}
+
+.screen--configure > .screen__heading,
+.screen--configure > .screen__summary,
+.screen--configure > .screen__note,
+.screen--configure > .notice {
+  grid-column: 1 / -1;
 }
 
 .screen__heading {
-  font-size: var(--font-size-large);
+  margin: 0;
+  font-size: 20px;
   font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
 }
 
 .screen__summary {
@@ -675,6 +749,33 @@ fieldset {
   background: var(--colour-warning-surface);
   border-color: var(--colour-warning-border);
   color: var(--colour-warning);
+}
+
+/* The four confidence grades `reqs.md` 5.7 defines, tinted the way the meter bands are so a
+   chip and a bar say the same thing about the same figure. */
+.chip--absolute {
+  background: var(--colour-accent-surface);
+  border-color: var(--colour-accent-border);
+  color: var(--colour-accent);
+}
+
+.chip--high {
+  background: var(--colour-success-surface);
+  border-color: var(--colour-success-border);
+  color: var(--colour-success);
+}
+
+.chip--medium,
+.chip--low {
+  background: var(--colour-warning-surface);
+  border-color: var(--colour-warning-border);
+  color: var(--colour-warning);
+}
+
+.chip--neutral {
+  background: var(--colour-surface-hair);
+  border-color: var(--colour-border-strong);
+  color: var(--colour-text-strong);
 }
 
 .chip--accent {
