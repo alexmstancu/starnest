@@ -17,9 +17,13 @@ import { ErrorNotice } from "../../shell/ErrorNotice";
 import { CandidateDetail } from "./CandidateDetail";
 import {
   type ConfidenceSplit,
+  type PillarScore,
   confidenceBands,
   confidenceLabel,
   coverageBar,
+  deltaTone,
+  formatDelta,
+  pillarBars,
 } from "./rankTable";
 import { useSelection } from "../../shell/SelectionContext";
 
@@ -85,10 +89,7 @@ function TheRanking({
   );
   // Which candidate's evidence is open. Client state in the sense `arch.md` 8.1 permits: it
   // decides nothing, and the evidence itself is fetched.
-  const [chosen, setChosen] = useState<{
-    candidate: string;
-    name: string;
-  } | null>(null);
+  const [chosen, setChosen] = useState<Chosen | null>(null);
 
   return (
     <>
@@ -112,10 +113,27 @@ function TheRanking({
       )}
 
       {chosen && (
-        <CandidateDetail candidate={chosen.candidate} name={chosen.name} />
+        <CandidateDetail
+          candidate={chosen.candidate}
+          name={chosen.name}
+          pillars={chosen.pillars}
+        />
       )}
     </>
   );
+}
+
+/**
+ * The open row, and what the drill-down needs from it.
+ *
+ * **It carries the pillar rollup rather than looking it up again.** The row already had it --
+ * it drew the chart from it -- so finding the candidate a second time in the ranking would be
+ * two paths to one number, and the sort of thing that goes out of step.
+ */
+interface Chosen {
+  candidate: string;
+  name: string;
+  pillars?: readonly PillarScore[] | null;
 }
 
 function RankingTable({
@@ -124,8 +142,8 @@ function RankingTable({
   onChoose,
 }: {
   ranking: Ranking;
-  chosen: { candidate: string; name: string } | null;
-  onChoose: (chosen: { candidate: string; name: string } | null) => void;
+  chosen: Chosen | null;
+  onChoose: (chosen: Chosen | null) => void;
 }) {
   return (
     <>
@@ -146,11 +164,13 @@ function RankingTable({
               <tr>
                 <th scope="col">Rank</th>
                 <th scope="col">Candidate</th>
+                <th scope="col">Pillars</th>
                 <th scope="col">Score</th>
                 <th scope="col">Coverage</th>
                 <th scope="col">Confidence</th>
                 <th scope="col">Match status</th>
                 <th scope="col">Reason</th>
+                <th scope="col">&Delta; home</th>
                 <th scope="col"> </th>
               </tr>
             </thead>
@@ -183,7 +203,7 @@ function CandidateRow({
 }: {
   result: CandidateResult;
   open: boolean;
-  onChoose: (chosen: { candidate: string; name: string } | null) => void;
+  onChoose: (chosen: Chosen | null) => void;
 }) {
   const matching = result.match_status === "matching";
 
@@ -198,6 +218,9 @@ function CandidateRow({
           prints where a number is genuinely absent. */}
       <td>{result.rank ?? ABSENT}</td>
       <th scope="row">{result.name}</th>
+      <td>
+        <PillarChart pillars={result.pillar_scores} />
+      </td>
       <ScoreCell result={result} />
       <td>
         <CoverageBar coverage={result.coverage} />
@@ -236,13 +259,27 @@ function CandidateRow({
           </p>
         ))}
       </td>
+      {/* Against staying put (`reqs.md` 1.2). Null for home itself and wherever a score is
+          missing, and a dash says so -- a zero here would read as "the same", which is a
+          measurement nobody made. */}
+      <td
+        className={`table__delta table__delta--${deltaTone(result.delta_vs_home)}`}
+      >
+        {formatDelta(result.delta_vs_home)}
+      </td>
       <td>
         <button
           type="button"
           className={open ? "button button--current" : "button"}
           onClick={() =>
             onChoose(
-              open ? null : { candidate: result.candidate, name: result.name },
+              open
+                ? null
+                : {
+                    candidate: result.candidate,
+                    name: result.name,
+                    pillars: result.pillar_scores,
+                  },
             )
           }
         >
@@ -250,6 +287,42 @@ function CandidateRow({
         </button>
       </td>
     </tr>
+  );
+}
+
+/**
+ * The eleven pillars as one small chart, so a score's shape is readable at a glance.
+ *
+ * **Bottom-aligned bars in a fixed coordinate space**, which is what makes an SVG right here:
+ * the geometry is data and the tones are classes. A pillar with no score is a full-height flat
+ * bar rather than a gap, because eleven bars are counted and a missing one silently renumbers
+ * the rest.
+ */
+function PillarChart({ pillars }: { pillars?: readonly PillarScore[] | null }) {
+  const bars = pillarBars(pillars);
+  if (bars.length === 0) {
+    return null;
+  }
+
+  return (
+    <svg
+      className="pillar-chart"
+      viewBox="0 0 100 26"
+      preserveAspectRatio="none"
+    >
+      {bars.map((bar) => (
+        <rect
+          key={bar.pillar}
+          className={`pillar-chart__bar pillar-chart__bar--${bar.tone}`}
+          x={bar.x}
+          y={bar.y}
+          width={bar.width}
+          height={bar.height}
+        >
+          <title>{bar.title}</title>
+        </rect>
+      ))}
+    </svg>
   );
 }
 

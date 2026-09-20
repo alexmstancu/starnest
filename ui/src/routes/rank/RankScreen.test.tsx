@@ -23,6 +23,36 @@ async function rankingRow(name: string): Promise<HTMLElement> {
   return within(table).getByRole("row", { name: new RegExp(name) });
 }
 
+/**
+ * One cell of a candidate's row, found by its column heading.
+ *
+ * **Not by index.** These assertions counted cells until a column was inserted in the middle
+ * and five tests failed for a reason none of them was about. A heading is what the column
+ * means; its position is an accident of layout.
+ */
+async function cell(candidate: string, column: string): Promise<HTMLElement> {
+  const table = await screen.findByRole("table");
+  const headings = within(table)
+    .getAllByRole("columnheader")
+    .map((heading) => heading.textContent?.trim() ?? "");
+  const at = headings.indexOf(column);
+  expect(
+    at,
+    `no column headed "${column}" in [${headings.join(", ")}]`,
+  ).toBeGreaterThan(-1);
+
+  const row = await rankingRow(candidate);
+  // The candidate's own cell is a rowheader rather than a cell, so it is put back in place to
+  // line the row up with its headings.
+  const inOrder = [...row.querySelectorAll("th,td")] as HTMLElement[];
+  const found = inOrder[at];
+  expect(
+    found,
+    `row for ${candidate} has no cell under "${column}"`,
+  ).toBeDefined();
+  return found!;
+}
+
 describe("the ranking table", () => {
   it("shows a row per candidate the API returned, in the order it returned them", async () => {
     renderShell("/rank");
@@ -38,12 +68,12 @@ describe("the ranking table", () => {
   it("shows the score, coverage and match status the API computed", async () => {
     renderShell("/rank");
 
-    const cells = within(await rankingRow("Portugal")).getAllByRole("cell");
-
-    expect(cells[0]).toHaveTextContent("1");
-    expect(cells[1]).toHaveTextContent("78");
-    expect(cells[2]).toHaveTextContent("92.4%");
-    expect(cells[4]).toHaveTextContent("Matching");
+    expect(await cell("Portugal", "Rank")).toHaveTextContent("1");
+    expect(await cell("Portugal", "Score")).toHaveTextContent("78");
+    expect(await cell("Portugal", "Coverage")).toHaveTextContent("92.4%");
+    expect(await cell("Portugal", "Match status")).toHaveTextContent(
+      "Matching",
+    );
   });
 
   it("names the criteria set and level the ranking was computed under", async () => {
@@ -64,18 +94,16 @@ describe("a candidate that does not match", () => {
   it("stays in the table, keeping the score it computed", async () => {
     renderShell("/rank");
 
-    const cells = within(await rankingRow("Spain")).getAllByRole("cell");
-
-    expect(cells[1]).toHaveTextContent("64");
-    expect(cells[4]).toHaveTextContent("Not matching");
+    expect(await cell("Spain", "Score")).toHaveTextContent("64");
+    expect(await cell("Spain", "Match status")).toHaveTextContent(
+      "Not matching",
+    );
   });
 
   it("shows why it does not match", async () => {
     renderShell("/rank");
 
-    const cells = within(await rankingRow("Spain")).getAllByRole("cell");
-
-    expect(cells[5]).toHaveTextContent(
+    expect(await cell("Spain", "Reason")).toHaveTextContent(
       "No visa route this household qualifies for.",
     );
   });
@@ -83,12 +111,10 @@ describe("a candidate that does not match", () => {
   it("has no rank, and says so rather than leaving the cell blank", async () => {
     renderShell("/rank");
 
-    const cells = within(await rankingRow("Spain")).getAllByRole("cell");
-
     // The dash this screen prints wherever a number is genuinely absent. An empty cell reads
     // as a table that failed to render -- and the previous assertion here was
     // `toHaveTextContent("")`, which matches any content at all and so checked nothing.
-    expect(cells[0]?.textContent).toBe("—");
+    expect((await cell("Spain", "Rank")).textContent).toBe("—");
   });
 });
 
@@ -96,19 +122,19 @@ describe("a candidate with insufficient data", () => {
   it("shows no number where a score would be", async () => {
     renderShell("/rank");
 
-    const cells = within(await rankingRow("Estonia")).getAllByRole("cell");
+    const score = await cell("Estonia", "Score");
 
-    expect(cells[1]).toHaveTextContent("No score");
-    expect(cells[1]?.textContent).not.toMatch(/\d/);
+    expect(score).toHaveTextContent("No score");
+    expect(score.textContent).not.toMatch(/\d/);
   });
 
   it("still shows its coverage, which is what explains the status", async () => {
     renderShell("/rank");
 
-    const cells = within(await rankingRow("Estonia")).getAllByRole("cell");
-
-    expect(cells[2]).toHaveTextContent("41%");
-    expect(cells[4]).toHaveTextContent("Insufficient data");
+    expect(await cell("Estonia", "Coverage")).toHaveTextContent("41%");
+    expect(await cell("Estonia", "Match status")).toHaveTextContent(
+      "Insufficient data",
+    );
   });
 });
 

@@ -102,3 +102,86 @@ function clampPercentage(value: number | null | undefined): number {
 function round(value: number): string {
   return value.toFixed(0);
 }
+
+/** One pillar's part in a candidate's total, as the ranking serves it. */
+export interface PillarScore {
+  pillar: string;
+  score?: number | null;
+  weight: number;
+  contribution: number;
+}
+
+export interface PillarBar {
+  pillar: string;
+  x: string;
+  width: string;
+  y: string;
+  height: string;
+  tone: Tone | "none";
+  title: string;
+}
+
+const CHART_HEIGHT = 26;
+const SHORTEST_VISIBLE = 8;
+
+/**
+ * The eleven pillars as one small chart, in a 100 x 26 coordinate space.
+ *
+ * **A pillar with no score is drawn full height in a flat tone**, not omitted and not drawn at
+ * zero. Omitting it would silently renumber the others -- the reader counts eleven bars and
+ * reads the shape of a decision -- and zero would claim it measured badly. The design does the
+ * same, with a hatch.
+ *
+ * A very low score still gets a visible stub, because a bar one pixel tall is
+ * indistinguishable from a missing one, and those two mean opposite things.
+ */
+export function pillarBars(
+  pillars: readonly PillarScore[] | null | undefined,
+): PillarBar[] {
+  const roster = pillars ?? [];
+  if (roster.length === 0) {
+    return [];
+  }
+  const slot = 100 / roster.length;
+  return roster.map((pillar, index) => {
+    const scored = typeof pillar.score === "number";
+    const score = scored ? clampPercentage(pillar.score) : 0;
+    const height = scored ? Math.max(SHORTEST_VISIBLE, score) : 100;
+    const drawn = (height / 100) * CHART_HEIGHT;
+    return {
+      pillar: pillar.pillar,
+      x: `${index * slot + slot * 0.1}%`,
+      width: `${slot * 0.8}%`,
+      y: String(CHART_HEIGHT - drawn),
+      height: String(drawn),
+      tone: !scored
+        ? "none"
+        : score >= 70
+          ? "good"
+          : score >= 50
+            ? "fair"
+            : "weak",
+      title: scored
+        ? `${pillar.pillar}: ${round(score)}, weight ${pillar.weight.toFixed(1)}%`
+        : `${pillar.pillar}: no score`,
+    };
+  });
+}
+
+/** The difference from home, signed, or a dash when there is nothing to compare against. */
+export function formatDelta(delta: number | null | undefined): string {
+  if (typeof delta !== "number" || Number.isNaN(delta)) {
+    return "—";
+  }
+  return delta > 0 ? `+${round(delta)}` : round(delta);
+}
+
+/** Which way the difference goes, for the colour the design gives it. */
+export function deltaTone(
+  delta: number | null | undefined,
+): "ahead" | "behind" | "level" {
+  if (typeof delta !== "number" || Number.isNaN(delta) || delta === 0) {
+    return "level";
+  }
+  return delta > 0 ? "ahead" : "behind";
+}

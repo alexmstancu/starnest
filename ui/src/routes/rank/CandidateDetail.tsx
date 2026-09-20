@@ -6,8 +6,14 @@ import {
   type StoredValue,
 } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
-import { formatDate, formatDateTime } from "../../format/display";
+import {
+  formatDate,
+  formatDateTime,
+  formatPercentage,
+  formatSigned,
+} from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
+import { type PillarScore, pillarBars } from "./rankTable";
 
 /**
  * One candidate's evidence: every stored value, and the outside indices beside them.
@@ -24,9 +30,11 @@ import { ErrorNotice } from "../../shell/ErrorNotice";
 export function CandidateDetail({
   candidate,
   name,
+  pillars,
 }: {
   candidate: string;
   name: string;
+  pillars?: readonly PillarScore[] | null;
 }) {
   const values = useResource(
     useCallback(
@@ -46,6 +54,8 @@ export function CandidateDetail({
       <h3 id="detail-heading" className="panel__heading">
         {name}: every figure behind the score
       </h3>
+
+      <PillarContributions pillars={pillars} />
 
       {values.resource.status === "loading" && (
         <p className="screen__note">Loading…</p>
@@ -144,6 +154,62 @@ function ValueTable({ values }: { values: StoredValue[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * What each pillar put into the total, as the cards the design draws.
+ *
+ * **The same `pillar_scores` the ranking row's chart reads**, so the chart and the cards can
+ * never disagree -- they are one number rendered twice. A pillar with no score says so in
+ * words here, where the chart only has a flat bar to say it with.
+ */
+function PillarContributions({
+  pillars,
+}: {
+  pillars?: readonly PillarScore[] | null;
+}) {
+  const bars = pillarBars(pillars);
+  if (bars.length === 0) {
+    return null;
+  }
+
+  return (
+    <section aria-labelledby="pillar-contributions">
+      <h4 id="pillar-contributions" className="panel__heading">
+        Pillar contributions
+      </h4>
+      <ul className="pillar-cards">
+        {(pillars ?? []).map((pillar, at) => (
+          <li key={pillar.pillar} className="pillar-card">
+            <div className="pillar-card__head">
+              <span className="pillar-card__name">{pillar.pillar}</span>
+              <span className="pillar-card__score">
+                {typeof pillar.score === "number" ? pillar.score : "No score"}
+              </span>
+            </div>
+            <svg
+              className="pillar-card__track"
+              viewBox="0 0 100 4"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <rect
+                className={`pillar-card__fill pillar-card__fill--${bars[at]?.tone ?? "none"}`}
+                width={
+                  typeof pillar.score === "number" ? `${pillar.score}%` : "0%"
+                }
+                height="4"
+              />
+            </svg>
+            <div className="pillar-card__foot">
+              <span>weight {formatPercentage(pillar.weight)}</span>
+              <span>{formatSigned(pillar.contribution)}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
