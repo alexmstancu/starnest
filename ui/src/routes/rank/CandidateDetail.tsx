@@ -1,5 +1,6 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
+  fetchCriteriaSet,
   fetchExternalScores,
   fetchValues,
   type ExternalScore,
@@ -13,6 +14,8 @@ import {
   formatSigned,
 } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
+import { useSelection } from "../../shell/SelectionContext";
+import { pillarsByAttribute, valuesInPillar } from "./pillarFilter";
 import { type PillarScore, pillarBars } from "./rankTable";
 
 /**
@@ -48,6 +51,23 @@ export function CandidateDetail({
       [candidate],
     ),
   );
+  // The active set is what files an attribute under a pillar, so the filter is that set's
+  // opinion rather than the catalog's -- an attribute this set does not score has no pillar,
+  // which is the truthful answer rather than a lookup that failed.
+  const { criteriaSetId } = useSelection();
+  const criteria = useResource(
+    useCallback(
+      (signal: AbortSignal) => fetchCriteriaSet(criteriaSetId ?? "", { signal }),
+      [criteriaSetId],
+    ),
+    criteriaSetId !== null,
+  );
+  const [pillar, setPillar] = useState<string | null>(null);
+  const byAttribute = pillarsByAttribute(
+    criteria.resource.status === "ready"
+      ? criteria.resource.data.criteria
+      : null,
+  );
 
   return (
     <section className="panel" aria-labelledby="detail-heading">
@@ -55,7 +75,11 @@ export function CandidateDetail({
         {name}: every figure behind the score
       </h3>
 
-      <PillarContributions pillars={pillars} />
+      <PillarContributions
+        pillars={pillars}
+        chosen={pillar}
+        onChoose={(each) => setPillar(each === pillar ? null : each)}
+      />
 
       {values.resource.status === "loading" && (
         <p className="screen__note">Loading…</p>
@@ -64,7 +88,14 @@ export function CandidateDetail({
         <ErrorNotice error={values.resource.error} onRetry={values.reload} />
       )}
       {values.resource.status === "ready" && (
-        <ValueTable values={values.resource.data.items} />
+        <ValueTable
+          values={valuesInPillar(
+            values.resource.data.items,
+            byAttribute,
+            pillar,
+          )}
+          pillar={pillar}
+        />
       )}
 
       <h4 className="panel__heading">Outside opinions</h4>
@@ -88,11 +119,19 @@ export function CandidateDetail({
   );
 }
 
-function ValueTable({ values }: { values: StoredValue[] }) {
+function ValueTable({
+  values,
+  pillar,
+}: {
+  values: StoredValue[];
+  pillar: string | null;
+}) {
   if (values.length === 0) {
     return (
       <p className="screen__note">
-        No figure has been stored for this candidate yet.
+        {pillar === null
+          ? "No figure has been stored for this candidate yet."
+          : `No figure has been stored for anything in ${pillar}.`}
       </p>
     );
   }
@@ -166,8 +205,12 @@ function ValueTable({ values }: { values: StoredValue[] }) {
  */
 function PillarContributions({
   pillars,
+  chosen,
+  onChoose,
 }: {
   pillars?: readonly PillarScore[] | null;
+  chosen: string | null;
+  onChoose: (pillar: string) => void;
 }) {
   const bars = pillarBars(pillars);
   if (bars.length === 0) {
@@ -177,35 +220,46 @@ function PillarContributions({
   return (
     <section aria-labelledby="pillar-contributions">
       <h4 id="pillar-contributions" className="panel__heading">
-        Pillar contributions
+        Pillar contributions — select one to filter the values below
       </h4>
       <ul className="pillar-cards">
         {(pillars ?? []).map((pillar, at) => (
-          <li key={pillar.pillar} className="pillar-card">
-            <div className="pillar-card__head">
-              <span className="pillar-card__name">{pillar.pillar}</span>
-              <span className="pillar-card__score">
-                {typeof pillar.score === "number" ? pillar.score : "No score"}
-              </span>
-            </div>
-            <svg
-              className="pillar-card__track"
-              viewBox="0 0 100 4"
-              preserveAspectRatio="none"
-              aria-hidden="true"
+          <li key={pillar.pillar}>
+            <button
+              type="button"
+              className={
+                chosen === pillar.pillar
+                  ? "pillar-card pillar-card--chosen"
+                  : "pillar-card"
+              }
+              aria-pressed={chosen === pillar.pillar}
+              onClick={() => onChoose(pillar.pillar)}
             >
-              <rect
-                className={`pillar-card__fill pillar-card__fill--${bars[at]?.tone ?? "none"}`}
-                width={
-                  typeof pillar.score === "number" ? `${pillar.score}%` : "0%"
-                }
-                height="4"
-              />
-            </svg>
-            <div className="pillar-card__foot">
-              <span>weight {formatPercentage(pillar.weight)}</span>
-              <span>{formatSigned(pillar.contribution)}</span>
-            </div>
+              <div className="pillar-card__head">
+                <span className="pillar-card__name">{pillar.pillar}</span>
+                <span className="pillar-card__score">
+                  {typeof pillar.score === "number" ? pillar.score : "No score"}
+                </span>
+              </div>
+              <svg
+                className="pillar-card__track"
+                viewBox="0 0 100 4"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <rect
+                  className={`pillar-card__fill pillar-card__fill--${bars[at]?.tone ?? "none"}`}
+                  width={
+                    typeof pillar.score === "number" ? `${pillar.score}%` : "0%"
+                  }
+                  height="4"
+                />
+              </svg>
+              <div className="pillar-card__foot">
+                <span>weight {formatPercentage(pillar.weight)}</span>
+                <span>{formatSigned(pillar.contribution)}</span>
+              </div>
+            </button>
           </li>
         ))}
       </ul>

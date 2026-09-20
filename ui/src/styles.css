@@ -904,6 +904,11 @@ select.field__control {
 }
 
 .pillar-card {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -912,6 +917,16 @@ select.field__control {
   border-radius: var(--radius-medium);
   background: var(--colour-surface);
   box-shadow: var(--shadow-card);
+}
+
+.pillar-card:hover {
+  border-color: var(--colour-accent-border);
+}
+
+/* The chosen pillar, which is also what the table below is filtered to. */
+.pillar-card--chosen {
+  border-color: var(--colour-accent-border);
+  background: var(--colour-accent-surface);
 }
 
 .pillar-card__head {

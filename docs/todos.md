@@ -14,7 +14,7 @@ The design (`claude.ai/design`, project **Starnest design**, file `Starnest Prod
 is implemented across all four tabs. Two things it does not specify are still outstanding, and
 `docs/design-brief.md` is the request sitting in the repo for Claude Design's next sync.
 
-- [ ] **Interaction states.** The mockup carries one hover rule and no `:focus-visible`, no
+- [x] **Interaction states.** Done 2026-09-20. The mockup carries one hover rule and no `:focus-visible`, no
       pressed state, and nothing for the native controls -- so the application still ships the
       browser's default focus ring, which is an accessibility gap rather than a cosmetic one.
       **Nocturne's `readme.md` already states the rule** ("never leave the default blue focus
@@ -31,10 +31,11 @@ is implemented across all four tabs. Two things it does not specify are still ou
       rather than collapsing, because the active criteria set is what every number on screen is
       relative to.
 
-- [ ] **Three things the ranking could still show.** Not blocked -- these have data now
-      (`pillar_scores`, `delta_vs_home`) -- but the drill-down's pillar cards do not yet filter
-      the figures below them, which the design's own caption offers ("select one to filter the
-      figures below").
+- [x] **The pillar cards filter the values below them.** Done 2026-09-20, the last thing the
+      design offered that the code did not do. The map from attribute to pillar comes from the
+      **active criteria set**, not the catalog: a set that does not score an attribute has no
+      pillar for it, and a descriptive attribute belongs to no pillar's contribution at all --
+      showing it under one would imply it counted.
 
 - [x] **The browser suite was order-coupled.** `gate-c.spec.ts` and
       `minimum-end-to-end.spec.ts` both moved the same criterion in the same criteria set
