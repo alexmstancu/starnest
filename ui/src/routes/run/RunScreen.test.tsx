@@ -291,8 +291,10 @@ describe("the run history", () => {
     expect(
       within(history).getByRole("rowheader", { name: "7" }),
     ).toBeInTheDocument();
+    // Read as words, not as an identifier. The sidebar's last-run panel has always done this;
+    // the history table printed the raw enum, which was the inconsistency rather than the rule.
     expect(
-      within(history).getByText("halted_on_spend_cap"),
+      within(history).getByText("halted on spend cap"),
     ).toBeInTheDocument();
   });
 

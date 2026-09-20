@@ -392,6 +392,20 @@ fieldset {
   cursor: pointer;
 }
 
+/* A roster, not a pair: these wrap and scroll rather than sharing one row equally. */
+.toggle-group--wrap {
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 112px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.toggle-group--wrap .toggle {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+}
+
 .toggle input {
   position: absolute;
   width: 0;
@@ -426,6 +440,14 @@ fieldset {
   cursor: pointer;
   white-space: nowrap;
   box-shadow: var(--shadow-card);
+}
+
+/* A button in a flex column would otherwise stretch to the column's width, which is how a
+   12px action ends up 1,400px wide. It sizes to its label wherever it sits. */
+.panel > .button,
+.screen > .button,
+.panel > form > .button {
+  align-self: flex-start;
 }
 
 .button:hover:not(:disabled) {
@@ -770,6 +792,34 @@ fieldset {
   background: var(--colour-warning-surface);
   border-color: var(--colour-warning-border);
   color: var(--colour-warning);
+}
+
+/* A run's four states. `running` takes the accent because it is the one that is still
+   happening; `completed` reads as the success it is. */
+.chip--completed {
+  background: var(--colour-success-surface);
+  border-color: var(--colour-success-border);
+  color: var(--colour-success);
+}
+
+.chip--running,
+.chip--planned {
+  background: var(--colour-accent-surface);
+  border-color: var(--colour-accent-border);
+  color: var(--colour-accent);
+}
+
+/* Halted is not failed: the run stopped at the cap and kept everything it had fetched. */
+.chip--halted_on_spend_cap {
+  background: var(--colour-warning-surface);
+  border-color: var(--colour-warning-border);
+  color: var(--colour-warning);
+}
+
+.chip--failed {
+  background: var(--colour-danger-surface);
+  border-color: var(--colour-danger-border);
+  color: var(--colour-danger);
 }
 
 .chip--neutral {

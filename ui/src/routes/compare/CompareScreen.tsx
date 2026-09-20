@@ -181,18 +181,23 @@ function ComparisonPicker({
 
       <fieldset className="field">
         <legend className="field__label">Comparators</legend>
-        {roster
-          .filter((candidate) => candidate.id !== focus)
-          .map((candidate) => (
-            <label key={candidate.id} className="toggle">
-              <input
-                type="checkbox"
-                checked={comparators.includes(candidate.id)}
-                onChange={() => onToggleComparator(candidate.id)}
-              />
-              {candidate.name}
-            </label>
-          ))}
+        {/* The design wraps these as chips in a box that scrolls, because a roster is 32 long
+            and a column of 32 full-width rows buries everything under it. The checkboxes stay:
+            this is a multiple choice, and a chip is what it looks like, not what it is. */}
+        <div className="toggle-group toggle-group--wrap">
+          {roster
+            .filter((candidate) => candidate.id !== focus)
+            .map((candidate) => (
+              <label key={candidate.id} className="toggle">
+                <input
+                  type="checkbox"
+                  checked={comparators.includes(candidate.id)}
+                  onChange={() => onToggleComparator(candidate.id)}
+                />
+                {candidate.name}
+              </label>
+            ))}
+        </div>
       </fieldset>
 
       <button

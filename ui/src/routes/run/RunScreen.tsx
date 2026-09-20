@@ -109,25 +109,27 @@ function PlannedRun({
           The cost is a ceiling, not a forecast: {plan.estimate_basis}
         </p>
       )}
-      <table className="table">
-        <caption>
-          Per source. Where two sources answer one attribute, both are asked.
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Source</th>
-            <th scope="col">Items</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(plan.by_source ?? []).map((source) => (
-            <tr key={source.data_source}>
-              <th scope="row">{source.data_source}</th>
-              <td>{formatCount(source.items)}</td>
+      <div className="table-card">
+        <table className="table">
+          <caption>
+            Per source. Where two sources answer one attribute, both are asked.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Source</th>
+              <th scope="col">Items</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {(plan.by_source ?? []).map((source) => (
+              <tr key={source.data_source}>
+                <th scope="row">{source.data_source}</th>
+                <td>{formatCount(source.items)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {/* The one filled button in the application. The design reserves the primary for the
           action a screen exists to take, and this screen exists to start a run -- everything
           else here reads, retries or navigates. */}
@@ -187,27 +189,29 @@ function RunReport({
 
       {unanswered.length > 0 && (
         <>
-          <table className="table">
-            <caption>
-              Asked about, and answered by nobody. Every source that could
-              answer did answer, and none of them had a figure for that
-              candidate -- which is not a failure and is not a score.
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Candidate</th>
-                <th scope="col">Attribute</th>
-              </tr>
-            </thead>
-            <tbody>
-              {unanswered.map((item) => (
-                <tr key={`${item.candidate}-${item.attribute}`}>
-                  <th scope="row">{item.candidate}</th>
-                  <td>{item.attribute}</td>
+          <div className="table-card">
+            <table className="table">
+              <caption>
+                Asked about, and answered by nobody. Every source that could
+                answer did answer, and none of them had a figure for that
+                candidate -- which is not a failure and is not a score.
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Candidate</th>
+                  <th scope="col">Attribute</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {unanswered.map((item) => (
+                  <tr key={`${item.candidate}-${item.attribute}`}>
+                    <th scope="row">{item.candidate}</th>
+                    <td>{item.attribute}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <button
             type="button"
             className="button"
@@ -223,32 +227,34 @@ function RunReport({
         <p className="panel__hint">Nothing failed in this run.</p>
       ) : (
         <>
-          <table className="table">
-            <caption>
-              What went wrong, source by source. A source that failed on one
-              attribute may have answered on another.
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Source</th>
-                <th scope="col">Candidate</th>
-                <th scope="col">Attribute</th>
-                <th scope="col">Why</th>
-              </tr>
-            </thead>
-            <tbody>
-              {failures.map((item) => (
-                <tr
-                  key={`${item.data_source}-${item.candidate}-${item.attribute}`}
-                >
-                  <th scope="row">{item.data_source}</th>
-                  <td>{item.candidate}</td>
-                  <td>{item.attribute}</td>
-                  <td>{item.error_message}</td>
+          <div className="table-card">
+            <table className="table">
+              <caption>
+                What went wrong, source by source. A source that failed on one
+                attribute may have answered on another.
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Source</th>
+                  <th scope="col">Candidate</th>
+                  <th scope="col">Attribute</th>
+                  <th scope="col">Why</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {failures.map((item) => (
+                  <tr
+                    key={`${item.data_source}-${item.candidate}-${item.attribute}`}
+                  >
+                    <th scope="row">{item.data_source}</th>
+                    <td>{item.candidate}</td>
+                    <td>{item.attribute}</td>
+                    <td>{item.error_message}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <button
             type="button"
             className="button"
@@ -273,36 +279,42 @@ function RunHistory({
   if (runs.length === 0)
     return <p className="screen__note">No run has been started yet.</p>;
   return (
-    <table className="table">
-      <thead>
-        <tr>
-          <th scope="col">Run</th>
-          <th scope="col">Status</th>
-          <th scope="col">Started</th>
-          <th scope="col">Cost</th>
-          <th scope="col"> </th>
-        </tr>
-      </thead>
-      <tbody>
-        {runs.map((run) => (
-          <tr key={run.id}>
-            <th scope="row">{run.id}</th>
-            <td>{run.run_status}</td>
-            <td>{formatDateTime(run.started_at)}</td>
-            <td>{formatMoney(run.cost_eur, "EUR")}</td>
-            <td>
-              <button
-                type="button"
-                className="button"
-                onClick={() => onOpen(run)}
-              >
-                Open
-              </button>
-            </td>
+    <div className="table-card">
+      <table className="table">
+        <thead>
+          <tr>
+            <th scope="col">Run</th>
+            <th scope="col">Status</th>
+            <th scope="col">Started</th>
+            <th scope="col">Cost</th>
+            <th scope="col"> </th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {runs.map((run) => (
+            <tr key={run.id}>
+              <th scope="row">{run.id}</th>
+              <td>
+                <span className={`chip chip--${run.run_status}`}>
+                  {run.run_status.replace(/_/g, " ")}
+                </span>
+              </td>
+              <td>{formatDateTime(run.started_at)}</td>
+              <td>{formatMoney(run.cost_eur, "EUR")}</td>
+              <td>
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => onOpen(run)}
+                >
+                  Open
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
