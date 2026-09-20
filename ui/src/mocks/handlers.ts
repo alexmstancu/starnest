@@ -13,6 +13,7 @@
 import { http, HttpResponse } from "msw";
 import type { components } from "../api/schema";
 import {
+  ATTRIBUTES,
   COMPOUND_RULES,
   CRITERIA_SETS,
   DATA_SOURCES,
@@ -455,12 +456,27 @@ export const handlers = [
   ),
 
   http.get(`${BASE}/values`, ({ request }) => {
-    const candidate = new URL(request.url).searchParams.get("candidate");
+    // Both axes the contract offers: every value for one candidate, or every candidate's
+    // value for one attribute (`reqs.md` 8.4). The real endpoint has always taken both.
+    const query = new URL(request.url).searchParams;
+    const candidate = query.get("candidate");
+    const attribute = query.get("attribute");
+    // `include_superseded` is honoured, because the two drill-downs want different things: a
+    // candidate's own detail shows every figure ever stored, and the attribute view wants one
+    // row per candidate -- the active one.
+    const superseded = query.get("include_superseded") === "true";
     const items = STORED_VALUES.filter(
-      (value) => value.candidate === candidate,
+      (value) =>
+        (candidate === null || value.candidate === candidate) &&
+        (attribute === null || value.attribute === attribute) &&
+        (superseded || value.is_active),
     );
     return HttpResponse.json({ items, total: items.length });
   }),
+
+  http.get(`${BASE}/attributes`, () =>
+    HttpResponse.json({ items: ATTRIBUTES }),
+  ),
 
   http.get(`${BASE}/external-scores`, ({ request }) => {
     const candidate = new URL(request.url).searchParams.get("candidate");

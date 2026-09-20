@@ -14,6 +14,7 @@ import {
   formatScore,
 } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
+import { AttributeDrillDown } from "./AttributeDrillDown";
 import { CandidateDetail } from "./CandidateDetail";
 import {
   type ConfidenceSplit,
@@ -119,6 +120,11 @@ function TheRanking({
           pillars={chosen.pillars}
         />
       )}
+
+      {/* The other axis (`reqs.md` 8.4). A candidate's detail says what we know about one
+          country; this says who has a figure for one attribute at all -- the question behind a
+          pillar that scores badly for want of data rather than for want of merit. */}
+      <AttributeDrillDown levelId={levelId} />
     </>
   );
 }

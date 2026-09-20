@@ -435,6 +435,42 @@ export const STARTED_RUN_DETAIL: RunDetail = {
  * Two values for one attribute and one for another: the drill-down's whole point is that a
  * superseded figure is still there, with the source that produced it (`reqs.md` 3.6).
  */
+/** The catalog's attributes, for the one-attribute-every-candidate drill-down (`reqs.md` 8.4). */
+export const ATTRIBUTES = [
+  {
+    id: "country.cost_of_living_index",
+    name: "Cost of living index",
+    pillar: "economics",
+    level: "country",
+    value_type: "Quantity",
+    unit: "index_eu27_100",
+    description: "Eurostat PLI, EU27 = 100",
+    manual_entry: false,
+    max_age_months: 24,
+    breakdown_scheme: null,
+    breakdown_options: [],
+    allowed_range: null,
+    allowed_labels: [],
+    effective_source_priority: ["eurostat"],
+  },
+  {
+    id: "country.nobody_measures_this",
+    name: "Nobody measures this",
+    pillar: "family",
+    level: "country",
+    value_type: "Quantity",
+    unit: "weeks",
+    description: "An attribute with no figure anywhere -- the case this view exists for",
+    manual_entry: true,
+    max_age_months: 24,
+    breakdown_scheme: null,
+    breakdown_options: [],
+    allowed_range: null,
+    allowed_labels: [],
+    effective_source_priority: [],
+  },
+];
+
 export const STORED_VALUES: StoredValue[] = [
   {
     id: 501,

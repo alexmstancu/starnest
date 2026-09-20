@@ -18,6 +18,7 @@ import {
 import type { components } from "./schema";
 
 export type Level = components["schemas"]["Level"];
+export type Attribute = components["schemas"]["Attribute"];
 export type Candidate = components["schemas"]["Candidate"];
 export type CriteriaSetSummary = components["schemas"]["CriteriaSetSummary"];
 export type Run = components["schemas"]["Run"];
@@ -233,6 +234,33 @@ export function fetchValues(
     { candidate, include_superseded: true, limit: 500 },
     options,
   );
+}
+
+/**
+ * Every candidate's figure for one attribute (`reqs.md` 8.4).
+ *
+ * **The other axis from `fetchValues`.** That one asks "what do we know about this country?";
+ * this asks "who has a figure for this at all, and where did each one come from?" -- which is
+ * the question behind a pillar that scores badly for want of data rather than for want of
+ * merit. The backend has always taken the filter; nothing asked for it.
+ */
+export function fetchValuesForAttribute(
+  attribute: string,
+  options?: RequestOptions,
+): Promise<{ items: StoredValue[]; total: number }> {
+  return getJson(
+    "/values",
+    { attribute, include_superseded: false, limit: 500 },
+    options,
+  );
+}
+
+/** The catalog's attributes at one level, each with the pillar it belongs to. */
+export function fetchAttributes(
+  level: string,
+  options?: RequestOptions,
+): Promise<{ items: Attribute[] }> {
+  return getJson("/attributes", { level }, options);
 }
 
 /** Published composites, shown beside our score and never fed into it (`reqs.md` 3.5a). */

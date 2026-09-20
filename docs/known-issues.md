@@ -21,10 +21,10 @@ the account of a defect outlives the defect.
 
 ## Status
 
-**69 findings: 63 closed, 6 open.** Five of the six are open **by decision rather than by
-neglect**: P36's spend record and P28's deferred ledger, P38's mitigated LLM editions, P6's
+**69 findings: 64 closed, 5 open, and every one of the five is open by decision rather than
+by neglect**: P36's spend record and P28's deferred ledger, P38's mitigated LLM editions, P6's
 Cloudflare block, P10's unstored exchange rates, and P39's postponed geography. P4 is recorded
-as out of scope rather than open. **The sixth is P69**, and it is the exception: a v1 requirement nobody built and no document recorded, found on 2026-09-20 by reading `reqs.md` 8.4 against the code rather than by using the application. **P35 closed 2026-09-19**; P64-P68 closed on 2026-09-20, all five found by running the
+as out of scope rather than open. **P69 closed the same day it was found** -- it was the one gap rather than a decision. **P35 closed 2026-09-19**; P64-P68 closed on 2026-09-20, all five found by running the
 application in a browser rather than by reading it. **P63 was found by fixing one of the review's own low
 items** -- wiring up a property that had no caller, which turned out to be wrong as well as
 unused. See "Found while closing the review's low items". **Twenty-two arrived at once**, from the full review of
@@ -519,4 +519,4 @@ already broken that a restyle made visible.
 
 | # | Finding | Status |
 |---|---|---|
-| **P69** | **The attribute drill-down of `reqs.md` 8.4 does not exist.** "Select one attribute and see every candidate on it alone: raw value, active source, reference date, retrieval date" is a v1 requirement, and `navigation/routes.ts` advertises it in the Rank tab's own summary text -- so the screen claims it. Nothing implements it, and **the API cannot support it either**: `GET /v1/values` filters by candidate only, with no attribute parameter. The drill-down that exists is the opposite axis, one candidate across every attribute | **Open, medium.** Not a regression -- it was never built, and no document recorded the gap, which is why it survived a full review and four gates. Two small pieces: an `attribute` filter on `listValues`, and a view that pivots the table. Worth doing before the city level, where "which candidates have this figure at all?" stops being answerable by reading 32 rows |
+| **P69** | **The attribute drill-down of `reqs.md` 8.4 does not exist.** "Select one attribute and see every candidate on it alone: raw value, active source, reference date, retrieval date" is a v1 requirement, and `navigation/routes.ts` advertises it in the Rank tab's own summary text -- so the screen claims it. Nothing implements it, and **the API cannot support it either**: `GET /v1/values` filters by candidate only, with no attribute parameter. The drill-down that exists is the opposite axis, one candidate across every attribute | **Fixed 2026-09-20.** And the finding was half wrong: **the API had always taken the filter** -- `GET /v1/values?attribute=` returns all 32 candidates and always did. Only the interface was missing, which is a sharper version of the same point: nothing was ever *out of step* with anything, so no drift check could fire. The view is on Rank, one row per candidate with its figure, source and both dates; an attribute nobody measures says so rather than rendering an empty table. Four tests, plus seven on the pillar filter extracted with it |
