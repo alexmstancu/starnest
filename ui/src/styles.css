@@ -46,6 +46,10 @@
   --colour-text: #101828;
   --colour-text-muted: #667085;
   --colour-accent: #0f766e;
+  /* One step darker. The design carries it as the hover for a filled button and for a link,
+     in `style-hover` attributes rather than CSS -- which is why it reads as having no
+     interaction states until you look for the attribute. */
+  --colour-accent-strong: #115e56;
   --colour-accent-contrast: #ffffff;
   --colour-danger: #b42318;
   --colour-danger-surface: #fef3f2;

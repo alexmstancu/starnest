@@ -1,27 +1,48 @@
 # What the interface needs from the design
 
-**For Claude Design.** This project's design lives at `claude.ai/design` ("Starnest analyst
-dark design"), and Claude Design reads this repository directly -- the design's own `github.md`
-maps each screen to the `.tsx` file it was built from. This file is the return channel: what
-the implementation needs that the current design cannot express.
+**For Claude Design.** This project's design lives at `claude.ai/design` in the project
+**"Starnest design"**, and Claude Design reads this repository directly -- the design's own
+`github.md` maps each screen to the `.tsx` file it was built from. This file is the return
+channel: what the implementation needs that the current design cannot express.
 
-`Starnest Product.dc.html` is being implemented now. Its palette, type scale, spacing and
-column widths are complete and are being followed exactly. Two things are missing, and both are
-things a static mockup cannot show rather than oversights.
+**`Starnest Product.dc.html` is the design being implemented** -- a white ground with green
+accents. Its palette, type scale, spacing and column widths are complete and are being followed
+exactly:
+
+| | |
+|---|---|
+| Accent | `#0f766e`, with `#115e56` one step darker |
+| Accent tints | `#f0fdfa` fill, `#99f6e4` border |
+| Ground / surfaces | `#fcfcfd`, `#ffffff`, `#f9fafb`, `#f2f4f7` |
+| Text | `#101828`, `#344054`, `#475467`, muted `#667085` |
+| Borders | `#eaecf0`, `#d0d5dd` |
+| Status | success `#067647` on `#ecfdf3`; warning `#fffaeb`/`#fedf89`; danger `#fecdca` |
+| Type | Public Sans 500/600/700, `font-feature-settings: 'tnum' 1, 'cv05' 1` |
+| Radius | 4px |
 
 ## 1. Interaction states
 
-The mockup contains one interaction rule in total -- `a:hover{color:#115e56}`. There is no
-`:focus-visible`, no `:active`, no `:disabled`, and no row hover. This interface is keyboard
-navigable and has 24 buttons, 5 selects and 5 checkboxes, so every one of those needs a state
-that somebody decided rather than one I invented.
+**Three hover states are already specified and are being implemented as given** -- they are in
+`style-hover` attributes rather than CSS, which is why they are easy to miss:
 
-Please specify, in the existing palette and with no new hues:
+| Element | Hover |
+|---|---|
+| Primary button (`#0f766e` fill, white text) | `background:#115e56;border-color:#115e56` |
+| Secondary button (white fill, `#d0d5dd` border, `#344054` text) | `background:#f9fafb` |
+| Link | `color:#115e56` plus underline |
+
+What is missing is everything else. There is no `:focus-visible`, no pressed state, no disabled
+state, and nothing for the native controls. This interface is keyboard navigable and has 24
+buttons, 5 selects and 5 checkboxes, so each needs a state somebody decided rather than one I
+invented.
+
+Please specify, in the palette above and with no new hues:
 
 | Element | States needed |
 |---|---|
 | Sidebar nav item | default, hover, `aria-current="page"` |
-| Button, primary / secondary / ghost | default, hover, focus-visible, active, disabled |
+| Button, primary / secondary | **focus-visible, active, disabled** (hover is done) |
+| Button, ghost / text-only, if the system has one | all states |
 | `<select>`, text input, number input | default, hover, focus-visible, disabled, invalid |
 | Checkbox | unchecked, checked, hover, focus-visible, disabled |
 | Table row | default, hover, and the expanded "Show figures" row |
