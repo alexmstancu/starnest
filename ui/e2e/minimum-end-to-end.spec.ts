@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { type Locator, type Page, expect, test } from "@playwright/test";
 
 /**
  * minE2E's acceptance test, and the only one that counts (`docs/mine2e.md`):
@@ -76,11 +76,17 @@ test.describe.serial("the minimum end to end", () => {
     // Coverage below the others, and a visible share of it low-confidence. Neither number is
     // pinned: they move when a source publishes, and pinning them would make this test fail for
     // being right about a different year.
-    const cells = await sparse.getByRole("cell").allTextContents();
-    const coverage = Number((cells[2] ?? "").replace("%", ""));
-    const lowConfidence = Number((cells[3] ?? "").replace("%", ""));
+    // Read by what the columns say, not by where they sit. This counted cells until a column
+    // was inserted, and then failed about coverage for a reason that had nothing to do with it.
+    const coverageText = await cellUnder(page, sparse, "Coverage");
+    const confidenceText = await cellUnder(page, sparse, "Confidence");
+
+    const coverage = Number(/([\d.]+)%/.exec(coverageText)?.[1] ?? "0");
     expect(coverage).toBeGreaterThan(0);
     expect(coverage).toBeLessThan(100);
+
+    // The split reads "82h / 11m / 7l". A visible low share is the honesty this test is about.
+    const lowConfidence = Number(/([\d.]+)l\b/.exec(confidenceText)?.[1] ?? "0");
     expect(lowConfidence).toBeGreaterThan(0);
   });
 
@@ -148,4 +154,30 @@ async function setWeight(
 async function scoresInOrder(page: import("@playwright/test").Page): Promise<string[]> {
   await openTheRanking(page);
   return page.getByRole("table").getByRole("row").allTextContents();
+}
+
+
+/**
+ * One cell of a row, found by the heading of its column.
+ *
+ * **Not by index.** These assertions counted cells, so inserting a column in the middle broke
+ * tests about entirely different columns. A heading is what a column means; its position is an
+ * accident of layout, and the layout is exactly what a design pass changes.
+ */
+async function cellUnder(
+  page: Page,
+  row: Locator,
+  column: string,
+): Promise<string> {
+  const headings = await page
+    .getByRole("columnheader")
+    .allTextContents()
+    .then((all) => all.map((each) => each.trim()));
+  const at = headings.indexOf(column);
+  expect(at, `no column headed "${column}" in [${headings.join(", ")}]`).toBeGreaterThan(-1);
+
+  // The candidate's own cell is a rowheader, so every cell is taken together to line the row
+  // up with its headings.
+  const cells = await row.locator("th,td").allTextContents();
+  return (cells[at] ?? "").trim();
 }

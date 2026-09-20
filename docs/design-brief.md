@@ -51,7 +51,13 @@ Please specify, in the palette above and with no new hues:
 For focus, name the ring colour, width and offset. Say whether any transition is intended and
 its duration, or that none is.
 
-## 2. Behaviour below the design's width
+## 2. Behaviour below the design's width -- desktop only
+
+**Scope decided 2026-09-20: web and desktop widths only. Mobile is post-MVP** and should not be
+designed for now -- this is a local, single-user decision tool opened on a laptop, and a phone
+layout would be effort spent on a case nobody has.
+
+### What is needed
 
 The tables are fixed-pixel grids -- the Rank table is
 `minmax(230px,1.5fr) minmax(130px,0.9fr) 62px 66px 76px 74px 86px 92px`. A browser is not a

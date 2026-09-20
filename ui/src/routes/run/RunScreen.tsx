@@ -163,8 +163,12 @@ function RunReport({
   const failures = run.failures ?? [];
   const unanswered = run.unanswered ?? [];
   return (
-    <div className="panel">
-      <h3 className="panel__heading">Run {run.id}</h3>
+    // A labelled region, so "the run report" is something a reader -- or a screen reader --
+    // can address, rather than the nearest box that happens to contain the heading.
+    <section className="panel" aria-labelledby={`run-${run.id}`}>
+      <h3 id={`run-${run.id}`} className="panel__heading">
+        Run {run.id}
+      </h3>
       <dl className="stat-list stat-list--inline">
         <Stat label="Status" value={run.run_status} />
         <Stat label="Started" value={formatDateTime(run.started_at)} />
@@ -265,7 +269,7 @@ function RunReport({
           </button>
         </>
       )}
-    </div>
+    </section>
   );
 }
 

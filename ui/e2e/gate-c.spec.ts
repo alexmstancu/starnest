@@ -209,9 +209,25 @@ test.describe("a run", () => {
 
     const report = page.getByRole("heading", { name: `Run ${run}` });
     await expect(report).toBeVisible();
-    // Scoped to the report: "completed" also appears in the history table below it.
-    await expect(page.getByRole("definition").filter({ hasText: "completed" }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
+
+    // **Polled, because a run no longer finishes before the request returns.** P35 made the
+    // 202 true: `POST /data-acquisition-runs` opens the run and hands the fetching to a
+    // background task, so the screen shows `running` first and `completed` when it is. This
+    // asserted the end state immediately and passed only while the endpoint blocked -- the
+    // refresh button beside it exists for exactly this.
+    // Scoped to the report. The first definition on the page belongs to the sidebar's
+    // candidate counts, which is what an unscoped lookup found.
+    const status = page
+      .getByRole("region", { name: `Run ${run}` })
+      .getByRole("definition")
+      .first();
+    await expect
+      .poll(async () => {
+        await page.getByRole("button", { name: "Refresh" }).click();
+        return status.textContent();
+      }, { timeout: 30_000, message: "the run never reported a terminal status" })
+      .toMatch(/completed|failed|halted/);
   });
 });
 
@@ -261,10 +277,28 @@ async function rankedOrder(page: Page): Promise<string[]> {
   return page.getByRole("table").getByRole("row").allTextContents();
 }
 
+/**
+ * A country's score, read by the heading of its column.
+ *
+ * **It read `cells[1]`, and `cells[1]` stopped being the score.** A `Pillars` column was
+ * inserted before it, so this returned the pillar chart's tooltip text instead -- which differs
+ * between criteria sets often enough that the test went on passing, and failed about one run in
+ * three when two sets happened to weight their pillars alike. A heading cannot drift like that.
+ */
 async function scoreOf(page: Page, country: string): Promise<string> {
+  // **Waits for the table rather than asserting on it.** Switching criteria sets replaces the
+  // table with "Loading…" for a beat, so a read taken mid-swap saw no columns at all -- and
+  // asserting there aborted the poll that was meant to tolerate exactly this.
+  await page.getByRole("columnheader", { name: "Score", exact: true }).waitFor();
+  const headings = (await page.getByRole("columnheader").allTextContents()).map((each) =>
+    each.trim(),
+  );
+  const at = headings.indexOf("Score");
+
   const row = page.getByRole("row").filter({ hasText: country }).first();
-  const cells = await row.getByRole("cell").allTextContents();
-  return cells[1] ?? "";
+  // Taken together with the rowheader, so the row lines up with its headings.
+  const cells = await row.locator("th,td").allTextContents();
+  return (cells[at] ?? "").trim();
 }
 
 async function setCriterionWeight(page: Page, attribute: string, weight: string): Promise<void> {

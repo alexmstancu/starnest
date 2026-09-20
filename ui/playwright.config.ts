@@ -7,7 +7,15 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: true,
+  // **One worker, in order.** These specs share one backend and one database, and several of
+  // them write to it: gate C moves a pillar weight, minE2E moves one and asserts the ranking
+  // moved with it, the sanity suite saves a setting and puts it back. Run concurrently, one
+  // test's write lands inside another's before-and-after and the assertion fails about a
+  // change that did happen. It passed for months because the suite was small enough for the
+  // collision to be unlikely -- which is luck, not correctness, and a suite that fails one run
+  // in five teaches people to re-run it rather than read it.
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env["CI"],
   retries: 0,
   reporter: [["html", { outputFolder: "playwright-report" }], ["list"]],
