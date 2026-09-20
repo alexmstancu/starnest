@@ -164,13 +164,17 @@ function RankingTable({
               <tr>
                 <th scope="col">Rank</th>
                 <th scope="col">Candidate</th>
-                <th scope="col">Pillars</th>
+                <th scope="col" className="col--pillars">
+                  Pillars
+                </th>
                 <th scope="col">Score</th>
                 <th scope="col">Coverage</th>
                 <th scope="col">Confidence</th>
                 <th scope="col">Match status</th>
                 <th scope="col">Reason</th>
-                <th scope="col">&Delta; home</th>
+                <th scope="col" className="col--delta">
+                  &Delta; home
+                </th>
                 <th scope="col"> </th>
               </tr>
             </thead>
@@ -218,7 +222,7 @@ function CandidateRow({
           prints where a number is genuinely absent. */}
       <td>{result.rank ?? ABSENT}</td>
       <th scope="row">{result.name}</th>
-      <td>
+      <td className="col--pillars">
         <PillarChart pillars={result.pillar_scores} />
       </td>
       <ScoreCell result={result} />
@@ -263,7 +267,7 @@ function CandidateRow({
           missing, and a dash says so -- a zero here would read as "the same", which is a
           measurement nobody made. */}
       <td
-        className={`table__delta table__delta--${deltaTone(result.delta_vs_home)}`}
+        className={`col--delta table__delta table__delta--${deltaTone(result.delta_vs_home)}`}
       >
         {formatDelta(result.delta_vs_home)}
       </td>

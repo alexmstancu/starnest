@@ -21,13 +21,15 @@ is implemented across all four tabs. Two things it does not specify are still ou
       ring": `outline: 2px solid var(--color-accent); outline-offset: 2px`, a pressed step one
       past the base, disabled at 45%), so this can be applied from a decision the same designer
       already made rather than invented. Disabled at 45% is done.
-- [ ] **Responsive behaviour, desktop only.** Decided 2026-09-20: the interface should reflow
-      across **web and desktop widths, not mobile** -- mobile is post-MVP. The design has no
-      `@media` rules at all and lays its tables out as fixed-pixel grids (the ranking is
-      1210px). What is needed is the order in which columns give way as a desktop window
-      narrows. Proposed, pending confirmation: never drop Rank, Candidate or Score; drop
-      Delta home, Pillars and Confidence first; Match status and Coverage last; Reason
-      collapses under its row.
+- [x] **Responsive behaviour, desktop only.** Decided 2026-09-20 and built: the floor is
+      **1280px** -- every MacBook, any 1440 or 1920 monitor, and a half-screen window on a 2560
+      one. Mobile stays post-MVP.
+      Columns give way in order of how far they sit from the question: `Delta home` at 1440,
+      `Pillars` at 1280, and `Confidence`, `Coverage` and `Match status` would follow if it ever
+      came to that. `Rank`, `Candidate` and `Score` never go. Nothing is lost -- both dropped
+      columns are on the candidate's own row in the drill-down. The sidebar narrows to 200px
+      rather than collapsing, because the active criteria set is what every number on screen is
+      relative to.
 
 - [ ] **Three things the ranking could still show.** Not blocked -- these have data now
       (`pillar_scores`, `delta_vs_home`) -- but the drill-down's pillar cards do not yet filter

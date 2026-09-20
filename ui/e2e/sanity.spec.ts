@@ -199,6 +199,8 @@ async function cellUnder(
 
   // The candidate's own cell is a rowheader rather than a cell, so every cell is read together
   // to line the row up with its headings.
-  const cells = await row.locator("th,td").allTextContents();
+  // **Visible cells only.** A column hidden at a narrow width leaves the accessibility tree
+  // but stays in the DOM, so headings and cells would count differently.
+  const cells = await row.locator("th:visible, td:visible").allTextContents();
   return (cells[at] ?? "").trim();
 }

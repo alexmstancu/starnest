@@ -340,7 +340,10 @@ async function scoreOf(page: Page, country: string): Promise<string> {
 
   const row = page.getByRole("row").filter({ hasText: country }).first();
   // Taken together with the rowheader, so the row lines up with its headings.
-  const cells = await row.locator("th,td").allTextContents();
+  // **Visible cells only.** A column hidden at a narrow width leaves the accessibility tree
+  // but stays in the DOM, so the headings and the cells would count differently and every
+  // lookup would be off by one.
+  const cells = await row.locator("th:visible, td:visible").allTextContents();
   return (cells[at] ?? "").trim();
 }
 

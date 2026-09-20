@@ -413,6 +413,12 @@ a:hover {
   box-shadow: var(--shadow-card);
 }
 
+/* A select draws its own chevron inside the box, so its text needs room the padding does not
+   otherwise leave -- "Local employment" ran under the arrow once the sidebar narrowed. */
+select.field__control {
+  padding-right: 26px;
+}
+
 .field__control:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -1189,4 +1195,60 @@ a:hover {
   padding-left: var(--space-double);
   font-family: var(--font-mono);
   font-size: var(--font-size-small);
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════════════════
+   Narrow desktop
+   ══════════════════════════════════════════════════════════════════════════════════════
+
+   **Desktop only. Mobile is post-MVP** (decided 2026-09-20): this is a local, single-user
+   decision tool opened on a laptop, and a phone layout would be effort spent on a case nobody
+   has. The floor is 1280px -- every MacBook, any 1440 or 1920 monitor, and a half-screen
+   window on a 2560 one, which is how a comparison tool actually gets used.
+
+   The ranking table wants 1210px and the shell takes 310 around it, so 1280 is 178px short.
+   **Columns give way in order of how far they sit from the question.** `Δ home` and `Pillars`
+   are context, and go first; `Confidence`, `Coverage` and `Match status` are the evidence for
+   trusting the answer and would go next if it ever came to that; `Rank`, `Candidate` and
+   `Score` are the answer and never go. Nothing is lost by dropping them here -- both are on
+   the candidate's own row in the drill-down.
+   ══════════════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 1440px) {
+  .col--delta {
+    display: none;
+  }
+
+  .table--ranking {
+    min-width: 1124px;
+  }
+}
+
+@media (max-width: 1280px) {
+  .col--pillars {
+    display: none;
+  }
+
+  .table--ranking {
+    min-width: 962px;
+  }
+
+  /* Narrowed, never hidden: the active criteria set is what every number on screen is
+     relative to, and a ranking you cannot see the set for is the misreading this product
+     exists to prevent. */
+  :root {
+    --sidebar-width: 12.5rem;
+  }
+
+  .sidebar {
+    padding: 16px 12px;
+    gap: 16px;
+  }
+
+  .content,
+  .tabbar {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
 }
