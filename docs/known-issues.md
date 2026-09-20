@@ -21,11 +21,11 @@ the account of a defect outlives the defect.
 
 ## Status
 
-**68 findings: 63 closed, 5 open, and every one of the five is open by decision rather than by
+**69 findings: 63 closed, 6 open.** Five of the six are open **by decision rather than by
 neglect**: P36's spend record and P28's deferred ledger, P38's mitigated LLM editions, P6's
 Cloudflare block, P10's unstored exchange rates, and P39's postponed geography. P4 is recorded
-as out of scope rather than open. **P35 closed 2026-09-19** -- the last finding that was a
-defect rather than a decision. **P63 was found by fixing one of the review's own low
+as out of scope rather than open. **The sixth is P69**, and it is the exception: a v1 requirement nobody built and no document recorded, found on 2026-09-20 by reading `reqs.md` 8.4 against the code rather than by using the application. **P35 closed 2026-09-19**; P64-P68 closed on 2026-09-20, all five found by running the
+application in a browser rather than by reading it. **P63 was found by fixing one of the review's own low
 items** -- wiring up a property that had no caller, which turned out to be wrong as well as
 unused. See "Found while closing the review's low items". **Twenty-two arrived at once**, from the full review of
 2026-09-16 (P41-P62, the last section of this file): six high, thirteen medium, the rest low.
@@ -514,3 +514,9 @@ already broken that a restyle made visible.
 | **P67** | **The browser suite mutated shared state in parallel.** Gate C and minE2E moved the same criterion in the same criteria set and both asserted on the whole ranking, so each could land inside the other's before-and-after | **Fixed 2026-09-20.** One worker in order, restores of what each test found, targets computed from the current value, and each mutating spec now duplicates `minimal` into a set it owns. Six consecutive clean runs, and the suite fell from ~48s to ~14s -- the tests had been waiting on each other's writes |
 | **P68** | **A run's end state was asserted immediately after starting it.** P35 made the 202 true that morning, so the run was still `running`; the test had been failing since and nothing had noticed | **Fixed 2026-09-20.** It polls through the Refresh button that exists for it, and the run report became a labelled region -- the unscoped lookup had been finding the sidebar's candidate count |
 
+
+### Found while checking the documents against the code — 2026-09-20
+
+| # | Finding | Status |
+|---|---|---|
+| **P69** | **The attribute drill-down of `reqs.md` 8.4 does not exist.** "Select one attribute and see every candidate on it alone: raw value, active source, reference date, retrieval date" is a v1 requirement, and `navigation/routes.ts` advertises it in the Rank tab's own summary text -- so the screen claims it. Nothing implements it, and **the API cannot support it either**: `GET /v1/values` filters by candidate only, with no attribute parameter. The drill-down that exists is the opposite axis, one candidate across every attribute | **Open, medium.** Not a regression -- it was never built, and no document recorded the gap, which is why it survived a full review and four gates. Two small pieces: an `attribute` filter on `listValues`, and a view that pivots the table. Worth doing before the city level, where "which candidates have this figure at all?" stops being answerable by reading 32 rows |
