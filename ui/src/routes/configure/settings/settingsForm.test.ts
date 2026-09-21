@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { draftOf, settingsFrom, type SettingsDraft } from "./settingsForm";
+import {
+  SETTING_FIELDS,
+  draftOf,
+  isBlocked,
+  settingsFrom,
+  type SettingsDraft,
+  unsetFields,
+} from "./settingsForm";
 
 /**
  * The four tuning values, as text and back.
@@ -63,5 +70,62 @@ describe("a draft becoming settings", () => {
     expect(
       settingsFrom({ ...SET, run_spend_cap_eur: "0" }).run_spend_cap_eur,
     ).toBe(0);
+  });
+});
+
+describe("what a blank setting costs", () => {
+  const filled: SettingsDraft = {
+    score_scale_max: "100",
+    min_coverage: "60",
+    comparator_limit: "5",
+    run_spend_cap_eur: "5",
+  };
+
+  it("finds nothing unset when all four are filled", () => {
+    expect(unsetFields(filled)).toEqual([]);
+    expect(isBlocked(filled)).toBe(false);
+  });
+
+  it("names the fields left blank, in the order they are shown", () => {
+    const draft = { ...filled, min_coverage: "", run_spend_cap_eur: "" };
+    expect(unsetFields(draft).map((field) => field.name)).toEqual([
+      "min_coverage",
+      "run_spend_cap_eur",
+    ]);
+  });
+
+  it("treats a field of spaces as blank", () => {
+    expect(unsetFields({ ...filled, comparator_limit: "   " })).toHaveLength(1);
+  });
+
+  /**
+   * The distinction the design's R3 turns on: an unset score scale stops the product working,
+   * while the other three merely leave a rule off. One red, three amber.
+   */
+  it("blocks only on the score scale", () => {
+    expect(isBlocked({ ...filled, score_scale_max: "" })).toBe(true);
+    expect(isBlocked({ ...filled, min_coverage: "" })).toBe(false);
+    expect(isBlocked({ ...filled, comparator_limit: "" })).toBe(false);
+    expect(isBlocked({ ...filled, run_spend_cap_eur: "" })).toBe(false);
+  });
+
+  it("blocks when everything is blank, which is the shipped state", () => {
+    const blank: SettingsDraft = {
+      score_scale_max: "",
+      min_coverage: "",
+      comparator_limit: "",
+      run_spend_cap_eur: "",
+    };
+    expect(unsetFields(blank)).toHaveLength(4);
+    expect(isBlocked(blank)).toBe(true);
+  });
+
+  it("gives every setting a consequence written in plain words", () => {
+    for (const field of SETTING_FIELDS) {
+      expect(field.consequence.length).toBeGreaterThan(0);
+      // A consequence is what is true while it is blank, so it must not merely restate the
+      // description of what the setting is for.
+      expect(field.consequence).not.toBe(field.description);
+    }
   });
 });

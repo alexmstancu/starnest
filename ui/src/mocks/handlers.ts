@@ -80,6 +80,39 @@ export const handlers = [
     HttpResponse.json({ items: criteriaSetSummaries }),
   ),
 
+  // A duplicate is a **full copy**, never a sparse overlay (`reqs.md` Q191), which is the
+  // whole reason it is a distinct operation from creating an empty set.
+  http.post(
+    `${BASE}/criteria-sets/:criteriaSetId/duplicate`,
+    async ({ params, request }) => {
+      const source = criteriaSetDetails[String(params["criteriaSetId"])];
+      if (!source) return notFound(String(params["criteriaSetId"]));
+
+      const body = (await request.json()) as { id: string; name: string };
+      if (criteriaSetDetails[body.id]) {
+        return HttpResponse.json(
+          {
+            code: "criteria_set_exists",
+            message: `A criteria set called ${body.id} already exists.`,
+          },
+          { status: 409 },
+        );
+      }
+
+      const copy: CriteriaSet = {
+        ...structuredClone(source),
+        id: body.id,
+        name: body.name,
+      };
+      criteriaSetDetails[body.id] = copy;
+      criteriaSetSummaries = [
+        ...criteriaSetSummaries,
+        { id: body.id, name: body.name },
+      ];
+      return HttpResponse.json(copy, { status: 201 });
+    },
+  ),
+
   http.post(`${BASE}/criteria-sets`, async ({ request }) => {
     const body = (await request.json()) as { id: string; name: string };
     if (criteriaSetDetails[body.id]) {
@@ -403,7 +436,12 @@ export const handlers = [
         );
       }
 
-      return rebalancePillar(set.criteria ?? [], criterion, body.weight);
+      return rebalancePillar(
+        set.criteria ?? [],
+        criterion,
+        body.weight,
+        body.weight_locked,
+      );
     },
   ),
 
@@ -559,7 +597,14 @@ function rebalancePillar(
   criteria: Criterion[],
   edited: Criterion,
   weight: number,
+  weightLocked?: boolean,
 ) {
+  // Applied before the arithmetic, because the lock is part of the same change: the server
+  // rebalances the unlocked siblings, and whether *this* one is among them is decided by the
+  // value arriving with the weight rather than by the one that was there before.
+  if (weightLocked !== undefined) {
+    edited.weight_locked = weightLocked;
+  }
   const pillar = criteria.filter((entry) => entry.pillar === edited.pillar);
   const siblings = pillar.filter((entry) => entry !== edited);
   const unlocked = siblings.filter((entry) => !entry.weight_locked);

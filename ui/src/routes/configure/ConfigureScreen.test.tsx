@@ -246,3 +246,106 @@ describe("when the criteria set cannot be shown", () => {
     );
   });
 });
+
+/**
+ * UX review G. `CriterionInput` has carried `weight_locked` all along and the screen never
+ * sent it, so the pillar-weight rule existed one level up and not here.
+ */
+describe("locking a criterion's weight", () => {
+  // `settled()` waits for the last panel to arrive, which can happen before the criteria
+  // table does -- so the first read of a row has to be a `findBy`, as `saveWeight` already is.
+  async function findLock(attribute: string): Promise<HTMLInputElement> {
+    return screen.findByRole<HTMLInputElement>("checkbox", {
+      name: `Lock the weight for ${attribute}`,
+    });
+  }
+
+  function lockFor(attribute: string): HTMLInputElement {
+    return screen.getByRole<HTMLInputElement>("checkbox", {
+      name: `Lock the weight for ${attribute}`,
+    });
+  }
+
+  it("shows which criteria are locked, as the set says", async () => {
+    renderShell("/configure");
+    await settled();
+
+    expect(await findLock("country.economic_outlook")).toBeChecked();
+    expect(lockFor("country.cost_of_living_index")).not.toBeChecked();
+  });
+
+  it("locks a weight, and the lock stays on", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+
+    await user.click(await findLock("country.cost_of_living_index"));
+
+    await waitFor(() =>
+      expect(lockFor("country.cost_of_living_index")).toBeChecked(),
+    );
+  });
+
+  /** A lock holds its weight where it is: a rebalance must route around it. */
+  it("leaves a locked sibling's weight untouched when another moves", async () => {
+    renderShell("/configure");
+    await settled();
+    await weightInput("country.economic_outlook");
+    expect(shownWeight("country.economic_outlook")).toBe("20");
+
+    await saveWeight("country.cost_of_living_index", "40");
+
+    await waitFor(() =>
+      expect(shownWeight("country.total_tax_rate_effective")).not.toBe("30"),
+    );
+    expect(shownWeight("country.economic_outlook")).toBe("20");
+  });
+
+  it("refuses a change when every other weight in the pillar is locked", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+
+    // Lock the one unlocked sibling, leaving nowhere for a change to be absorbed.
+    await user.click(await findLock("country.total_tax_rate_effective"));
+    await waitFor(() =>
+      expect(lockFor("country.total_tax_rate_effective")).toBeChecked(),
+    );
+
+    await saveWeight("country.cost_of_living_index", "40");
+
+    // The client's own wording, not the server's: `errorPresentation` maps this code to a
+    // sentence of its own, which is the one a reader sees.
+    expect(
+      await screen.findByText(/nothing to rebalance into/i),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("what each pillar's criteria come to", () => {
+  it("shows a total per pillar, so the rule can be seen holding", async () => {
+    renderShell("/configure");
+    await settled();
+
+    const totals = within(
+      await screen.findByRole("list", { name: /weight totals by pillar/i }),
+    );
+    expect(totals.getByText(/^economics 100/i)).toBeInTheDocument();
+    expect(totals.getByText(/^housing 100/i)).toBeInTheDocument();
+  });
+
+  it("keeps the total at 100 after a weight moves", async () => {
+    renderShell("/configure");
+    await settled();
+
+    await saveWeight("country.cost_of_living_index", "40");
+
+    await waitFor(() =>
+      expect(shownWeight("country.total_tax_rate_effective")).not.toBe("30"),
+    );
+    const totals = within(
+      await screen.findByRole("list", { name: /weight totals by pillar/i }),
+    );
+    expect(totals.getByText(/^economics 100/i)).toBeInTheDocument();
+  });
+});

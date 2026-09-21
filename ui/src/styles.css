@@ -694,6 +694,34 @@ select.field__control {
   color: var(--colour-danger);
 }
 
+/* The amber band the design gives a setting that is merely undecided, as against the red one
+   for the setting nothing works without. Two tints because they are two different facts. */
+.notice--warning {
+  background: var(--colour-warning-surface);
+  border: var(--border-width) solid var(--colour-warning-border);
+  color: var(--colour-warning);
+}
+
+/* A field with no value yet. The tint says "undecided" at a glance; the consequence beneath
+   it says what that costs. */
+.field--unset .field__control {
+  border-color: var(--colour-warning-border);
+  background: var(--colour-warning-surface);
+}
+
+.field--unset-blocking .field__control {
+  border-color: var(--colour-danger-border);
+  background: var(--colour-danger-surface);
+}
+
+.field__consequence {
+  color: var(--colour-warning);
+}
+
+.field--unset-blocking .field__consequence {
+  color: var(--colour-danger);
+}
+
 .notice__code {
   font-family: var(--font-mono);
   color: var(--colour-text-muted);
@@ -1282,6 +1310,17 @@ select.field__control {
     padding-left: 16px;
     padding-right: 16px;
   }
+}
+
+/* What each pillar's criteria come to, beside the criteria themselves. The rule is that they
+   sum to 100 within a pillar; showing the total lets a reader watch it hold. */
+.pillar-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-half);
+  margin: 0 0 var(--space-single);
+  padding: 0;
+  list-style: none;
 }
 
 /* --- Saved rankings -----------------------------------------------------------------------

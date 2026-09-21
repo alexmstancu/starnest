@@ -10,37 +10,87 @@
 
 import type { Settings } from "../../../api/endpoints";
 
-export const SETTING_FIELDS = [
-  [
-    "score_scale_max",
-    "Score scale maximum",
-    "The top of every score. Nothing assumes 100.",
-  ],
-  [
-    "min_coverage",
-    "Minimum coverage",
-    "Below this, a candidate is insufficient_data.",
-  ],
-  [
-    "comparator_limit",
-    "Comparator limit",
-    "How many comparators one comparison may hold.",
-  ],
-  [
-    "run_spend_cap_eur",
-    "Run spend cap (EUR)",
-    "A run halts here, keeping what it fetched.",
-  ],
-] as const;
+/**
+ * How much is lost while a setting is undecided.
+ *
+ * `blocking` means the product cannot do its job: a ranking refuses to compute without a score
+ * scale, so Rank and Compare have nothing to show. `advisory` means a rule is simply not in
+ * force, which is a different and much smaller thing -- and conflating the two would teach a
+ * reader that every warning here is decorative.
+ */
+export type UnsetSeverity = "blocking" | "advisory";
 
-export type SettingName = (typeof SETTING_FIELDS)[number][0];
+export interface SettingField {
+  name: SettingName;
+  label: string;
+  description: string;
+  /** What is true *while this is blank*, in plain words. */
+  consequence: string;
+  severity: UnsetSeverity;
+}
+
+export const SETTING_FIELDS = [
+  {
+    name: "score_scale_max",
+    label: "Score scale maximum",
+    description: "The top of every score. Nothing assumes 100.",
+    consequence: "Nothing can be ranked or compared until this is set.",
+    severity: "blocking",
+  },
+  {
+    name: "min_coverage",
+    label: "Minimum coverage",
+    description: "Below this, a candidate is insufficient_data.",
+    consequence:
+      "No coverage floor is in force, so a candidate is scored however little is known about it.",
+    severity: "advisory",
+  },
+  {
+    name: "comparator_limit",
+    label: "Comparator limit",
+    description: "How many comparators one comparison may hold.",
+    consequence: "A comparison accepts as many comparators as you pick.",
+    severity: "advisory",
+  },
+  {
+    name: "run_spend_cap_eur",
+    label: "Run spend cap (EUR)",
+    description: "A run halts here, keeping what it fetched.",
+    consequence:
+      "A run that can spend refuses to start until a cap is set, or the request accepts going uncapped.",
+    severity: "advisory",
+  },
+] as const satisfies readonly SettingField[];
+
+export type SettingName =
+  | "score_scale_max"
+  | "min_coverage"
+  | "comparator_limit"
+  | "run_spend_cap_eur";
+
+/** The fields left blank, in the order they are shown. */
+export function unsetFields(
+  draft: SettingsDraft,
+): readonly SettingField[] {
+  return SETTING_FIELDS.filter((field) => draft[field.name].trim() === "");
+}
+
+/**
+ * Whether anything blank stops the product working, rather than merely leaving a rule off.
+ *
+ * The design's round-2 review found its prototype stating this rule and then ranking anyway
+ * (R3), which is worse than saying nothing: it teaches that the warnings are decoration.
+ */
+export function isBlocked(draft: SettingsDraft): boolean {
+  return unsetFields(draft).some((field) => field.severity === "blocking");
+}
 
 export type SettingsDraft = Record<SettingName, string>;
 
 /** The four values as the text of four inputs, which is what a half-typed number has to be. */
 export function draftOf(settings: Settings): SettingsDraft {
   return Object.fromEntries(
-    SETTING_FIELDS.map(([name]) => [name, asText(settings[name])]),
+    SETTING_FIELDS.map((field) => [field.name, asText(settings[field.name])]),
   ) as SettingsDraft;
 }
 

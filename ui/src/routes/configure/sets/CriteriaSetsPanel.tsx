@@ -79,6 +79,42 @@ export function CriteriaSetsPanel() {
           </button>
         </form>
       )}
+
+      {chosen && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            form.duplicate(chosen.id);
+          }}
+        >
+          <p className="panel__hint">
+            Editing a weight changes this set in place, so trying an idea out
+            without losing what is here means copying it first. A copy is a
+            complete set of its own, never a reference to this one.
+          </p>
+          <label className="field">
+            <span className="field__label">
+              Identifier for a copy of {chosen.name}
+            </span>
+            <input
+              className="field__control"
+              value={form.duplicateId}
+              onChange={(event) => form.typeDuplicateId(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span className="field__label">Name for the copy</span>
+            <input
+              className="field__control"
+              value={form.duplicateName}
+              onChange={(event) => form.typeDuplicateName(event.target.value)}
+            />
+          </label>
+          <button type="submit" className="button" disabled={!form.canDuplicate}>
+            Duplicate {chosen.name}
+          </button>
+        </form>
+      )}
     </section>
   );
 }

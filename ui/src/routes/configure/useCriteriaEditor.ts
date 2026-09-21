@@ -33,7 +33,11 @@ export interface CriteriaEditor {
   savingAttribute: string | null;
   /** The failure of the last weight change. Shown; never swallowed. */
   saveError: unknown;
-  setWeight: (attribute: string, weight: number) => void;
+  setWeight: (
+    attribute: string,
+    weight: number,
+    weightLocked?: boolean,
+  ) => void;
   /**
    * Change how one criterion judges: goal, method, band, anchors, threshold.
    *
@@ -70,13 +74,13 @@ export function useCriteriaEditor(
   }, [resource.data]);
 
   const setWeight = useCallback(
-    (attribute: string, weight: number) => {
+    (attribute: string, weight: number, weightLocked?: boolean) => {
       if (criteriaSetId === null) return;
 
       setSavingAttribute(attribute);
       setSaveError(null);
 
-      void updateCriterionWeight(criteriaSetId, attribute, weight)
+      void updateCriterionWeight(criteriaSetId, attribute, weight, weightLocked)
         .then((rebalanced) => {
           setCriteria((current) =>
             applyRebalance(current, rebalanced.criteria),

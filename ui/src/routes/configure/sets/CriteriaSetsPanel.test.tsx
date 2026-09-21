@@ -113,6 +113,96 @@ describe("the criteria sets panel", () => {
     );
   });
 
+  /**
+   * UX review J. `POST /criteria-sets/{id}/duplicate` was served and never called, so the
+   * only way to try an idea out was to edit the set in place and lose what was there.
+   */
+  it("duplicates a set as a full copy, not an empty one", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const sets = await panel();
+
+    await user.type(
+      await sets.findByRole("textbox", {
+        name: /identifier for a copy of Default/i,
+      }),
+      "experiment",
+    );
+    await user.type(
+      sets.getByRole("textbox", { name: /name for the copy/i }),
+      "Experiment",
+    );
+    await user.click(sets.getByRole("button", { name: /duplicate default/i }));
+
+    await waitFor(() =>
+      expect(
+        within(sidebarSets()).getByRole("option", { name: "Experiment" }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  /** Duplicating is how an experiment starts, so the next edit belongs to the copy. */
+  it("selects the copy, not the set it was copied from", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const sets = await panel();
+
+    await user.type(
+      await sets.findByRole("textbox", {
+        name: /identifier for a copy of Default/i,
+      }),
+      "experiment",
+    );
+    await user.type(
+      sets.getByRole("textbox", { name: /name for the copy/i }),
+      "Experiment",
+    );
+    await user.click(sets.getByRole("button", { name: /duplicate default/i }));
+
+    await waitFor(() => expect(sidebarSets()).toHaveValue("experiment"));
+  });
+
+  it("asks for both an identifier and a name before it will duplicate anything", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const sets = await panel();
+
+    expect(
+      await sets.findByRole("button", { name: /duplicate default/i }),
+    ).toBeDisabled();
+    await user.type(
+      await sets.findByRole("textbox", {
+        name: /identifier for a copy of Default/i,
+      }),
+      "experiment",
+    );
+    expect(
+      sets.getByRole("button", { name: /duplicate default/i }),
+    ).toBeDisabled();
+  });
+
+  it("refuses a copy whose identifier is already taken, and says so", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const sets = await panel();
+
+    await user.type(
+      await sets.findByRole("textbox", {
+        name: /identifier for a copy of Default/i,
+      }),
+      "remote-only",
+    );
+    await user.type(
+      sets.getByRole("textbox", { name: /name for the copy/i }),
+      "Clash",
+    );
+    await user.click(sets.getByRole("button", { name: /duplicate default/i }));
+
+    expect(await sets.findByRole("alert")).toHaveTextContent(
+      "criteria_set_exists",
+    );
+  });
+
   it("asks for both an identifier and a name before it will create anything", async () => {
     const user = userEvent.setup();
     renderShell("/configure");

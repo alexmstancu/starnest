@@ -87,3 +87,114 @@ describe("the settings panel", () => {
     expect(await screen.findByText(/no settings/)).toBeInTheDocument();
   });
 });
+
+/**
+ * UX review K. All four settings are nullable with null the shipped state, and the screen
+ * could not express that: an empty field looked the same as one nobody had reached yet.
+ */
+describe("a setting that is not set", () => {
+  it("shows an empty field as Not set rather than as blank", async () => {
+    mockServer.use(
+      http.get("/v1/settings", () =>
+        HttpResponse.json({
+          score_scale_max: 100,
+          min_coverage: null,
+          comparator_limit: 5,
+          run_spend_cap_eur: 5,
+        }),
+      ),
+    );
+    renderShell("/configure");
+    const settings = await panel();
+
+    expect(
+      await settings.findByRole("textbox", { name: "Minimum coverage" }),
+    ).toHaveAttribute("placeholder", "Not set");
+  });
+
+  it("says what leaving a setting blank costs", async () => {
+    mockServer.use(
+      http.get("/v1/settings", () =>
+        HttpResponse.json({
+          score_scale_max: 100,
+          min_coverage: null,
+          comparator_limit: 5,
+          run_spend_cap_eur: 5,
+        }),
+      ),
+    );
+    renderShell("/configure");
+    const settings = await panel();
+
+    expect(
+      await settings.findByText(/no coverage floor is in force/i),
+    ).toBeInTheDocument();
+    expect(
+      settings.getByText(/1 setting is not set|one setting is not set/i),
+    ).toBeInTheDocument();
+  });
+
+  /** The blank that stops the product working, as against the three that leave a rule off. */
+  it("raises a blocking banner when the score scale is unset", async () => {
+    mockServer.use(
+      http.get("/v1/settings", () =>
+        HttpResponse.json({
+          score_scale_max: null,
+          min_coverage: 60,
+          comparator_limit: 5,
+          run_spend_cap_eur: 5,
+        }),
+      ),
+    );
+    renderShell("/configure");
+    const settings = await panel();
+
+    expect(await settings.findByRole("alert")).toHaveTextContent(
+      /nothing can be ranked or compared until the score scale maximum is set/i,
+    );
+  });
+
+  it("says nothing at all when every setting is set", async () => {
+    mockServer.use(
+      http.get("/v1/settings", () =>
+        HttpResponse.json({
+          score_scale_max: 100,
+          min_coverage: 60,
+          comparator_limit: 5,
+          run_spend_cap_eur: 5,
+        }),
+      ),
+    );
+    renderShell("/configure");
+    const settings = await panel();
+
+    await settings.findByRole("textbox", { name: "Score scale maximum" });
+    expect(settings.queryByRole("alert")).toBeNull();
+    expect(settings.queryByText(/is not set/i)).toBeNull();
+  });
+
+  /** Read off the draft, so clearing a field says what that costs before any save. */
+  it("warns as soon as a field is cleared, not only after saving", async () => {
+    const user = userEvent.setup();
+    mockServer.use(
+      http.get("/v1/settings", () =>
+        HttpResponse.json({
+          score_scale_max: 100,
+          min_coverage: 60,
+          comparator_limit: 5,
+          run_spend_cap_eur: 5,
+        }),
+      ),
+    );
+    renderShell("/configure");
+    const settings = await panel();
+
+    await user.clear(
+      await settings.findByRole("textbox", { name: "Score scale maximum" }),
+    );
+
+    expect(await settings.findByRole("alert")).toHaveTextContent(
+      /nothing can be ranked or compared/i,
+    );
+  });
+});

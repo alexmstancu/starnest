@@ -91,15 +91,29 @@ export function fetchCriteriaSet(
  * depends on which weights are locked, and a pillar that does not sum to 100 is a broken
  * score -- so the server owns the arithmetic and this returns whatever it decided.
  */
+/**
+ * One criterion's weight within its pillar, and whether it is locked against rebalancing.
+ *
+ * The two travel together because the server treats them together: it rebalances the
+ * *unlocked* siblings to 100, so which of them absorb a change depends on what is locked at
+ * the moment it is made. Sending the lock separately would mean two requests whose order
+ * decides the answer.
+ *
+ * Refused with `409 weights_all_locked` when everything else in the pillar is locked, because
+ * then there is nothing to rebalance into.
+ */
 export function updateCriterionWeight(
   criteriaSetId: string,
   attributeId: string,
   weight: number,
+  weightLocked?: boolean,
   options?: RequestOptions,
 ): Promise<RebalancedPillar> {
   return patchJson(
     "/criteria-sets/{criteriaSetId}/criteria/{attributeId}",
-    { weight },
+    weightLocked === undefined
+      ? { weight }
+      : { weight, weight_locked: weightLocked },
     { ...options, pathParams: { criteriaSetId, attributeId } },
   );
 }
@@ -326,6 +340,28 @@ export function createCriteriaSet(
   options?: RequestOptions,
 ): Promise<CriteriaSet> {
   return postJson("/criteria-sets", { id, name }, options);
+}
+
+/**
+ * A full, independent copy of a set, under a new id.
+ *
+ * **The contract calls this the safe way to experiment** (`reqs.md` Q168): editing a weight
+ * changes the set in place, so trying an idea out means either losing what was there or
+ * copying it first. A set is a full copy and never a sparse overlay (Q191), so what comes
+ * back is a complete opinion about the same attributes rather than a reference to the
+ * original.
+ */
+export function duplicateCriteriaSet(
+  criteriaSetId: string,
+  id: string,
+  name: string,
+  options?: RequestOptions,
+): Promise<CriteriaSet> {
+  return postJson(
+    "/criteria-sets/{criteriaSetId}/duplicate",
+    { id, name },
+    { ...options, pathParams: { criteriaSetId } },
+  );
 }
 
 export function renameCriteriaSet(

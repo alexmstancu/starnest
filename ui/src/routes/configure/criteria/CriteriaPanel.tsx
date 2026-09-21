@@ -1,9 +1,10 @@
 import type { Criterion, CriterionRule } from "../../../api/endpoints";
 import { lockedAttributes } from "../../../api/errorPresentation";
+import { formatPercentage } from "../../../format/display";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { CriteriaEditor } from "../useCriteriaEditor";
-import { weightAsText, weightFrom } from "../weights";
+import { totalsByPillar, weightAsText, weightFrom } from "../weights";
 import { CriterionRuleFields } from "./CriterionRuleFields";
 import { useCriterionRule } from "./useCriterionRule";
 
@@ -30,6 +31,13 @@ export function CriteriaPanel({ editor }: { editor: CriteriaEditor }) {
         criterion&apos;s rule — its goal, scale and threshold — is edited per
         row, and moves no weight.
       </p>
+      <p className="panel__hint">
+        A locked weight is held where it is and takes no share of a rebalance.
+        Lock everything in a pillar and there is nowhere left for a change to
+        go, which the backend refuses rather than silently absorbing.
+      </p>
+
+      <PillarTotals criteria={editor.criteria} />
 
       {editor.saveError !== null && <SaveFailure error={editor.saveError} />}
 
@@ -42,6 +50,7 @@ export function CriteriaPanel({ editor }: { editor: CriteriaEditor }) {
               <th scope="col">Attribute</th>
               <th scope="col">Pillar</th>
               <th scope="col">Weight</th>
+              <th scope="col">Locked</th>
               <th scope="col">Goal</th>
               <th scope="col">Rule</th>
             </tr>
@@ -63,6 +72,35 @@ export function CriteriaPanel({ editor }: { editor: CriteriaEditor }) {
   );
 }
 
+/**
+ * What each pillar's criteria currently come to.
+ *
+ * **Criterion weights sum to 100 within a pillar** (`reqs.md` 3.4). The server enforces it by
+ * rebalancing; showing the total back lets a reader watch the rule hold instead of taking it
+ * on trust -- and makes a pillar that has drifted visible rather than merely wrong.
+ */
+function PillarTotals({ criteria }: { criteria: readonly Criterion[] }) {
+  const totals = totalsByPillar(criteria);
+  if (totals.length === 0) return null;
+
+  return (
+    <ul className="pillar-totals" aria-label="Weight totals by pillar">
+      {totals.map((each) => (
+        <li
+          key={each.pillar}
+          className={
+            each.balanced
+              ? "chip chip--accent"
+              : "chip chip--not_matching"
+          }
+        >
+          {each.pillar} {formatPercentage(each.total)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function CriterionRow({
   criterion,
   saving,
@@ -71,7 +109,7 @@ function CriterionRow({
 }: {
   criterion: Criterion;
   saving: boolean;
-  onSave: (attribute: string, weight: number) => void;
+  onSave: (attribute: string, weight: number, weightLocked?: boolean) => void;
   onSaveRule: (attribute: string, rule: CriterionRule) => void;
 }) {
   const stored = weightAsText(criterion.weight);
@@ -140,6 +178,28 @@ function CriterionRow({
               </p>
             )}
           </form>
+        </td>
+        <td>
+          {/* Sent with the weight, not separately: the server rebalances the *unlocked*
+              siblings, so which of them absorb a change depends on what is locked at the
+              moment it is made. Two requests would let their order decide the answer. */}
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={criterion.weight_locked ?? false}
+              disabled={saving}
+              onChange={(event) =>
+                onSave(
+                  criterion.attribute,
+                  criterion.weight ?? 0,
+                  event.target.checked,
+                )
+              }
+            />
+            <span className="visually-hidden">
+              Lock the weight for {criterion.attribute}
+            </span>
+          </label>
         </td>
         <td>{criterion.goal}</td>
         <td>
