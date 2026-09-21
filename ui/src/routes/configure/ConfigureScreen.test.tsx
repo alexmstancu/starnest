@@ -393,3 +393,147 @@ describe("what each pillar's criteria come to", () => {
     expect(totals.getByText(/^economics 100/i)).toBeInTheDocument();
   });
 });
+
+/**
+ * UX review E. Session-scoped on purpose: the backend records no change log, and inventing one
+ * in the client would be a second account of the truth the server cannot confirm.
+ */
+describe("what this session changed", () => {
+  async function historyPanel() {
+    return within(await screen.findByRole("region", { name: "Recent changes" }));
+  }
+
+  it("says nothing has changed, and that the list is not stored", async () => {
+    renderShell("/configure");
+    const panel = await historyPanel();
+
+    expect(
+      panel.getByText(/nothing has been changed in this session/i),
+    ).toBeInTheDocument();
+    expect(panel.getByText(/reloading clears it/i)).toBeInTheDocument();
+  });
+
+  it("lists a weight change once it has been made", async () => {
+    renderShell("/configure");
+    await settled();
+
+    await saveWeight("country.cost_of_living_index", "40");
+
+    const panel = await historyPanel();
+    expect(
+      await panel.findByText(/Weight for country\.cost_of_living_index: 50 to 40/),
+    ).toBeInTheDocument();
+  });
+
+  /** A configuration is a state, so the reach is named before it is taken. */
+  it("names how far an undo would reach", async () => {
+    renderShell("/configure");
+    await settled();
+
+    await saveWeight("country.cost_of_living_index", "40");
+    await userEvent.click(
+      await screen.findByRole("checkbox", {
+        name: "Lock the weight for country.homicide_rate",
+      }),
+    );
+
+    const panel = await historyPanel();
+    await panel.findByText(/Locked country\.homicide_rate/);
+    expect(
+      panel.getByRole("button", { name: "Undo this and the 1 after it" }),
+    ).toBeInTheDocument();
+    expect(panel.getByRole("button", { name: "Undo this" })).toBeInTheDocument();
+  });
+
+  /**
+   * The behaviour the whole panel turns on: an undo that only put a number back on screen
+   * would disagree with the server the moment anything else read it.
+   */
+  it("undoes by making the opposite request, not by restoring the screen", async () => {
+    const sent: unknown[] = [];
+    renderShell("/configure");
+    await settled();
+    await saveWeight("country.cost_of_living_index", "40");
+    await screen.findByText(/Weight for country\.cost_of_living_index: 50 to 40/);
+
+    mockServer.use(
+      http.patch(
+        "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+        async ({ request, params }) => {
+          const body = await request.json();
+          sent.push({ attribute: params["attributeId"], body });
+          return HttpResponse.json({ pillar: "economics", criteria: [] });
+        },
+      ),
+    );
+
+    const panel = await historyPanel();
+    await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({
+      attribute: "country.cost_of_living_index",
+      body: { weight: 50 },
+    });
+  });
+
+  it("drops the change from the list once it has been undone", async () => {
+    renderShell("/configure");
+    await settled();
+    await saveWeight("country.cost_of_living_index", "40");
+
+    const panel = await historyPanel();
+    await panel.findByText(/Weight for country\.cost_of_living_index: 50 to 40/);
+    await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/Weight for country\.cost_of_living_index: 50 to 40/),
+      ).toBeNull(),
+    );
+  });
+
+  it("offers a way back to where the session started", async () => {
+    renderShell("/configure");
+    await settled();
+    await saveWeight("country.cost_of_living_index", "40");
+
+    const panel = await historyPanel();
+    await panel.findByText(/Weight for country\.cost_of_living_index: 50 to 40/);
+    await userEvent.click(
+      panel.getByRole("button", { name: "Back to where I started" }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Back to where I started" }),
+      ).toBeNull(),
+    );
+  });
+
+  it("reports a refusal to undo, and keeps the change listed", async () => {
+    renderShell("/configure");
+    await settled();
+    await saveWeight("country.cost_of_living_index", "40");
+    const panel = await historyPanel();
+    await panel.findByText(/Weight for country\.cost_of_living_index: 50 to 40/);
+
+    mockServer.use(
+      http.patch("/v1/criteria-sets/:criteriaSetId/criteria/:attributeId", () =>
+        HttpResponse.json(
+          { code: "weights_all_locked", message: "no" },
+          { status: 409 },
+        ),
+      ),
+    );
+    await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
+
+    expect(await panel.findByRole("alert")).toHaveTextContent(
+      /nothing to rebalance into/i,
+    );
+    // A half-finished undo is a real state, so what was not undone stays listed.
+    expect(
+      screen.getByText(/Weight for country\.cost_of_living_index: 50 to 40/),
+    ).toBeInTheDocument();
+  });
+});

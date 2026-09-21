@@ -9,6 +9,8 @@ import { PillarWeightsPanel } from "./pillars/PillarWeightsPanel";
 import { ProposalsPanel } from "./proposals/ProposalsPanel";
 import { RulesPanel } from "./rules/RulesPanel";
 import { SettingsPanel } from "./settings/SettingsPanel";
+import { RecentChanges } from "./RecentChanges";
+import { useChangeHistory } from "./useChangeHistory";
 import { useCriteriaEditor } from "./useCriteriaEditor";
 
 /**
@@ -25,13 +27,18 @@ import { useCriteriaEditor } from "./useCriteriaEditor";
  */
 export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   const { criteriaSetId, levelId } = useSelection();
-  const editor = useCriteriaEditor(criteriaSetId);
+  const history = useChangeHistory();
+  const editor = useCriteriaEditor(criteriaSetId, history);
 
   return (
     <section className="screen screen--configure" aria-labelledby="screen-heading">
       <h2 id="screen-heading" className="screen__heading">
         {route.label}
       </h2>
+
+      {/* At the top, because it is the answer to "what have I just done?" -- a question
+          asked before scrolling to look for the thing that was done. */}
+      <RecentChanges history={history} />
 
       <HouseholdPanel />
       <SettingsPanel />

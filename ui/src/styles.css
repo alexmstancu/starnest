@@ -1394,6 +1394,31 @@ select.field__control {
   font-size: var(--font-size-small);
 }
 
+/* What this session changed, with the way back. Newest first, one row per target. */
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+  margin: 0 0 var(--space-single);
+  padding: 0;
+  list-style: none;
+}
+
+.history__entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-single);
+  padding: var(--space-half) var(--space-single);
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-small);
+  background: var(--colour-surface-raised);
+}
+
+.history__label {
+  color: var(--colour-text-strong);
+}
+
 /* --- Saved rankings -----------------------------------------------------------------------
    A ranking is recomputed on every request, so it moves as weights move. Keeping one is a
    deliberate act, and the panel says so by putting the note field and the button together at

@@ -242,3 +242,115 @@ describe("when a comparison cannot be drawn", () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * UX review F. `ComparisonAttributeRow` carries the whole `Value` for the focus and for every
+ * comparator, alongside the normalised score, and a `delta` documented as being in the
+ * attribute's own unit. All of it was served and none of it was shown.
+ */
+describe("raw figures", () => {
+  it("shows scores until asked for figures", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Spain");
+
+    const row = await screen.findByRole("row", {
+      name: /cost_of_living_index/i,
+    });
+    expect(row).toHaveTextContent("82");
+    expect(row).not.toHaveTextContent("92.1");
+  });
+
+  it("switches the attribute rows to the figure in its own unit", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Spain");
+    await screen.findByRole("row", { name: /cost_of_living_index/i });
+
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+
+    const row = screen.getByRole("row", { name: /cost_of_living_index/i });
+    expect(row).toHaveTextContent("92.1 index_eu27_100");
+    expect(row).toHaveTextContent("105.5 index_eu27_100");
+  });
+
+  /** `delta` is documented as being in the attribute's own unit, so it belongs here. */
+  it("shows the gap in the attribute's unit rather than in points", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Spain");
+    await screen.findByRole("row", { name: /cost_of_living_index/i });
+
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+
+    const row = screen.getByRole("row", { name: /cost_of_living_index/i });
+    expect(row).toHaveTextContent("-13.4");
+    expect(row).not.toHaveTextContent("points");
+  });
+
+  /** A comparator with no figure must read as absent, never as a zero. */
+  it("says nothing rather than zero where a figure is missing", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Spain");
+    await screen.findByRole("row", { name: /coastline_access/i });
+
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+
+    const row = screen.getByRole("row", { name: /coastline_access/i });
+    expect(row).toHaveTextContent("1793 km");
+    expect(row).toHaveTextContent("—");
+  });
+
+  it("goes back to scores when asked", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Spain");
+    await screen.findByRole("row", { name: /cost_of_living_index/i });
+
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+    await userEvent.click(
+      screen.getByRole("radio", { name: /score 0.*100/i }),
+    );
+
+    const row = screen.getByRole("row", { name: /cost_of_living_index/i });
+    expect(row).toHaveTextContent("82");
+    expect(row).toHaveTextContent("points");
+  });
+});
+
+/**
+ * UX review L. The limit was enforced only when adding, so lowering it left a selection above
+ * it in place -- and `/comparisons` answers 409 above the limit, so that was a request this
+ * application could never make.
+ */
+describe("the comparator ceiling", () => {
+  it("trims the selection to the newest when the limit is below it", async () => {
+    mockServer.use(
+      http.get(`${BASE}/settings`, () =>
+        HttpResponse.json({
+          score_scale_max: 100,
+          min_coverage: 60,
+          comparator_limit: 1,
+          run_spend_cap_eur: 5,
+        }),
+      ),
+    );
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Spain" }));
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: "Netherlands" }),
+    );
+
+    const notice = await screen.findByRole("alert");
+    expect(notice).toHaveTextContent(/comparator limit is lower/i);
+    // The newest is kept: the last click is the one being thought about.
+    expect(screen.getByRole("checkbox", { name: "Netherlands" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Spain" })).not.toBeChecked();
+  });
+
+  it("says nothing while the selection is inside the limit", async () => {
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Spain" }));
+
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});

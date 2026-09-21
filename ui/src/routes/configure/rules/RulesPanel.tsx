@@ -5,6 +5,7 @@ import {
 } from "../../../api/endpoints";
 import { type Resource } from "../../../api/useResource";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { describeEffect } from "./ruleEffect";
 import { useRuleToggles } from "./useRuleToggles";
 
 /**
@@ -50,7 +51,14 @@ export function RulesPanel({
           listed.map((rule) => ({
             id: rule.id,
             name: rule.name,
-            detail: rule.level ?? "every level",
+            // The level *and* the effect. A switch saying only "enforced" makes a reader
+            // guess whether it matters; dropping the level to make room would lose which
+            // candidates it is even asked about.
+            detail: `Asked at ${rule.level ?? "every"} level. ${describeEffect(
+              rule.id,
+              rules.matchRuleResults,
+              { enforced: rules.isEnforced(rule.id) },
+            )}`,
             on: rules.isEnforced(rule.id),
             toggleLabel: `Enforce ${rule.name}`,
             onToggle: (wanted: boolean) => rules.enforce(rule.id, wanted),
@@ -69,7 +77,9 @@ export function RulesPanel({
           listed.map((rule) => ({
             id: rule.id,
             name: rule.name,
-            detail: `${rule.shape} · ${rule.outcome}`,
+            // A phrase, not two facts joined by a separator: the middle dot is barred
+            // outright, and the fix that matters is saying the thing in words.
+            detail: `${rule.shape}, and ${rule.outcome}s when it fires`,
             on: rules.isApplied(rule.id),
             toggleLabel: `Apply ${rule.name}`,
             onToggle: (wanted: boolean) => rules.apply(rule.id, wanted),

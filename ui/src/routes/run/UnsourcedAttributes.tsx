@@ -1,9 +1,5 @@
 import { useCallback, useId } from "react";
-import {
-  fetchAttributes,
-  fetchCriteriaSet,
-  type Attribute,
-} from "../../api/endpoints";
+import { fetchAttributes, fetchCriteriaSet } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
 import { formatPercentage } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
@@ -51,7 +47,7 @@ export function UnsourcedAttributes({ level }: { level: string }) {
   if (attributes.resource.status !== "ready") return null;
 
   const gaps = unsourcedAttributes(
-    attributes.resource.data.items as Attribute[],
+    attributes.resource.data.items,
     set.resource.status === "ready" ? (set.resource.data.criteria ?? []) : [],
   );
 

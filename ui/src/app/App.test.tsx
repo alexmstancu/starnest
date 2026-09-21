@@ -30,7 +30,11 @@ describe("the shell", () => {
   it("puts the route and the display name in the browser tab title", async () => {
     renderShell("/compare");
 
-    await waitFor(() => expect(document.title).toBe(`Compare · ${TEST_CONFIG.displayName}`));
+    // An em dash: the middle-dot separator is barred outright and the design removed every
+    // one from the application, the title bar included.
+    await waitFor(() =>
+      expect(document.title).toBe(`Compare — ${TEST_CONFIG.displayName}`),
+    );
   });
 
   it("redirects the root path to Configure, which a fresh installation needs first", async () => {

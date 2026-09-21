@@ -332,23 +332,49 @@ export function comparisonFor(
       {
         attribute: "country.cost_of_living_index",
         pillar: "economics",
-        focus: { normalised_score: 82 },
+        // The raw figure beside the score, which is what the Compare toggle switches between
+        // (`ComparisonAttributeRow` carries the whole `Value`, not only its score).
+        focus: {
+          normalised_score: 82,
+          value: comparedValue(
+            "country.cost_of_living_index",
+            focus,
+            { magnitude: 92.1, unit: "index_eu27_100" },
+            "Quantity",
+          ),
+        },
         comparators: comparators.map((candidate) => ({
           candidate,
           normalised_score: 41,
           delta: -13.4,
           weighted_contribution: 4.9,
+          value: comparedValue(
+            "country.cost_of_living_index",
+            candidate,
+            { magnitude: 105.5, unit: "index_eu27_100" },
+            "Quantity",
+          ),
         })),
       },
       {
         attribute: "country.coastline_access",
         pillar: "nature",
-        focus: { normalised_score: 70 },
+        focus: {
+          normalised_score: 70,
+          value: comparedValue(
+            "country.coastline_access",
+            focus,
+            { magnitude: 1793, unit: "km" },
+            "Quantity",
+          ),
+        },
         comparators: comparators.map((candidate) => ({
           candidate,
           normalised_score: 64,
           delta: 1341,
           weighted_contribution: 0.2,
+          // No `value` on this one: a comparator with no figure must read as absent rather
+          // than as a zero, which is the whole reason the raw view exists.
         })),
       },
     ],
@@ -361,6 +387,30 @@ export function comparisonFor(
       ],
       disadvantages: ["Broadband coverage: 61 against 88, worth -1.8 points"],
     })),
+  };
+}
+
+/** A stored value as a comparison carries it: the figure in its own unit, with provenance. */
+function comparedValue(
+  attribute: string,
+  candidate: string,
+  payload: StoredValue["payload"],
+  valueType: StoredValue["value_type"],
+): StoredValue {
+  return {
+    id: 900,
+    candidate,
+    attribute,
+    value_type: valueType,
+    payload,
+    data_source: "eurostat",
+    reference_period: { start: "2025-01-01", end: "2025-12-31" },
+    retrieval_date: "2026-09-11T08:00:00Z",
+    confidence_level: "high",
+    is_active: true,
+    quote: null,
+    citations: [],
+    data_acquisition_run: 7,
   };
 }
 

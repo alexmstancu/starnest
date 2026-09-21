@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -34,9 +34,11 @@ describe("what the panel shows", () => {
     renderShell("/configure");
     await settled();
 
-    const row = await screen.findByRole("row", {
-      name: new RegExp(PROPOSED_FOR),
-    });
+    // Scoped to this panel. A gate now states which candidates it rules out, so a candidate
+    // id appears in the Rules table too and a global row lookup matches both.
+    const row = await within(
+      await screen.findByRole("region", { name: "Gate proposals" }),
+    ).findByRole("row", { name: new RegExp(PROPOSED_FOR) });
     expect(row).toHaveTextContent(PROPOSED_GATE);
     expect(row).toHaveTextContent("not_matching");
     expect(

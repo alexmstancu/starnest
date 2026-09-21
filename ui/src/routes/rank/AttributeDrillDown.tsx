@@ -7,7 +7,7 @@ import {
 import { useResource } from "../../api/useResource";
 import { formatDate, formatDateTime } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
-import { describeFigure } from "./describeFigure";
+import { describeFigure } from "../../format/figure";
 
 /**
  * One attribute, every candidate (`reqs.md` 8.4).

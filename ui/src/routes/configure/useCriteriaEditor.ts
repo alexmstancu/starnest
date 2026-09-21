@@ -9,6 +9,7 @@ import {
   type CriterionRule,
 } from "../../api/endpoints";
 import { useResource, type Resource } from "../../api/useResource";
+import type { ChangeHistory } from "./useChangeHistory";
 
 /**
  * One criteria set, and the one write the Configure screen makes.
@@ -53,6 +54,7 @@ export interface CriteriaEditor {
 
 export function useCriteriaEditor(
   criteriaSetId: string | null,
+  history?: ChangeHistory,
 ): CriteriaEditor {
   const fetcher = useCallback(
     async (signal: AbortSignal): Promise<CriteriaSet> => {
@@ -82,16 +84,37 @@ export function useCriteriaEditor(
       setSavingAttribute(attribute);
       setSaveError(null);
 
+      // Read before the request, because the answer replaces it and an undo needs the value
+      // that was there rather than the one that came back.
+      const was = criteria.find((each) => each.attribute === attribute)?.weight;
+
       void updateCriterionWeight(criteriaSetId, attribute, weight)
         .then((rebalanced) => {
           setCriteria((current) =>
             applyRebalance(current, rebalanced.criteria),
           );
+          history?.note({
+            target: `criterion:${attribute}`,
+            label: `Weight for ${attribute}: ${String(was)} to ${String(weight)}`,
+            before: was,
+            after: weight,
+            // The opposite request, not a local restore: an undo that only moved a number on
+            // screen would disagree with the server the moment anything else read it.
+            reverse: async (before) => {
+              if (typeof before !== "number") return;
+              const back = await updateCriterionWeight(
+                criteriaSetId,
+                attribute,
+                before,
+              );
+              setCriteria((current) => applyRebalance(current, back.criteria));
+            },
+          });
         })
         .catch((error: unknown) => setSaveError(error))
         .finally(() => setSavingAttribute(null));
     },
-    [criteriaSetId],
+    [criteriaSetId, criteria, history],
   );
 
   const setLock = useCallback(
@@ -106,11 +129,25 @@ export function useCriteriaEditor(
           setCriteria((current) =>
             applyRebalance(current, rebalanced.criteria),
           );
+          history?.note({
+            target: `lock:${attribute}`,
+            label: `${weightLocked ? "Locked" : "Unlocked"} ${attribute}`,
+            before: !weightLocked,
+            after: weightLocked,
+            reverse: async (before) => {
+              const back = await updateCriterionLock(
+                criteriaSetId,
+                attribute,
+                before === true,
+              );
+              setCriteria((current) => applyRebalance(current, back.criteria));
+            },
+          });
         })
         .catch((error: unknown) => setSaveError(error))
         .finally(() => setSavingAttribute(null));
     },
-    [criteriaSetId],
+    [criteriaSetId, history],
   );
 
   const setRule = useCallback(

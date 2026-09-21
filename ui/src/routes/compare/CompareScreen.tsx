@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { droppedByLimit, withinLimit } from "./comparatorLimit";
 import {
   fetchCandidates,
   fetchComparison,
@@ -8,7 +9,8 @@ import {
 } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
 import type { RouteDefinition } from "../../navigation/routes";
-import { formatScore, formatSigned } from "../../format/display";
+import { ABSENT, formatScore, formatSigned } from "../../format/display";
+import { describeFigure } from "../../format/figure";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
 
@@ -54,6 +56,8 @@ function TheComparison({
 }) {
   const [focus, setFocus] = useState<string | null>(null);
   const [comparators, setComparators] = useState<string[]>([]);
+  // How the attribute rows read: the normalised score, or the figure in its own unit.
+  const [shownAs, setShownAs] = useState<"score" | "raw">("score");
   const [asked, setAsked] = useState<{
     focus: string;
     comparators: string[];
@@ -97,6 +101,12 @@ function TheComparison({
       ? settings.resource.data.comparator_limit
       : null;
 
+  // **Trimmed as it is rendered, not on a click.** The limit was enforced only when adding, so
+  // lowering it in Configure left a selection above it in place -- and `/comparisons` answers
+  // 409 above the limit, so that was a request this application could never make (R4).
+  const kept = withinLimit(comparators, limit);
+  const dropped = droppedByLimit(comparators, limit);
+
   return (
     <>
       {criteriaSetId === null || levelId === null ? (
@@ -107,8 +117,9 @@ function TheComparison({
         <ComparisonPicker
           roster={roster}
           focus={focus}
-          comparators={comparators}
+          comparators={kept}
           limit={limit ?? null}
+          dropped={dropped}
           onFocus={setFocus}
           onToggleComparator={(candidate) =>
             setComparators((chosen) =>
@@ -117,7 +128,7 @@ function TheComparison({
                 : [...chosen, candidate],
             )
           }
-          onCompare={() => focus && setAsked({ focus, comparators })}
+          onCompare={() => focus && setAsked({ focus, comparators: kept })}
         />
       )}
 
@@ -131,7 +142,11 @@ function TheComparison({
         />
       )}
       {comparison.resource.status === "ready" && (
-        <ComparisonTable comparison={comparison.resource.data} />
+        <ComparisonTable
+          comparison={comparison.resource.data}
+          shownAs={shownAs}
+          onShownAs={setShownAs}
+        />
       )}
     </>
   );
@@ -145,6 +160,7 @@ function ComparisonPicker({
   onFocus,
   onToggleComparator,
   onCompare,
+  dropped,
 }: {
   roster: Candidate[];
   focus: string | null;
@@ -153,6 +169,8 @@ function ComparisonPicker({
   onFocus: (candidate: string) => void;
   onToggleComparator: (candidate: string) => void;
   onCompare: () => void;
+  /** How many the limit is holding back, so the screen says so rather than losing them. */
+  dropped: number;
 }) {
   return (
     <div className="panel">
@@ -160,8 +178,21 @@ function ComparisonPicker({
       <p className="panel__hint">
         {limit === null
           ? "No comparator limit is configured, so the server will refuse a comparison."
-          : `Up to ${limit} comparators, the limit configured in Settings.`}
+          : `Up to ${limit} comparators, the limit configured in Configure.`}
       </p>
+
+      {/* Said out loud, because a selection silently shrinking is worse than one that
+          refuses. The newest are kept: the last clicks are the ones being thought about. */}
+      {dropped > 0 && (
+        <div className="notice notice--warning" role="alert">
+          <p className="notice__message">
+            The comparator limit is lower than what was picked, so the{" "}
+            {dropped === 1 ? "oldest choice is" : `oldest ${dropped} choices are`}{" "}
+            no longer in the comparison. Raise the limit in Configure to bring
+            them back.
+          </p>
+        </div>
+      )}
 
       <label className="field">
         <span className="field__label">Focus</span>
@@ -212,7 +243,15 @@ function ComparisonPicker({
   );
 }
 
-function ComparisonTable({ comparison }: { comparison: Comparison }) {
+function ComparisonTable({
+  comparison,
+  shownAs,
+  onShownAs,
+}: {
+  comparison: Comparison;
+  shownAs: "score" | "raw";
+  onShownAs: (how: "score" | "raw") => void;
+}) {
   const comparators = comparison.comparators ?? [];
   return (
     <>
@@ -262,8 +301,39 @@ function ComparisonTable({ comparison }: { comparison: Comparison }) {
         </section>
       ))}
 
+      {/* **Raw figures exist per attribute, never per pillar.** A pillar is a weighted mean
+          of things measured in different units, so it has no unit of its own -- which is why
+          this toggle governs the attribute rows and the synthesis stays in points. */}
+      <fieldset className="field">
+        <legend className="field__label">Show attribute values as</legend>
+        <div className="toggle-group">
+          <label className="toggle">
+            <input
+              type="radio"
+              name="shown-as"
+              checked={shownAs === "score"}
+              onChange={() => onShownAs("score")}
+            />
+            Score 0&ndash;100
+          </label>
+          <label className="toggle">
+            <input
+              type="radio"
+              name="shown-as"
+              checked={shownAs === "raw"}
+              onChange={() => onShownAs("raw")}
+            />
+            Raw figures
+          </label>
+        </div>
+      </fieldset>
+
       <table className="table">
-        <caption>Every attribute, with the gap and what it is worth</caption>
+        <caption>
+          {shownAs === "raw"
+            ? "Every attribute as published, with the gap in its own unit"
+            : "Every attribute, with the gap and what it is worth"}
+        </caption>
         <thead>
           <tr>
             <th scope="col">Attribute</th>
@@ -279,19 +349,41 @@ function ComparisonTable({ comparison }: { comparison: Comparison }) {
           {comparison.attributes.map((row) => (
             <tr key={row.attribute}>
               <th scope="row">{row.attribute}</th>
-              <td>{formatScore(row.focus?.normalised_score)}</td>
+              <td>
+                {shownAs === "raw"
+                  ? (row.focus?.value
+                      ? describeFigure(row.focus.value)
+                      : ABSENT)
+                  : formatScore(row.focus?.normalised_score)}
+              </td>
               {comparators.map((each) => {
                 const cell = (row.comparators ?? []).find(
                   (candidate) => candidate.candidate === each.candidate,
                 );
                 return (
                   <td key={each.candidate}>
-                    {formatScore(cell?.normalised_score)}
-                    {cell?.weighted_contribution != null && (
-                      <span className="table__note">
-                        {" "}
-                        ({formatSigned(cell.weighted_contribution)} points)
-                      </span>
+                    {shownAs === "raw" ? (
+                      <>
+                        {cell?.value ? describeFigure(cell.value) : ABSENT}
+                        {/* `delta` is documented as being in the attribute's own unit, so it
+                            belongs with the raw figure and not beside a score. */}
+                        {cell?.delta != null && (
+                          <span className="table__note">
+                            {" "}
+                            ({formatSigned(cell.delta)})
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {formatScore(cell?.normalised_score)}
+                        {cell?.weighted_contribution != null && (
+                          <span className="table__note">
+                            {" "}
+                            ({formatSigned(cell.weighted_contribution)} points)
+                          </span>
+                        )}
+                      </>
                     )}
                   </td>
                 );

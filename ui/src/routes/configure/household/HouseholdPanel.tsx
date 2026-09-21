@@ -4,6 +4,7 @@ import { fetchHousehold, type Household } from "../../../api/endpoints";
 import { useResource } from "../../../api/useResource";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { NOTHING_RECORDED, type HouseholdDraft } from "./householdForm";
+import { HOUSEHOLD_LABELS } from "../../../format/vocabulary";
 import { useHouseholdForm } from "./useHouseholdForm";
 
 /**
@@ -76,27 +77,27 @@ function HouseholdFields({
       {form.saved && <p className="panel__hint">Saved.</p>}
 
       <form onSubmit={form.save}>
-        <Field label="Net annual income" name="net_income" form={form} />
-        <Field label="Adults" name="number_adults" form={form} />
-        <Field label="Children under 18" name="number_children" form={form} />
+        <Field label={HOUSEHOLD_LABELS.net_income} name="net_income" form={form} />
+        <Field label={HOUSEHOLD_LABELS.number_adults} name="number_adults" form={form} />
+        <Field label={HOUSEHOLD_LABELS.number_children} name="number_children" form={form} />
         <Field
-          label="Target monthly spend"
+          label={HOUSEHOLD_LABELS.target_monthly_spend}
           name="target_monthly_spend"
           form={form}
         />
-        <Field label="Maximum rent" name="max_rent" form={form} />
+        <Field label={HOUSEHOLD_LABELS.max_rent} name="max_rent" form={form} />
         <Field
-          label="Home country candidate"
+          label={HOUSEHOLD_LABELS.home_country_candidate}
           name="home_country_candidate"
           form={form}
         />
         <Field
-          label="Home city candidate"
+          label={HOUSEHOLD_LABELS.home_city_candidate}
           name="home_city_candidate"
           form={form}
         />
         <Field
-          label="Citizenships"
+          label={HOUSEHOLD_LABELS.citizenships}
           name="citizenships"
           form={form}
           hint="Country candidate ids, separated by commas."

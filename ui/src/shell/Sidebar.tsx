@@ -1,7 +1,16 @@
+import { useCallback } from "react";
 import { NavLink } from "react-router-dom";
+import { fetchHousehold } from "../api/endpoints";
+import { useResource } from "../api/useResource";
 import { useAppConfig } from "../config/AppConfigContext";
-import { formatCount, formatDateTime, formatMoney } from "../format/display";
+import {
+  ABSENT,
+  formatCount,
+  formatDateTime,
+  formatMoney,
+} from "../format/display";
 import { ROUTES } from "../navigation/routes";
+import { HOUSEHOLD_LABELS } from "../format/vocabulary";
 
 /**
  * Where the Run screen lives, found once by name.
@@ -46,6 +55,7 @@ export function Sidebar() {
         <SelectionControls />
       )}
 
+      <HouseholdPanel />
       <CandidateCountsPanel summary={summary} />
       <LastRunPanel summary={summary} />
     </aside>
@@ -97,6 +107,61 @@ function SelectionControls() {
         </fieldset>
       </section>
     </>
+  );
+}
+
+/**
+ * The household, in the same words Configure uses for it.
+ *
+ * **The labels come from one constant**, so the two screens cannot drift into calling the same
+ * field by two names (UX review I). A reader seeing "Adults" here and "Household size" there
+ * has to work out whether they are the same thing.
+ *
+ * It says "not set" rather than showing nothing: a household nobody has filled in is the
+ * shipped state, and several gates and criterion defaults read it.
+ */
+function HouseholdPanel() {
+  const { resource, reload } = useResource(
+    useCallback((signal: AbortSignal) => fetchHousehold({ signal }), []),
+  );
+
+  return (
+    <section className="panel" aria-labelledby="household-summary-heading">
+      {/* "Household summary", not "Household": the Configure panel is the household and this
+          is a view of it, and two landmarks with one name is ambiguous to a screen reader as
+          well as to a test. The *field* labels are identical, which is what one vocabulary
+          means (UX review I). */}
+      <h2 id="household-summary-heading" className="panel__heading">
+        Household summary
+      </h2>
+      {resource.status === "loading" && <p className="panel__hint">Loading…</p>}
+      {resource.status === "error" && (
+        <p className="panel__hint">
+          Nothing has been recorded about the household yet.
+        </p>
+      )}
+      {resource.status === "ready" && (
+        <dl className="stat-list">
+          <Stat
+            label={HOUSEHOLD_LABELS.number_adults}
+            value={formatCount(resource.data.number_adults)}
+          />
+          <Stat
+            label={HOUSEHOLD_LABELS.number_children}
+            value={formatCount(resource.data.number_children)}
+          />
+          <Stat
+            label={HOUSEHOLD_LABELS.home_country_candidate}
+            value={resource.data.home_country_candidate ?? ABSENT}
+          />
+        </dl>
+      )}
+      {resource.status === "idle" && (
+        <button type="button" className="button" onClick={reload}>
+          Reload
+        </button>
+      )}
+    </section>
   );
 }
 

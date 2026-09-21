@@ -16,7 +16,7 @@ import {
 } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
-import { describeFigure } from "./describeFigure";
+import { describeFigure } from "../../format/figure";
 import { pillarsByAttribute, valuesInPillar } from "./pillarFilter";
 import { type PillarScore, pillarBars } from "./rankTable";
 

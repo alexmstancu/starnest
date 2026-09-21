@@ -1,10 +1,20 @@
-import type { StoredValue } from "../../api/endpoints";
+/**
+ * Anything carrying a value's payload.
+ *
+ * **Structural, not the contract's own type.** `format/` is a leaf: the layering forbids it
+ * from importing `api/`, and the rule is right -- a formatting helper that knows the wire
+ * types gets dragged along by the next contract change. Callers pass their `StoredValue`
+ * unchanged; this only ever reads the payload.
+ */
+export interface HasPayload {
+  payload: unknown;
+}
 
 /**
  * A payload as one line. **The shape follows the value type**, which is the server's word for
  * what the figure is; nothing here converts, rounds or rescales it.
  */
-export function describeFigure(value: StoredValue): string {
+export function describeFigure(value: HasPayload): string {
   const payload = value.payload as Record<string, unknown>;
   if ("magnitude" in payload)
     return `${String(payload["magnitude"])} ${String(payload["unit"])}`;

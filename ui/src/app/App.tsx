@@ -82,7 +82,9 @@ function DocumentTitle() {
   const route = findRouteByPath(pathname);
 
   useEffect(() => {
-    document.title = route ? `${route.label} · ${displayName}` : displayName;
+    // An em dash, not a middle dot. The separator is barred outright (`CLAUDE.md`), and the
+    // design removed every one from the application -- the title bar is part of it.
+    document.title = route ? `${route.label} — ${displayName}` : displayName;
   }, [route, displayName]);
 
   return null;

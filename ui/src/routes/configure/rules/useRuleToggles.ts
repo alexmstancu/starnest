@@ -11,17 +11,21 @@
 import { useCallback, useState } from "react";
 import {
   fetchCompoundRules,
+  fetchMatchRuleResults,
   fetchMatchRules,
   setCompoundRuleApplication,
   setMatchRuleEnforcement,
   type CompoundRule,
   type CriteriaSet,
   type MatchRule,
+  type MatchRuleResult,
 } from "../../../api/endpoints";
 import { useResource, type Resource } from "../../../api/useResource";
 
 export interface RuleToggles {
   matchRules: Resource<{ items: MatchRule[] }>;
+  /** Every recorded gate answer, so a rule can say what it is actually costing. */
+  matchRuleResults: MatchRuleResult[];
   compoundRules: Resource<{ items: CompoundRule[] }>;
   reloadMatchRules: () => void;
   reloadCompoundRules: () => void;
@@ -42,6 +46,15 @@ export function useRuleToggles(
       [levelId],
     ),
   );
+  // What each gate has actually decided. Read here rather than in the panel so the markup
+  // stays markup, and because it is the same question the switches are about.
+  const results = useResource(
+    useCallback(
+      (signal: AbortSignal) => fetchMatchRuleResults({ signal }),
+      [],
+    ),
+  );
+
   const compoundRules = useResource(
     useCallback(
       (signal: AbortSignal) => fetchCompoundRules(levelId, { signal }),
@@ -85,6 +98,8 @@ export function useRuleToggles(
 
   return {
     matchRules: matchRules.resource,
+    matchRuleResults:
+      results.resource.status === "ready" ? results.resource.data.items : [],
     compoundRules: compoundRules.resource,
     reloadMatchRules: matchRules.reload,
     reloadCompoundRules: compoundRules.reload,

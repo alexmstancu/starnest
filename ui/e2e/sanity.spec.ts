@@ -281,6 +281,78 @@ test.describe("a run", () => {
   });
 });
 
+test.describe("what this session changed", () => {
+  /**
+   * Session-scoped by design: the backend records no change log. The behaviour worth checking
+   * is that undo makes the opposite **request** -- an undo that only moved a number on screen
+   * would disagree with the server the moment anything else read it.
+   */
+  test("records a weight change and takes it back", async ({ page }) => {
+    await page.goto("/configure");
+    const history = page.getByRole("region", { name: "Recent changes" });
+    await expect(history.getByText(/Nothing has been changed/)).toBeVisible();
+
+    const criteria = page.getByRole("region", { name: "Criteria" });
+    const row = criteria.getByRole("row").filter({ hasText: "country.rule_of_law" });
+    const weight = row.getByRole("spinbutton");
+    await expect.poll(() => weight.inputValue()).not.toBe("");
+    const before = await weight.inputValue();
+    const after = before === "30" ? "35" : "30";
+
+    await weight.fill(after);
+    await row.getByRole("button", { name: "Save" }).click();
+    await expect(weight).toHaveValue(after);
+
+    const entry = history.getByRole("listitem").filter({ hasText: "country.rule_of_law" });
+    await expect(entry).toHaveCount(1);
+
+    // The way back, and it must reach the server: the value is re-read after a reload.
+    await entry.getByRole("button", { name: /^Undo this$/ }).click();
+    await expect(history.getByText(/Nothing has been changed/)).toBeVisible();
+
+    await page.reload();
+    await expect(
+      criteria
+        .getByRole("row")
+        .filter({ hasText: "country.rule_of_law" })
+        .getByRole("spinbutton"),
+    ).toHaveValue(before);
+  });
+});
+
+test.describe("what a rule costs", () => {
+  test("each gate says what it does, not only that it is enforced", async ({
+    page,
+  }) => {
+    await page.goto("/configure");
+    const rules = page.getByRole("region", { name: "Rules" });
+    const row = rules.getByRole("row").filter({ hasText: "UK Skilled Worker" });
+
+    // Either it has answers and says what they cost, or it says nobody has answered. Both are
+    // real states; a switch that says only "enforced" is neither.
+    await expect(row).toContainText(
+      /Removes |rules nobody out|No answer has been recorded/,
+    );
+  });
+});
+
+test.describe("the acquire screen", () => {
+  test("names the attributes no source covers, and offers no retry for them", async ({
+    page,
+  }) => {
+    await page.goto("/acquire");
+    const card = page.getByRole("region", {
+      name: "Attributes with no data source at all",
+    });
+
+    await expect(card).toBeVisible();
+    // Either there are gaps and it explains them, or there are none and it says so.
+    await expect(card).toContainText(
+      /retrying one changes nothing|at least one source that would be asked/,
+    );
+  });
+});
+
 test.describe("a comparison", () => {
   test("compares a focus against comparators and explains the difference", async ({
     page,
