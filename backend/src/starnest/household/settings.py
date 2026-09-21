@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class Settings(BaseModel):
-    """The four tuning values, each of which may legitimately not be set yet.
+    """The five tuning values, each of which may legitimately not be set yet.
 
     Carries no identifier, exactly as `Household` carries none: there is one set of settings
     for the one household, `HouseholdStore` names none, and the database says `CHECK (id = 1)`.
@@ -67,5 +67,16 @@ class Settings(BaseModel):
             "The ceiling on what one data acquisition run may cost in API calls "
             "(`reqs.md` 6.3). The spend cap is not the household budget -- different word, "
             "deliberately different thing (`reqs.md` 1.4)."
+        ),
+    )
+    refetch_older_than_days: int | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "How old a figure must be before a run asks about it again. **Null refetches "
+            "everything**, which is the shipped state and the behaviour the planner has "
+            "always had. Governs re-fetching only: which stored figure scores is the "
+            "attribute's own `max_age` (`reqs.md` 7.1), because one number cannot sensibly "
+            "govern staleness for climate and for rent alike."
         ),
     )

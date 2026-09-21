@@ -292,6 +292,9 @@ export const SETTINGS: Settings = {
   score_scale_max: 100,
   comparator_limit: 5,
   run_spend_cap_eur: 10,
+  // Null, like the shipped database: every run refetches everything until somebody decides
+  // a number, which is exactly what the planner did before the setting existed.
+  refetch_older_than_days: null,
 };
 
 /**

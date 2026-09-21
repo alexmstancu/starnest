@@ -910,6 +910,8 @@ export interface components {
             score_scale_max?: number | null;
             comparator_limit?: number | null;
             run_spend_cap_eur?: number | null;
+            /** @description How old a figure must be before a run asks about it again. Null refetches everything, which is the shipped state. Governs re-fetching only -- which stored figure scores is the attribute's own max_age (reqs.md 7.1), because one number cannot sensibly govern staleness for climate and for rent alike. */
+            refetch_older_than_days?: number | null;
         };
         Settings: components["schemas"]["SettingsInput"];
         /** @description Only the fields present are changed. */

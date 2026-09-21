@@ -101,6 +101,7 @@ describe("a setting that is not set", () => {
           min_coverage: null,
           comparator_limit: 5,
           run_spend_cap_eur: 5,
+          refetch_older_than_days: 365,
         }),
       ),
     );
@@ -120,6 +121,7 @@ describe("a setting that is not set", () => {
           min_coverage: null,
           comparator_limit: 5,
           run_spend_cap_eur: 5,
+          refetch_older_than_days: 365,
         }),
       ),
     );
@@ -143,6 +145,7 @@ describe("a setting that is not set", () => {
           min_coverage: 60,
           comparator_limit: 5,
           run_spend_cap_eur: 5,
+          refetch_older_than_days: 365,
         }),
       ),
     );
@@ -162,6 +165,7 @@ describe("a setting that is not set", () => {
           min_coverage: 60,
           comparator_limit: 5,
           run_spend_cap_eur: 5,
+          refetch_older_than_days: 365,
         }),
       ),
     );
@@ -183,6 +187,7 @@ describe("a setting that is not set", () => {
           min_coverage: 60,
           comparator_limit: 5,
           run_spend_cap_eur: 5,
+          refetch_older_than_days: 365,
         }),
       ),
     );

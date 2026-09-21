@@ -33,6 +33,7 @@ class SettingsBody(BaseModel):
     score_scale_max: int | None = None
     comparator_limit: int | None = None
     run_spend_cap_eur: float | None = None
+    refetch_older_than_days: int | None = None
 
 
 @router.get("/settings", operation_id="getSettings", response_model=SettingsBody)
@@ -45,14 +46,15 @@ async def get_settings(households: Households) -> SettingsBody:
         run_spend_cap_eur=(
             None if settings.run_spend_cap_eur is None else float(settings.run_spend_cap_eur)
         ),
+        refetch_older_than_days=settings.refetch_older_than_days,
     )
 
 
 @router.put("/settings", operation_id="replaceSettings", response_model=SettingsBody)
 async def replace_settings(body: SettingsBody, households: Households) -> SettingsBody:
-    """Store all four, and answer with what was stored.
+    """Store all five, and answer with what was stored.
 
-    **Replaced whole, never patched**, for the reason the household is: these four decide what a
+    **Replaced whole, never patched**, for the reason the household is: these decide what a
     score means, and a partial write would leave a ranking computed half against the old scale
     and half against the new. **A null stays null** -- it is a decision the household has not
     made, and substituting a default here would be this application choosing what "enough
@@ -66,6 +68,7 @@ async def replace_settings(body: SettingsBody, households: Households) -> Settin
             run_spend_cap_eur=(
                 None if body.run_spend_cap_eur is None else Decimal(str(body.run_spend_cap_eur))
             ),
+            refetch_older_than_days=body.refetch_older_than_days,
         )
     )
     return await get_settings(households)

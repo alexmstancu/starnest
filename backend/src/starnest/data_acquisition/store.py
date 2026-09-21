@@ -13,7 +13,7 @@ a candidate that produced nothing would be indistinguishable from one nobody ask
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -130,6 +130,21 @@ class RunStore(ABC):
     @abstractmethod
     async def count_runs(self) -> int:
         """How many runs there are, for the `total` beside a page."""
+
+    @abstractmethod
+    async def last_retrieved(
+        self,
+        *,
+        level: str | None = None,
+        candidates: Sequence[str] = (),
+        attributes: Sequence[str] = (),
+    ) -> Mapping[tuple[str, str], datetime]:
+        """When each candidate and attribute was last **asked about**, whatever came of it.
+
+        Read from every stored value rather than the active ones: the question is when we last
+        asked, and a figure that lost the active-value comparison or failed validation was
+        still an answer somebody paid for.
+        """
 
     @abstractmethod
     async def run_in_flight(self) -> int | None:

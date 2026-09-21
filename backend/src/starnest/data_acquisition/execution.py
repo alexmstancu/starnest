@@ -17,7 +17,7 @@ screen say which pass produced it, and what makes "re-run just this" answerable 
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from starnest.candidates import Candidate
@@ -31,6 +31,7 @@ from starnest.data import (
 )
 from starnest.data_acquisition.adapter import Acquired, AcquisitionFailure, SourceAdapter
 from starnest.data_acquisition.estimate import Estimate
+from starnest.data_acquisition.freshness import still_fresh_everywhere
 from starnest.data_acquisition.run import acquire
 from starnest.data_acquisition.spend import CostMeter, refuse_unless_capped
 from starnest.data_acquisition.stand_in import STAND_IN, stand_in
@@ -79,6 +80,8 @@ async def open_run(
     spend_cap_eur: Decimal | None = None,
     uncapped_is_accepted: bool = False,
     may_borrow_alone: bool = False,
+    refetch_older_than: timedelta | None = None,
+    now: datetime | None = None,
 ) -> "OpenedRun":
     """Settle every refusal, write the run row, and hand back what the fetching will need.
 
@@ -133,6 +136,24 @@ async def open_run(
     # attempted Liechtenstein's three declared borrows on every unrelated run and recorded each
     # as a failure, and treating "no adapters" as borrow-only overturned P27 -- an unscoped
     # sweep whose only source charges must still refuse rather than record a run for nothing.
+    # **What is still fresh everywhere is not asked about again** (`reqs.md` 3.10, Q233).
+    # Null skips nothing, which is the shipped state and exactly what the planner did before
+    # this existed -- so a run's scope only ever narrows because somebody set a number.
+    fresh = still_fresh_everywhere(
+        attributes=[str(attribute.id) for attribute in answerable],
+        candidates=[str(candidate.id) for candidate in candidates],
+        last_retrieved=await runs.last_retrieved(
+            level=level,
+            candidates=[str(candidate.id) for candidate in candidates],
+            attributes=[str(attribute.id) for attribute in answerable],
+        )
+        if refetch_older_than is not None
+        else {},
+        refetch_older_than=refetch_older_than,
+        now=now or datetime.now(UTC),
+    )
+    answerable = [attribute for attribute in answerable if str(attribute.id) not in fresh]
+
     in_scope = answerable or (borrowable if may_borrow_alone else [])
     scope = RunScope(
         level=level,
@@ -142,6 +163,15 @@ async def open_run(
     if not in_scope or not candidates:
         # Named separately, because it is the one cause with an obvious remedy: there is
         # nothing to ask rather than nothing worth asking about.
+        if fresh:
+            # Named separately: the scope was not empty, it was emptied by the freshness
+            # rule, and "nothing to fetch" would read as a fault rather than as a run that
+            # had nothing left to do.
+            raise NothingToFetchError(
+                f"every attribute in this run's scope was fetched within the last "
+                f"{refetch_older_than}, so there is nothing to ask about again. Lower "
+                f"'refetch data older than' in Configure to ask anyway"
+            )
         if not adapters:
             raise NothingToFetchError(
                 "no data source is switched on, so there is nothing to ask. Switch one on in "

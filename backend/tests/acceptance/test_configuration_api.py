@@ -148,7 +148,7 @@ class TestTheRulesASetEnforces:
 
 
 class TestSettings:
-    async def test_the_four_are_replaced_whole_and_returned(self, api: httpx.AsyncClient) -> None:
+    async def test_the_five_are_replaced_whole_and_returned(self, api: httpx.AsyncClient) -> None:
         response = await api.put(
             "/v1/settings",
             json={
@@ -156,6 +156,7 @@ class TestSettings:
                 "score_scale_max": 100,
                 "comparator_limit": 5,
                 "run_spend_cap_eur": 10,
+                "refetch_older_than_days": 365,
             },
         )
 
@@ -165,7 +166,14 @@ class TestSettings:
             "score_scale_max": 100,
             "comparator_limit": 5,
             "run_spend_cap_eur": 10,
+            "refetch_older_than_days": 365,
         }
+
+    async def test_an_unset_refetch_age_refetches_everything(self, api: httpx.AsyncClient) -> None:
+        """The shipped state, and exactly what the planner did before the setting existed."""
+        await api.put("/v1/settings", json={"score_scale_max": 100})
+
+        assert (await api.get("/v1/settings")).json()["refetch_older_than_days"] is None
 
     async def test_a_null_stays_null_rather_than_taking_a_default(
         self, api: httpx.AsyncClient

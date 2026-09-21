@@ -21,6 +21,7 @@ const SET: SettingsDraft = {
   min_coverage: "60",
   comparator_limit: "5",
   run_spend_cap_eur: "10",
+  refetch_older_than_days: "365",
 };
 
 describe("settings becoming a draft", () => {
@@ -50,6 +51,7 @@ describe("a draft becoming settings", () => {
       min_coverage: 60,
       comparator_limit: 5,
       run_spend_cap_eur: 10,
+      refetch_older_than_days: 365,
     });
   });
 
@@ -79,6 +81,7 @@ describe("what a blank setting costs", () => {
     min_coverage: "60",
     comparator_limit: "5",
     run_spend_cap_eur: "5",
+    refetch_older_than_days: "365",
   };
 
   it("finds nothing unset when all four are filled", () => {
@@ -115,8 +118,9 @@ describe("what a blank setting costs", () => {
       min_coverage: "",
       comparator_limit: "",
       run_spend_cap_eur: "",
+      refetch_older_than_days: "",
     };
-    expect(unsetFields(blank)).toHaveLength(4);
+    expect(unsetFields(blank)).toHaveLength(5);
     expect(isBlocked(blank)).toBe(true);
   });
 

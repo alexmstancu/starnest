@@ -118,7 +118,6 @@ QUERIES_NOTHING_CALLS_YET = {
     # coverage -- both are named in `reqs.md` and neither is written.
     "clear_run_failure": "a failure that later succeeded in the same run is not yet unmarked",
     "select_run_values": "nothing asks which items a run answered without their payloads",
-    "select_last_retrieval_dates": "the planner does not yet skip what is still fresh",
     "select_attribute_coverage": "no screen reports coverage of the catalog per attribute",
     "select_attribute_source_priority": "the overrides travel on the attribute, read with it",
     # **Reference data nothing serves.** The four vocabularies are read from the catalog by

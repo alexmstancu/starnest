@@ -29,6 +29,7 @@ from starnest.data_acquisition.execution import (
     execute_run,
     open_run,
     retry_run,
+    still_fresh_everywhere,
     switched_on,
 )
 from starnest.data_acquisition.research import (
@@ -95,5 +96,6 @@ __all__ = [
     "research_gates",
     "retry_run",
     "stand_in",
+    "still_fresh_everywhere",
     "switched_on",
 ]

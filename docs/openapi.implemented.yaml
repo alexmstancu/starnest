@@ -1741,6 +1741,11 @@ components:
           - type: number
           - type: 'null'
           title: Min Coverage
+        refetch_older_than_days:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Refetch Older Than Days
         run_spend_cap_eur:
           anyOf:
           - type: number
@@ -3460,11 +3465,11 @@ paths:
       tags:
       - settings
     put:
-      description: 'Store all four, and answer with what was stored.
+      description: 'Store all five, and answer with what was stored.
 
 
         **Replaced whole, never patched**, for the reason the household is: these
-        four decide what a
+        decide what a
 
         score means, and a partial write would leave a ranking computed half against
         the old scale

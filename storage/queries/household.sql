@@ -98,16 +98,20 @@ SELECT s.id,
        s.min_coverage,
        s.score_scale_max,
        s.comparator_limit,
-       s.run_spend_cap_eur
+       s.run_spend_cap_eur,
+       s.refetch_older_than_days
 FROM   settings AS s
 WHERE  s.id = 1;
 
--- name: upsert_settings(min_coverage, score_scale_max, comparator_limit, run_spend_cap_eur)!
+-- name: upsert_settings(min_coverage, score_scale_max, comparator_limit, run_spend_cap_eur, refetch_older_than_days)!
 -- The same replace-the-row shape as the household above, and the same literal 1.
-INSERT INTO settings (id, min_coverage, score_scale_max, comparator_limit, run_spend_cap_eur)
-VALUES (1, :min_coverage, :score_scale_max, :comparator_limit, :run_spend_cap_eur)
+INSERT INTO settings (id, min_coverage, score_scale_max, comparator_limit, run_spend_cap_eur,
+                      refetch_older_than_days)
+VALUES (1, :min_coverage, :score_scale_max, :comparator_limit, :run_spend_cap_eur,
+        :refetch_older_than_days)
 ON CONFLICT (id) DO UPDATE
-SET min_coverage      = EXCLUDED.min_coverage,
-    score_scale_max   = EXCLUDED.score_scale_max,
-    comparator_limit  = EXCLUDED.comparator_limit,
-    run_spend_cap_eur = EXCLUDED.run_spend_cap_eur;
+SET min_coverage            = EXCLUDED.min_coverage,
+    score_scale_max         = EXCLUDED.score_scale_max,
+    comparator_limit        = EXCLUDED.comparator_limit,
+    run_spend_cap_eur       = EXCLUDED.run_spend_cap_eur,
+    refetch_older_than_days = EXCLUDED.refetch_older_than_days;

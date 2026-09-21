@@ -167,7 +167,7 @@ class TestGetSettings:
     async def test_unset_settings_come_back_as_null_rather_than_as_a_default(
         self, api: httpx.AsyncClient
     ) -> None:
-        """The shipped state. All four are provisional by design (`reqs.md` 3.10), and a
+        """The shipped state. All five are provisional by design (`reqs.md` 3.10), and a
         default invented here would be a number nobody chose arriving as one they did."""
         body = (await api.get("/v1/settings")).json()
 
@@ -176,6 +176,8 @@ class TestGetSettings:
             "score_scale_max": None,
             "comparator_limit": None,
             "run_spend_cap_eur": None,
+            # Null refetches everything, which is what the planner did before this existed.
+            "refetch_older_than_days": None,
         }
 
 

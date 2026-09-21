@@ -9,7 +9,7 @@ One read serves a poll (`arch.md` 8.4): status, progress and counts arrive toget
 screen polling a live run should not cost four queries a second.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -142,6 +142,25 @@ class PostgresRunStore(RunStore):
     async def count_runs(self) -> int:
         async with acquire(self._pool) as connection:
             return int(await self._queries.count_runs(connection))
+
+    async def last_retrieved(
+        self,
+        *,
+        level: str | None = None,
+        candidates: Sequence[str] = (),
+        attributes: Sequence[str] = (),
+    ) -> Mapping[tuple[str, str], datetime]:
+        async with acquire(self._pool) as connection:
+            rows = [
+                row
+                async for row in self._queries.select_last_retrieval_dates(
+                    connection,
+                    level=level,
+                    candidates=list(candidates) or None,
+                    attributes=list(attributes) or None,
+                )
+            ]
+        return {(row.candidate, row.attribute): row.last_retrieval_date for row in rows}
 
     async def run_in_flight(self) -> int | None:
         async with acquire(self._pool) as connection:

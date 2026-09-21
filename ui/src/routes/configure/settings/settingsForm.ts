@@ -1,5 +1,5 @@
 /**
- * The four tuning values as text, and back again. No React, no markup.
+ * The five tuning values as text, and back again. No React, no markup.
  *
  * **Every one may be empty, and empty is the shipped state.** They are provisional by design
  * (`reqs.md` 3.10): the documents propose numbers and the household chooses them, so an empty
@@ -60,13 +60,23 @@ export const SETTING_FIELDS = [
       "A run that can spend refuses to start until a cap is set, or the request accepts going uncapped.",
     severity: "advisory",
   },
+  {
+    name: "refetch_older_than_days",
+    label: "Refetch data older than (days)",
+    description:
+      "How old a figure must be before a run asks about it again. Not what decides which figure scores.",
+    consequence:
+      "Every run re-fetches everything in its scope, including figures fetched minutes ago.",
+    severity: "advisory",
+  },
 ] as const satisfies readonly SettingField[];
 
 export type SettingName =
   | "score_scale_max"
   | "min_coverage"
   | "comparator_limit"
-  | "run_spend_cap_eur";
+  | "run_spend_cap_eur"
+  | "refetch_older_than_days";
 
 /** The fields left blank, in the order they are shown. */
 export function unsetFields(
@@ -100,6 +110,7 @@ export function settingsFrom(draft: SettingsDraft): Settings {
     min_coverage: asNumber(draft.min_coverage),
     comparator_limit: asNumber(draft.comparator_limit),
     run_spend_cap_eur: asNumber(draft.run_spend_cap_eur),
+    refetch_older_than_days: asNumber(draft.refetch_older_than_days),
   };
 }
 

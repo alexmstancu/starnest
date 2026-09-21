@@ -142,6 +142,10 @@ class RecordingRunStore(RunStore):
     async def count_runs(self) -> int:
         return 0
 
+    async def last_retrieved(self, *, level=None, candidates=(), attributes=()):
+        """Nothing was ever asked about, so nothing is fresh and nothing is skipped."""
+        return {}
+
     async def run_in_flight(self) -> int | None:
         """Nothing is in flight here: these tests call the domain directly, and the one-run-at-
         a-time rule is the API's to enforce (P35). Implemented because the port declares it."""

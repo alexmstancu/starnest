@@ -97,6 +97,7 @@ class PostgresHouseholdStore(HouseholdStore):
             min_coverage=row.min_coverage,
             score_scale_max=row.score_scale_max,
             comparator_limit=row.comparator_limit,
+            refetch_older_than_days=row.refetch_older_than_days,
             run_spend_cap_eur=row.run_spend_cap_eur,
         )
 
@@ -107,6 +108,7 @@ class PostgresHouseholdStore(HouseholdStore):
                 min_coverage=settings.min_coverage,
                 score_scale_max=settings.score_scale_max,
                 comparator_limit=settings.comparator_limit,
+                refetch_older_than_days=settings.refetch_older_than_days,
                 run_spend_cap_eur=settings.run_spend_cap_eur,
             )
 

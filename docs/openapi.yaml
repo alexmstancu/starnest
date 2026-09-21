@@ -1235,7 +1235,7 @@ components:
 
     SettingsInput:
       type: object
-      # Every one of the four may be null, and null is the shipped state: the documents propose
+      # Every one of these may be null, and null is the shipped state: the documents propose
       # values and the household chooses them (reqs.md 3.10), so an unset setting is a decision
       # not yet made rather than a fault. A ranking refuses to compute until the score scale is
       # set instead of assuming 100 (devplan.md 0.3), which only works if "unset" is expressible.
@@ -1244,6 +1244,14 @@ components:
         score_scale_max: { type: [integer, "null"] }
         comparator_limit: { type: [integer, "null"], minimum: 1 }
         run_spend_cap_eur: { type: [number, "null"], minimum: 0 }
+        refetch_older_than_days:
+          type: [integer, "null"]
+          minimum: 1
+          description: >
+            How old a figure must be before a run asks about it again. Null refetches
+            everything, which is the shipped state. Governs re-fetching only -- which stored
+            figure scores is the attribute's own max_age (reqs.md 7.1), because one number
+            cannot sensibly govern staleness for climate and for rent alike.
     Settings:
       allOf: [ { $ref: "#/components/schemas/SettingsInput" } ]
 

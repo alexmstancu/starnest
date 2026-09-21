@@ -12,7 +12,7 @@ step: the estimate exists so that a source which does cost money cannot be start
 and attributes are bounded by the catalog and come back whole (`arch.md` 7.6).
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Query
@@ -236,7 +236,8 @@ async def start_run(
     asked = asked_this_run(consulted, attributes_named=scope.attributes is not None)
     # The cap is a setting the household edits (`reqs.md` 3.10) and is read per run, so a cap
     # set after a refusal takes effect on the next request rather than at the next restart.
-    cap = (await households.get_settings()).run_spend_cap_eur
+    settings = await households.get_settings()
+    cap = settings.run_spend_cap_eur
 
     # **Opened here, fetched afterwards** (P35). Everything that can refuse this request --
     # an empty scope, and the spend cap -- happens inside `open_run`, so the client still gets
@@ -251,6 +252,9 @@ async def start_run(
         stand_ins=await catalog.read_stand_ins(level=scope.level),
         spend_cap_eur=cap,
         uncapped_is_accepted=scope.accept_uncapped_spend,
+        # Read per run like the cap, so a threshold set after a refusal takes effect on the
+        # next request rather than at the next restart.
+        refetch_older_than=_refetch_age(settings.refetch_older_than_days),
     )
     # Starlette sends the response before running this, so the client has its run id and is
     # free -- which is what 202 has always claimed and did not do. A sweep that takes minutes
@@ -413,3 +417,16 @@ def _run_body(run: Run) -> RunBody:
         llm_call_count=run.llm_call_count,
         cost_eur=float(run.cost_eur),
     )
+
+
+def _refetch_age(days: int | None) -> timedelta | None:
+    """The setting as an interval, or nothing.
+
+    **Nothing means refetch everything**, which is the shipped state and exactly what the
+    planner did before the setting existed.
+
+    **A retry does not get one.** Retrying asks again about items that produced no answer, so
+    judging them by when they were last asked would refuse the retry for being recent -- which
+    is precisely when somebody retries.
+    """
+    return None if days is None else timedelta(days=days)
