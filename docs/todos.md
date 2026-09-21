@@ -49,4 +49,67 @@ is implemented across all four tabs. Two things it does not specify are still ou
       Six consecutive clean runs, and the suite went from ~48s to ~14s -- the tests had been
       waiting on each other's writes.
 
+## The second design sync (2026-09-21)
+
+The design grew from 114KB to 197KB between syncs, and **the palette barely moved** -- almost
+all of it was new structure. Seventeen items, A to Q, built in five waves. The whole thing is
+UI: **no backend change, no migration, no contract change.**
+
+The sharpest tool was not the design file. Enumerating the 41 operations FastAPI serves against
+every function in `ui/src/api/endpoints.ts` found **seven with no client at all**, and all
+seven landed on three design items. The design was not asking for new capability; it was
+noticing capability already built and never surfaced. Worth repeating before any future UI
+wave.
+
+- [x] **A** saved rankings, **J** duplicate a set, **H** the unsourced-attribute card -- the
+      seven unused operations, now called.
+- [x] **G** per-attribute weight locks, **K** settings that say "not set", **M** several Rank
+      rows open, **N** provenance that links, **F** raw figures in Compare, **L** the
+      comparator ceiling, **B** a progress bar, **C** grouped selectable failures with a
+      scoped re-ask, **D** a confirmation before anything spends, **E** change history with
+      undo, **I** one household vocabulary, **O** what each rule costs.
+- [x] **R3** the unset score range now names the setting and offers the way to it. **R7**
+      needed no work: our confidence readout always gave all three bands.
+
+**Three things the sanity suite earned its keep on**, none visible to 469 unit tests:
+
+1. **A lock was readable and unclickable.** `.toggle` takes its width from a flex parent and
+   has none standing alone, so a lock whose only child was a `visually-hidden` span collapsed
+   to nothing. It affected the **pillar** locks too, which had shipped that way.
+2. **The mock was kinder than the server.** A locked criterion's weight cannot be moved even
+   to the value it already holds, so a lock must travel **alone**. The mock accepted both
+   together and certified a protocol the backend rejects.
+3. **`setChecked()` cannot drive a server-backed toggle.** It asserts the new state the moment
+   it has clicked, while a controlled checkbox flips only when the PATCH resolves. `click()`
+   then `toBeChecked()` polls, which is the right shape.
+
+**Deliberate divergences from the design, both for the same reason:**
+
+- **Opening a saved ranking shows it; it does not restore it.** The design loads a saved
+  weight vector back over the live set. Our contract freezes the criteria *and* the score
+  scale and returns a whole `Ranking`, so there is a real thing to look at -- and restoring
+  would be the very act the design's own R6 calls most in need of an undo.
+- **R5 and R2 do not apply to us.** Our country-level gates are answered per candidate rather
+  than derived from the household, and our runs genuinely store values. Both were faults in
+  the prototype's own fake logic.
+
+**`known-issues.md` P42 is stale in the review.** It was fixed 2026-09-16: `retry_run` and
+`ask_again` both take `spend_cap_eur` and `uncapped_is_accepted`. The confirmation step is
+still worth having; it is not the only ceiling.
+
+### Still open, and deliberately
+
+- [ ] **P, the per-source enable toggle.** `data_source` has no enabled column and there is no
+      write endpoint, so the source panel is read-only. Needs a migration and a 43rd operation.
+- [ ] **Q, the acquisition diff.** No endpoint and no changed-since field. Derivable client
+      side from `/values?include_superseded=true`, which is real client work rather than a
+      field to render.
+- [ ] **"Refetch data older than N days."** The design's stage 6 offers a global knob we do not
+      model: staleness is per-attribute `max_age` (`reqs.md` 7.1). Decide before building.
+- [ ] **The hand-entry form behind "Enter a value by hand."** `POST /values/manual` is served
+      and waiting; what it needs is a payload editor per value type. Parked by the design too.
+- [ ] **A saved evaluation cannot be deleted.** The contract has no `DELETE /evaluations`, on
+      purpose -- a saved evaluation is a measurement somebody chose to keep. The browser suite
+      therefore leaves one row behind per run, and marks what it creates.
+
 ## TODOs for Alex

@@ -286,6 +286,32 @@ Module layout, all under `backend/src/starnest/` (`arch.md` 6.1) — **named aft
 | `api/` | The REST surface. **This is the presenter** — use cases return DTOs, `api/` serialises them |
 | `data_sources/`, `storage/` | **Plugins.** Implement interfaces the policy modules declare; no policy lives here |
 
+**The design's second sync is integrated** (2026-09-21). It grew from 114KB to 197KB and
+**the palette barely moved** -- almost all of it was new structure, so "integrate the design"
+and "build what the design offers and we do not" were the same work. Seventeen items in five
+waves, **all of it UI**: no backend change, no migration, no contract change.
+
+**The tool that found the most was not the design file.** Enumerating the 41 operations
+FastAPI serves against every function in `ui/src/api/endpoints.ts` found **seven with no
+client at all** -- the five evaluation operations, `duplicateCriteriaSet` and
+`enterValueManually` -- and all seven landed on three design items. The design was noticing
+capability already built and never surfaced. Run that check before any UI wave.
+
+**The browser suite found three faults 469 unit tests could not.** A lock that was readable
+and unclickable, because `.toggle` takes its width from a flex parent and had none standing
+alone -- which had shipped for the **pillar** locks too. A mock that was *kinder than the
+server*: a locked criterion's weight cannot be moved even to the value it already holds, so a
+lock travels alone, and accepting both together certified a protocol the backend rejects. And
+`setChecked()`, which asserts the new state the moment it has clicked and so cannot drive a
+controlled checkbox that flips only when its PATCH resolves.
+
+**Opening a saved ranking shows it; it does not restore it** -- a deliberate divergence. The
+design loads a saved weight vector back over the live set; our contract freezes the criteria
+*and* the score scale and returns a whole `Ranking`, so there is a real thing to look at, and
+restoring would be the act the design's own review calls most in need of an undo. **Undo, where
+it exists, re-issues the real request** and never restores local state, because a configuration
+screen that lies about what is stored is worse than one with no undo.
+
 **The design pass has happened** (2026-09-20). `ui/` was built behaviour-first on purpose --
 semantic HTML, roles and labels a test can find, and every colour, space and size a custom
 property in `styles.css` -- and that bet paid: reproducing the design moved one `:root` block
