@@ -36,6 +36,7 @@ from starnest.data_acquisition import (
     continue_run,
     open_run,
     retry_run,
+    switched_on,
 )
 
 router = APIRouter(tags=["acquisition"])
@@ -152,8 +153,12 @@ async def plan_run(
     wanted = await _attributes_in(scope, catalog)
 
     # The plan counts the same sources the run would ask, so an estimate for an unscoped run
-    # does not promise paid work that would not happen.
-    planned = asked_this_run(adapters, attributes_named=scope.attributes is not None)
+    # does not promise paid work that would not happen -- and a source switched off is not
+    # counted, for the same reason.
+    planned = asked_this_run(
+        switched_on(adapters, await catalog.read_data_sources()),
+        attributes_named=scope.attributes is not None,
+    )
     by_source = []
     # Each source prices its own share, because each is the only thing that knows what it
     # charges -- and a free one prices nothing, which is every structured source.
@@ -224,7 +229,11 @@ async def start_run(
             f"run {in_flight} is still going, and one household runs one pass at a time "
             f"(reqs.md 10). Poll run {in_flight} rather than starting another."
         )
-    asked = asked_this_run(adapters, attributes_named=scope.attributes is not None)
+    # **A source switched off is not asked** (`reqs.md` 2, Q232). The same switch keeps its
+    # stored values out of the active-value comparison, so asking it again would fetch figures
+    # that cannot score -- and would pay for them where the source charges.
+    consulted = switched_on(adapters, await catalog.read_data_sources())
+    asked = asked_this_run(consulted, attributes_named=scope.attributes is not None)
     # The cap is a setting the household edits (`reqs.md` 3.10) and is read per run, so a cap
     # set after a refusal takes effect on the next request rather than at the next restart.
     cap = (await households.get_settings()).run_spend_cap_eur

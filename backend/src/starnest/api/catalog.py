@@ -13,12 +13,12 @@ from datetime import timedelta
 from typing import ClassVar
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.bodies import ContractBody
 from starnest.api.dependencies import Candidates, Catalog, Criteria
 from starnest.candidates import UnknownCandidateError
-from starnest.data import Attribute
+from starnest.data import Attribute, DataSourceId
 
 router = APIRouter(tags=["catalog"])
 
@@ -247,6 +247,21 @@ class DataSourceBody(BaseModel):
     source_kind: str
     default_priority: int
     reliability_tier: str
+    is_enabled: bool = True
+
+
+class DataSourceInput(BaseModel):
+    """What may be changed about a source: whether it is consulted, and where it stands.
+
+    Both are optional and independent, so switching one off does not have to restate its
+    priority. **Nothing here changes what the source measures** -- that is the catalog, and
+    the catalog is changed by migration (`reqs.md` 2, Q232).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_enabled: bool | None = None
+    default_priority: int | None = Field(default=None, gt=0)
 
 
 class DataSourcesBody(BaseModel):
@@ -269,9 +284,44 @@ async def list_data_sources(catalog: Catalog) -> DataSourcesBody:
                 source_kind=str(source.source_kind),
                 default_priority=source.default_priority,
                 reliability_tier=str(source.reliability_tier),
+                is_enabled=source.is_enabled,
             )
             for source in await catalog.read_data_sources()
         )
+    )
+
+
+@router.patch(
+    "/data-sources/{data_source_id}",
+    operation_id="updateDataSource",
+    response_model=DataSourceBody,
+)
+async def update_data_source(
+    data_source_id: str, body: DataSourceInput, catalog: Catalog
+) -> DataSourceBody:
+    """Switch a source on or off, and set where it stands in the global order.
+
+    **Switching one off stops it being scored, and keeps every figure it produced**
+    (`reqs.md` 3.6): the values stay stored, stay visible in the drill-down with their
+    provenance, and come back to the ranking the moment it is switched on again. It also stops
+    being asked, so a run does not fetch figures that cannot score.
+
+    **Scores move when this changes**, which is the point rather than a side effect: the
+    active-value rule is evaluated on every read, so the next ranking is computed from what is
+    still consulted. Nothing is recomputed here and nothing is cached.
+    """
+    changed = await catalog.set_data_source(
+        DataSourceId(data_source_id),
+        is_enabled=body.is_enabled,
+        default_priority=body.default_priority,
+    )
+    return DataSourceBody(
+        id=str(changed.id),
+        name=changed.name,
+        source_kind=str(changed.source_kind),
+        default_priority=changed.default_priority,
+        reliability_tier=str(changed.reliability_tier),
+        is_enabled=changed.is_enabled,
     )
 
 

@@ -123,6 +123,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/data-sources/{dataSourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Switch a source on or off, and set where it stands
+         * @description Switching a source off stops it being consulted: a run does not ask it, and its stored values drop out of the active-value comparison so they are no longer scored. **The values themselves are kept** and stay visible in the drill-down with their provenance (reqs.md 3.6) -- switching the source back on returns them to the ranking unchanged. Scores move when this changes, because the active-value rule is evaluated on every read. Both fields are optional and independent.
+         */
+        patch: operations["updateDataSource"];
+        trace?: never;
+    };
     "/candidates": {
         parameters: {
             query?: never;
@@ -766,6 +786,11 @@ export interface components {
             source_kind: "structured" | "llm" | "manual";
             default_priority: number;
             reliability_tier: string;
+            /**
+             * @description Whether this source is consulted. False means a run does not ask it and its stored values are not scored -- the values are kept and stay visible, because selecting an active value never discards data (reqs.md 3.6).
+             * @default true
+             */
+            is_enabled: boolean;
         };
         Candidate: {
             id: string;
@@ -1468,6 +1493,36 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["DataSource"][];
                     };
+                };
+            };
+        };
+    };
+    updateDataSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @example numbeo */
+                dataSourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    is_enabled?: boolean;
+                    default_priority?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataSource"];
                 };
             };
         };

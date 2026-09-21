@@ -113,3 +113,74 @@ class TestTheAttributes:
 
         assert len(country_only["items"]) <= len(everything["items"])
         assert all(a["level"] == COUNTRY for a in country_only["items"])
+
+
+class TestSwitchingASourceOff:
+    """Whether a source is consulted is a judgement the household makes (`reqs.md` 2, Q232).
+
+    **Every test here puts the source back**, because these run against a real database and a
+    source left switched off would change every ranking the rest of the suite reads.
+    """
+
+    SOURCE = "numbeo"
+
+    async def _restore(self, api: httpx.AsyncClient) -> None:
+        await api.patch(f"/v1/data-sources/{self.SOURCE}", json={"is_enabled": True})
+
+    async def test_a_source_reports_whether_it_is_consulted(self, api: httpx.AsyncClient) -> None:
+        body = (await api.get("/v1/data-sources")).json()
+
+        assert all("is_enabled" in source for source in body["items"])
+
+    async def test_switching_one_off_is_read_back(self, api: httpx.AsyncClient) -> None:
+        try:
+            answer = await api.patch(f"/v1/data-sources/{self.SOURCE}", json={"is_enabled": False})
+
+            assert answer.status_code == 200
+            assert answer.json()["is_enabled"] is False
+
+            listed = (await api.get("/v1/data-sources")).json()["items"]
+            assert next(s for s in listed if s["id"] == self.SOURCE)["is_enabled"] is False
+        finally:
+            await self._restore(api)
+
+    async def test_the_switch_and_the_order_are_independent(self, api: httpx.AsyncClient) -> None:
+        """Switching one off does not have to restate where it stands."""
+        before = next(
+            s for s in (await api.get("/v1/data-sources")).json()["items"] if s["id"] == self.SOURCE
+        )["default_priority"]
+        try:
+            answer = await api.patch(f"/v1/data-sources/{self.SOURCE}", json={"is_enabled": False})
+
+            assert answer.json()["default_priority"] == before
+        finally:
+            await self._restore(api)
+
+    async def test_the_order_can_be_set_without_touching_the_switch(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        listed = (await api.get("/v1/data-sources")).json()["items"]
+        before = next(s for s in listed if s["id"] == self.SOURCE)["default_priority"]
+        try:
+            answer = await api.patch(
+                f"/v1/data-sources/{self.SOURCE}", json={"default_priority": before + 1}
+            )
+
+            assert answer.json()["default_priority"] == before + 1
+            assert answer.json()["is_enabled"] is True
+        finally:
+            await api.patch(f"/v1/data-sources/{self.SOURCE}", json={"default_priority": before})
+
+    async def test_a_source_the_catalog_does_not_hold_is_refused(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        answer = await api.patch("/v1/data-sources/no_such_source", json={"is_enabled": False})
+
+        assert answer.status_code == 422
+        assert answer.json()["code"] == "unknown_data_source"
+
+    async def test_nothing_else_about_a_source_may_be_changed(self, api: httpx.AsyncClient) -> None:
+        """What a source *is* stays catalog, changed by migration (`arch.md` 1.2)."""
+        answer = await api.patch(f"/v1/data-sources/{self.SOURCE}", json={"name": "Something else"})
+
+        assert answer.status_code == 422

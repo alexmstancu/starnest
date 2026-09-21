@@ -43,6 +43,7 @@ type PillarWeight = components["schemas"]["PillarWeight"];
 type Settings = components["schemas"]["Settings"];
 type Household = components["schemas"]["HouseholdInput"];
 type EvaluationSummary = components["schemas"]["EvaluationSummary"];
+type DataSource = components["schemas"]["DataSource"];
 
 const BASE = "/v1";
 
@@ -60,6 +61,9 @@ let household: Household = { ...HOUSEHOLD };
 let matchRuleResults: MatchRuleResult[] = [...MATCH_RULE_RESULTS];
 // Nothing is saved until somebody saves it, so the list starts empty -- which is also the
 // state a reader meets on a fresh install, and the one the empty message is written for.
+// A copy, because the switch writes to it: serving the shared constant would let one test's
+// switched-off source leak into every test after it.
+let dataSources: DataSource[] = DATA_SOURCES.map((each) => ({ ...each }));
 let savedEvaluations: EvaluationSummary[] = [];
 let nextEvaluationId = 1;
 
@@ -69,12 +73,38 @@ export function resetMockData(): void {
   settings = { ...SETTINGS };
   household = { ...HOUSEHOLD };
   matchRuleResults = [...MATCH_RULE_RESULTS];
+  dataSources = DATA_SOURCES.map((each) => ({ ...each }));
   savedEvaluations = [];
   nextEvaluationId = 1;
 }
 
 export const handlers = [
   http.get(`${BASE}/levels`, () => HttpResponse.json({ items: LEVELS })),
+
+  http.patch(`${BASE}/data-sources/:dataSourceId`, async ({ params, request }) => {
+    const source = dataSources.find(
+      (each) => each.id === String(params["dataSourceId"]),
+    );
+    if (!source) {
+      return HttpResponse.json(
+        {
+          code: "unknown_data_source",
+          message: `no data source called ${String(params["dataSourceId"])}`,
+        },
+        { status: 422 },
+      );
+    }
+    const body = (await request.json()) as {
+      is_enabled?: boolean;
+      default_priority?: number;
+    };
+    // Coalesced, like the query: either may be left out to keep what is there.
+    if (body.is_enabled !== undefined) source.is_enabled = body.is_enabled;
+    if (body.default_priority !== undefined) {
+      source.default_priority = body.default_priority;
+    }
+    return HttpResponse.json(source);
+  }),
 
   http.get(`${BASE}/criteria-sets`, () =>
     HttpResponse.json({ items: criteriaSetSummaries }),
@@ -293,7 +323,7 @@ export const handlers = [
   }),
 
   http.get(`${BASE}/data-sources`, () =>
-    HttpResponse.json({ items: DATA_SOURCES }),
+    HttpResponse.json({ items: dataSources }),
   ),
 
   http.get(`${BASE}/household`, () => HttpResponse.json(household)),

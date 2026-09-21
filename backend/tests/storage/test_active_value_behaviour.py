@@ -349,3 +349,79 @@ def test_the_view_adds_what_the_ordering_rules_need(
     exposed = _columns_of(connection, view)
 
     assert set(THE_RANKING_COLUMNS) <= set(exposed)
+
+
+# --- rule 1a: a source that is switched off ----------------------------------
+
+
+def _switch_off(connection: psycopg.Connection, source: str) -> None:
+    connection.execute("UPDATE data_source SET is_enabled = false WHERE id = %s", (source,))
+
+
+def test_a_value_from_a_switched_off_source_never_becomes_active(
+    connection: psycopg.Connection,
+) -> None:
+    """Switching a source off stops its figures being scored (`reqs.md` 2, Q232)."""
+    better, _ = _two_sources(connection)
+    _store(connection, source=better, retrieved=datetime.now(UTC))
+    _switch_off(connection, better)
+
+    assert _active(connection) is None
+
+
+def test_its_values_are_kept_and_stay_visible(connection: psycopg.Connection) -> None:
+    """The non-destructive invariant: selecting an active value never discards data (3.6)."""
+    better, _ = _two_sources(connection)
+    stored = _store(connection, source=better, retrieved=datetime.now(UTC))
+    _switch_off(connection, better)
+
+    assert (
+        connection.execute("SELECT count(*) FROM value WHERE id = %s", (stored,)).fetchone()[0] == 1
+    ), "a value from a switched-off source must remain stored"
+    assert (
+        connection.execute(
+            "SELECT source_is_enabled FROM value_with_rank WHERE id = %s", (stored,)
+        ).fetchone()[0]
+        is False
+    ), "and must be visible, carrying why it did not score"
+
+
+def test_switching_a_source_off_promotes_the_next_one(connection: psycopg.Connection) -> None:
+    """The reason the switch is worth having: the next source's figure takes over."""
+    better, worse = _two_sources(connection)
+    _store(connection, source=better, retrieved=datetime.now(UTC))
+    from_worse = _store(connection, source=worse, retrieved=datetime.now(UTC))
+
+    _switch_off(connection, better)
+
+    assert _active(connection) == from_worse
+
+
+def test_switching_it_back_on_restores_the_ranking_exactly(
+    connection: psycopg.Connection,
+) -> None:
+    """Nothing was lost, so nothing has to be re-fetched to get it back."""
+    better, worse = _two_sources(connection)
+    from_better = _store(connection, source=better, retrieved=datetime.now(UTC))
+    _store(connection, source=worse, retrieved=datetime.now(UTC))
+
+    _switch_off(connection, better)
+    connection.execute("UPDATE data_source SET is_enabled = true WHERE id = %s", (better,))
+
+    assert _active(connection) == from_better
+
+
+def test_switching_off_the_only_source_leaves_no_figure(
+    connection: psycopg.Connection,
+) -> None:
+    """Excluded rather than ranked last.
+
+    If a disabled source still won when it was the only one with a figure, switching off the
+    sole provider of an attribute would change nothing -- which is the case somebody switching
+    it off most means. The attribute's coverage falls instead, and the candidate says so.
+    """
+    better, _ = _two_sources(connection)
+    _store(connection, source=better, retrieved=datetime.now(UTC))
+    _switch_off(connection, better)
+
+    assert _active(connection) is None

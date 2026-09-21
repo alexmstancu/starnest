@@ -709,7 +709,12 @@ export const COMPOUND_RULES: CompoundRule[] = [
   },
 ];
 
-/** Priority order as the migrations ship it: a lower number wins, and the LLM ranks last. */
+/**
+ * Priority order as the migrations ship it: a lower number wins, and the LLM ranks last.
+ *
+ * **One is switched off**, so the screen's two states are both exercised by a test rather
+ * than one of them only by a configured environment.
+ */
 export const DATA_SOURCES: DataSource[] = [
   {
     id: "eurostat",
@@ -717,6 +722,7 @@ export const DATA_SOURCES: DataSource[] = [
     source_kind: "structured",
     default_priority: 10,
     reliability_tier: "official",
+    is_enabled: true,
   },
   {
     id: "manual",
@@ -724,6 +730,7 @@ export const DATA_SOURCES: DataSource[] = [
     source_kind: "manual",
     default_priority: 50,
     reliability_tier: "declared",
+    is_enabled: true,
   },
   {
     id: "llm",
@@ -731,5 +738,6 @@ export const DATA_SOURCES: DataSource[] = [
     source_kind: "llm",
     default_priority: 90,
     reliability_tier: "indicative",
+    is_enabled: false,
   },
 ];

@@ -431,6 +431,28 @@ export interface ResearchScope {
  * rules nothing out (`reqs.md` 6.10 use 3). The screen needs both kinds in one list: a reader
  * deciding whether to trust one wants to see what has already been settled beside it.
  */
+/**
+ * Switch a source on or off, and set where it stands in the global order.
+ *
+ * **Switching one off stops its figures being scored and keeps every one of them**
+ * (`reqs.md` 3.6, Q232): the values stay stored, stay visible in the drill-down with their
+ * provenance, and return to the ranking when it is switched back on. **Scores move when this
+ * changes**, because the active-value rule is evaluated on every read -- so a ranking on
+ * screen is refetched rather than adjusted here.
+ *
+ * Both fields are optional and independent: switching one off does not restate its priority.
+ */
+export function updateDataSource(
+  dataSourceId: string,
+  change: { is_enabled?: boolean; default_priority?: number },
+  options?: RequestOptions,
+): Promise<DataSource> {
+  return patchJson("/data-sources/{dataSourceId}", change, {
+    ...options,
+    pathParams: { dataSourceId },
+  });
+}
+
 export function fetchMatchRuleResults(
   options?: RequestOptions,
 ): Promise<{ items: MatchRuleResult[] }> {

@@ -46,6 +46,7 @@ from starnest.data import (
     StandIn,
     UnitId,
     UnknownAttributeError,
+    UnknownDataSourceError,
     ValueType,
 )
 from starnest.data.identifiers import HouseholdFieldId, ReliabilityTierId
@@ -135,8 +136,39 @@ class PostgresCatalogStore(CatalogStore):
                 source_kind=SourceKind(row.source_kind),
                 default_priority=row.default_priority,
                 reliability_tier=ReliabilityTierId(row.reliability_tier),
+                is_enabled=row.is_enabled,
             )
             for row in rows
+        )
+
+    async def set_data_source(
+        self,
+        data_source: DataSourceId,
+        *,
+        is_enabled: bool | None = None,
+        default_priority: int | None = None,
+    ) -> DataSource:
+        """Switch a source on or off, and set where it stands in the global order.
+
+        Either may be left out to keep what is there, so the switch and the order are two
+        controls rather than one combined write.
+        """
+        async with acquire(self._pool) as connection:
+            row = await self._queries.update_data_source(
+                connection,
+                data_source=str(data_source),
+                is_enabled=is_enabled,
+                default_priority=default_priority,
+            )
+        if row is None:
+            raise UnknownDataSourceError(f"no data source called {data_source!r}")
+        return DataSource(
+            id=DataSourceId(row[0]),
+            name=row[1],
+            source_kind=SourceKind(row[2]),
+            default_priority=row[3],
+            reliability_tier=ReliabilityTierId(row[4]),
+            is_enabled=row[5],
         )
 
     async def read_breakdown_schemes(

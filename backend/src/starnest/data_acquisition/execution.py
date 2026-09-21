@@ -21,7 +21,14 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from starnest.candidates import Candidate
-from starnest.data import Attribute, AttributeId, DataSourceId, StandIn, ValueStore
+from starnest.data import (
+    Attribute,
+    AttributeId,
+    DataSource,
+    DataSourceId,
+    StandIn,
+    ValueStore,
+)
 from starnest.data_acquisition.adapter import Acquired, AcquisitionFailure, SourceAdapter
 from starnest.data_acquisition.estimate import Estimate
 from starnest.data_acquisition.run import acquire
@@ -133,6 +140,13 @@ async def open_run(
         attributes=tuple(str(attribute.id) for attribute in in_scope),
     )
     if not in_scope or not candidates:
+        # Named separately, because it is the one cause with an obvious remedy: there is
+        # nothing to ask rather than nothing worth asking about.
+        if not adapters:
+            raise NothingToFetchError(
+                "no data source is switched on, so there is nothing to ask. Switch one on in "
+                "Configure, or this run would fetch nothing and record that it had run"
+            )
         raise NothingToFetchError(
             "nothing in this run's scope can be answered by the sources it may ask or borrowed "
             f"from a declared stand-in: {len(candidates)} candidate(s), "
@@ -295,6 +309,23 @@ def _item_by_item(
     return itemised
 
 
+def switched_on(
+    adapters: Sequence[SourceAdapter], sources: Sequence[DataSource]
+) -> tuple[SourceAdapter, ...]:
+    """The adapters whose source is switched on (`reqs.md` 2, Q232).
+
+    **A source the household has switched off is not asked.** The same switch also keeps its
+    stored values out of the active-value comparison, so asking it again would fetch figures
+    that cannot score -- work nobody wants, paid for in the case of a source that charges.
+
+    An adapter whose source is not in the catalog at all is kept rather than dropped: that is
+    a declaration fault the boot check exists to catch, and silently skipping it here would
+    hide it behind a run that merely fetched less than it should have.
+    """
+    switched_off = {source.id for source in sources if not source.is_enabled}
+    return tuple(adapter for adapter in adapters if adapter.data_source not in switched_off)
+
+
 def asked_this_run(
     adapters: Sequence[SourceAdapter], *, attributes_named: bool
 ) -> tuple[SourceAdapter, ...]:
@@ -318,9 +349,11 @@ class NothingToFetchError(ValueError):
     """A run whose sources, between them, can answer nothing in its scope.
 
     Refused rather than opened: a run over an empty scope is a no-op recorded as though it were
-    work, and the run list is a record of what was actually asked. It happens for one honest
-    reason -- an unscoped run over a registry whose only source charges, which `asked_this_run`
-    declines to ask.
+    work, and the run list is a record of what was actually asked. It happens for two honest
+    reasons -- an unscoped run over a registry whose only source charges, which
+    `asked_this_run` declines to ask; and a run with every source switched off, which
+    `switched_on` leaves nothing of. The second is reachable in a few clicks, so its refusal
+    names the remedy rather than the arithmetic.
     """
 
 

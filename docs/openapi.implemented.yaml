@@ -649,6 +649,10 @@ components:
         id:
           title: Id
           type: string
+        is_enabled:
+          default: true
+          title: Is Enabled
+          type: boolean
         name:
           title: Name
           type: string
@@ -665,6 +669,33 @@ components:
       - default_priority
       - reliability_tier
       title: DataSourceBody
+      type: object
+    DataSourceInput:
+      additionalProperties: false
+      description: 'What may be changed about a source: whether it is consulted, and
+        where it stands.
+
+
+        Both are optional and independent, so switching one off does not have to restate
+        its
+
+        priority. **Nothing here changes what the source measures** -- that is the
+        catalog, and
+
+        the catalog is changed by migration (`reqs.md` 2, Q232).'
+      properties:
+        default_priority:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Default Priority
+        is_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Enabled
+      title: DataSourceInput
       type: object
     DataSourcesBody:
       properties:
@@ -2856,6 +2887,60 @@ paths:
                 $ref: '#/components/schemas/DataSourcesBody'
           description: Successful Response
       summary: List Data Sources
+      tags:
+      - catalog
+  /v1/data-sources/{data_source_id}:
+    patch:
+      description: 'Switch a source on or off, and set where it stands in the global
+        order.
+
+
+        **Switching one off stops it being scored, and keeps every figure it produced**
+
+        (`reqs.md` 3.6): the values stay stored, stay visible in the drill-down with
+        their
+
+        provenance, and come back to the ranking the moment it is switched on again.
+        It also stops
+
+        being asked, so a run does not fetch figures that cannot score.
+
+
+        **Scores move when this changes**, which is the point rather than a side effect:
+        the
+
+        active-value rule is evaluated on every read, so the next ranking is computed
+        from what is
+
+        still consulted. Nothing is recomputed here and nothing is cached.'
+      operationId: updateDataSource
+      parameters:
+      - in: path
+        name: data_source_id
+        required: true
+        schema:
+          title: Data Source Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataSourceInput'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataSourceBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Update Data Source
       tags:
       - catalog
   /v1/evaluations:

@@ -9,9 +9,10 @@ from decimal import Decimal
 
 import pytest
 
+from starnest.data import DataSource, DataSourceId, ReliabilityTierId, SourceKind
 from starnest.data_acquisition import CostMeter, SpendCapNotSetError, refuse_unless_capped
 from starnest.data_acquisition.adapter import SourceAdapter
-from starnest.data_acquisition.execution import asked_this_run
+from starnest.data_acquisition.execution import asked_this_run, switched_on
 
 
 class TestTheMeter:
@@ -142,3 +143,89 @@ class TestWhichSourcesARunAsks:
 
         assert len(asked_this_run(registry, attributes_named=False)) == 1
         assert len(asked_this_run(registry, attributes_named=True)) == 1
+
+
+def _catalogued(source: str, *, enabled: bool) -> DataSource:
+    """One source as the catalog holds it, with only the switch varying."""
+    return DataSource(
+        id=DataSourceId(source),
+        name=source,
+        source_kind=SourceKind.STRUCTURED,
+        default_priority=10,
+        reliability_tier=ReliabilityTierId("official_international"),
+        is_enabled=enabled,
+    )
+
+
+class TestASourceThatIsSwitchedOff:
+    """A source the household has switched off is not asked (`reqs.md` 2, Q232).
+
+    The same switch keeps its stored values out of the active-value comparison, so asking it
+    again would fetch figures that cannot score -- work nobody wants, and paid for where the
+    source charges.
+    """
+
+    def test_a_disabled_source_is_not_asked(self) -> None:
+        adapters = [
+            _Source(source="eurostat", charges=False),
+            _Source(source="numbeo", charges=False),
+        ]
+
+        asked = switched_on(
+            adapters,
+            [_catalogued("eurostat", enabled=True), _catalogued("numbeo", enabled=False)],
+        )
+
+        assert [str(each.data_source) for each in asked] == ["eurostat"]
+
+    def test_every_source_is_asked_when_none_is_switched_off(self) -> None:
+        adapters = [_Source(source="eurostat", charges=False)]
+
+        asked = switched_on(adapters, [_catalogued("eurostat", enabled=True)])
+
+        assert len(asked) == 1
+
+    def test_switching_every_source_off_leaves_nothing_to_ask(self) -> None:
+        adapters = [
+            _Source(source="eurostat", charges=False),
+            _Source(source="numbeo", charges=False),
+        ]
+
+        asked = switched_on(
+            adapters,
+            [_catalogued("eurostat", enabled=False), _catalogued("numbeo", enabled=False)],
+        )
+
+        assert asked == ()
+
+    def test_an_adapter_the_catalog_does_not_know_is_kept(self) -> None:
+        """A declaration fault the boot check exists to catch.
+
+        Silently skipping it here would hide it behind a run that merely fetched less than it
+        should have.
+        """
+        adapters = [_Source(source="undeclared", charges=False)]
+
+        asked = switched_on(adapters, [_catalogued("eurostat", enabled=True)])
+
+        assert [str(each.data_source) for each in asked] == ["undeclared"]
+
+    def test_the_two_filters_compose(self) -> None:
+        """Switched off and charges-without-a-scope are separate reasons not to ask."""
+        adapters = [
+            _Source(source="eurostat", charges=False),
+            _Source(source="llm_search", charges=True),
+            _Source(source="numbeo", charges=False),
+        ]
+
+        consulted = switched_on(
+            adapters,
+            [
+                _catalogued("eurostat", enabled=True),
+                _catalogued("llm_search", enabled=True),
+                _catalogued("numbeo", enabled=False),
+            ],
+        )
+        asked = asked_this_run(consulted, attributes_named=False)
+
+        assert [str(each.data_source) for each in asked] == ["eurostat"]

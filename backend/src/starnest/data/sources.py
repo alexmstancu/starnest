@@ -61,6 +61,14 @@ class DataSource(BaseModel):
     reliability_tier: ReliabilityTierId = Field(
         description="The family confidence is derived from (`reqs.md` 5.7)."
     )
+    is_enabled: bool = Field(
+        default=True,
+        description=(
+            "Whether this source is consulted. False means a run does not ask it and its "
+            "stored values are not scored -- the values are kept and stay visible, because "
+            "selecting an active value never discards data (`reqs.md` 3.6)."
+        ),
+    )
 
     @property
     def is_typed_by_hand(self) -> bool:

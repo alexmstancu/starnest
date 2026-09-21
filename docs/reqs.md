@@ -146,6 +146,15 @@ edits the bootstrap configuration — by editing config files and code directly.
 developer action performed in config, not a user action performed in a screen. Do not build
 one.
 
+**One exception, decided 2026-09-21 (Q232): whether a source already in the catalog is
+consulted, and where it stands in the global order, are editable on screen.** The rule above
+exists to stop a *user* reaching into the administrator's half and leaving the catalog
+inconsistent. This application has exactly one person, who is both roles, so the separation it
+protects does not exist here. The exception is narrow by construction: it changes no
+measurement, adds and removes no row, and cannot make the catalog inconsistent -- it records
+which of the sources already declared the household trusts, which is a judgement about
+evidence rather than a fact about the world.
+
 ---
 
 ## 3. Ontology
@@ -2859,6 +2868,7 @@ not only *what*.
 | Q33 | Catalog at name/type/direction/source/weight detail | Scale bands and thresholds can only be set sensibly after real data |
 | Q34 | Four tabs plus sidebar | One tab per stage of the workflow; newer surfaces nest inside |
 | Q231 | **The second tab is "Acquire", not "Run"** (2026-09-20) | Every other tab names the work -- Configure, Rank, Compare. "Run" named the mechanism, and the mechanism is the application's, not the reader's. The tab is where figures are fetched, so it says so, and it matches the vocabulary the rest of the system already uses: a `data_acquisition` module, `POST /v1/data-acquisition-runs`, "data acquisition run" throughout this document. The route moves with the label -- a tab called Acquire living at `/run` is the same drift under a different name. **The runs themselves stay runs**: the entity is unchanged, which is why the sidebar still links to "Run history" |
+| Q232 | **A source can be switched off and reordered on screen** (2026-09-21) | Section 2 said there is no admin interface and that connecting a source is a developer action -- a rule written to keep a *user* from reaching into the administrator's half and leaving the catalog inconsistent. This application has one person, who is both roles, so that separation does not exist and the rule cost more than it bought. **The exception is narrow**: it changes no measurement, adds and removes no row, and cannot make the catalog inconsistent. What a source *is* -- what it measures, in what unit, of what type -- is still changed only by migration. **Switching one off stops it being scored and keeps every figure it produced**: the values stay in `value`, stay visible in the drill-down with their provenance, and return to the ranking unchanged when it is switched on again, which is `reqs.md` 3.6 holding rather than an exception to it. A disabled source is **excluded from the active-value comparison rather than ranked last**, because a source that still won when it was the only one with a figure would make switching off the sole provider of an attribute do nothing -- which is the case somebody switching it off most means; the attribute's coverage falls instead and the candidate says so. It also stops being asked by a run, since fetching figures that cannot score is work nobody wants and is paid for where the source charges. **Scores move when this changes**, which is the point: the active-value rule is evaluated on every read, so nothing is recomputed and nothing is cached |
 | Q35 | Per-value confidence: display and source priority only | Coverage says how much data exists; confidence says what it is worth. Discounting the score would absorb uncertainty rather than disclose it |
 | Q36 | Confidence derived from source, age and geography, with override | Reuses `max_age` and `DataSource.kind`; no field anyone must remember to fill |
 | Q37 | `country.openness_to_foreigners` moved to country level | MIPEX, Eurobarometer and InterNations are country-level only |

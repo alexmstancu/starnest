@@ -1,22 +1,25 @@
-import { useCallback } from "react";
-import { fetchDataSources } from "../../../api/endpoints";
-import { useResource } from "../../../api/useResource";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { inPriorityOrder, positionsOf } from "./sourceOrder";
+import { useDataSources } from "./useDataSources";
 
 /**
- * The source priority order, shown and not editable.
+ * Which sources are consulted, and in what order.
  *
- * **Deliberately read-only.** Source priority is domain configuration shipped as migrations
- * (`arch.md` 1.2, 7.5), and the user's role does not include connecting sources. It is on this
- * screen because the order decides which figure is the active one, and a ranking nobody can
- * see the priority behind is not explained.
+ * **Editable since Q232.** `reqs.md` 2 keeps the catalog -- what exists, in what unit, of what
+ * type -- a developer action in config, and that still holds. What is editable here is
+ * narrower and different in kind: whether a source already declared is consulted, and where it
+ * stands. That is a judgement about which evidence to trust, not a change to what is measured,
+ * and it cannot put the catalog into an inconsistent state.
+ *
+ * **Switching one off keeps every figure it produced.** The values stay stored, stay visible
+ * in the drill-down with their provenance, and come back to the ranking the moment it is
+ * switched on again (`reqs.md` 3.6). What changes is which figure scores.
  *
  * **A lower number wins**, which is stated rather than left to be inferred from the sort.
  */
 export function DataSourcesPanel() {
-  const { resource, reload } = useResource(
-    useCallback((signal: AbortSignal) => fetchDataSources({ signal }), []),
-  );
+  const sources = useDataSources();
+  const positions = positionsOf(sources.sources);
 
   return (
     <section className="panel" aria-labelledby="data-sources-heading">
@@ -25,18 +28,19 @@ export function DataSourcesPanel() {
       </h3>
       <p className="panel__hint">
         Which source wins when two answer the same attribute. A lower number
-        wins. Changed by a migration, not here -- nothing about a measurement is
-        a preference.
+        wins. Switching one off stops its figures being scored and stops a run
+        asking it — every figure it has already produced is kept, and comes
+        back if you switch it on again.
       </p>
 
-      {resource.status === "error" && (
-        <ErrorNotice error={resource.error} onRetry={reload} />
+      {sources.error != null && (
+        <ErrorNotice error={sources.error} onRetry={sources.reload} />
       )}
-      {resource.status === "loading" && (
+      {sources.status === "loading" && (
         <p className="screen__note">Loading…</p>
       )}
 
-      {resource.status === "ready" && (
+      {sources.status === "ready" && (
         <table className="table">
           <caption>Every configured source, in priority order</caption>
           <thead>
@@ -45,23 +49,74 @@ export function DataSourcesPanel() {
               <th scope="col">Source</th>
               <th scope="col">Kind</th>
               <th scope="col">Reliability</th>
+              <th scope="col">Consulted</th>
+              <th scope="col">Move</th>
             </tr>
           </thead>
           <tbody>
-            {[...resource.data.items]
-              .sort(
-                (one, other) => one.default_priority - other.default_priority,
-              )
-              .map((source) => (
-                <tr key={source.id}>
+            {inPriorityOrder(sources.sources).map((source) => {
+              const position = positions.get(source.id) ?? null;
+              const busy = sources.saving === source.id;
+              return (
+                <tr
+                  key={source.id}
+                  className={
+                    source.is_enabled ? "table__row" : "table__row--superseded"
+                  }
+                >
                   <td className="table__cell--numeric">
-                    {source.default_priority}
+                    {/* No number for a source that is not consulted: showing one would say
+                        it is next in line when it is not in the contest at all. */}
+                    {position ?? "not consulted"}
                   </td>
                   <th scope="row">{source.name}</th>
                   <td>{source.source_kind}</td>
                   <td>{source.reliability_tier}</td>
+                  <td>
+                    <label className="toggle toggle--lock">
+                      <input
+                        type="checkbox"
+                        aria-label={`Consult ${source.name}`}
+                        checked={source.is_enabled}
+                        disabled={busy}
+                        onChange={(event) =>
+                          sources.setEnabled(source.id, event.target.checked)
+                        }
+                      />
+                      <span aria-hidden="true">
+                        {source.is_enabled ? "Consulted" : "Off"}
+                      </span>
+                    </label>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="button"
+                      disabled={busy || sources.moveTo(source.id, "up") === null}
+                      onClick={() => sources.move(source.id, "up")}
+                    >
+                      <span className="visually-hidden">
+                        Move {source.name} up
+                      </span>
+                      <span aria-hidden="true">▲</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="button"
+                      disabled={
+                        busy || sources.moveTo(source.id, "down") === null
+                      }
+                      onClick={() => sources.move(source.id, "down")}
+                    >
+                      <span className="visually-hidden">
+                        Move {source.name} down
+                      </span>
+                      <span aria-hidden="true">▼</span>
+                    </button>
+                  </td>
                 </tr>
-              ))}
+              );
+            })}
           </tbody>
         </table>
       )}

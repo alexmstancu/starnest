@@ -8,10 +8,14 @@ objective catalog, and declares two interfaces for all of it -- split by what a 
 doing rather than by which table answers. A module receives only the operations it actually
 calls, so nothing that reads a catalog can accidentally write a value.
 
-**Neither interface has an update or a delete, and that is the invariant rather than an
-oversight.** Values are never overwritten and never discarded (`reqs.md` 3.6); catalog rows
-are changed only by migration (`arch.md` 1.2). An implementation that offered either would be
-implementing something this module did not ask for.
+**Neither interface has a delete, and that is the invariant rather than an oversight.** Values
+are never overwritten and never discarded (`reqs.md` 3.6), and the catalog -- what exists, in
+what unit, of what type -- is changed only by migration (`arch.md` 1.2).
+
+**One catalog write exists: whether a source is consulted, and where it stands** (`reqs.md` 2,
+Q232). It changes no measurement and adds no row; it records which of the sources already in
+the catalog the household trusts, which is a judgement rather than a fact. Everything else
+here still reads only.
 """
 
 from abc import ABC, abstractmethod
@@ -24,6 +28,7 @@ from starnest.data.identifiers import (
     AttributeId,
     BreakdownOptionId,
     BreakdownSchemeId,
+    DataSourceId,
 )
 from starnest.data.population_centre import PopulationCentre
 from starnest.data.rules import CompoundRule, MatchRule
@@ -122,8 +127,10 @@ class ValueStore(ABC):
 class CatalogStore(ABC):
     """Read the objective catalog: levels, pillars, attributes, sources, breakdown schemes.
 
-    All of it is changed only by migration, so there is nothing here that writes. An admin
-    screen would need one -- and `reqs.md` 2 says deliberately that there is no admin screen.
+    **What exists is changed only by migration** -- adding an attribute or a source is a
+    developer action in config. The one write here decides whether a source already in the
+    catalog is consulted and where it stands (`reqs.md` 2, Q232): a judgement about what to
+    trust, not a change to what is measured.
     """
 
     @abstractmethod
@@ -156,6 +163,20 @@ class CatalogStore(ABC):
     @abstractmethod
     async def read_data_sources(self) -> tuple[DataSource, ...]:
         """Every source, so the global priority order can be resolved from it."""
+
+    @abstractmethod
+    async def set_data_source(
+        self,
+        data_source: DataSourceId,
+        *,
+        is_enabled: bool | None = None,
+        default_priority: int | None = None,
+    ) -> DataSource:
+        """Switch a source on or off, and set where it stands in the global order.
+
+        Either may be left out to keep what is there. Refuses with `UnknownDataSourceError`
+        where no such source exists.
+        """
 
     @abstractmethod
     async def read_breakdown_schemes(

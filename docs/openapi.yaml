@@ -162,6 +162,40 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/DataSource" } }
 
+  /data-sources/{dataSourceId}:
+    patch:
+      tags: [catalog]
+      operationId: updateDataSource
+      summary: Switch a source on or off, and set where it stands
+      description: >
+        Switching a source off stops it being consulted: a run does not ask it, and its stored
+        values drop out of the active-value comparison so they are no longer scored. **The
+        values themselves are kept** and stay visible in the drill-down with their provenance
+        (reqs.md 3.6) -- switching the source back on returns them to the ranking unchanged.
+        Scores move when this changes, because the active-value rule is evaluated on every
+        read. Both fields are optional and independent.
+      parameters:
+        - name: dataSourceId
+          in: path
+          required: true
+          schema: { type: string }
+          example: numbeo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_enabled: { type: boolean }
+                default_priority: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DataSource" }
+
   /candidates:
     get:
       tags: [candidates]
@@ -1023,6 +1057,13 @@ components:
         source_kind: { type: string, enum: [structured, llm, manual] }
         default_priority: { type: integer }
         reliability_tier: { type: string }
+        is_enabled:
+          type: boolean
+          default: true
+          description: >
+            Whether this source is consulted. False means a run does not ask it and its stored
+            values are not scored -- the values are kept and stay visible, because selecting an
+            active value never discards data (reqs.md 3.6).
 
     Candidate:
       type: object

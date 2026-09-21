@@ -26,6 +26,7 @@ from starnest.data import (
     Pillar,
     ReferencePeriod,
     UnknownAttributeError,
+    UnknownDataSourceError,
     Value,
     ValueListing,
     ValueStore,
@@ -108,6 +109,9 @@ class InMemoryCatalogStore(CatalogStore):
 
     async def read_data_sources(self):
         return ()
+
+    async def set_data_source(self, data_source, *, is_enabled=None, default_priority=None):
+        raise UnknownDataSourceError(data_source)
 
     async def read_breakdown_schemes(self):
         return {}

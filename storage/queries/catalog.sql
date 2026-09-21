@@ -93,9 +93,22 @@ SELECT s.id,
        s.name,
        s.source_kind,
        s.default_priority,
-       s.reliability_tier
+       s.reliability_tier,
+       s.is_enabled
 FROM   data_source AS s
+-- Switched-off sources keep their place in the order rather than sinking to the bottom: the
+-- order is what they would take if switched back on, and moving them would make the toggle
+-- look like it renumbered the catalog.
 ORDER  BY s.default_priority;
+
+-- name: update_data_source(data_source, is_enabled, default_priority)<!
+-- Switch a source on or off, and set where it stands. Either may be left null to keep what is
+-- there, so the two controls do not have to be sent together.
+UPDATE data_source
+SET    is_enabled       = coalesce(:is_enabled, is_enabled),
+       default_priority = coalesce(:default_priority, default_priority)
+WHERE  id = :data_source
+RETURNING id, name, source_kind, default_priority, reliability_tier, is_enabled;
 
 -- name: select_attribute_source_priority(attribute)
 -- The per-attribute overrides, flat. An override is partial (reqs.md 6.6): the sources named
