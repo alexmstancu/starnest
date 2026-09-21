@@ -129,3 +129,17 @@ function parseDate(value: string | null | undefined): Date | null {
 function isFiniteNumber(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
+
+/**
+ * A catalog identifier as a name: `country` reads "Country", `local_employment` reads
+ * "Local employment".
+ *
+ * **The catalog ships ids, not display names.** `GET /levels` returns `country` and `city`
+ * and nothing else, so capitalising here is the alternative to either printing a wire
+ * identifier at the reader or inventing a lookup table that would have to be kept in step
+ * with the migrations -- which is the "nothing hardcoded" invariant applied to names.
+ */
+export function formatIdentifier(identifier: string): string {
+  const spaced = identifier.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}

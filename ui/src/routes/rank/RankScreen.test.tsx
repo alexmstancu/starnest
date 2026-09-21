@@ -84,7 +84,8 @@ describe("the ranking table", () => {
     expect(
       (await rank.findByText("Criteria set")).nextSibling,
     ).toHaveTextContent("default");
-    expect(rank.getByText("Level").nextSibling).toHaveTextContent("country");
+    // Capitalised: the catalog ships ids, and a reader is shown a name.
+    expect(rank.getByText("Level").nextSibling).toHaveTextContent("Country");
     expect(rank.getByText("Computed").nextSibling).toHaveTextContent(
       "30 Aug 2026, 09:15",
     );
@@ -104,7 +105,7 @@ describe("a candidate that does not match", () => {
   it("shows why it does not match", async () => {
     renderShell("/rank");
 
-    expect(await cell("Spain", "Reason")).toHaveTextContent(
+    expect(await cell("Spain", "Why this status")).toHaveTextContent(
       "No visa route this household qualifies for.",
     );
   });
@@ -115,7 +116,9 @@ describe("a candidate that does not match", () => {
     // The dash this screen prints wherever a number is genuinely absent. An empty cell reads
     // as a table that failed to render -- and the previous assertion here was
     // `toHaveTextContent("")`, which matches any content at all and so checked nothing.
-    expect((await cell("Spain", "Rank")).textContent).toBe("—");
+    // The caret that says the row opens shares the cell and is not part of the reading.
+    const rank = await cell("Spain", "Rank");
+    expect(rank.textContent?.replace(/[\u25B8\u25BE]/g, "")).toBe("—");
   });
 });
 
@@ -248,7 +251,9 @@ describe("the drill-down", () => {
     const row = await rankingRow("Portugal");
 
     await userEvent.click(
-      within(row).getByRole("button", { name: /show figures/i }),
+      // The candidate's name is the toggle: the whole row opens, and this is what a
+      // keyboard reaches.
+      within(row).getByRole("button"),
     );
 
     const table = await screen.findByRole("table", {
@@ -265,7 +270,9 @@ describe("the drill-down", () => {
     const row = await rankingRow("Portugal");
 
     await userEvent.click(
-      within(row).getByRole("button", { name: /show figures/i }),
+      // The candidate's name is the toggle: the whole row opens, and this is what a
+      // keyboard reaches.
+      within(row).getByRole("button"),
     );
 
     const table = await screen.findByRole("table", {
@@ -287,16 +294,12 @@ describe("the drill-down", () => {
     renderShell("/rank");
 
     await userEvent.click(
-      within(await rankingRow("Portugal")).getByRole("button", {
-        name: /show figures/i,
-      }),
+      within(await rankingRow("Portugal")).getByRole("button"),
     );
     await screen.findByRole("heading", { name: /Portugal: every figure/i });
 
     await userEvent.click(
-      within(await rankingRow("Netherlands")).getByRole("button", {
-        name: /show figures/i,
-      }),
+      within(await rankingRow("Netherlands")).getByRole("button"),
     );
 
     expect(
@@ -315,9 +318,7 @@ describe("the drill-down", () => {
 
     for (const name of ["Portugal", "Netherlands"]) {
       await userEvent.click(
-        within(await rankingRow(name)).getByRole("button", {
-          name: /show figures/i,
-        }),
+        within(await rankingRow(name)).getByRole("button"),
       );
     }
 
@@ -332,17 +333,13 @@ describe("the drill-down", () => {
 
     for (const name of ["Portugal", "Netherlands"]) {
       await userEvent.click(
-        within(await rankingRow(name)).getByRole("button", {
-          name: /show figures/i,
-        }),
+        within(await rankingRow(name)).getByRole("button"),
       );
     }
     await screen.findByRole("heading", { name: /Netherlands: every figure/i });
 
     await userEvent.click(
-      within(await rankingRow("Portugal")).getByRole("button", {
-        name: /hide figures/i,
-      }),
+      within(await rankingRow("Portugal")).getByRole("button"),
     );
 
     await waitFor(() =>
@@ -362,9 +359,7 @@ describe("the drill-down", () => {
   it("links a publisher to how it says it reached its number", async () => {
     renderShell("/rank");
     await userEvent.click(
-      within(await rankingRow("Portugal")).getByRole("button", {
-        name: /show figures/i,
-      }),
+      within(await rankingRow("Portugal")).getByRole("button"),
     );
 
     const outside = await screen.findByRole("table", {
@@ -381,9 +376,7 @@ describe("the drill-down", () => {
   it("links a figure to the pages it was read from", async () => {
     renderShell("/rank");
     await userEvent.click(
-      within(await rankingRow("Portugal")).getByRole("button", {
-        name: /show figures/i,
-      }),
+      within(await rankingRow("Portugal")).getByRole("button"),
     );
 
     const figures = await screen.findByRole("table", {
@@ -402,9 +395,7 @@ describe("the drill-down", () => {
   it("refuses to link a citation whose scheme would run something", async () => {
     renderShell("/rank");
     await userEvent.click(
-      within(await rankingRow("Portugal")).getByRole("button", {
-        name: /show figures/i,
-      }),
+      within(await rankingRow("Portugal")).getByRole("button"),
     );
 
     const figures = await screen.findByRole("table", {
@@ -422,7 +413,9 @@ describe("the drill-down", () => {
     const row = await rankingRow("Portugal");
 
     await userEvent.click(
-      within(row).getByRole("button", { name: /show figures/i }),
+      // The candidate's name is the toggle: the whole row opens, and this is what a
+      // keyboard reaches.
+      within(row).getByRole("button"),
     );
 
     const outside = await screen.findByRole("table", {
@@ -440,10 +433,12 @@ describe("the drill-down", () => {
     const row = await rankingRow("Portugal");
 
     await userEvent.click(
-      within(row).getByRole("button", { name: /show figures/i }),
+      // The candidate's name is the toggle: the whole row opens, and this is what a
+      // keyboard reaches.
+      within(row).getByRole("button"),
     );
     await userEvent.click(
-      within(row).getByRole("button", { name: /hide figures/i }),
+      within(row).getByRole("button"),
     );
 
     expect(
@@ -458,13 +453,15 @@ describe("the drill-down", () => {
     renderShell("/rank");
     const row = await rankingRow("Portugal");
     await userEvent.click(
-      within(row).getByRole("button", { name: /show figures/i }),
+      // The candidate's name is the toggle: the whole row opens, and this is what a
+      // keyboard reaches.
+      within(row).getByRole("button"),
     );
     expect(
       await screen.findByRole("table", { name: /every stored value/i }),
     ).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("radio", { name: "city" }));
+    await userEvent.click(screen.getByRole("button", { name: "City" }));
 
     await waitFor(() =>
       expect(
@@ -477,7 +474,9 @@ describe("the drill-down", () => {
     renderShell("/rank");
     const row = await rankingRow("Portugal");
     await userEvent.click(
-      within(row).getByRole("button", { name: /show figures/i }),
+      // The candidate's name is the toggle: the whole row opens, and this is what a
+      // keyboard reaches.
+      within(row).getByRole("button"),
     );
     expect(
       await screen.findByRole("table", { name: /every stored value/i }),
@@ -500,7 +499,9 @@ describe("the drill-down", () => {
     const row = await rankingRow("Estonia");
 
     await userEvent.click(
-      within(row).getByRole("button", { name: /show figures/i }),
+      // The candidate's name is the toggle: the whole row opens, and this is what a
+      // keyboard reaches.
+      within(row).getByRole("button"),
     );
 
     expect(
@@ -570,7 +571,9 @@ describe("what a stored figure looks like, whatever its type", () => {
     const row = await rankingRow("Portugal");
 
     await userEvent.click(
-      within(row).getByRole("button", { name: /show figures/i }),
+      // The candidate's name is the toggle: the whole row opens, and this is what a
+      // keyboard reaches.
+      within(row).getByRole("button"),
     );
 
     const table = await screen.findByRole("table", {
@@ -594,7 +597,9 @@ describe("what a stored figure looks like, whatever its type", () => {
     const row = await rankingRow("Portugal");
 
     await userEvent.click(
-      within(row).getByRole("button", { name: /show figures/i }),
+      // The candidate's name is the toggle: the whole row opens, and this is what a
+      // keyboard reaches.
+      within(row).getByRole("button"),
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -615,7 +620,9 @@ describe("what a stored figure looks like, whatever its type", () => {
     const row = await rankingRow("Portugal");
 
     await userEvent.click(
-      within(row).getByRole("button", { name: /show figures/i }),
+      // The candidate's name is the toggle: the whole row opens, and this is what a
+      // keyboard reaches.
+      within(row).getByRole("button"),
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -653,7 +660,9 @@ describe("what a stored figure looks like, whatever its type", () => {
     const row = await rankingRow("Portugal");
 
     await userEvent.click(
-      within(row).getByRole("button", { name: /show figures/i }),
+      // The candidate's name is the toggle: the whole row opens, and this is what a
+      // keyboard reaches.
+      within(row).getByRole("button"),
     );
 
     const table = await screen.findByRole("table", {

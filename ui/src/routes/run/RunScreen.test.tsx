@@ -17,7 +17,7 @@ const BASE = "/v1";
 
 async function estimate() {
   await userEvent.click(
-    await screen.findByRole("button", { name: /estimate a run/i }),
+    await screen.findByRole("button", { name: /estimate an acquisition/i }),
   );
 }
 
@@ -28,7 +28,7 @@ describe("estimating a run", () => {
     await estimate();
 
     expect(
-      await screen.findByText(/what this run would do/i),
+      await screen.findByText(/what this acquisition would do/i),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("table", { name: /per source/i }),
@@ -41,7 +41,7 @@ describe("estimating a run", () => {
 
     await estimate();
 
-    await screen.findByText(/what this run would do/i);
+    await screen.findByText(/what this acquisition would do/i);
     expect(screen.queryByText(/a ceiling, not a forecast/i)).not.toBeInTheDocument();
   });
 
@@ -55,7 +55,7 @@ describe("estimating a run", () => {
 
     await estimate();
 
-    await screen.findByText(/what this run would do/i);
+    await screen.findByText(/what this acquisition would do/i);
     // The money, which is the only figure on this plan that is not also a count of items.
     expect(screen.getByText(/2\.10/)).toBeInTheDocument();
     expect(
@@ -77,7 +77,7 @@ describe("estimating a run", () => {
 
     expect(started).toEqual([]);
     expect(
-      screen.getByRole("button", { name: /start this run/i }),
+      screen.getByRole("button", { name: /start this acquisition/i }),
     ).toBeInTheDocument();
   });
 
@@ -104,11 +104,11 @@ describe("running and retrying", () => {
     await estimate();
 
     await userEvent.click(
-      screen.getByRole("button", { name: /start this run/i }),
+      screen.getByRole("button", { name: /start this acquisition/i }),
     );
 
     expect(
-      await screen.findByRole("heading", { name: /run 8/i }),
+      await screen.findByRole("heading", { name: /acquisition 8/i }),
     ).toBeInTheDocument();
     const failures = screen.getByRole("table", { name: /what went wrong/i });
     expect(
@@ -130,7 +130,7 @@ describe("running and retrying", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this run/i }),
+      screen.getByRole("button", { name: /start this acquisition/i }),
     );
 
     await userEvent.click(
@@ -139,7 +139,7 @@ describe("running and retrying", () => {
 
     expect(retried).toEqual([8]);
     expect(
-      await screen.findByRole("heading", { name: /run 12/i }),
+      await screen.findByRole("heading", { name: /acquisition 12/i }),
     ).toBeInTheDocument();
   });
 
@@ -160,11 +160,11 @@ describe("running and retrying", () => {
     await estimate();
 
     await userEvent.click(
-      screen.getByRole("button", { name: /start this run/i }),
+      screen.getByRole("button", { name: /start this acquisition/i }),
     );
 
     expect(
-      await screen.findByText(/nothing failed in this run/i),
+      await screen.findByText(/nothing failed in this acquisition/i),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /retry everything that failed/i }),
@@ -184,9 +184,9 @@ describe("what nobody answered", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this run/i }),
+      screen.getByRole("button", { name: /start this acquisition/i }),
     );
-    return await screen.findByRole("heading", { name: /run 8/i });
+    return await screen.findByRole("heading", { name: /acquisition 8/i });
   }
 
   it("counts them beside what answered and what failed", async () => {
@@ -232,7 +232,7 @@ describe("what nobody answered", () => {
 
     expect(asked).toEqual([{ run: 8, items: "unanswered" }]);
     expect(
-      await screen.findByRole("heading", { name: /run 14/i }),
+      await screen.findByRole("heading", { name: /acquisition 14/i }),
     ).toBeInTheDocument();
   });
 
@@ -306,7 +306,7 @@ describe("the run history", () => {
     await userEvent.click(within(row).getByRole("button", { name: /open/i }));
 
     expect(
-      await screen.findByRole("heading", { name: /run 7/i }),
+      await screen.findByRole("heading", { name: /acquisition 7/i }),
     ).toBeInTheDocument();
   });
 
@@ -340,10 +340,10 @@ describe("when there is nothing to show", () => {
     renderShell("/acquire");
 
     expect(
-      await screen.findByText(/choose a level to plan a run/i),
+      await screen.findByText(/choose a level to plan an acquisition/i),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /estimate a run/i }),
+      screen.queryByRole("button", { name: /estimate an acquisition/i }),
     ).toBeNull();
   });
 
@@ -356,7 +356,7 @@ describe("when there is nothing to show", () => {
     renderShell("/acquire");
 
     expect(
-      await screen.findByText(/no run has been started yet/i),
+      await screen.findByText(/no acquisition has been started yet/i),
     ).toBeInTheDocument();
   });
 
@@ -378,7 +378,7 @@ describe("when there is nothing to show", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this run/i }),
+      screen.getByRole("button", { name: /start this acquisition/i }),
     );
 
     await userEvent.click(
@@ -398,9 +398,9 @@ describe("a run's progress", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this run/i }),
+      screen.getByRole("button", { name: /start this acquisition/i }),
     );
-    await screen.findByRole("heading", { name: /run 8/i });
+    await screen.findByRole("heading", { name: /acquisition 8/i });
 
     expect(
       screen.getByRole("img", {
@@ -419,9 +419,9 @@ describe("re-asking about part of a run", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this run/i }),
+      screen.getByRole("button", { name: /start this acquisition/i }),
     );
-    await screen.findByRole("heading", { name: /run 8/i });
+    await screen.findByRole("heading", { name: /acquisition 8/i });
   }
 
   it("groups failures by the source that refused", async () => {
@@ -587,9 +587,9 @@ describe("picking out individual items", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this run/i }),
+      screen.getByRole("button", { name: /start this acquisition/i }),
     );
-    await screen.findByRole("heading", { name: /run 8/i });
+    await screen.findByRole("heading", { name: /acquisition 8/i });
     return within(
       await screen.findByRole("region", { name: /what failed, by source/i }),
     );
@@ -667,9 +667,9 @@ describe("picking out individual items", () => {
         renderShell("/acquire");
         await estimate();
         await userEvent.click(
-          screen.getByRole("button", { name: /start this run/i }),
+          screen.getByRole("button", { name: /start this acquisition/i }),
         );
-        await screen.findByRole("heading", { name: /run 8/i });
+        await screen.findByRole("heading", { name: /acquisition 8/i });
         return screen.findByRole("region", {
           name: /attributes nobody answered/i,
         });

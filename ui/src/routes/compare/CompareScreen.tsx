@@ -30,9 +30,15 @@ export function CompareScreen({ route }: { route: RouteDefinition }) {
 
   return (
     <section className="screen" aria-labelledby="screen-heading">
-      <h2 id="screen-heading" className="screen__heading">
-        {route.label}
-      </h2>
+      <header className="screen__header">
+        <h2 id="screen-heading" className="screen__heading">
+          {route.label}
+        </h2>
+        <p className="screen__summary">
+          One focus candidate against the ones you compare it with. Differences
+          are per pillar, in score points, never averaged into one verdict.
+        </p>
+      </header>
       {/* Keyed by the selection (P54). **A comparison never mixes levels** (`reqs.md`), and
           the focus and comparators are candidate ids at one level, so they mean nothing at
           another: keeping them across a switch re-asked for `level=city&focus=country.…`,

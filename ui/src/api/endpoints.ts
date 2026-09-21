@@ -53,10 +53,12 @@ export function fetchCriteriaSets(
 }
 
 export function fetchCandidates(
-  level: string,
+  level?: string,
   options?: RequestOptions,
 ): Promise<{ items: Candidate[] }> {
-  return getJson("/candidates", { level }, options);
+  // Omitted rather than sent empty: `?level=` is a filter for a level named "", which is not
+  // the same request as "every candidate".
+  return getJson("/candidates", level === undefined ? {} : { level }, options);
 }
 
 export function fetchRanking(

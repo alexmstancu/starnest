@@ -60,7 +60,7 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
             value={earlier ?? ""}
             onChange={(event) => setEarlier(runIdFrom(event.target.value))}
           >
-            <option value="">Choose a run…</option>
+            <option value="">Choose an acquisition…</option>
             {runs.map((run) => (
               <option key={run.id} value={run.id}>
                 {labelFor(run)}
@@ -78,7 +78,7 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
             value={later ?? ""}
             onChange={(event) => setLater(runIdFrom(event.target.value))}
           >
-            <option value="">Choose a run…</option>
+            <option value="">Choose an acquisition…</option>
             {runs.map((run) => (
               <option key={run.id} value={run.id}>
                 {labelFor(run)}
@@ -163,7 +163,7 @@ function chipFor(change: string): string {
 }
 
 function labelFor(run: Run): string {
-  return `Run ${run.id} — ${formatDateTime(run.started_at)}`;
+  return `Acquisition ${run.id} — ${formatDateTime(run.started_at)}`;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

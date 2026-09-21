@@ -4,14 +4,23 @@ import { describe, expect, it } from "vitest";
 import { renderShell } from "../../../testing/renderShell";
 
 /**
- * Making, renaming and discarding a set of priorities.
+ * Making, using, renaming, copying and discarding a set of priorities.
  *
  * **A new set is empty, and the screen says so.** Copying another set's weights would be
  * deciding for the user; asking for a copy is a separate operation (`reqs.md` Q168).
+ *
+ * **The stage is a list with four verbs, not four forms.** These tests reach a set by its
+ * name and then press the verb, which is how it is used -- and which is why they no longer
+ * care where on the row the button sits.
  */
 
 async function panel() {
-  return within(await screen.findByRole("region", { name: "Criteria sets" }));
+  return within(await screen.findByRole("region", { name: /^criteria set/i }));
+}
+
+/** One set's row, found by what the set is called. */
+async function row(name: string) {
+  return within(await screen.findByRole("listitem", { name }));
 }
 
 function sidebarSets(): HTMLSelectElement {
@@ -20,11 +29,11 @@ function sidebarSets(): HTMLSelectElement {
   });
 }
 
-async function create(id: string, name: string) {
+/** The design asks for a name; the identifier is derived from it (`setIdentifier.ts`). */
+async function create(name: string) {
   const user = userEvent.setup();
   const sets = await panel();
-  await user.type(sets.getByRole("textbox", { name: "Identifier" }), id);
-  await user.type(sets.getByRole("textbox", { name: "Name" }), name);
+  await user.type(sets.getByRole("textbox", { name: /name a new set/i }), name);
   await user.click(sets.getByRole("button", { name: "Create set" }));
 }
 
@@ -32,7 +41,7 @@ describe("the criteria sets panel", () => {
   it("creates a set, selects it, and shows that it holds nothing yet", async () => {
     renderShell("/configure");
 
-    await create("partner", "Partner");
+    await create("Partner");
 
     await waitFor(() => expect(sidebarSets()).toHaveValue("partner"));
     expect(
@@ -43,29 +52,76 @@ describe("the criteria sets panel", () => {
   it("refuses an identifier that is already taken, rather than overwriting the set", async () => {
     renderShell("/configure");
 
-    await create("default", "Another default");
+    // "Default" derives `default`, which the shipped set already holds.
+    await create("Default");
 
     const sets = await panel();
     expect(await sets.findByText(/already exists/)).toBeInTheDocument();
     expect(sidebarSets()).toHaveValue("default");
   });
 
-  it("renames the selected set, and the sidebar follows", async () => {
+  it("renames a set in place, and the sidebar follows", async () => {
     const user = userEvent.setup();
     renderShell("/configure");
-    const sets = await panel();
 
-    await user.type(
-      await sets.findByRole("textbox", { name: /Rename Default/ }),
-      "Alex",
-    );
-    await user.click(sets.getByRole("button", { name: "Rename" }));
+    await user.click((await row("Default")).getByRole("button", { name: "Rename" }));
+    const draft = (await row("Default")).getByRole("textbox", {
+      name: /new name for Default/i,
+    });
+    await user.clear(draft);
+    await user.type(draft, "Alex");
+    await user.click((await row("Default")).getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
       expect(
         within(sidebarSets()).getByRole("option", { name: "Alex" }),
       ).toBeInTheDocument(),
     );
+  });
+
+  it("leaves the name alone when a rename is cancelled", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+
+    await user.click((await row("Default")).getByRole("button", { name: "Rename" }));
+    await user.click((await row("Default")).getByRole("button", { name: "Cancel" }));
+
+    expect(
+      (await row("Default")).getByRole("button", { name: "Rename" }),
+    ).toBeInTheDocument();
+  });
+
+  it("switches which set is in use", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    // The selection is adopted a render after the sets arrive, so wait rather than assuming
+    // the two happen together.
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+
+    await user.click((await row("Remote only")).getByRole("button", { name: "Use" }));
+
+    await waitFor(() => expect(sidebarSets()).toHaveValue("remote-only"));
+  });
+
+  /**
+   * **The four slots never move.** Unavailable is drawn as unavailable rather than as absent:
+   * a hole would shift every other button one place left, and a button that moves is one you
+   * have to find again.
+   */
+  it("keeps the verb in the same place on every row, available or not", async () => {
+    renderShell("/configure");
+    // "In use" appears once the shell has adopted a selection, a render after the sets land.
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+
+    const inUse = await row("Default");
+    expect(inUse.getByRole("button", { name: "In use" })).toBeDisabled();
+    const other = await row("Remote only");
+    expect(other.getByRole("button", { name: "Use" })).toBeEnabled();
+
+    for (const verb of ["Rename", "Duplicate", "Delete"]) {
+      expect(inUse.getByRole("button", { name: verb })).toBeInTheDocument();
+      expect(other.getByRole("button", { name: verb })).toBeInTheDocument();
+    }
   });
 
   it("moves the selection to a surviving set when the selected one is discarded", async () => {
@@ -75,21 +131,19 @@ describe("the criteria sets panel", () => {
     // there was no Try again to press either.
     const user = userEvent.setup();
     renderShell("/configure");
-    const sets = await panel();
-    expect(sidebarSets()).toHaveValue("default");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
 
-    await user.click(
-      await sets.findByRole("button", { name: "Discard Default" }),
-    );
+    await user.click((await row("Default")).getByRole("button", { name: "Delete" }));
 
     // **Asserted through the panel, not the `<select>`.** A select whose value matches no
     // option falls back to the first one in jsdom, so `toHaveValue` passes whatever the
     // application believes -- the first version of this test passed against the bug. The
-    // discard button is labelled with the *selected* set, so this fails unless the selection
-    // itself moved.
-    expect(
-      await sets.findByRole("button", { name: "Discard Remote only" }),
-    ).toBeInTheDocument();
+    // surviving set becoming the one in use is what fails unless the selection itself moved.
+    await waitFor(async () =>
+      expect(
+        (await row("Remote only")).getByRole("button", { name: "In use" }),
+      ).toBeInTheDocument(),
+    );
     // The screen settles on the surviving set rather than on an error. A request for the
     // deleted id may already be in flight when it goes, so what matters is where this ends up.
     await waitFor(() =>
@@ -100,11 +154,8 @@ describe("the criteria sets panel", () => {
   it("discards a set, and it leaves the sidebar", async () => {
     const user = userEvent.setup();
     renderShell("/configure");
-    const sets = await panel();
 
-    await user.click(
-      await sets.findByRole("button", { name: "Discard Default" }),
-    );
+    await user.click((await row("Default")).getByRole("button", { name: "Delete" }));
 
     await waitFor(() =>
       expect(
@@ -117,26 +168,17 @@ describe("the criteria sets panel", () => {
    * UX review J. `POST /criteria-sets/{id}/duplicate` was served and never called, so the
    * only way to try an idea out was to edit the set in place and lose what was there.
    */
-  it("duplicates a set as a full copy, not an empty one", async () => {
+  it("duplicates a set as a full copy, in one press", async () => {
     const user = userEvent.setup();
     renderShell("/configure");
-    const sets = await panel();
 
-    await user.type(
-      await sets.findByRole("textbox", {
-        name: /identifier for a copy of Default/i,
-      }),
-      "experiment",
+    await user.click(
+      (await row("Default")).getByRole("button", { name: "Duplicate" }),
     );
-    await user.type(
-      sets.getByRole("textbox", { name: /name for the copy/i }),
-      "Experiment",
-    );
-    await user.click(sets.getByRole("button", { name: /duplicate default/i }));
 
     await waitFor(() =>
       expect(
-        within(sidebarSets()).getByRole("option", { name: "Experiment" }),
+        within(sidebarSets()).getByRole("option", { name: "Default copy" }),
       ).toBeInTheDocument(),
     );
   });
@@ -145,74 +187,22 @@ describe("the criteria sets panel", () => {
   it("selects the copy, not the set it was copied from", async () => {
     const user = userEvent.setup();
     renderShell("/configure");
-    const sets = await panel();
 
-    await user.type(
-      await sets.findByRole("textbox", {
-        name: /identifier for a copy of Default/i,
-      }),
-      "experiment",
+    await user.click(
+      (await row("Default")).getByRole("button", { name: "Duplicate" }),
     );
-    await user.type(
-      sets.getByRole("textbox", { name: /name for the copy/i }),
-      "Experiment",
-    );
-    await user.click(sets.getByRole("button", { name: /duplicate default/i }));
 
-    await waitFor(() => expect(sidebarSets()).toHaveValue("experiment"));
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default_copy"));
   });
 
-  it("asks for both an identifier and a name before it will duplicate anything", async () => {
-    const user = userEvent.setup();
-    renderShell("/configure");
-    const sets = await panel();
-
-    expect(
-      await sets.findByRole("button", { name: /duplicate default/i }),
-    ).toBeDisabled();
-    await user.type(
-      await sets.findByRole("textbox", {
-        name: /identifier for a copy of Default/i,
-      }),
-      "experiment",
-    );
-    expect(
-      sets.getByRole("button", { name: /duplicate default/i }),
-    ).toBeDisabled();
-  });
-
-  it("refuses a copy whose identifier is already taken, and says so", async () => {
-    const user = userEvent.setup();
-    renderShell("/configure");
-    const sets = await panel();
-
-    await user.type(
-      await sets.findByRole("textbox", {
-        name: /identifier for a copy of Default/i,
-      }),
-      "remote-only",
-    );
-    await user.type(
-      sets.getByRole("textbox", { name: /name for the copy/i }),
-      "Clash",
-    );
-    await user.click(sets.getByRole("button", { name: /duplicate default/i }));
-
-    expect(await sets.findByRole("alert")).toHaveTextContent(
-      "criteria_set_exists",
-    );
-  });
-
-  it("asks for both an identifier and a name before it will create anything", async () => {
+  it("asks for a name before it will create anything", async () => {
     const user = userEvent.setup();
     renderShell("/configure");
     const sets = await panel();
 
     expect(sets.getByRole("button", { name: "Create set" })).toBeDisabled();
-    await user.type(
-      sets.getByRole("textbox", { name: "Identifier" }),
-      "partner",
-    );
+    // Punctuation alone derives no identifier, so it is still not a name.
+    await user.type(sets.getByRole("textbox", { name: /name a new set/i }), "!!");
     expect(sets.getByRole("button", { name: "Create set" })).toBeDisabled();
   });
 });

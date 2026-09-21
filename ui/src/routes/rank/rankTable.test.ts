@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  PILLAR_CHART,
   confidenceBands,
   confidenceLabel,
   coverageBar,
@@ -97,37 +98,76 @@ describe("the pillar chart", () => {
     ]);
   });
 
-  it("draws an unscored pillar full height in its own tone, never omitted", () => {
+  it("draws an unscored pillar full height and hatched, never omitted", () => {
     const [, family] = pillarBars(roster);
-    expect(family?.tone).toBe("none");
-    expect(family?.height).toBe("26");
-    expect(family?.title).toBe("family: no score");
+    // No ramp colour is the signal for "nothing was stored"; the chart hatches it.
+    expect(family?.fill).toBeNull();
+    expect(family?.height).toBe(PILLAR_CHART.height);
+    expect(family?.label).toBe("");
+    expect(family?.title).toBe("family: no value stored");
   });
 
-  it("gives a very low score a visible stub rather than a hairline", () => {
-    const [, , housing] = pillarBars(roster);
-    // 20% of 26 would be 5.2; the floor of 8% keeps it distinguishable from absent.
-    expect(Number(housing?.height)).toBeGreaterThanOrEqual(
-      Number(housing?.height),
+  /**
+   * The lowest score still has a body. A bar one pixel tall is indistinguishable from a
+   * missing one, and those two mean opposite things.
+   */
+  it("gives the lowest score a bar with a body rather than a hairline", () => {
+    const [lowest] = pillarBars([
+      { pillar: "x", score: 1, weight: 1, contribution: 0 },
+    ]);
+    expect(lowest?.height).toBe(19);
+    expect(lowest?.label).toBe("1");
+  });
+
+  /** 96 and above fills the band; 40 and below sits at the floor. */
+  it("scales a bar across the range the scores actually occupy", () => {
+    const [top] = pillarBars([
+      { pillar: "x", score: 96, weight: 1, contribution: 0 },
+    ]);
+    expect(top?.height).toBe(PILLAR_CHART.height);
+    const [middle] = pillarBars([
+      { pillar: "x", score: 68, weight: 1, contribution: 0 },
+    ]);
+    expect(middle?.height).toBeGreaterThan(19);
+    expect(middle?.height).toBeLessThan(PILLAR_CHART.height);
+  });
+
+  it("ramps a bar's colour from amber through to teal as it scores", () => {
+    const [low] = pillarBars([
+      { pillar: "a", score: 40, weight: 1, contribution: 1 },
+    ]);
+    const [high] = pillarBars([
+      { pillar: "b", score: 96, weight: 1, contribution: 1 },
+    ]);
+    // Amber at the floor: red channel far above blue.
+    const amber = low!.fill!.bottom.match(/\d+/g)!.map(Number);
+    expect(amber[0]).toBeGreaterThan(amber[2]!);
+    // Teal at the ceiling: blue and green far above red.
+    const teal = high!.fill!.bottom.match(/\d+/g)!.map(Number);
+    expect(teal[1]).toBeGreaterThan(teal[0]!);
+    expect(teal[2]).toBeGreaterThan(teal[0]!);
+  });
+
+  /** Eleven bars in 522px with 2px gutters leaves 45.6px each, and they must not overlap. */
+  it("lays the bars out across the chart without overlapping", () => {
+    const bars = pillarBars(
+      Array.from({ length: 11 }, (_, index) => ({
+        pillar: `p${index}`,
+        score: 70,
+        weight: 1,
+        contribution: 1,
+      })),
     );
-    expect(
-      Number(
-        pillarBars([{ pillar: "x", score: 1, weight: 1, contribution: 0 }])[0]
-          ?.height,
-      ),
-    ).toBeCloseTo(2.08, 2);
+    expect(bars[0]?.x).toBe(0);
+    const last = bars[10]!;
+    expect(last.x + last.width).toBeCloseTo(PILLAR_CHART.width, 6);
+    expect(bars[1]!.x - (bars[0]!.x + bars[0]!.width)).toBeCloseTo(
+      PILLAR_CHART.gap,
+      6,
+    );
   });
 
-  it("tones a bar by what it scored", () => {
-    const tones = pillarBars([
-      { pillar: "a", score: 90, weight: 1, contribution: 1 },
-      { pillar: "b", score: 60, weight: 1, contribution: 1 },
-      { pillar: "c", score: 10, weight: 1, contribution: 1 },
-    ]).map((b) => b.tone);
-    expect(tones).toEqual(["good", "fair", "weak"]);
-  });
-
-  it("titles each bar, because a 4px stripe explains nothing on its own", () => {
+  it("titles each bar, because a stripe of colour explains nothing on its own", () => {
     expect(pillarBars(roster)[0]?.title).toBe("economics: 80, weight 16.3%");
   });
 
@@ -140,7 +180,9 @@ describe("the pillar chart", () => {
 describe("the difference from home", () => {
   it("signs the number the way the design does", () => {
     expect(formatDelta(11)).toBe("+11");
-    expect(formatDelta(-8)).toBe("-8");
+    // U+2212, not a hyphen: a hyphen is narrower than a plus at the same size, so a column
+    // of signed deltas would not line up on it.
+    expect(formatDelta(-8)).toBe("\u22128");
   });
 
   it("says nothing rather than zero when there is nothing to compare against", () => {

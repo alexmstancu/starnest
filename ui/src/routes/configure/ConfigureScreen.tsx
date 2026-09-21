@@ -32,56 +32,80 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
 
   return (
     <section className="screen screen--configure" aria-labelledby="screen-heading">
-      <h2 id="screen-heading" className="screen__heading">
-        {route.label}
-      </h2>
-
-      {/* At the top, because it is the answer to "what have I just done?" -- a question
-          asked before scrolling to look for the thing that was done. */}
-      <RecentChanges history={history} />
-
-      <HouseholdPanel />
-      <SettingsPanel />
-      <CriteriaSetsPanel />
-
-      {editor.status === "idle" && (
-        <p className="screen__note">
-          Choose a criteria set to see its criteria.
+      <header className="screen__header">
+        <h2 id="screen-heading" className="screen__heading">
+          {route.label}
+        </h2>
+        <p className="screen__summary">
+          Everything that is a judgement rather than a measurement. Nothing on
+          this screen computes.
         </p>
-      )}
-      {editor.status === "loading" && <p className="screen__note">Loading…</p>}
-      {editor.status === "error" && (
-        <ErrorNotice error={editor.error} onRetry={editor.reload} />
-      )}
+      </header>
 
-      {editor.status === "ready" && editor.criteriaSet !== null && (
-        <>
-          {/* Keyed by the set, because both panels hold what the set says -- its pillar
-              weights, the rules it enforces -- as state they then edit. Switching sets has to
-              start that state again from the new set rather than carry the old set's answers
-              into it. */}
-          <PillarWeightsPanel
-            key={editor.criteriaSet.id}
-            criteriaSet={editor.criteriaSet}
-          />
-          <CriteriaPanel editor={editor} />
-          {levelId !== null && (
+      <div className="configure">
+        {/* **The stages are a sequence, and their numbers come from this order.** The
+            counter lives on `.configure__stages`, so moving a card moves its numeral with
+            it and the two cannot disagree. The order is the order the decisions depend on
+            each other: which set you are editing, who is moving, what matters and how much,
+            what rules out, which source wins, and what an acquisition may spend. */}
+        <div className="configure__stages">
+          <CriteriaSetsPanel />
+          <HouseholdPanel />
+
+          {editor.status === "idle" && (
+            <p className="screen__note">
+              Choose a criteria set to see its criteria.
+            </p>
+          )}
+          {editor.status === "loading" && <p className="screen__note">Loading…</p>}
+          {editor.status === "error" && (
+            <ErrorNotice error={editor.error} onRetry={editor.reload} />
+          )}
+
+          {editor.status === "ready" && editor.criteriaSet !== null && (
             <>
-              <RulesPanel
-                key={`${editor.criteriaSet.id}-${levelId}`}
+              {/* Keyed by the set, because both panels hold what the set says -- its pillar
+                  weights, the rules it enforces -- as state they then edit. Switching sets
+                  has to start that state again from the new set rather than carry the old
+                  set's answers into it. */}
+              <PillarWeightsPanel
+                key={editor.criteriaSet.id}
                 criteriaSet={editor.criteriaSet}
-                levelId={levelId}
-              />
-              {/* Beside the gates, because that is where a gate is enforced and released: a
-                  proposal is an answer to one of the rules listed above it. Its own tab would
-                  give a feature that produces a handful of rows the same weight as Rank. */}
-              <ProposalsPanel key={`proposals-${levelId}`} levelId={levelId} />
+              >
+                {/* **Inside the weights, not beside them.** A criterion's weight is a share
+                    of its pillar's, so the two are one decision at two depths -- which is
+                    how the design draws it, and why opening a pillar is what reveals the
+                    attributes under it. */}
+                <CriteriaPanel editor={editor} />
+              </PillarWeightsPanel>
+
+              {levelId !== null && (
+                <RulesPanel
+                  key={`${editor.criteriaSet.id}-${levelId}`}
+                  criteriaSet={editor.criteriaSet}
+                  levelId={levelId}
+                >
+                  {/* Beside the gates, because that is where a gate is enforced and
+                      released: a proposal is an answer to one of the rules listed above
+                      it. Its own stage would give a feature that produces a handful of
+                      rows the same weight as the household. */}
+                  <ProposalsPanel key={`proposals-${levelId}`} levelId={levelId} />
+                </RulesPanel>
+              )}
             </>
           )}
-        </>
-      )}
 
-      <DataSourcesPanel />
+          <DataSourcesPanel />
+          <SettingsPanel />
+        </div>
+
+        {/* **It never scrolls away.** The only question worth asking while changing things
+            is "what have I just done?", and an answer that has to be scrolled back to is an
+            answer nobody reads. */}
+        <aside className="configure__rail">
+          <RecentChanges history={history} />
+        </aside>
+      </div>
     </section>
   );
 }

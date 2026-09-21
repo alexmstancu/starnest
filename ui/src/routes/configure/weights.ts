@@ -63,3 +63,48 @@ export function totalsByPillar(
     balanced: Math.abs(total - 100) < ROUNDING_SLACK,
   }));
 }
+
+/**
+ * The bounds the weight sliders run between.
+ *
+ * **A pillar's track stops at 40 and a criterion's at 60**, which is the design's judgement
+ * rather than a domain rule: eleven pillars share 100, so a track to 100 would spend
+ * three-fifths of its length on values that cannot occur while the others hold anything at
+ * all. Going past the ceiling is still possible -- the server rebalances and the reading
+ * shows it -- the track is just scaled to where the answers actually are.
+ */
+export const PILLAR_SLIDER = { min: 0, step: 0.5 } as const;
+export const CRITERION_SLIDER = { min: 0, step: 0.5 } as const;
+
+/**
+ * How high a weight slider's track runs, given how many weights share the 100.
+ *
+ * **The ceiling scales with the field, and never below what is legal.** The design draws a
+ * pillar track to 40, which is four and a half times an even share of eleven -- enough head
+ * room to express "this one matters much more" while keeping the resolution that makes 8 and
+ * 9 distinguishable. Four pillars sharing 100 need a taller track, and three of them need the
+ * whole hundred: a ceiling that clamps a weight the server would accept is a control that
+ * silently refuses a legal answer, which is worse than a coarse one.
+ */
+export function sliderCeiling(count: number, floor: number): number {
+  if (count <= 0) return 100;
+  const headroom = Math.ceil((100 / count) * 4.4);
+  return Math.min(100, Math.max(floor, headroom));
+}
+
+/** The head room the design gives a pillar track, and a criterion's within its pillar. */
+export const PILLAR_CEILING_FLOOR = 40;
+export const CRITERION_CEILING_FLOOR = 60;
+
+/**
+ * What a slider's position reads as beside it: one decimal, always.
+ *
+ * **A decimal that is always there is what makes the column line up.** A rebalance produces
+ * fractions -- 8.5, 7.2 -- so a reading that drops `.0` when a weight happens to be whole
+ * makes the numbers jump left and right as a slider moves, which reads as instability in
+ * the thing being measured rather than in the formatting.
+ */
+export function weightReading(typed: string): string {
+  const weight = weightFrom(typed);
+  return weight === null ? typed : `${weight.toFixed(1)}%`;
+}

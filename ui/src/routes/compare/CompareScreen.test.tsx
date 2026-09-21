@@ -66,7 +66,7 @@ describe("when the level changes underneath", () => {
       await screen.findByRole("table", { name: /every attribute/i }),
     ).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("radio", { name: "city" }));
+    await userEvent.click(screen.getByRole("button", { name: "City" }));
 
     expect(await screen.findByLabelText(/focus/i)).toHaveValue("");
     expect(

@@ -1,15 +1,22 @@
-import { useId, useState } from "react";
+import { useId } from "react";
+import { useSearchParams } from "react-router-dom";
+import { requestedSavedRanking } from "../../format/savedRanking";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { SavedRankingView } from "./SavedRankingView";
-import { describeSaved, detailOf } from "./savedRankings";
 import { useSavedRankings } from "./useSavedRankings";
 
 /**
- * Rankings kept on purpose, and the control that keeps one.
+ * Keeping a ranking, and looking at one that was kept.
  *
  * **`GET /rankings` computes and stores nothing.** That is what makes re-weighting instant,
  * and it is why saving has to be a deliberate act rather than a side effect of looking. The
  * live ranking moves under you as you change a weight; a saved one does not.
+ *
+ * **The list of what has been kept lives in the sidebar**, where the design puts it: a saved
+ * ranking is about the whole session rather than about the screen that happened to make one,
+ * and it has to be reachable from Configure while a weight is being moved. This screen owns
+ * the two things that are about the ranking in front of you -- saving it, and showing the one
+ * the sidebar opened.
  *
  * **Opening a saved ranking shows it. It does not restore it.** The design's prototype
  * treated a saved ranking as a weight vector to load back, which would overwrite whatever
@@ -28,13 +35,28 @@ export function SavedRankingsPanel({
   const headingId = useId();
   const noteId = useId();
   const saved = useSavedRankings(criteriaSetId, levelId);
-  const [open, setOpen] = useState<number | null>(null);
+
+  // **Which one is open lives in the address, not in a hook.** The sidebar lists the same
+  // saved rankings and links here with the one that was clicked, so "open" has to be
+  // something a link can say. It also survives a reload, which local state does not.
+  const [parameters, setParameters] = useSearchParams();
+  const open = requestedSavedRanking(parameters.get("saved"));
+  const close = () => {
+    const next = new URLSearchParams(parameters);
+    next.delete("saved");
+    setParameters(next, { replace: true });
+  };
 
   return (
     <section className="panel" aria-labelledby={headingId}>
       <h3 id={headingId} className="panel__heading">
-        Saved rankings
+        Save this ranking
       </h3>
+      <p className="panel__hint">
+        Nothing is kept until you save it. A saved ranking freezes the criteria
+        and the score scale it used, so it still means what it meant however the
+        weights move afterwards. Saved ones are listed in the sidebar.
+      </p>
 
       <div className="saved__save">
         <label className="field__label" htmlFor={noteId}>
@@ -62,36 +84,14 @@ export function SavedRankingsPanel({
         <ErrorNotice error={saved.error} onRetry={saved.reload} />
       )}
 
-      {saved.status === "loading" && <p className="screen__note">Loading…</p>}
-
-      {saved.status === "ready" && saved.saved.length === 0 && (
-        <p className="screen__note">
-          No ranking has been saved yet. The live ranking recomputes every time
-          a weight moves, so nothing is kept until you keep it.
-        </p>
+      {open !== null && (
+        <>
+          <button type="button" className="button" onClick={close}>
+            Close this saved ranking
+          </button>
+          <SavedRankingView evaluationId={open} />
+        </>
       )}
-
-      {saved.saved.length > 0 && (
-        <ul className="saved__list">
-          {saved.saved.map((entry) => (
-            <li key={entry.id} className="saved__entry">
-              <button
-                type="button"
-                className={
-                  open === entry.id ? "button button--current" : "button"
-                }
-                onClick={() => setOpen(open === entry.id ? null : entry.id)}
-              >
-                {open === entry.id ? "Hide" : "Open"}
-              </button>
-              <span className="saved__name">{describeSaved(entry)}</span>
-              <span className="saved__detail">{detailOf(entry)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {open !== null && <SavedRankingView evaluationId={open} />}
     </section>
   );
 }

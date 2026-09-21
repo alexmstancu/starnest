@@ -22,17 +22,23 @@ export function DataSourcesPanel() {
   const positions = positionsOf(sources.sources);
 
   return (
-    <section className="panel" aria-labelledby="data-sources-heading">
-      <h3 id="data-sources-heading" className="panel__heading">
-        Source priority
-      </h3>
-      <p className="panel__hint">
-        Which source wins when two answer the same attribute. A lower number
-        wins. Switching one off stops its figures being scored and stops a run
-        asking it — every figure it has already produced is kept, and comes
-        back if you switch it on again.
-      </p>
-
+    <section className="stage" aria-labelledby="data-sources-heading">
+      <header className="stage__head">
+        {/* The numeral is a CSS counter on `.stage__number`, so a stage cannot claim a
+            position it does not hold -- nothing fails when a hard-coded 4 sits fifth. */}
+        <span className="stage__number" aria-hidden="true" />
+        <div className="stage__titles">
+          <h3 id="data-sources-heading" className="stage__title">
+            Source priority
+          </h3>
+    <p className="stage__lead">
+            Which source wins when two answer the same attribute. A lower number
+            wins. Switching one off stops its figures being scored and stops a run
+            asking it — every figure it has already produced is kept, and comes
+            back if you switch it on again.
+          </p>
+        </div>
+      </header>
       {sources.error != null && (
         <ErrorNotice error={sources.error} onRetry={sources.reload} />
       )}

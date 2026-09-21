@@ -26,10 +26,18 @@ const LOADING = { status: "loading", data: null, error: null } as const;
 /**
  * `fetcher` must be stable across renders -- wrap it in `useCallback` -- because a new
  * function identity re-runs the request.
+ *
+ * `freshness` is for the case where something *elsewhere* has made the answer stale: pass a
+ * number that changes when it does, and the request is made again. **It is not part of the
+ * request** -- the URL is the fetcher's business -- so a caller that has nothing to say about
+ * staleness leaves it alone. Wrapping the fetcher to capture the number instead would work,
+ * and would be a dependency the fetcher does not read, which is the shape lint refuses and is
+ * right to.
  */
 export function useResource<Data>(
   fetcher: (signal: AbortSignal) => Promise<Data>,
   enabled = true,
+  freshness = 0,
 ): ResourceState<Data> {
   const [resource, setResource] = useState<Resource<Data>>(enabled ? LOADING : IDLE);
   const [attempt, setAttempt] = useState(0);
@@ -59,7 +67,7 @@ export function useResource<Data>(
       current = false;
       controller.abort();
     };
-  }, [fetcher, enabled, attempt]);
+  }, [fetcher, enabled, attempt, freshness]);
 
   const reload = useCallback(() => setAttempt((previous) => previous + 1), []);
 

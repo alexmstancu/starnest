@@ -1,27 +1,24 @@
 import { useCallback, useState } from "react";
-import { fetchEvaluations, saveEvaluation } from "../../api/endpoints";
-import { useResource } from "../../api/useResource";
-import { newestFirst } from "./savedRankings";
+import { saveEvaluation } from "../../api/endpoints";
+import { useSelection } from "../../shell/SelectionContext";
 
 /**
- * What the saved-rankings panel knows, kept out of its markup.
+ * What the saving panel knows, kept out of its markup.
  *
  * React's own answer -- a custom hook beside the component -- rather than the older
  * container/presentational split (`CLAUDE.md`).
+ *
+ * **It does not read the list.** The sidebar lists what has been saved; this only adds to it,
+ * and tells the shell that it did so the list can catch up.
  */
 export function useSavedRankings(
   criteriaSetId: string | null,
   levelId: string | null,
 ) {
-  const list = useResource(
-    useCallback((signal: AbortSignal) => fetchEvaluations({ signal }), []),
-  );
+  const { noteSavedRanking } = useSelection();
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<unknown>(null);
-
-  const saved =
-    list.resource.status === "ready" ? newestFirst(list.resource.data.items) : [];
 
   // A ranking is saved for a criteria set at a level, so with no selection there is nothing
   // to save -- not an empty one.
@@ -34,21 +31,20 @@ export function useSavedRankings(
     try {
       await saveEvaluation(criteriaSetId, levelId, note);
       setNote("");
-      // Re-read rather than pushing the answer onto the list: the server decides what a saved
-      // ranking is, including the moment it was computed.
-      list.reload();
+      // The server decides what a saved ranking is, including the moment it was computed, so
+      // the sidebar re-reads rather than being handed this answer to push onto its list.
+      noteSavedRanking();
     } catch (error) {
       setFailure(error);
     } finally {
       setSaving(false);
     }
-  }, [criteriaSetId, levelId, note, list]);
+  }, [criteriaSetId, levelId, note, noteSavedRanking]);
 
   return {
-    status: list.resource.status,
-    error: list.resource.status === "error" ? list.resource.error : failure,
-    reload: list.reload,
-    saved,
+    error: failure,
+    /** Clearing the failure is the retry: the save button is still there to press again. */
+    reload: () => setFailure(null),
     note,
     setNote,
     canSave,

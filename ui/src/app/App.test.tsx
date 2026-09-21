@@ -86,11 +86,19 @@ describe("the sidebar selectors", () => {
   it("offers a level per level record, without assuming there are two", async () => {
     renderShell("/rank");
 
-    const levels = await screen.findAllByRole("radio");
-    expect(levels.map((input) => (input as HTMLInputElement).value)).toEqual(["country", "city"]);
+    // Segmented buttons, as the design draws them: a choice between two named things, not
+    // the first of a longer list. `aria-pressed` is what says which one is current.
+    const group = await screen.findByRole("group", { name: "Level" });
+    const levels = within(group).getAllByRole("button");
+    expect(levels.map((button) => button.textContent)).toEqual(["Country", "City"]);
     // The default is adopted a render after the levels arrive, so wait for it rather than
     // assuming the two happen together.
-    await waitFor(() => expect(screen.getByRole("radio", { name: "country" })).toBeChecked());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Country" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
   });
 
   it("passes the chosen level to the screen and refetches the counts", async () => {
@@ -100,10 +108,11 @@ describe("the sidebar selectors", () => {
     const counts = within(await screen.findByRole("region", { name: /candidates/i }));
     await waitFor(() => expect(counts.getByText("Total").nextSibling).toHaveTextContent("4"));
 
-    await user.click(screen.getByRole("radio", { name: "city" }));
+    await user.click(screen.getByRole("button", { name: "City" }));
 
     const rank = within(screen.getByRole("region", { name: "Rank" }));
-    await waitFor(() => expect(rank.getByText("Level").nextSibling).toHaveTextContent("city"));
+    // Capitalised: the catalog ships ids, and a reader is shown a name.
+    await waitFor(() => expect(rank.getByText("Level").nextSibling).toHaveTextContent("City"));
     // Two city candidates in the mock, one of them insufficient_data.
     await waitFor(() => expect(counts.getByText("Total").nextSibling).toHaveTextContent("2"));
     expect(counts.getByText("Insufficient data").nextSibling).toHaveTextContent("1");
@@ -143,10 +152,10 @@ describe("the sidebar counts and last run", () => {
   it("summarises the most recent run and links to the history", async () => {
     renderShell("/rank");
 
-    const lastRun = within(await screen.findByRole("region", { name: /last run/i }));
+    const lastRun = within(await screen.findByRole("region", { name: /last acquisition/i }));
     await waitFor(() => expect(lastRun.getByText("Status").nextSibling).toHaveTextContent("completed"));
     expect(lastRun.getByText("Started").nextSibling).toHaveTextContent("29 Aug 2026, 18:02");
-    expect(lastRun.getByRole("link", { name: /run history/i })).toHaveAttribute("href", "/acquire");
+    expect(lastRun.getByRole("link", { name: /acquisition history/i })).toHaveAttribute("href", "/acquire");
   });
 
   it("says so plainly when no run has happened yet", async () => {
@@ -155,7 +164,7 @@ describe("the sidebar counts and last run", () => {
     );
     renderShell("/rank");
 
-    expect(await screen.findByText(/no data acquisition run yet/i)).toBeInTheDocument();
+    expect(await screen.findByText(/no acquisition yet/i)).toBeInTheDocument();
   });
 });
 

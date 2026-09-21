@@ -15,7 +15,7 @@ import { renderShell } from "../../../testing/renderShell";
  */
 
 async function panel() {
-  return within(await screen.findByRole("region", { name: "Settings" }));
+  return within(await screen.findByRole("region", { name: "Acquisition limits" }));
 }
 
 function field(name: string): HTMLInputElement {

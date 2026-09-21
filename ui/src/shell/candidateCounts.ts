@@ -39,3 +39,18 @@ export function tallyMatchStatus(results: readonly CandidateResult[], total: num
 
   return counts;
 }
+
+/**
+ * Which levels have a candidate at all.
+ *
+ * **This is what decides whether a level can be chosen**, and it is data rather than a name:
+ * v1 ranks countries because countries are what the catalog holds candidates for, not because
+ * the word "city" appears in a condition somewhere. The day city candidates are nominated the
+ * level offers itself, with no change here (`reqs.md` 3.1: no code may assume there are
+ * exactly two levels).
+ */
+export function levelsWithCandidates(
+  candidates: readonly { level: string }[],
+): Set<string> {
+  return new Set(candidates.map((candidate) => candidate.level));
+}

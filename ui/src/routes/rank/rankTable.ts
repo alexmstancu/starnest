@@ -113,27 +113,80 @@ export interface PillarScore {
 
 export interface PillarBar {
   pillar: string;
-  x: string;
-  width: string;
-  y: string;
-  height: string;
-  tone: Tone | "none";
+  /** Left edge and width in the chart's own pixel space, which is the design's 522px track. */
+  x: number;
+  width: number;
+  y: number;
+  height: number;
+  /** The score printed inside the bar, or empty where there is none to print. */
+  label: string;
+  /** The two ends of the bar's vertical ramp, or null for a pillar with no score. */
+  fill: { top: string; bottom: string } | null;
   title: string;
 }
 
-const CHART_HEIGHT = 26;
-const SHORTEST_VISIBLE = 8;
+/**
+ * The chart's coordinate space, which is the design's own: a 522px track 36px tall holding
+ * eleven bars two pixels apart.
+ */
+export const PILLAR_CHART = { width: 522, height: 36, columns: 11, gap: 2 } as const;
 
 /**
- * The eleven pillars as one small chart, in a 100 x 26 coordinate space.
+ * **The bars encode 40 to 96, not 0 to 100.** Scores across 32 countries occupy the middle of
+ * the range and nothing else: a bar scaled from zero would put every country in the same
+ * narrow band near the top, which is a chart that cannot be read. Clipping to the range the
+ * answers actually occupy is what makes the differences visible -- and the number is printed
+ * inside the bar, so nothing is lost to the reader who wants the figure rather than the shape.
+ */
+const READABLE_RANGE = { from: 40, to: 96 } as const;
+
+/** The shortest and tallest a scored bar is drawn, so even the lowest score has a body. */
+const BAR_HEIGHT = { shortest: 19, tallest: 36 } as const;
+
+/**
+ * Amber through pale teal to teal: one hue ramp with a warning at the bottom of it.
  *
- * **A pillar with no score is drawn full height in a flat tone**, not omitted and not drawn at
+ * **Three stops, interpolated, not three classes.** A pillar score is continuous, and
+ * bucketing it into three tones would draw 69 and 71 as different colours while drawing 71
+ * and 96 as the same one.
+ */
+const RAMP: readonly (readonly [number, number, number])[] = [
+  [253, 176, 34],
+  [110, 231, 183],
+  [45, 212, 191],
+];
+
+/** Where a score sits on the readable range, 0 at the bottom and 1 at the top. */
+function positionOf(score: number): number {
+  const { from, to } = READABLE_RANGE;
+  return Math.max(0, Math.min(1, (score - from) / (to - from)));
+}
+
+/**
+ * The ramp colour at a position, shifted by `lift` so a bar can be lighter at the top than at
+ * the bottom without needing a second ramp.
+ */
+function rampColour(position: number, lift: number): string {
+  const scaled = position * (RAMP.length - 1);
+  const lower = Math.min(RAMP.length - 2, Math.floor(scaled));
+  const within = scaled - lower;
+  const from = RAMP[lower]!;
+  const to = RAMP[lower + 1]!;
+  const channels = from.map((value, index) =>
+    Math.round(
+      Math.max(0, Math.min(255, value + (to[index]! - value) * within + lift)),
+    ),
+  );
+  return `rgb(${channels.join(",")})`;
+}
+
+/**
+ * The eleven pillars as one chart, in the design's 522 x 36 space.
+ *
+ * **A pillar with no score is drawn full height, hatched**, not omitted and not drawn at
  * zero. Omitting it would silently renumber the others -- the reader counts eleven bars and
- * reads the shape of a decision -- and zero would claim it measured badly. The design does the
- * same, with a hatch.
- *
- * A very low score still gets a visible stub, because a bar one pixel tall is
- * indistinguishable from a missing one, and those two mean opposite things.
+ * reads the shape of a decision -- and zero would claim it measured badly rather than that
+ * nobody measured it.
  */
 export function pillarBars(
   pillars: readonly PillarScore[] | null | undefined,
@@ -142,28 +195,55 @@ export function pillarBars(
   if (roster.length === 0) {
     return [];
   }
-  const slot = 100 / roster.length;
+  const { width, height, gap } = PILLAR_CHART;
+  const slot = (width - gap * (roster.length - 1)) / roster.length;
+
   return roster.map((pillar, index) => {
     const scored = typeof pillar.score === "number";
     const score = scored ? clampPercentage(pillar.score) : 0;
-    const height = scored ? Math.max(SHORTEST_VISIBLE, score) : 100;
-    const drawn = (height / 100) * CHART_HEIGHT;
+    const position = positionOf(score);
+    const drawn = scored
+      ? Math.round(
+          BAR_HEIGHT.shortest +
+            position * (BAR_HEIGHT.tallest - BAR_HEIGHT.shortest),
+        )
+      : height;
+
     return {
       pillar: pillar.pillar,
-      x: `${index * slot + slot * 0.1}%`,
-      width: `${slot * 0.8}%`,
-      y: String(CHART_HEIGHT - drawn),
-      height: String(drawn),
-      tone: !scored
-        ? "none"
-        : score >= 70
-          ? "good"
-          : score >= 50
-            ? "fair"
-            : "weak",
+      x: index * (slot + gap),
+      width: slot,
+      y: height - drawn,
+      height: drawn,
+      label: scored ? round(score) : "",
+      fill: scored
+        ? { top: rampColour(position, 16), bottom: rampColour(position, -12) }
+        : null,
       title: scored
         ? `${pillar.pillar}: ${round(score)}, weight ${pillar.weight.toFixed(1)}%`
-        : `${pillar.pillar}: no score`,
+        : `${pillar.pillar}: no value stored`,
+    };
+  });
+}
+
+/**
+ * The confidence split as three readings rather than one.
+ *
+ * **All three, always.** The column used to print the low share alone, which answered half of
+ * the question it raised: a candidate that is 5% low-confidence and one that is 5% low and 60%
+ * medium are not the same candidate, and only showing both makes that visible.
+ */
+export function confidenceReadings(
+  split: ConfidenceSplit | null | undefined,
+): { grade: string; reading: string; loud: boolean }[] {
+  if (!split) return [];
+  return (["high", "medium", "low"] as const).map((grade) => {
+    const share = split[grade] ?? 0;
+    return {
+      grade,
+      reading: `${grade} ${round(share)}%`,
+      // The share that carries most of the weight is the one worth reading first.
+      loud: share >= 50,
     };
   });
 }
@@ -173,7 +253,10 @@ export function formatDelta(delta: number | null | undefined): string {
   if (typeof delta !== "number" || Number.isNaN(delta)) {
     return "—";
   }
-  return delta > 0 ? `+${round(delta)}` : round(delta);
+  if (delta === 0) return "0";
+  // **U+2212, not a hyphen.** A hyphen is narrower than a plus at the same size, so a column
+  // of signed deltas does not line up on it -- and this screen is a column of signed deltas.
+  return delta > 0 ? `+${round(delta)}` : `\u2212${round(Math.abs(delta))}`;
 }
 
 /** Which way the difference goes, for the colour the design gives it. */

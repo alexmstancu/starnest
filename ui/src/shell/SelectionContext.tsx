@@ -25,6 +25,16 @@ export interface Selection {
   status: "loading" | "ready" | "error";
   error: unknown;
   reload: () => void;
+  /**
+   * Bumped whenever a ranking is saved.
+   *
+   * **The sidebar lists what Rank saves**, and the two are in different subtrees, so one has
+   * to be able to tell the other that the list has moved on. A counter rather than the list
+   * itself: what changed is "there is something new to read", and the server stays the
+   * authority on what that is.
+   */
+  savedRankingsVersion: number;
+  noteSavedRanking: () => void;
 }
 
 const SelectionContext = createContext<Selection | null>(null);
@@ -37,6 +47,11 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
 
   const [levelId, setLevelId] = useState<string | null>(null);
   const [criteriaSetId, setCriteriaSetId] = useState<string | null>(null);
+  const [savedRankingsVersion, setSavedRankingsVersion] = useState(0);
+  const noteSavedRanking = useCallback(
+    () => setSavedRankingsVersion((version) => version + 1),
+    [],
+  );
 
   const orderedLevels = useMemo(
     () => [...(levels.resource.data?.items ?? [])].sort((a, b) => a.depth_order - b.depth_order),
@@ -93,6 +108,8 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     criteriaSetId,
     selectLevel: setLevelId,
     selectCriteriaSet: setCriteriaSetId,
+    savedRankingsVersion,
+    noteSavedRanking,
     status: combineStatus(levels.resource.status, criteriaSets.resource.status),
     error: levels.resource.error ?? criteriaSets.resource.error,
     reload,

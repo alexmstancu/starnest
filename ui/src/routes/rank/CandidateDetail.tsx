@@ -259,8 +259,12 @@ function PillarContributions({
                 preserveAspectRatio="none"
                 aria-hidden="true"
               >
+                {/* The same ramp the row's bars use, so a pillar is the same colour
+                    wherever it appears. `fill` is an attribute, not a style, which is what
+                    lets a datum decide a colour without design leaving `styles.css`. */}
                 <rect
-                  className={`pillar-card__fill pillar-card__fill--${bars[at]?.tone ?? "none"}`}
+                  className="pillar-card__fill"
+                  fill={bars[at]?.fill?.bottom ?? "#eaecf0"}
                   width={
                     typeof pillar.score === "number" ? `${pillar.score}%` : "0%"
                   }

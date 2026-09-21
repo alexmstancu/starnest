@@ -251,8 +251,19 @@ const CITY_RESULTS: CandidateResult[] = [
   },
 ];
 
+/**
+ * **No level means every candidate, not the first level's.**
+ *
+ * `GET /candidates` takes `level` as a filter, so omitting it asks for all of them -- and the
+ * server answers that way. This returned the country roster for an unfiltered request, which
+ * made the mock quietly disagree with the contract: the sidebar decides which levels can be
+ * chosen by looking for candidates at each, and against this mock the deeper level looked
+ * empty when it was not. A mock that is kinder, or narrower, than the server certifies a
+ * protocol the server does not speak (`CLAUDE.md`).
+ */
 export function candidatesForLevel(level: string | null): Candidate[] {
   if (level === "city") return CITY_CANDIDATES;
+  if (level === null) return [...COUNTRY_CANDIDATES, ...CITY_CANDIDATES];
   return COUNTRY_CANDIDATES;
 }
 

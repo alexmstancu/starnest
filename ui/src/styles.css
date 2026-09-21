@@ -49,6 +49,8 @@
      single hairline shadow rather than a blur stack. */
   --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
   --shadow-control: 0 1px 2px rgba(16, 24, 40, 0.08);
+  /* The design's raised card: a hairline plus a wide, low lift. */
+  --shadow-raised: 0 1px 2px rgba(16, 24, 40, 0.06), 0 10px 24px -8px rgba(16, 24, 40, 0.14);
   --colour-text: #101828;
   /* The design names five text weights, not two: INK #101828, TXT #344054, SUB #475467,
      MUT and DIM both #667085. A label is SUB, a secondary value is TXT. */
@@ -76,6 +78,30 @@
   --colour-warning-surface: #fffaeb;
   --colour-warning-border: #fedf89;
   --colour-danger-border: #fecdca;
+
+  /* The bars, and the two deep texts. A bar is read as an area of colour rather than as
+     text, so it takes a saturated step the 4.5:1 contrast rule does not apply to -- and the
+     deep text is what a caption inside a tinted block uses, where the ordinary status text
+     would be too light against its own tint. */
+  --colour-success-bar: #12b76a;
+  --colour-warning-bar: #fdb022;
+  --colour-warning-deep: #7a2e0e;
+  --colour-danger-bar: #f04438;
+  --colour-danger-deep: #7a271a;
+  /* The accent's two data steps, for a scale that has to read as one hue getting stronger:
+     a coverage bar drops from high to mid before it turns amber. */
+  --colour-data-mid: #5eead4;
+  --colour-data-high: #14b8a6;
+  /* The faintest tint in the design, marking a row whose source is consulted first. It is
+     half a step off white on purpose -- a priority is a whisper, not a highlight. */
+  --colour-accent-priority: #fbfefd;
+  /* The accent tint one step deeper than the surface, which is what a progress track under
+     an accent fill is drawn on. */
+  --colour-accent-track: #ccfbf1;
+  /* Accent text dark enough to sit on the accent tint. */
+  --colour-accent-deep: #134e4a;
+  /* A label inside the teal household card: teal-grey, not the muted grey. */
+  --colour-accent-label: #47645f;
 
   /* Space */
   --space-quarter: 0.25rem;
@@ -120,7 +146,7 @@ body {
   font-size: var(--font-size-base);
   line-height: var(--line-height-body);
   color: var(--colour-text);
-  background: var(--colour-surface-sunken);
+  background: var(--colour-surface);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -245,6 +271,231 @@ fieldset {
   color: var(--colour-text-muted);
 }
 
+/* **A card reports; a bare group chooses.** The design draws the household, the counts, the
+   last acquisition and the saved rankings as bordered cards, and leaves the criteria set and
+   the level as a label above a control on the sidebar's own white. Wrapping the latter two in
+   cards -- which this sheet used to -- reads as four things to decide rather than two. */
+.sidebar__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* A sentence under a control, explaining why it is the shape it is. */
+.sidebar__note {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--colour-text-muted);
+}
+
+/* The household card, first and loudest: teal on teal. Every attribute default, warning and
+   gate reads the household, so the rest of the sidebar is relative to it. */
+.panel--household {
+  gap: 9px;
+  padding: 13px;
+  border-color: var(--colour-accent-border);
+  background: var(--colour-accent-surface);
+}
+
+.panel--household .panel__heading {
+  font-size: 12.5px;
+  color: var(--colour-accent);
+}
+
+.panel--household .stat-list {
+  gap: 7px;
+}
+
+.panel--household .stat {
+  align-items: baseline;
+  gap: 10px;
+}
+
+.panel--household .stat__label {
+  font-size: 12px;
+  color: var(--colour-accent-label);
+}
+
+/* 500, not 600: inside a tinted card the value is already the loud thing. */
+.panel--household .stat__value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--colour-text);
+  text-align: right;
+  line-height: 1.35;
+}
+
+/* A card's title beside something that qualifies it -- an Edit link, a count. */
+.panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panel__count {
+  font-size: 11px;
+  color: var(--colour-text-muted);
+}
+
+/* Inside a heading it needs its own air; beside one the flex gap already gives it some. */
+.rail__heading .panel__count {
+  margin-left: 6px;
+  font-size: 11.5px;
+  font-weight: var(--weight-normal);
+}
+
+/* Level: two segments filling the sidebar's width. The second is disabled rather than absent,
+   because "city comes later" is information and a missing button is not. */
+.level-group {
+  display: flex;
+  gap: 6px;
+}
+
+.level-group__option {
+  flex: 1;
+  padding: 6px 0;
+  border: var(--border-width) solid var(--colour-border-strong);
+  border-radius: var(--radius-medium);
+  background: var(--colour-surface);
+  color: var(--colour-text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.level-group__option--current {
+  border-color: var(--colour-accent);
+  background: var(--colour-accent-surface);
+  color: var(--colour-accent);
+  font-weight: var(--weight-strong);
+  cursor: default;
+}
+
+.level-group__option:disabled {
+  cursor: not-allowed;
+}
+
+/* The counts carry the ranking's own three colours, so the sidebar says the same thing the
+   table does without repeating its words. */
+.stat__value--matching {
+  color: var(--colour-success);
+}
+
+.stat__value--not-matching {
+  color: var(--colour-danger);
+}
+
+.stat__value--insufficient {
+  color: var(--colour-warning);
+}
+
+/* Saved rankings, in the sidebar rather than on Rank: a saved ranking is about the whole
+   session, not about the screen that happened to make it. */
+.saved-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.saved-list__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: var(--border-width) solid var(--colour-surface-hair);
+}
+
+.saved-list__row:last-child {
+  border-bottom-color: transparent;
+}
+
+.saved-list__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.saved-list__name {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--colour-text);
+}
+
+.saved-list__meta {
+  font-size: 11px;
+  color: var(--colour-text-muted);
+}
+
+.saved-list__remove {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-medium);
+  background: var(--colour-surface);
+  color: var(--colour-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* The acquisition bar, under the tabs and only while something is running. It sits at 44px
+   because that is the tab strip's own height -- sticky under sticky. */
+.acquiring-bar {
+  position: sticky;
+  top: 44px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 24px;
+  background: var(--colour-accent-surface);
+  border-bottom: var(--border-width) solid var(--colour-accent-border);
+}
+
+.acquiring-bar__title {
+  font-size: 12.5px;
+  font-weight: var(--weight-strong);
+  color: var(--colour-accent);
+  white-space: nowrap;
+}
+
+.acquiring-bar__track {
+  flex: 1;
+  min-width: 60px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--colour-accent-track);
+  overflow: hidden;
+}
+
+.acquiring-bar__fill {
+  height: 100%;
+  background: var(--colour-accent);
+}
+
+.acquiring-bar__meta {
+  font-size: 12px;
+  color: var(--colour-accent-deep);
+  white-space: nowrap;
+}
+
+.acquiring-bar__link {
+  font-size: 12.5px;
+  font-weight: var(--weight-strong);
+  white-space: nowrap;
+}
+
 
 /* ══════════════════════════════════════════════════════════════════════════════════════
    Interaction states
@@ -360,14 +611,24 @@ a:hover {
 .screen .panel {
   gap: 14px;
   padding: 16px;
-  box-shadow:
-    0 1px 2px rgba(16, 24, 40, 0.06),
-    0 10px 24px -8px rgba(16, 24, 40, 0.14);
+  box-shadow: var(--shadow-raised);
 }
 
-.screen .panel__heading {
-  font-size: 15px;
+/* A panel heading on a screen is a section title, and takes the same 18px a Configure stage
+   takes -- so "what this part of the screen is" reads at one size everywhere in the product.
+   In the sidebar it stays the small upright label, because there it names a card. */
+.screen .panel__heading,
+.screen > h3.panel__heading {
+  font-size: 18px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
   color: var(--colour-text);
+}
+
+/* The hint under one is the section's lead. */
+.screen .panel > .panel__hint:first-of-type {
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 /* Sentence case, not uppercase. The design sets every card and field label the same way --
@@ -656,19 +917,457 @@ select.field__control {
   gap: 16px;
 }
 
-/* Configure is the one screen the design lays out in two columns -- eight panels in a single
-   column would be a page of scrolling. The heading spans both. */
-.screen--configure {
+/* ══════════════════════════════════════════════════════════════════════════════════════
+   Configure: six numbered stages beside a rail that never scrolls away
+   ══════════════════════════════════════════════════════════════════════════════════════
+
+   **The rail is a fixed 296px and the stages take the rest.** Configure is the one screen
+   where the reader is changing things, and the only question that matters while changing
+   them is "what have I just done?" -- so the answer stays on screen at every scroll
+   position, and the stages get a single column wide enough to hold a slider and its
+   readout on one line. Two equal columns of panels, which this sheet used to draw, put the
+   answer somewhere the reader has to go looking for.
+   ══════════════════════════════════════════════════════════════════════════════════════ */
+
+/* Acquire is a column of sections rather than a table, and a line of prose stops being
+   readable somewhere past 1,100px. The design caps it there. */
+.screen--acquire {
+  max-width: 1120px;
+}
+
+.configure {
   display: grid;
-  grid-template-columns: minmax(380px, 1fr) minmax(340px, 0.95fr);
+  grid-template-columns: minmax(0, 1fr) 296px;
+  gap: 18px;
   align-items: start;
 }
 
-.screen--configure > .screen__heading,
-.screen--configure > .screen__summary,
-.screen--configure > .screen__note,
-.screen--configure > .notice {
+.configure__stages {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  counter-reset: stage;
+}
+
+/* 62px clears the tab strip; the max-height keeps the rail's own scrollbar inside the
+   viewport rather than letting a long history push the page. */
+.configure__rail {
+  position: sticky;
+  top: 62px;
+  max-height: calc(100vh - 86px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* One stage of the configuration, numbered. */
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  background: var(--colour-surface);
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-raised);
+}
+
+.stage__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+/* **The number is a CSS counter, not a prop.** Which stage is third is a fact about the
+   order they are rendered in, and a prop would let the two disagree -- silently, because
+   nothing fails when a card says 4 and sits fifth.
+
+   A disc, not a square: 12px on a 24px box is a circle, and these are the one round thing
+   in the design, which is what makes them read as a sequence. */
+.stage__number {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--colour-accent);
+  color: var(--colour-accent-contrast);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stage__number::before {
+  counter-increment: stage;
+  content: counter(stage);
+}
+
+.stage__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stage__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+
+/* A count beside the title -- "3 sets" -- which qualifies it rather than names it. */
+.stage__count {
+  margin-left: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--colour-text-muted);
+}
+
+.stage__lead {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--colour-text-muted);
+}
+
+/* A stage's body, and any panel inside one, carries no chrome of its own: the stage is the
+   card, and a card inside a card is the layout saying the same thing twice. */
+.stage__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.stage .panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* A line between a stage's head and its rows, saying what rule the rows are held to, with
+   the running total of whether they meet it. */
+.stage__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--colour-text-muted);
+}
+
+.stage__summary-total {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── The weighting control ─────────────────────────────────────────────────────────────
+   **A slider, not a number box.** A weight is a proportion, and the question asked of it is
+   "more or less than the one above", which a track answers at a glance and a text field does
+   not. The number stays beside it, because "roughly a seventh" is not something anyone can
+   act on -- so the control is direct and the readout is exact.
+
+   Four tracks: the name, the slider, the reading, the lock. Fixed widths on the last two so
+   every row's percentage and lock line up down the column regardless of how long a pillar's
+   name is. */
+
+.weight-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.weight-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(100px, 1.1fr) 58px 28px;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 8px;
+  border-bottom: var(--border-width) solid var(--colour-surface-hair);
+  border-radius: var(--radius-medium);
+}
+
+.weight-row__name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: var(--colour-text);
+}
+
+.weight-row__label {
+  font-size: 15px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+
+.weight-row__meta {
+  font-size: 11px;
+  color: var(--colour-text-muted);
+}
+
+.weight-row__slider {
+  width: 100%;
+  cursor: ew-resize;
+  accent-color: var(--colour-accent);
+}
+
+.weight-row__value {
+  font-size: 13px;
+  font-weight: var(--weight-strong);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* **Filled when held, hollow when free.** A lock is a state, not an action, so it is drawn
+   as one: the disc is the state and the tint says it is on. 26px square because that is the
+   smallest square this design gives anything clickable. */
+.weight-row__lock {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: var(--border-width) solid var(--colour-border-strong);
+  border-radius: var(--radius-medium);
+  background: var(--colour-surface);
+  color: var(--colour-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.weight-row__lock--on {
+  border-color: var(--colour-accent);
+  background: var(--colour-accent-surface);
+  color: var(--colour-accent);
+}
+
+.weight-row__problem {
   grid-column: 1 / -1;
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--colour-danger);
+}
+
+/* ── The criteria-set list ────────────────────────────────────────────────────────────
+   One row per set, with the same four verbs in the same four places on every row. The
+   height is capped so a dozen sets do not push the rest of the stage off the screen. */
+
+.set-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 6px;
+  border-bottom: var(--border-width) solid var(--colour-surface-hair);
+  border-radius: var(--radius-medium);
+}
+
+.set-row--in-use {
+  background: var(--colour-accent-surface);
+}
+
+.set-row__name {
+  flex: 1 1 140px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.set-row--in-use .set-row__name {
+  font-weight: var(--weight-strong);
+  color: var(--colour-accent);
+}
+
+.set-row__rename {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 9px;
+  border: var(--border-width) solid var(--colour-accent);
+  border-radius: var(--radius-medium);
+  font: inherit;
+  font-size: 13px;
+  color: var(--colour-text);
+}
+
+/* The identifier the catalog holds. It is shown because a migration, a query and an export
+   all name a set by this rather than by what it is called on screen. */
+.set-row__meta {
+  font-size: 11.5px;
+  color: var(--colour-text-muted);
+  white-space: nowrap;
+}
+
+.set-row__actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+/* **62px minimum, so the column of verbs lines up.** "Use" and "Duplicate" are very different
+   lengths, and without a floor the buttons on one row sit nowhere near the buttons on the
+   next -- which is what makes a list of them unreadable. */
+.action {
+  min-width: 62px;
+  padding: 4px 9px;
+  border: var(--border-width) solid var(--colour-border-strong);
+  border-radius: var(--radius-medium);
+  background: var(--colour-surface);
+  color: var(--colour-text-strong);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: var(--weight-strong);
+  text-align: center;
+  cursor: pointer;
+}
+
+.action:hover:not(:disabled) {
+  background: var(--colour-surface-sunken);
+}
+
+/* Deleting is the one action here that cannot be undone, and it is the only one drawn in red.
+   The danger is in the border and the text, not a filled button: a red block would pull the
+   eye to the most destructive thing on the screen. */
+.action--danger {
+  border-color: var(--colour-danger-border);
+  color: var(--colour-danger);
+}
+
+/* Unavailable, not absent: the slot keeps its place so the other three never move. */
+.action:disabled {
+  border-color: var(--colour-surface-hair);
+  background: var(--colour-surface-raised);
+  color: var(--colour-text-muted);
+  cursor: default;
+}
+
+.set-create {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.set-create__name {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Fields across rather than down. The 190px floor is what stops a figure and its currency
+   being split across a wrap. */
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+}
+
+.field-grid .field {
+  gap: 5px;
+}
+
+/* A field's control with whatever sits beside it -- a currency, a unit. */
+.field__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.field__row .field__control {
+  width: 100%;
+  min-width: 0;
+}
+
+.field__affix {
+  flex: none;
+  font-size: 13px;
+  color: var(--colour-text-muted);
+}
+
+/* What the number means, under the box: a period, a unit, a note about the format. */
+.field__note {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--colour-text-muted);
+}
+
+/* ── The change history rail ──────────────────────────────────────────────────────────
+   The rail card is quieter than a stage: tighter padding, the control shadow rather than
+   the raised one. It sits beside the stages rather than among them, and should read that
+   way at a glance. */
+
+.panel--rail {
+  gap: 9px;
+  padding: 13px 16px;
+  box-shadow: var(--shadow-control);
+}
+
+.rail__heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: var(--weight-strong);
+  color: var(--colour-text);
+}
+
+.rail__empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--colour-text-muted);
+}
+
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.history__entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  margin: 0 -8px;
+  border-radius: var(--radius-medium);
+  border-bottom: var(--border-width) solid var(--colour-surface-hair);
+}
+
+.history__entry:last-child {
+  border-bottom-color: transparent;
+}
+
+.history__label {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--colour-text-strong);
+}
+
+/* An undo reaches back through everything made since, so its button says how far -- which is
+   longer than a verb and must not be squeezed into the action minimum. */
+.history__entry .action {
+  min-width: 0;
+  align-self: flex-start;
+  text-align: left;
 }
 
 .screen__heading {
@@ -679,7 +1378,142 @@ select.field__control {
 }
 
 .screen__summary {
+  margin: 0;
+  font-size: 13px;
   color: var(--colour-text-muted);
+}
+
+/* A screen's title and the one line that says what it is for, 3px apart so they read as one
+   block rather than as a heading and a paragraph after it. */
+.screen__header {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* A title on the left and the facts that qualify it on the right, on one line. */
+.screen__header--split {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+
+.screen__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* ── Sections and big stats ───────────────────────────────────────────────────────────
+   A screen below the first is a sequence of named sections, not a stack of cards. The
+   heading is 18px -- the same size a Configure stage takes -- so "what this part of the
+   screen is" reads at one size everywhere in the product. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section__head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.section__heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+
+.section__lead {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--colour-text-muted);
+}
+
+/* **A figure worth reading across the room.** The screen opens with what is already known,
+   and a number at body size is a number nobody reads before scrolling past it. The label
+   above is upright and small so the eye lands on the figure first. */
+.big-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 18px;
+}
+
+.big-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.big-stat__label {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--colour-text-muted);
+}
+
+.big-stat__value {
+  margin: 0;
+  font-size: 26px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.big-stat__note {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--colour-text-muted);
+}
+
+/* A figure that is itself the problem -- values past their age, a count of failures -- takes
+   the warning colour, so the strip says which of its four numbers needs doing something
+   about without a second line of prose. */
+.big-stat--warning .big-stat__value {
+  color: var(--colour-warning);
+}
+
+.big-stat--danger .big-stat__value {
+  color: var(--colour-danger);
+}
+
+/* **A small upright label over its value**, 22px apart. Uppercase at 11px reads as a field
+   name rather than as text, which is what lets three of them sit beside a title without
+   competing with it. */
+.meta-row {
+  display: flex;
+  gap: 22px;
+  margin: 0;
+}
+
+.meta-row__item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.meta-row__label {
+  font-size: 11px;
+  font-weight: var(--weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--colour-text-muted);
+}
+
+.meta-row__value {
+  margin: 0;
+  font-size: 13px;
+  color: var(--colour-text);
 }
 
 .screen__note {
@@ -752,10 +1586,9 @@ select.field__control {
   background: var(--colour-surface);
   border: var(--border-width) solid var(--colour-border);
   border-radius: var(--radius-medium);
-  box-shadow:
-    0 1px 2px rgba(16, 24, 40, 0.06),
-    0 10px 24px -8px rgba(16, 24, 40, 0.14);
-  overflow-x: auto;
+  box-shadow: var(--shadow-raised);
+  overflow: auto;
+  max-height: calc(100vh - 150px);
 }
 
 .table {
@@ -791,129 +1624,202 @@ select.field__control {
    and a screen reader both depend on -- the grid in the mockup was standing in for a table, not
    arguing against one. The widths are the design's, less the two columns whose data the API
    does not serve. */
+/* ══════════════════════════════════════════════════════════════════════════════════════
+   The ranking table
+   ══════════════════════════════════════════════════════════════════════════════════════
+
+   **A grid wearing a table's semantics.** The element stays a `<table>` -- rows, row headers
+   and column headers are what a screen reader and a test both navigate by -- and the layout
+   is CSS grid, because ten columns of very different natures (a 522px chart, a 44px rank, a
+   reason that wraps) are a grid's problem and not a table algorithm's.
+
+   **The card scrolls, the page does not.** Capping it at the viewport and making the header
+   sticky inside means the column a number sits under is still legible at row 30. 1,518px is
+   what the ten tracks come to, and the card scrolls sideways to it rather than squeezing the
+   chart until its bars stop being comparable.
+   ══════════════════════════════════════════════════════════════════════════════════════ */
+
 .table--ranking {
-  table-layout: fixed;
-  min-width: 1210px;
+  display: block;
+  min-width: 1518px;
+  font-size: 13px;
 }
 
-/* The design lays this out as a grid with a 14px gutter and 14px at the edges. A table pays
-   that twice -- padding on both neighbours -- so half of it per cell reproduces the gutter and
-   leaves the columns their real widths. Without this, ten columns of padding ate 280px and the
-   reason column wrapped identifiers mid-word. */
-.table--ranking th,
-.table--ranking td {
-  padding: 10px 7px;
+.table--ranking thead,
+.table--ranking tbody {
+  display: block;
 }
 
-.table--ranking th:first-child,
-.table--ranking td:first-child {
-  padding-left: 14px;
+.table--ranking tr {
+  display: grid;
+  grid-template-columns:
+    44px minmax(140px, 1fr) 80px 78px 522px 116px 168px 116px
+    minmax(180px, 1.05fr);
+  gap: 14px;
+  padding: 9px 16px;
+  align-items: center;
+  border-bottom: var(--border-width) solid var(--colour-surface-hair);
 }
 
-.table--ranking th:last-child,
-.table--ranking td:last-child {
-  padding-right: 14px;
+.table--ranking thead tr {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 11px 16px;
+  align-items: start;
+  background: var(--colour-surface-raised);
+  border-bottom: var(--border-width) solid var(--colour-border);
 }
 
-.table--ranking th:nth-child(1),
-.table--ranking td:nth-child(1) {
-  width: 44px;
+.table--ranking tbody th,
+.table--ranking tbody td {
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.table--ranking thead th {
+  /* The row draws the rule under the header and the cell padding; a cell that draws its own
+     would put a second line under every column and break the one the row draws. */
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--colour-text-label);
+  text-align: left;
+}
+
+.col--right {
+  text-align: right;
+}
+
+/* The rank, with the caret that says the row opens. */
+.rank-cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
   color: var(--colour-text-muted);
 }
 
-.table--ranking th:nth-child(3),
-.table--ranking td:nth-child(3) {
-  width: 148px;
+.rank-cell__caret {
+  width: 9px;
+  font-size: 11px;
+  color: var(--colour-text-muted);
 }
 
-.table--ranking th:nth-child(4),
-.table--ranking td:nth-child(4) {
-  width: 70px;
-  text-align: right;
-}
-
-.table--ranking th:nth-child(5),
-.table--ranking td:nth-child(5) {
-  width: 116px;
-}
-
-.table--ranking th:nth-child(6),
-.table--ranking td:nth-child(6) {
-  width: 132px;
-}
-
-.table--ranking th:nth-child(7),
-.table--ranking td:nth-child(7) {
-  width: 116px;
-}
-
-/* The reason column takes what is left, and is the only one that wraps. */
-.table--ranking th:nth-child(8),
-.table--ranking td:nth-child(8) {
-  width: auto;
-  min-width: 180px;
-}
-
-.table--ranking th:nth-child(9),
-.table--ranking td:nth-child(9) {
-  width: 72px;
-  text-align: right;
-}
-
-.table--ranking th:nth-child(10),
-.table--ranking td:nth-child(10) {
-  width: 104px;
-  text-align: right;
-}
-
-/* The candidate's own name, and the one cell that may not wrap. */
-.table--ranking th[scope="row"] {
+.name-cell {
+  min-width: 0;
   font-size: 13.5px;
   font-weight: 500;
+  text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* The score is the number the screen exists to show, so it is the largest thing in the row. */
-.table--ranking .table__cell--numeric:nth-child(4) {
-  font-size: 15px;
+/* **The row is the target; this is what a keyboard reaches.** It is drawn as the name rather
+   than as a button, because a row of buttons down the candidate column would read as eleven
+   actions rather than as a list of places. */
+.name-cell__toggle {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.table__cell--absent {
+/* **22px, and the loudest thing in the row.** The score is what the screen is for; every
+   other column exists to say whether to believe it. */
+.score-cell {
+  font-size: 22px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* No score is not a small score, so it is not drawn as one: it drops to body size and to the
+   muted grey, which is the difference between a figure and a statement about its absence. */
+.score-cell--absent {
   font-size: 12px;
   font-weight: var(--weight-normal);
   color: var(--colour-text-muted);
-  text-align: right;
+  letter-spacing: 0;
 }
 
-/* The eleven pillars as one chart. Bottom-aligned bars, geometry from the data, tone from a
-   class -- the same division the meters use. */
+.reason-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* The rotated pillar names above the bars they name. The band is 56px tall because that is
+   what "governance" needs at 11px on a minus-45-degree diagonal. */
+.col--pillars {
+  padding-left: 16px;
+}
+
+.pillar-key {
+  display: grid;
+  grid-template-columns: repeat(11, minmax(0, 1fr));
+  gap: 2px;
+  align-items: end;
+  height: 56px;
+  margin-top: 6px;
+}
+
+.pillar-key__slot {
+  position: relative;
+  height: 100%;
+}
+
+.pillar-key__name {
+  position: absolute;
+  left: 3px;
+  bottom: 2px;
+  transform: rotate(-45deg);
+  transform-origin: left bottom;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--colour-text-label);
+}
+
+
+/* The eleven pillars as one chart: geometry and ramp colour from the data, everything else
+   from here. A `fill` attribute is a datum in SVG, not a style, which is what lets a
+   continuous colour ramp exist without design leaving this file. */
 .pillar-chart {
   display: block;
-  width: 100%;
-  height: 26px;
 }
 
-.pillar-chart__bar--good {
-  fill: #14b8a6;
+.pillar-chart__bar {
+  cursor: help;
 }
 
-.pillar-chart__bar--fair {
-  fill: #5eead4;
+/* Printed inside the bar, near its foot. Dark enough to read on the palest end of the ramp,
+   and tabular so eleven two-digit numbers sit on one baseline. */
+.pillar-chart__value {
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  fill: #06403a;
+  pointer-events: none;
 }
 
-.pillar-chart__bar--weak {
-  fill: #fdb022;
-}
-
-/* No score: flat, pale, and unmistakably not a low score. */
-.pillar-chart__bar--none {
-  fill: var(--colour-border);
-}
-
-/* The difference from home. Ahead and behind are the only two that carry colour; level and
-   absent stay muted, because neither is an achievement. */
 .table__delta {
   font-variant-numeric: tabular-nums;
   font-weight: 500;
@@ -1044,15 +1950,15 @@ select.field__control {
 }
 
 .meter__fill--good {
-  fill: #12b76a;
+  fill: var(--colour-success-bar);
 }
 
 .meter__fill--fair {
-  fill: #5eead4;
+  fill: var(--colour-data-mid);
 }
 
 .meter__fill--weak {
-  fill: #fdb022;
+  fill: var(--colour-warning-bar);
 }
 
 .meter__reading {
@@ -1060,12 +1966,32 @@ select.field__control {
   color: var(--colour-text-label);
 }
 
+/* All three confidence shares on one line. **All three, not the low one alone**: a candidate
+   that is 5% low-confidence and one that is 5% low and 60% medium are not the same candidate,
+   and printing only the worst share answered half the question it raised. */
+.meter__readings {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+}
+
+.meter__readings .meter__reading {
+  font-size: 10.5px;
+  color: var(--colour-text-muted);
+}
+
+/* The share carrying most of the weight is the one worth reading first. */
+.meter__readings .meter__reading--loud {
+  color: var(--colour-text-strong);
+}
+
 /* A chip: a small tinted label. One shape, four tints, and the tint is the only thing that
    changes between them. */
 .chip {
   display: inline-flex;
   align-items: center;
-  padding: 1px 6px;
+  padding: 2px 8px;
   border: var(--border-width) solid transparent;
   border-radius: 9px;
   font-size: 10.5px;
@@ -1164,6 +2090,26 @@ select.field__control {
 
 .table__row--open {
   background: var(--colour-accent-surface);
+}
+
+/* The whole row opens the drill-down, so the whole row says so. */
+.table--ranking tbody tr {
+  cursor: pointer;
+  background: var(--colour-surface);
+}
+
+.table--ranking tbody tr:hover {
+  background: var(--colour-surface-raised);
+}
+
+.table--ranking tbody tr.table__row--open:hover {
+  background: var(--colour-accent-surface);
+}
+
+/* A reason nobody has to read: present, so the column is never blank, and quiet, so it never
+   competes with a reason somebody does. */
+.table__reason--quiet {
+  color: var(--colour-text-muted);
 }
 
 /* A superseded figure is still there and still true of its period; it is simply not the one

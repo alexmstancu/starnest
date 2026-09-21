@@ -1,10 +1,9 @@
-import {
-  type CandidateResult,
-  type Ranking,
-} from "../../api/endpoints";
+import { useId } from "react";
+import { type CandidateResult, type Ranking } from "../../api/endpoints";
 import {
   ABSENT,
   formatDateTime,
+  formatIdentifier,
   formatMatchStatus,
   formatPercentage,
   formatScore,
@@ -12,8 +11,9 @@ import {
 import {
   type ConfidenceSplit,
   type PillarScore,
+  PILLAR_CHART,
   confidenceBands,
-  confidenceLabel,
+  confidenceReadings,
   coverageBar,
   deltaTone,
   formatDelta,
@@ -32,6 +32,10 @@ import { type OpenRow, isOpen } from "./openRows";
  * `onToggle` is optional, and that is the only difference between the two uses: a live row
  * opens the candidate's current evidence, while a saved ranking is a snapshot whose evidence
  * has moved on, so it offers no drill-down rather than a misleading one.
+ *
+ * **The card scrolls, not the page.** The header is sticky inside it and the whole thing is
+ * capped at the viewport, so the column a number sits under is still on screen at row 30 --
+ * which is the difference between a table of 32 countries and a list of them.
  */
 export function RankingTable({
   ranking,
@@ -42,55 +46,100 @@ export function RankingTable({
   open?: readonly OpenRow[];
   onToggle?: (row: OpenRow) => void;
 }) {
-  return (
-    <>
-      <dl className="stat-list stat-list--inline">
-        <Stat label="Criteria set" value={ranking.criteria_set} />
-        <Stat label="Level" value={ranking.level} />
-        <Stat label="Computed" value={formatDateTime(ranking.computed_at)} />
-      </dl>
+  if (ranking.candidates.length === 0) {
+    return (
+      <p className="screen__note">
+        No candidate has been evaluated under this criteria set at this level.
+      </p>
+    );
+  }
 
-      {ranking.candidates.length === 0 ? (
-        <p className="screen__note">
-          No candidate has been evaluated under this criteria set at this level.
-        </p>
-      ) : (
-        <div className="table-card">
-          {/* Named, because it stops being the only table on the screen the moment a
-              candidate's figures are opened -- and several can be open at once. */}
-          <table className="table table--ranking" aria-label="Ranked candidates">
-            <thead>
-              <tr>
-                <th scope="col">Rank</th>
-                <th scope="col">Candidate</th>
-                <th scope="col" className="col--pillars">
-                  Pillars
-                </th>
-                <th scope="col">Score</th>
-                <th scope="col">Coverage</th>
-                <th scope="col">Confidence</th>
-                <th scope="col">Match status</th>
-                <th scope="col">Reason</th>
-                <th scope="col" className="col--delta">
-                  &Delta; home
-                </th>
-                <th scope="col"> </th>
-              </tr>
-            </thead>
-            <tbody>
-              {ranking.candidates.map((result) => (
-                <CandidateRow
-                  key={result.candidate}
-                  result={result}
-                  open={isOpen(open, result.candidate)}
-                  onToggle={onToggle}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
+  return (
+    <div className="table-card">
+      {/* Named, because it stops being the only table on the screen the moment a candidate's
+          figures are opened -- and several can be open at once. */}
+      <table className="table table--ranking" aria-label="Ranked candidates">
+        <thead>
+          <tr>
+            <th scope="col">Rank</th>
+            <th scope="col">Candidate</th>
+            <th scope="col" className="col--right">
+              Score
+            </th>
+            <th scope="col" className="col--right">
+              &Delta; home
+            </th>
+            <th scope="col" className="col--pillars">
+              Pillars
+              <PillarKey pillars={ranking.candidates[0]?.pillar_scores} />
+            </th>
+            <th scope="col">Coverage</th>
+            <th scope="col">Confidence</th>
+            <th scope="col">Match status</th>
+            <th scope="col">Why this status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ranking.candidates.map((result) => (
+            <CandidateRow
+              key={result.candidate}
+              result={result}
+              open={isOpen(open, result.candidate)}
+              onToggle={onToggle}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * The three facts that say which ranking this is, as the design sets them: a small upright
+ * label over the value, in a row beside the screen's own title.
+ *
+ * Exported because the design puts them in the page header rather than above the table, and
+ * the header belongs to the screen.
+ */
+export function RankingMeta({ ranking }: { ranking: Ranking }) {
+  return (
+    <dl className="meta-row">
+      <Meta label="Criteria set" value={ranking.criteria_set} />
+      <Meta label="Level" value={formatIdentifier(ranking.level)} />
+      <Meta label="Computed" value={formatDateTime(ranking.computed_at)} />
+    </dl>
+  );
+}
+
+function Meta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="meta-row__item">
+      <dt className="meta-row__label">{label}</dt>
+      <dd className="meta-row__value">{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * The pillar names, rotated, above the bars they name.
+ *
+ * **Rotated rather than abbreviated or dropped.** Eleven columns in 522px leaves 45px each,
+ * which holds neither "governance" nor a legible abbreviation of it -- and a chart whose axis
+ * is unlabelled is decoration. Minus 45 degrees is the angle at which a word reads with the
+ * least head-tilt while still fitting a narrow column.
+ */
+function PillarKey({ pillars }: { pillars?: readonly PillarScore[] | null }) {
+  const roster = pillars ?? [];
+  if (roster.length === 0) return null;
+
+  return (
+    <span className="pillar-key" aria-hidden="true">
+      {roster.map((pillar) => (
+        <span key={pillar.pillar} className="pillar-key__slot">
+          <span className="pillar-key__name">{pillar.pillar}</span>
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -98,6 +147,11 @@ export function RankingTable({
  * `reqs.md` 5.4: a non-matching candidate keeps its computed score, greyed out. The row stays
  * in the same table as the rest -- a separate "rejected" list would be a filter by another
  * name, and the ordering would stop meaning anything.
+ *
+ * **The whole row is the toggle.** A button in the last column made opening a candidate's
+ * evidence a thing you had to travel 1,500px to reach; the row itself is the target the eye
+ * is already on. The button in the rank cell is what a keyboard reaches, so the row being
+ * clickable never becomes the only way in.
  */
 function CandidateRow({
   result,
@@ -109,29 +163,70 @@ function CandidateRow({
   onToggle?: (row: OpenRow) => void;
 }) {
   const matching = result.match_status === "matching";
+  const toggle = onToggle
+    ? () =>
+        onToggle({
+          candidate: result.candidate,
+          name: result.name,
+          pillars: result.pillar_scores,
+        })
+    : undefined;
+
+  const classes = ["table__row"];
+  if (!matching) classes.push("table__row--not-matching");
+  if (open) classes.push("table__row--open");
 
   return (
     <tr
-      className={
-        matching ? "table__row" : "table__row table__row--not-matching"
+      className={classes.join(" ")}
+      onClick={toggle}
+      title={
+        toggle
+          ? open
+            ? `Hide the values behind ${result.name}’s score`
+            : `Show the values behind ${result.name}’s score`
+          : undefined
       }
     >
-      {/* A candidate a gate ruled out has no rank, and an empty cell does not say that --
-          it reads as a table that failed to render. The dash is what the rest of this screen
+      {/* A candidate a gate ruled out has no rank, and an empty cell does not say that -- it
+          reads as a table that failed to render. The dash is what the rest of this screen
           prints where a number is genuinely absent. */}
-      <td>{result.rank ?? ABSENT}</td>
-      <th scope="row">{result.name}</th>
+      <td className="rank-cell">
+        {toggle && (
+          <span className="rank-cell__caret" aria-hidden="true">
+            {open ? "▾" : "▸"}
+          </span>
+        )}
+        {result.rank ?? ABSENT}
+      </td>
+      <th scope="row" className="name-cell">
+        {/* **No handler of its own.** The row listens, and a button activated by mouse or
+            keyboard fires a click that bubbles to it -- so the keyboard path and the click
+            path are the same path. Giving the button its own handler toggled the row twice
+            and left it exactly as it was. */}
+        {toggle ? (
+          <button type="button" className="name-cell__toggle">
+            {result.name}
+          </button>
+        ) : (
+          result.name
+        )}
+      </th>
+      <ScoreCell result={result} />
+      {/* Against staying put (`reqs.md` 1.2). Null for home itself and wherever a score is
+          missing, and a dash says so -- a zero here would read as "the same", which is a
+          measurement nobody made. */}
+      <td className={`col--right table__delta table__delta--${deltaTone(result.delta_vs_home)}`}>
+        {formatDelta(result.delta_vs_home)}
+      </td>
       <td className="col--pillars">
         <PillarChart pillars={result.pillar_scores} />
       </td>
-      <ScoreCell result={result} />
       <td>
         <CoverageBar coverage={result.coverage} />
       </td>
       {/* A score is never discounted for resting on a weak figure (`reqs.md` 5.7), so the
-          disclosure is here: an estimate and a measurement land in the same column otherwise.
-          The bar shows the whole split rather than the low grade alone -- the column used to
-          say "of it, low confidence", which answered only half the question it raised. */}
+          disclosure is here: an estimate and a measurement land in the same column otherwise. */}
       <td>
         <ConfidenceBar split={result.coverage_by_confidence} />
       </td>
@@ -140,7 +235,7 @@ function CandidateRow({
           {formatMatchStatus(result.match_status)}
         </span>
       </td>
-      <td>
+      <td className="reason-cell">
         {/* Two kinds of reason, and they are not the same thing. `non_match_reasons` say why a
             candidate that COULD be scored does not match; `insufficient_reason` says why one
             could not be scored at all. A screen that showed only the first would leave every
@@ -161,88 +256,103 @@ function CandidateRow({
             {warning.detail}
           </p>
         ))}
-      </td>
-      {/* Against staying put (`reqs.md` 1.2). Null for home itself and wherever a score is
-          missing, and a dash says so -- a zero here would read as "the same", which is a
-          measurement nobody made. */}
-      <td
-        className={`col--delta table__delta table__delta--${deltaTone(result.delta_vs_home)}`}
-      >
-        {formatDelta(result.delta_vs_home)}
-      </td>
-      <td>
-        {/* A saved ranking is a snapshot; the stored values behind it have moved on since.
-            Offering a drill-down there would open today's evidence under yesterday's score. */}
-        {onToggle && (
-          <button
-            type="button"
-            className={open ? "button button--current" : "button"}
-            onClick={() =>
-              onToggle({
-                candidate: result.candidate,
-                name: result.name,
-                pillars: result.pillar_scores,
-              })
-            }
-          >
-            {open ? "Hide figures" : "Show figures"}
-          </button>
-        )}
+        {(result.non_match_reasons ?? []).length === 0 &&
+          (result.warnings ?? []).length === 0 &&
+          !result.insufficient_reason && (
+            <span className="table__reason table__reason--quiet">
+              Passed every rule
+            </span>
+          )}
       </td>
     </tr>
   );
 }
 
 /**
- * The eleven pillars as one small chart, so a score's shape is readable at a glance.
+ * The eleven pillars as one chart, with each score printed inside its own bar.
  *
- * **Bottom-aligned bars in a fixed coordinate space**, which is what makes an SVG right here:
- * the geometry is data and the tones are classes. A pillar with no score is a full-height flat
- * bar rather than a gap, because eleven bars are counted and a missing one silently renumbers
- * the rest.
+ * **SVG, not styled divs.** A bar's height and its ramp colour are both data, and
+ * `styles.css` is where design lives -- the lint rule says so. An SVG carries a number in a
+ * geometry attribute and a colour in `fill`, so nothing here is an inline style, and the
+ * reader still gets the figure as well as the shape.
  */
 function PillarChart({ pillars }: { pillars?: readonly PillarScore[] | null }) {
   const bars = pillarBars(pillars);
-  if (bars.length === 0) {
-    return null;
-  }
+  const hatch = useId();
+  if (bars.length === 0) return null;
 
   return (
     <svg
       className="pillar-chart"
-      viewBox="0 0 100 26"
-      preserveAspectRatio="none"
+      viewBox={`0 0 ${PILLAR_CHART.width} ${PILLAR_CHART.height}`}
+      width={PILLAR_CHART.width}
+      height={PILLAR_CHART.height}
     >
-      {bars.map((bar) => (
-        <rect
-          key={bar.pillar}
-          className={`pillar-chart__bar pillar-chart__bar--${bar.tone}`}
-          x={bar.x}
-          y={bar.y}
-          width={bar.width}
-          height={bar.height}
+      <defs>
+        {/* One hatch for the whole chart, and one ramp per bar. The ids are scoped by
+            `useId`, because several rows render this and duplicate ids in one document make
+            every later reference resolve to the first. */}
+        <pattern
+          id={hatch}
+          width="4"
+          height="4"
+          patternUnits="userSpaceOnUse"
+          patternTransform="rotate(45)"
         >
-          <title>{bar.title}</title>
-        </rect>
+          <rect width="4" height="4" fill="#ffffff" />
+          <rect width="2" height="4" fill="#e4e7ec" />
+        </pattern>
+        {bars.map((bar, index) =>
+          bar.fill ? (
+            <linearGradient
+              key={bar.pillar}
+              id={`${hatch}-${index}`}
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="1"
+            >
+              <stop offset="0" stopColor={bar.fill.top} />
+              <stop offset="1" stopColor={bar.fill.bottom} />
+            </linearGradient>
+          ) : null,
+        )}
+      </defs>
+      {bars.map((bar, index) => (
+        <g key={bar.pillar}>
+          <rect
+            className="pillar-chart__bar"
+            x={bar.x}
+            y={bar.y}
+            width={bar.width}
+            height={bar.height}
+            rx="2"
+            fill={bar.fill ? `url(#${hatch}-${index})` : `url(#${hatch})`}
+          >
+            <title>{bar.title}</title>
+          </rect>
+          {bar.label !== "" && (
+            <text
+              className="pillar-chart__value"
+              x={bar.x + bar.width / 2}
+              y={PILLAR_CHART.height - 4}
+              textAnchor="middle"
+            >
+              {bar.label}
+            </text>
+          )}
+        </g>
       ))}
     </svg>
   );
 }
 
-/**
- * Coverage as a track and a reading, the way the design draws it.
- *
- * The width and the tone are decided in `rankTable.ts`; this renders what it is handed.
- */
+/** Coverage as a track and a reading, the way the design draws it. */
 function CoverageBar({ coverage }: { coverage: number | null | undefined }) {
   const bar = coverageBar(coverage);
 
   return (
     <div className="meter">
-      {/* **SVG, not a styled div.** A bar's width is a datum, and `styles.css` is where design
-          lives (the lint rule says so). An SVG geometry attribute carries the number without a
-          `style` attribute, and the colour still comes from a class -- so changing how a meter
-          looks is still a change to one stylesheet. */}
       <svg
         className="meter__track"
         viewBox="0 0 100 6"
@@ -263,11 +373,10 @@ function CoverageBar({ coverage }: { coverage: number | null | undefined }) {
 }
 
 /**
- * The confidence split as one stacked track.
+ * The confidence split as one stacked track and all three shares in words.
  *
  * **Every band carries a `title`**, because a 6px stripe of colour is not self-explaining and
- * this is the disclosure `reqs.md` 5.7 requires rather than decoration. The reading beside it
- * says the same thing in text, for anyone who cannot hover.
+ * this is the disclosure `reqs.md` 5.7 requires rather than decoration.
  */
 function ConfidenceBar({
   split,
@@ -275,6 +384,7 @@ function ConfidenceBar({
   split: ConfidenceSplit | null | undefined;
 }) {
   const bands = confidenceBands(split);
+  const readings = confidenceReadings(split);
 
   return (
     <div className="meter">
@@ -296,7 +406,20 @@ function ConfidenceBar({
           </rect>
         ))}
       </svg>
-      <span className="meter__reading">{confidenceLabel(split)}</span>
+      <span className="meter__readings">
+        {readings.map((reading) => (
+          <span
+            key={reading.grade}
+            className={
+              reading.loud
+                ? "meter__reading meter__reading--loud"
+                : "meter__reading"
+            }
+          >
+            {reading.reading}
+          </span>
+        ))}
+      </span>
     </div>
   );
 }
@@ -315,17 +438,10 @@ function ConfidenceBar({
  */
 function ScoreCell({ result }: { result: CandidateResult }) {
   if (result.score === null || result.score === undefined) {
-    return <td className="table__cell--absent">No score</td>;
+    return <td className="col--right score-cell score-cell--absent">No score</td>;
   }
 
-  return <td className="table__cell--numeric">{formatScore(result.score)}</td>;
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="stat">
-      <dt className="stat__label">{label}</dt>
-      <dd className="stat__value">{value}</dd>
-    </div>
+    <td className="col--right score-cell">{formatScore(result.score)}</td>
   );
 }

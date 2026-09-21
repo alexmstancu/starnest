@@ -6,7 +6,7 @@ import { ErrorNotice } from "../../shell/ErrorNotice";
 import { AttributeDrillDown } from "./AttributeDrillDown";
 import { CandidateDetail } from "./CandidateDetail";
 import { type OpenRow, toggleRow } from "./openRows";
-import { RankingTable } from "./RankingTable";
+import { RankingMeta, RankingTable } from "./RankingTable";
 import { SavedRankingsPanel } from "./SavedRankingsPanel";
 import { useSelection } from "../../shell/SelectionContext";
 
@@ -30,10 +30,6 @@ export function RankScreen({ route }: { route: RouteDefinition }) {
 
   return (
     <section className="screen" aria-labelledby="screen-heading">
-      <h2 id="screen-heading" className="screen__heading">
-        {route.label}
-      </h2>
-
       {/* Keyed by the selection, the way `ConfigureScreen` keys its panels: the open
           drill-down is state about *this* ranking, and a switch of level or criteria set
           makes it state about a ranking nobody is looking at (P53). It used to survive the
@@ -43,6 +39,7 @@ export function RankScreen({ route }: { route: RouteDefinition }) {
           from an effect is a render the screen does not need. */}
       <TheRanking
         key={`${criteriaSetId}-${levelId}`}
+        label={route.label}
         criteriaSetId={criteriaSetId}
         levelId={levelId}
       />
@@ -58,9 +55,11 @@ export function RankScreen({ route }: { route: RouteDefinition }) {
 }
 
 function TheRanking({
+  label,
   criteriaSetId,
   levelId,
 }: {
+  label: string;
   criteriaSetId: string | null;
   levelId: string | null;
 }) {
@@ -87,6 +86,23 @@ function TheRanking({
 
   return (
     <>
+      {/* **The title and the provenance on one line.** Which criteria set, which level and
+          when it was computed are what make a ranking a particular ranking rather than
+          "the ranking" -- so they belong beside its name, not in a caption under the table
+          somebody has already started reading. */}
+      <header className="screen__header screen__header--split">
+        <div className="screen__titles">
+          <h2 id="screen-heading" className="screen__heading">
+            {label}
+          </h2>
+          <p className="screen__summary">
+            The ranking table, the non-matching rows, and every value behind a
+            score.
+          </p>
+        </div>
+        {resource.status === "ready" && <RankingMeta ranking={resource.data} />}
+      </header>
+
       {resource.status === "idle" && (
         <p className="screen__note">
           Choose a criteria set and a level to see the ranking.

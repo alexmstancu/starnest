@@ -1,14 +1,28 @@
 import { describe, expect, it } from "vitest";
-import type { EvaluationSummary } from "../../api/endpoints";
-import { describeSaved, detailOf, newestFirst } from "./savedRankings";
+import {
+  describeSaved,
+  detailOf,
+  newestFirst,
+  summariseSaved,
+  type SavedRankingLike,
+} from "./savedRanking";
 
-function saved(over: Partial<EvaluationSummary> = {}): EvaluationSummary {
+/**
+ * A saved ranking as this module sees one: four fields and an id to assert order by.
+ *
+ * **Not `EvaluationSummary`.** `format/` may not import `api/` (the layering rule), and the
+ * test lives beside what it tests, so it declares the same structural shape the module does.
+ */
+interface Entry extends SavedRankingLike {
+  id: number;
+}
+
+function saved(over: Partial<Entry> = {}): Entry {
   return {
     id: 1,
     criteria_set: "local_employment",
     level: "country",
     computed_at: "2026-09-21T09:00:00Z",
-    score_scale_max: 100,
     ...over,
   };
 }
@@ -63,5 +77,12 @@ describe("the saved rankings list", () => {
     expect(detail).toContain("country");
     expect(detail).toMatch(/saved /);
     expect(detail).not.toContain("·");
+  });
+
+  /** The sidebar is 262px wide, so the summary drops the time and keeps the day. */
+  it("summarises a saved ranking short enough for the sidebar", () => {
+    const summary = summariseSaved(saved());
+    expect(summary).toContain("local_employment");
+    expect(summary).not.toMatch(/\d\d:\d\d/);
   });
 });

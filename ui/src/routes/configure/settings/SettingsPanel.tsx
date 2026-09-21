@@ -36,15 +36,22 @@ function SettingsFields({ settings }: { settings: Settings }) {
   const blocked = isBlocked(form.draft);
 
   return (
-    <section className="panel" aria-labelledby="settings-heading">
-      <h3 id="settings-heading" className="panel__heading">
-        Settings
-      </h3>
-      <p className="panel__hint">
-        All four are provisional by design. Leave one empty and it stays
-        undecided.
-      </p>
-
+    <section className="stage" aria-labelledby="settings-heading">
+      <header className="stage__head">
+        {/* The numeral is a CSS counter on `.stage__number`, so a stage cannot claim a
+            position it does not hold -- nothing fails when a hard-coded 4 sits fifth. */}
+        <span className="stage__number" aria-hidden="true" />
+        <div className="stage__titles">
+          <h3 id="settings-heading" className="stage__title">
+            Acquisition limits
+          </h3>
+          <p className="stage__lead">
+            The floor and the ceilings an acquisition respects. Below the coverage floor a
+            candidate shows no score rather than a wrong one. All four are provisional by
+            design: leave one empty and it stays undecided.
+          </p>
+        </div>
+      </header>
       {/* No "try again" button: the way to retry a save is the save button, which is still
           there. */}
       {form.failure !== null && <ErrorNotice error={form.failure} />}
@@ -74,6 +81,9 @@ function SettingsFields({ settings }: { settings: Settings }) {
       )}
 
       <form onSubmit={form.save}>
+        {/* Five short numbers across, as the design has them: a column of them reads as five
+            decisions to make in order, and they are independent. */}
+        <div className="field-grid">
         {SETTING_FIELDS.map(({ name, label, description, consequence, severity }) => {
           const blank = form.draft[name].trim() === "";
           return (
@@ -98,7 +108,7 @@ function SettingsFields({ settings }: { settings: Settings }) {
               aria-describedby={`setting-${name}-hint`}
               onChange={(event) => form.change(name, event.target.value)}
             />
-            <span className="panel__hint" id={`setting-${name}-hint`}>
+            <span className="field__note" id={`setting-${name}-hint`}>
               {description}
               {/* What is true *while it is blank*. A description says what the setting is
                   for; this says what leaving it empty costs, which is the question somebody
@@ -110,7 +120,8 @@ function SettingsFields({ settings }: { settings: Settings }) {
           </div>
           );
         })}
-        <button type="submit" className="button">
+        </div>
+        <button type="submit" className="button button--primary">
           Save settings
         </button>
       </form>

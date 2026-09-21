@@ -400,7 +400,7 @@ describe("what each pillar's criteria come to", () => {
  */
 describe("what this session changed", () => {
   async function historyPanel() {
-    return within(await screen.findByRole("region", { name: "Recent changes" }));
+    return within(await screen.findByRole("region", { name: /^recent changes/i }));
   }
 
   it("says nothing has changed, and that the list is not stored", async () => {

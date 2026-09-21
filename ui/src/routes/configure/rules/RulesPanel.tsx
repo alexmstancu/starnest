@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   type CompoundRule,
   type CriteriaSet,
@@ -21,23 +22,32 @@ import { useRuleToggles } from "./useRuleToggles";
 export function RulesPanel({
   criteriaSet,
   levelId,
+  children,
 }: {
   criteriaSet: CriteriaSet;
   levelId: string;
+  /** The gate proposals, rendered inside the stage: a proposal answers one of these rules. */
+  children?: ReactNode;
 }) {
   const rules = useRuleToggles(criteriaSet, levelId);
 
   return (
-    <section className="panel" aria-labelledby="rules-heading">
-      <h3 id="rules-heading" className="panel__heading">
-        Rules
-      </h3>
-      <p className="panel__hint">
-        A gate can make a candidate not matching, which costs it its rank and
-        leaves its score intact. A compound rule mostly warns. A rule nobody has
-        answered never fires either way.
-      </p>
-
+    <section className="stage" aria-labelledby="rules-heading">
+      <header className="stage__head">
+        {/* The numeral is a CSS counter on `.stage__number`, so a stage cannot claim a
+            position it does not hold -- nothing fails when a hard-coded 4 sits fifth. */}
+        <span className="stage__number" aria-hidden="true" />
+        <div className="stage__titles">
+          <h3 id="rules-heading" className="stage__title">
+            Match rules &amp; gates
+          </h3>
+    <p className="stage__lead">
+            A gate can make a candidate not matching, which costs it its rank and
+            leaves its score intact. A compound rule mostly warns. A rule nobody has
+            answered never fires either way.
+          </p>
+        </div>
+      </header>
       {rules.failure !== null && <ErrorNotice error={rules.failure} />}
 
       <h4 className="panel__heading">Gates</h4>
@@ -86,6 +96,7 @@ export function RulesPanel({
           }))
         }
       />
+      {children}
     </section>
   );
 }

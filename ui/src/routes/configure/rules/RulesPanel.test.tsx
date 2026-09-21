@@ -15,7 +15,7 @@ import { renderShell } from "../../../testing/renderShell";
  */
 
 async function panel() {
-  return within(await screen.findByRole("region", { name: "Rules" }));
+  return within(await screen.findByRole("region", { name: "Match rules & gates" }));
 }
 
 describe("the rules panel", () => {

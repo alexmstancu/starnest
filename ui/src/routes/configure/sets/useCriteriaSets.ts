@@ -1,10 +1,15 @@
 /**
- * What the criteria-sets panel does: make one, rename one, discard one (`reqs.md` 3.4).
+ * What the criteria-set stage does: make one, use one, rename one, copy one, discard one
+ * (`reqs.md` 3.4).
  *
  * **A new set is empty**, which the API decides: copying one would mean starting from somebody
  * else's priorities without being asked. Discarding a set does not touch a saved evaluation,
  * which froze its own copy of the criteria (`reqs.md` Q193) -- the difference between an opinion
  * and a measurement.
+ *
+ * **One name, not a name and an identifier.** The design asks for what the set is called and
+ * derives the rest (`setIdentifier.ts`); the server still refuses a collision, so nothing is
+ * guessed around.
  */
 
 import { useState } from "react";
@@ -14,38 +19,35 @@ import {
   duplicateCriteriaSet,
   renameCriteriaSet,
 } from "../../../api/endpoints";
+import { copyName, identifierFrom } from "./setIdentifier";
 
 export interface CriteriaSetsForm {
-  newId: string;
   newName: string;
-  rename: string;
-  duplicateId: string;
-  duplicateName: string;
+  /** Which set's name is being edited in place, or null while none is. */
+  renaming: string | null;
+  renameDraft: string;
   failure: unknown;
-  /** Whether the two fields a new set needs are both filled in. */
   canCreate: boolean;
-  canRename: boolean;
-  canDuplicate: boolean;
-  typeNewId: (value: string) => void;
+  canSaveRename: boolean;
   typeNewName: (value: string) => void;
-  typeRename: (value: string) => void;
-  typeDuplicateId: (value: string) => void;
-  typeDuplicateName: (value: string) => void;
+  typeRenameDraft: (value: string) => void;
+  beginRename: (criteriaSetId: string, currentName: string) => void;
+  cancelRename: () => void;
+  saveRename: () => void;
   create: () => void;
-  renameTo: (criteriaSetId: string) => void;
-  duplicate: (criteriaSetId: string) => void;
+  duplicate: (criteriaSetId: string, currentName: string) => void;
   discard: (criteriaSetId: string) => void;
 }
 
 export function useCriteriaSets(options: {
+  /** Every set's name, so a copy can be given one that is not taken. */
+  names: readonly string[];
   reload: () => void;
   select: (criteriaSetId: string | null) => void;
 }): CriteriaSetsForm {
-  const [newId, setNewId] = useState("");
   const [newName, setNewName] = useState("");
-  const [rename, setRename] = useState("");
-  const [duplicateId, setDuplicateId] = useState("");
-  const [duplicateName, setDuplicateName] = useState("");
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const [failure, setFailure] = useState<unknown>(null);
 
   async function act(action: () => Promise<void>): Promise<void> {
@@ -59,43 +61,48 @@ export function useCriteriaSets(options: {
   }
 
   return {
-    newId,
     newName,
-    rename,
-    duplicateId,
-    duplicateName,
+    renaming,
+    renameDraft,
     failure,
-    canCreate: newId.trim() !== "" && newName.trim() !== "",
-    canRename: rename.trim() !== "",
-    canDuplicate: duplicateId.trim() !== "" && duplicateName.trim() !== "",
-    typeNewId: setNewId,
+    canCreate: identifierFrom(newName) !== "",
+    canSaveRename: renameDraft.trim() !== "",
     typeNewName: setNewName,
-    typeRename: setRename,
-    typeDuplicateId: setDuplicateId,
-    typeDuplicateName: setDuplicateName,
+    typeRenameDraft: setRenameDraft,
+    beginRename: (criteriaSetId, currentName) => {
+      setRenaming(criteriaSetId);
+      setRenameDraft(currentName);
+    },
+    cancelRename: () => {
+      setRenaming(null);
+      setRenameDraft("");
+    },
+    saveRename: () => {
+      const target = renaming;
+      if (target === null) return;
+      void act(async () => {
+        await renameCriteriaSet(target, renameDraft.trim());
+        setRenaming(null);
+        setRenameDraft("");
+      });
+    },
     create: () =>
       void act(async () => {
-        const created = await createCriteriaSet(newId.trim(), newName.trim());
-        setNewId("");
+        const name = newName.trim();
+        const created = await createCriteriaSet(identifierFrom(name), name);
         setNewName("");
         options.select(created.id);
       }),
-    renameTo: (criteriaSetId) =>
-      void act(async () => {
-        await renameCriteriaSet(criteriaSetId, rename.trim());
-        setRename("");
-      }),
     // The copy is selected, because duplicating is how an experiment starts and the next
     // edit belongs to the copy rather than to what it was copied from.
-    duplicate: (criteriaSetId) =>
+    duplicate: (criteriaSetId, currentName) =>
       void act(async () => {
+        const name = copyName(currentName, options.names);
         const copy = await duplicateCriteriaSet(
           criteriaSetId,
-          duplicateId.trim(),
-          duplicateName.trim(),
+          identifierFrom(name),
+          name,
         );
-        setDuplicateId("");
-        setDuplicateName("");
         options.select(copy.id);
       }),
     // Discarding says nothing about what to select next: `SelectionContext` holds the rule that

@@ -9,13 +9,25 @@ import { renderShell } from "../../testing/renderShell";
  * UX review A. `GET /rankings` computes and stores nothing -- which is what makes re-weighting
  * instant, and why keeping a ranking has to be a deliberate act rather than a side effect of
  * looking at one.
+ *
+ * **Saving and listing are in two places, as the design has them.** The sidebar lists what has
+ * been kept, because a saved ranking is about the session rather than about one screen; Rank
+ * owns the act of saving and the view of the one that was opened. These tests exercise both
+ * ends, because the interesting behaviour is that they stay in step.
  */
-async function savedPanel(): Promise<HTMLElement> {
+
+/** Where a ranking is saved: the panel under the table on Rank. */
+async function savingPanel(): Promise<HTMLElement> {
+  return screen.findByRole("region", { name: /save this ranking/i });
+}
+
+/** Where saved rankings are listed: the sidebar card, present on every screen. */
+async function savedList(): Promise<HTMLElement> {
   return screen.findByRole("region", { name: /saved rankings/i });
 }
 
 /**
- * The panel, once saving is actually possible.
+ * The saving panel, once saving is actually possible.
  *
  * A ranking is saved for a criteria set at a level, so the button stays disabled until the
  * shell has resolved both. Clicking before then does nothing, which reads in a failure as
@@ -32,69 +44,70 @@ async function savedPanel(): Promise<HTMLElement> {
 async function armedPanel() {
   await waitFor(() =>
     expect(
-      within(screen.getByRole("region", { name: /saved rankings/i })).getByRole(
-        "button",
-        { name: /save this ranking/i },
-      ),
+      within(
+        screen.getByRole("region", { name: /save this ranking/i }),
+      ).getByRole("button", { name: /save this ranking/i }),
     ).toBeEnabled(),
   );
-  return within(await savedPanel());
+  return within(await savingPanel());
+}
+
+async function saveOne(note?: string) {
+  const panel = await armedPanel();
+  if (note !== undefined) {
+    await userEvent.type(
+      panel.getByLabelText(/why this one is worth keeping/i),
+      note,
+    );
+  }
+  await userEvent.click(
+    panel.getByRole("button", { name: /save this ranking/i }),
+  );
+  return panel;
 }
 
 describe("saved rankings", () => {
   it("says nothing is saved yet, and why", async () => {
     renderShell("/rank");
 
+    const list = within(await savedList());
+    expect(await list.findByText(/none yet/i)).toBeInTheDocument();
     const panel = await armedPanel();
     expect(
-      await panel.findByText(/no ranking has been saved yet/i),
+      panel.getByText(/nothing is kept until you save it/i),
     ).toBeInTheDocument();
-    expect(panel.getByText(/nothing is kept until you keep it/i)).toBeInTheDocument();
   });
 
   it("saves the ranking with the note it was given", async () => {
     renderShell("/rank");
-    const panel = await armedPanel();
-    await panel.findByText(/no ranking has been saved yet/i);
+    await saveOne("before I raised housing");
 
-    await userEvent.type(
-      panel.getByLabelText(/why this one is worth keeping/i),
-      "before I raised housing",
-    );
-    await userEvent.click(
-      panel.getByRole("button", { name: /save this ranking/i }),
-    );
-
+    // It appears in the sidebar, which is the list the shell keeps.
+    const list = within(await savedList());
     expect(
-      await panel.findByText("before I raised housing"),
+      await list.findByText("before I raised housing"),
     ).toBeInTheDocument();
   });
 
   /** A saved ranking names its criteria set and level, whether or not it has a note. */
   it("falls back to the criteria set and level when no note was given", async () => {
     renderShell("/rank");
-    const panel = await armedPanel();
-    await panel.findByText(/no ranking has been saved yet/i);
+    await saveOne();
 
-    await userEvent.click(
-      panel.getByRole("button", { name: /save this ranking/i }),
-    );
-
-    expect(await panel.findByText(/default, country/i)).toBeInTheDocument();
+    const list = within(await savedList());
+    expect(await list.findByText(/default, country/i)).toBeInTheDocument();
   });
 
   it("clears the note once it has been saved, so the next one starts empty", async () => {
     renderShell("/rank");
     const panel = await armedPanel();
-    await panel.findByText(/no ranking has been saved yet/i);
-
     const note = panel.getByLabelText(/why this one is worth keeping/i);
     await userEvent.type(note, "a reason");
     await userEvent.click(
       panel.getByRole("button", { name: /save this ranking/i }),
     );
 
-    await panel.findByText("a reason");
+    await within(await savedList()).findByText("a reason");
     expect(note).toHaveValue("");
   });
 
@@ -104,15 +117,13 @@ describe("saved rankings", () => {
    */
   it("shows a saved ranking rather than restoring it over the live one", async () => {
     renderShell("/rank");
-    const panel = await armedPanel();
-    await panel.findByText(/no ranking has been saved yet/i);
-    await userEvent.click(
-      panel.getByRole("button", { name: /save this ranking/i }),
-    );
-    await panel.findByText(/default, country/i);
+    await saveOne();
+    const list = within(await savedList());
+    await list.findByText(/default, country/i);
 
-    await userEvent.click(panel.getByRole("button", { name: /^open$/i }));
+    await userEvent.click(list.getAllByRole("link")[0]!);
 
+    const panel = within(await savingPanel());
     expect(
       await panel.findByText(/as it was when it was saved/i),
     ).toBeInTheDocument();
@@ -120,31 +131,32 @@ describe("saved rankings", () => {
     const frozen = within(
       await panel.findByRole("table", { name: /ranked candidates/i }),
     );
-    expect(frozen.queryByRole("button", { name: /show figures/i })).toBeNull();
+    expect(frozen.queryByRole("button")).toBeNull();
   });
 
   it("closes a saved ranking that was open", async () => {
     renderShell("/rank");
-    const panel = await armedPanel();
-    await panel.findByText(/no ranking has been saved yet/i);
-    await userEvent.click(
-      panel.getByRole("button", { name: /save this ranking/i }),
-    );
-    await panel.findByText(/default, country/i);
+    await saveOne();
+    const list = within(await savedList());
+    await list.findByText(/default, country/i);
+    await userEvent.click(list.getAllByRole("link")[0]!);
 
-    await userEvent.click(panel.getByRole("button", { name: /^open$/i }));
+    const panel = within(await savingPanel());
     await panel.findByText(/as it was when it was saved/i);
-    await userEvent.click(panel.getByRole("button", { name: /^hide$/i }));
+    await userEvent.click(
+      panel.getByRole("button", { name: /close this saved ranking/i }),
+    );
 
     await waitFor(() =>
-      expect(panel.queryByText(/as it was when it was saved/i)).toBeNull(),
+      expect(
+        within(document.body).queryByText(/as it was when it was saved/i),
+      ).toBeNull(),
     );
   });
 
   it("reports a refusal to save, and keeps the note so nothing is retyped", async () => {
     renderShell("/rank");
     const panel = await armedPanel();
-    await panel.findByText(/no ranking has been saved yet/i);
 
     mockServer.use(
       http.post("/v1/evaluations", () =>
@@ -171,8 +183,8 @@ describe("saved rankings", () => {
     mockServer.use(http.get("/v1/evaluations", () => HttpResponse.error()));
     renderShell("/rank");
 
-    const panel = within(await savedPanel());
-    expect(await panel.findByRole("alert")).toHaveTextContent(
+    const list = within(await savedList());
+    expect(await list.findByRole("alert")).toHaveTextContent(
       "client.unreachable",
     );
   });

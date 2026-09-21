@@ -29,17 +29,23 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
   const run = useRunScreen();
 
   return (
-    <section className="screen" aria-labelledby="screen-heading">
-      <h2 id="screen-heading" className="screen__heading">
-        {route.label}
-      </h2>
+    <section className="screen screen--acquire" aria-labelledby="screen-heading">
+      <header className="screen__header">
+        <h2 id="screen-heading" className="screen__heading">
+          {route.label}
+        </h2>
+        <p className="screen__summary">
+          Where the values come from. Nothing here is fetched or charged until
+          you agree to an estimate.
+        </p>
+      </header>
 
       {levelId === null ? (
-        <p className="screen__note">Choose a level to plan a run.</p>
+        <p className="screen__note">Choose a level to plan an acquisition.</p>
       ) : (
         <div className="panel">
           <h3 className="panel__heading">
-            A run over every {levelId} candidate
+            An acquisition over every {levelId} candidate
           </h3>
           <p className="panel__hint">
             The estimate first: what would be fetched, and what it would cost,
@@ -51,7 +57,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
             disabled={run.busy !== null}
             onClick={() => run.estimate(levelId)}
           >
-            {run.busy === "planning" ? "Estimating…" : "Estimate a run"}
+            {run.busy === "planning" ? "Estimating…" : "Estimate an acquisition"}
           </button>
 
           {run.plan && (
@@ -102,7 +108,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
         <AcquisitionDiffPanel runs={run.history.data.items} />
       )}
 
-      <h3 className="panel__heading">Recent runs</h3>
+      <h3 className="panel__heading">Every acquisition so far</h3>
       {run.history.status === "loading" && (
         <p className="screen__note">Loading…</p>
       )}
@@ -127,7 +133,7 @@ function PlannedRun({
 }) {
   return (
     <div className="panel">
-      <h4 className="panel__heading">What this run would do</h4>
+      <h4 className="panel__heading">What this acquisition would do</h4>
       <dl className="stat-list stat-list--inline">
         <Stat label="Items" value={formatCount(plan.items_total)} />
         <Stat label="LLM calls" value={formatCount(plan.llm_call_count)} />
@@ -171,7 +177,7 @@ function PlannedRun({
         disabled={busy}
         onClick={onStart}
       >
-        {busy ? "Running…" : "Start this run"}
+        {busy ? "Running…" : "Start this acquisition"}
       </button>
     </div>
   );
@@ -294,7 +300,7 @@ function RunReport({
     // can address, rather than the nearest box that happens to contain the heading.
     <section className="panel" aria-labelledby={`run-${run.id}`}>
       <h3 id={`run-${run.id}`} className="panel__heading">
-        Run {run.id}
+        Acquisition {run.id}
       </h3>
       <dl className="stat-list stat-list--inline">
         <Stat label="Status" value={run.run_status} />
@@ -369,7 +375,7 @@ function RunReport({
       )}
 
       {failures.length === 0 ? (
-        <p className="panel__hint">Nothing failed in this run.</p>
+        <p className="panel__hint">Nothing failed in this acquisition.</p>
       ) : (
         <>
           <div className="table-card">
@@ -434,7 +440,7 @@ function RunHistory({
   onOpen: (run: Run) => void;
 }) {
   if (runs.length === 0)
-    return <p className="screen__note">No run has been started yet.</p>;
+    return <p className="screen__note">No acquisition has been started yet.</p>;
   return (
     <div className="table-card">
       <table className="table">
