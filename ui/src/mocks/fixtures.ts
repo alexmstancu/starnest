@@ -514,7 +514,11 @@ export const STORED_VALUES: StoredValue[] = [
     confidence_level: "low",
     is_active: true,
     quote: "Estimated from Eurostat's tax-benefit figures",
-    citations: [],
+    citations: [
+      "https://ec.europa.eu/eurostat/tax-benefit",
+      // Refused at render: a scheme the interface will not put behind a click.
+      "javascript:alert(1)",
+    ],
     data_acquisition_run: 7,
   },
 ];
@@ -528,6 +532,7 @@ export const EXTERNAL_SCORES: ExternalScore[] = [
     reference_period: { start: "2026-01-01", end: "2026-06-30" },
     retrieval_date: "2026-09-01T08:00:00Z",
     caveats: "Crowdsourced, and its weighting is the publisher's own.",
+    methodology_url: "https://www.numbeo.com/crime/indices_explained.jsp",
   },
 ];
 

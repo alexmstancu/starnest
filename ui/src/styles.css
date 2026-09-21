@@ -1163,6 +1163,22 @@ select.field__control {
  * the point: a published composite that looked like one of our measurements is the first step
  * towards somebody scoring it.
  */
+/* The pages a figure was read from, sitting under its source. Inline and small: they are
+   provenance, which must be reachable without competing with the figure itself. */
+.citations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-half);
+  margin: var(--space-half) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-small);
+}
+
+.citations a {
+  color: var(--colour-accent);
+}
+
 .table--external {
   border-left: 3px solid var(--colour-text-muted);
   padding-left: 0.75rem;

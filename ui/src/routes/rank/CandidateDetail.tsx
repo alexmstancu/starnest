@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import {
   fetchCriteriaSet,
   fetchExternalScores,
@@ -12,6 +12,7 @@ import {
   formatDateTime,
   formatPercentage,
   formatSigned,
+  safeHttpUrl,
 } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
@@ -71,9 +72,14 @@ export function CandidateDetail({
       : null,
   );
 
+  // **Unique per open panel.** Several candidates' evidence can be open at once, and a
+  // hardcoded id would repeat in the document -- so every panel would be announced with the
+  // first one's name, and the duplicate ids would be invalid markup besides.
+  const headingId = useId();
+
   return (
-    <section className="panel" aria-labelledby="detail-heading">
-      <h3 id="detail-heading" className="panel__heading">
+    <section className="panel" aria-labelledby={headingId}>
+      <h3 id={headingId} className="panel__heading">
         {name}: every figure behind the score
       </h3>
 
@@ -167,7 +173,10 @@ function ValueTable({
             >
               <th scope="row">{value.attribute}</th>
               <td title={value.quote ?? undefined}>{describeFigure(value)}</td>
-              <td>{value.data_source}</td>
+              <td>
+                {value.data_source}
+                <Citations citations={value.citations} />
+              </td>
               <td>
                 {formatDate(value.reference_period.start)} to{" "}
                 {formatDate(value.reference_period.end)}
@@ -214,14 +223,15 @@ function PillarContributions({
   chosen: string | null;
   onChoose: (pillar: string) => void;
 }) {
+  const headingId = useId();
   const bars = pillarBars(pillars);
   if (bars.length === 0) {
     return null;
   }
 
   return (
-    <section aria-labelledby="pillar-contributions">
-      <h4 id="pillar-contributions" className="panel__heading">
+    <section aria-labelledby={headingId}>
+      <h4 id={headingId} className="panel__heading">
         Pillar contributions — select one to filter the values below
       </h4>
       <ul className="pillar-cards">
@@ -269,6 +279,52 @@ function PillarContributions({
   );
 }
 
+/**
+ * The pages a figure was actually read from (`reqs.md` 6.10).
+ *
+ * The LLM path is *required* to display them, and a structured adapter may carry them too.
+ * They were stored and never shown, which made "full provenance on every displayed number"
+ * true of the database and not of the screen.
+ */
+function Citations({ citations }: { citations?: readonly string[] | null }) {
+  const links = (citations ?? [])
+    .map((citation) => safeHttpUrl(citation))
+    .filter((href): href is string => href !== null);
+  if (links.length === 0) return null;
+
+  return (
+    <ul className="citations">
+      {links.map((href, at) => (
+        <li key={href}>
+          <a href={href} target="_blank" rel="noreferrer noopener">
+            {/* Numbered rather than named: a publisher's URL is rarely readable, and the
+                figure's own source column already says who published it. */}
+            source {at + 1}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** A publisher, linked to how it says it arrived at its number, where it says so. */
+function PublisherName({
+  publisher,
+  methodology,
+}: {
+  publisher: string;
+  methodology?: string | null;
+}) {
+  const href = safeHttpUrl(methodology);
+  if (!href) return <>{publisher}</>;
+
+  return (
+    <a href={href} target="_blank" rel="noreferrer noopener">
+      {publisher}
+    </a>
+  );
+}
+
 function ExternalScoreTable({ scores }: { scores: ExternalScore[] }) {
   if (scores.length === 0) {
     return (
@@ -301,7 +357,12 @@ function ExternalScoreTable({ scores }: { scores: ExternalScore[] }) {
               score.retrieval_date ?? "",
             ].join("-")}
           >
-            <th scope="row">{score.data_source}</th>
+            <th scope="row">
+              <PublisherName
+                publisher={score.data_source}
+                methodology={score.methodology_url}
+              />
+            </th>
             <td>
               {score.published_value ?? "—"}
               {score.published_rank != null &&

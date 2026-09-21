@@ -26,6 +26,7 @@ import {
   formatDelta,
   pillarBars,
 } from "./rankTable";
+import { type OpenRow, isOpen, toggleRow } from "./openRows";
 import { useSelection } from "../../shell/SelectionContext";
 
 /**
@@ -88,9 +89,13 @@ function TheRanking({
     fetcher,
     criteriaSetId !== null && levelId !== null,
   );
-  // Which candidate's evidence is open. Client state in the sense `arch.md` 8.1 permits: it
+  // Which candidates' evidence is open. Client state in the sense `arch.md` 8.1 permits: it
   // decides nothing, and the evidence itself is fetched.
-  const [chosen, setChosen] = useState<Chosen | null>(null);
+  const [open, setOpen] = useState<readonly OpenRow[]>([]);
+  const toggle = useCallback(
+    (row: OpenRow) => setOpen((already) => toggleRow(already, row)),
+    [],
+  );
 
   return (
     <>
@@ -108,18 +113,22 @@ function TheRanking({
       {resource.status === "ready" && (
         <RankingTable
           ranking={resource.data}
-          chosen={chosen}
-          onChoose={setChosen}
+          open={open}
+          onToggle={toggle}
         />
       )}
 
-      {chosen && (
+      {/* One panel per open row, in the order they were opened. Several at once is the
+          point (UX review M): closing Portugal to read Finland made comparing the two a
+          memory exercise. */}
+      {open.map((row) => (
         <CandidateDetail
-          candidate={chosen.candidate}
-          name={chosen.name}
-          pillars={chosen.pillars}
+          key={row.candidate}
+          candidate={row.candidate}
+          name={row.name}
+          pillars={row.pillars}
         />
-      )}
+      ))}
 
       {/* The other axis (`reqs.md` 8.4). A candidate's detail says what we know about one
           country; this says who has a figure for one attribute at all -- the question behind a
@@ -129,27 +138,14 @@ function TheRanking({
   );
 }
 
-/**
- * The open row, and what the drill-down needs from it.
- *
- * **It carries the pillar rollup rather than looking it up again.** The row already had it --
- * it drew the chart from it -- so finding the candidate a second time in the ranking would be
- * two paths to one number, and the sort of thing that goes out of step.
- */
-interface Chosen {
-  candidate: string;
-  name: string;
-  pillars?: readonly PillarScore[] | null;
-}
-
 function RankingTable({
   ranking,
-  chosen,
-  onChoose,
+  open,
+  onToggle,
 }: {
   ranking: Ranking;
-  chosen: Chosen | null;
-  onChoose: (chosen: Chosen | null) => void;
+  open: readonly OpenRow[];
+  onToggle: (row: OpenRow) => void;
 }) {
   return (
     <>
@@ -165,7 +161,9 @@ function RankingTable({
         </p>
       ) : (
         <div className="table-card">
-          <table className="table table--ranking">
+          {/* Named, because it stops being the only table on the screen the moment a
+              candidate's figures are opened -- and several can be open at once. */}
+          <table className="table table--ranking" aria-label="Ranked candidates">
             <thead>
               <tr>
                 <th scope="col">Rank</th>
@@ -189,8 +187,8 @@ function RankingTable({
                 <CandidateRow
                   key={result.candidate}
                   result={result}
-                  open={chosen?.candidate === result.candidate}
-                  onChoose={onChoose}
+                  open={isOpen(open, result.candidate)}
+                  onToggle={onToggle}
                 />
               ))}
             </tbody>
@@ -209,11 +207,11 @@ function RankingTable({
 function CandidateRow({
   result,
   open,
-  onChoose,
+  onToggle,
 }: {
   result: CandidateResult;
   open: boolean;
-  onChoose: (chosen: Chosen | null) => void;
+  onToggle: (row: OpenRow) => void;
 }) {
   const matching = result.match_status === "matching";
 
@@ -282,15 +280,11 @@ function CandidateRow({
           type="button"
           className={open ? "button button--current" : "button"}
           onClick={() =>
-            onChoose(
-              open
-                ? null
-                : {
-                    candidate: result.candidate,
-                    name: result.name,
-                    pillars: result.pillar_scores,
-                  },
-            )
+            onToggle({
+              candidate: result.candidate,
+              name: result.name,
+              pillars: result.pillar_scores,
+            })
           }
         >
           {open ? "Hide figures" : "Show figures"}

@@ -91,6 +91,30 @@ export function formatDate(value: string | null | undefined): string {
 }
 
 /** `not_matching` reads as "Not matching" wherever a status is shown. */
+/**
+ * A link out to a publisher, or nothing.
+ *
+ * **Only `http` and `https`.** `methodology_url` and a value's `citations` are strings the
+ * backend stored from a source, and rendering an arbitrary one into `href` would put whatever
+ * scheme it carries -- `javascript:` above all -- behind a click. The interface never renders
+ * a URL it has not looked at, and a URL it will not vouch for becomes plain text instead of a
+ * link that lies about where it goes.
+ */
+export function safeHttpUrl(value: string | null | undefined): string | null {
+  if (typeof value !== "string" || value.trim() === "") return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    // Not absolute, so there is nowhere to send a reader. A relative link here would point
+    // back into this app, which is never what a publisher's citation means.
+    return null;
+  }
+  return parsed.protocol === "http:" || parsed.protocol === "https:"
+    ? parsed.href
+    : null;
+}
+
 export function formatMatchStatus(status: string): string {
   const spaced = status.replace(/_/g, " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);

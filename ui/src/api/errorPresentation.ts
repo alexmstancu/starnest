@@ -52,6 +52,15 @@ const KNOWN_CODES: Record<string, { message: string; retryable: boolean }> = {
     message: "Every other weight in this pillar is locked, so there is nothing to rebalance into.",
     retryable: false,
   },
+  // The shipped state, not a fault: `score_scale_max` is provisional by design and has no
+  // default, so nothing can be ranked until it is set. The server says "Settings"; the tab a
+  // reader can actually click is Configure, and the settings live inside it.
+  score_scale_not_set: {
+    message:
+      "Nothing can be ranked until the top of the score range is set. It has no default, " +
+      "because the scale is a judgement rather than a fact.",
+    retryable: false,
+  },
   manual_entry_not_permitted: {
     message: "This attribute does not accept a manually entered value.",
     retryable: false,

@@ -19,7 +19,8 @@ import { renderShell } from "../../testing/renderShell";
  * and the button that opens the figures. The candidate's name is a rowheader, not a cell.
  */
 async function rankingRow(name: string): Promise<HTMLElement> {
-  const table = await screen.findByRole("table");
+  // By name: an open drill-down puts more tables on the screen, and several can be open.
+  const table = await screen.findByRole("table", { name: /ranked candidates/i });
   return within(table).getByRole("row", { name: new RegExp(name) });
 }
 
@@ -155,6 +156,55 @@ describe("when the ranking cannot be shown", () => {
     expect(await screen.findByRole("table")).toBeInTheDocument();
   });
 
+  /**
+   * UX review R3. `score_scale_max` is provisional by design and has no default, so the
+   * shipped state refuses to rank. The screen must say which setting is missing and offer the
+   * way to it -- not a "Try again" that would fail identically every time.
+   */
+  it("names the missing score range and offers the way to it", async () => {
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        HttpResponse.json(
+          {
+            code: "score_scale_not_set",
+            message: "score_scale_max is not set, so there is no scale to score onto.",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderShell("/rank");
+
+    const rank = within(await screen.findByRole("region", { name: "Rank" }));
+    const alert = await rank.findByRole("alert");
+
+    expect(alert).toHaveTextContent(/top of the score range is set/i);
+    expect(alert).toHaveTextContent("score_scale_not_set");
+    expect(
+      within(alert).getByRole("link", { name: /set it in configure/i }),
+    ).toHaveAttribute("href", "/configure");
+    expect(within(alert).queryByRole("button", { name: /try again/i })).toBeNull();
+  });
+
+  it("shows no ranking table at all while the score range is unset", async () => {
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        HttpResponse.json(
+          { code: "score_scale_not_set", message: "not set" },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderShell("/rank");
+
+    // Scoped to the Rank region: the attribute drill-down raises its own alert.
+    const rank = within(await screen.findByRole("region", { name: "Rank" }));
+    await rank.findByRole("alert");
+    expect(
+      screen.queryByRole("table", { name: /ranked candidates/i }),
+    ).toBeNull();
+  });
+
   it("says the ranking is empty rather than showing an empty table", async () => {
     mockServer.use(
       http.get("/v1/rankings", () =>
@@ -227,6 +277,144 @@ describe("the drill-down", () => {
     expect(estimate).toHaveTextContent("41.5");
     expect(estimate).toHaveTextContent("eurostat_estimate");
     expect(estimate).toHaveTextContent("low");
+  });
+
+  /**
+   * UX review M. Opening a second candidate used to close the first, so comparing what two
+   * countries are scored on meant holding one of them in your head.
+   */
+  it("keeps a candidate's figures open when another candidate is opened", async () => {
+    renderShell("/rank");
+
+    await userEvent.click(
+      within(await rankingRow("Portugal")).getByRole("button", {
+        name: /show figures/i,
+      }),
+    );
+    await screen.findByRole("heading", { name: /Portugal: every figure/i });
+
+    await userEvent.click(
+      within(await rankingRow("Netherlands")).getByRole("button", {
+        name: /show figures/i,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: /Netherlands: every figure/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /Portugal: every figure/i }),
+    ).toBeInTheDocument();
+  });
+
+  /** Each open panel must be announced as its own candidate, not as the first one opened. */
+  it("labels each open panel with its own candidate", async () => {
+    renderShell("/rank");
+
+    for (const name of ["Portugal", "Netherlands"]) {
+      await userEvent.click(
+        within(await rankingRow(name)).getByRole("button", {
+          name: /show figures/i,
+        }),
+      );
+    }
+
+    await screen.findByRole("region", { name: /Netherlands: every figure/i });
+    expect(
+      screen.getByRole("region", { name: /Portugal: every figure/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("closes one open candidate without closing the others", async () => {
+    renderShell("/rank");
+
+    for (const name of ["Portugal", "Netherlands"]) {
+      await userEvent.click(
+        within(await rankingRow(name)).getByRole("button", {
+          name: /show figures/i,
+        }),
+      );
+    }
+    await screen.findByRole("heading", { name: /Netherlands: every figure/i });
+
+    await userEvent.click(
+      within(await rankingRow("Portugal")).getByRole("button", {
+        name: /hide figures/i,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: /Portugal: every figure/i }),
+      ).toBeNull(),
+    );
+    expect(
+      screen.getByRole("heading", { name: /Netherlands: every figure/i }),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * UX review N. `methodology_url` and `citations` were stored and never rendered, so "full
+   * provenance on every displayed number" was true of the database and not of the screen.
+   */
+  it("links a publisher to how it says it reached its number", async () => {
+    renderShell("/rank");
+    await userEvent.click(
+      within(await rankingRow("Portugal")).getByRole("button", {
+        name: /show figures/i,
+      }),
+    );
+
+    const outside = await screen.findByRole("table", {
+      name: /not part of any score/i,
+    });
+    expect(
+      within(outside).getByRole("link", { name: "numbeo" }),
+    ).toHaveAttribute(
+      "href",
+      "https://www.numbeo.com/crime/indices_explained.jsp",
+    );
+  });
+
+  it("links a figure to the pages it was read from", async () => {
+    renderShell("/rank");
+    await userEvent.click(
+      within(await rankingRow("Portugal")).getByRole("button", {
+        name: /show figures/i,
+      }),
+    );
+
+    const figures = await screen.findByRole("table", {
+      name: /every stored value/i,
+    });
+    const estimate = within(figures).getByRole("row", {
+      name: /total_tax_rate_effective/i,
+    });
+    expect(within(estimate).getByRole("link", { name: /source 1/i })).toHaveAttribute(
+      "href",
+      "https://ec.europa.eu/eurostat/tax-benefit",
+    );
+  });
+
+  /** The reason the URL is parsed rather than passed straight into `href`. */
+  it("refuses to link a citation whose scheme would run something", async () => {
+    renderShell("/rank");
+    await userEvent.click(
+      within(await rankingRow("Portugal")).getByRole("button", {
+        name: /show figures/i,
+      }),
+    );
+
+    const figures = await screen.findByRole("table", {
+      name: /every stored value/i,
+    });
+    const estimate = within(figures).getByRole("row", {
+      name: /total_tax_rate_effective/i,
+    });
+    expect(within(estimate).getAllByRole("link")).toHaveLength(1);
+    expect(within(estimate).queryByRole("link", { name: /source 2/i })).toBeNull();
   });
 
   it("keeps outside opinions in their own table, not among the figures", async () => {

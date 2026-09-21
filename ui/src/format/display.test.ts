@@ -8,6 +8,7 @@ import {
   formatMoney,
   formatPercentage,
   formatScore,
+  safeHttpUrl,
 } from "./display";
 
 describe("formatPercentage", () => {
@@ -94,5 +95,36 @@ describe("formatMatchStatus", () => {
 
   it("survives an empty status without throwing", () => {
     expect(formatMatchStatus("")).toBe("");
+  });
+});
+
+describe("a link out to a publisher", () => {
+  it("keeps an https URL", () => {
+    expect(safeHttpUrl("https://rsf.org/en/index")).toBe(
+      "https://rsf.org/en/index",
+    );
+  });
+
+  it("keeps a plain http URL, because some publishers still serve one", () => {
+    expect(safeHttpUrl("http://example.org/a")).toBe("http://example.org/a");
+  });
+
+  /** The reason this function exists rather than the value going straight into `href`. */
+  it("refuses a scheme that would run something", () => {
+    expect(safeHttpUrl("javascript:alert(1)")).toBeNull();
+    expect(safeHttpUrl("data:text/html,<script>alert(1)</script>")).toBeNull();
+    expect(safeHttpUrl("vbscript:msgbox(1)")).toBeNull();
+  });
+
+  it("refuses a relative path, which would point back into this app", () => {
+    expect(safeHttpUrl("/configure")).toBeNull();
+    expect(safeHttpUrl("rsf.org")).toBeNull();
+  });
+
+  it("refuses nothing at all", () => {
+    expect(safeHttpUrl(null)).toBeNull();
+    expect(safeHttpUrl(undefined)).toBeNull();
+    expect(safeHttpUrl("")).toBeNull();
+    expect(safeHttpUrl("   ")).toBeNull();
   });
 });
