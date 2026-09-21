@@ -69,7 +69,7 @@ test.describe.serial("the minimum end to end", () => {
   test("a ranked table of real countries, scored from stored figures", async ({ page }) => {
     await openTheRanking(page);
 
-    const table = page.getByRole("table");
+    const table = page.getByRole("table", { name: "Ranked candidates" });
 
     // Real places, not fixtures. Any of the 32 would do; these three are seeded and are not
     // going to stop being European.
@@ -151,7 +151,7 @@ test.describe.serial("the minimum end to end", () => {
 async function openTheRanking(page: import("@playwright/test").Page): Promise<void> {
   await page.goto("/rank");
   await selectTheScoringSet(page);
-  await expect(page.getByRole("table")).toBeVisible();
+  await expect(page.getByRole("table", { name: "Ranked candidates" })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "Finland" })).toHaveCount(1);
 }
 
@@ -206,7 +206,7 @@ async function setWeight(
 
 async function scoresInOrder(page: import("@playwright/test").Page): Promise<string[]> {
   await openTheRanking(page);
-  return page.getByRole("table").getByRole("row").allTextContents();
+  return page.getByRole("table", { name: "Ranked candidates" }).getByRole("row").allTextContents();
 }
 
 

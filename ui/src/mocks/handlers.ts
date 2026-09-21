@@ -42,6 +42,7 @@ type CriteriaSetSummary = components["schemas"]["CriteriaSetSummary"];
 type PillarWeight = components["schemas"]["PillarWeight"];
 type Settings = components["schemas"]["Settings"];
 type Household = components["schemas"]["HouseholdInput"];
+type EvaluationSummary = components["schemas"]["EvaluationSummary"];
 
 const BASE = "/v1";
 
@@ -57,6 +58,10 @@ let criteriaSetSummaries: CriteriaSetSummary[] = [...CRITERIA_SETS];
 let settings: Settings = { ...SETTINGS };
 let household: Household = { ...HOUSEHOLD };
 let matchRuleResults: MatchRuleResult[] = [...MATCH_RULE_RESULTS];
+// Nothing is saved until somebody saves it, so the list starts empty -- which is also the
+// state a reader meets on a fresh install, and the one the empty message is written for.
+let savedEvaluations: EvaluationSummary[] = [];
+let nextEvaluationId = 1;
 
 export function resetMockData(): void {
   criteriaSetDetails = makeCriteriaSetDetails();
@@ -64,6 +69,8 @@ export function resetMockData(): void {
   settings = { ...SETTINGS };
   household = { ...HOUSEHOLD };
   matchRuleResults = [...MATCH_RULE_RESULTS];
+  savedEvaluations = [];
+  nextEvaluationId = 1;
 }
 
 export const handlers = [
@@ -317,6 +324,40 @@ export const handlers = [
     }
 
     return HttpResponse.json(rankingFor(criteriaSet, level));
+  }),
+
+  // Saved rankings. The store is module state rather than a fixture, because the thing worth
+  // testing is that saving puts something in the list that was not there before.
+  http.get(`${BASE}/evaluations`, () =>
+    HttpResponse.json({ items: [...savedEvaluations] }),
+  ),
+
+  http.post(`${BASE}/evaluations`, async ({ request }) => {
+    const body = (await request.json()) as {
+      criteria_set: string;
+      level: string;
+      note?: string;
+    };
+    const saved = {
+      id: nextEvaluationId++,
+      criteria_set: body.criteria_set,
+      level: body.level,
+      computed_at: "2026-09-21T09:00:00Z",
+      score_scale_max: 100,
+      ...(body.note === undefined ? {} : { note: body.note }),
+    };
+    savedEvaluations = [saved, ...savedEvaluations];
+    return HttpResponse.json(saved, { status: 201 });
+  }),
+
+  // A saved ranking answers in the same shape as a live one, which is what lets one table
+  // render both.
+  http.get(`${BASE}/evaluations/:evaluationId`, ({ params }) => {
+    const saved = savedEvaluations.find(
+      (entry) => String(entry.id) === String(params["evaluationId"]),
+    );
+    if (!saved) return notFound(String(params["evaluationId"]));
+    return HttpResponse.json(rankingFor(saved.criteria_set, saved.level));
   }),
 
   http.get(`${BASE}/criteria-sets/:criteriaSetId`, ({ params }) => {

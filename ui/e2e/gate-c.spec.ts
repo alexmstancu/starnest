@@ -311,13 +311,13 @@ async function chooseScoringSet(page: Page): Promise<void> {
 async function openTheRanking(page: Page): Promise<void> {
   await page.goto("/rank");
   await chooseScoringSet(page);
-  await expect(page.getByRole("table")).toBeVisible();
+  await expect(page.getByRole("table", { name: "Ranked candidates" })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "Finland" })).toHaveCount(1);
 }
 
 async function rankedOrder(page: Page): Promise<string[]> {
   await openTheRanking(page);
-  return page.getByRole("table").getByRole("row").allTextContents();
+  return page.getByRole("table", { name: "Ranked candidates" }).getByRole("row").allTextContents();
 }
 
 /**

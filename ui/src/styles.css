@@ -1283,3 +1283,71 @@ select.field__control {
     padding-right: 16px;
   }
 }
+
+/* --- Saved rankings -----------------------------------------------------------------------
+   A ranking is recomputed on every request, so it moves as weights move. Keeping one is a
+   deliberate act, and the panel says so by putting the note field and the button together at
+   the top rather than hiding a save behind a menu. */
+.saved__save {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "label label"
+    "input button";
+  gap: var(--space-half) var(--space-single);
+  align-items: end;
+  margin-bottom: var(--space-single);
+}
+
+.saved__save .field__label {
+  grid-area: label;
+}
+
+.saved__save .field__control {
+  grid-area: input;
+}
+
+.saved__save .button {
+  grid-area: button;
+}
+
+.saved__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.saved__entry {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-quarter) var(--space-single);
+  align-items: baseline;
+  padding: var(--space-half) var(--space-single);
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-small);
+  background: var(--colour-surface-raised);
+}
+
+.saved__entry .button {
+  grid-row: span 2;
+  align-self: center;
+}
+
+.saved__name {
+  font-weight: var(--weight-strong);
+  color: var(--colour-text-strong);
+}
+
+.saved__detail {
+  font-size: var(--font-size-small);
+  color: var(--colour-text-muted);
+}
+
+.saved__view {
+  margin-top: var(--space-single);
+  padding-top: var(--space-single);
+  border-top: var(--border-width) solid var(--colour-border);
+}

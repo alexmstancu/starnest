@@ -27,6 +27,11 @@ export type CandidateResult = components["schemas"]["CandidateResult"];
 export type Settings = components["schemas"]["Settings"];
 export type CriteriaSet = components["schemas"]["CriteriaSet"];
 export type Criterion = components["schemas"]["Criterion"];
+export type EvaluationSummary = components["schemas"]["EvaluationSummary"];
+export type EvaluationCriterion =
+  components["schemas"]["EvaluationCriterion"];
+export type CandidateScoreDetail =
+  components["schemas"]["CandidateScoreDetail"];
 
 /**
  * What a weight change answers with: the affected pillar and every criterion in it, already
@@ -469,5 +474,83 @@ export function setCompoundRuleApplication(
     "/criteria-sets/{criteriaSetId}/compound-rules/{compoundRuleId}",
     { is_applied: isApplied },
     { ...options, pathParams: { criteriaSetId, compoundRuleId } },
+  );
+}
+
+/**
+ * A ranking kept on purpose, and the four ways to read one back.
+ *
+ * **`/rankings` computes and stores nothing.** That is what makes re-weighting instant -- the
+ * ranking is arithmetic over stored values, recomputed on every request -- and it is also why
+ * saving has to be a separate act rather than a side effect of looking. Nothing is kept until
+ * somebody says so.
+ *
+ * An evaluation freezes the criteria it used *and* the score scale it used (`arch.md`
+ * `0107`), so a saved ranking keeps meaning what it meant. Read it back rather than
+ * recomputing it: the criteria set it names may have moved since.
+ */
+export function saveEvaluation(
+  criteriaSet: string,
+  level: string,
+  note: string,
+  options?: RequestOptions,
+): Promise<EvaluationSummary> {
+  // An empty note is no note. The contract makes it optional, and storing "" would be a note
+  // that says nothing while looking like one that does.
+  const trimmed = note.trim();
+  return postJson(
+    "/evaluations",
+    {
+      criteria_set: criteriaSet,
+      level,
+      ...(trimmed === "" ? {} : { note: trimmed }),
+    },
+    options,
+  );
+}
+
+export function fetchEvaluations(
+  options?: RequestOptions,
+): Promise<{ items: EvaluationSummary[] }> {
+  return getJson("/evaluations", undefined, options);
+}
+
+/**
+ * One saved ranking, in the same shape `GET /rankings` answers with.
+ *
+ * Which is why the saved view needs no table of its own: a frozen ranking and a live one are
+ * the same thing seen at different moments, and rendering them through one component is what
+ * keeps them saying the same thing.
+ */
+export function fetchEvaluation(
+  evaluationId: number,
+  options?: RequestOptions,
+): Promise<Ranking> {
+  return getJson("/evaluations/{evaluationId}", undefined, {
+    ...options,
+    pathParams: { evaluationId },
+  });
+}
+
+/** The criteria as they were when this was saved -- a full copy, never a reference. */
+export function fetchEvaluationCriteria(
+  evaluationId: number,
+  options?: RequestOptions,
+): Promise<{ criteria: EvaluationCriterion[] }> {
+  return getJson("/evaluations/{evaluationId}/criteria", undefined, {
+    ...options,
+    pathParams: { evaluationId },
+  });
+}
+
+export function fetchCandidateScoreDetail(
+  evaluationId: number,
+  candidateId: string,
+  options?: RequestOptions,
+): Promise<CandidateScoreDetail> {
+  return getJson(
+    "/evaluations/{evaluationId}/candidates/{candidateId}",
+    undefined,
+    { ...options, pathParams: { evaluationId, candidateId } },
   );
 }
