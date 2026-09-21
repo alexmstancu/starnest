@@ -138,15 +138,21 @@ function PillarRow({
         </form>
       </td>
       <td>
-        <label className="toggle">
+        {/* Same shape as a criterion's lock, and for the same reason: a `.toggle` whose only
+            child is a `visually-hidden` span collapses to nothing outside a flex row, so the
+            control was there to read and not there to click. */}
+        <label className="toggle toggle--lock">
           <input
             type="checkbox"
+            aria-label={`Lock ${weight.pillar}`}
             checked={weight.weight_locked}
             onChange={(event) =>
               void onMove(weight.pillar, weight.weight, event.target.checked)
             }
           />
-          <span className="visually-hidden">Lock {weight.pillar}</span>
+          <span aria-hidden="true">
+            {weight.weight_locked ? "Locked" : "Unlocked"}
+          </span>
         </label>
       </td>
     </tr>

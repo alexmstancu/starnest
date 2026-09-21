@@ -62,6 +62,7 @@ export function CriteriaPanel({ editor }: { editor: CriteriaEditor }) {
                 criterion={criterion}
                 saving={editor.savingAttribute === criterion.attribute}
                 onSave={editor.setWeight}
+                onSetLock={editor.setLock}
                 onSaveRule={editor.setRule}
               />
             ))}
@@ -105,11 +106,13 @@ function CriterionRow({
   criterion,
   saving,
   onSave,
+  onSetLock,
   onSaveRule,
 }: {
   criterion: Criterion;
   saving: boolean;
-  onSave: (attribute: string, weight: number, weightLocked?: boolean) => void;
+  onSave: (attribute: string, weight: number) => void;
+  onSetLock: (attribute: string, weightLocked: boolean) => void;
   onSaveRule: (attribute: string, rule: CriterionRule) => void;
 }) {
   const stored = weightAsText(criterion.weight);
@@ -183,21 +186,22 @@ function CriterionRow({
           {/* Sent with the weight, not separately: the server rebalances the *unlocked*
               siblings, so which of them absorb a change depends on what is locked at the
               moment it is made. Two requests would let their order decide the answer. */}
-          <label className="toggle">
+          {/* **The name is on the input, and the visible word is decorative.** A `.toggle`
+              whose only child is a `visually-hidden` span has no width outside a flex row, so
+              it collapses to a target nothing can click -- which a component test cannot see,
+              because it clicks the element rather than a point on the screen. */}
+          <label className="toggle toggle--lock">
             <input
               type="checkbox"
+              aria-label={`Lock the weight for ${criterion.attribute}`}
               checked={criterion.weight_locked ?? false}
               disabled={saving}
               onChange={(event) =>
-                onSave(
-                  criterion.attribute,
-                  criterion.weight ?? 0,
-                  event.target.checked,
-                )
+                onSetLock(criterion.attribute, event.target.checked)
               }
             />
-            <span className="visually-hidden">
-              Lock the weight for {criterion.attribute}
+            <span aria-hidden="true">
+              {criterion.weight_locked ? "Locked" : "Unlocked"}
             </span>
           </label>
         </td>

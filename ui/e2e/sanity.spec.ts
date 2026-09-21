@@ -124,6 +124,138 @@ test.describe("configuring", () => {
   });
 });
 
+test.describe("saved rankings", () => {
+  /**
+   * A ranking is recomputed on every request, so it moves as weights move -- which is why
+   * keeping one is a deliberate act rather than a side effect of looking.
+   *
+   * **This leaves a row behind.** The contract has no `DELETE /evaluations`, deliberately: a
+   * saved evaluation is a measurement somebody chose to keep, not a draft. So this test
+   * marks what it creates rather than tidying it away.
+   */
+  test("keeps a ranking, lists it, and opens it again", async ({ page }) => {
+    await page.goto("/rank");
+    const panel = page.getByRole("region", { name: "Saved rankings" });
+    const save = panel.getByRole("button", { name: "Save this ranking" });
+    await expect(save).toBeEnabled();
+
+    const note = `sanity suite ${Date.now()}`;
+    await panel.getByRole("textbox", { name: /worth keeping/ }).fill(note);
+    await save.click();
+
+    const entry = panel.getByRole("listitem").filter({ hasText: note });
+    await expect(entry).toHaveCount(1);
+
+    await entry.getByRole("button", { name: "Open" }).click();
+    // Frozen: the criteria and the score scale were copied with it, so it keeps meaning what
+    // it meant even after a weight moves.
+    await expect(panel.getByText(/As it was when it was saved/)).toBeVisible();
+    await expect(
+      panel.getByRole("table", { name: "Ranked candidates" }),
+    ).toBeVisible();
+  });
+
+  test("opens several candidates' figures at once", async ({ page }) => {
+    await page.goto("/rank");
+    const open = page.getByRole("button", { name: "Show figures" });
+    await open.first().click();
+    // The second button, because the first has become "Hide figures".
+    await page.getByRole("button", { name: "Show figures" }).first().click();
+
+    await expect(
+      page.getByRole("heading", { name: /every figure behind the score/ }),
+    ).toHaveCount(2);
+  });
+});
+
+test.describe("criteria sets", () => {
+  test("duplicates a set as a full copy, then discards the copy", async ({
+    page,
+  }) => {
+    await page.goto("/configure");
+    const sets = page.getByRole("region", { name: "Criteria sets" });
+    const id = `sanity_copy_${Date.now()}`;
+
+    await sets
+      .getByRole("textbox", { name: /Identifier for a copy of/ })
+      .fill(id);
+    await sets.getByRole("textbox", { name: /Name for the copy/ }).fill(id);
+    await sets.getByRole("button", { name: /^Duplicate / }).click();
+
+    const chosen = page.getByRole("combobox", { name: "Active criteria set" });
+    await expect(chosen).toHaveValue(id);
+
+    // A copy is a full set, never a sparse overlay (`reqs.md` Q191), so it must arrive with
+    // criteria rather than empty like a newly created one.
+    await expect(
+      page.getByRole("region", { name: "Criteria" }).getByRole("row"),
+    ).not.toHaveCount(1);
+
+    // Left as it was found: the copy exists only for this test.
+    await sets.getByRole("button", { name: `Discard ${id}` }).click();
+    await expect(chosen).not.toHaveValue(id);
+  });
+
+  test("locks a criterion's weight and unlocks it again", async ({ page }) => {
+    await page.goto("/configure");
+    const criteria = page.getByRole("region", { name: "Criteria" });
+    const lock = criteria.getByRole("checkbox").first();
+
+    const before = await lock.isChecked();
+
+    // **`click()` and then poll, never `setChecked()`.** This checkbox is controlled: it
+    // flips only once the PATCH resolves, and `setChecked` asserts the new state the moment
+    // it has clicked, so it throws "did not change its state" while the request is still in
+    // flight. `toBeChecked` retries, which is what a server-backed toggle needs.
+    //
+    // Rule 3 of this suite still holds -- clicking is driving the real control. It was
+    // `setChecked`'s impatience that did not fit, not the control.
+    await lock.click();
+    await expect(lock).toBeChecked({ checked: !before });
+
+    await lock.click();
+    await expect(lock).toBeChecked({ checked: before });
+  });
+
+  test("shows what each pillar's criteria come to", async ({ page }) => {
+    await page.goto("/configure");
+    const totals = page.getByRole("list", {
+      name: "Weight totals by pillar",
+    });
+
+    await expect(totals).toBeVisible();
+    // Weights sum to 100 within a pillar; the screen shows the rule holding.
+    await expect(totals.getByRole("listitem").first()).toContainText("100");
+  });
+});
+
+test.describe("a setting nobody has decided", () => {
+  /**
+   * Deliberately the **comparator limit** and not the score scale. Both may be unset, but an
+   * unset score scale stops the whole product ranking -- and a sanity test that blocked the
+   * application for the duration, or left it blocked if it failed halfway, would be a worse
+   * fault than the one it was checking for.
+   */
+  test("says what a blank setting costs, then takes it back", async ({
+    page,
+  }) => {
+    await page.goto("/configure");
+    const limit = page.getByRole("textbox", { name: /Comparator limit/ });
+    await expect.poll(() => limit.inputValue()).not.toBe("");
+    const before = await limit.inputValue();
+
+    await limit.fill("");
+    await expect(
+      page.getByText(/A comparison accepts as many comparators as you pick/),
+    ).toBeVisible();
+    await expect(limit).toHaveAttribute("placeholder", "Not set");
+
+    await limit.fill(before);
+    await page.getByRole("button", { name: "Save settings" }).click();
+    await expect(limit).toHaveValue(before);
+  });
+});
+
 test.describe("a run", () => {
   test("can be estimated without fetching anything", async ({ page }) => {
     await page.goto("/acquire");

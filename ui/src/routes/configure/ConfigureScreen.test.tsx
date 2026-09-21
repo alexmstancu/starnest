@@ -322,6 +322,50 @@ describe("locking a criterion's weight", () => {
   });
 });
 
+/**
+ * The protocol the real backend enforces, learned by driving it: a lock travels **alone**.
+ *
+ * Sending `{ weight, weight_locked: false }` for a locked criterion is refused, because the
+ * request asks to move a weight that is locked at the moment it arrives -- even when the
+ * weight sent is the one it already holds. The mock was more permissive than the server for
+ * a while, which certified a protocol the server rejects.
+ */
+describe("a locked weight holds where it is", () => {
+  it("refuses a weight change on a criterion that is itself locked", async () => {
+    renderShell("/configure");
+    await settled();
+    await weightInput("country.economic_outlook");
+
+    await saveWeight("country.economic_outlook", "25");
+
+    expect(
+      await screen.findByText(/nothing to rebalance into/i),
+    ).toBeInTheDocument();
+  });
+
+  it("unlocks without touching the weight, so the weight can then move", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+
+    const lock = await screen.findByRole("checkbox", {
+      name: "Lock the weight for country.economic_outlook",
+    });
+    expect(shownWeight("country.economic_outlook")).toBe("20");
+
+    await user.click(lock);
+
+    await waitFor(() => expect(lock).not.toBeChecked());
+    // Unlocking moves nothing: it says the weight may move, not that it has.
+    expect(shownWeight("country.economic_outlook")).toBe("20");
+
+    await saveWeight("country.economic_outlook", "25");
+    await waitFor(() =>
+      expect(shownWeight("country.economic_outlook")).toBe("25"),
+    );
+  });
+});
+
 describe("what each pillar's criteria come to", () => {
   it("shows a total per pillar, so the rule can be seen holding", async () => {
     renderShell("/configure");

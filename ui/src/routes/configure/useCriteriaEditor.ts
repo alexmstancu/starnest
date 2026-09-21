@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   fetchCriteriaSet,
+  updateCriterionLock,
   updateCriterionRule,
   updateCriterionWeight,
   type CriteriaSet,
@@ -33,11 +34,12 @@ export interface CriteriaEditor {
   savingAttribute: string | null;
   /** The failure of the last weight change. Shown; never swallowed. */
   saveError: unknown;
-  setWeight: (
-    attribute: string,
-    weight: number,
-    weightLocked?: boolean,
-  ) => void;
+  setWeight: (attribute: string, weight: number) => void;
+  /**
+   * Lock or unlock a weight. **Its own change, not part of a weight change** -- the server
+   * refuses to move a locked weight even to the value it already holds.
+   */
+  setLock: (attribute: string, weightLocked: boolean) => void;
   /**
    * Change how one criterion judges: goal, method, band, anchors, threshold.
    *
@@ -74,13 +76,32 @@ export function useCriteriaEditor(
   }, [resource.data]);
 
   const setWeight = useCallback(
-    (attribute: string, weight: number, weightLocked?: boolean) => {
+    (attribute: string, weight: number) => {
       if (criteriaSetId === null) return;
 
       setSavingAttribute(attribute);
       setSaveError(null);
 
-      void updateCriterionWeight(criteriaSetId, attribute, weight, weightLocked)
+      void updateCriterionWeight(criteriaSetId, attribute, weight)
+        .then((rebalanced) => {
+          setCriteria((current) =>
+            applyRebalance(current, rebalanced.criteria),
+          );
+        })
+        .catch((error: unknown) => setSaveError(error))
+        .finally(() => setSavingAttribute(null));
+    },
+    [criteriaSetId],
+  );
+
+  const setLock = useCallback(
+    (attribute: string, weightLocked: boolean) => {
+      if (criteriaSetId === null) return;
+
+      setSavingAttribute(attribute);
+      setSaveError(null);
+
+      void updateCriterionLock(criteriaSetId, attribute, weightLocked)
         .then((rebalanced) => {
           setCriteria((current) =>
             applyRebalance(current, rebalanced.criteria),
@@ -119,6 +140,7 @@ export function useCriteriaEditor(
     savingAttribute,
     saveError,
     setWeight,
+    setLock,
     setRule,
     reload,
   };

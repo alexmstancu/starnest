@@ -501,6 +501,16 @@ select.field__control {
   cursor: pointer;
 }
 
+/* A lock standing on its own in a table cell, rather than one of a row of choices.
+   `.toggle` takes its width from a flex parent; alone it has none, so a lock built the same
+   way was readable and unclickable. This gives it a size of its own. */
+.toggle--lock {
+  display: inline-flex;
+  min-width: 5.5rem;
+  padding: 4px 8px;
+  font-size: var(--font-size-small);
+}
+
 .toggle:has(input:checked) {
   border-color: var(--colour-accent);
   background: var(--colour-accent-surface);
@@ -1321,6 +1331,67 @@ select.field__control {
   margin: 0 0 var(--space-single);
   padding: 0;
   list-style: none;
+}
+
+/* A run's three outcomes as one bar. Three tints because they are three different facts:
+   answered, refused by a source, and answered by nobody (`reqs.md` Q217). */
+.meter__fill--completed {
+  fill: var(--colour-success);
+}
+
+.meter__fill--failed {
+  fill: var(--colour-danger);
+}
+
+.meter__fill--unanswered {
+  fill: var(--colour-border-strong);
+}
+
+/* Grouped failures and unanswered items, with their selection controls. */
+.panel--nested {
+  margin-top: var(--space-single);
+  background: var(--colour-surface-sunken);
+}
+
+.group__actions {
+  display: flex;
+  gap: var(--space-half);
+  margin-bottom: var(--space-single);
+}
+
+.group__list,
+.group__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.group__items {
+  margin: var(--space-half) 0 var(--space-single) var(--space-single);
+}
+
+.group__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-half);
+}
+
+.group__count {
+  font-size: var(--font-size-small);
+  color: var(--colour-text-muted);
+}
+
+/* One selectable item. Like `.toggle--lock`, it needs a size of its own: a `.toggle` takes
+   its width from a flex parent and has none standing alone. */
+.toggle--item {
+  display: inline-flex;
+  justify-content: flex-start;
+  padding: 4px 8px;
+  font-size: var(--font-size-small);
 }
 
 /* --- Saved rankings -----------------------------------------------------------------------

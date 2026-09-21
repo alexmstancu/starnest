@@ -413,8 +413,23 @@ export const handlers = [
 
       const body = (await request.json()) as Partial<Criterion>;
 
-      // A rule change: the scoring fields, which move no weight. Applied in place, because
-      // the point of a mock here is that the screen can read back what it sent.
+      // **A locked weight cannot be moved, not even to the value it already holds.** The real
+      // backend refuses this, and a mock that accepted it certified a protocol the server
+      // rejects -- which is how `weight_locked` shipped travelling with a weight and failed
+      // the moment a browser drove it. Unlocking is its own change.
+      if (body.weight !== undefined && criterion.weight_locked) {
+        return HttpResponse.json(
+          {
+            code: "weights_all_locked",
+            message: `cannot change the weight of ${attributeId}: it is itself locked. A lock holds that weight where it is, so unlock it before moving it.`,
+            details: { locked: [attributeId] },
+          },
+          { status: 409 },
+        );
+      }
+
+      // A rule change, or a lock on its own: the fields that move no weight. Applied in
+      // place, because the point of a mock here is that the screen can read back what it sent.
       if (body.weight === undefined) {
         Object.assign(criterion, body);
         return HttpResponse.json({
@@ -436,12 +451,7 @@ export const handlers = [
         );
       }
 
-      return rebalancePillar(
-        set.criteria ?? [],
-        criterion,
-        body.weight,
-        body.weight_locked,
-      );
+      return rebalancePillar(set.criteria ?? [], criterion, body.weight);
     },
   ),
 
@@ -597,14 +607,7 @@ function rebalancePillar(
   criteria: Criterion[],
   edited: Criterion,
   weight: number,
-  weightLocked?: boolean,
 ) {
-  // Applied before the arithmetic, because the lock is part of the same change: the server
-  // rebalances the unlocked siblings, and whether *this* one is among them is decided by the
-  // value arriving with the weight rather than by the one that was there before.
-  if (weightLocked !== undefined) {
-    edited.weight_locked = weightLocked;
-  }
   const pillar = criteria.filter((entry) => entry.pillar === edited.pillar);
   const siblings = pillar.filter((entry) => entry !== edited);
   const unlocked = siblings.filter((entry) => !entry.weight_locked);

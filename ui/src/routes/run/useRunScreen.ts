@@ -13,13 +13,16 @@ import { useCallback, useState } from "react";
 import {
   fetchRun,
   fetchRuns,
+  fetchSettings,
   planRun,
   retryRun,
   startRun,
   type Run,
   type RunDetail,
   type RunPlan,
+  type RunScope,
 } from "../../api/endpoints";
+import { type Commitment, describeCommitment } from "./spendCommitment";
 import { useResource, type Resource } from "../../api/useResource";
 
 export type RunAct =
@@ -35,8 +38,24 @@ export type RunAct =
  * `act` entirely (P45).
  */
 
+/**
+ * A run that has been estimated and is waiting to be agreed to.
+ *
+ * **Nothing that can spend fires on a click.** The estimate panel already showed items, paid
+ * calls and a cost ceiling; what was missing was a step between reading that and it
+ * happening. A run is the only thing here that spends money and the only one a weight change
+ * cannot undo.
+ */
+export interface ArmedRun {
+  scope: RunScope;
+  plan: RunPlan;
+  commitment: Commitment;
+}
+
 export interface RunScreenState {
   plan: RunPlan | null;
+  /** The run awaiting a yes, or null when nothing is armed. */
+  armed: ArmedRun | null;
   current: RunDetail | null;
   busy: RunAct | null;
   failure: unknown;
@@ -46,6 +65,15 @@ export interface RunScreenState {
   estimate: (levelId: string) => void;
   start: (levelId: string) => void;
   refresh: () => void;
+  /**
+   * Estimate a scoped run and arm it. **Scoped rather than a retry**, because
+   * `POST /{runId}/retry` takes only `failed | unanswered` over a whole run -- anything
+   * narrower has to go through `/plan` and then `POST /data-acquisition-runs`.
+   */
+  propose: (scope: RunScope, act: string) => void;
+  /** Start the armed run. Only reachable once something has been armed. */
+  commit: () => void;
+  cancel: () => void;
   /** A new run over the part named: the sources that failed, or the items nobody answered. */
   again: (items: "failed" | "unanswered") => void;
   open: (run: Run) => void;
@@ -56,6 +84,7 @@ export function useRunScreen(): RunScreenState {
   const [current, setCurrent] = useState<RunDetail | null>(null);
   const [busy, setBusy] = useState<RunAct | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
+  const [armed, setArmed] = useState<ArmedRun | null>(null);
 
   const history = useResource(
     useCallback((signal: AbortSignal) => fetchRuns(10, { signal }), []),
@@ -83,6 +112,7 @@ export function useRunScreen(): RunScreenState {
 
   return {
     plan,
+    armed,
     current,
     busy,
     failure,
@@ -100,6 +130,37 @@ export function useRunScreen(): RunScreenState {
         setPlan(null);
         await watch(started);
       }),
+    propose: (scope, what) =>
+      void act("planning", async () => {
+        setPlan(null);
+        const planned = await planRun(scope);
+        // The cap is read at the moment of arming, not cached: it is a setting somebody may
+        // have just changed, and a stale ceiling in a confirmation is worse than none.
+        const settings = await fetchSettings();
+        setArmed({
+          scope,
+          plan: planned,
+          commitment: describeCommitment({
+            act: what,
+            itemsTotal: planned.items_total,
+            llmCallCount: planned.llm_call_count,
+            estimatedCostEur: planned.estimated_cost_eur,
+            capEur: settings.run_spend_cap_eur,
+          }),
+        });
+      }),
+    commit: () =>
+      void act("running", async () => {
+        if (!armed) return;
+        // Going uncapped is only ever accepted because the strip said so in as many words.
+        const started = await startRun({
+          ...armed.scope,
+          accept_uncapped_spend: armed.commitment.uncapped,
+        });
+        setArmed(null);
+        await watch(started);
+      }),
+    cancel: () => setArmed(null),
     refresh: () =>
       void act("opening", async () => {
         if (current) setCurrent(await fetchRun(current.id));

@@ -1,8 +1,8 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { PAID_RUN_PLAN } from "../../mocks/fixtures";
+import { PAID_RUN_PLAN, RUN_PLAN } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -134,7 +134,7 @@ describe("running and retrying", () => {
     );
 
     await userEvent.click(
-      await screen.findByRole("button", { name: /retry only what failed/i }),
+      await screen.findByRole("button", { name: /retry everything that failed/i }),
     );
 
     expect(retried).toEqual([8]);
@@ -167,7 +167,7 @@ describe("running and retrying", () => {
       await screen.findByText(/nothing failed in this run/i),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /retry only what failed/i }),
+      screen.queryByRole("button", { name: /retry everything that failed/i }),
     ).toBeNull();
   });
 });
@@ -228,7 +228,7 @@ describe("what nobody answered", () => {
     );
     await openTheRun();
 
-    await userEvent.click(screen.getByRole("button", { name: /ask again/i }));
+    await userEvent.click(screen.getByRole("button", { name: /ask again about all of them/i }));
 
     expect(asked).toEqual([{ run: 8, items: "unanswered" }]);
     expect(
@@ -257,7 +257,7 @@ describe("what nobody answered", () => {
     );
     await openTheRun();
 
-    expect(screen.queryByRole("button", { name: /ask again/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /ask again about all of them/i })).toBeNull();
     expect(
       screen.queryByRole("table", { name: /answered by nobody/i }),
     ).toBeNull();
@@ -277,7 +277,7 @@ describe("what nobody answered", () => {
     );
     await openTheRun();
 
-    await userEvent.click(screen.getByRole("button", { name: /ask again/i }));
+    await userEvent.click(screen.getByRole("button", { name: /ask again about all of them/i }));
 
     expect(await screen.findByText(/no unanswered items/i)).toBeInTheDocument();
   });
@@ -386,5 +386,373 @@ describe("when there is nothing to show", () => {
     );
 
     expect(polled).toBe(2);
+  });
+});
+
+/**
+ * UX review B. The four counts were shown as numbers to compare in your head; `reqs.md` Q217
+ * makes them close, so they draw as one bar with no remainder.
+ */
+describe("a run's progress", () => {
+  it("draws the run's outcomes as one bar, read out in words", async () => {
+    renderShell("/acquire");
+    await estimate();
+    await userEvent.click(
+      screen.getByRole("button", { name: /start this run/i }),
+    );
+    await screen.findByRole("heading", { name: /run 8/i });
+
+    expect(
+      screen.getByRole("img", {
+        name: "93 of 96 answered, 1 failed, 2 unanswered",
+      }),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * UX review C. `POST /{runId}/retry` takes only `failed | unanswered` over a whole run, so a
+ * narrower selection goes through `/plan` and then `POST /data-acquisition-runs` with a scope.
+ */
+describe("re-asking about part of a run", () => {
+  async function openRun() {
+    renderShell("/acquire");
+    await estimate();
+    await userEvent.click(
+      screen.getByRole("button", { name: /start this run/i }),
+    );
+    await screen.findByRole("heading", { name: /run 8/i });
+  }
+
+  it("groups failures by the source that refused", async () => {
+    await openRun();
+
+    const group = within(
+      await screen.findByRole("region", { name: /what failed, by source/i }),
+    );
+    expect(
+      group.getByRole("button", { name: /^oecd \(1\)$/i }),
+    ).toBeInTheDocument();
+  });
+
+  /** Nothing refused an unanswered item, so the useful question is the attribute. */
+  it("groups unanswered items by attribute", async () => {
+    await openRun();
+
+    const group = within(
+      await screen.findByRole("region", {
+        name: /attributes nobody answered/i,
+      }),
+    );
+    expect(
+      group.getByRole("button", {
+        name: /country\.overcrowding_rate \(1\)/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("starts with everything selected, and clears on request", async () => {
+    await openRun();
+    const group = within(
+      await screen.findByRole("region", { name: /what failed, by source/i }),
+    );
+
+    expect(
+      group.getByRole("button", { name: /^Retry 1 selected$/ }),
+    ).toBeEnabled();
+
+    await userEvent.click(group.getByRole("button", { name: "Clear all" }));
+
+    expect(
+      group.getByRole("button", { name: /^Retry 0 selected$/ }),
+    ).toBeDisabled();
+  });
+
+  /**
+   * The routing decision, made visible: a narrow selection plans a *new* run rather than
+   * calling the retry endpoint, which cannot express anything narrower than a whole bucket.
+   */
+  it("plans a scoped run rather than calling the retry endpoint", async () => {
+    const planned: unknown[] = [];
+    const retried: number[] = [];
+    await openRun();
+    // Installed *after* the run is on screen: overriding the start endpoint beforehand would
+    // break the very setup this test depends on.
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, async ({ request }) => {
+        planned.push(await request.json());
+        return HttpResponse.json(RUN_PLAN);
+      }),
+      http.post(`${BASE}/data-acquisition-runs/:runId/retry`, ({ params }) => {
+        retried.push(Number(params["runId"]));
+        return HttpResponse.json({ id: 12 }, { status: 202 });
+      }),
+    );
+    const group = within(
+      await screen.findByRole("region", { name: /what failed, by source/i }),
+    );
+
+    await userEvent.click(
+      group.getByRole("button", { name: /^Retry 1 selected$/ }),
+    );
+
+    expect(retried).toEqual([]);
+    expect(planned.at(-1)).toEqual({
+      level: "country",
+      candidates: ["country.liechtenstein"],
+      attributes: ["country.total_tax_rate_effective"],
+    });
+  });
+
+  /**
+   * UX review D. Nothing that can spend fires on a click: the estimate already said what it
+   * would cost, and this is the step between reading that and it happening.
+   */
+  it("arms a confirmation rather than starting immediately", async () => {
+    await openRun();
+    const group = within(
+      await screen.findByRole("region", { name: /what failed, by source/i }),
+    );
+
+    await userEvent.click(
+      group.getByRole("button", { name: /^Retry 1 selected$/ }),
+    );
+
+    const strip = await screen.findByRole("alert");
+    expect(strip).toHaveTextContent(/Retry 1 selected over 96 values/);
+    // The shipped plan asks no paid source, and saying so plainly is what stops a reader
+    // learning to click past the confirmations that do cost something.
+    expect(strip).toHaveTextContent(/costs nothing/i);
+    expect(
+      within(strip).getByRole("button", { name: /yes, start it/i }),
+    ).toBeEnabled();
+  });
+
+  it("starts nothing when the confirmation is cancelled", async () => {
+    const started: unknown[] = [];
+    await openRun();
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
+        started.push(await request.json());
+        return HttpResponse.json({ id: 12 }, { status: 202 });
+      }),
+    );
+    const group = within(
+      await screen.findByRole("region", { name: /what failed, by source/i }),
+    );
+    await userEvent.click(
+      group.getByRole("button", { name: /^Retry 1 selected$/ }),
+    );
+
+    const strip = await screen.findByRole("alert");
+    await userEvent.click(within(strip).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(started).toEqual([]);
+  });
+
+  it("starts the scoped run once it is agreed to", async () => {
+    const started: unknown[] = [];
+    await openRun();
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
+        started.push(await request.json());
+        return HttpResponse.json({ id: 12 }, { status: 202 });
+      }),
+    );
+    const group = within(
+      await screen.findByRole("region", { name: /what failed, by source/i }),
+    );
+    await userEvent.click(
+      group.getByRole("button", { name: /^Retry 1 selected$/ }),
+    );
+
+    const strip = await screen.findByRole("alert");
+    await userEvent.click(
+      within(strip).getByRole("button", { name: /yes, start it/i }),
+    );
+
+    await waitFor(() => expect(started).toHaveLength(1));
+    expect(started[0]).toMatchObject({
+      level: "country",
+      candidates: ["country.liechtenstein"],
+      attributes: ["country.total_tax_rate_effective"],
+      accept_uncapped_spend: false,
+    });
+  });
+});
+
+describe("picking out individual items", () => {
+  async function failureGroup() {
+    renderShell("/acquire");
+    await estimate();
+    await userEvent.click(
+      screen.getByRole("button", { name: /start this run/i }),
+    );
+    await screen.findByRole("heading", { name: /run 8/i });
+    return within(
+      await screen.findByRole("region", { name: /what failed, by source/i }),
+    );
+  }
+
+  it("opens a group to show the items inside it", async () => {
+    const group = await failureGroup();
+    const head = group.getByRole("button", { name: /^oecd \(1\)$/i });
+    expect(head).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(head);
+
+    expect(head).toHaveAttribute("aria-expanded", "true");
+    expect(
+      group.getByRole("checkbox", {
+        name: /country\.liechtenstein country\.total_tax_rate_effective/i,
+      }),
+    ).toBeChecked();
+  });
+
+  it("closes a group that was open", async () => {
+    const group = await failureGroup();
+    const head = group.getByRole("button", { name: /^oecd \(1\)$/i });
+
+    await userEvent.click(head);
+    await userEvent.click(head);
+
+    expect(head).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("clears and restores one group with All and None", async () => {
+    const group = await failureGroup();
+
+    await userEvent.click(group.getByRole("button", { name: "None" }));
+    expect(group.getByText("0 selected")).toBeInTheDocument();
+
+    await userEvent.click(group.getByRole("button", { name: "All" }));
+    expect(group.getByText("1 selected")).toBeInTheDocument();
+  });
+
+  it("selects everything again after a clear", async () => {
+    const group = await failureGroup();
+
+    await userEvent.click(group.getByRole("button", { name: "Clear all" }));
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
+
+    expect(
+      group.getByRole("button", { name: /^Retry 1 selected$/ }),
+    ).toBeEnabled();
+  });
+
+  it("unpicks a single item without touching the others", async () => {
+    const group = await failureGroup();
+    await userEvent.click(group.getByRole("button", { name: /^oecd \(1\)$/i }));
+
+    await userEvent.click(
+      group.getByRole("checkbox", {
+        name: /country\.liechtenstein country\.total_tax_rate_effective/i,
+      }),
+    );
+
+    expect(
+      group.getByRole("button", { name: /^Retry 0 selected$/ }),
+    ).toBeDisabled();
+  });
+
+  /**
+   * `RunScope` carries candidates and attributes as separate lists, so a selection that is not
+   * a full rectangle asks about more pairs than it has items. Somebody about to spend money
+   * gets the real number.
+   */
+  it("says when a selection would ask about more pairs than it holds", async () => {
+    const group = within(
+      await (async () => {
+        renderShell("/acquire");
+        await estimate();
+        await userEvent.click(
+          screen.getByRole("button", { name: /start this run/i }),
+        );
+        await screen.findByRole("heading", { name: /run 8/i });
+        return screen.findByRole("region", {
+          name: /attributes nobody answered/i,
+        });
+      })(),
+    );
+
+    // Two unanswered items share one candidate and differ by attribute, so the scope is one
+    // candidate by two attributes -- two pairs for two items, a full rectangle.
+    expect(
+      group.getByRole("button", { name: /^Ask again about 2 selected$/ }),
+    ).toBeEnabled();
+  });
+});
+
+/**
+ * UX review H. Three reasons a figure is missing look identical in a ranking and have
+ * entirely different remedies: a source refused, a source had nothing, or there is no source.
+ * Only the first two are worth asking again about.
+ */
+describe("attributes with no data source at all", () => {
+  it("lists an attribute nobody would even be asked about", async () => {
+    renderShell("/acquire");
+
+    const card = within(
+      await screen.findByRole("region", {
+        name: /attributes with no data source at all/i,
+      }),
+    );
+    expect(
+      await card.findByRole("rowheader", { name: "Nobody measures this" }),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves out attributes that do have a source", async () => {
+    renderShell("/acquire");
+
+    const card = within(
+      await screen.findByRole("region", {
+        name: /attributes with no data source at all/i,
+      }),
+    );
+    await card.findByRole("rowheader", { name: "Nobody measures this" });
+    expect(
+      card.queryByRole("rowheader", { name: "Cost of living index" }),
+    ).toBeNull();
+  });
+
+  /** Retrying cannot conjure an adapter, so the card says so rather than offering a button. */
+  it("says a run cannot fill them, instead of offering a retry", async () => {
+    renderShell("/acquire");
+
+    const card = within(
+      await screen.findByRole("region", {
+        name: /attributes with no data source at all/i,
+      }),
+    );
+    expect(
+      await card.findByText(/retrying one changes nothing/i),
+    ).toBeInTheDocument();
+    expect(card.queryByRole("button", { name: /retry/i })).toBeNull();
+  });
+
+  it("names hand entry as the remedy where the catalog permits it", async () => {
+    renderShell("/acquire");
+
+    const card = within(
+      await screen.findByRole("region", {
+        name: /attributes with no data source at all/i,
+      }),
+    );
+    const row = await card.findByRole("row", { name: /nobody measures this/i });
+    expect(row).toHaveTextContent(/enter a value by hand/i);
+  });
+
+  it("says an attribute the active set does not score is not weighed", async () => {
+    renderShell("/acquire");
+
+    const card = within(
+      await screen.findByRole("region", {
+        name: /attributes with no data source at all/i,
+      }),
+    );
+    const row = await card.findByRole("row", { name: /nobody measures this/i });
+    expect(row).toHaveTextContent(/not scored here/i);
   });
 });

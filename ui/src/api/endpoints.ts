@@ -106,14 +106,36 @@ export function updateCriterionWeight(
   criteriaSetId: string,
   attributeId: string,
   weight: number,
-  weightLocked?: boolean,
   options?: RequestOptions,
 ): Promise<RebalancedPillar> {
   return patchJson(
     "/criteria-sets/{criteriaSetId}/criteria/{attributeId}",
-    weightLocked === undefined
-      ? { weight }
-      : { weight, weight_locked: weightLocked },
+    { weight },
+    { ...options, pathParams: { criteriaSetId, attributeId } },
+  );
+}
+
+/**
+ * Lock or unlock one criterion's weight.
+ *
+ * **The lock travels alone, without a weight.** A lock holds its weight where it is, and the
+ * server enforces that against the weight's *own current value* too: sending
+ * `{ weight, weight_locked: false }` for a locked criterion is refused with
+ * `409 weights_all_locked`, because the request asks to move a weight that is locked at the
+ * moment it arrives. So unlocking is its own change, and moving the weight comes after.
+ *
+ * Found by driving the real backend. A mock that accepted both together certified a protocol
+ * the server rejects.
+ */
+export function updateCriterionLock(
+  criteriaSetId: string,
+  attributeId: string,
+  weightLocked: boolean,
+  options?: RequestOptions,
+): Promise<RebalancedPillar> {
+  return patchJson(
+    "/criteria-sets/{criteriaSetId}/criteria/{attributeId}",
+    { weight_locked: weightLocked },
     { ...options, pathParams: { criteriaSetId, attributeId } },
   );
 }

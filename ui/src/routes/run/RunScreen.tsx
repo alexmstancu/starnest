@@ -1,8 +1,16 @@
-import { type Run, type RunDetail, type RunPlan } from "../../api/endpoints";
+import {
+  type Run,
+  type RunDetail,
+  type RunPlan,
+  type RunScope,
+} from "../../api/endpoints";
 import { formatCount, formatDateTime, formatMoney } from "../../format/display";
 import type { RouteDefinition } from "../../navigation/routes";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
+import { ItemGroups } from "./ItemGroups";
+import { UnsourcedAttributes } from "./UnsourcedAttributes";
+import { type Progress, progressBar } from "./runProgress";
 import { useRunScreen } from "./useRunScreen";
 
 /**
@@ -52,6 +60,18 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
               onStart={() => run.start(levelId)}
             />
           )}
+
+          {/* Nothing that can spend fires on a click. The estimate already said what it would
+              cost; this is the step between reading that and it happening. */}
+          {run.armed && (
+            <SpendConfirmation
+              sentence={run.armed.commitment.sentence}
+              uncapped={run.armed.commitment.uncapped}
+              busy={run.busy === "running"}
+              onYes={run.commit}
+              onCancel={run.cancel}
+            />
+          )}
         </div>
       )}
 
@@ -67,8 +87,15 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           onRetry={() => run.again("failed")}
           asking={run.busy === "asking"}
           onAskAgain={() => run.again("unanswered")}
+          level={levelId}
+          planning={run.busy === "planning"}
+          onPropose={run.propose}
         />
       )}
+
+      {/* Beside the failures deliberately: the three reasons a figure is missing look the
+          same in a ranking and have entirely different remedies. */}
+      {levelId !== null && <UnsourcedAttributes level={levelId} />}
 
       <h3 className="panel__heading">Recent runs</h3>
       {run.history.status === "loading" && (
@@ -145,6 +172,95 @@ function PlannedRun({
   );
 }
 
+/**
+ * The step between reading what a run would cost and it happening.
+ *
+ * An uncapped run is marked out rather than merely mentioned: `run_spend_cap_eur` is nullable
+ * and null is the shipped state, so "no ceiling" is the *default* condition and the one most
+ * worth interrupting for.
+ */
+/**
+ * The run's progress as one bar.
+ *
+ * **SVG geometry, not a style attribute.** eslint refuses a `style` attribute anywhere under
+ * `routes/` -- an inline style is design inside a component, which is what makes a redesign a
+ * rewrite -- and a `<rect width="73%">` carries the same number as an attribute of the
+ * drawing rather than of the styling.
+ */
+function RunProgress({ progress }: { progress?: Progress | null }) {
+  const bar = progressBar(progress);
+  if (bar.segments.length === 0) {
+    return <p className="panel__hint">{bar.reading}</p>;
+  }
+
+  return (
+    <div className="meter">
+      <svg
+        className="meter__track"
+        viewBox="0 0 100 8"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={bar.reading}
+      >
+        {bar.segments.map((segment) => (
+          <rect
+            key={segment.kind}
+            className={`meter__fill meter__fill--${segment.kind}`}
+            x={segment.x}
+            y="0"
+            width={segment.width}
+            height="8"
+          >
+            <title>{segment.title}</title>
+          </rect>
+        ))}
+      </svg>
+      <span className="meter__reading">{bar.reading}</span>
+    </div>
+  );
+}
+
+function SpendConfirmation({
+  sentence,
+  uncapped,
+  busy,
+  onYes,
+  onCancel,
+}: {
+  sentence: string;
+  uncapped: boolean;
+  busy: boolean;
+  onYes: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className={
+        uncapped ? "notice notice--error" : "notice notice--warning"
+      }
+      role="alert"
+    >
+      <p className="notice__message">{sentence}</p>
+      <button
+        type="button"
+        className="button button--primary"
+        disabled={busy}
+        onClick={onYes}
+      >
+        {busy ? "Starting…" : "Yes, start it"}
+      </button>
+      <button
+        type="button"
+        className="button"
+        disabled={busy}
+        onClick={onCancel}
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 function RunReport({
   run,
   busy,
@@ -152,6 +268,9 @@ function RunReport({
   onRetry,
   asking,
   onAskAgain,
+  level,
+  planning,
+  onPropose,
 }: {
   run: RunDetail;
   busy: boolean;
@@ -159,6 +278,9 @@ function RunReport({
   onRetry: () => void;
   asking: boolean;
   onAskAgain: () => void;
+  level: string | null;
+  planning: boolean;
+  onPropose: (scope: RunScope, describedAs: string) => void;
 }) {
   const failures = run.failures ?? [];
   const unanswered = run.unanswered ?? [];
@@ -187,6 +309,8 @@ function RunReport({
           value={formatCount(run.progress?.items_unanswered)}
         />
       </dl>
+      <RunProgress progress={run.progress} />
+
       <button type="button" className="button" onClick={onRefresh}>
         Refresh
       </button>
@@ -222,8 +346,20 @@ function RunReport({
             disabled={asking}
             onClick={onAskAgain}
           >
-            {asking ? "Asking…" : "Ask again"}
+            {asking ? "Asking…" : "Ask again about all of them"}
           </button>
+
+          {level !== null && (
+            <ItemGroups
+              items={unanswered}
+              groupedBy="attribute"
+              caption="Attributes nobody answered"
+              level={level}
+              act="Ask again about"
+              busy={planning}
+              onPropose={onPropose}
+            />
+          )}
         </>
       )}
 
@@ -265,8 +401,20 @@ function RunReport({
             disabled={busy}
             onClick={onRetry}
           >
-            {busy ? "Retrying…" : "Retry only what failed"}
+            {busy ? "Retrying…" : "Retry everything that failed"}
           </button>
+
+          {level !== null && (
+            <ItemGroups
+              items={failures}
+              groupedBy="data_source"
+              caption="What failed, by source"
+              level={level}
+              act="Retry"
+              busy={planning}
+              onPropose={onPropose}
+            />
+          )}
         </>
       )}
     </section>
