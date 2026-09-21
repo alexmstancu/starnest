@@ -94,6 +94,7 @@ class PostgresValueStore(ValueStore):
         *,
         candidate: str | None = None,
         attribute: str | None = None,
+        data_acquisition_run: int | None = None,
         include_superseded: bool = True,
         limit: int | None = None,
         offset: int = 0,
@@ -112,6 +113,7 @@ class PostgresValueStore(ValueStore):
                     connection,
                     candidate=candidate,
                     attribute=attribute,
+                    data_acquisition_run=data_acquisition_run,
                     include_superseded=include_superseded,
                     limit_rows=limit,
                     offset_rows=offset,
@@ -150,6 +152,7 @@ class PostgresValueStore(ValueStore):
         *,
         candidate: str | None = None,
         attribute: str | None = None,
+        data_acquisition_run: int | None = None,
         include_superseded: bool = True,
     ) -> int:
         async with acquire(self._pool) as connection:
@@ -157,6 +160,7 @@ class PostgresValueStore(ValueStore):
                 connection,
                 candidate=candidate,
                 attribute=attribute,
+                data_acquisition_run=data_acquisition_run,
                 include_superseded=include_superseded,
             )
 

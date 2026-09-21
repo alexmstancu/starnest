@@ -239,6 +239,13 @@ paths:
         (`reqs.md` 3.6).
       operationId: listValues
       parameters:
+        - name: data_acquisition_run
+          in: query
+          description: >
+            Narrow to the values one acquisition produced. A value keeps the run that produced
+            it for the life of the row, so this is what makes comparing two acquisitions two
+            requests rather than a walk of the whole corpus.
+          schema: { type: integer }
         - { name: candidate, in: query, schema: { type: string } }
         - { name: attribute, in: query, schema: { type: string } }
         - name: include_superseded

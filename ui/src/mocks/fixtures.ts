@@ -285,6 +285,18 @@ export const RUNS: Run[] = [
     llm_call_count: 34,
     cost_eur: 2.5,
   },
+  // **Run 5 exists because a stored value names it.** A value referencing a run the history
+  // does not hold is a fixture that could not have happened, and it made the acquisition
+  // diff untestable: the run could not be picked.
+  {
+    id: 5,
+    run_status: "completed",
+    triggered_by: "user",
+    started_at: "2025-09-11T08:00:00Z",
+    finished_at: "2025-09-11T08:06:12Z",
+    llm_call_count: 0,
+    cost_eur: 0,
+  },
 ];
 
 export const SETTINGS: Settings = {

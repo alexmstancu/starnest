@@ -93,7 +93,7 @@ WHERE  (:level::text IS NULL OR c.level = :level)
   AND  (:attributes::text[] IS NULL OR v.attribute = ANY(:attributes))
 ORDER  BY v.candidate, v.attribute, v.breakdown_option NULLS FIRST;
 
--- name: select_values(candidate, attribute, include_superseded, limit_rows, offset_rows)
+-- name: select_values(candidate, attribute, data_acquisition_run, include_superseded, limit_rows, offset_rows)
 -- Every stored value for one candidate, with its provenance and its citations, for the
 -- drill-down. Superseded and rejected values are returned too when asked for, because nothing
 -- is discarded and the point of the screen is to show that (reqs.md 3.6).
@@ -123,18 +123,25 @@ FROM   value AS v
 LEFT   JOIN active_value AS active ON active.id = v.id
 WHERE  (:candidate::text IS NULL OR v.candidate = :candidate)
   AND  (:attribute::text IS NULL OR v.attribute = :attribute)
+  -- Which run produced it. Without this, comparing two acquisitions means paging the whole
+  -- corpus and grouping client-side: 8,488 values at 1,000 a page is nine requests to answer
+  -- a question about two runs.
+  AND  (:data_acquisition_run::integer IS NULL
+        OR v.data_acquisition_run = :data_acquisition_run)
   AND  (:include_superseded OR active.id IS NOT NULL)
 ORDER  BY v.candidate, v.attribute, v.breakdown_option NULLS FIRST,
           v.retrieval_date DESC, v.id DESC
 LIMIT  :limit_rows OFFSET :offset_rows;
 
--- name: count_values(candidate, attribute, include_superseded)$
+-- name: count_values(candidate, attribute, data_acquisition_run, include_superseded)$
 -- The `total` beside the page of values above. Same predicate, deliberately.
 SELECT count(*)
 FROM   value AS v
 LEFT   JOIN active_value AS active ON active.id = v.id
 WHERE  (:candidate::text IS NULL OR v.candidate = :candidate)
   AND  (:attribute::text IS NULL OR v.attribute = :attribute)
+  AND  (:data_acquisition_run::integer IS NULL
+        OR v.data_acquisition_run = :data_acquisition_run)
   AND  (:include_superseded OR active.id IS NOT NULL);
 
 -- name: select_value_payloads(value_ids)

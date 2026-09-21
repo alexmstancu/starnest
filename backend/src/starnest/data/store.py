@@ -74,6 +74,7 @@ class ValueStore(ABC):
         *,
         candidate: str | None = None,
         attribute: str | None = None,
+        data_acquisition_run: int | None = None,
         include_superseded: bool = True,
         limit: int | None = None,
         offset: int = 0,
@@ -96,6 +97,7 @@ class ValueStore(ABC):
         *,
         candidate: str | None = None,
         attribute: str | None = None,
+        data_acquisition_run: int | None = None,
         include_superseded: bool = True,
     ) -> int:
         """How many values `read_values` would return unpaginated."""

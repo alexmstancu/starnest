@@ -1582,6 +1582,8 @@ export interface operations {
     listValues: {
         parameters: {
             query?: {
+                /** @description Narrow to the values one acquisition produced. A value keeps the run that produced it for the life of the row, so this is what makes comparing two acquisitions two requests rather than a walk of the whole corpus. */
+                data_acquisition_run?: number;
                 candidate?: string;
                 attribute?: string;
                 include_superseded?: boolean;

@@ -8,6 +8,7 @@ import { formatCount, formatDateTime, formatMoney } from "../../format/display";
 import type { RouteDefinition } from "../../navigation/routes";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
+import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { ItemGroups } from "./ItemGroups";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";
 import { type Progress, progressBar } from "./runProgress";
@@ -96,6 +97,10 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
       {/* Beside the failures deliberately: the three reasons a figure is missing look the
           same in a ranking and have entirely different remedies. */}
       {levelId !== null && <UnsourcedAttributes level={levelId} />}
+
+      {run.history.status === "ready" && (
+        <AcquisitionDiffPanel runs={run.history.data.items} />
+      )}
 
       <h3 className="panel__heading">Recent runs</h3>
       {run.history.status === "loading" && (

@@ -339,7 +339,12 @@ there is no `components/`, `hooks/` or `utils/` directory, because a panel's mar
 and its pure module are one family and splitting them by file type would scatter every panel
 across three places. **Shared code lives at the nearest common ancestor** -- `weights.ts` sits in
 `configure/` because two panels read it. **No `index.ts` barrel files**: they hide which file a
-symbol came from and are the usual way an import cycle appears. `src/app/architecture.test.ts`
+symbol came from and are the usual way an import cycle appears. **A component whose concept
+already names a sibling pure module takes a `Panel` or `Screen` suffix** --
+`CriteriaSetsPanel.tsx` beside `criterionForm.ts`, `AcquisitionDiffPanel.tsx` beside
+`acquisitionDiff.ts`. Two files differing only in case are one file on macOS, and the import
+resolves to whichever the bundler reaches first: the symptom is `Element type is invalid...
+got: undefined` at runtime with a clean typecheck. It has cost this project twice. `src/app/architecture.test.ts`
 fails on a barrel, on a loose file directly under `routes/`, and on a directory the layering
 does not name.
 

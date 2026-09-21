@@ -285,6 +285,25 @@ export function fetchValues(
  * the question behind a pillar that scores badly for want of data rather than for want of
  * merit. The backend has always taken the filter; nothing asked for it.
  */
+/**
+ * Every value one acquisition produced.
+ *
+ * **Two requests, not nine.** Without the run filter, comparing two acquisitions means paging
+ * the whole corpus and grouping client-side -- 8,488 values at 1,000 a page. A value keeps the
+ * run that produced it for the life of the row, so this answers the same way however much has
+ * happened since.
+ */
+export function fetchValuesFromRun(
+  run: number,
+  options?: RequestOptions,
+): Promise<{ items: StoredValue[]; total: number }> {
+  return getJson(
+    "/values",
+    { data_acquisition_run: run, include_superseded: true, limit: 1000 },
+    options,
+  );
+}
+
 export function fetchValuesForAttribute(
   attribute: string,
   options?: RequestOptions,

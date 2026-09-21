@@ -79,21 +79,32 @@ async def list_values(
     values: Values,
     candidate: str | None = None,
     attribute: str | None = None,
+    data_acquisition_run: int | None = None,
     include_superseded: bool = False,
     # The contract's own bounds, enforced rather than described (see `list_runs`).
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
 ) -> ValuesBody:
-    """The active value per attribute, or every value when `include_superseded` is set."""
+    """The active value per attribute, or every value when `include_superseded` is set.
+
+    **`data_acquisition_run` narrows to what one run produced**, which is what makes comparing
+    two acquisitions two requests rather than a walk of the whole corpus. A value keeps the run
+    that produced it for the life of the row, so this answers the same way however much has
+    happened since.
+    """
     listings = await values.read_values(
         candidate=candidate,
         attribute=attribute,
+        data_acquisition_run=data_acquisition_run,
         include_superseded=include_superseded,
         limit=limit,
         offset=offset,
     )
     total = await values.count_values(
-        candidate=candidate, attribute=attribute, include_superseded=include_superseded
+        candidate=candidate,
+        attribute=attribute,
+        data_acquisition_run=data_acquisition_run,
+        include_superseded=include_superseded,
     )
     return ValuesBody(items=tuple(_value_body(listing) for listing in listings), total=total)
 

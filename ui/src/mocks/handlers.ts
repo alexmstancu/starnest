@@ -584,10 +584,15 @@ export const handlers = [
     // candidate's own detail shows every figure ever stored, and the attribute view wants one
     // row per candidate -- the active one.
     const superseded = query.get("include_superseded") === "true";
+    // Which run produced it. This is what makes an acquisition diff two requests rather than
+    // a walk of the whole corpus.
+    const fromRun = query.get("data_acquisition_run");
     const items = STORED_VALUES.filter(
       (value) =>
         (candidate === null || value.candidate === candidate) &&
         (attribute === null || value.attribute === attribute) &&
+        (fromRun === null ||
+          String(value.data_acquisition_run ?? "") === fromRun) &&
         (superseded || value.is_active),
     );
     return HttpResponse.json({ items, total: items.length });

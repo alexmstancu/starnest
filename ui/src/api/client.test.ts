@@ -60,7 +60,9 @@ describe("getJson against the contract mock", () => {
     const runs = await fetchRuns(1);
 
     expect(runs.items).toHaveLength(1);
-    expect(runs.total).toBe(2);
+    // The page is one; the total is every run the fixture holds, which is what makes the
+    // limit visible as a limit rather than as the whole answer.
+    expect(runs.total).toBe(3);
   });
 });
 

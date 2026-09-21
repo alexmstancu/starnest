@@ -756,3 +756,117 @@ describe("attributes with no data source at all", () => {
     expect(row).toHaveTextContent(/not scored here/i);
   });
 });
+
+/**
+ * UX review Q. The design badged this "design only, no endpoint yet"; the endpoint is a filter
+ * on `GET /values`, so the badge comes off.
+ */
+describe("what changed between two acquisitions", () => {
+  async function diffPanel() {
+    return within(
+      await screen.findByRole("region", {
+        name: /what changed between two acquisitions/i,
+      }),
+    );
+  }
+
+  async function compare(earlier: string, later: string) {
+    const panel = await diffPanel();
+    await userEvent.selectOptions(
+      panel.getByRole("combobox", { name: /earlier acquisition/i }),
+      earlier,
+    );
+    await userEvent.selectOptions(
+      panel.getByRole("combobox", { name: /later acquisition/i }),
+      later,
+    );
+    return panel;
+  }
+
+  it("asks for two acquisitions before comparing anything", async () => {
+    renderShell("/acquire");
+    const panel = await diffPanel();
+
+    expect(
+      panel.getByText(/choose two acquisitions to compare/i),
+    ).toBeInTheDocument();
+  });
+
+  it("counts what appeared, what moved and what stopped coming", async () => {
+    renderShell("/acquire");
+    const panel = await compare("5", "7");
+
+    // Run 5 produced the cost of living; run 7 produced it again and added the tax rate.
+    expect(await panel.findByText("Newly acquired")).toBeInTheDocument();
+    const rows = await panel.findAllByRole("row");
+    expect(rows.length).toBeGreaterThan(1);
+  });
+
+  it("names a pair the later run produced and the earlier one did not", async () => {
+    renderShell("/acquire");
+    const panel = await compare("5", "7");
+
+    const row = await panel.findByRole("row", {
+      name: /total_tax_rate_effective/i,
+    });
+    expect(row).toHaveTextContent("newly acquired");
+  });
+
+  it("names a pair both runs produced as refreshed", async () => {
+    renderShell("/acquire");
+    const panel = await compare("5", "7");
+
+    const row = await panel.findByRole("row", {
+      name: /cost_of_living_index/i,
+    });
+    expect(row).toHaveTextContent("refreshed");
+  });
+
+  /**
+   * "Went missing" is about the run, never about the store: this application does not delete
+   * values, and the earlier figure may still be the active one.
+   */
+  it("says a pair the later run did not produce went missing", async () => {
+    renderShell("/acquire");
+    const panel = await compare("7", "5");
+
+    const row = await panel.findByRole("row", {
+      name: /total_tax_rate_effective/i,
+    });
+    expect(row).toHaveTextContent("went missing");
+  });
+
+  it("states that a missing pair is still stored", async () => {
+    renderShell("/acquire");
+    const panel = await diffPanel();
+
+    expect(
+      panel.getByText(/the earlier figure is still stored/i),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * Comparing a run to itself is not an empty diff: every pair it produced reads as
+   * refreshed. The empty case is two runs that produced nothing.
+   */
+  it("reads a run against itself as entirely refreshed", async () => {
+    renderShell("/acquire");
+    const panel = await compare("7", "7");
+
+    const row = await panel.findByRole("row", {
+      name: /cost_of_living_index/i,
+    });
+    expect(row).toHaveTextContent("refreshed");
+    expect(panel.queryByText(/newly acquired/i)).toBeInTheDocument();
+  });
+
+  it("says so when neither acquisition produced anything", async () => {
+    renderShell("/acquire");
+    // Run 6 halted on its spend cap and stored nothing.
+    const panel = await compare("6", "6");
+
+    expect(
+      await panel.findByText(/neither acquisition produced a figure/i),
+    ).toBeInTheDocument();
+  });
+});

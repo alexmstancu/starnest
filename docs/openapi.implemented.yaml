@@ -3506,8 +3506,20 @@ paths:
       - settings
   /v1/values:
     get:
-      description: The active value per attribute, or every value when `include_superseded`
+      description: 'The active value per attribute, or every value when `include_superseded`
         is set.
+
+
+        **`data_acquisition_run` narrows to what one run produced**, which is what
+        makes comparing
+
+        two acquisitions two requests rather than a walk of the whole corpus. A value
+        keeps the run
+
+        that produced it for the life of the row, so this answers the same way however
+        much has
+
+        happened since.'
       operationId: listValues
       parameters:
       - in: query
@@ -3526,6 +3538,14 @@ paths:
           - type: string
           - type: 'null'
           title: Attribute
+      - in: query
+        name: data_acquisition_run
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Data Acquisition Run
       - in: query
         name: include_superseded
         required: false

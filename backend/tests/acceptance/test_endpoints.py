@@ -947,3 +947,75 @@ class TestWhatARankingSaysItRestsOn:
 
         france = next(c for c in body["candidates"] if c["candidate"] == "country.france")
         assert france["coverage_by_confidence"] is None
+
+
+class TestNarrowingValuesToOneRun:
+    """What one acquisition produced (`data_acquisition_run`).
+
+    **This is what makes an acquisition diff two requests.** Without it, comparing two runs
+    means paging the whole corpus and grouping client-side -- 8,488 values at 1,000 a page.
+    """
+
+    async def test_it_returns_only_that_run_s_values(self, api: httpx.AsyncClient) -> None:
+        everything = (
+            await api.get("/v1/values", params={"include_superseded": True, "limit": 1000})
+        ).json()
+        runs = {
+            value["data_acquisition_run"]
+            for value in everything["items"]
+            if value.get("data_acquisition_run") is not None
+        }
+        if not runs:
+            pytest.skip("no value carries a run in this database")
+        one = sorted(runs)[0]
+
+        narrowed = (
+            await api.get(
+                "/v1/values",
+                params={
+                    "data_acquisition_run": one,
+                    "include_superseded": True,
+                    "limit": 1000,
+                },
+            )
+        ).json()
+
+        assert narrowed["items"], "a run that produced values must return some"
+        assert {value["data_acquisition_run"] for value in narrowed["items"]} == {one}
+
+    async def test_the_total_counts_the_same_predicate(self, api: httpx.AsyncClient) -> None:
+        """The `total` beside the page must answer the same question the page does."""
+        everything = (
+            await api.get("/v1/values", params={"include_superseded": True, "limit": 1000})
+        ).json()
+        runs = {
+            value["data_acquisition_run"]
+            for value in everything["items"]
+            if value.get("data_acquisition_run") is not None
+        }
+        if not runs:
+            pytest.skip("no value carries a run in this database")
+        one = sorted(runs)[0]
+
+        narrowed = (
+            await api.get(
+                "/v1/values",
+                params={"data_acquisition_run": one, "include_superseded": True, "limit": 1},
+            )
+        ).json()
+
+        assert narrowed["total"] >= len(narrowed["items"])
+        assert narrowed["total"] < everything["total"]
+
+    async def test_a_run_that_produced_nothing_returns_nothing(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        body = (
+            await api.get(
+                "/v1/values",
+                params={"data_acquisition_run": 999_999, "include_superseded": True},
+            )
+        ).json()
+
+        assert body["items"] == []
+        assert body["total"] == 0
