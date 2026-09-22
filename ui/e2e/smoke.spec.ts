@@ -45,7 +45,10 @@ test("the sidebar shows the selectors and the candidate counts", async ({ page }
   await page.goto("/rank");
 
   await expect(page.getByLabel("Active criteria set")).toBeVisible();
-  await expect(page.getByRole("radio", { name: "country" })).toBeChecked();
+  // Segments, as the design draws them; `aria-pressed` is what says which is current.
+  await expect(
+    page.getByRole("button", { name: "Country" }),
+  ).toHaveAttribute("aria-pressed", "true");
 
   const counts = page.getByRole("region", { name: "Candidates" });
   await expect(counts.getByText("Matching", { exact: true })).toBeVisible();

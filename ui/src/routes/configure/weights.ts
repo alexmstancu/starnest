@@ -108,3 +108,19 @@ export function weightReading(typed: string): string {
   const weight = weightFrom(typed);
   return weight === null ? typed : `${weight.toFixed(1)}%`;
 }
+
+/**
+ * How many criteria each pillar holds.
+ *
+ * The line under a pillar's name, so a reader knows whether opening it reveals four rows or
+ * fourteen before they open it.
+ */
+export function countByPillar(
+  criteria: readonly { pillar: string }[],
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const criterion of criteria) {
+    counts.set(criterion.pillar, (counts.get(criterion.pillar) ?? 0) + 1);
+  }
+  return counts;
+}

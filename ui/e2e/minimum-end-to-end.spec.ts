@@ -116,8 +116,9 @@ test.describe.serial("the minimum end to end", () => {
     expect(coverage).toBeGreaterThan(0);
     expect(coverage).toBeLessThan(100);
 
-    // The split reads "82h / 11m / 7l". A visible low share is the honesty this test is about.
-    const lowConfidence = Number(/([\d.]+)l\b/.exec(confidenceText)?.[1] ?? "0");
+    // The split reads "high 82% medium 11% low 7%" -- all three shares, in words. A visible
+    // low share is the honesty this test is about.
+    const lowConfidence = Number(/low ([\d.]+)%/.exec(confidenceText)?.[1] ?? "0");
     expect(lowConfidence).toBeGreaterThan(0);
   });
 
@@ -168,6 +169,55 @@ async function selectTheScoringSet(page: import("@playwright/test").Page): Promi
  * value actually changes. The test that follows asserts the ranking moved, so it needs the
  * weight to have moved, not to have been assigned.
  */
+/**
+ * Opens the pillar an attribute is weighed inside.
+ *
+ * **A criterion's weight is a share of its pillar's**, so the screen keeps it there. Which
+ * pillar holds what belongs to the catalog, so this looks rather than carrying a copy.
+ */
+async function openPillarOf(
+  page: import("@playwright/test").Page,
+  attribute: string,
+): Promise<void> {
+  const weight = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
+  const weights = page.getByRole("region", { name: "Pillar weights" });
+  // **`all()` does not wait.** It reads the rows that exist at this instant, and the criteria
+  // set is still in flight when a test has just navigated -- so the list comes back empty and
+  // the scan below concludes no pillar holds anything.
+  await weights.getByRole("group").first().waitFor({ state: "visible" });
+  const rows = await weights.getByRole("group").all();
+
+  // **The likely pillar first.** An attribute is usually named after the pillar it is in --
+  // `country.housing_cost_overburden_rate` is housing -- so trying that one first turns a scan
+  // of eleven into a single click. It is a shortcut, not a rule: anything it misses is found
+  // by the scan that follows, which is why the pillar is never written down here.
+  const named: { row: (typeof rows)[number]; pillar: string }[] = [];
+  for (const row of rows) {
+    named.push({ row, pillar: (await row.getAttribute("aria-label")) ?? "" });
+  }
+  named.sort(
+    (left, right) =>
+      Number(attribute.includes(right.pillar)) -
+      Number(attribute.includes(left.pillar)),
+  );
+
+  for (const { row, pillar } of named) {
+    const opener = row.getByRole("button", { name: new RegExp(`^${pillar}`) });
+    if ((await opener.getAttribute("aria-expanded")) !== "true") {
+      await opener.click();
+    }
+    // **Waited for, not counted.** `count()` reads the DOM as it is; opening a pillar is a
+    // render away, so a bare count says "not here" for a pillar that is about to hold it.
+    try {
+      await weight.waitFor({ state: "visible", timeout: 1200 });
+      return;
+    } catch {
+      // Not this pillar. Try the next.
+    }
+  }
+  throw new Error(`no pillar on screen holds ${attribute}`);
+}
+
 async function moveTheWeight(
   page: import("@playwright/test").Page,
   attribute: string,
@@ -175,6 +225,7 @@ async function moveTheWeight(
   // The weights live on Configure, and the caller has just read the ranking.
   await page.goto("/configure");
   await selectTheScoringSet(page);
+  await openPillarOf(page, attribute);
   const input = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
   await input.waitFor();
   const now = await input.inputValue();
@@ -187,6 +238,7 @@ async function setWeight(
   weight: string,
 ): Promise<void> {
   await selectTheScoringSet(page);
+  await openPillarOf(page, attribute);
   const input = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
   await input.waitFor();
 

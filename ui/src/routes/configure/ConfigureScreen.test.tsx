@@ -13,7 +13,40 @@ import { renderShell } from "../../testing/renderShell";
  * never about a number this code worked out -- there is no such number.
  */
 
+/**
+ * Opens the pillar an attribute is weighed inside.
+ *
+ * **Found by looking, not by a table of which pillar holds what.** A criterion's weight is a
+ * share of its pillar's, so the screen keeps it there and the way to reach one is to open the
+ * pillar -- but which pillar that is belongs to the catalog, and a map here would be a second
+ * copy of it to keep in step.
+ */
+async function openThePillarOf(attribute: string): Promise<void> {
+  const named = { name: `Weight for ${attribute}` };
+  if (screen.queryByRole("spinbutton", named) !== null) return;
+
+  const weights = await screen.findByRole("region", { name: "Pillar weights" });
+  const pillars = within(weights)
+    .getAllByRole("group")
+    .map((row) => row.getAttribute("aria-label") ?? "");
+  for (const pillar of pillars) {
+    await userEvent.click(
+      screen.getByRole("button", { name: new RegExp(`^${pillar}`) }),
+    );
+    if (screen.queryByRole("spinbutton", named) !== null) return;
+  }
+}
+
+/** A criterion's lock, opening the pillar it lives in first. */
+async function findLockAnywhere(attribute: string): Promise<HTMLInputElement> {
+  await openThePillarOf(attribute);
+  return screen.getByRole<HTMLInputElement>("checkbox", {
+    name: `Lock the weight for ${attribute}`,
+  });
+}
+
 async function weightInput(attribute: string): Promise<HTMLInputElement> {
+  await openThePillarOf(attribute);
   return await screen.findByRole("spinbutton", {
     name: `Weight for ${attribute}`,
   });
@@ -65,16 +98,26 @@ async function saveWeight(attribute: string, weight: string): Promise<void> {
 }
 
 describe("the criteria list", () => {
-  it("shows every criterion in the selected set with its pillar and weight", async () => {
+  /**
+   * **Inside its pillar, not beside it.** A criterion's weight is a share of its pillar's, so
+   * opening the pillar is what reveals the attributes sharing that hundred -- and the pillar
+   * is then the row above rather than a column repeated down every row.
+   */
+  it("shows every criterion in a pillar with its weight, once the pillar is open", async () => {
     renderShell("/configure");
 
     expect(await weightInput("country.cost_of_living_index")).toHaveValue(50);
     expect(await weightInput("country.total_tax_rate_effective")).toHaveValue(30);
+
     const row = (await weightInput("country.homicide_rate")).closest("tr")!;
     expect(within(row).getByRole("rowheader")).toHaveTextContent(
       "country.homicide_rate",
     );
-    expect(row).toHaveTextContent("safety");
+    // The pillar names the block these rows are in, so the row itself no longer repeats it.
+    expect(row).not.toHaveTextContent("safety");
+    expect(
+      screen.getByRole("button", { name: /^safety/ }),
+    ).toHaveAttribute("aria-expanded", "true");
   });
 
   it("follows the criteria set chosen in the sidebar", async () => {
@@ -111,6 +154,11 @@ describe("changing a weight", () => {
     expect(shownWeight("country.economic_outlook")).toBe("20");
   });
 
+  /**
+   * **One pillar is open at a time**, as the design has it, so the other pillar's weights are
+   * read by opening it -- which is also the honest test: the rebalance has to have left them
+   * alone on the server, not merely off screen.
+   */
   it("leaves the other pillars alone", async () => {
     renderShell("/configure");
 
@@ -119,7 +167,9 @@ describe("changing a weight", () => {
     await waitFor(() =>
       expect(shownWeight("country.total_tax_rate_effective")).toBe("40"),
     );
-    expect(shownWeight("country.housing_cost_overburden_rate")).toBe("60");
+    expect(
+      await weightInput("country.housing_cost_overburden_rate"),
+    ).toHaveValue(60);
   });
 
   it("shows the refusal, and which locks caused it, when nothing can absorb the change", async () => {
@@ -216,9 +266,16 @@ describe("when the criteria set cannot be shown", () => {
   });
 
   it("says so plainly when the set has no criteria", async () => {
+    // No pillar weights either: a set that weighs nothing has nothing to open, and the
+    // stage says so where the pillars would be.
     mockServer.use(
       http.get("/v1/criteria-sets/:id", () =>
-        HttpResponse.json({ id: "default", name: "Default", criteria: [] }),
+        HttpResponse.json({
+          id: "default",
+          name: "Default",
+          criteria: [],
+          pillar_weights: [],
+        }),
       ),
     );
     renderShell("/configure");
@@ -228,7 +285,9 @@ describe("when the criteria set cannot be shown", () => {
     const configure = within(
       await screen.findByRole("region", { name: "Configure" }),
     );
-    expect(await configure.findByText(/has no criteria/i)).toBeInTheDocument();
+    expect(
+      await configure.findByText(/weighs no pillar yet/i),
+    ).toBeInTheDocument();
   });
 
   it("asks for a selection rather than fetching a criteria set of nothing", async () => {
@@ -255,6 +314,7 @@ describe("locking a criterion's weight", () => {
   // `settled()` waits for the last panel to arrive, which can happen before the criteria
   // table does -- so the first read of a row has to be a `findBy`, as `saveWeight` already is.
   async function findLock(attribute: string): Promise<HTMLInputElement> {
+    await openThePillarOf(attribute);
     return screen.findByRole<HTMLInputElement>("checkbox", {
       name: `Lock the weight for ${attribute}`,
     });
@@ -265,6 +325,7 @@ describe("locking a criterion's weight", () => {
       name: `Lock the weight for ${attribute}`,
     });
   }
+
 
   it("shows which criteria are locked, as the set says", async () => {
     renderShell("/configure");
@@ -348,9 +409,7 @@ describe("a locked weight holds where it is", () => {
     renderShell("/configure");
     await settled();
 
-    const lock = await screen.findByRole("checkbox", {
-      name: "Lock the weight for country.economic_outlook",
-    });
+    const lock = await findLockAnywhere("country.economic_outlook");
     expect(shownWeight("country.economic_outlook")).toBe("20");
 
     await user.click(lock);
@@ -367,15 +426,24 @@ describe("a locked weight holds where it is", () => {
 });
 
 describe("what each pillar's criteria come to", () => {
-  it("shows a total per pillar, so the rule can be seen holding", async () => {
+  /** The total belongs to the pillar it is inside, and is read there. */
+  it("shows the total inside each pillar, so the rule can be seen holding", async () => {
     renderShell("/configure");
     await settled();
 
-    const totals = within(
-      await screen.findByRole("list", { name: /weight totals by pillar/i }),
-    );
-    expect(totals.getByText(/^economics 100/i)).toBeInTheDocument();
-    expect(totals.getByText(/^housing 100/i)).toBeInTheDocument();
+    await openThePillarOf("country.cost_of_living_index");
+    expect(
+      within(
+        await screen.findByRole("list", { name: /weight totals by pillar/i }),
+      ).getByText(/^economics 100/i),
+    ).toBeInTheDocument();
+
+    await openThePillarOf("country.overcrowding_rate");
+    expect(
+      within(
+        await screen.findByRole("list", { name: /weight totals by pillar/i }),
+      ).getByText(/^housing 100/i),
+    ).toBeInTheDocument();
   });
 
   it("keeps the total at 100 after a weight moves", async () => {
@@ -431,6 +499,9 @@ describe("what this session changed", () => {
     await settled();
 
     await saveWeight("country.cost_of_living_index", "40");
+    // A different pillar, so it is opened first -- which is also two changes, which is the
+    // reach this test is about.
+    await openThePillarOf("country.homicide_rate");
     await userEvent.click(
       await screen.findByRole("checkbox", {
         name: "Lock the weight for country.homicide_rate",

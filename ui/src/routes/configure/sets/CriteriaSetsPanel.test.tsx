@@ -44,8 +44,9 @@ describe("the criteria sets panel", () => {
     await create("Partner");
 
     await waitFor(() => expect(sidebarSets()).toHaveValue("partner"));
+    // A new set weighs no pillar, so there is no pillar to open and nothing inside one.
     expect(
-      await screen.findByText("This criteria set has no criteria."),
+      await screen.findByText("This set weighs no pillar yet."),
     ).toBeInTheDocument();
   });
 
@@ -110,11 +111,13 @@ describe("the criteria sets panel", () => {
    */
   it("keeps the verb in the same place on every row, available or not", async () => {
     renderShell("/configure");
-    // "In use" appears once the shell has adopted a selection, a render after the sets land.
-    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
 
+    // "In use" appears once the shell has adopted a selection, a render after the sets land,
+    // so it is waited for rather than read the moment the list arrives.
+    expect(
+      await screen.findByRole("button", { name: "In use" }),
+    ).toBeDisabled();
     const inUse = await row("Default");
-    expect(inUse.getByRole("button", { name: "In use" })).toBeDisabled();
     const other = await row("Remote only");
     expect(other.getByRole("button", { name: "Use" })).toBeEnabled();
 

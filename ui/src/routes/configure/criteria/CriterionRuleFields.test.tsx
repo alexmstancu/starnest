@@ -21,6 +21,18 @@ const ANCHORED = "country.overcrowding_rate";
 const PLAIN = "country.homicide_rate";
 
 /**
+ * Which pillar each of them is weighed inside.
+ *
+ * **A criterion lives inside a pillar, and the screen says so by keeping it there.** Its
+ * weight is a share of the pillar's, so the way to reach one is to open the pillar -- which
+ * is what these tests now do before touching a rule.
+ */
+const PILLAR_OF: Record<string, string> = {
+  [ANCHORED]: "housing",
+  [PLAIN]: "safety",
+};
+
+/**
  * Waits until every panel has finished loading before anything is typed.
  *
  * The same race as `ConfigureScreen.test.tsx` (P13): the screen mounts seven panels behind six
@@ -33,10 +45,20 @@ async function settled(): Promise<void> {
   );
 }
 
+/** Opens the pillar an attribute is weighed inside, which is where its row lives. */
+async function openThePillarOf(attribute: string): Promise<void> {
+  const user = userEvent.setup();
+  const pillar = PILLAR_OF[attribute]!;
+  await user.click(
+    await screen.findByRole("button", { name: new RegExp(`^${pillar}`) }),
+  );
+}
+
 async function openTheRuleFor(attribute: string): Promise<void> {
   const user = userEvent.setup();
   renderShell("/configure");
   await settled();
+  await openThePillarOf(attribute);
   await user.click(
     await screen.findByRole("button", {
       name: `Edit the rule for ${attribute}`,
@@ -52,6 +74,7 @@ describe("reading the rule a criterion already has", () => {
   it("is closed until asked for, because forty-one open scales is unreadable", async () => {
     renderShell("/configure");
     await settled();
+    await openThePillarOf(PLAIN);
 
     expect(
       screen.queryByRole("combobox", { name: "Goal" }),

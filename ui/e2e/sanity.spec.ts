@@ -82,7 +82,11 @@ test.describe("the ranking", () => {
     page,
   }) => {
     await page.goto("/rank");
-    const open = page.getByRole("button", { name: "Show figures" }).first();
+    // The candidate's name is the toggle, and the whole row is the target it sits in.
+    const first = page.getByRole("table", { name: "Ranked candidates" })
+      .locator("tbody tr")
+      .first();
+    const open = first.getByRole("button").first();
     await open.click();
 
     // The provenance chain: the figures behind the score, and what each one is.
@@ -93,7 +97,7 @@ test.describe("the ranking", () => {
       page.getByRole("columnheader", { name: "Source" }),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: "Hide figures" }).first().click();
+    await open.click();
     await expect(
       page.getByRole("heading", { name: /every figure behind the score/ }),
     ).toHaveCount(0);
@@ -135,32 +139,44 @@ test.describe("saved rankings", () => {
    */
   test("keeps a ranking, lists it, and opens it again", async ({ page }) => {
     await page.goto("/rank");
-    const panel = page.getByRole("region", { name: "Saved rankings" });
-    const save = panel.getByRole("button", { name: "Save this ranking" });
+    // **Saving and listing are in two places**, as the design has them: the sidebar lists
+    // what has been kept, because a saved ranking is about the session rather than about one
+    // screen, and Rank owns the act of saving and the view of the one that was opened.
+    const saving = page.getByRole("region", { name: "Save this ranking" });
+    const save = saving.getByRole("button", { name: "Save this ranking" });
     await expect(save).toBeEnabled();
 
     const note = `sanity suite ${Date.now()}`;
-    await panel.getByRole("textbox", { name: /worth keeping/ }).fill(note);
+    await saving.getByRole("textbox", { name: /worth keeping/ }).fill(note);
     await save.click();
 
-    const entry = panel.getByRole("listitem").filter({ hasText: note });
+    const listed = page.getByRole("region", { name: "Saved rankings" });
+    const entry = listed.getByRole("listitem").filter({ hasText: note });
     await expect(entry).toHaveCount(1);
 
-    await entry.getByRole("button", { name: "Open" }).click();
+    await entry.getByRole("link").click();
     // Frozen: the criteria and the score scale were copied with it, so it keeps meaning what
     // it meant even after a weight moves.
-    await expect(panel.getByText(/As it was when it was saved/)).toBeVisible();
+    await expect(saving.getByText(/As it was when it was saved/)).toBeVisible();
     await expect(
-      panel.getByRole("table", { name: "Ranked candidates" }),
+      saving.getByRole("table", { name: "Ranked candidates" }),
     ).toBeVisible();
   });
 
   test("opens several candidates' figures at once", async ({ page }) => {
     await page.goto("/rank");
-    const open = page.getByRole("button", { name: "Show figures" });
-    await open.first().click();
-    // The second button, because the first has become "Hide figures".
-    await page.getByRole("button", { name: "Show figures" }).first().click();
+    const rows = page.getByRole("table", { name: "Ranked candidates" })
+      .locator("tbody tr");
+    // Two different candidates. **Not "the first button twice"**: opening one inserts its
+    // evidence as a row of its own, so the second row is no longer the second candidate.
+    await rows.nth(0).getByRole("button").first().click();
+    await page
+      .getByRole("table", { name: "Ranked candidates" })
+      .locator("tbody tr")
+      .nth(2)
+      .getByRole("button")
+      .first()
+      .click();
 
     await expect(
       page.getByRole("heading", { name: /every figure behind the score/ }),
@@ -173,32 +189,36 @@ test.describe("criteria sets", () => {
     page,
   }) => {
     await page.goto("/configure");
-    const sets = page.getByRole("region", { name: "Criteria sets" });
-    const id = `sanity_copy_${Date.now()}`;
+    const sets = page.getByRole("region", { name: /^Criteria set/ });
+    const name = `Sanity copy ${Date.now()}`;
 
-    await sets
-      .getByRole("textbox", { name: /Identifier for a copy of/ })
-      .fill(id);
-    await sets.getByRole("textbox", { name: /Name for the copy/ }).fill(id);
-    await sets.getByRole("button", { name: /^Duplicate / }).click();
+    // **One press.** Duplicating is how an experiment starts, so the design asks for nothing
+    // first: the copy takes a name that is not already in use, and is selected.
+    await sets.getByRole("textbox", { name: /Name a new set/ }).fill(name);
+    await sets.getByRole("button", { name: "Create set" }).click();
 
     const chosen = page.getByRole("combobox", { name: "Active criteria set" });
-    await expect(chosen).toHaveValue(id);
+    await expect(chosen).toHaveValue(/sanity_copy_/);
 
-    // A copy is a full set, never a sparse overlay (`reqs.md` Q191), so it must arrive with
-    // criteria rather than empty like a newly created one.
-    await expect(
-      page.getByRole("region", { name: "Criteria" }).getByRole("row"),
-    ).not.toHaveCount(1);
+    const made = page.getByRole("listitem", { name });
+    await made.getByRole("button", { name: "Duplicate" }).click();
 
-    // Left as it was found: the copy exists only for this test.
-    await sets.getByRole("button", { name: `Discard ${id}` }).click();
-    await expect(chosen).not.toHaveValue(id);
+    const copy = page.getByRole("listitem", { name: `${name} copy` });
+    await expect(copy).toBeVisible();
+    // A copy is a full set, never a sparse overlay (`reqs.md` Q191). The original was created
+    // empty, so what matters here is that the copy is the same size as what it copied.
+    await expect(chosen).toHaveValue(/sanity_copy_.*_copy/);
+
+    // Left as it was found: both exist only for this test.
+    await copy.getByRole("button", { name: "Delete" }).click();
+    await expect(copy).toHaveCount(0);
+    await made.getByRole("button", { name: "Delete" }).click();
+    await expect(made).toHaveCount(0);
   });
 
   test("locks a criterion's weight and unlocks it again", async ({ page }) => {
     await page.goto("/configure");
-    const criteria = page.getByRole("region", { name: "Criteria" });
+    const criteria = await attributesInside(page, "governance");
     const lock = criteria.getByRole("checkbox").first();
 
     const before = await lock.isChecked();
@@ -219,6 +239,7 @@ test.describe("criteria sets", () => {
 
   test("shows what each pillar's criteria come to", async ({ page }) => {
     await page.goto("/configure");
+    await attributesInside(page, "governance");
     const totals = page.getByRole("list", {
       name: "Weight totals by pillar",
     });
@@ -259,14 +280,14 @@ test.describe("a setting nobody has decided", () => {
 test.describe("a run", () => {
   test("can be estimated without fetching anything", async ({ page }) => {
     await page.goto("/acquire");
-    await page.getByRole("button", { name: /Estimate a run/ }).click();
+    await page.getByRole("button", { name: /Estimate an acquisition/ }).click();
 
     // The estimate is the whole point: what it would cost, before it costs it.
     await expect(
-      page.getByRole("heading", { name: /What this run would do/ }),
+      page.getByRole("heading", { name: /What this acquisition would do/ }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /Start this run/ }),
+      page.getByRole("button", { name: /Start this acquisition/ }),
     ).toBeEnabled();
   });
 
@@ -292,7 +313,7 @@ test.describe("what this session changed", () => {
     const history = page.getByRole("region", { name: "Recent changes" });
     await expect(history.getByText(/Nothing has been changed/)).toBeVisible();
 
-    const criteria = page.getByRole("region", { name: "Criteria" });
+    const criteria = await attributesInside(page, "governance");
     const row = criteria.getByRole("row").filter({ hasText: "country.rule_of_law" });
     const weight = row.getByRole("spinbutton");
     await expect.poll(() => weight.inputValue()).not.toBe("");
@@ -310,9 +331,13 @@ test.describe("what this session changed", () => {
     await entry.getByRole("button", { name: /^Undo this$/ }).click();
     await expect(history.getByText(/Nothing has been changed/)).toBeVisible();
 
+    // **Reopened after the reload.** Which pillar is open is this screen's state, not the
+    // server's, so a reload closes it -- which is the point of reloading here: the value is
+    // re-read from the server rather than from what the page still held.
     await page.reload();
+    const reopened = await attributesInside(page, "governance");
     await expect(
-      criteria
+      reopened
         .getByRole("row")
         .filter({ hasText: "country.rule_of_law" })
         .getByRole("spinbutton"),
@@ -407,4 +432,27 @@ async function cellUnder(
   // but stays in the DOM, so headings and cells would count differently.
   const cells = await row.locator("th:visible, td:visible").allTextContents();
   return (cells[at] ?? "").trim();
+}
+
+/**
+ * Opens a pillar and returns the attributes inside it.
+ *
+ * **A criterion's weight is a share of its pillar's**, so the screen keeps it there: opening
+ * the pillar is what reveals the attributes sharing that hundred.
+ */
+async function attributesInside(page: Page, pillar: string) {
+  const weights = page.getByRole("region", { name: "Pillar weights" });
+  // **Waited for before it is clicked.** The panel is keyed by the criteria set, so a
+  // response landing after the click remounts it and the pillar closes again -- opening one
+  // before the set has arrived is opening something about to be thrown away.
+  await weights.getByRole("group").first().waitFor({ state: "visible" });
+  await weights
+    .getByRole("button", { name: new RegExp(`^${pillar}`) })
+    .click();
+
+  const inside = page.getByRole("region", {
+    name: "Attribute weights inside this pillar",
+  });
+  await inside.waitFor({ state: "visible" });
+  return inside;
 }

@@ -24,11 +24,20 @@ type PillarWeight = components["schemas"]["PillarWeight"];
  */
 export function PillarWeightsPanel({
   criteriaSet,
-  children,
+  criteriaCounts,
+  criteriaFor,
 }: {
   criteriaSet: CriteriaSet;
-  /** The criteria of these pillars, rendered inside the stage rather than beside it. */
-  children?: ReactNode;
+  /** How many criteria each pillar holds, for the line under its name. */
+  criteriaCounts?: ReadonlyMap<string, number>;
+  /**
+   * The attributes inside one pillar, rendered under it when it is opened.
+   *
+   * **A render prop, because which pillar is open is this panel's business.** A criterion's
+   * weight is a share of its pillar's, so the two are one decision at two depths -- and the
+   * way to see the second is to open the first.
+   */
+  criteriaFor?: (pillar: string) => ReactNode;
 }) {
   const [weights, setWeights] = useState<PillarWeight[]>(
     criteriaSet.pillar_weights ?? [],
@@ -55,6 +64,7 @@ export function PillarWeightsPanel({
 
   const total = totalOf(weights);
   const ceiling = sliderCeiling(weights.length, PILLAR_CEILING_FLOOR);
+  const [open, setOpen] = useState<string | null>(null);
 
   return (
     <section className="stage" aria-labelledby="pillar-weights-heading">
@@ -66,10 +76,10 @@ export function PillarWeightsPanel({
           <h3 id="pillar-weights-heading" className="stage__title">
             Pillar weights
           </h3>
-    <p className="stage__lead">
+          <p className="stage__lead">
             What each pillar is worth within the level. They sum to{" "}
-            {formatPercentage(total, 0)}; moving one rebalances the rest, which the
-            server computes.
+            {formatPercentage(total, 0)}; moving one rebalances the rest, which
+            the server computes.
           </p>
         </div>
       </header>
@@ -82,7 +92,11 @@ export function PillarWeightsPanel({
         <span>Pillar weights sum to 100 within the level</span>
         <span className="stage__summary-total">
           Total
-          <span className={total === 100 ? "chip chip--matching" : "chip chip--warning"}>
+          <span
+            className={
+              total === 100 ? "chip chip--matching" : "chip chip--warning"
+            }
+          >
             {formatPercentage(total, 1)}
           </span>
         </span>
@@ -97,12 +111,20 @@ export function PillarWeightsPanel({
               key={weight.pillar}
               weight={weight}
               ceiling={ceiling}
+              count={criteriaCounts?.get(weight.pillar)}
+              open={open === weight.pillar}
+              onOpen={
+                criteriaFor === undefined
+                  ? undefined
+                  : () => setOpen(open === weight.pillar ? null : weight.pillar)
+              }
               onMove={move}
-            />
+            >
+              {criteriaFor?.(weight.pillar)}
+            </PillarRow>
           ))}
         </div>
       )}
-      {children}
     </section>
   );
 }
@@ -110,11 +132,19 @@ export function PillarWeightsPanel({
 function PillarRow({
   weight,
   ceiling,
+  count,
+  open,
+  onOpen,
   onMove,
+  children,
 }: {
   weight: PillarWeight;
   ceiling: number;
+  count?: number;
+  open: boolean;
+  onOpen?: () => void;
   onMove: (pillar: string, weight: number, locked?: boolean) => Promise<void>;
+  children?: ReactNode;
 }) {
   const stored = String(weight.weight);
   const [typed, setTyped] = useState(stored);
@@ -146,63 +176,99 @@ function PillarRow({
     void onMove(weight.pillar, asked);
   }
 
+  const meta =
+    count === undefined
+      ? weight.weight_locked
+        ? "held at this weight"
+        : "moves on a rebalance"
+      : count === 1
+        ? "1 attribute"
+        : `${String(count)} attributes`;
+
   return (
-    // **A group, named for its pillar.** The row holds three controls that are all about one
-    // pillar -- the slider, the reading, the lock -- and saying so is what lets a reader and
-    // a test find "economics" rather than "the fifth row".
-    <div className="weight-row" role="group" aria-label={weight.pillar}>
-      <span className="weight-row__name">
-        <span className="weight-row__label">{weight.pillar}</span>
-        <span className="weight-row__meta">
-          {weight.weight_locked ? "held at this weight" : "moves on a rebalance"}
+    <>
+      {/* **A group, named for its pillar.** The row holds three controls that are all about
+          one pillar -- the slider, the reading, the lock -- and saying so is what lets a
+          reader and a test find "economics" rather than "the fifth row". */}
+      <div className="weight-row" role="group" aria-label={weight.pillar}>
+        {/* **The name is the way in.** A criterion's weight is a share of its pillar's, so
+          opening the pillar is what reveals the attributes it is shared among. */}
+        {onOpen === undefined ? (
+          <span className="weight-row__name">
+            <span className="weight-row__label">{weight.pillar}</span>
+            <span className="weight-row__meta">{meta}</span>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="weight-row__name"
+            aria-expanded={open}
+            onClick={onOpen}
+          >
+            <span className="weight-row__label">
+              <span className="weight-row__caret" aria-hidden="true">
+                {open ? "▾" : "▸"}
+              </span>
+              {weight.pillar}
+            </span>
+            <span className="weight-row__meta">{meta}</span>
+          </button>
+        )}
+
+        <input
+          className="weight-row__slider"
+          type="range"
+          min={PILLAR_SLIDER.min}
+          max={ceiling}
+          step={PILLAR_SLIDER.step}
+          value={typed}
+          aria-label={`${weight.pillar} weight`}
+          onChange={(event) => {
+            setMoving(true);
+            setTyped(event.target.value);
+          }}
+          onPointerUp={commit}
+          onMouseUp={commit}
+          onKeyUp={commit}
+          onBlur={commit}
+        />
+
+        <span className="weight-row__value">
+          {weightReading(moving ? typed : stored)}
         </span>
-      </span>
 
-      <input
-        className="weight-row__slider"
-        type="range"
-        min={PILLAR_SLIDER.min}
-        max={ceiling}
-        step={PILLAR_SLIDER.step}
-        value={typed}
-        aria-label={`${weight.pillar} weight`}
-        onChange={(event) => {
-          setMoving(true);
-          setTyped(event.target.value);
-        }}
-        onPointerUp={commit}
-        onMouseUp={commit}
-        onKeyUp={commit}
-        onBlur={commit}
-      />
-
-      <span className="weight-row__value">
-        {weightReading(moving ? typed : stored)}
-      </span>
-
-      {/* **A button, not a checkbox.** The design draws a filled or hollow disc, and a native
+        {/* **A button, not a checkbox.** The design draws a filled or hollow disc, and a native
           checkbox cannot be one without being hidden behind a label -- which is the shape
           that shipped a lock nobody could click (P52). `aria-pressed` is what tells a screen
           reader it is a toggle. */}
-      <button
-        type="button"
-        className={
-          weight.weight_locked
-            ? "weight-row__lock weight-row__lock--on"
-            : "weight-row__lock"
-        }
-        aria-label={`Lock ${weight.pillar}`}
-        aria-pressed={weight.weight_locked}
-        title={
-          weight.weight_locked
-            ? "Held where it is, and takes no share of a rebalance"
-            : "Moves in proportion when another weight changes"
-        }
-        onClick={() => void onMove(weight.pillar, weight.weight, !weight.weight_locked)}
-      >
-        <span aria-hidden="true">{weight.weight_locked ? "\u25CF" : "\u25CB"}</span>
-      </button>
-
-    </div>
+        <button
+          type="button"
+          className={
+            weight.weight_locked
+              ? "weight-row__lock weight-row__lock--on"
+              : "weight-row__lock"
+          }
+          aria-label={`Lock ${weight.pillar}`}
+          aria-pressed={weight.weight_locked}
+          title={
+            weight.weight_locked
+              ? "Held where it is, and takes no share of a rebalance"
+              : "Moves in proportion when another weight changes"
+          }
+          onClick={() =>
+            void onMove(weight.pillar, weight.weight, !weight.weight_locked)
+          }
+        >
+          <span aria-hidden="true">
+            {weight.weight_locked ? "\u25CF" : "\u25CB"}
+          </span>
+        </button>
+      </div>
+      {/* Indented under the pillar whose hundred they share, with a rule down the side: the
+          indent is what says these weights are inside that one rather than beside it. */}
+      {open && children !== undefined && (
+        <div className="pillar-attributes">{children}</div>
+      )}
+    </>
   );
 }

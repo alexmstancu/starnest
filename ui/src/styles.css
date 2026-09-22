@@ -1156,6 +1156,21 @@ select.field__control {
   color: var(--colour-accent);
 }
 
+.weight-row__caret {
+  margin-right: 6px;
+  font-size: 11px;
+  color: var(--colour-text-muted);
+}
+
+/* **Indented, with a rule down the side.** These weights are inside the pillar above them
+   rather than beside it, and 34px of indent with a teal rule is what says so at a glance --
+   a heading saying it would be a sentence where a shape will do. */
+.pillar-attributes {
+  margin: 2px 0 14px 34px;
+  padding: 4px 0 0 16px;
+  border-left: 2px solid var(--colour-accent-border);
+}
+
 .weight-row__problem {
   grid-column: 1 / -1;
   margin: 0;
@@ -1677,6 +1692,123 @@ select.field__control {
 .gap-card > .button {
   margin-top: auto;
   align-self: flex-start;
+}
+
+/* ── Source priority ──────────────────────────────────────────────────────────────────
+   One row per source, in the order the active-value rule applies them. Reading the list
+   top to bottom is reading that order, which is what makes a per-attribute override
+   legible: an override names the sources somebody has an opinion about, and every other
+   source keeps its place beneath them. */
+
+.source-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 6px;
+  border-bottom: var(--border-width) solid var(--colour-surface-hair);
+}
+
+/* A source that is not consulted keeps its row and its figures; it just stops competing. */
+.source-row--off .source-row__name {
+  color: var(--colour-text-muted);
+}
+
+.source-row__priority {
+  flex: none;
+  width: 18px;
+  font-size: 12px;
+  font-weight: var(--weight-strong);
+  font-variant-numeric: tabular-nums;
+  color: var(--colour-text-muted);
+}
+
+.source-row__name {
+  flex: 1 1 140px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.source-row__meta {
+  font-size: 11.5px;
+  color: var(--colour-text-muted);
+  white-space: nowrap;
+}
+
+.source-row__move {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+/* **A switch, because being consulted is a state rather than an act.** 34 by 20 with a 14px
+   knob is the design's; the knob moves rather than the track changing shape, so the two
+   positions read as the same control in two states. */
+.switch {
+  flex: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  border: var(--border-width) solid var(--colour-border-strong);
+  border-radius: 10px;
+  background: var(--colour-border);
+  cursor: pointer;
+}
+
+.switch[aria-checked="true"] {
+  border-color: var(--colour-accent);
+  background: var(--colour-accent);
+}
+
+.switch__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--colour-surface);
+  transition: left 120ms ease;
+}
+
+.switch[aria-checked="true"] .switch__knob {
+  left: 16px;
+}
+
+.switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 22px square: the smallest thing in this design that is still comfortably clickable, which
+   is what a pair of them beside a row's text has to be. */
+.arrow {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: var(--border-width) solid var(--colour-border-strong);
+  border-radius: var(--radius-medium);
+  background: var(--colour-surface);
+  color: var(--colour-text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.arrow:disabled {
+  border-color: var(--colour-surface-hair);
+  color: var(--colour-text-muted);
+  opacity: 0.45;
+  cursor: default;
 }
 
 .screen__heading {

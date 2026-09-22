@@ -47,84 +47,78 @@ export function DataSourcesPanel() {
       )}
 
       {sources.status === "ready" && (
-        <table className="table">
-          <caption>Every configured source, in priority order</caption>
-          <thead>
-            <tr>
-              <th scope="col">Priority</th>
-              <th scope="col">Source</th>
-              <th scope="col">Kind</th>
-              <th scope="col">Reliability</th>
-              <th scope="col">Consulted</th>
-              <th scope="col">Move</th>
-            </tr>
-          </thead>
-          <tbody>
-            {inPriorityOrder(sources.sources).map((source) => {
-              const position = positions.get(source.id) ?? null;
-              const busy = sources.saving === source.id;
-              return (
-                <tr
-                  key={source.id}
-                  className={
-                    source.is_enabled ? "table__row" : "table__row--superseded"
+        <ul className="source-list" aria-label="Every configured source, in priority order">
+          {inPriorityOrder(sources.sources).map((source) => {
+            const position = positions.get(source.id) ?? null;
+            const busy = sources.saving === source.id;
+            return (
+              <li
+                key={source.id}
+                aria-label={source.name}
+                className={
+                  source.is_enabled ? "source-row" : "source-row source-row--off"
+                }
+              >
+                {/* **A switch, not a checkbox.** Consulting a source is a state it is in, and
+                    the design draws it as one; `role="switch"` is what says so to a screen
+                    reader, which a styled checkbox behind a label could not (P52). */}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={source.is_enabled}
+                  aria-label={`Consult ${source.name}`}
+                  className="switch"
+                  disabled={busy}
+                  title="Consult this source at all"
+                  onClick={() =>
+                    sources.setEnabled(source.id, !source.is_enabled)
                   }
                 >
-                  <td className="table__cell--numeric">
-                    {/* No number for a source that is not consulted: showing one would say
-                        it is next in line when it is not in the contest at all. */}
-                    {position ?? "not consulted"}
-                  </td>
-                  <th scope="row">{source.name}</th>
-                  <td>{source.source_kind}</td>
-                  <td>{source.reliability_tier}</td>
-                  <td>
-                    <label className="toggle toggle--lock">
-                      <input
-                        type="checkbox"
-                        aria-label={`Consult ${source.name}`}
-                        checked={source.is_enabled}
-                        disabled={busy}
-                        onChange={(event) =>
-                          sources.setEnabled(source.id, event.target.checked)
-                        }
-                      />
-                      <span aria-hidden="true">
-                        {source.is_enabled ? "Consulted" : "Off"}
-                      </span>
-                    </label>
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="button"
-                      disabled={busy || sources.moveTo(source.id, "up") === null}
-                      onClick={() => sources.move(source.id, "up")}
-                    >
-                      <span className="visually-hidden">
-                        Move {source.name} up
-                      </span>
-                      <span aria-hidden="true">▲</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="button"
-                      disabled={
-                        busy || sources.moveTo(source.id, "down") === null
-                      }
-                      onClick={() => sources.move(source.id, "down")}
-                    >
-                      <span className="visually-hidden">
-                        Move {source.name} down
-                      </span>
-                      <span aria-hidden="true">▼</span>
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                  <span className="switch__knob" aria-hidden="true" />
+                </button>
+
+                {/* No number for a source that is not consulted: showing one would say it is
+                    next in line when it is not in the contest at all. */}
+                <span className="source-row__priority">
+                  {position ?? "—"}
+                </span>
+                <span className="source-row__name">{source.name}</span>
+                <span className="source-row__meta">
+                  {position === null
+                    ? "not consulted"
+                    : `${source.source_kind}, ${source.reliability_tier}`}
+                </span>
+
+                <span className="source-row__move">
+                  <button
+                    type="button"
+                    className="arrow"
+                    disabled={busy || sources.moveTo(source.id, "up") === null}
+                    title="Higher priority"
+                    onClick={() => sources.move(source.id, "up")}
+                  >
+                    <span className="visually-hidden">
+                      Move {source.name} up
+                    </span>
+                    <span aria-hidden="true">▲</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="arrow"
+                    disabled={busy || sources.moveTo(source.id, "down") === null}
+                    title="Lower priority"
+                    onClick={() => sources.move(source.id, "down")}
+                  >
+                    <span className="visually-hidden">
+                      Move {source.name} down
+                    </span>
+                    <span aria-hidden="true">▼</span>
+                  </button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </section>
   );

@@ -12,6 +12,7 @@ import { SettingsPanel } from "./settings/SettingsPanel";
 import { RecentChanges } from "./RecentChanges";
 import { useChangeHistory } from "./useChangeHistory";
 import { useCriteriaEditor } from "./useCriteriaEditor";
+import { countByPillar } from "./weights";
 
 /**
  * Everything that is a judgement rather than a measurement, on one screen (`reqs.md` 8.2).
@@ -68,16 +69,18 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                   weights, the rules it enforces -- as state they then edit. Switching sets
                   has to start that state again from the new set rather than carry the old
                   set's answers into it. */}
+              {/* **Inside the weights, not beside them.** A criterion's weight is a share
+                  of its pillar's, so the two are one decision at two depths -- which is how
+                  the design draws it, and why opening a pillar is what reveals the
+                  attributes under it. */}
               <PillarWeightsPanel
                 key={editor.criteriaSet.id}
                 criteriaSet={editor.criteriaSet}
-              >
-                {/* **Inside the weights, not beside them.** A criterion's weight is a share
-                    of its pillar's, so the two are one decision at two depths -- which is
-                    how the design draws it, and why opening a pillar is what reveals the
-                    attributes under it. */}
-                <CriteriaPanel editor={editor} />
-              </PillarWeightsPanel>
+                criteriaCounts={countByPillar(editor.criteria)}
+                criteriaFor={(pillar) => (
+                  <CriteriaPanel editor={editor} pillar={pillar} />
+                )}
+              />
 
               {levelId !== null && (
                 <RulesPanel

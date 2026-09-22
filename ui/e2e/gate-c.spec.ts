@@ -93,8 +93,10 @@ test.describe("the weight change, end to end", () => {
 
     // Every weight in that pillar, as the table shows them after the response. A pillar that
     // does not sum to 100 is a broken score, and this is the screen the user is looking at.
-    const pillar = await pillarOf(page, A_CRITERION);
-    const total = (await weightsInPillar(page, pillar)).reduce((sum, each) => sum + each, 0);
+    const total = (await weightsInPillar(page, A_CRITERION)).reduce(
+      (sum, each) => sum + each,
+      0,
+    );
     expect(total).toBeCloseTo(100, 2);
 
     expect(await rankedOrder(page)).not.toEqual(before);
@@ -111,10 +113,14 @@ test.describe("provenance on a displayed number", () => {
   }) => {
     await openTheRanking(page);
 
+    // The candidate's name is the toggle: the whole row opens, and the name is what a
+    // keyboard reaches.
     const row = page.getByRole("row").filter({ hasText: "Finland" }).first();
-    await row.getByRole("button", { name: "Show figures" }).click();
+    await row.getByRole("button", { name: "Finland" }).click();
 
-    const figures = page.getByRole("table").filter({ hasText: "Fetched" });
+    // **Named, not filtered.** The evidence opens inside the ranking table now, so the outer
+    // table contains the word "Fetched" too and a filter matches both.
+    const figures = page.getByRole("table", { name: /every stored value/i });
     await expect(figures).toBeVisible();
     for (const column of ["Attribute", "Figure", "Source", "Describes", "Fetched", "Confidence"]) {
       await expect(figures.getByRole("columnheader", { name: column })).toBeVisible();
@@ -150,8 +156,9 @@ test.describe("a candidate a gate ruled out", () => {
     // The score survives the gate (`reqs.md` 5.5): a candidate that led on merit and died on
     // one rule is visible as exactly that.
     await expect(row).not.toContainText("No score");
+    // The caret that says the row opens shares the cell and is not part of the reading.
     const rank = await row.getByRole("cell").first().textContent();
-    expect(rank?.trim()).toBe("—");
+    expect(rank?.replace(/[\u25B8\u25BE]/g, "").trim()).toBe("—");
   });
 });
 
@@ -230,12 +237,14 @@ test.describe("a run", () => {
     });
 
     await page.goto("/acquire");
-    await page.getByRole("button", { name: "Estimate a run" }).click();
+    await page.getByRole("button", { name: "Estimate an acquisition" }).click();
 
-    const plan = page.getByRole("heading", { name: "What this run would do" });
+    const plan = page.getByRole("heading", { name: "What this acquisition would do" });
     await expect(plan).toBeVisible();
-    await expect(page.getByRole("table").filter({ hasText: "Source" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Start this run" })).toBeVisible();
+    // **Named, not filtered.** The last acquisition's report opens with the screen now, and
+    // its failures table has a Source column too.
+    await expect(page.getByRole("table", { name: /per source/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start this acquisition" })).toBeVisible();
 
     // The estimate is an estimate. Nothing was started, which is the whole point of showing it.
     expect(started).toEqual([]);
@@ -250,7 +259,7 @@ test.describe("a run", () => {
     const row = page.getByRole("row").filter({ hasText: String(run) }).first();
     await row.getByRole("button", { name: "Open" }).click();
 
-    const report = page.getByRole("heading", { name: `Run ${run}` });
+    const report = page.getByRole("heading", { name: `Acquisition ${run}` });
     await expect(report).toBeVisible();
     await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
 
@@ -262,7 +271,7 @@ test.describe("a run", () => {
     // Scoped to the report. The first definition on the page belongs to the sidebar's
     // candidate counts, which is what an unscoped lookup found.
     const status = page
-      .getByRole("region", { name: `Run ${run}` })
+      .getByRole("region", { name: `Acquisition ${run}` })
       .getByRole("definition")
       .first();
     await expect
@@ -348,7 +357,55 @@ async function scoreOf(page: Page, country: string): Promise<string> {
 }
 
 /** What a criterion's weight is right now, so a test can move it somewhere else. */
+/**
+ * Opens the pillar an attribute is weighed inside, and names it.
+ *
+ * **A criterion's weight is a share of its pillar's**, so the screen keeps it there and the
+ * way to reach one is to open the pillar. Which pillar holds what belongs to the catalog, so
+ * this looks rather than carrying a copy of it.
+ */
+async function openPillarOf(page: Page, attribute: string): Promise<string> {
+  const weight = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
+  const weights = page.getByRole("region", { name: "Pillar weights" });
+  // **`all()` does not wait.** It reads the rows that exist at this instant, and the criteria
+  // set is still in flight when a test has just navigated -- so the list comes back empty and
+  // the scan below concludes no pillar holds anything.
+  await weights.getByRole("group").first().waitFor({ state: "visible" });
+  const rows = await weights.getByRole("group").all();
+
+  // **The likely pillar first.** An attribute is usually named after the pillar it is in --
+  // `country.housing_cost_overburden_rate` is housing -- so trying that one first turns a scan
+  // of eleven into a single click. It is a shortcut, not a rule: anything it misses is found
+  // by the scan that follows, which is why the pillar is never written down here.
+  const named: { row: (typeof rows)[number]; pillar: string }[] = [];
+  for (const row of rows) {
+    named.push({ row, pillar: (await row.getAttribute("aria-label")) ?? "" });
+  }
+  named.sort(
+    (left, right) =>
+      Number(attribute.includes(right.pillar)) -
+      Number(attribute.includes(left.pillar)),
+  );
+
+  for (const { row, pillar } of named) {
+    const opener = row.getByRole("button", { name: new RegExp(`^${pillar}`) });
+    if ((await opener.getAttribute("aria-expanded")) !== "true") {
+      await opener.click();
+    }
+    // **Waited for, not counted.** `count()` reads the DOM as it is; opening a pillar is a
+    // render away, so a bare count says "not here" for a pillar that is about to hold it.
+    try {
+      await weight.waitFor({ state: "visible", timeout: 1200 });
+      return pillar;
+    } catch {
+      // Not this pillar. Try the next.
+    }
+  }
+  throw new Error(`no pillar on screen holds ${attribute}`);
+}
+
 async function currentWeight(page: Page, attribute: string): Promise<string> {
+  await openPillarOf(page, attribute);
   const input = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
   await input.waitFor();
   return input.inputValue();
@@ -357,6 +414,7 @@ async function currentWeight(page: Page, attribute: string): Promise<string> {
 async function setCriterionWeight(page: Page, attribute: string, weight: string): Promise<void> {
   await page.goto("/configure");
   await chooseScoringSet(page);
+  await openPillarOf(page, attribute);
   const input = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
   await input.waitFor();
   if ((await input.inputValue()) === weight) return;
@@ -370,18 +428,21 @@ async function setCriterionWeight(page: Page, attribute: string, weight: string)
   await expect(input).toHaveValue(weight);
 }
 
-async function pillarOf(page: Page, attribute: string): Promise<string> {
-  const row = page.getByRole("row").filter({ hasText: attribute }).first();
-  const cells = await row.getByRole("cell").allTextContents();
-  return (cells[0] ?? "").trim();
-}
-
-async function weightsInPillar(page: Page, pillar: string): Promise<number[]> {
-  const rows = await page.getByRole("row").filter({ hasText: pillar }).all();
+/**
+ * Every weight inside one pillar, read from the block the pillar opens.
+ *
+ * **Read from inside the pillar, not by filtering rows that mention its name.** The pillar is
+ * now the row above these rather than a column repeated down each of them, which is exactly
+ * why the block is the right place to count.
+ */
+async function weightsInPillar(page: Page, attribute: string): Promise<number[]> {
+  await openPillarOf(page, attribute);
+  const inside = page.getByRole("region", {
+    name: "Attribute weights inside this pillar",
+  });
+  const inputs = await inside.getByRole("spinbutton").all();
   const weights: number[] = [];
-  for (const row of rows) {
-    const input = row.getByRole("spinbutton");
-    if ((await input.count()) === 0) continue;
+  for (const input of inputs) {
     weights.push(Number(await input.inputValue()));
   }
   return weights;

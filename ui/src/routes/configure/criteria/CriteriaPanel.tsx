@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { Criterion, CriterionRule } from "../../../api/endpoints";
 import { lockedAttributes } from "../../../api/errorPresentation";
 import { formatPercentage } from "../../../format/display";
@@ -19,11 +20,30 @@ import { useCriterionRule } from "./useCriterionRule";
  * A refusal is shown rather than absorbed. `409 weights_all_locked` means the weight was not
  * set; a screen that stayed silent would leave the user believing it had been.
  */
-export function CriteriaPanel({ editor }: { editor: CriteriaEditor }) {
+export function CriteriaPanel({
+  editor,
+  pillar,
+}: {
+  editor: CriteriaEditor;
+  /**
+   * The one pillar to show, when the panel is opened from inside a pillar's row.
+   *
+   * **Without it the panel is every criterion in the set**, which is how a criteria set is
+   * read whole; with it, the panel is the inside of one pillar, which is how a weight is
+   * changed. The same rows either way -- the difference is which question is being asked.
+   */
+  pillar?: string;
+}) {
+  const headingId = useId();
+  const shown =
+    pillar === undefined
+      ? editor.criteria
+      : editor.criteria.filter((criterion) => criterion.pillar === pillar);
+
   return (
-    <section className="panel" aria-labelledby="criteria-heading">
-      <h3 id="criteria-heading" className="panel__heading">
-        Criteria
+    <section className="panel" aria-labelledby={headingId}>
+      <h3 id={headingId} className="panel__heading">
+        {pillar === undefined ? "Criteria" : "Attribute weights inside this pillar"}
       </h3>
       <p className="panel__hint">
         Weights are percentages within a pillar. Changing one rebalances the
@@ -37,18 +57,18 @@ export function CriteriaPanel({ editor }: { editor: CriteriaEditor }) {
         go, which the backend refuses rather than silently absorbing.
       </p>
 
-      <PillarTotals criteria={editor.criteria} />
+      <PillarTotals criteria={shown} />
 
       {editor.saveError !== null && <SaveFailure error={editor.saveError} />}
 
-      {editor.criteria.length === 0 ? (
+      {shown.length === 0 ? (
         <p className="screen__note">This criteria set has no criteria.</p>
       ) : (
         <table className="table">
           <thead>
             <tr>
               <th scope="col">Attribute</th>
-              <th scope="col">Pillar</th>
+              {pillar === undefined && <th scope="col">Pillar</th>}
               <th scope="col">Weight</th>
               <th scope="col">Locked</th>
               <th scope="col">Goal</th>
@@ -56,10 +76,11 @@ export function CriteriaPanel({ editor }: { editor: CriteriaEditor }) {
             </tr>
           </thead>
           <tbody>
-            {editor.criteria.map((criterion) => (
+            {shown.map((criterion) => (
               <CriterionRow
                 key={criterion.attribute}
                 criterion={criterion}
+                showPillar={pillar === undefined}
                 saving={editor.savingAttribute === criterion.attribute}
                 onSave={editor.setWeight}
                 onSetLock={editor.setLock}
@@ -104,12 +125,15 @@ function PillarTotals({ criteria }: { criteria: readonly Criterion[] }) {
 
 function CriterionRow({
   criterion,
+  showPillar,
   saving,
   onSave,
   onSetLock,
   onSaveRule,
 }: {
   criterion: Criterion;
+  /** False inside a pillar's own row, where every criterion shares the same one. */
+  showPillar: boolean;
   saving: boolean;
   onSave: (attribute: string, weight: number) => void;
   onSetLock: (attribute: string, weightLocked: boolean) => void;
@@ -155,7 +179,7 @@ function CriterionRow({
     <>
       <tr className="table__row">
         <th scope="row">{criterion.attribute}</th>
-        <td>{criterion.pillar}</td>
+        {showPillar && <td>{criterion.pillar}</td>}
         <td>
           <form className="weight-form" onSubmit={submit}>
             <input

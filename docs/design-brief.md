@@ -93,3 +93,57 @@ active criteria set is what every number on screen is relative to.
 **What would still help**, if the design is revised again: loading, empty and error states.
 `useResource` distinguishes idle, loading, ready and error on every screen, and the mockup
 draws only the last.
+
+---
+
+# The third pass, built against the file itself (2026-09-22)
+
+**The two passes before this one were built from a summary of the design rather than from the
+design.** `UX-REVIEW.md` is a changelog, and a changelog says what moved, not what it looks
+like; the palette was inferred from a token diff and the layout from character counts. The
+result was a product that carried the colours and almost none of the structure.
+
+This pass was built with `Starnest Product.dc.html` rendered in one browser tab and the running
+application in another, screen by screen. Everything below is either reproduced from that file
+or is a divergence with a reason.
+
+## Divergences, and why each one is deliberate
+
+**No flag beside a candidate.** The design draws a 24x17 chip carrying an ISO code
+(`ui/flags/nl.svg`). `GET /rankings` carries no ISO code and the catalog holds none, so the
+column is left out rather than a country-to-ISO table being written into the client -- which
+would be exactly the hardcoding `reqs.md` bars, for decoration.
+
+**Source rows have arrows and no drag grip.** The design has both. The arrows are implemented
+and are what a keyboard reaches; dragging would need an operation the contract does not have
+("place this source at that position" rather than "swap it with its neighbour"). Worth adding
+to the contract if the gesture matters.
+
+**Adults and children are number fields, not segments of 1-4 and none-3.** A segmented control
+caps the count at whatever the design drew, and the domain has no such ceiling.
+
+**The pillar slider's ceiling scales with how many weights share the hundred.** The design fixes
+it at 40, which is four and a half times an even share of eleven pillars -- right for eleven and
+wrong for three, where it silently clamps a weight the server would accept. The floor is still
+40, so the eleven-pillar case is drawn exactly as designed.
+
+**Cell tints in the comparison matrix are three bands rather than a continuous alpha ramp.** A
+background colour is design, and design lives in `styles.css` (the lint rule says so); a
+continuous alpha would have to be an inline style. The bands are the design's own thresholds --
+nothing below 5%, full at 30%.
+
+**A level is offered as soon as it holds a candidate.** The design disables City outright.
+Which levels exist and which hold candidates are catalog rows, so the condition is read off
+them: today that draws exactly what the design draws, and the day cities are nominated the
+level enables itself.
+
+**A saved ranking opens rather than restores**, as recorded above, and the list of them lives
+in the sidebar while the act of saving lives on Rank.
+
+## What would still help
+
+The mockup's numbers are a full database: twelve failures, sixty-two unanswered values, a month
+of spend. The application's cards are the same cards, and currently read zero -- which is the
+truth about the last acquisition rather than a rendering fault. **Loading, empty and error
+states remain undrawn**, as noted above, and are now the largest remaining gap between the file
+and what a reader actually meets.

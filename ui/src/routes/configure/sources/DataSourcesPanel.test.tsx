@@ -24,21 +24,20 @@ describe("the source priority panel", () => {
     renderShell("/configure");
     const sources = await panel();
 
-    const names = (await sources.findAllByRole("rowheader")).map(
-      (cell) => cell.textContent,
+    const names = (await sources.findAllByRole("listitem")).map((item) =>
+      item.getAttribute("aria-label"),
     );
     expect(names).toEqual(["Eurostat", "Manual entry", "LLM with web search"]);
   });
 
   it("names each source's kind, so a figure from a model is recognisable as one", async () => {
     renderShell("/configure");
-    const sources = await panel();
 
-    const row = (
-      await sources.findByRole("rowheader", { name: "LLM with web search" })
-    ).closest("tr");
-    expect(row).toHaveTextContent("llm");
-    expect(row).toHaveTextContent("indicative");
+    // The kind and the tier stand in for the order only while the source is consulted; a
+    // source nobody consults says that instead, because it is the more useful fact.
+    const eurostat = await screen.findByRole("listitem", { name: "Eurostat" });
+    expect(eurostat).toHaveTextContent("structured");
+    expect(eurostat).toHaveTextContent("official");
   });
 
   it("says what switching a source off does, and what it does not", async () => {
@@ -58,17 +57,13 @@ describe("the source priority panel", () => {
    */
   it("gives a switched-off source no position, and closes the numbering up", async () => {
     renderShell("/configure");
-    const sources = await panel();
 
-    const off = (
-      await sources.findByRole("rowheader", { name: "LLM with web search" })
-    ).closest("tr");
-    expect(off).toHaveTextContent("not consulted");
-
-    const on = sources
-      .getByRole("rowheader", { name: "Manual entry" })
-      .closest("tr");
-    expect(on).toHaveTextContent("2");
+    expect(
+      await screen.findByRole("listitem", { name: "LLM with web search" }),
+    ).toHaveTextContent("not consulted");
+    expect(
+      screen.getByRole("listitem", { name: "Manual entry" }),
+    ).toHaveTextContent("2");
   });
 
   it("switches a source on, and it takes its place in the order", async () => {
@@ -77,16 +72,14 @@ describe("the source priority panel", () => {
     const sources = await panel();
 
     await user.click(
-      await sources.findByRole("checkbox", {
+      await sources.findByRole("switch", {
         name: "Consult LLM with web search",
       }),
     );
 
     await waitFor(() =>
       expect(
-        sources
-          .getByRole("rowheader", { name: "LLM with web search" })
-          .closest("tr"),
+        screen.getByRole("listitem", { name: "LLM with web search" }),
       ).toHaveTextContent("3"),
     );
   });
@@ -97,12 +90,12 @@ describe("the source priority panel", () => {
     const sources = await panel();
 
     await user.click(
-      await sources.findByRole("checkbox", { name: "Consult Eurostat" }),
+      await sources.findByRole("switch", { name: "Consult Eurostat" }),
     );
 
     await waitFor(() =>
       expect(
-        sources.getByRole("rowheader", { name: "Eurostat" }).closest("tr"),
+        screen.getByRole("listitem", { name: "Eurostat" }),
       ).toHaveTextContent("not consulted"),
     );
   });
@@ -119,8 +112,8 @@ describe("the source priority panel", () => {
 
     await waitFor(() => {
       const names = sources
-        .getAllByRole("rowheader")
-        .map((cell) => cell.textContent);
+        .getAllByRole("listitem")
+        .map((item) => item.getAttribute("aria-label"));
       expect(names[0]).toBe("Manual entry");
     });
   });
@@ -141,7 +134,7 @@ describe("the source priority panel", () => {
     const user = userEvent.setup();
     renderShell("/configure");
     const sources = await panel();
-    await sources.findByRole("checkbox", { name: "Consult Eurostat" });
+    await sources.findByRole("switch", { name: "Consult Eurostat" });
 
     mockServer.use(
       http.patch("/v1/data-sources/:dataSourceId", () =>
@@ -151,15 +144,13 @@ describe("the source priority panel", () => {
         ),
       ),
     );
-    await user.click(
-      sources.getByRole("checkbox", { name: "Consult Eurostat" }),
-    );
+    await user.click(sources.getByRole("switch", { name: "Consult Eurostat" }));
 
     expect(await sources.findByRole("alert")).toHaveTextContent(
       "unknown_data_source",
     );
     expect(
-      sources.getByRole("rowheader", { name: "Eurostat" }),
+      screen.getByRole("listitem", { name: "Eurostat" }),
     ).toBeInTheDocument();
   });
 
