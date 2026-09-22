@@ -712,15 +712,20 @@ select.field__control {
    semantics are the platform's. */
 .toggle-group {
   display: flex;
+  align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
+/* **Sized to its own label, not to the row.** These used to stretch, which was the level
+   toggle's need before it became `.level-group`; everywhere else a segmented control that
+   fills the width reads as two page-wide buttons rather than as one choice between two. */
 .toggle {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 0;
+  padding: 6px 13px;
   border: var(--border-width) solid var(--colour-border-strong);
   border-radius: var(--radius-medium);
   background: var(--colour-surface);
@@ -1370,6 +1375,225 @@ select.field__control {
   text-align: left;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════════════
+   The comparison matrix
+   ══════════════════════════════════════════════════════════════════════════════════════
+
+   One row per pillar, one column per candidate. **Two explicit tracks and then
+   `grid-auto-columns`**, so the stylesheet never has to know how many candidates are being
+   compared -- the comparator limit stays a configured bound rather than a number written
+   into a rule here.
+
+   `width: max-content` with `min-width: 100%` is what keeps every candidate's column at
+   least 86px while still filling the card when there is room: the card scrolls sideways
+   rather than squeezing the bars until one column's cannot be compared with the next's.
+   ══════════════════════════════════════════════════════════════════════════════════════ */
+
+.table-card--matrix {
+  max-height: none;
+}
+
+.table--matrix {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+}
+
+.table--matrix > thead,
+.table--matrix > tbody {
+  display: block;
+}
+
+.table--matrix > thead > tr,
+.table--matrix > tbody > tr {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 60px;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(86px, 1fr);
+  gap: 12px;
+  padding: 9px 16px;
+  align-items: start;
+  border-bottom: var(--border-width) solid var(--colour-border);
+}
+
+.table--matrix > thead > tr > th,
+.table--matrix > tbody > tr > th,
+.table--matrix > tbody > tr > td {
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  text-align: left;
+}
+
+.table--matrix > thead > tr {
+  background: var(--colour-surface-raised);
+}
+
+.table--matrix > thead > tr > th {
+  background: none;
+  font-size: 11px;
+  font-weight: var(--weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--colour-text-muted);
+}
+
+/* **The total sits apart from the pillars that make it.** It is the only row that is not a
+   measurement of one thing, and a reader scanning the pillars should not have to remember
+   which row was the sum. */
+.matrix__row--total {
+  background: var(--colour-surface-hair);
+  border-bottom: 2px solid var(--colour-border-strong);
+}
+
+.matrix__row--total .matrix__label {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--colour-text-label);
+}
+
+.matrix__label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.matrix__weight {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--colour-text-muted);
+}
+
+.matrix__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px;
+  margin: -4px 0;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-medium);
+}
+
+.matrix__score {
+  font-size: 14px;
+  font-weight: var(--weight-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.matrix__delta {
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--colour-text-muted);
+}
+
+.matrix__delta--ahead {
+  color: var(--colour-success);
+}
+
+.matrix__delta--behind {
+  color: var(--colour-danger);
+}
+
+.matrix__track {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin-top: 2px;
+}
+
+/* The centre line. Without it a short bar reads as "nearly nothing" rather than as "barely
+   ahead", and those are different answers. */
+.matrix__tick {
+  fill: var(--colour-border-strong);
+}
+
+.matrix__fill--ahead {
+  fill: var(--colour-success-bar);
+}
+
+.matrix__fill--behind {
+  fill: var(--colour-danger-bar);
+}
+
+/* **The tint is banded, and it starts at a gap worth noticing.** Three steps is as much as a
+   background can say at this size, and tinting a two-point gap would claim a difference the
+   arithmetic does not support (`divergingBar.ts`). The border appears only in the top band,
+   where the cell is making a real claim. */
+.matrix__cell--ahead-1 {
+  background: color-mix(in srgb, var(--colour-success-bar) 9%, transparent);
+}
+
+.matrix__cell--ahead-2 {
+  background: color-mix(in srgb, var(--colour-success-bar) 22%, transparent);
+}
+
+.matrix__cell--ahead-3 {
+  background: color-mix(in srgb, var(--colour-success-bar) 42%, transparent);
+  border-color: var(--colour-success-border);
+}
+
+.matrix__cell--behind-1 {
+  background: color-mix(in srgb, var(--colour-danger-bar) 9%, transparent);
+}
+
+.matrix__cell--behind-2 {
+  background: color-mix(in srgb, var(--colour-danger-bar) 22%, transparent);
+}
+
+.matrix__cell--behind-3 {
+  background: color-mix(in srgb, var(--colour-danger-bar) 42%, transparent);
+  border-color: var(--colour-danger-border);
+}
+
+/* ── The per-comparator synthesis ─────────────────────────────────────────────────────
+   One card per comparator, side by side. Five of them stacked is five screens of scrolling
+   to answer "which of these is closest"; in a row the totals line up and the answer is the
+   shape of the column. */
+
+.synthesis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.synthesis__card {
+  gap: 9px;
+  padding: 14px;
+  box-shadow: var(--shadow-control);
+}
+
+.synthesis__name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+
+/* The one number on the card, and the reason it is there: how much better or worse, in
+   points, before any of the words under it. */
+.synthesis__delta {
+  font-size: 15px;
+  font-weight: var(--weight-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.synthesis__delta--ahead {
+  color: var(--colour-success);
+}
+
+.synthesis__delta--behind {
+  color: var(--colour-danger);
+}
+
+.synthesis__lead {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--colour-text-muted);
+}
+
 .screen__heading {
   margin: 0;
   font-size: 20px;
@@ -1645,12 +1869,13 @@ select.field__control {
   font-size: 13px;
 }
 
-.table--ranking thead,
-.table--ranking tbody {
+.table--ranking > thead,
+.table--ranking > tbody {
   display: block;
 }
 
-.table--ranking tr {
+.table--ranking > thead > tr,
+.table--ranking > tbody > tr {
   display: grid;
   grid-template-columns:
     44px minmax(140px, 1fr) 80px 78px 522px 116px 168px 116px
@@ -1661,7 +1886,7 @@ select.field__control {
   border-bottom: var(--border-width) solid var(--colour-surface-hair);
 }
 
-.table--ranking thead tr {
+.table--ranking > thead > tr {
   position: sticky;
   top: 0;
   z-index: 3;
@@ -1671,15 +1896,15 @@ select.field__control {
   border-bottom: var(--border-width) solid var(--colour-border);
 }
 
-.table--ranking tbody th,
-.table--ranking tbody td {
+.table--ranking > tbody > tr > th,
+.table--ranking > tbody > tr > td {
   padding: 0;
   border: 0;
   min-width: 0;
   vertical-align: middle;
 }
 
-.table--ranking thead th {
+.table--ranking > thead > tr > th {
   /* The row draws the rule under the header and the cell padding; a cell that draws its own
      would put a second line under every column and break the one the row draws. */
   padding: 0;
@@ -2093,16 +2318,16 @@ select.field__control {
 }
 
 /* The whole row opens the drill-down, so the whole row says so. */
-.table--ranking tbody tr {
+.table--ranking > tbody > tr {
   cursor: pointer;
   background: var(--colour-surface);
 }
 
-.table--ranking tbody tr:hover {
+.table--ranking > tbody > tr:hover {
   background: var(--colour-surface-raised);
 }
 
-.table--ranking tbody tr.table__row--open:hover {
+.table--ranking > tbody > tr.table__row--open:hover {
   background: var(--colour-accent-surface);
 }
 
@@ -2110,6 +2335,25 @@ select.field__control {
    competes with a reason somebody does. */
 .table__reason--quiet {
   color: var(--colour-text-muted);
+}
+
+/* The evidence behind one candidate's score, in a row of its own under the row it belongs
+   to. It leaves the grid -- there are no columns to line up with -- and takes the page's own
+   ground so it reads as a layer underneath rather than as another row. */
+.table--ranking > tbody > tr.table__detail {
+  display: block;
+  padding: 18px 16px 22px;
+  background: var(--colour-surface-raised);
+  border-top: var(--border-width) solid var(--colour-border);
+  cursor: default;
+}
+
+.table--ranking > tbody > tr.table__detail:hover {
+  background: var(--colour-surface-raised);
+}
+
+.table--ranking > tbody > tr.table__detail > td {
+  display: block;
 }
 
 /* A superseded figure is still there and still true of its period; it is simply not the one

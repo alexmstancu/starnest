@@ -109,11 +109,11 @@ describe("the comparison", () => {
 
     await compare("Portugal", "Netherlands");
 
-    expect(
-      await screen.findByRole("heading", {
-        name: /netherlands: \+7\.0 points/i,
-      }),
-    ).toBeInTheDocument();
+    // The card names the comparator; the difference sits beside the name rather than inside
+    // it, so the heading reads as a place and the number reads as a number.
+    const card = (await screen.findByRole("heading", { name: "Netherlands" }))
+      .closest("section")!;
+    expect(within(card).getByText("+7.0")).toBeInTheDocument();
   });
 
   it("reports a refusal from the server rather than showing an empty table", async () => {
@@ -237,9 +237,10 @@ describe("when a comparison cannot be drawn", () => {
     });
     const row = within(table).getByRole("row", { name: /broadband/i });
     expect(within(row).getAllByText("—").length).toBeGreaterThan(0);
-    expect(
-      screen.getByRole("heading", { name: /netherlands: — points/i }),
-    ).toBeInTheDocument();
+    const card = screen
+      .getByRole("heading", { name: "Netherlands" })
+      .closest("section")!;
+    expect(within(card).getAllByText("—").length).toBeGreaterThan(0);
   });
 });
 

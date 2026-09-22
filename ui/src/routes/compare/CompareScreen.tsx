@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { ComparisonMatrix } from "./ComparisonMatrix";
 import { droppedByLimit, withinLimit } from "./comparatorLimit";
 import {
   fetchCandidates,
@@ -266,17 +267,32 @@ function ComparisonTable({
         {comparators.map((each) => each.name).join(", ")}
       </h3>
 
-      {/* Keyed by position as well as by name: `comparator` is optional in the contract, so
+      {/* **Side by side, one card per comparator.** Five of them stacked is five screens of
+          scrolling to answer "which of these is closest"; in a row the totals line up and the
+          answer is the shape of the column.
+
+          Keyed by position as well as by name: `comparator` is optional in the contract, so
           two pairs without one shared the key "pair" -- and a sentence can legitimately repeat
           between pairs. A key has to be unique among siblings, not meaningful. */}
+      <div className="synthesis">
       {(comparison.synthesis ?? []).map((pair, at) => (
-        <section key={`${pair.comparator ?? "pair"}-${at}`} className="panel">
-          <h4 className="panel__heading">
-            {nameOf(comparison, pair.comparator ?? "")}: {formatSigned(pair.score_delta)} points
-          </h4>
-          <p className="panel__hint">
-            Ordered by what each difference is worth to the score, not by how
-            large it looks.
+        <section key={`${pair.comparator ?? "pair"}-${at}`} className="panel synthesis__card">
+          <div className="panel__head">
+            <h4 className="synthesis__name">
+              {nameOf(comparison, pair.comparator ?? "")}
+            </h4>
+            <span
+              className={
+                pair.score_delta != null && pair.score_delta < 0
+                  ? "synthesis__delta synthesis__delta--behind"
+                  : "synthesis__delta synthesis__delta--ahead"
+              }
+            >
+              {formatSigned(pair.score_delta)}
+            </span>
+          </div>
+          <p className="synthesis__lead">
+            By impact on the total, not by how large the gap looks.
           </p>
           {/* Stacked, not label-and-value: a list is not a figure, and pushing it to the
               right of its own label left a column of text hard against the card's edge. The
@@ -306,10 +322,16 @@ function ComparisonTable({
           </dl>
         </section>
       ))}
+      </div>
 
       {/* **Raw figures exist per attribute, never per pillar.** A pillar is a weighted mean
           of things measured in different units, so it has no unit of its own -- which is why
           this toggle governs the attribute rows and the synthesis stays in points. */}
+      {/* **The matrix first, the attributes under it.** The pillars are the shape of the
+          answer; the attributes are the evidence for it, and a reader who wants the evidence
+          knows to look down. */}
+      <ComparisonMatrix comparison={comparison} />
+
       <fieldset className="field">
         <legend className="field__label">Show attribute values as</legend>
         <div className="toggle-group">

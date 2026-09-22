@@ -21,7 +21,15 @@ import { renderShell } from "../../testing/renderShell";
 async function rankingRow(name: string): Promise<HTMLElement> {
   // By name: an open drill-down puts more tables on the screen, and several can be open.
   const table = await screen.findByRole("table", { name: /ranked candidates/i });
-  return within(table).getByRole("row", { name: new RegExp(name) });
+  // **By its rowheader, not by the row's own name.** An open row is followed by a row
+  // holding that candidate's evidence, whose heading names the candidate too -- so a query
+  // by row name matches both, and which one it returns depends on whether the row happens
+  // to be open.
+  const heading = within(table)
+    .getAllByRole("rowheader")
+    .find((cell) => cell.textContent?.trim() === name);
+  expect(heading, `no row for ${name}`).toBeDefined();
+  return heading!.closest("tr")!;
 }
 
 /**

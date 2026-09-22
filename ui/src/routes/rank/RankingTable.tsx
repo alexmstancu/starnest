@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 import { type CandidateResult, type Ranking } from "../../api/endpoints";
 import {
   ABSENT,
@@ -41,10 +41,17 @@ export function RankingTable({
   ranking,
   open = [],
   onToggle,
+  detail,
 }: {
   ranking: Ranking;
   open?: readonly OpenRow[];
   onToggle?: (row: OpenRow) => void;
+  /**
+   * What an open row shows underneath itself. **Passed in rather than imported**, because
+   * the evidence behind a score is fetched, and a table that renders a live ranking and a
+   * frozen one must not know the difference -- a saved ranking supplies none.
+   */
+  detail?: (row: OpenRow) => ReactNode;
 }) {
   if (ranking.candidates.length === 0) {
     return (
@@ -86,6 +93,7 @@ export function RankingTable({
               result={result}
               open={isOpen(open, result.candidate)}
               onToggle={onToggle}
+              detail={detail}
             />
           ))}
         </tbody>
@@ -157,26 +165,27 @@ function CandidateRow({
   result,
   open,
   onToggle,
+  detail,
 }: {
   result: CandidateResult;
   open: boolean;
   onToggle?: (row: OpenRow) => void;
+  detail?: (row: OpenRow) => ReactNode;
 }) {
   const matching = result.match_status === "matching";
-  const toggle = onToggle
-    ? () =>
-        onToggle({
-          candidate: result.candidate,
-          name: result.name,
-          pillars: result.pillar_scores,
-        })
-    : undefined;
+  const row: OpenRow = {
+    candidate: result.candidate,
+    name: result.name,
+    pillars: result.pillar_scores,
+  };
+  const toggle = onToggle ? () => onToggle(row) : undefined;
 
   const classes = ["table__row"];
   if (!matching) classes.push("table__row--not-matching");
   if (open) classes.push("table__row--open");
 
   return (
+    <>
     <tr
       className={classes.join(" ")}
       onClick={toggle}
@@ -265,6 +274,15 @@ function CandidateRow({
           )}
       </td>
     </tr>
+    {/* **Underneath the row it belongs to, not under the whole table.** The evidence behind
+        a score is about one candidate, and a panel that appears a screenful below the row
+        that opened it makes the reader hold the connection in their head. */}
+    {open && detail !== undefined && (
+      <tr className="table__detail">
+        <td>{detail(row)}</td>
+      </tr>
+    )}
+    </>
   );
 }
 

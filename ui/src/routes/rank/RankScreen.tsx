@@ -119,20 +119,15 @@ function TheRanking({
           ranking={resource.data}
           open={open}
           onToggle={toggle}
+          detail={(row) => (
+            <CandidateDetail
+              candidate={row.candidate}
+              name={row.name}
+              pillars={row.pillars}
+            />
+          )}
         />
       )}
-
-      {/* One panel per open row, in the order they were opened. Several at once is the
-          point (UX review M): closing Portugal to read Finland made comparing the two a
-          memory exercise. */}
-      {open.map((row) => (
-        <CandidateDetail
-          key={row.candidate}
-          candidate={row.candidate}
-          name={row.name}
-          pillars={row.pillars}
-        />
-      ))}
 
       {/* The other axis (`reqs.md` 8.4). A candidate's detail says what we know about one
           country; this says who has a figure for one attribute at all -- the question behind a

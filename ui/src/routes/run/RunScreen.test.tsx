@@ -192,11 +192,17 @@ describe("what nobody answered", () => {
   it("counts them beside what answered and what failed", async () => {
     await openTheRun();
 
+    // **Scoped to this acquisition's report.** The strip at the top of the screen says
+    // "Failed" too, about the last acquisition rather than about this one, and an unscoped
+    // query would read whichever happened to render first.
+    const report = within(
+      screen.getByRole("region", { name: /acquisition 8/i }),
+    );
     // A `dd` takes no accessible name from its `dt`, so the label is found and its value read
     // beside it -- which is also what a reader does.
-    expect(screen.getByText("Unanswered").nextSibling).toHaveTextContent("2");
-    expect(screen.getByText("Failed").nextSibling).toHaveTextContent("1");
-    expect(screen.getByText("Answered").nextSibling).toHaveTextContent("93");
+    expect(report.getByText("Unanswered").nextSibling).toHaveTextContent("2");
+    expect(report.getByText("Failed").nextSibling).toHaveTextContent("1");
+    expect(report.getByText("Answered").nextSibling).toHaveTextContent("93");
   });
 
   it("names the items, so the reader knows which country learned nothing", async () => {
@@ -381,11 +387,15 @@ describe("when there is nothing to show", () => {
       screen.getByRole("button", { name: /start this acquisition/i }),
     );
 
+    const before = polled;
     await userEvent.click(
       await screen.findByRole("button", { name: /refresh/i }),
     );
 
-    expect(polled).toBe(2);
+    // One more read than before the click. **Counted as a delta, not as a total**: the strip
+    // at the top of the screen reads the last acquisition's detail too, and a total would be
+    // asserting how many other things happen to want the same endpoint.
+    expect(polled).toBe(before + 1);
   });
 });
 

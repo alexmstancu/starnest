@@ -9,6 +9,7 @@ import type { RouteDefinition } from "../../navigation/routes";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
 import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
+import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
 import { ItemGroups } from "./ItemGroups";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";
 import { type Progress, progressBar } from "./runProgress";
@@ -39,6 +40,12 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           you agree to an estimate.
         </p>
       </header>
+
+      {/* **The screen opens with what is already known.** Everything under it is about
+          changing that, and none of it means anything without the number it would change. */}
+      {run.history.status === "ready" && (
+        <DatabaseHoldsPanel runs={run.history.data.items} />
+      )}
 
       {levelId === null ? (
         <p className="screen__note">Choose a level to plan an acquisition.</p>
