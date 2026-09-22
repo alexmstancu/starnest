@@ -438,7 +438,7 @@ describe("re-asking about part of a run", () => {
     await openRun();
 
     const group = within(
-      await screen.findByRole("region", { name: /what failed, by source/i }),
+      await screen.findByRole("region", { name: /which sources broke/i }),
     );
     expect(
       group.getByRole("button", { name: /^oecd \(1\)$/i }),
@@ -451,7 +451,7 @@ describe("re-asking about part of a run", () => {
 
     const group = within(
       await screen.findByRole("region", {
-        name: /attributes nobody answered/i,
+        name: /which values went unanswered/i,
       }),
     );
     expect(
@@ -464,7 +464,7 @@ describe("re-asking about part of a run", () => {
   it("starts with everything selected, and clears on request", async () => {
     await openRun();
     const group = within(
-      await screen.findByRole("region", { name: /what failed, by source/i }),
+      await screen.findByRole("region", { name: /which sources broke/i }),
     );
 
     expect(
@@ -499,7 +499,7 @@ describe("re-asking about part of a run", () => {
       }),
     );
     const group = within(
-      await screen.findByRole("region", { name: /what failed, by source/i }),
+      await screen.findByRole("region", { name: /which sources broke/i }),
     );
 
     await userEvent.click(
@@ -521,7 +521,7 @@ describe("re-asking about part of a run", () => {
   it("arms a confirmation rather than starting immediately", async () => {
     await openRun();
     const group = within(
-      await screen.findByRole("region", { name: /what failed, by source/i }),
+      await screen.findByRole("region", { name: /which sources broke/i }),
     );
 
     await userEvent.click(
@@ -548,7 +548,7 @@ describe("re-asking about part of a run", () => {
       }),
     );
     const group = within(
-      await screen.findByRole("region", { name: /what failed, by source/i }),
+      await screen.findByRole("region", { name: /which sources broke/i }),
     );
     await userEvent.click(
       group.getByRole("button", { name: /^Retry 1 selected$/ }),
@@ -571,7 +571,7 @@ describe("re-asking about part of a run", () => {
       }),
     );
     const group = within(
-      await screen.findByRole("region", { name: /what failed, by source/i }),
+      await screen.findByRole("region", { name: /which sources broke/i }),
     );
     await userEvent.click(
       group.getByRole("button", { name: /^Retry 1 selected$/ }),
@@ -601,7 +601,7 @@ describe("picking out individual items", () => {
     );
     await screen.findByRole("heading", { name: /acquisition 8/i });
     return within(
-      await screen.findByRole("region", { name: /what failed, by source/i }),
+      await screen.findByRole("region", { name: /which sources broke/i }),
     );
   }
 
@@ -681,7 +681,7 @@ describe("picking out individual items", () => {
         );
         await screen.findByRole("heading", { name: /acquisition 8/i });
         return screen.findByRole("region", {
-          name: /attributes nobody answered/i,
+          name: /which values went unanswered/i,
         });
       })(),
     );

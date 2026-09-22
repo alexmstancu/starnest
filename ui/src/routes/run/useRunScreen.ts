@@ -9,7 +9,7 @@
  * once would both write values and neither screen would be telling the truth about the other.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchRun,
   fetchRuns,
@@ -22,6 +22,7 @@ import {
   type RunPlan,
   type RunScope,
 } from "../../api/endpoints";
+import { newestRun } from "./databaseHolds";
 import { type Commitment, describeCommitment } from "./spendCommitment";
 import { useResource, type Resource } from "../../api/useResource";
 
@@ -109,6 +110,28 @@ export function useRunScreen(): RunScreenState {
   const watch = useCallback(async (run: Run) => {
     setCurrent(await fetchRun(run.id));
   }, []);
+
+  /**
+   * **The last acquisition opens by itself, once.**
+   *
+   * The screen's three remedies are about what the last acquisition left behind, and a
+   * reader arriving here to retry a failure should not have to find the run in the history
+   * and open it before the screen will say there was one. `opened` is a ref rather than
+   * state so that closing a run, or opening an older one, is not undone on the next render:
+   * this is the opening view, not a rule about what must stay open.
+   */
+  const opened = useRef(false);
+  const runs = history.resource.status === "ready" ? history.resource.data.items : null;
+  useEffect(() => {
+    if (opened.current || runs === null) return;
+    opened.current = true;
+    const newest = newestRun(runs);
+    if (newest === undefined) return;
+    // **Silent if it fails.** Nobody asked for this read -- it is the opening view -- so a
+    // banner about it would report a failure the reader did not cause. Opening a run from
+    // the history is an act, and that one reports.
+    void watch(newest).catch(() => undefined);
+  }, [runs, watch]);
 
   return {
     plan,

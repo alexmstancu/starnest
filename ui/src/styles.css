@@ -1594,6 +1594,91 @@ select.field__control {
   color: var(--colour-text-muted);
 }
 
+/* ── What you can do about the gaps ───────────────────────────────────────────────────
+   Three remedies, side by side and the same shape each. A failure, an item nobody answered
+   and a wholesale refresh are three different problems, and a reader arriving at Acquire is
+   choosing between them -- stacked in a column they would read as a sequence of steps. */
+
+.gap-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.gap-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--colour-surface);
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-control);
+}
+
+/* The card takes the colour of the problem it is about, on its edge rather than its face:
+   a filled red card would make the most alarming thing on the screen the loudest. */
+.gap-card--danger {
+  border-color: var(--colour-danger-border);
+}
+
+.gap-card--warning {
+  border-color: var(--colour-warning-border);
+}
+
+.gap-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  flex-wrap: wrap;
+}
+
+/* **The count leads.** It is what the reader is choosing on, so it is the size of a figure
+   rather than the size of a heading. */
+.gap-card__count {
+  font-size: 26px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.gap-card--danger .gap-card__count {
+  color: var(--colour-danger);
+}
+
+.gap-card--warning .gap-card__count {
+  color: var(--colour-warning);
+}
+
+.gap-card__what {
+  font-size: 15px;
+  font-weight: var(--weight-strong);
+}
+
+.gap-card--danger .gap-card__what {
+  color: var(--colour-danger);
+}
+
+.gap-card--warning .gap-card__what {
+  color: var(--colour-warning);
+}
+
+.gap-card__lead {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--colour-text-label);
+}
+
+/* The verb is always at the foot, so the choice is made by reading across rather than by
+   hunting for where each card put its action. */
+.gap-card > .button {
+  margin-top: auto;
+  align-self: flex-start;
+}
+
 .screen__heading {
   margin: 0;
   font-size: 20px;

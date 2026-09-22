@@ -1,8 +1,8 @@
+import type { ReactNode } from "react";
 import {
   type Run,
   type RunDetail,
   type RunPlan,
-  type RunScope,
 } from "../../api/endpoints";
 import { formatCount, formatDateTime, formatMoney } from "../../format/display";
 import type { RouteDefinition } from "../../navigation/routes";
@@ -47,65 +47,135 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
         <DatabaseHoldsPanel runs={run.history.data.items} />
       )}
 
-      {levelId === null ? (
-        <p className="screen__note">Choose a level to plan an acquisition.</p>
-      ) : (
-        <div className="panel">
-          <h3 className="panel__heading">
-            An acquisition over every {levelId} candidate
+      {/* ── What you can do about the gaps ───────────────────────────────────────────
+          **Three cards, side by side, and the same shape each.** A failure, an item nobody
+          answered and a wholesale refresh are three different problems with three different
+          remedies, and a reader arriving at this screen is choosing between them. Stacked
+          in a column they read as a sequence of steps, which they are not. */}
+      <section className="section" aria-labelledby="gaps">
+        <header className="section__head">
+          <h3 id="gaps" className="section__heading">
+            What you can do about the gaps
           </h3>
-          <p className="panel__hint">
-            The estimate first: what would be fetched, and what it would cost,
-            before anything is.
+          <p className="section__lead">
+            Each of these starts a new acquisition. Nothing is fetched or
+            charged until you agree to an estimate.
           </p>
-          <button
-            type="button"
-            className="button"
-            disabled={run.busy !== null}
-            onClick={() => run.estimate(levelId)}
-          >
-            {run.busy === "planning" ? "Estimating…" : "Estimate an acquisition"}
-          </button>
+        </header>
 
-          {run.plan && (
-            <PlannedRun
-              plan={run.plan}
-              busy={run.busy === "running"}
-              onStart={() => run.start(levelId)}
-            />
+        <div className="gap-cards">
+          {run.current && (run.current.failures ?? []).length > 0 && (
+            <GapCard
+              tone="danger"
+              count={formatCount(run.current.progress?.items_failed)}
+              what="failed"
+              lead="A source broke. Worth retrying — the item itself is fine."
+            >
+              {levelId !== null && (
+                <ItemGroups
+                  items={run.current.failures ?? []}
+                  groupedBy="data_source"
+                  caption="Which sources broke"
+                  level={levelId}
+                  act="Retry"
+                  busy={run.busy === "planning"}
+                  onPropose={run.propose}
+                />
+              )}
+              <button
+                type="button"
+                className="button button--primary"
+                disabled={run.busy === "retrying"}
+                onClick={() => run.again("failed")}
+              >
+                {run.busy === "retrying"
+                  ? "Retrying…"
+                  : "Retry everything that failed"}
+              </button>
+            </GapCard>
           )}
 
-          {/* Nothing that can spend fires on a click. The estimate already said what it would
-              cost; this is the step between reading that and it happening. */}
-          {run.armed && (
-            <SpendConfirmation
-              sentence={run.armed.commitment.sentence}
-              uncapped={run.armed.commitment.uncapped}
-              busy={run.busy === "running"}
-              onYes={run.commit}
-              onCancel={run.cancel}
-            />
+          {run.current && (run.current.unanswered ?? []).length > 0 && (
+            <GapCard
+              tone="warning"
+              count={formatCount(run.current.progress?.items_unanswered)}
+              what="unanswered"
+              lead="Every source answered, and none had a row. Retrying the same sources changes nothing."
+            >
+              {levelId !== null && (
+                <ItemGroups
+                  items={run.current.unanswered ?? []}
+                  groupedBy="attribute"
+                  caption="Which values went unanswered"
+                  level={levelId}
+                  act="Ask again about"
+                  busy={run.busy === "planning"}
+                  onPropose={run.propose}
+                />
+              )}
+              <button
+                type="button"
+                className="button"
+                disabled={run.busy === "asking"}
+                onClick={() => run.again("unanswered")}
+              >
+                {run.busy === "asking"
+                  ? "Asking…"
+                  : "Ask again about all of them"}
+              </button>
+            </GapCard>
+          )}
+
+          {levelId === null ? (
+            <p className="screen__note">
+              Choose a level to plan an acquisition.
+            </p>
+          ) : (
+            <GapCard
+              count=""
+              what={`An acquisition over every ${levelId} candidate`}
+              lead="Re-asks everything, including what is already stored and still fresh. The estimate first: what would be fetched, and what it would cost, before anything is."
+            >
+              <button
+                type="button"
+                className="button"
+                disabled={run.busy !== null}
+                onClick={() => run.estimate(levelId)}
+              >
+                {run.busy === "planning"
+                  ? "Estimating…"
+                  : "Estimate an acquisition"}
+              </button>
+            </GapCard>
           )}
         </div>
-      )}
+
+        {run.plan && levelId !== null && (
+          <PlannedRun
+            plan={run.plan}
+            busy={run.busy === "running"}
+            onStart={() => run.start(levelId)}
+          />
+        )}
+
+        {/* Nothing that can spend fires on a click. The estimate already said what it would
+            cost; this is the step between reading that and it happening. */}
+        {run.armed && (
+          <SpendConfirmation
+            sentence={run.armed.commitment.sentence}
+            uncapped={run.armed.commitment.uncapped}
+            busy={run.busy === "running"}
+            onYes={run.commit}
+            onCancel={run.cancel}
+          />
+        )}
+      </section>
 
       {run.failure !== null && (
         <ErrorNotice error={run.failure} onRetry={run.dismissFailure} />
       )}
 
-      {run.current && (
-        <RunReport
-          run={run.current}
-          busy={run.busy === "retrying"}
-          onRefresh={run.refresh}
-          onRetry={() => run.again("failed")}
-          asking={run.busy === "asking"}
-          onAskAgain={() => run.again("unanswered")}
-          level={levelId}
-          planning={run.busy === "planning"}
-          onPropose={run.propose}
-        />
-      )}
+      {run.current && <RunReport run={run.current} onRefresh={run.refresh} />}
 
       {/* Beside the failures deliberately: the three reasons a figure is missing look the
           same in a ranking and have entirely different remedies. */}
@@ -125,6 +195,39 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
       {run.history.status === "ready" && (
         <RunHistory runs={run.history.data.items} onOpen={run.open} />
       )}
+    </section>
+  );
+}
+
+/**
+ * One remedy, as a card.
+ *
+ * **The count leads and the verb closes.** A reader arriving here is choosing between three
+ * problems, and the figure is what they are choosing on; the button at the foot of each card
+ * is always in the same place, so the choice is made by reading across rather than by
+ * hunting for where each card put its action.
+ */
+function GapCard({
+  count,
+  what,
+  lead,
+  tone,
+  children,
+}: {
+  count: string;
+  what: string;
+  lead: string;
+  tone?: "danger" | "warning";
+  children: ReactNode;
+}) {
+  return (
+    <section className={tone ? `gap-card gap-card--${tone}` : "gap-card"}>
+      <h4 className="gap-card__head">
+        {count !== "" && <span className="gap-card__count">{count}</span>}
+        <span className="gap-card__what">{what}</span>
+      </h4>
+      <p className="gap-card__lead">{lead}</p>
+      {children}
     </section>
   );
 }
@@ -281,24 +384,10 @@ function SpendConfirmation({
 
 function RunReport({
   run,
-  busy,
   onRefresh,
-  onRetry,
-  asking,
-  onAskAgain,
-  level,
-  planning,
-  onPropose,
 }: {
   run: RunDetail;
-  busy: boolean;
   onRefresh: () => void;
-  onRetry: () => void;
-  asking: boolean;
-  onAskAgain: () => void;
-  level: string | null;
-  planning: boolean;
-  onPropose: (scope: RunScope, describedAs: string) => void;
 }) {
   const failures = run.failures ?? [];
   const unanswered = run.unanswered ?? [];
@@ -358,26 +447,6 @@ function RunReport({
               </tbody>
             </table>
           </div>
-          <button
-            type="button"
-            className="button"
-            disabled={asking}
-            onClick={onAskAgain}
-          >
-            {asking ? "Asking…" : "Ask again about all of them"}
-          </button>
-
-          {level !== null && (
-            <ItemGroups
-              items={unanswered}
-              groupedBy="attribute"
-              caption="Attributes nobody answered"
-              level={level}
-              act="Ask again about"
-              busy={planning}
-              onPropose={onPropose}
-            />
-          )}
         </>
       )}
 
@@ -413,26 +482,6 @@ function RunReport({
               </tbody>
             </table>
           </div>
-          <button
-            type="button"
-            className="button"
-            disabled={busy}
-            onClick={onRetry}
-          >
-            {busy ? "Retrying…" : "Retry everything that failed"}
-          </button>
-
-          {level !== null && (
-            <ItemGroups
-              items={failures}
-              groupedBy="data_source"
-              caption="What failed, by source"
-              level={level}
-              act="Retry"
-              busy={planning}
-              onPropose={onPropose}
-            />
-          )}
         </>
       )}
     </section>
