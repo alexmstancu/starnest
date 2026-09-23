@@ -268,3 +268,43 @@ export function deltaTone(
   }
   return delta > 0 ? "ahead" : "behind";
 }
+
+/** A candidate as the band below needs to see one: only whether it matches. */
+export interface Judged {
+  match_status: string;
+}
+
+/**
+ * Where the ranking stops, and what is below the line.
+ *
+ * **Non-matching candidates stay in the table, keeping their scores** (`reqs.md` 5.4).
+ * Filtering them out would hide exactly what a rule is costing; leaving them in with nothing
+ * between makes the ranking look as though it simply continues. The band is what says the list
+ * has changed meaning -- above it is an order, below it is a set.
+ *
+ * **Two ways to be below it, and they are not the same problem.** A gate ruled a candidate out;
+ * insufficient data means nobody could score it. One is a decision and the other is a gap, so
+ * the sentence counts them separately.
+ */
+export function excludedBand(
+  candidates: readonly Judged[],
+): { at: number; reading: string } | null {
+  const at = candidates.findIndex(
+    (candidate) => candidate.match_status !== "matching",
+  );
+  if (at === -1) return null;
+
+  const below = candidates.length - at;
+  const gated = candidates.filter(
+    (candidate) => candidate.match_status === "not_matching",
+  ).length;
+  const unscored = below - gated;
+
+  return {
+    at,
+    reading:
+      `${round(below)} ${below === 1 ? "candidate" : "candidates"} below — ` +
+      `${round(gated)} ruled out by a gate, ` +
+      `${round(unscored)} without enough data to score`,
+  };
+}

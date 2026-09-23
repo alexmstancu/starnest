@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { fetchRanking, type Ranking } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
 import type { RouteDefinition } from "../../navigation/routes";
-import { ErrorNotice } from "../../shell/ErrorNotice";
+import { UnsetSetting } from "../../shell/UnsetSetting";
 import { AttributeDrillDown } from "./AttributeDrillDown";
 import { CandidateDetail } from "./CandidateDetail";
 import { type OpenRow, toggleRow } from "./openRows";
@@ -111,8 +111,16 @@ function TheRanking({
       {resource.status === "loading" && (
         <p className="screen__note">Loading…</p>
       )}
+      {/* **A setting nobody has decided is not a fault.** A score has no meaning without a
+          top of the range, so a fresh installation ranks nothing -- and that is the state to
+          explain, not an error to report. */}
       {resource.status === "error" && (
-        <ErrorNotice error={resource.error} onRetry={reload} />
+        <UnsetSetting
+          error={resource.error}
+          title="No ranking"
+          detail="A score has no meaning without a top of the range, so nothing is scored and nothing is ranked. This is an unset setting rather than a fault — set the top of the score range and the ranking returns."
+          onRetry={reload}
+        />
       )}
       {resource.status === "ready" && (
         <RankingTable

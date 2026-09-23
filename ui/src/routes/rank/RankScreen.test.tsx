@@ -168,9 +168,11 @@ describe("when the ranking cannot be shown", () => {
   });
 
   /**
-   * UX review R3. `score_scale_max` is provisional by design and has no default, so the
-   * shipped state refuses to rank. The screen must say which setting is missing and offer the
-   * way to it -- not a "Try again" that would fail identically every time.
+   * UX review R3, and the design's own treatment of it. `score_scale_max` is provisional by
+   * design and has no default, so the shipped state refuses to rank -- and a fresh
+   * installation meeting that as a red alert learns the product is broken on the day it was
+   * installed. It is a state with a name, an explanation and the one button that lifts it:
+   * not a fault, so **not an alert**, and not a "Try again" that would fail identically.
    */
   it("names the missing score range and offers the way to it", async () => {
     mockServer.use(
@@ -186,15 +188,23 @@ describe("when the ranking cannot be shown", () => {
     );
     renderShell("/rank");
 
-    const rank = within(await screen.findByRole("region", { name: "Rank" }));
-    const alert = await rank.findByRole("alert");
+    const unset = within(
+      await screen.findByRole("region", { name: "No ranking" }),
+    );
 
-    expect(alert).toHaveTextContent(/top of the score range is set/i);
-    expect(alert).toHaveTextContent("score_scale_not_set");
     expect(
-      within(alert).getByRole("link", { name: /set it in configure/i }),
+      unset.getByText(/a score has no meaning without a top of the range/i),
+    ).toBeInTheDocument();
+    expect(
+      unset.getByRole("link", { name: /set it in configure/i }),
     ).toHaveAttribute("href", "/configure");
-    expect(within(alert).queryByRole("button", { name: /try again/i })).toBeNull();
+    expect(unset.queryByRole("button", { name: /try again/i })).toBeNull();
+
+    // **Not an alert, and no code.** An expected state announced urgently, with a machine
+    // identifier beside it, tells the reader something went wrong. Something did not.
+    const rank = within(screen.getByRole("region", { name: "Rank" }));
+    expect(rank.queryByRole("alert")).toBeNull();
+    expect(rank.queryByText("score_scale_not_set")).toBeNull();
   });
 
   it("shows no ranking table at all while the score range is unset", async () => {
@@ -208,9 +218,7 @@ describe("when the ranking cannot be shown", () => {
     );
     renderShell("/rank");
 
-    // Scoped to the Rank region: the attribute drill-down raises its own alert.
-    const rank = within(await screen.findByRole("region", { name: "Rank" }));
-    await rank.findByRole("alert");
+    await screen.findByRole("region", { name: "No ranking" });
     expect(
       screen.queryByRole("table", { name: /ranked candidates/i }),
     ).toBeNull();

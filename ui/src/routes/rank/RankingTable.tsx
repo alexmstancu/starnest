@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from "react";
+import { Fragment, useId, type ReactNode } from "react";
 import { type CandidateResult, type Ranking } from "../../api/endpoints";
 import {
   ABSENT,
@@ -16,6 +16,7 @@ import {
   confidenceReadings,
   coverageBar,
   deltaTone,
+  excludedBand,
   formatDelta,
   pillarBars,
 } from "./rankTable";
@@ -53,6 +54,9 @@ export function RankingTable({
    */
   detail?: (row: OpenRow) => ReactNode;
 }) {
+  // Where the ranking stops and the set below it starts. Null when everything matches.
+  const band = excludedBand(ranking.candidates);
+
   if (ranking.candidates.length === 0) {
     return (
       <p className="screen__note">
@@ -87,14 +91,27 @@ export function RankingTable({
           </tr>
         </thead>
         <tbody>
-          {ranking.candidates.map((result) => (
-            <CandidateRow
-              key={result.candidate}
-              result={result}
-              open={isOpen(open, result.candidate)}
-              onToggle={onToggle}
-              detail={detail}
-            />
+          {ranking.candidates.map((result, at) => (
+            <Fragment key={result.candidate}>
+              {/* **The list changes meaning here.** Above the band it is an order; below it
+                  is a set, because a candidate with no rank cannot be in an order. Leaving
+                  them in with nothing between makes the ranking look as though it simply
+                  continues (`reqs.md` 5.4 keeps them visible; this says what they are). */}
+              {band?.at === at && (
+                <tr className="table__band">
+                  <td>
+                    <span className="table__band-label">Not in the ranking</span>
+                    <span className="table__band-reading">{band.reading}</span>
+                  </td>
+                </tr>
+              )}
+              <CandidateRow
+                result={result}
+                open={isOpen(open, result.candidate)}
+                onToggle={onToggle}
+                detail={detail}
+              />
+            </Fragment>
           ))}
         </tbody>
       </table>

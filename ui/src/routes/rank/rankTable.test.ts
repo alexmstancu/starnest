@@ -5,6 +5,7 @@ import {
   confidenceLabel,
   coverageBar,
   deltaTone,
+  excludedBand,
   formatDelta,
   pillarBars,
 } from "./rankTable";
@@ -195,5 +196,45 @@ describe("the difference from home", () => {
     expect(deltaTone(null)).toBe("level");
     expect(deltaTone(3)).toBe("ahead");
     expect(deltaTone(-3)).toBe("behind");
+  });
+});
+
+describe("where the ranking stops", () => {
+  const matching = { match_status: "matching" };
+  const gated = { match_status: "not_matching" };
+  const unscored = { match_status: "insufficient_data" };
+
+  it("marks the first candidate that is not in the ranking", () => {
+    expect(excludedBand([matching, matching, gated, unscored])?.at).toBe(2);
+  });
+
+  /** Nothing to mark: the band would be a line under a list that has not changed meaning. */
+  it("is nothing when every candidate matches", () => {
+    expect(excludedBand([matching, matching])).toBeNull();
+  });
+
+  it("is nothing when there are no candidates at all", () => {
+    expect(excludedBand([])).toBeNull();
+  });
+
+  /**
+   * A gate is a decision and insufficient data is a gap, so the sentence counts them apart --
+   * one is answered by changing a rule and the other by acquiring a figure.
+   */
+  it("counts what a gate ruled out apart from what could not be scored", () => {
+    expect(excludedBand([matching, gated, gated, unscored])?.reading).toBe(
+      "3 candidates below — 2 ruled out by a gate, 1 without enough data to score",
+    );
+  });
+
+  it("says candidate rather than candidates when there is one", () => {
+    expect(excludedBand([matching, unscored])?.reading).toBe(
+      "1 candidate below — 0 ruled out by a gate, 1 without enough data to score",
+    );
+  });
+
+  /** The whole list can be below the line, and then the band is the first row. */
+  it("marks the top when nothing matches at all", () => {
+    expect(excludedBand([gated, unscored])?.at).toBe(0);
   });
 });

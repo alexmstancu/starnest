@@ -12,7 +12,7 @@ import { useResource } from "../../api/useResource";
 import type { RouteDefinition } from "../../navigation/routes";
 import { ABSENT, formatScore, formatSigned } from "../../format/display";
 import { describeFigure } from "../../format/figure";
-import { ErrorNotice } from "../../shell/ErrorNotice";
+import { UnsetSetting } from "../../shell/UnsetSetting";
 import { useSelection } from "../../shell/SelectionContext";
 
 /**
@@ -142,9 +142,13 @@ function TheComparison({
       {comparison.resource.status === "loading" && (
         <p className="screen__note">Comparing…</p>
       )}
+      {/* A comparison is a difference between two scores, so it goes the same way a score
+          does when the range it is measured on has not been decided. */}
       {comparison.resource.status === "error" && (
-        <ErrorNotice
+        <UnsetSetting
           error={comparison.resource.error}
+          title="Nothing to compare"
+          detail="A comparison is a difference between two scores, and no score can be computed without a top of the range. Set it and the comparison returns."
           onRetry={comparison.reload}
         />
       )}
