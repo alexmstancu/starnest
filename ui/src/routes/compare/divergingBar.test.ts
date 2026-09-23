@@ -5,7 +5,8 @@ describe("the diverging bar", () => {
   it("is level when there is no difference", () => {
     expect(divergingBar(0)).toEqual({
       direction: "level",
-      strength: 0,
+      alpha: 0,
+      edge: false,
       reach: 0,
     });
   });
@@ -27,14 +28,29 @@ describe("the diverging bar", () => {
    */
   it("draws a small difference without tinting it", () => {
     const small = divergingBar(3);
-    expect(small.strength).toBe(0);
+    expect(small.alpha).toBe(0);
     expect(small.reach).toBeGreaterThan(0);
   });
 
-  it("tints more strongly the wider the gap", () => {
-    expect(divergingBar(7).strength).toBe(1);
-    expect(divergingBar(18).strength).toBe(2);
-    expect(divergingBar(28).strength).toBe(3);
+  /** Continuous, so 11 and 13 are not drawn as the same claim. */
+  it("tints more strongly the wider the gap, without steps", () => {
+    const gentle = divergingBar(7).alpha;
+    const firmer = divergingBar(11).alpha;
+    const firmest = divergingBar(28).alpha;
+    expect(gentle).toBeGreaterThan(0);
+    expect(firmer).toBeGreaterThan(gentle);
+    expect(firmest).toBeGreaterThan(firmer);
+    expect(divergingBar(13).alpha).not.toBe(firmer);
+  });
+
+  it("never tints past the strongest the design goes to", () => {
+    expect(divergingBar(200).alpha).toBeCloseTo(0.42, 5);
+  });
+
+  /** A border only where the cell is making a real claim, not on every tinted one. */
+  it("adds an edge only at the top of the range", () => {
+    expect(divergingBar(9).edge).toBe(false);
+    expect(divergingBar(28).edge).toBe(true);
   });
 
   /** Past the full reach the bar stops rather than running out of its half of the track. */

@@ -43,6 +43,7 @@ export function RankingTable({
   open = [],
   onToggle,
   detail,
+  codes,
 }: {
   ranking: Ranking;
   open?: readonly OpenRow[];
@@ -53,6 +54,14 @@ export function RankingTable({
    * frozen one must not know the difference -- a saved ranking supplies none.
    */
   detail?: (row: OpenRow) => ReactNode;
+  /**
+   * Candidate id to ISO 3166-1 alpha-2, for the flag beside a name.
+   *
+   * **From the catalog, never from the name.** Mapping "Netherlands" to NL in the client
+   * would be a second copy of something the database already holds, and wrong for every
+   * candidate whose name is not a country's.
+   */
+  codes?: ReadonlyMap<string, string>;
 }) {
   // Where the ranking stops and the set below it starts. Null when everything matches.
   const band = excludedBand(ranking.candidates);
@@ -73,6 +82,9 @@ export function RankingTable({
         <thead>
           <tr>
             <th scope="col">Rank</th>
+            <th scope="col">
+              <span className="visually-hidden">Country</span>
+            </th>
             <th scope="col">Candidate</th>
             <th scope="col" className="col--right">
               Score
@@ -110,6 +122,7 @@ export function RankingTable({
                 open={isOpen(open, result.candidate)}
                 onToggle={onToggle}
                 detail={detail}
+                code={codes?.get(result.candidate)}
               />
             </Fragment>
           ))}
@@ -186,11 +199,14 @@ function CandidateRow({
   open,
   onToggle,
   detail,
+  code,
 }: {
   result: CandidateResult;
   open: boolean;
   onToggle?: (row: OpenRow) => void;
   detail?: (row: OpenRow) => ReactNode;
+  /** This candidate's ISO 3166-1 alpha-2, where the catalog holds one. */
+  code?: string;
 }) {
   const matching = result.match_status === "matching";
   const row: OpenRow = {
@@ -227,6 +243,16 @@ function CandidateRow({
           </span>
         )}
         {result.rank ?? ABSENT}
+      </td>
+      {/* **The code, not a flag image.** There is no flag asset here and inventing one for 32
+          countries would be 32 files to keep in step with a catalog that already carries the
+          code. Two letters in a bordered box is what the design's own placeholder is. */}
+      <td className="flag-cell">
+        {code !== undefined && (
+          <span className="flag" title={`${result.name} — ${code}`}>
+            {code}
+          </span>
+        )}
       </td>
       <th scope="row" className="name-cell">
         {/* **No handler of its own.** The row listens, and a button activated by mouse or

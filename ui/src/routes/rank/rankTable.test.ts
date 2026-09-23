@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PILLAR_CHART,
+  codesByCandidate,
   confidenceBands,
   confidenceLabel,
   coverageBar,
@@ -236,5 +237,31 @@ describe("where the ranking stops", () => {
   /** The whole list can be below the line, and then the band is the first row. */
   it("marks the top when nothing matches at all", () => {
     expect(excludedBand([gated, unscored])?.at).toBe(0);
+  });
+});
+
+describe("the flag beside a candidate", () => {
+  it("maps a candidate to the code the catalog holds", () => {
+    const codes = codesByCandidate([
+      { id: "country.netherlands", country_code: "NL" },
+      { id: "country.portugal", country_code: "PT" },
+    ]);
+    expect(codes.get("country.netherlands")).toBe("NL");
+  });
+
+  /**
+   * **No code, no flag.** A city belongs to a country but is not one, and guessing from the
+   * name would put the wrong flag beside Lisbon or none beside Liechtenstein.
+   */
+  it("leaves out a candidate the catalog gives no code", () => {
+    const codes = codesByCandidate([
+      { id: "city.lisbon" },
+      { id: "city.porto", country_code: null },
+    ]);
+    expect(codes.size).toBe(0);
+  });
+
+  it("is empty before the roster arrives", () => {
+    expect(codesByCandidate(null).size).toBe(0);
   });
 });

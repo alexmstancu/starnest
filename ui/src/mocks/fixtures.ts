@@ -147,24 +147,28 @@ export const COUNTRY_CANDIDATES: Candidate[] = [
     name: "Portugal",
     level: "country",
     parent_candidate: null,
+    country_code: "PT",
   },
   {
     id: "country.spain",
     name: "Spain",
     level: "country",
     parent_candidate: null,
+    country_code: "ES",
   },
   {
     id: "country.netherlands",
     name: "Netherlands",
     level: "country",
     parent_candidate: null,
+    country_code: "NL",
   },
   {
     id: "country.estonia",
     name: "Estonia",
     level: "country",
     parent_candidate: null,
+    country_code: "EE",
   },
 ];
 

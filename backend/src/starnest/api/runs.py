@@ -83,6 +83,15 @@ class RunBody(ContractBody):
     finished_at: datetime | None = None
     llm_call_count: int = 0
     cost_eur: float = 0
+    # **What the pass reached, in the list.** A history of status and cost cannot answer
+    # "which of these actually filled anything", which is the question a list of past runs
+    # exists to answer. The scope is summarised rather than listed: it is stored expanded,
+    # and a history row wants its size.
+    scope_candidates: int = 0
+    scope_attributes: int = 0
+    items_total: int = 0
+    items_completed: int = 0
+    items_failed: int = 0
 
 
 class ProgressBody(BaseModel):
@@ -416,6 +425,11 @@ def _run_body(run: Run) -> RunBody:
         finished_at=run.finished_at,
         llm_call_count=run.llm_call_count,
         cost_eur=float(run.cost_eur),
+        scope_candidates=run.scope_candidates,
+        scope_attributes=run.scope_attributes,
+        items_total=run.items_total,
+        items_completed=run.items_completed,
+        items_failed=run.items_failed,
     )
 
 

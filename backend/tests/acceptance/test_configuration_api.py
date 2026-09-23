@@ -204,6 +204,8 @@ class TestReadingOneOfSomething:
             "name": "Portugal",
             "level": COUNTRY,
             "parent_candidate": None,
+            # From the catalog, so the interface never has to map a name to a flag.
+            "country_code": "PT",
         }
 
     @pytest.mark.parametrize(

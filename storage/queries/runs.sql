@@ -88,7 +88,16 @@ WHERE  data_acquisition_run = :data_acquisition_run
 -- Reading runs.
 
 -- name: select_runs(limit_rows, offset_rows)
--- The run history, newest first.
+-- The run history, newest first, with what each pass reached.
+--
+-- The three counts are the same arithmetic select_run does and mean exactly the same thing --
+-- see its comment for why items_failed never overlaps items_completed. They are here because a
+-- history that lists only status and cost cannot answer "which of these actually filled
+-- anything", which is the question a list of past runs exists to answer. Bounded by the page
+-- size, so this is a handful of correlated counts and not a scan.
+--
+-- The scope is summarised rather than listed: it is stored expanded, one row per candidate and
+-- one per attribute, and a history row wants its size, not its contents.
 SELECT r.id,
        r.run_status,
        r.triggered_by,
@@ -96,7 +105,25 @@ SELECT r.id,
        r.finished_at,
        r.llm_call_count,
        r.cost_eur,
-       r.level
+       r.level,
+       (SELECT count(*) FROM data_acquisition_run_candidate AS scope
+        WHERE  scope.data_acquisition_run = r.id) AS scope_candidates,
+       (SELECT count(*) FROM data_acquisition_run_attribute AS scope
+        WHERE  scope.data_acquisition_run = r.id) AS scope_attributes,
+       (SELECT count(*) FROM data_acquisition_run_candidate AS scope
+        WHERE  scope.data_acquisition_run = r.id)
+       * (SELECT count(*) FROM data_acquisition_run_attribute AS scope
+          WHERE  scope.data_acquisition_run = r.id) AS items_total,
+       (SELECT count(DISTINCT (v.candidate, v.attribute))
+        FROM   value AS v
+        WHERE  v.data_acquisition_run = r.id) AS items_completed,
+       (SELECT count(DISTINCT (f.candidate, f.attribute))
+        FROM   data_acquisition_failure AS f
+        WHERE  f.data_acquisition_run = r.id
+          AND  NOT EXISTS (SELECT 1 FROM value AS v
+                           WHERE  v.data_acquisition_run = r.id
+                             AND  v.candidate = f.candidate
+                             AND  v.attribute = f.attribute)) AS items_failed
 FROM   data_acquisition_run AS r
 ORDER  BY r.started_at DESC, r.id DESC
 LIMIT  :limit_rows OFFSET :offset_rows;

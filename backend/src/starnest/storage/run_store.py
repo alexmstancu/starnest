@@ -215,7 +215,17 @@ def _run_from(row: Any, failures: Sequence[Any], unanswered: Sequence[Any]) -> R
 
 
 def _run_header_from(row: Any) -> Run:
-    """A list row, which carries no scope and no failures -- the list is a list."""
+    """A list row: what each pass reached, without its failures listed one by one.
+
+    **The counts, not the contents.** A history row answers "did this one fill anything", which
+    three integers answer; which source failed on which attribute is the detail's question, and
+    reading it for every row would be a scan per page.
+    """
+    candidates = int(row.scope_candidates)
+    attributes = int(row.scope_attributes)
+    total = int(row.items_total)
+    completed = int(row.items_completed)
+    failed = int(row.items_failed)
     return Run(
         id=int(row.id),
         status=RunStatus(row.run_status),
@@ -224,4 +234,12 @@ def _run_header_from(row: Any) -> Run:
         finished_at=row.finished_at,
         llm_call_count=int(row.llm_call_count),
         cost_eur=Decimal(str(row.cost_eur)),
+        scope_candidates=candidates,
+        scope_attributes=attributes,
+        items_total=total,
+        items_completed=completed,
+        items_failed=failed,
+        # The third count closes the arithmetic (Q217) and is derived rather than read: asked
+        # about, and neither answered nor failed.
+        items_unanswered=max(0, total - completed - failed),
     )

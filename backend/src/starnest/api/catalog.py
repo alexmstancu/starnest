@@ -39,6 +39,8 @@ class CandidateBody(BaseModel):
     name: str
     level: str
     parent_candidate: str | None = None
+    country_code: str | None = None
+    """ISO 3166-1 alpha-2, from the catalog. Null for a candidate that belongs to no country."""
 
 
 class PillarBody(ContractBody):
@@ -146,6 +148,7 @@ async def list_candidates(
                 parent_candidate=(
                     str(candidate.parent_candidate) if candidate.parent_candidate else None
                 ),
+                country_code=(str(candidate.country_code) if candidate.country_code else None),
             )
             for candidate in roster
         )
@@ -349,4 +352,5 @@ async def get_candidate(candidate_id: str, candidates: Candidates) -> CandidateB
         name=found.name,
         level=str(found.level.id),
         parent_candidate=str(found.parent_candidate) if found.parent_candidate else None,
+        country_code=str(found.country_code) if found.country_code else None,
     )

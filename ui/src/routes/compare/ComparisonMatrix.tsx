@@ -87,11 +87,27 @@ function Cell({ cell }: { cell: MatrixCell }) {
   return (
     <td
       className={
-        bar.strength === 0
-          ? "matrix__cell"
-          : `matrix__cell matrix__cell--${bar.direction}-${String(bar.strength)}`
+        bar.edge ? `matrix__cell matrix__cell--${bar.direction}` : "matrix__cell"
       }
     >
+      {/* **The tint is a layer, not a background.** A continuous alpha cannot be a class and
+          must not be an inline style, so the hue comes from the class on this rect and only
+          the opacity is data -- which is what `fill-opacity` is for. */}
+      {bar.alpha > 0 && (
+        <svg
+          className="matrix__tint"
+          viewBox="0 0 1 1"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <rect
+            className={`matrix__tint-fill matrix__tint-fill--${bar.direction}`}
+            width="1"
+            height="1"
+            fillOpacity={bar.alpha}
+          />
+        </svg>
+      )}
       <span className="matrix__score">{formatScore(cell.score)}</span>
       <span className={`matrix__delta matrix__delta--${bar.direction}`}>
         {cell.delta === null ? "—" : formatDelta(cell.delta)}

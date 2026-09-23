@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  describeScope,
   filledOf,
   newestRun,
   runningNow,
@@ -114,5 +115,25 @@ describe("what an acquisition filled", () => {
   /** A run with no progress yet reads as nothing of nothing, never as undefined. */
   it("reads an absent progress as nothing rather than as a blank", () => {
     expect(filledOf(null)).toEqual({ filled: 0, asked: 0 });
+  });
+});
+
+describe("how big a pass was", () => {
+  it("counts the candidates and the attributes it covered", () => {
+    expect(
+      describeScope({ scope_candidates: 32, scope_attributes: 41 }),
+    ).toBe("32 candidates over 41 attributes");
+  });
+
+  it("says candidate and attribute in the singular when there is one of each", () => {
+    expect(describeScope({ scope_candidates: 1, scope_attributes: 1 })).toBe(
+      "1 candidate over 1 attribute",
+    );
+  });
+
+  /** A scope of nothing is not a scope, so it reads as absent rather than as zero by zero. */
+  it("says nothing rather than zero where there is no scope", () => {
+    expect(describeScope({})).toBe("—");
+    expect(describeScope({ scope_candidates: 5, scope_attributes: 0 })).toBe("—");
   });
 });

@@ -83,6 +83,11 @@ components:
       type: object
     CandidateBody:
       properties:
+        country_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Country Code
         id:
           title: Id
           type: string

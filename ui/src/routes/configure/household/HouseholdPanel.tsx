@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { isApiError } from "../../../api/ApiError";
 import { fetchHousehold, type Household } from "../../../api/endpoints";
 import { useResource } from "../../../api/useResource";
+import { CountField } from "./CountField";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { NOTHING_RECORDED, type HouseholdDraft } from "./householdForm";
 import { HOUSEHOLD_LABELS } from "../../../format/vocabulary";
@@ -94,15 +95,21 @@ function HouseholdFields({
             prefix="€"
             suffix="per year"
           />
-          <Field
+          {/* One click for almost every household, and the field for the rest. */}
+          <CountField
+            id="household-number_adults"
             label={HOUSEHOLD_LABELS.number_adults}
-            name="number_adults"
-            form={form}
+            offered={[1, 2, 3, 4]}
+            value={form.draft.number_adults}
+            onChange={(value) => form.change("number_adults", value)}
           />
-          <Field
+          <CountField
+            id="household-number_children"
             label={HOUSEHOLD_LABELS.number_children}
-            name="number_children"
-            form={form}
+            offered={[0, 1, 2, 3]}
+            noneLabel="None"
+            value={form.draft.number_children}
+            onChange={(value) => form.change("number_children", value)}
           />
           <Field
             label={HOUSEHOLD_LABELS.target_monthly_spend}

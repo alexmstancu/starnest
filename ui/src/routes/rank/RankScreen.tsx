@@ -1,5 +1,9 @@
 import { useCallback, useState } from "react";
-import { fetchRanking, type Ranking } from "../../api/endpoints";
+import {
+  fetchCandidates,
+  fetchRanking,
+  type Ranking,
+} from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
 import type { RouteDefinition } from "../../navigation/routes";
 import { UnsetSetting } from "../../shell/UnsetSetting";
@@ -7,6 +11,7 @@ import { AttributeDrillDown } from "./AttributeDrillDown";
 import { CandidateDetail } from "./CandidateDetail";
 import { type OpenRow, toggleRow } from "./openRows";
 import { RankingMeta, RankingTable } from "./RankingTable";
+import { codesByCandidate } from "./rankTable";
 import { SaveControl } from "./SaveControl";
 import { SavedRankingsPanel } from "./SavedRankingsPanel";
 import { useSelection } from "../../shell/SelectionContext";
@@ -78,6 +83,19 @@ function TheRanking({
     fetcher,
     criteriaSetId !== null && levelId !== null,
   );
+
+  // The roster, for the flag beside each name. One read, and only once a level is chosen.
+  const roster = useResource(
+    useCallback(
+      (signal: AbortSignal) =>
+        fetchCandidates(levelId ?? undefined, { signal }),
+      [levelId],
+    ),
+    levelId !== null,
+  );
+  const codes = codesByCandidate(
+    roster.resource.status === "ready" ? roster.resource.data.items : null,
+  );
   // Which candidates' evidence is open. Client state in the sense `arch.md` 8.1 permits: it
   // decides nothing, and the evidence itself is fetched.
   const [open, setOpen] = useState<readonly OpenRow[]>([]);
@@ -135,6 +153,7 @@ function TheRanking({
           ranking={resource.data}
           open={open}
           onToggle={toggle}
+          codes={codes}
           detail={(row) => (
             <CandidateDetail
               candidate={row.candidate}

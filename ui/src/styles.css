@@ -1329,6 +1329,23 @@ select.field__control {
   color: var(--colour-text-muted);
 }
 
+/* The way past the shortcut: a small field under the segments, reachable whether or not the
+   answer is outside them. */
+.field__more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* A chosen segment, for a group that is a set of buttons rather than radios. */
+.toggle--chosen {
+  border-color: var(--colour-accent);
+  background: var(--colour-accent-surface);
+  color: var(--colour-accent);
+  font-weight: var(--weight-strong);
+}
+
 /* ── The change history rail ──────────────────────────────────────────────────────────
    The rail card is quieter than a stage: tighter padding, the control shadow rather than
    the raised one. It sits beside the stages rather than among them, and should read that
@@ -1481,6 +1498,7 @@ select.field__control {
 }
 
 .matrix__cell {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1488,6 +1506,13 @@ select.field__control {
   margin: -4px 0;
   border: var(--border-width) solid transparent;
   border-radius: var(--radius-medium);
+}
+
+/* Above the tint layer, which is absolutely positioned under everything in the cell. */
+.matrix__score,
+.matrix__delta,
+.matrix__track {
+  position: relative;
 }
 
 .matrix__score {
@@ -1531,33 +1556,35 @@ select.field__control {
   fill: var(--colour-danger-bar);
 }
 
-/* **The tint is banded, and it starts at a gap worth noticing.** Three steps is as much as a
-   background can say at this size, and tinting a two-point gap would claim a difference the
-   arithmetic does not support (`divergingBar.ts`). The border appears only in the top band,
-   where the cell is making a real claim. */
-.matrix__cell--ahead-1 {
-  background: color-mix(in srgb, var(--colour-success-bar) 9%, transparent);
+/* **The tint starts at a gap worth noticing.** Below five points a difference is noise, and
+   colouring it would claim otherwise; from there it ramps to the design's strongest at thirty.
+   The hue is here and the opacity is data on the rect, which is what lets it be continuous
+   without design leaving this file.
+
+   A layer rather than a background, so it sits under the number without tinting the text. */
+.matrix__tint {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-medium);
+  pointer-events: none;
 }
 
-.matrix__cell--ahead-2 {
-  background: color-mix(in srgb, var(--colour-success-bar) 22%, transparent);
+.matrix__tint-fill--ahead {
+  fill: var(--colour-success-bar);
 }
 
-.matrix__cell--ahead-3 {
-  background: color-mix(in srgb, var(--colour-success-bar) 42%, transparent);
+.matrix__tint-fill--behind {
+  fill: var(--colour-danger-bar);
+}
+
+/* The border appears only where the cell is making a real claim. */
+.matrix__cell--ahead {
   border-color: var(--colour-success-border);
 }
 
-.matrix__cell--behind-1 {
-  background: color-mix(in srgb, var(--colour-danger-bar) 9%, transparent);
-}
-
-.matrix__cell--behind-2 {
-  background: color-mix(in srgb, var(--colour-danger-bar) 22%, transparent);
-}
-
-.matrix__cell--behind-3 {
-  background: color-mix(in srgb, var(--colour-danger-bar) 42%, transparent);
+.matrix__cell--behind {
   border-color: var(--colour-danger-border);
 }
 
@@ -2284,7 +2311,7 @@ select.field__control {
 
 .table--ranking {
   display: block;
-  min-width: 1518px;
+  min-width: 1560px;
   font-size: 13px;
 }
 
@@ -2297,7 +2324,7 @@ select.field__control {
 .table--ranking > tbody > tr {
   display: grid;
   grid-template-columns:
-    44px minmax(140px, 1fr) 80px 78px 522px 116px 168px 116px
+    44px 28px minmax(140px, 1fr) 80px 78px 522px 116px 168px 116px
     minmax(180px, 1.05fr);
   gap: 14px;
   padding: 9px 16px;
@@ -2354,6 +2381,35 @@ select.field__control {
   width: 9px;
   font-size: 11px;
   color: var(--colour-text-muted);
+}
+
+/* Two letters in a bordered box, which is what the design's own flag placeholder is: there
+   is no flag asset here, and 32 of them would be 32 files to keep in step with a catalog
+   that already carries the code. */
+.flag-cell {
+  display: flex;
+  align-items: center;
+}
+
+.flag {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 17px;
+  flex: none;
+  border: var(--border-width) solid #e4e7ec;
+  border-radius: var(--radius-small);
+  background: var(--colour-surface-hair);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--colour-text-label);
+}
+
+/* A row a gate ruled out is greyed, and so is its flag. */
+.table__row--not-matching .flag {
+  opacity: 0.6;
 }
 
 .name-cell {
@@ -2968,6 +3024,18 @@ select.field__control {
 .link-button:hover {
   color: var(--colour-accent-strong);
   text-decoration: underline;
+}
+
+.run-scope {
+  font-size: 12.5px;
+  color: var(--colour-text-muted);
+}
+
+/* Only when it is not zero: a column of red noughts would make every past acquisition look
+   like it went wrong. */
+.run-failed {
+  color: var(--colour-danger);
+  font-weight: var(--weight-strong);
 }
 
 /* A superseded figure is still there and still true of its period; it is simply not the one

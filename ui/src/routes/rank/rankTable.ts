@@ -308,3 +308,26 @@ export function excludedBand(
       `${round(unscored)} without enough data to score`,
   };
 }
+
+/** A candidate as the catalog serves one, for the flag beside its name. */
+export interface Coded {
+  id: string;
+  country_code?: string | null;
+}
+
+/**
+ * Candidate id to ISO 3166-1 alpha-2.
+ *
+ * **From the catalog, never from the name.** Mapping "Netherlands" to NL in the client would
+ * be a second copy of something the database already holds -- and wrong for every candidate
+ * whose name is not a country's, which is every city.
+ */
+export function codesByCandidate(
+  roster: readonly Coded[] | null | undefined,
+): Map<string, string> {
+  const codes = new Map<string, string>();
+  for (const candidate of roster ?? []) {
+    if (candidate.country_code) codes.set(candidate.id, candidate.country_code);
+  }
+  return codes;
+}

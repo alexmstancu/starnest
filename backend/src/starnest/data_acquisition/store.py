@@ -75,6 +75,10 @@ class Run:
     llm_call_count: int = 0
     cost_eur: Decimal = Decimal(0)
     scope: RunScope | None = None
+    # How big the pass was, without listing it. The scope is stored expanded, and a history row
+    # wants its size rather than its contents.
+    scope_candidates: int = 0
+    scope_attributes: int = 0
     items_total: int = 0
     items_completed: int = 0
     # Items some source failed on and no source answered -- never `len(failures)`, which counts

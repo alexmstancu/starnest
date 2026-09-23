@@ -797,6 +797,8 @@ export interface components {
             name: string;
             level: string;
             parent_candidate?: string | null;
+            /** @description ISO 3166-1 alpha-2, where the candidate is a country or belongs to one. Stored in the catalog rather than derived from the name: a display that maps names to codes in the client would be a second, drifting copy of a thing the database already holds, and would be wrong for every candidate whose name is not a country's. */
+            country_code?: string | null;
         };
         CandidateDetail: components["schemas"]["Candidate"] & {
             /** @description Attributes with no criterion — population, timezone, coastline. */
@@ -1092,6 +1094,16 @@ export interface components {
             finished_at?: string | null;
             llm_call_count?: number;
             cost_eur?: number;
+            /** @description How many candidates the pass was asked about. The scope is stored expanded, so a history row carries its size rather than its contents. */
+            scope_candidates?: number;
+            /** @description How many attributes the pass was asked about. */
+            scope_attributes?: number;
+            /** @description The planned cross product: every attribute in scope, for every candidate in scope. */
+            items_total?: number;
+            /** @description Pairs that produced a value row. */
+            items_completed?: number;
+            /** @description Pairs some source failed on and no source answered, so it never overlaps items_completed. The same arithmetic RunDetail.progress reports. */
+            items_failed?: number;
         };
         RunDetail: components["schemas"]["Run"] & {
             scope?: components["schemas"]["RunScope"];

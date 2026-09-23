@@ -10,16 +10,20 @@
  * A `.tsx` under `routes/` may not call `Number` (`CLAUDE.md`), so the arithmetic is here.
  */
 
-/** Which way a cell goes, and how strongly, for the classes that colour it. */
+/** Which way a cell goes, and how strongly, for the layer that tints it. */
 export interface Divergence {
   /** Ahead of the focus, behind it, or level -- which is also the colour. */
   direction: "ahead" | "behind" | "level";
   /**
-   * How emphatic the tint is, 0 to 3. **Banded rather than continuous**: a background colour
-   * is design, and design lives in `styles.css` -- a continuous alpha would have to be an
-   * inline style. Three bands is as much as a tint can say at this size anyway.
+   * How opaque the tint is, 0 to 1, ramping with the size of the difference.
+   *
+   * **Continuous, and still not a style.** The hue is a class on the tint layer; only the
+   * alpha is data, carried as SVG's `fill-opacity` attribute -- so design stays in
+   * `styles.css` and the cell can still say "slightly" rather than only "somewhat".
    */
-  strength: 0 | 1 | 2 | 3;
+  alpha: number;
+  /** A border, in the top of the range only, where the cell is making a real claim. */
+  edge: boolean;
   /** Half-width of the bar as a percentage of the track, 0 to 50. */
   reach: number;
 }
@@ -29,7 +33,19 @@ const NOISE = 5;
 /** Where the tint stops getting stronger, and where the bar reaches the end of its half. */
 const FULL = 30;
 
-const LEVEL: Divergence = { direction: "level", strength: 0, reach: 0 };
+/** The faintest tint worth drawing, and the strongest the design goes to. */
+const FAINT = 0.09;
+const STRONGEST = 0.42;
+
+/** Past this share of the range the cell takes a border as well as a tint. */
+const EMPHATIC = 0.66;
+
+const LEVEL: Divergence = {
+  direction: "level",
+  alpha: 0,
+  edge: false,
+  reach: 0,
+};
 
 /**
  * A cell's divergence from the focus.
@@ -45,10 +61,14 @@ export function divergingBar(delta: number | null | undefined): Divergence {
   const direction = delta > 0 ? "ahead" : "behind";
   // The bar is drawn for any difference at all; only the tint waits for one worth noticing.
   const reach = Math.min(50, (size / FULL) * 50);
-  if (size < NOISE) return { direction, strength: 0, reach };
+  if (size < NOISE) return { direction, alpha: 0, edge: false, reach };
   const share = Math.min(1, (size - NOISE) / (FULL - NOISE));
-  const strength = share > 0.66 ? 3 : share > 0.33 ? 2 : 1;
-  return { direction, strength, reach };
+  return {
+    direction,
+    alpha: FAINT + share * (STRONGEST - FAINT),
+    edge: share > EMPHATIC,
+    reach,
+  };
 }
 
 /** Where the bar starts on a 100-wide track, given which way it goes. */

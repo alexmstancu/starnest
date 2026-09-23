@@ -10,6 +10,7 @@ import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
 import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
+import { describeScope } from "./databaseHolds";
 import { ItemGroups } from "./ItemGroups";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";
 import { type Progress, progressBar } from "./runProgress";
@@ -504,7 +505,14 @@ function RunHistory({
           <tr>
             <th scope="col">Number</th>
             <th scope="col">Started</th>
+            <th scope="col">Scope</th>
             <th scope="col">Status</th>
+            <th scope="col" className="col--right">
+              Stored
+            </th>
+            <th scope="col" className="col--right">
+              Failed
+            </th>
             <th scope="col" className="col--right">
               Cost
             </th>
@@ -527,10 +535,27 @@ function RunHistory({
                 </button>
               </th>
               <td>{formatDateTime(run.started_at)}</td>
+              {/* Its size, not its contents: the scope is stored expanded, so a row carries
+                  two counts rather than a list of what it covered. */}
+              <td className="run-scope">{describeScope(run)}</td>
               <td>
                 <span className={`chip chip--${run.run_status}`}>
                   {run.run_status.replace(/_/g, " ")}
                 </span>
+              </td>
+              <td className="col--right">
+                {formatCount(run.items_completed)}
+              </td>
+              {/* **Coloured only when it is not zero.** A column of red noughts would make
+                  every past acquisition look like it went wrong. */}
+              <td
+                className={
+                  (run.items_failed ?? 0) > 0
+                    ? "col--right run-failed"
+                    : "col--right"
+                }
+              >
+                {formatCount(run.items_failed)}
               </td>
               <td className="col--right">{formatMoney(run.cost_eur, "EUR")}</td>
             </tr>

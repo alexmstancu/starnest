@@ -76,3 +76,28 @@ export function filledOf(progress: RunProgress | null | undefined): {
     asked: progress?.items_total ?? 0,
   };
 }
+
+/** What a history row says a pass covered and reached. */
+export interface RunReach {
+  scope_candidates?: number;
+  scope_attributes?: number;
+  items_completed?: number;
+  items_failed?: number;
+}
+
+/**
+ * How big a pass was, in words.
+ *
+ * **Its size, not its contents.** The scope is stored expanded -- one row per candidate and
+ * one per attribute -- so a history row carries two counts, and "32 candidates over 41
+ * attributes" is what those two mean.
+ */
+export function describeScope(run: RunReach): string {
+  const candidates = run.scope_candidates ?? 0;
+  const attributes = run.scope_attributes ?? 0;
+  if (candidates === 0 || attributes === 0) return "—";
+  return (
+    `${String(candidates)} ${candidates === 1 ? "candidate" : "candidates"}` +
+    ` over ${String(attributes)} ${attributes === 1 ? "attribute" : "attributes"}`
+  );
+}
