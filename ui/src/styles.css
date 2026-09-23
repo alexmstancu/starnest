@@ -1609,6 +1609,64 @@ select.field__control {
   color: var(--colour-text-muted);
 }
 
+/* ── Choosing how to read a comparison ────────────────────────────────────────────────
+   A control and the sentence that says what choosing it means, side by side. The sentence
+   is beside rather than under because the two are one thought, and a caption under a
+   segmented control reads as a caption for the whole panel. */
+
+.picker__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.choice .field {
+  gap: 6px;
+}
+
+.choice__meaning {
+  margin: 0;
+  flex: 1 1 260px;
+  align-self: center;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--colour-text-label);
+}
+
+/* The focus and the roster side by side: one is a single choice and the other is several,
+   and stacking them full width made the first look like the start of a form. */
+.picker__who {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.picker__limit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.picker__limit-note {
+  font-size: 12px;
+  color: var(--colour-text-muted);
+}
+
+/* At the ceiling the note stops being background and becomes the answer to "why can I not
+   add another", so it takes the warning colour. */
+.picker__limit-note--full {
+  color: var(--colour-warning);
+}
+
 /* ── What you can do about the gaps ───────────────────────────────────────────────────
    Three remedies, side by side and the same shape each. A failure, an item nobody answered
    and a wholesale refresh are three different problems, and a reader arriving at Acquire is
@@ -1846,6 +1904,80 @@ select.field__control {
   cursor: default;
 }
 
+/* ── Match rules and gates ────────────────────────────────────────────────────────────
+   One row per rule: the switch that puts it in force, what it is, and what it is doing
+   right now. The switch leads for the same reason it leads a source's row -- what a reader
+   scans for is which of these are on, and a column of them answers that in one pass. */
+
+/* **Block, not flex.** A flex container makes every child a flex item, and the emphasised
+   words in this sentence are children -- so "A **gate** makes…" became three columns. */
+.rule-note {
+  display: block;
+  margin: 0;
+  padding: 11px 12px;
+  border: var(--border-width) solid var(--colour-accent-border);
+  border-radius: var(--radius-medium);
+  background: var(--colour-accent-surface);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--colour-accent-deep);
+}
+
+.rule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rule-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(160px, 220px);
+  gap: 12px;
+  align-items: start;
+  padding: 12px 6px;
+  border-bottom: var(--border-width) solid var(--colour-surface-hair);
+}
+
+.rule-row__what {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rule-row__name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.rule-row__detail {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--colour-text-muted);
+}
+
+/* **What it is doing, not what it is for.** A switch raises the question "is this costing me
+   anything", and a description cannot answer it -- so the answer is on its own line, in the
+   colour of the consequence. */
+.rule-row__effect {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--colour-danger);
+}
+
+.rule-row__effect--idle {
+  color: var(--colour-text-muted);
+}
+
+/* Which kind of rule this list holds, repeated on the row so a reader who scrolled past the
+   heading still knows what turning the switch on would do. */
+.rule-row__kind {
+  font-size: 12.5px;
+  color: var(--colour-text-label);
+}
+
 .screen__heading {
   margin: 0;
   font-size: 20px;
@@ -1881,6 +2013,14 @@ select.field__control {
   flex-direction: column;
   gap: 3px;
   min-width: 0;
+}
+
+/* What identifies the screen's subject, and the one thing to do about it, on one line. */
+.screen__actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 22px;
+  flex-wrap: wrap;
 }
 
 /* ── Sections and big stats ───────────────────────────────────────────────────────────
@@ -1990,6 +2130,33 @@ select.field__control {
   margin: 0;
   font-size: 13px;
   color: var(--colour-text);
+}
+
+/* Keeping the ranking, in the header beside what identifies it. Right-aligned, because it is
+   the one thing in that row that is an action rather than a fact. */
+.keep {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.keep__ask {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 210px: wide enough for a reason and narrow enough that it cannot be mistaken for the
+   screen's main input. */
+.keep__note {
+  width: 210px;
+  border-color: var(--colour-accent);
+}
+
+.keep__note-line {
+  font-size: 11px;
+  color: var(--colour-text-muted);
 }
 
 .screen__note {
@@ -2644,6 +2811,163 @@ select.field__control {
 .table__band-reading {
   font-size: 12px;
   color: var(--colour-warning-deep);
+}
+
+/* ── Every stored value behind one candidate's score ──────────────────────────────────
+   **Five columns, not nine.** Source, the period a figure describes and the moment it was
+   fetched were three of them, which wrapped every date over three lines and made the table
+   wider than the screen. They are facts *about* one figure rather than columns to compare
+   down, so they stack under the name they belong to and the table narrows to what a reader
+   actually scans across. */
+
+.table-card--values {
+  max-height: none;
+  overflow-x: auto;
+}
+
+/* **`width: 100%`, never `max-content`.** The first two tracks are `fr`, and `max-content`
+   resolves an `fr` against its content -- so the stacked provenance under a long attribute id
+   pushed the table to 3,981px and left four columns off the side of the screen. The minimum is
+   the sum of the tracks' own minimums; below that the card scrolls. */
+.table--values {
+  display: block;
+  width: 100%;
+  min-width: 720px;
+  font-size: 13px;
+}
+
+.table--values > thead,
+.table--values > tbody {
+  display: block;
+}
+
+.table--values > thead > tr,
+.table--values > tbody > tr {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(130px, 0.9fr) 66px 86px 96px;
+  gap: 12px;
+  padding: 10px 14px;
+  align-items: start;
+  border-bottom: var(--border-width) solid var(--colour-surface-hair);
+}
+
+.table--values > thead > tr {
+  padding: 8px 14px;
+  background: var(--colour-surface-raised);
+  border-bottom: var(--border-width) solid var(--colour-border);
+}
+
+.table--values > thead > tr > th {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--colour-text-label);
+  text-align: left;
+}
+
+.table--values > tbody > tr > th,
+.table--values > tbody > tr > td {
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  text-align: left;
+}
+
+.value-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.value-cell__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.value-cell__name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Label and fact in two columns, so three facts read as a block rather than as a sentence
+   somebody has to parse. */
+.value-cell__meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 3px;
+  padding-top: 2px;
+}
+
+.value-cell__label {
+  font-size: 11px;
+  color: var(--colour-text-muted);
+  white-space: nowrap;
+}
+
+.value-cell__fact {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--colour-text-strong);
+}
+
+.figure-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.figure-cell__figure {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* What the publisher said about the scale. A figure does not always carry its own units. */
+.figure-cell__scale {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--colour-text-muted);
+}
+
+.value-weight {
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--colour-text-muted);
+}
+
+/* Which pillar's values are below, when one has been chosen. It names the filter rather than
+   restating the table, so a reader who clicked a pillar card can see what they clicked. */
+.drill__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: var(--weight-strong);
+}
+
+/* A button that opens something and is drawn as the thing it opens. **Still a button**: it
+   changes what is on the screen rather than navigating, and an anchor that goes nowhere is a
+   link only to a mouse. */
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: var(--weight-strong);
+  font-variant-numeric: tabular-nums;
+  color: var(--colour-accent);
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--colour-accent-strong);
+  text-decoration: underline;
 }
 
 /* A superseded figure is still there and still true of its period; it is simply not the one

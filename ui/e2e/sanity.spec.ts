@@ -91,15 +91,18 @@ test.describe("the ranking", () => {
 
     // The provenance chain: the figures behind the score, and what each one is.
     await expect(
-      page.getByRole("heading", { name: /every figure behind the score/ }),
+      page.getByRole("heading", { name: /every value behind the score/ }),
     ).toBeVisible();
+    // **Stacked under the attribute, not a column of its own.** Source, the period a figure
+    // describes and when it was fetched are facts about one figure rather than columns to
+    // compare down, so they read as a block beside the name.
     await expect(
-      page.getByRole("columnheader", { name: "Source" }),
+      page.getByRole("table", { name: /every stored value/i }).getByText("Source").first(),
     ).toBeVisible();
 
     await open.click();
     await expect(
-      page.getByRole("heading", { name: /every figure behind the score/ }),
+      page.getByRole("heading", { name: /every value behind the score/ }),
     ).toHaveCount(0);
   });
 });
@@ -142,13 +145,16 @@ test.describe("saved rankings", () => {
     // **Saving and listing are in two places**, as the design has them: the sidebar lists
     // what has been kept, because a saved ranking is about the session rather than about one
     // screen, and Rank owns the act of saving and the view of the one that was opened.
-    const saving = page.getByRole("region", { name: "Save this ranking" });
-    const save = saving.getByRole("button", { name: "Save this ranking" });
+    // **Three parts, three places, as the design has them**: saving is in the ranking's own
+    // header, the list of what has been kept is in the sidebar, and the one you opened
+    // appears under the live table it is being compared against.
+    const save = page.getByRole("button", { name: "Save this ranking" });
     await expect(save).toBeEnabled();
+    await save.click();
 
     const note = `sanity suite ${Date.now()}`;
-    await saving.getByRole("textbox", { name: /worth keeping/ }).fill(note);
-    await save.click();
+    await page.getByLabel(/worth keeping/).fill(note);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
 
     const listed = page.getByRole("region", { name: "Saved rankings" });
     const entry = listed.getByRole("listitem").filter({ hasText: note });
@@ -157,9 +163,10 @@ test.describe("saved rankings", () => {
     await entry.getByRole("link").click();
     // Frozen: the criteria and the score scale were copied with it, so it keeps meaning what
     // it meant even after a weight moves.
-    await expect(saving.getByText(/As it was when it was saved/)).toBeVisible();
+    const opened = page.getByRole("region", { name: "A saved ranking" });
+    await expect(opened.getByText(/As it was when it was saved/)).toBeVisible();
     await expect(
-      saving.getByRole("table", { name: "Ranked candidates" }),
+      opened.getByRole("table", { name: "Ranked candidates" }),
     ).toBeVisible();
   });
 
@@ -179,7 +186,7 @@ test.describe("saved rankings", () => {
       .click();
 
     await expect(
-      page.getByRole("heading", { name: /every figure behind the score/ }),
+      page.getByRole("heading", { name: /every value behind the score/ }),
     ).toHaveCount(2);
   });
 });
@@ -350,8 +357,12 @@ test.describe("what a rule costs", () => {
     page,
   }) => {
     await page.goto("/configure");
-    const rules = page.getByRole("region", { name: "Rules" });
-    const row = rules.getByRole("row").filter({ hasText: "UK Skilled Worker" });
+    // A list of rules, not a table: each row is a switch, what the rule is, and what it is
+    // doing right now.
+    const rules = page.getByRole("region", { name: "Match rules & gates" });
+    const row = rules
+      .getByRole("listitem")
+      .filter({ hasText: "UK Skilled Worker" });
 
     // Either it has answers and says what they cost, or it says nobody has answered. Both are
     // real states; a switch that says only "enforced" is neither.

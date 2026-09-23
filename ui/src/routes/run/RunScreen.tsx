@@ -502,33 +502,37 @@ function RunHistory({
       <table className="table">
         <thead>
           <tr>
-            <th scope="col">Run</th>
-            <th scope="col">Status</th>
+            <th scope="col">Number</th>
             <th scope="col">Started</th>
-            <th scope="col">Cost</th>
-            <th scope="col"> </th>
+            <th scope="col">Status</th>
+            <th scope="col" className="col--right">
+              Cost
+            </th>
           </tr>
         </thead>
         <tbody>
           {runs.map((run) => (
             <tr key={run.id}>
-              <th scope="row">{run.id}</th>
+              {/* **The number is the way in.** A separate Open button in a fifth column is a
+                  target to hunt for on every row; the acquisition's own number is what a
+                  reader is already looking at, and it is unique, which is what a link needs
+                  to be. Sequential, never hexadecimal -- an acquisition is counted. */}
+              <th scope="row">
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => onOpen(run)}
+                >
+                  {run.id}
+                </button>
+              </th>
+              <td>{formatDateTime(run.started_at)}</td>
               <td>
                 <span className={`chip chip--${run.run_status}`}>
                   {run.run_status.replace(/_/g, " ")}
                 </span>
               </td>
-              <td>{formatDateTime(run.started_at)}</td>
-              <td>{formatMoney(run.cost_eur, "EUR")}</td>
-              <td>
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() => onOpen(run)}
-                >
-                  Open
-                </button>
-              </td>
+              <td className="col--right">{formatMoney(run.cost_eur, "EUR")}</td>
             </tr>
           ))}
         </tbody>

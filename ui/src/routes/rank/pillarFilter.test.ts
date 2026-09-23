@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { pillarsByAttribute, valuesInPillar } from "./pillarFilter";
+import {
+  judgementsByAttribute,
+  pillarsByAttribute,
+  valuesInPillar,
+} from "./pillarFilter";
 
 const CRITERIA = [
   { attribute: "country.cost_of_living_index", pillar: "economics" },
@@ -57,5 +61,41 @@ describe("filtering the stored values", () => {
     const copy = [...VALUES];
     valuesInPillar(VALUES, map, "economics");
     expect(VALUES).toEqual(copy);
+  });
+});
+
+describe("what the active set has decided about an attribute", () => {
+  const criteria = [
+    { attribute: "country.rent", weight: 40, blocks_if_missing: true },
+    { attribute: "country.sun", weight: 60 },
+  ];
+
+  it("carries the weight the set gives it", () => {
+    expect(judgementsByAttribute(criteria).get("country.rent")?.weight).toBe(40);
+  });
+
+  it("says which attributes the candidate cannot be scored without", () => {
+    const judged = judgementsByAttribute(criteria);
+    expect(judged.get("country.rent")?.required).toBe(true);
+    expect(judged.get("country.sun")?.required).toBe(false);
+  });
+
+  /**
+   * **Absent, not zero.** An attribute this set does not score is not judged here at all, and
+   * a zero would read as "worth nothing" -- which is a different claim (`reqs.md` 3.0).
+   */
+  it("says nothing at all about an attribute the set does not score", () => {
+    expect(judgementsByAttribute(criteria).get("country.noise")).toBeUndefined();
+  });
+
+  it("carries no weight for a criterion the set left unweighed", () => {
+    expect(
+      judgementsByAttribute([{ attribute: "country.rent" }]).get("country.rent")
+        ?.weight,
+    ).toBeNull();
+  });
+
+  it("is empty when there is no set yet", () => {
+    expect(judgementsByAttribute(null).size).toBe(0);
   });
 });

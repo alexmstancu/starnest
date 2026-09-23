@@ -24,12 +24,13 @@ describe("the rules panel", () => {
     const rules = await panel();
 
     expect(
-      await rules.findByRole("rowheader", { name: "A visa route exists" }),
+      await rules.findByRole("listitem", { name: "A visa route exists" }),
     ).toBeInTheDocument();
-    const anywhere = rules.getByRole("rowheader", {
-      name: "Not excluded by hand",
-    });
-    expect(anywhere.closest("tr")).toHaveTextContent("every level");
+    // The row itself carries what the rule is and what it is doing, so there is no cell to
+    // step out to: the listitem is the row.
+    expect(
+      rules.getByRole("listitem", { name: "Not excluded by hand" }),
+    ).toHaveTextContent("every level");
   });
 
   it("shows which gates this set enforces", async () => {
@@ -37,12 +38,12 @@ describe("the rules panel", () => {
     await panel();
 
     expect(
-      await screen.findByRole("checkbox", {
+      await screen.findByRole("switch", {
         name: "Enforce A visa route exists",
       }),
     ).toBeChecked();
     expect(
-      screen.getByRole("checkbox", { name: "Enforce Free movement applies" }),
+      screen.getByRole("switch", { name: "Enforce Free movement applies" }),
     ).not.toBeChecked();
   });
 
@@ -51,7 +52,7 @@ describe("the rules panel", () => {
     renderShell("/configure");
     await panel();
 
-    const toggle = await screen.findByRole("checkbox", {
+    const toggle = await screen.findByRole("switch", {
       name: "Enforce Free movement applies",
     });
     await user.click(toggle);
@@ -74,7 +75,7 @@ describe("the rules panel", () => {
     renderShell("/configure");
     const rules = await panel();
 
-    const toggle = await screen.findByRole("checkbox", {
+    const toggle = await screen.findByRole("switch", {
       name: "Enforce Free movement applies",
     });
     await user.click(toggle);
@@ -89,9 +90,9 @@ describe("the rules panel", () => {
     renderShell("/configure");
     const rules = await panel();
 
-    const row = (
-      await rules.findByRole("rowheader", { name: "Mild and connected" })
-    ).closest("tr");
+    const row = await rules.findByRole("listitem", {
+      name: "Mild and connected",
+    });
     expect(row).toHaveTextContent("AllConditionsHold");
     expect(row).toHaveTextContent("not_matching");
   });
@@ -101,7 +102,7 @@ describe("the rules panel", () => {
     renderShell("/configure");
     await panel();
 
-    const toggle = await screen.findByRole("checkbox", {
+    const toggle = await screen.findByRole("switch", {
       name: "Apply Rent fits the target spend",
     });
     expect(toggle).not.toBeChecked();

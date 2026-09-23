@@ -41,3 +41,38 @@ export function valuesInPillar<T extends HasAttribute>(
   }
   return values.filter((value) => byAttribute.get(value.attribute) === pillar);
 }
+
+/** What the active set says about one attribute, beyond which pillar it is in. */
+export interface Judgement {
+  /** Its share of its pillar, as a percentage, or null where the set does not weigh it. */
+  weight: number | null;
+  /** Whether the candidate cannot be scored at all without it (`blocks_if_missing`). */
+  required: boolean;
+}
+
+export interface Weighed {
+  attribute: string;
+  weight?: number;
+  blocks_if_missing?: boolean;
+}
+
+/**
+ * What the active set has decided about each attribute.
+ *
+ * **The set's opinion, not the catalog's.** An attribute this set does not score appears in no
+ * entry, so the table says nothing about its weight rather than showing a zero -- which would
+ * read as "worth nothing" when the truth is "not judged here at all" (`reqs.md` 3.0).
+ */
+export function judgementsByAttribute(
+  criteria: readonly Weighed[] | null | undefined,
+): Map<string, Judgement> {
+  return new Map(
+    (criteria ?? []).map((each) => [
+      each.attribute,
+      {
+        weight: each.weight ?? null,
+        required: each.blocks_if_missing === true,
+      },
+    ]),
+  );
+}

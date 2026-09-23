@@ -1,7 +1,11 @@
 import type { Comparison } from "../../api/endpoints";
 import { formatPercentage, formatScore } from "../../format/display";
 import { barStart, divergingBar } from "./divergingBar";
-import { pillarMatrix, type MatrixCell } from "./pillarMatrix";
+import {
+  pillarMatrix,
+  type MatrixCell,
+  type Measure,
+} from "./pillarMatrix";
 import { formatDelta } from "../rank/rankTable";
 
 /**
@@ -16,9 +20,15 @@ import { formatDelta } from "../rank/rankTable";
  * has to be read off a minus one cell at a time. Anchored in the middle, a column of them
  * reads as a shape -- which is the whole reason to draw the number twice.
  */
-export function ComparisonMatrix({ comparison }: { comparison: Comparison }) {
+export function ComparisonMatrix({
+  comparison,
+  measure,
+}: {
+  comparison: Comparison;
+  measure: Measure;
+}) {
   const comparators = comparison.comparators ?? [];
-  const rows = pillarMatrix(comparison.focus, comparators);
+  const rows = pillarMatrix(comparison.focus, comparators, measure);
 
   return (
     <div className="table-card table-card--matrix">

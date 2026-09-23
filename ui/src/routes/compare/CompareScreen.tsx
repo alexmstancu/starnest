@@ -1,5 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
+import { NavLink } from "react-router-dom";
 import { ComparisonMatrix } from "./ComparisonMatrix";
+import { ViewChoices } from "./ViewChoices";
+import type { Measure } from "./pillarMatrix";
 import { droppedByLimit, withinLimit } from "./comparatorLimit";
 import {
   fetchCandidates,
@@ -65,6 +68,7 @@ function TheComparison({
   const [comparators, setComparators] = useState<string[]>([]);
   // How the attribute rows read: the normalised score, or the figure in its own unit.
   const [shownAs, setShownAs] = useState<"score" | "raw">("score");
+  const [measure, setMeasure] = useState<Measure>("points");
   const [asked, setAsked] = useState<{
     focus: string;
     comparators: string[];
@@ -127,6 +131,14 @@ function TheComparison({
           comparators={kept}
           limit={limit ?? null}
           dropped={dropped}
+          choices={
+            <ViewChoices
+              shownAs={shownAs}
+              onShownAs={setShownAs}
+              measure={measure}
+              onMeasure={setMeasure}
+            />
+          }
           onFocus={setFocus}
           onToggleComparator={(candidate) =>
             setComparators((chosen) =>
@@ -156,7 +168,7 @@ function TheComparison({
         <ComparisonTable
           comparison={comparison.resource.data}
           shownAs={shownAs}
-          onShownAs={setShownAs}
+          measure={measure}
         />
       )}
     </>
@@ -172,6 +184,7 @@ function ComparisonPicker({
   onToggleComparator,
   onCompare,
   dropped,
+  choices,
 }: {
   roster: Candidate[];
   focus: string | null;
@@ -182,15 +195,30 @@ function ComparisonPicker({
   onCompare: () => void;
   /** How many the limit is holding back, so the screen says so rather than losing them. */
   dropped: number;
+  /** The two questions about how to read the comparison, answered before it is drawn. */
+  choices: ReactNode;
 }) {
+  const full = limit !== null && comparators.length >= limit;
+
   return (
     <div className="panel">
-      <h3 className="panel__heading">What to compare</h3>
-      <p className="panel__hint">
-        {limit === null
-          ? "No comparator limit is configured, so the server will refuse a comparison."
-          : `Up to ${limit} comparators, the limit configured in Configure.`}
-      </p>
+      {/* The limit sits beside the heading rather than under it: it is a fact about this
+          panel's one control, and a reader only needs it when they reach for another chip. */}
+      <div className="panel__head">
+        <h3 className="panel__heading">What to compare</h3>
+        <span className="picker__limit">
+          <span className={full ? "picker__limit-note picker__limit-note--full" : "picker__limit-note"}>
+            {limit === null
+              ? "No comparator limit is configured, so the server will refuse a comparison."
+              : full
+                ? `You have ${String(comparators.length)} of ${String(limit)} — the limit set in Configure. Remove one to add another, or raise the limit there.`
+                : `Up to ${String(limit)} comparators, the limit set in Configure.`}
+          </span>
+          <NavLink className="action" to="/configure">
+            Change it in Configure
+          </NavLink>
+        </span>
+      </div>
 
       {/* Said out loud, because a selection silently shrinking is worse than one that
           refuses. The newest are kept: the last clicks are the ones being thought about. */}
@@ -205,6 +233,12 @@ function ComparisonPicker({
         </div>
       )}
 
+      {/* **The two questions before the two lists.** What a cell shows, and what a difference
+          is measured in, decide how everything below reads -- so they are answered first,
+          each with the sentence that says what the choice means. */}
+      <div className="picker__choices">{choices}</div>
+
+      <div className="picker__who">
       <label className="field">
         <span className="field__label">Focus</span>
         <select
@@ -222,7 +256,7 @@ function ComparisonPicker({
       </label>
 
       <fieldset className="field">
-        <legend className="field__label">Comparators</legend>
+        <legend className="field__label">Compare with</legend>
         {/* The design wraps these as chips in a box that scrolls, because a roster is 32 long
             and a column of 32 full-width rows buries everything under it. The checkboxes stay:
             this is a multiple choice, and a chip is what it looks like, not what it is. */}
@@ -241,10 +275,11 @@ function ComparisonPicker({
             ))}
         </div>
       </fieldset>
+      </div>
 
       <button
         type="button"
-        className="button"
+        className="button button--primary"
         disabled={focus === null || comparators.length === 0}
         onClick={onCompare}
       >
@@ -257,11 +292,11 @@ function ComparisonPicker({
 function ComparisonTable({
   comparison,
   shownAs,
-  onShownAs,
+  measure,
 }: {
   comparison: Comparison;
   shownAs: "score" | "raw";
-  onShownAs: (how: "score" | "raw") => void;
+  measure: Measure;
 }) {
   const comparators = comparison.comparators ?? [];
   return (
@@ -334,31 +369,8 @@ function ComparisonTable({
       {/* **The matrix first, the attributes under it.** The pillars are the shape of the
           answer; the attributes are the evidence for it, and a reader who wants the evidence
           knows to look down. */}
-      <ComparisonMatrix comparison={comparison} />
+      <ComparisonMatrix comparison={comparison} measure={measure} />
 
-      <fieldset className="field">
-        <legend className="field__label">Show attribute values as</legend>
-        <div className="toggle-group">
-          <label className="toggle">
-            <input
-              type="radio"
-              name="shown-as"
-              checked={shownAs === "score"}
-              onChange={() => onShownAs("score")}
-            />
-            Score 0&ndash;100
-          </label>
-          <label className="toggle">
-            <input
-              type="radio"
-              name="shown-as"
-              checked={shownAs === "raw"}
-              onChange={() => onShownAs("raw")}
-            />
-            Raw figures
-          </label>
-        </div>
-      </fieldset>
 
       <table className="table">
         <caption>

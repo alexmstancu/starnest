@@ -309,7 +309,9 @@ describe("the run history", () => {
     const history = await screen.findByRole("table");
     const row = within(history).getByRole("row", { name: /^7/ });
 
-    await userEvent.click(within(row).getByRole("button", { name: /open/i }));
+    // The acquisition's own number is what opens it: a separate button in a fifth column is
+    // a target to hunt for on every row.
+    await userEvent.click(within(row).getByRole("button", { name: "7" }));
 
     expect(
       await screen.findByRole("heading", { name: /acquisition 7/i }),
@@ -332,7 +334,9 @@ describe("the run history", () => {
     const history = await screen.findByRole("table");
     const row = within(history).getByRole("row", { name: /^7/ });
 
-    await userEvent.click(within(row).getByRole("button", { name: /open/i }));
+    // The acquisition's own number is what opens it: a separate button in a fifth column is
+    // a target to hunt for on every row.
+    await userEvent.click(within(row).getByRole("button", { name: "7" }));
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();
   });

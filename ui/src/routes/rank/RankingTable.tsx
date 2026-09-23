@@ -161,7 +161,10 @@ function PillarKey({ pillars }: { pillars?: readonly PillarScore[] | null }) {
     <span className="pillar-key" aria-hidden="true">
       {roster.map((pillar) => (
         <span key={pillar.pillar} className="pillar-key__slot">
-          <span className="pillar-key__name">{pillar.pillar}</span>
+          {/* Capitalised: the catalog ships ids, and a reader is shown a name. */}
+          <span className="pillar-key__name">
+            {formatIdentifier(pillar.pillar)}
+          </span>
         </span>
       ))}
     </span>

@@ -147,3 +147,30 @@ of spend. The application's cards are the same cards, and currently read zero --
 truth about the last acquisition rather than a rendering fault. **Loading, empty and error
 states remain undrawn**, as noted above, and are now the largest remaining gap between the file
 and what a reader actually meets.
+
+## A fourth pass, and two gaps that are the contract's rather than the screen's (2026-09-23)
+
+Rank's header now carries the save control the design puts there, pillar names are capitalised
+everywhere, the stored-values table stacks a figure's provenance under the name it belongs to,
+Compare asks its two questions before drawing anything, the rules stage is a switch and a
+consequence per rule, and the acquisition history opens a run by its own number.
+
+**Two columns the design draws cannot be filled for a live ranking.**
+
+*Score 0–100, weight used and points added, per attribute.* `getCandidateScoreDetail` serves
+exactly these -- normalised score, effective weight after redistribution, contribution -- but it
+takes an **evaluation id**, and a live ranking has no evaluation. Computing them here is barred
+and rightly: normalisation is `evaluation/`'s, and a second answer on the client would be a
+second, quietly different one. The table shows the weight the active set gives each attribute,
+which is real, and leaves the other three out. **What would close it**: the same shape on
+`GET /rankings`, or a per-candidate drill-down that takes a criteria set and a level rather than
+an evaluation.
+
+*Scope, values stored and values failed, per row of the acquisition history.* `GET
+/data-acquisition-runs` carries id, status, both timestamps, the LLM call count and the cost.
+The three the design shows are in `RunDetail`, so filling that column would be one request per
+row. **What would close it**: those three counts on the list, where they are cheap -- they are
+already derived in SQL for the detail.
+
+Both are noted rather than worked around: a number on this screen is the server's or it is not
+shown.

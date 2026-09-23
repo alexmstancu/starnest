@@ -16,6 +16,8 @@ export interface PillarScore {
   pillar: string;
   score?: number | null;
   weight: number;
+  /** score x weight / 100: what this pillar actually put into the total. */
+  contribution?: number | null;
 }
 
 /** A candidate as the comparison serves it: a total and its pillars. */
@@ -72,9 +74,20 @@ function cellsFor(
  * pillar the focus was actually scored on and the order is the catalog's rather than
  * whichever candidate happened to be read first.
  */
+/**
+ * What a cell reads, and therefore what a difference between two cells means.
+ *
+ * **Points and impact answer different questions.** A pillar can be 30 points better and
+ * barely move the total because it is weighted at 4%, and a reader deciding between two
+ * places needs both answers -- which is why the design makes it a choice rather than picking
+ * one.
+ */
+export type Measure = "points" | "impact";
+
 export function pillarMatrix(
   focus: Compared,
   comparators: readonly Compared[],
+  measure: Measure = "points",
 ): MatrixRow[] {
   const focusTotal = scoreOf(focus.score);
   const total: MatrixRow = {
@@ -85,18 +98,28 @@ export function pillarMatrix(
     cells: cellsFor(comparators, focusTotal, (each) => scoreOf(each.score)),
   };
 
+  // Which number each cell carries. **The server's either way**: `contribution` is
+  // `score x weight / 100`, computed by `evaluation/` and sent with the comparison, so
+  // switching the measure changes which figure is read rather than doing arithmetic here.
+  const readingOf = (pillar: PillarScore | undefined): number | null =>
+    pillar === undefined
+      ? null
+      : measure === "impact"
+        ? scoreOf(pillar.contribution)
+        : scoreOf(pillar.score);
+
   const rows = (focus.pillar_scores ?? []).map((pillar) => {
-    const here = scoreOf(pillar.score);
+    const here = readingOf(pillar);
     return {
       label: pillar.pillar,
       weight: pillar.weight,
       total: false,
       focus: here,
       cells: cellsFor(comparators, here, (each) =>
-        scoreOf(
+        readingOf(
           (each.pillar_scores ?? []).find(
             (theirs) => theirs.pillar === pillar.pillar,
-          )?.score,
+          ),
         ),
       ),
     };

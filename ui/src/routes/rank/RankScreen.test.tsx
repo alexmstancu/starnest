@@ -312,7 +312,7 @@ describe("the drill-down", () => {
     await userEvent.click(
       within(await rankingRow("Portugal")).getByRole("button"),
     );
-    await screen.findByRole("heading", { name: /Portugal: every figure/i });
+    await screen.findByRole("heading", { name: /Portugal: every value/i });
 
     await userEvent.click(
       within(await rankingRow("Netherlands")).getByRole("button"),
@@ -320,11 +320,11 @@ describe("the drill-down", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: /Netherlands: every figure/i,
+        name: /Netherlands: every value/i,
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: /Portugal: every figure/i }),
+      screen.getByRole("heading", { name: /Portugal: every value/i }),
     ).toBeInTheDocument();
   });
 
@@ -338,9 +338,9 @@ describe("the drill-down", () => {
       );
     }
 
-    await screen.findByRole("region", { name: /Netherlands: every figure/i });
+    await screen.findByRole("region", { name: /Netherlands: every value/i });
     expect(
-      screen.getByRole("region", { name: /Portugal: every figure/i }),
+      screen.getByRole("region", { name: /Portugal: every value/i }),
     ).toBeInTheDocument();
   });
 
@@ -352,7 +352,7 @@ describe("the drill-down", () => {
         within(await rankingRow(name)).getByRole("button"),
       );
     }
-    await screen.findByRole("heading", { name: /Netherlands: every figure/i });
+    await screen.findByRole("heading", { name: /Netherlands: every value/i });
 
     await userEvent.click(
       within(await rankingRow("Portugal")).getByRole("button"),
@@ -360,11 +360,11 @@ describe("the drill-down", () => {
 
     await waitFor(() =>
       expect(
-        screen.queryByRole("heading", { name: /Portugal: every figure/i }),
+        screen.queryByRole("heading", { name: /Portugal: every value/i }),
       ).toBeNull(),
     );
     expect(
-      screen.getByRole("heading", { name: /Netherlands: every figure/i }),
+      screen.getByRole("heading", { name: /Netherlands: every value/i }),
     ).toBeInTheDocument();
   });
 

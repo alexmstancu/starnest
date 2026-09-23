@@ -81,3 +81,57 @@ describe("the comparison matrix", () => {
     expect(pillarMatrix({ ...focus, pillar_scores: null }, [ahead])).toHaveLength(1);
   });
 });
+
+describe("what a difference is measured in", () => {
+  const weighted: Compared = {
+    candidate: "country.portugal",
+    name: "Portugal",
+    score: 83,
+    pillar_scores: [
+      { pillar: "economics", score: 78, weight: 14, contribution: 10.9 },
+    ],
+  };
+  const other: Compared = {
+    candidate: "country.netherlands",
+    name: "Netherlands",
+    score: 84,
+    pillar_scores: [
+      { pillar: "economics", score: 89, weight: 14, contribution: 12.5 },
+    ],
+  };
+
+  it("reads the pillar score when measuring in points", () => {
+    const [, economics] = pillarMatrix(weighted, [other], "points");
+    expect(economics?.focus).toBe(78);
+    expect(economics?.cells[0]?.delta).toBe(11);
+  });
+
+  /**
+   * **A large gap on a small pillar moves little.** Eleven points on a pillar weighted at 14%
+   * is worth 1.6 to the total, which is the number a reader deciding between two places needs
+   * -- and the server computes it, so switching the measure reads a different figure rather
+   * than doing arithmetic here.
+   */
+  it("reads what the pillar put into the total when measuring impact", () => {
+    const [, economics] = pillarMatrix(weighted, [other], "impact");
+    expect(economics?.focus).toBe(10.9);
+    expect(economics?.cells[0]?.delta).toBeCloseTo(1.6, 5);
+  });
+
+  it("measures in points unless told otherwise", () => {
+    expect(pillarMatrix(weighted, [other])[1]?.focus).toBe(78);
+  });
+
+  it("says nothing where the server sent no contribution to read", () => {
+    const bare: Compared = {
+      ...weighted,
+      pillar_scores: [{ pillar: "economics", score: 78, weight: 14 }],
+    };
+    expect(pillarMatrix(bare, [other], "impact")[1]?.focus).toBeNull();
+  });
+
+  /** The total row is the total either way: it is already the sum of the contributions. */
+  it("leaves the total alone, which is already what everything came to", () => {
+    expect(pillarMatrix(weighted, [other], "impact")[0]?.focus).toBe(83);
+  });
+});

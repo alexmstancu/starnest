@@ -7,6 +7,7 @@ import { AttributeDrillDown } from "./AttributeDrillDown";
 import { CandidateDetail } from "./CandidateDetail";
 import { type OpenRow, toggleRow } from "./openRows";
 import { RankingMeta, RankingTable } from "./RankingTable";
+import { SaveControl } from "./SaveControl";
 import { SavedRankingsPanel } from "./SavedRankingsPanel";
 import { useSelection } from "../../shell/SelectionContext";
 
@@ -49,7 +50,8 @@ export function RankScreen({ route }: { route: RouteDefinition }) {
           list of what has been kept is not about the current selection. `GET /evaluations`
           takes no filter, and remounting this with the table would re-fetch the same list
           every time a criteria set is switched. */}
-      <SavedRankingsPanel criteriaSetId={criteriaSetId} levelId={levelId} />
+      {/* Only when one has been opened from the sidebar; nothing otherwise. */}
+      <SavedRankingsPanel />
     </section>
   );
 }
@@ -100,7 +102,13 @@ function TheRanking({
             score.
           </p>
         </div>
-        {resource.status === "ready" && <RankingMeta ranking={resource.data} />}
+        <div className="screen__actions">
+          {resource.status === "ready" && <RankingMeta ranking={resource.data} />}
+          {/* **In the header, beside what identifies the ranking.** Saving is an act about
+              the whole ranking rather than about anything under the table, and a control for
+              it below 32 rows is a control nobody finds. */}
+          <SaveControl criteriaSetId={criteriaSetId} levelId={levelId} />
+        </div>
       </header>
 
       {resource.status === "idle" && (

@@ -8,7 +8,9 @@ import {
 } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
 import {
+  ABSENT,
   formatDate,
+  formatIdentifier,
   formatDateTime,
   formatPercentage,
   formatSigned,
@@ -17,7 +19,12 @@ import {
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
 import { describeFigure } from "../../format/figure";
-import { pillarsByAttribute, valuesInPillar } from "./pillarFilter";
+import {
+  judgementsByAttribute,
+  pillarsByAttribute,
+  valuesInPillar,
+  type Judgement,
+} from "./pillarFilter";
 import { type PillarScore, pillarBars } from "./rankTable";
 
 /**
@@ -66,11 +73,10 @@ export function CandidateDetail({
     criteriaSetId !== null,
   );
   const [pillar, setPillar] = useState<string | null>(null);
-  const byAttribute = pillarsByAttribute(
-    criteria.resource.status === "ready"
-      ? criteria.resource.data.criteria
-      : null,
-  );
+  const setCriteria =
+    criteria.resource.status === "ready" ? criteria.resource.data.criteria : null;
+  const byAttribute = pillarsByAttribute(setCriteria);
+  const judgements = judgementsByAttribute(setCriteria);
 
   // **Unique per open panel.** Several candidates' evidence can be open at once, and a
   // hardcoded id would repeat in the document -- so every panel would be announced with the
@@ -79,9 +85,16 @@ export function CandidateDetail({
 
   return (
     <section className="panel" aria-labelledby={headingId}>
-      <h3 id={headingId} className="panel__heading">
-        {name}: every figure behind the score
-      </h3>
+      <div className="panel__head">
+        <h3 id={headingId} className="panel__heading">
+          {name}: every value behind the score
+        </h3>
+        {/* Said once, at the top, rather than as a caption on the table: it is a fact about
+            how this application treats evidence, not about this table. */}
+        <span className="panel__count">
+          Superseded and rejected values are kept, never deleted.
+        </span>
+      </div>
 
       <PillarContributions
         pillars={pillars}
@@ -96,7 +109,15 @@ export function CandidateDetail({
         <ErrorNotice error={values.resource.error} onRetry={values.reload} />
       )}
       {values.resource.status === "ready" && (
+        <h4 className="drill__title">
+          {pillar === null
+            ? "Every stored value"
+            : `${formatIdentifier(pillar)} — stored values`}
+        </h4>
+      )}
+      {values.resource.status === "ready" && (
         <ValueTable
+          judgements={judgements}
           values={valuesInPillar(
             values.resource.data.items,
             byAttribute,
@@ -130,9 +151,12 @@ export function CandidateDetail({
 function ValueTable({
   values,
   pillar,
+  judgements,
 }: {
   values: StoredValue[];
   pillar: string | null;
+  /** What the active set decided about each attribute: its weight, and whether it blocks. */
+  judgements: Map<string, Judgement>;
 }) {
   if (values.length === 0) {
     return (
@@ -144,63 +168,102 @@ function ValueTable({
     );
   }
   return (
-    <div className="table-card">
-      <table className="table">
-        <caption>
-          Every stored value, the active one marked. A superseded figure is
-          kept, never deleted.
-        </caption>
+    <div className="table-card table-card--values">
+      <table className="table table--values" aria-label="Every stored value">
         <thead>
           <tr>
             <th scope="col">Attribute</th>
-            <th scope="col">Figure</th>
-            <th scope="col">Source</th>
-            <th scope="col">Describes</th>
-            <th scope="col">Fetched</th>
+            <th scope="col">Stored value</th>
+            <th scope="col" className="col--right">
+              Weight
+            </th>
             <th scope="col">Confidence</th>
-            <th scope="col">In use</th>
+            <th scope="col">Status</th>
           </tr>
         </thead>
         <tbody>
-          {values.map((value) => (
-            <tr
-              key={value.id}
-              className={
-                value.is_active
-                  ? "table__row"
-                  : "table__row table__row--superseded"
-              }
-            >
-              <th scope="row">{value.attribute}</th>
-              <td title={value.quote ?? undefined}>{describeFigure(value)}</td>
-              <td>
-                {value.data_source}
-                <Citations citations={value.citations} />
-              </td>
-              <td>
-                {formatDate(value.reference_period.start)} to{" "}
-                {formatDate(value.reference_period.end)}
-              </td>
-              <td>{formatDateTime(value.retrieval_date)}</td>
-              <td>
-                <span className={`chip chip--${value.confidence_level}`}>
-                  {value.confidence_level}
-                </span>
-              </td>
-              {/* Three states, and the design gives each its own tint: a figure being scored, one
-                a better source displaced, and one the catalog refused. They are not degrees of
-                the same thing, which one column of plain words made them look like. */}
-              <td>
-                {value.is_active ? (
-                  <span className="chip chip--accent">Scored</span>
-                ) : value.rejection_reason ? (
-                  <span className="chip chip--not_matching">Rejected</span>
-                ) : (
-                  <span className="chip chip--neutral">Superseded</span>
-                )}
-              </td>
-            </tr>
-          ))}
+          {values.map((value) => {
+            const judged = judgements.get(value.attribute);
+            return (
+              <tr
+                key={value.id}
+                className={
+                  value.is_active
+                    ? "table__row"
+                    : "table__row table__row--superseded"
+                }
+              >
+                {/* **The provenance stacks under the name it belongs to.** Source, period and
+                    retrieval date were three columns, which made the table nine wide and wrapped
+                    every date over three lines. They are facts *about* this figure rather than
+                    columns to compare across rows, so they read as a block. */}
+                <th scope="row" className="value-cell">
+                  <span className="value-cell__head">
+                    <span className="value-cell__name">{value.attribute}</span>
+                    {judged?.required === true && (
+                      <span className="chip chip--accent">Required</span>
+                    )}
+                  </span>
+                  <span className="value-cell__meta">
+                    <span className="value-cell__label">Source</span>
+                    <span className="value-cell__fact">
+                      {value.data_source}
+                      <Citations citations={value.citations} />
+                    </span>
+                    <span className="value-cell__label">Describes</span>
+                    <span className="value-cell__fact">
+                      {formatDate(value.reference_period.start)} to{" "}
+                      {formatDate(value.reference_period.end)}
+                    </span>
+                    <span className="value-cell__label">Fetched</span>
+                    <span className="value-cell__fact">
+                      {formatDateTime(value.retrieval_date)}
+                    </span>
+                  </span>
+                </th>
+
+                <td className="figure-cell">
+                  <span className="figure-cell__figure">
+                    {describeFigure(value)}
+                  </span>
+                  {/* What the publisher said, where they said anything: the scale a figure is
+                      on is not always readable from the figure. */}
+                  {value.quote != null && value.quote !== "" && (
+                    <span className="figure-cell__scale">{value.quote}</span>
+                  )}
+                </td>
+
+                {/* **The weight this set gives it, and nothing where it gives none.** An
+                    attribute the set does not score is not judged here at all, and a zero
+                    would read as "worth nothing" -- a different claim. */}
+                <td className="col--right value-weight">
+                  {judged?.weight == null
+                    ? ABSENT
+                    : formatPercentage(judged.weight)}
+                </td>
+
+                <td>
+                  <span className={`chip chip--${value.confidence_level}`}>
+                    {value.confidence_level}
+                  </span>
+                </td>
+
+                {/* Three states, and the design gives each its own tint: a figure being
+                    scored, one a better source displaced, and one the catalog refused. They
+                    are not degrees of the same thing, which one column of plain words made
+                    them look like. */}
+                <td>
+                  {value.is_active ? (
+                    <span className="chip chip--accent">Scored</span>
+                  ) : value.rejection_reason ? (
+                    <span className="chip chip--not_matching">Rejected</span>
+                  ) : (
+                    <span className="chip chip--neutral">Superseded</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -248,7 +311,9 @@ function PillarContributions({
               onClick={() => onChoose(pillar.pillar)}
             >
               <div className="pillar-card__head">
-                <span className="pillar-card__name">{pillar.pillar}</span>
+                <span className="pillar-card__name">
+                  {formatIdentifier(pillar.pillar)}
+                </span>
                 <span className="pillar-card__score">
                   {typeof pillar.score === "number" ? pillar.score : "No score"}
                 </span>

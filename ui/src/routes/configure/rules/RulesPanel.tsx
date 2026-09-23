@@ -50,13 +50,22 @@ export function RulesPanel({
       </header>
       {rules.failure !== null && <ErrorNotice error={rules.failure} />}
 
+      {/* Said once, at the top, because the difference between the two kinds is the thing a
+          reader has to hold while reading either list. */}
+      <p className="rule-note">
+        A <strong>gate</strong> makes a candidate not matching, which costs it its
+        rank and leaves its score intact. A <strong>warning</strong> keeps it
+        ranked and says why. Turn one off and it stops being applied — and a rule
+        nobody has answered never fires either way.
+      </p>
+
       <h4 className="panel__heading">Gates</h4>
       <RuleList
         resource={rules.matchRules}
         onRetry={rules.reloadMatchRules}
         empty="No gate is defined at this level."
         caption="Gates. Enforcing one lets it rule a candidate out."
-        columnLabel="Enforced"
+        columnLabel="Gate — removes from the ranking"
         rows={(listed: MatchRule[]) =>
           listed.map((rule) => ({
             id: rule.id,
@@ -64,11 +73,13 @@ export function RulesPanel({
             // The level *and* the effect. A switch saying only "enforced" makes a reader
             // guess whether it matters; dropping the level to make room would lose which
             // candidates it is even asked about.
-            detail: `Asked at ${rule.level ?? "every"} level. ${describeEffect(
-              rule.id,
-              rules.matchRuleResults,
-              { enforced: rules.isEnforced(rule.id) },
-            )}`,
+            detail: `Asked at ${rule.level ?? "every"} level.`,
+            // The level *and* the effect, because a switch saying only "enforced" makes a
+            // reader guess whether it matters -- and dropping the level to make room would
+            // lose which candidates it is even asked about.
+            effect: describeEffect(rule.id, rules.matchRuleResults, {
+              enforced: rules.isEnforced(rule.id),
+            }),
             on: rules.isEnforced(rule.id),
             toggleLabel: `Enforce ${rule.name}`,
             onToggle: (wanted: boolean) => rules.enforce(rule.id, wanted),
@@ -82,14 +93,15 @@ export function RulesPanel({
         onRetry={rules.reloadCompoundRules}
         empty="No compound rule is defined at this level."
         caption="Compound rules, with what each one does when it fires."
-        columnLabel="Applied"
+        columnLabel="Warning — keeps it, flags it"
         rows={(listed: CompoundRule[]) =>
           listed.map((rule) => ({
             id: rule.id,
             name: rule.name,
             // A phrase, not two facts joined by a separator: the middle dot is barred
             // outright, and the fix that matters is saying the thing in words.
-            detail: `${rule.shape}, and ${rule.outcome}s when it fires`,
+            detail: `${rule.shape}, and ${rule.outcome}s when it fires.`,
+            effect: null,
             on: rules.isApplied(rule.id),
             toggleLabel: `Apply ${rule.name}`,
             onToggle: (wanted: boolean) => rules.apply(rule.id, wanted),
@@ -105,6 +117,8 @@ interface RuleRow {
   id: string;
   name: string;
   detail: string;
+  /** What it is doing right now, or null when it is firing on nobody. */
+  effect: string | null;
   on: boolean;
   toggleLabel: string;
   onToggle: (wanted: boolean) => void;
@@ -137,33 +151,40 @@ function RuleList<Rule>({
   if (listed.length === 0) return <p className="screen__note">{empty}</p>;
 
   return (
-    <table className="table">
-      <caption>{caption}</caption>
-      <thead>
-        <tr>
-          <th scope="col">Rule</th>
-          <th scope="col">Detail</th>
-          <th scope="col">{columnLabel}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {listed.map((row) => (
-          <tr key={row.id}>
-            <th scope="row">{row.name}</th>
-            <td>{row.detail}</td>
-            <td>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={row.on}
-                  aria-label={row.toggleLabel}
-                  onChange={(event) => row.onToggle(event.target.checked)}
-                />
-              </label>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <ul className="rule-list" aria-label={caption}>
+      {listed.map((row) => (
+        <li key={row.id} className="rule-row" aria-label={row.name}>
+          {/* **A switch, because being in force is a state the rule is in.** It leads the row
+              for the same reason it leads a source's: what a reader scans for is which of
+              these are on, and a column of switches down the left answers that in one pass. */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={row.on}
+            aria-label={row.toggleLabel}
+            className="switch"
+            onClick={() => row.onToggle(!row.on)}
+          >
+            <span className="switch__knob" aria-hidden="true" />
+          </button>
+          <span className="rule-row__what">
+            <span className="rule-row__name">{row.name}</span>
+            <span className="rule-row__detail">{row.detail}</span>
+            {/* What it is doing *right now*, which is the question a switch raises and a
+                description cannot answer. */}
+            <span
+              className={
+                row.effect === null
+                  ? "rule-row__effect rule-row__effect--idle"
+                  : "rule-row__effect"
+              }
+            >
+              {row.effect ?? "Applies to no candidate right now."}
+            </span>
+          </span>
+          <span className="rule-row__kind">{columnLabel}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
