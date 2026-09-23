@@ -584,6 +584,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/rankings/candidates/{candidateId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Why this candidate scores what it scores, in the live ranking
+         * @description The drill-down for a ranking nobody saved. `getCandidateScoreDetail` answers the same
+         *     question of a saved evaluation and takes its id; a ranking computed on the fly has none,
+         *     so without this the numbers behind a score on screen could be reached only by saving the
+         *     ranking first — a decision about what to keep, not a step in reading it.
+         *
+         *     **Computes and returns; stores nothing**, like the ranking it drills into. It scores the
+         *     whole level rather than the one candidate, because redistribution and the score scale
+         *     are properties of the pass and not of the row.
+         */
+        get: operations["getRankedCandidateDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/evaluations": {
         parameters: {
             query?: never;
@@ -2300,6 +2327,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Ranking"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getRankedCandidateDetail: {
+        parameters: {
+            query: {
+                criteria_set: string;
+                level: string;
+            };
+            header?: never;
+            path: {
+                /** @description e.g. `country.portugal` */
+                candidateId: components["parameters"]["CandidateId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateScoreDetail"];
                 };
             };
             404: components["responses"]["NotFound"];

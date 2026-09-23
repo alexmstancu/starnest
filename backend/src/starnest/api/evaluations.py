@@ -24,13 +24,14 @@ from starnest.api.dependencies import (
     Values,
 )
 from starnest.api.rankings import (
-    CandidateResultBody,
+    CandidateScoreDetailBody,
     RankingBody,
+    _attribute_score_body,
     _in_rank_order,
     _result_body,
     the_ranking,
 )
-from starnest.evaluation import AttributeScore, SavedEvaluation
+from starnest.evaluation import SavedEvaluation
 
 router = APIRouter(tags=["evaluation"])
 
@@ -52,18 +53,6 @@ class SaveEvaluationBody(BaseModel):
     criteria_set: str
     level: str
     note: str | None = None
-
-
-class AttributeScoreBody(BaseModel):
-    attribute: str
-    pillar: str
-    normalised_score: int | None = None
-    effective_weight: float
-    contribution: float
-
-
-class CandidateScoreDetailBody(CandidateResultBody):
-    attribute_scores: tuple[AttributeScoreBody, ...] = ()
 
 
 class EvaluationPillarWeightBody(BaseModel):
@@ -203,14 +192,4 @@ def _summary(saved: SavedEvaluation) -> EvaluationSummaryBody:
         computed_at=saved.computed_at,
         score_scale_max=saved.score_scale_max,
         note=saved.note,
-    )
-
-
-def _attribute_score_body(row: AttributeScore) -> AttributeScoreBody:
-    return AttributeScoreBody(
-        attribute=str(row.attribute),
-        pillar=str(row.pillar),
-        normalised_score=row.normalised_score,
-        effective_weight=float(row.effective_weight),
-        contribution=float(row.contribution),
     )

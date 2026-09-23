@@ -14,15 +14,16 @@ import { http, HttpResponse } from "msw";
 import type { components } from "../api/schema";
 import {
   ATTRIBUTES,
+  ATTRIBUTE_SCORES,
   COMPOUND_RULES,
   CRITERIA_SETS,
   DATA_SOURCES,
   EXTERNAL_SCORES,
   HOUSEHOLD,
+  LEVELS,
   MATCH_RULES,
   MATCH_RULE_RESULTS,
   RESEARCH_PLAN,
-  LEVELS,
   RUNS,
   RUN_PLAN,
   SETTINGS,
@@ -387,6 +388,36 @@ export const handlers = [
     }
 
     return HttpResponse.json(rankingFor(criteriaSet, level));
+  }),
+
+  /**
+   * Why one candidate scores what it scores, in the live ranking.
+   *
+   * **Built from the same ranking the table reads**, so the drill-down cannot show figures for
+   * a candidate the table never listed -- which is the fault a hand-written detail fixture
+   * invites. The attribute scores are the fixture's; the header is this candidate's own row.
+   */
+  http.get(`${BASE}/rankings/candidates/:candidateId`, ({ params, request }) => {
+    const query = new URL(request.url).searchParams;
+    const criteriaSet = query.get("criteria_set");
+    const level = query.get("level");
+    if (!criteriaSet || !level) {
+      return HttpResponse.json(
+        {
+          code: "missing_query_parameter",
+          message: "criteria_set and level are both required.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const candidateId = String(params["candidateId"]);
+    const ranked = rankingFor(criteriaSet, level).candidates.find(
+      (each) => each.candidate === candidateId,
+    );
+    if (!ranked) return notFound(candidateId);
+
+    return HttpResponse.json({ ...ranked, attribute_scores: ATTRIBUTE_SCORES });
   }),
 
   // Saved rankings. The store is module state rather than a fixture, because the thing worth

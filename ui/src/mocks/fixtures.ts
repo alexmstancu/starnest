@@ -567,7 +567,72 @@ export const ATTRIBUTES = [
   },
 ];
 
+/**
+ * What the pass made of each stored figure: the score it normalised to, the weight it used
+ * after redistribution, and the points it added.
+ *
+ * **The attributes are the stored values' own**, so the drill-down's three new columns have a
+ * reading for every row it draws -- except `country.summer_daytime_high`, deliberately left
+ * out, because an attribute with a figure the active set does not score is exactly the case
+ * those columns must say nothing about rather than nought.
+ */
+export const ATTRIBUTE_SCORES = [
+  {
+    attribute: "country.cost_of_living_index",
+    pillar: "economics",
+    normalised_score: 73,
+    effective_weight: 12.5,
+    contribution: 9.125,
+  },
+  {
+    attribute: "country.average_rent",
+    pillar: "housing",
+    normalised_score: 61,
+    effective_weight: 20,
+    contribution: 12.2,
+  },
+  {
+    attribute: "country.total_tax_rate_effective",
+    pillar: "economics",
+    normalised_score: 48,
+    effective_weight: 27.5,
+    contribution: 13.2,
+  },
+  // Covered by no figure, so it dropped out and its share went to the others. The score is
+  // null and the weight it was actually given is nought -- which is not the same claim as a
+  // score of nought, and the table must not print one for the other.
+  {
+    attribute: "country.broadband_coverage",
+    pillar: "connectivity",
+    normalised_score: null,
+    effective_weight: 0,
+    contribution: 0,
+  },
+];
+
 export const STORED_VALUES: StoredValue[] = [
+  /**
+   * **A figure with no criterion attached**, which `reqs.md` 3.0 provides for and
+   * `european_air_connectivity` is this project's own example of (Q228): counted, fetched and
+   * displayed as context, never scored. It is here so the drill-down has a row whose score,
+   * weight used and points added are all genuinely absent -- which is a different claim from
+   * nought and must read differently.
+   */
+  {
+    id: 500,
+    candidate: "country.portugal",
+    attribute: "country.european_air_connectivity",
+    value_type: "Count",
+    payload: { count: 31 },
+    data_source: "eurostat",
+    reference_period: { start: "2025-01-01", end: "2025-12-31" },
+    retrieval_date: "2026-09-11T08:00:00Z",
+    confidence_level: "high",
+    is_active: true,
+    quote: null,
+    citations: [],
+    data_acquisition_run: 7,
+  },
   {
     id: 501,
     candidate: "country.portugal",

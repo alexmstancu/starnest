@@ -2887,7 +2887,7 @@ select.field__control {
 .table--values {
   display: block;
   width: 100%;
-  min-width: 720px;
+  min-width: 1042px;
   font-size: 13px;
 }
 
@@ -2899,7 +2899,8 @@ select.field__control {
 .table--values > thead > tr,
 .table--values > tbody > tr {
   display: grid;
-  grid-template-columns: minmax(220px, 1.5fr) minmax(130px, 0.9fr) 66px 86px 96px;
+  grid-template-columns:
+    minmax(220px, 1.5fr) minmax(130px, 0.9fr) 74px 66px 82px 88px 86px 96px;
   gap: 12px;
   padding: 10px 14px;
   align-items: start;
@@ -3104,24 +3105,6 @@ select.field__control {
 
 .table__reason {
   color: var(--colour-text-muted);
-}
-
-/* The weight editor */
-
-.weight-form {
-  display: flex;
-  align-items: center;
-  gap: var(--space-half);
-  flex-wrap: wrap;
-}
-
-.weight-form__input {
-  width: 6rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.weight-form__problem {
-  color: var(--colour-danger);
 }
 
 .save-failure {

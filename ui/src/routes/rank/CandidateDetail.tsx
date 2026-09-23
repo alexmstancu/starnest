@@ -2,6 +2,7 @@ import { useCallback, useId, useState } from "react";
 import {
   fetchCriteriaSet,
   fetchExternalScores,
+  fetchRankedCandidateDetail,
   fetchValues,
   type ExternalScore,
   type StoredValue,
@@ -27,6 +28,7 @@ import {
 } from "./pillarFilter";
 import { pillarCompleteness, type Completeness } from "./pillarCompleteness";
 import { type PillarScore, pillarBars } from "./rankTable";
+import { scoresByAttribute, type ScoreReading } from "./attributeScores";
 
 /**
  * One candidate's evidence: every stored value, and the outside indices beside them.
@@ -65,6 +67,7 @@ export function CandidateDetail({
   // opinion rather than the catalog's -- an attribute this set does not score has no pillar,
   // which is the truthful answer rather than a lookup that failed.
   const { criteriaSetId } = useSelection();
+
   const criteria = useResource(
     useCallback(
       (signal: AbortSignal) =>
@@ -73,6 +76,35 @@ export function CandidateDetail({
     ),
     criteriaSetId !== null,
   );
+  /**
+   * What each attribute actually contributed, from the ranking on screen.
+   *
+   * **A separate read, and a silent one.** It answers a different question from the values --
+   * those are what is stored, this is what the pass made of it -- and the table is worth
+   * showing without it: a figure, its source and its dates are facts whether or not the
+   * scoring arithmetic arrived. So a failure here empties three columns rather than replacing
+   * the table with an error.
+   */
+  const { levelId } = useSelection();
+  const scored = useResource(
+    useCallback(
+      (signal: AbortSignal) =>
+        fetchRankedCandidateDetail(
+          candidate,
+          criteriaSetId ?? "",
+          levelId ?? "",
+          { signal },
+        ),
+      [candidate, criteriaSetId, levelId],
+    ),
+    criteriaSetId !== null && levelId !== null,
+  );
+  const contributions = scoresByAttribute(
+    scored.resource.status === "ready"
+      ? scored.resource.data.attribute_scores
+      : null,
+  );
+
   const [pillar, setPillar] = useState<string | null>(null);
   const setCriteria =
     criteria.resource.status === "ready" ? criteria.resource.data.criteria : null;
@@ -128,6 +160,7 @@ export function CandidateDetail({
       {values.resource.status === "ready" && (
         <ValueTable
           judgements={judgements}
+          contributions={contributions}
           values={valuesInPillar(
             values.resource.data.items,
             byAttribute,
@@ -198,11 +231,14 @@ function ValueTable({
   values,
   pillar,
   judgements,
+  contributions,
 }: {
   values: StoredValue[];
   pillar: string | null;
   /** What the active set decided about each attribute: its weight, and whether it blocks. */
   judgements: Map<string, Judgement>;
+  /** What the pass made of each figure, from the ranking on screen. Empty until it arrives. */
+  contributions: ReadonlyMap<string, ScoreReading>;
 }) {
   if (values.length === 0) {
     return (
@@ -220,8 +256,22 @@ function ValueTable({
           <tr>
             <th scope="col">Attribute</th>
             <th scope="col">Stored value</th>
+            {/* **Three columns the criteria set alone cannot give.** The weight a set
+                configures is a different number from the weight the pass used: an attribute
+                with no figure drops out and its share spreads over the ones that have one
+                (`reqs.md` 5.4), so showing only the configured weight leaves a reader unable
+                to see where a missing figure went. */}
+            <th scope="col" className="col--right">
+              Score 0–100
+            </th>
             <th scope="col" className="col--right">
               Weight
+            </th>
+            <th scope="col" className="col--right">
+              Weight used
+            </th>
+            <th scope="col" className="col--right">
+              Points added
             </th>
             <th scope="col">Confidence</th>
             <th scope="col">Status</th>
@@ -279,6 +329,10 @@ function ValueTable({
                   )}
                 </td>
 
+                <td className="col--right value-weight">
+                  {contributions.get(value.attribute)?.score ?? ABSENT}
+                </td>
+
                 {/* **The weight this set gives it, and nothing where it gives none.** An
                     attribute the set does not score is not judged here at all, and a zero
                     would read as "worth nothing" -- a different claim. */}
@@ -286,6 +340,14 @@ function ValueTable({
                   {judged?.weight == null
                     ? ABSENT
                     : formatPercentage(judged.weight)}
+                </td>
+
+                <td className="col--right value-weight">
+                  {contributions.get(value.attribute)?.weightUsed ?? ABSENT}
+                </td>
+
+                <td className="col--right value-weight">
+                  {contributions.get(value.attribute)?.pointsAdded ?? ABSENT}
                 </td>
 
                 <td>

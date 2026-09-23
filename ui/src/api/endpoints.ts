@@ -655,3 +655,25 @@ export function fetchCandidateScoreDetail(
     { ...options, pathParams: { evaluationId, candidateId } },
   );
 }
+
+/**
+ * Why one candidate scores what it scores, in the ranking on screen.
+ *
+ * **The live counterpart of `fetchCandidateScoreDetail`**, which takes an evaluation id. A
+ * ranking computed from the active set has none, so without this the figures behind a score
+ * could be read only after saving the ranking -- a decision about what to keep, not a step in
+ * looking at it. The server computes both the same way and the acceptance suite asserts they
+ * agree, so the drill-down reads identically whether or not the ranking was kept.
+ */
+export function fetchRankedCandidateDetail(
+  candidateId: string,
+  criteriaSet: string,
+  level: string,
+  options?: RequestOptions,
+): Promise<CandidateScoreDetail> {
+  return getJson(
+    "/rankings/candidates/{candidateId}",
+    { criteria_set: criteriaSet, level },
+    { ...options, pathParams: { candidateId } },
+  );
+}

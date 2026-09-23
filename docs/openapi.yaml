@@ -802,6 +802,31 @@ paths:
             application/json: { schema: { $ref: "#/components/schemas/Ranking" } }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /rankings/candidates/{candidateId}:
+    get:
+      tags: [evaluation]
+      summary: Why this candidate scores what it scores, in the live ranking
+      description: |
+        The drill-down for a ranking nobody saved. `getCandidateScoreDetail` answers the same
+        question of a saved evaluation and takes its id; a ranking computed on the fly has none,
+        so without this the numbers behind a score on screen could be reached only by saving the
+        ranking first — a decision about what to keep, not a step in reading it.
+
+        **Computes and returns; stores nothing**, like the ranking it drills into. It scores the
+        whole level rather than the one candidate, because redistribution and the score scale
+        are properties of the pass and not of the row.
+      operationId: getRankedCandidateDetail
+      parameters:
+        - { $ref: "#/components/parameters/CandidateId" }
+        - { name: criteria_set, in: query, required: true, schema: { type: string } }
+        - { name: level, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/CandidateScoreDetail" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /evaluations:
     get:
       tags: [evaluation]

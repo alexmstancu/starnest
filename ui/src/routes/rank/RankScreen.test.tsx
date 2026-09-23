@@ -316,9 +316,11 @@ describe("the drill-down", () => {
       name: /every stored value/i,
     });
     const rows = within(table).getAllByRole("row").slice(1);
-    expect(rows).toHaveLength(3);
+    // Four figures: two for the cost of living index, of which one is superseded, the tax
+    // estimate, and the air connectivity count that no criterion scores.
+    expect(rows).toHaveLength(4);
     expect(within(table).getAllByText("Superseded")).toHaveLength(1);
-    expect(within(table).getAllByText("Scored")).toHaveLength(2);
+    expect(within(table).getAllByText("Scored")).toHaveLength(3);
   });
 
   it("shows each figure with its source, both dates and its confidence", async () => {
@@ -824,5 +826,61 @@ describe("what a stored figure looks like, whatever its type", () => {
     expect(
       within(row).getByText(/cheap and heavily taxed/i),
     ).toBeInTheDocument();
+  });
+});
+
+describe("what the pass made of each figure", () => {
+  /**
+   * `reqs.md` 5.4, through `GET /rankings/candidates/{id}`. **The weight a set configures and
+   * the weight a pass used are different numbers.** An attribute with no figure drops out and
+   * its share spreads over the ones that have one, so a table showing only the configured
+   * weight leaves a reader unable to see where a missing figure went -- which is the question
+   * "why is this score what it is" mostly comes down to.
+   *
+   * These numbers were reachable before only by saving the ranking first, because the drill-down
+   * that had them took an evaluation id.
+   */
+  async function theValues() {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(within(row).getByRole("button"));
+    return within(
+      await screen.findByRole("table", { name: /every stored value/i }),
+    );
+  }
+
+  it("prints the score, the weight used and the points added, all the server's", async () => {
+    const table = await theValues();
+
+    // The active figure, not the one it superseded: both rows carry the attribute's name, and
+    // the pass scored the one it is using.
+    const row = table
+      .getAllByRole("row", { name: /cost_of_living_index/i })
+      .find((each) => each.textContent?.includes("Scored"));
+    expect(row).toHaveTextContent("73");
+    expect(row).toHaveTextContent("12.5%");
+    expect(row).toHaveTextContent("+9.1");
+  });
+
+  it("keeps the configured weight beside the one the pass used", async () => {
+    // Both, because they answer different questions: what this set says the attribute is
+    // worth, and what it was actually worth once the missing figures had been redistributed.
+    const table = await theValues();
+
+    expect(table.getByRole("columnheader", { name: "Weight" })).toBeInTheDocument();
+    expect(
+      table.getByRole("columnheader", { name: "Weight used" }),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing where the ranking scored nothing", async () => {
+    // `european_air_connectivity` is counted and never scored (`reqs.md` 3.0, Q228): a figure
+    // with no criterion attached. Its three columns are blank rather than nought, because
+    // "not judged" and "judged to be worth nothing" are different claims.
+    const table = await theValues();
+
+    const row = table.getByRole("row", { name: /european_air_connectivity/i });
+    expect(row).toHaveTextContent("31");
+    expect(row).not.toHaveTextContent(/[+-]?\d+\.\d/);
   });
 });

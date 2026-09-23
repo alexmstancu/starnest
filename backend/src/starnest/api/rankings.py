@@ -29,7 +29,7 @@ from starnest.api.dependencies import (
 from starnest.candidates import Candidate
 from starnest.criteria import CriteriaSet
 from starnest.data import MatchRuleResult, Value
-from starnest.evaluation import CandidateResult, rank_candidates
+from starnest.evaluation import AttributeScore, CandidateResult, rank_candidates
 from starnest.household import HouseholdNotConfiguredError
 
 router = APIRouter(tags=["rankings"])
@@ -91,6 +91,26 @@ class CandidateResultBody(BaseModel):
     insufficient_reason: str | None = None
     warnings: tuple[WarningBody, ...] = ()
     non_match_reasons: tuple[NonMatchReasonBody, ...] = ()
+
+
+class AttributeScoreBody(BaseModel):
+    attribute: str
+    pillar: str
+    normalised_score: int | None = None
+    effective_weight: float
+    contribution: float
+
+
+class CandidateScoreDetailBody(CandidateResultBody):
+    """Why a candidate scored what it scored, attribute by attribute.
+
+    **Here rather than beside the saved evaluations**, because a live ranking answers the same
+    question and `api/evaluations.py` already depends on this module. The two paths must return
+    the same shape: a drill-down that looked different depending on whether the ranking had
+    been saved would be two answers to one question.
+    """
+
+    attribute_scores: tuple[AttributeScoreBody, ...] = ()
 
 
 class RankingBody(BaseModel):
@@ -208,6 +228,65 @@ async def get_ranking(
         level=level,
         computed_at=datetime.now(UTC),
         candidates=tuple(_result_body(result, names) for result in _in_rank_order(ranking.results)),
+    )
+
+
+@router.get(
+    "/rankings/candidates/{candidate_id}",
+    operation_id="getRankedCandidateDetail",
+    response_model=CandidateScoreDetailBody,
+)
+async def get_ranked_candidate_detail(
+    candidate_id: str,
+    criteria_set: str,
+    level: str,
+    criteria: Criteria,
+    candidates: Candidates,
+    values: Values,
+    households: Households,
+    catalog: Catalog,
+    match_rule_results: MatchRuleResults,
+) -> CandidateScoreDetailBody:
+    """The drill-down for a ranking nobody saved.
+
+    **The same question `getCandidateScoreDetail` answers, asked of the live set.** That one
+    takes an evaluation id, and a ranking computed on the fly has none -- so the numbers behind
+    a score on screen could be reached only by saving the ranking first, which is a decision
+    about what to keep rather than a step in reading it.
+
+    **Computes and returns; stores nothing**, like the ranking it drills into. It runs the whole
+    level rather than one candidate because redistribution and the score scale are properties of
+    the pass, not of the row: scoring one candidate alone would give a different answer.
+    """
+    ranking = await the_ranking(
+        criteria_set, level, criteria, candidates, values, households, catalog, match_rule_results
+    )
+    result = next((each for each in ranking.results if str(each.candidate) == candidate_id), None)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "candidate_not_found",
+                "message": (
+                    f"no candidate called {candidate_id!r} was ranked at level {level!r}; it may "
+                    f"belong to another level or not exist"
+                ),
+            },
+        )
+    names = {str(candidate.id): candidate.name for candidate in ranking.roster}
+    return CandidateScoreDetailBody(
+        **_result_body(result, names).model_dump(),
+        attribute_scores=tuple(_attribute_score_body(row) for row in result.attribute_scores),
+    )
+
+
+def _attribute_score_body(row: AttributeScore) -> AttributeScoreBody:
+    return AttributeScoreBody(
+        attribute=str(row.attribute),
+        pillar=str(row.pillar),
+        normalised_score=row.normalised_score,
+        effective_weight=float(row.effective_weight),
+        contribution=float(row.contribution),
     )
 
 

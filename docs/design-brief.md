@@ -157,7 +157,14 @@ consequence per rule, and the acquisition history opens a run by its own number.
 
 **Two columns the design draws cannot be filled for a live ranking.**
 
-*Score 0–100, weight used and points added, per attribute.* `getCandidateScoreDetail` serves
+*Score 0–100, weight used and points added, per attribute.* **Closed 2026-09-23** by
+`GET /rankings/candidates/{candidateId}`, which takes a criteria set and a level instead of an
+evaluation id. It computes the whole level, because redistribution and the score scale are
+properties of the pass and not of the row, and stores nothing — like the ranking it drills into.
+The acceptance suite asserts that its `attribute_scores` are identical to the saved
+evaluation's for the same set and level, so the drill-down reads the same whether or not the
+ranking was kept. **The table now draws the design's eight columns.** What follows is why it
+could not before. `getCandidateScoreDetail` serves
 exactly these -- normalised score, effective weight after redistribution, contribution -- but it
 takes an **evaluation id**, and a live ranking has no evaluation. Computing them here is barred
 and rightly: normalisation is `evaluation/`'s, and a second answer on the client would be a

@@ -177,6 +177,19 @@ components:
       title: CandidateResultBody
       type: object
     CandidateScoreDetailBody:
+      description: 'Why a candidate scored what it scored, attribute by attribute.
+
+
+        **Here rather than beside the saved evaluations**, because a live ranking
+        answers the same
+
+        question and `api/evaluations.py` already depends on this module. The two
+        paths must return
+
+        the same shape: a drill-down that looked different depending on whether the
+        ranking had
+
+        been saved would be two answers to one question.'
       properties:
         attribute_scores:
           default: []
@@ -3473,6 +3486,67 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Get Ranking
+      tags:
+      - rankings
+  /v1/rankings/candidates/{candidate_id}:
+    get:
+      description: 'The drill-down for a ranking nobody saved.
+
+
+        **The same question `getCandidateScoreDetail` answers, asked of the live set.**
+        That one
+
+        takes an evaluation id, and a ranking computed on the fly has none -- so the
+        numbers behind
+
+        a score on screen could be reached only by saving the ranking first, which
+        is a decision
+
+        about what to keep rather than a step in reading it.
+
+
+        **Computes and returns; stores nothing**, like the ranking it drills into.
+        It runs the whole
+
+        level rather than one candidate because redistribution and the score scale
+        are properties of
+
+        the pass, not of the row: scoring one candidate alone would give a different
+        answer.'
+      operationId: getRankedCandidateDetail
+      parameters:
+      - in: path
+        name: candidate_id
+        required: true
+        schema:
+          title: Candidate Id
+          type: string
+      - in: query
+        name: criteria_set
+        required: true
+        schema:
+          title: Criteria Set
+          type: string
+      - in: query
+        name: level
+        required: true
+        schema:
+          title: Level
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateScoreDetailBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Get Ranked Candidate Detail
       tags:
       - rankings
   /v1/settings:

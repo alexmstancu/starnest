@@ -114,6 +114,86 @@ class TestWhatTheSnapshotFreezes:
         assert after == before
 
 
+class TestTheDrillDownOnALiveRanking:
+    """The same question, asked of a ranking nobody saved.
+
+    **The numbers behind a score must be reachable without keeping the ranking.** Saving is a
+    decision about what to keep; reading why a candidate scored what it scored is a step in
+    looking at it. Before this the only drill-down took an evaluation id, so the screen could
+    show the figures only after the reader had committed to a snapshot.
+    """
+
+    async def test_it_agrees_with_the_saved_evaluation_it_was_computed_the_same_way_as(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        """**The two paths are one computation or they are two answers to one question.** A
+        drill-down that read differently depending on whether the ranking had been saved would
+        make the act of saving change the figures, which is the opposite of what freezing is
+        for."""
+        kept = await _keep_one(api)
+        saved = (await api.get(f"/v1/evaluations/{kept['id']}/candidates/{PORTUGAL}")).json()
+
+        live = (
+            await api.get(
+                f"/v1/rankings/candidates/{PORTUGAL}",
+                params={"criteria_set": MINIMAL, "level": COUNTRY},
+            )
+        ).json()
+
+        assert live["candidate"] == saved["candidate"]
+        assert live["score"] == saved["score"]
+        assert live["attribute_scores"] == saved["attribute_scores"]
+
+    async def test_the_contributions_add_up_to_the_score(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        """A total nobody can take apart is a number this application may not show."""
+        live = (
+            await api.get(
+                f"/v1/rankings/candidates/{PORTUGAL}",
+                params={"criteria_set": MINIMAL, "level": COUNTRY},
+            )
+        ).json()
+
+        assert round(sum(row["contribution"] for row in live["attribute_scores"])) == live["score"]
+
+    async def test_it_stores_nothing(self, api: httpx.AsyncClient, stored_figures: None) -> None:
+        """Like the ranking it drills into (`reqs.md` 5.6, Q155). An afternoon of reading must
+        not fill the saved list with snapshots nobody asked for."""
+        before = (await api.get("/v1/evaluations")).json()["items"]
+
+        await api.get(
+            f"/v1/rankings/candidates/{PORTUGAL}",
+            params={"criteria_set": MINIMAL, "level": COUNTRY},
+        )
+
+        assert (await api.get("/v1/evaluations")).json()["items"] == before
+
+    async def test_a_candidate_the_level_does_not_hold_is_a_404(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        response = await api.get(
+            "/v1/rankings/candidates/country.atlantis",
+            params={"criteria_set": MINIMAL, "level": COUNTRY},
+        )
+
+        assert response.status_code == 404
+        assert response.json()["code"] == "candidate_not_found"
+
+    async def test_a_criteria_set_nobody_made_is_a_404(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        """**The named resource is read first**, as the ranking itself does: asked about a set
+        that does not exist, a 409 about the score scale would send a reader to change a
+        setting that was never the problem."""
+        response = await api.get(
+            f"/v1/rankings/candidates/{PORTUGAL}",
+            params={"criteria_set": "no_such_set", "level": COUNTRY},
+        )
+
+        assert response.status_code == 404
+
+
 class TestTheDrillDown:
     async def test_it_explains_the_total_attribute_by_attribute(
         self, api: httpx.AsyncClient, stored_figures: None
