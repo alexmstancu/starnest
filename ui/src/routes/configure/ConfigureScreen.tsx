@@ -10,6 +10,7 @@ import { ProposalsPanel } from "./proposals/ProposalsPanel";
 import { RulesPanel } from "./rules/RulesPanel";
 import { SettingsPanel } from "./settings/SettingsPanel";
 import { RecentChanges } from "./RecentChanges";
+import { useAttributeCatalog } from "./useAttributeCatalog";
 import { useChangeHistory } from "./useChangeHistory";
 import { useCriteriaEditor } from "./useCriteriaEditor";
 import { countByPillar } from "./weights";
@@ -30,6 +31,10 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   const { criteriaSetId, levelId } = useSelection();
   const history = useChangeHistory();
   const editor = useCriteriaEditor(criteriaSetId, history);
+  // Once for the screen rather than once per opened pillar: every criterion row wants the
+  // same copy of what the attributes are, and the panel inside a pillar is mounted and
+  // unmounted each time one is opened.
+  const catalog = useAttributeCatalog(levelId);
 
   return (
     <section className="screen screen--configure" aria-labelledby="screen-heading">
@@ -78,7 +83,11 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                 criteriaSet={editor.criteriaSet}
                 criteriaCounts={countByPillar(editor.criteria)}
                 criteriaFor={(pillar) => (
-                  <CriteriaPanel editor={editor} pillar={pillar} />
+                  <CriteriaPanel
+                    editor={editor}
+                    pillar={pillar}
+                    catalog={catalog}
+                  />
                 )}
               />
 

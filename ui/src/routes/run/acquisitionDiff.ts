@@ -9,14 +9,28 @@
  * screen claiming a deletion this application never performs (`reqs.md` 3.6).
  */
 
+import { describeFigure } from "../../format/figure";
+
 export interface ProducedValue {
   candidate: string;
   attribute: string;
   data_source?: string;
   retrieval_date?: string | null;
+  payload?: unknown;
 }
 
-export type Change = "newly acquired" | "refreshed" | "went missing";
+/**
+ * **"Refreshed" and "unchanged" are different answers to the question this panel asks.**
+ * A run that re-fetched a thousand figures and moved none of them is a run that cost
+ * something and changed nothing, and a single "refreshed" count hides exactly that. They were
+ * one word until the figures themselves were read, because without the figures they could not
+ * be told apart.
+ */
+export type Change =
+  | "newly acquired"
+  | "refreshed"
+  | "unchanged"
+  | "went missing";
 
 export interface DiffRow {
   candidate: string;
@@ -24,12 +38,16 @@ export interface DiffRow {
   change: Change;
   /** The source that answered in the later run, or in the earlier one when it went missing. */
   data_source?: string | undefined;
+  /** The figure as each run produced it. Null where that run produced none. */
+  earlier: string | null;
+  later: string | null;
 }
 
 export interface Diff {
   rows: DiffRow[];
   newlyAcquired: number;
   refreshed: number;
+  unchanged: number;
   wentMissing: number;
 }
 
@@ -55,6 +73,8 @@ const ORDER: Record<Change, number> = {
   "newly acquired": 0,
   refreshed: 1,
   "went missing": 2,
+  // Last, and deliberately: a figure that did not move is the one row nobody has to act on.
+  unchanged: 3,
 };
 
 export function diffAcquisitions(
@@ -66,11 +86,21 @@ export function diffAcquisitions(
 
   const rows: DiffRow[] = [];
   for (const [key, value] of after) {
+    const earlier = before.get(key);
+    const laterFigure = figureOf(value);
+    const earlierFigure = earlier === undefined ? null : figureOf(earlier);
     rows.push({
       candidate: value.candidate,
       attribute: value.attribute,
-      change: before.has(key) ? "refreshed" : "newly acquired",
+      change:
+        earlier === undefined
+          ? "newly acquired"
+          : isUnchanged(earlierFigure, laterFigure)
+            ? "unchanged"
+            : "refreshed",
       data_source: value.data_source,
+      earlier: earlierFigure,
+      later: laterFigure,
     });
   }
   for (const [key, value] of before) {
@@ -80,6 +110,8 @@ export function diffAcquisitions(
       attribute: value.attribute,
       change: "went missing",
       data_source: value.data_source,
+      earlier: figureOf(value),
+      later: null,
     });
   }
 
@@ -94,8 +126,35 @@ export function diffAcquisitions(
     rows,
     newlyAcquired: rows.filter((row) => row.change === "newly acquired").length,
     refreshed: rows.filter((row) => row.change === "refreshed").length,
+    unchanged: rows.filter((row) => row.change === "unchanged").length,
     wentMissing: rows.filter((row) => row.change === "went missing").length,
   };
+}
+
+/**
+ * **Unchanged is a claim, and it is only made when both figures were readable.**
+ *
+ * Where either side produced no payload the answer is "refreshed" -- the weaker statement that
+ * a pair which already had a figure got one again. Calling two unreadable figures identical
+ * would be the screen inventing agreement out of ignorance, which is the one thing this
+ * application exists not to do.
+ */
+function isUnchanged(earlier: string | null, later: string | null): boolean {
+  return earlier !== null && later !== null && earlier === later;
+}
+
+/**
+ * The figure a run produced, as one line, or nothing where it produced no payload.
+ *
+ * **Compared as the string a reader sees**, not as a number: a payload may be a label set, a
+ * share composition or free text, and "did this move" has to mean the same thing for all ten
+ * value types. Comparing what is displayed is also what makes the answer checkable -- two rows
+ * marked unchanged show the same two figures.
+ */
+function figureOf(value: ProducedValue): string | null {
+  return value.payload === undefined || value.payload === null
+    ? null
+    : describeFigure({ payload: value.payload });
 }
 
 /**

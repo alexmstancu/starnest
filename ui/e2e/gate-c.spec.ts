@@ -37,7 +37,14 @@ test.beforeAll(async ({ playwright }) => {
   const made = await api.post(`/v1/criteria-sets/${SHIPPED_SOURCE}/duplicate`, {
     data: { id: SCORING_SET, name: SCORING_SET },
   });
-  expect(made.ok(), await made.text()).toBe(true);
+  // **A set left by an earlier run of this spec is this spec's set.** The delete above is
+  // refused once anything has saved a ranking from it -- an evaluation holds its criteria set
+  // by foreign key, which is the point of freezing them -- so a run that saved one leaves the
+  // set behind for good. Insisting on a fresh copy would make the suite fail for ever after
+  // the first save. `beforeEach` puts the weight back regardless, which is what actually
+  // makes each test independent.
+  const already = made.status() === 409 && (await made.text()).includes("criteria_set_exists");
+  expect(made.ok() || already, await made.text()).toBe(true);
   await api.dispose();
 });
 
@@ -249,12 +256,17 @@ test.describe("a run", () => {
     await page.goto("/acquire");
     await page.getByRole("button", { name: "Estimate an acquisition" }).click();
 
-    const plan = page.getByRole("heading", { name: "What this acquisition would do" });
-    await expect(plan).toBeVisible();
+    // **The figures sit inside the card that asked for them.** Three remedies stand side by
+    // side, and an estimate under the row of them cannot say which of the three it is about.
+    const card = page.getByRole("region", {
+      name: /An acquisition over every country candidate/,
+    });
+    await expect(card.getByText("At most")).toBeVisible();
+    await expect(card.getByText("Paid calls")).toBeVisible();
     // **Named, not filtered.** The last acquisition's report opens with the screen now, and
     // its failures table has a Source column too.
     await expect(page.getByRole("table", { name: /per source/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Start this acquisition" })).toBeVisible();
+    await expect(card.getByRole("button", { name: "Start this acquisition" })).toBeVisible();
 
     // The estimate is an estimate. Nothing was started, which is the whole point of showing it.
     expect(started).toEqual([]);
@@ -279,16 +291,14 @@ test.describe("a run", () => {
     // background task, so the screen shows `running` first and `completed` when it is. This
     // asserted the end state immediately and passed only while the endpoint blocked -- the
     // refresh button beside it exists for exactly this.
-    // Scoped to the report. The first definition on the page belongs to the sidebar's
-    // candidate counts, which is what an unscoped lookup found.
-    const status = page
-      .getByRole("region", { name: `Acquisition ${run}` })
-      .getByRole("definition")
-      .first();
+    // Scoped to the card, which carries the status as a pill beside its heading. Read off the
+    // whole card rather than one node: the status is a word in the design's own shape, and a
+    // test that pinned which element holds it would break on the next time it moves.
+    const card = page.getByRole("region", { name: `Acquisition ${run}` });
     await expect
       .poll(async () => {
         await page.getByRole("button", { name: "Refresh" }).click();
-        return status.textContent();
+        return card.textContent();
       }, { timeout: 30_000, message: "the run never reported a terminal status" })
       .toMatch(/completed|failed|halted/);
   });
@@ -376,7 +386,7 @@ async function scoreOf(page: Page, country: string): Promise<string> {
  * this looks rather than carrying a copy of it.
  */
 async function openPillarOf(page: Page, attribute: string): Promise<string> {
-  const weight = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
+  const weight = page.getByRole("slider", { name: `Weight for ${attribute}` });
   const weights = page.getByRole("region", { name: "Pillar weights" });
   // **`all()` does not wait.** It reads the rows that exist at this instant, and the criteria
   // set is still in flight when a test has just navigated -- so the list comes back empty and
@@ -417,7 +427,7 @@ async function openPillarOf(page: Page, attribute: string): Promise<string> {
 
 async function currentWeight(page: Page, attribute: string): Promise<string> {
   await openPillarOf(page, attribute);
-  const input = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
+  const input = page.getByRole("slider", { name: `Weight for ${attribute}` });
   await input.waitFor();
   return input.inputValue();
 }
@@ -426,16 +436,14 @@ async function setCriterionWeight(page: Page, attribute: string, weight: string)
   await page.goto("/configure");
   await chooseScoringSet(page);
   await openPillarOf(page, attribute);
-  const input = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
+  // **A slider that commits on release**, as the design draws it. There is no Save: letting
+  // go is the save, so the gesture is a fill followed by the pointer coming up.
+  const input = page.getByRole("slider", { name: `Weight for ${attribute}` });
   await input.waitFor();
   if ((await input.inputValue()) === weight) return;
 
   await input.fill(weight);
-  await page
-    .getByRole("row")
-    .filter({ hasText: attribute })
-    .getByRole("button", { name: "Save" })
-    .click();
+  await input.dispatchEvent("pointerup");
   await expect(input).toHaveValue(weight);
 }
 
@@ -451,7 +459,7 @@ async function weightsInPillar(page: Page, attribute: string): Promise<number[]>
   const inside = page.getByRole("region", {
     name: "Attribute weights inside this pillar",
   });
-  const inputs = await inside.getByRole("spinbutton").all();
+  const inputs = await inside.getByRole("slider").all();
   const weights: number[] = [];
   for (const input of inputs) {
     weights.push(Number(await input.inputValue()));

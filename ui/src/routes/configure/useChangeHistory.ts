@@ -17,10 +17,14 @@ export interface RecordedChange extends Change {
 
 export interface ChangeHistory {
   changes: RecordedChange[];
-  /** Note a change that has already been made, with the call that would undo it. */
-  note: (
-    entry: Omit<RecordedChange, "id">,
-  ) => void;
+  /**
+   * Note a change that has already been made, with the call that would undo it.
+   *
+   * **The id and the time are stamped here, not passed in.** Both are facts about the
+   * recording rather than decisions of the caller, and a caller that could supply its own
+   * would be able to record a change as having happened at a moment it did not.
+   */
+  note: (entry: Omit<RecordedChange, "id" | "at">) => void;
   /** Undo this change and every change made after it. */
   undoThrough: (id: number) => void;
   /** Undo everything this session did, oldest last. */
@@ -37,9 +41,13 @@ export function useChangeHistory(): ChangeHistory {
   // screen depends on its value.
   const nextId = useRef(1);
 
-  const note = useCallback((entry: Omit<RecordedChange, "id">) => {
+  const note = useCallback((entry: Omit<RecordedChange, "id" | "at">) => {
     setChanges((history) =>
-      record(history, { ...entry, id: nextId.current++ }) as RecordedChange[],
+      record(history, {
+        ...entry,
+        id: nextId.current++,
+        at: new Date(),
+      }) as RecordedChange[],
     );
   }, []);
 

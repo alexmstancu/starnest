@@ -3,9 +3,26 @@ import type { Criterion, CriterionRule } from "../../../api/endpoints";
 import { lockedAttributes } from "../../../api/errorPresentation";
 import { formatPercentage } from "../../../format/display";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CriteriaEditor } from "../useCriteriaEditor";
-import { totalsByPillar, weightAsText, weightFrom } from "../weights";
+import {
+  CRITERION_CEILING_FLOOR,
+  CRITERION_SLIDER,
+  sliderCeiling,
+  totalsByPillar,
+  weightFrom,
+  weightReading,
+} from "../weights";
+import {
+  chipsFor,
+  titleOf,
+  describeValueType,
+  hasNoSource,
+  weightBarWidth,
+  type AttributeCatalog,
+  type CatalogAttribute,
+  type ChipTone,
+} from "./criterionReading";
 import { CriterionRuleFields } from "./CriterionRuleFields";
 import { useCriterionRule } from "./useCriterionRule";
 
@@ -19,10 +36,16 @@ import { useCriterionRule } from "./useCriterionRule";
  *
  * A refusal is shown rather than absorbed. `409 weights_all_locked` means the weight was not
  * set; a screen that stayed silent would leave the user believing it had been.
+ *
+ * **A block per attribute, not a table row.** A criterion is a rule with half a dozen parts,
+ * and a table forces each part into a column of its own -- which makes the goal, the threshold
+ * and the method look like three independent facts rather than one sentence about one
+ * attribute. The block says the name, then the rule, then the weight, in that order.
  */
 export function CriteriaPanel({
   editor,
   pillar,
+  catalog,
 }: {
   editor: CriteriaEditor;
   /**
@@ -33,12 +56,15 @@ export function CriteriaPanel({
    * changed. The same rows either way -- the difference is which question is being asked.
    */
   pillar?: string;
+  /** The catalog, for what each attribute measures and whether anything would answer it. */
+  catalog?: AttributeCatalog;
 }) {
   const headingId = useId();
   const shown =
     pillar === undefined
       ? editor.criteria
       : editor.criteria.filter((criterion) => criterion.pillar === pillar);
+  const ceiling = sliderCeiling(shown.length, CRITERION_CEILING_FLOOR);
 
   return (
     <section className="panel" aria-labelledby={headingId}>
@@ -64,31 +90,20 @@ export function CriteriaPanel({
       {shown.length === 0 ? (
         <p className="screen__note">This criteria set has no criteria.</p>
       ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th scope="col">Attribute</th>
-              {pillar === undefined && <th scope="col">Pillar</th>}
-              <th scope="col">Weight</th>
-              <th scope="col">Locked</th>
-              <th scope="col">Goal</th>
-              <th scope="col">Rule</th>
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((criterion) => (
-              <CriterionRow
-                key={criterion.attribute}
-                criterion={criterion}
-                showPillar={pillar === undefined}
-                saving={editor.savingAttribute === criterion.attribute}
-                onSave={editor.setWeight}
-                onSetLock={editor.setLock}
-                onSaveRule={editor.setRule}
-              />
-            ))}
-          </tbody>
-        </table>
+        <div className="criterion-rows">
+          {shown.map((criterion) => (
+            <CriterionRow
+              key={criterion.attribute}
+              criterion={criterion}
+              attribute={catalog?.get(criterion.attribute)}
+              ceiling={ceiling}
+              saving={editor.savingAttribute === criterion.attribute}
+              onSave={editor.setWeight}
+              onSetLock={editor.setLock}
+              onSaveRule={editor.setRule}
+            />
+          ))}
+        </div>
       )}
     </section>
   );
@@ -123,138 +138,210 @@ function PillarTotals({ criteria }: { criteria: readonly Criterion[] }) {
   );
 }
 
+/** Which chip class each tone is drawn in. The tone is the meaning; this is the tint. */
+const CHIP_CLASS: Record<ChipTone, string> = {
+  accent: "chip chip--accent",
+  neutral: "chip chip--neutral",
+  required: "chip chip--required",
+  warning: "chip chip--warning",
+};
+
 function CriterionRow({
   criterion,
-  showPillar,
+  attribute,
+  ceiling,
   saving,
   onSave,
   onSetLock,
   onSaveRule,
 }: {
   criterion: Criterion;
-  /** False inside a pillar's own row, where every criterion shares the same one. */
-  showPillar: boolean;
+  /** The catalog's entry, or undefined while the catalog is still in flight. */
+  attribute?: CatalogAttribute;
+  ceiling: number;
   saving: boolean;
   onSave: (attribute: string, weight: number) => void;
   onSetLock: (attribute: string, weightLocked: boolean) => void;
   onSaveRule: (attribute: string, rule: CriterionRule) => void;
 }) {
-  const stored = weightAsText(criterion.weight);
-  const [draft, setDraft] = useState(stored);
-  const [notANumber, setNotANumber] = useState(false);
+  // Zero where the server sent no weight at all, which it never does -- `weight` is required
+  // on `Criterion` and optional only in the generated type. A slider has no way to show
+  // "unset", so the fallback is the one value that moves nothing until it is dragged.
+  const stored = String(criterion.weight ?? 0);
+  const [typed, setTyped] = useState(stored);
+  // True only between the first move and letting go. **The reading follows the stored weight
+  // the rest of the time**: a range input snaps its value to the step, and a rebalance
+  // produces 29.17, so a readout taken from the slider would print 29.0 for a weight the
+  // server holds at 29.17 -- the screen contradicting the response it just rendered.
+  const [moving, setMoving] = useState(false);
   // Closed by default: forty-one criteria with their scales open at once is a screen nobody
   // can read. Local state, because which row is open is this component's own business and
   // nothing outside it needs to know.
   const [editingRule, setEditingRule] = useState(false);
   const rule = useCriterionRule(criterion, saving, onSaveRule);
 
-  // A rebalance changes this row's weight without the row having been edited, so the input
-  // follows the stored value rather than keeping whatever was last typed into it.
-  useEffect(() => setDraft(stored), [stored]);
+  // A rebalance moves this row's weight without this row having been dragged, and a refused
+  // change leaves it exactly where it was. Either way the slider follows the stored weight --
+  // without this, the criteria that absorbed a change would keep showing the weights they had
+  // before it, the screen contradicting the response it just rendered the total from.
+  useEffect(() => setTyped(stored), [stored]);
 
-  // A refused change leaves the stored weight exactly where it was, so the input goes back to
-  // it once the attempt is over. Leaving the typed number on screen would have the same screen
-  // reporting the refusal in one place and showing the weight it refused in another -- and the
-  // number in the input is the one a reader takes for the weight being scored.
+  // A refused change leaves the stored weight exactly where it was, so `stored` never
+  // changes and the effect above never fires -- the slider would sit at the position the
+  // server refused. It goes back once the attempt is over, because the position of the thumb
+  // is what a reader takes for the weight being scored.
   const wasSaving = useRef(false);
   useEffect(() => {
-    if (wasSaving.current && !saving) setDraft(stored);
+    if (wasSaving.current && !saving) setTyped(stored);
     wasSaving.current = saving;
   }, [saving, stored]);
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
-
-    const weight = weightFrom(draft);
-    if (weight === null) {
-      setNotANumber(true);
-      return;
-    }
-
-    setNotANumber(false);
-    onSave(criterion.attribute, weight);
+  /**
+   * **Dragging shows; letting go sends.** A range input has no "committed" event -- `change`
+   * fires on every pixel of the drag -- so a naive binding would PATCH the server forty times
+   * for one gesture, and every answer would rebalance the rest of the pillar under the thumb.
+   *
+   * **The value comes from the input, never from state.** The DOM node always holds what the
+   * pointer left there, whatever React has rendered, so a release cannot send the weight the
+   * previous render saw.
+   */
+  function commit(asked: string) {
+    setMoving(false);
+    // A range input always holds a number, so this never fires -- it is here because
+    // `weightFrom` is honest about text that might not be one, and silently sending `NaN`
+    // would be worse than doing nothing.
+    const moved = weightFrom(asked);
+    if (moved === null || moved === criterion.weight) return;
+    onSave(criterion.attribute, moved);
   }
 
+  /**
+   * The four ways a weight gesture ends: a pointer lifts, a mouse lifts, a key comes up after
+   * the arrow keys moved it, or focus leaves with the drag unfinished. One handler, because
+   * they are one event -- "the reader has stopped moving this" -- and four inline arrows would
+   * be four functions saying the same sentence.
+   */
+  const release = (event: { currentTarget: { value: string } }) =>
+    commit(event.currentTarget.value);
+
+  const typeLine = describeValueType(attribute?.value_type, attribute?.unit);
+  const title = titleOf(criterion.attribute, attribute);
+  const locked = criterion.weight_locked ?? false;
+
   return (
-    <>
-      <tr className="table__row">
-        <th scope="row">{criterion.attribute}</th>
-        {showPillar && <td>{criterion.pillar}</td>}
-        <td>
-          <form className="weight-form" onSubmit={submit}>
-            <input
-              className="field__control weight-form__input"
-              type="number"
-              min={0}
-              max={100}
-              step="any"
-              value={draft}
-              aria-label={`Weight for ${criterion.attribute}`}
-              onChange={(event) => setDraft(event.target.value)}
-            />
-            <button
-              type="submit"
-              className="button"
-              disabled={saving || draft === stored}
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-            {notANumber && (
-              <p className="weight-form__problem" role="alert">
-                A weight must be a number.
-              </p>
-            )}
-          </form>
-        </td>
-        <td>
-          {/* Sent with the weight, not separately: the server rebalances the *unlocked*
-              siblings, so which of them absorb a change depends on what is locked at the
-              moment it is made. Two requests would let their order decide the answer. */}
-          {/* **The name is on the input, and the visible word is decorative.** A `.toggle`
-              whose only child is a `visually-hidden` span has no width outside a flex row, so
-              it collapses to a target nothing can click -- which a component test cannot see,
-              because it clicks the element rather than a point on the screen. */}
-          <label className="toggle toggle--lock">
-            <input
-              type="checkbox"
-              aria-label={`Lock the weight for ${criterion.attribute}`}
-              checked={criterion.weight_locked ?? false}
-              disabled={saving}
-              onChange={(event) =>
-                onSetLock(criterion.attribute, event.target.checked)
-              }
-            />
-            <span aria-hidden="true">
-              {criterion.weight_locked ? "Locked" : "Unlocked"}
-            </span>
-          </label>
-        </td>
-        <td>{criterion.goal}</td>
-        <td>
+    <div className="criterion-row" role="group" aria-label={criterion.attribute}>
+      <div className="criterion-row__head">
+        <span className="criterion-row__what">
+          <span className="criterion-row__name">{title.name}</span>
+          {title.identifier !== null && (
+            <code className="criterion-row__id">{title.identifier}</code>
+          )}
+          {/* Empty while the catalog is in flight, and empty for an attribute it has never
+              heard of: an empty line is what is true then, and "Unknown type" would not be. */}
+          {typeLine !== "" && (
+            <span className="criterion-row__type">{typeLine}</span>
+          )}
+        </span>
+
+        <span className="criterion-row__controls">
+          <input
+            className="criterion-row__slider"
+            type="range"
+            min={CRITERION_SLIDER.min}
+            max={ceiling}
+            step={CRITERION_SLIDER.step}
+            value={typed}
+            disabled={saving}
+            aria-label={`Weight for ${criterion.attribute}`}
+            onChange={(event) => {
+              setMoving(true);
+              setTyped(event.target.value);
+            }}
+            onPointerUp={release}
+            onMouseUp={release}
+            onKeyUp={release}
+            onBlur={release}
+          />
+
+          <span className="criterion-row__value">
+            {weightReading(moving ? typed : stored)}
+          </span>
+
+          {/* **A button, not a checkbox.** The design draws a filled or hollow disc, and a
+              native checkbox cannot be one without being hidden behind a label -- which is
+              the shape that shipped a lock nobody could click (P52). Sent on its own, never
+              with the weight: the server refuses to move a locked weight even to the value it
+              already holds, so a lock travels alone. */}
           <button
             type="button"
-            className="button"
-            aria-expanded={editingRule}
-            onClick={() => setEditingRule((open) => !open)}
+            className={
+              locked
+                ? "criterion-row__lock criterion-row__lock--on"
+                : "criterion-row__lock"
+            }
+            aria-label={`Lock the weight for ${criterion.attribute}`}
+            aria-pressed={locked}
+            disabled={saving}
+            title={
+              locked
+                ? "Held where it is, and takes no share of a rebalance"
+                : "Moves in proportion when another weight changes"
+            }
+            onClick={() => onSetLock(criterion.attribute, !locked)}
           >
-            {editingRule ? "Close" : "Edit"} the rule for {criterion.attribute}
+            <span aria-hidden="true">{locked ? "●" : "○"}</span>
           </button>
-        </td>
-      </tr>
+        </span>
+      </div>
+
+      {/* **An SVG, because the geometry is data.** A `<div>` filled to a width would put a
+          style attribute in a component, which is what makes a redesign a rewrite; a `rect`
+          carries its width as an attribute and its colour as a class. Hidden from the reading
+          order because the figure beside it says the same thing in words. */}
+      <svg
+        className="criterion-row__bar"
+        viewBox="0 0 100 4"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <rect className="criterion-row__track" width="100" height="4" />
+        <rect
+          className={
+            hasNoSource(attribute)
+              ? "criterion-row__fill criterion-row__fill--unsourced"
+              : "criterion-row__fill"
+          }
+          width={weightBarWidth(criterion.weight)}
+          height="4"
+        />
+      </svg>
+
+      {/* The rule in words, under the weight it earns. Everything here is stored on the
+          criterion or the catalog, and the disclosure below is where it is changed. */}
+      <ul className="criterion-row__chips" aria-label={`Rule for ${criterion.attribute}`}>
+        {chipsFor(criterion, attribute).map((chip) => (
+          <li key={chip.key} className={CHIP_CLASS[chip.tone]}>
+            {chip.text}
+          </li>
+        ))}
+      </ul>
+
+      <button
+        type="button"
+        className="action"
+        aria-expanded={editingRule}
+        onClick={() => setEditingRule((open) => !open)}
+      >
+        {editingRule ? "Close" : "Edit"} the rule for {criterion.attribute}
+      </button>
       {editingRule && (
-        <tr className="table__row">
-          {/* One cell across the row, because the rule is about the criterion the row names
-              rather than about any one column of it. */}
-          <td colSpan={5}>
-            <CriterionRuleFields
-              form={rule}
-              attribute={criterion.attribute}
-              saving={saving}
-            />
-          </td>
-        </tr>
+        <CriterionRuleFields
+          form={rule}
+          attribute={criterion.attribute}
+          saving={saving}
+        />
       )}
-    </>
+    </div>
   );
 }
 
@@ -274,7 +361,7 @@ function SaveFailure({ error }: { error: unknown }) {
           <p className="screen__note" id="lock-list-heading">
             Locked, so unable to absorb the change:
           </p>
-          {/* Named, because these attribute ids also appear in the table above: a reader
+          {/* Named, because these attribute ids also appear in the rows above: a reader
               arriving at the list out of context needs to be told which one it is. */}
           <ul className="lock-list" aria-labelledby="lock-list-heading">
             {locked.map((attribute) => (

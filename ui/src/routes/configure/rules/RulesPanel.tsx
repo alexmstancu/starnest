@@ -51,12 +51,19 @@ export function RulesPanel({
       {rules.failure !== null && <ErrorNotice error={rules.failure} />}
 
       {/* Said once, at the top, because the difference between the two kinds is the thing a
-          reader has to hold while reading either list. */}
-      <p className="rule-note">
-        A <strong>gate</strong> makes a candidate not matching, which costs it its
-        rank and leaves its score intact. A <strong>warning</strong> keeps it
-        ranked and says why. Turn one off and it stops being applied — and a rule
-        nobody has answered never fires either way.
+          reader has to hold while reading either list. The disc marks it as the note that
+          explains the two lists rather than a warning about either of them: the shape says
+          which kind of message this is before the sentence is read. */}
+      <p className="rule-note rule-note--marked">
+        <span className="rule-note__mark" aria-hidden="true">
+          i
+        </span>
+        <span>
+          A <strong>gate</strong> makes a candidate not matching, which costs it
+          its rank and leaves its score intact. A <strong>warning</strong> keeps
+          it ranked and says why. Turn one off and it stops being applied — and a
+          rule nobody has answered never fires either way.
+        </span>
       </p>
 
       <h4 className="panel__heading">Gates</h4>

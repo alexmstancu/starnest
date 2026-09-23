@@ -179,7 +179,7 @@ async function openPillarOf(
   page: import("@playwright/test").Page,
   attribute: string,
 ): Promise<void> {
-  const weight = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
+  const weight = page.getByRole("slider", { name: `Weight for ${attribute}` });
   const weights = page.getByRole("region", { name: "Pillar weights" });
   // **`all()` does not wait.** It reads the rows that exist at this instant, and the criteria
   // set is still in flight when a test has just navigated -- so the list comes back empty and
@@ -226,7 +226,7 @@ async function moveTheWeight(
   await page.goto("/configure");
   await selectTheScoringSet(page);
   await openPillarOf(page, attribute);
-  const input = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
+  const input = page.getByRole("slider", { name: `Weight for ${attribute}` });
   await input.waitFor();
   const now = await input.inputValue();
   await setWeight(page, attribute, now === A_DIFFERENT_WEIGHT ? "60" : A_DIFFERENT_WEIGHT);
@@ -239,20 +239,18 @@ async function setWeight(
 ): Promise<void> {
   await selectTheScoringSet(page);
   await openPillarOf(page, attribute);
-  const input = page.getByRole("spinbutton", { name: `Weight for ${attribute}` });
+  const input = page.getByRole("slider", { name: `Weight for ${attribute}` });
   await input.waitFor();
 
-  // Nothing to do, and nothing the screen would let us do: Save is disabled until the weight
-  // actually changes. A restore hits this whenever the test it follows changed nothing.
+  // Nothing to do: the panel sends only a weight that moved. A restore hits this whenever the
+  // test it follows changed nothing.
   if ((await input.inputValue()) === weight) return;
 
+  // **Letting go is the save.** The weight is a slider, as the design draws it, and it commits
+  // when the pointer comes up -- there is no Save beside it.
   await input.fill(weight);
-  await page
-    .getByRole("row")
-    .filter({ hasText: attribute })
-    .getByRole("button", { name: "Save" })
-    .click();
-  // The server's answer, not ours: the row shows what came back from the PATCH.
+  await input.dispatchEvent("pointerup");
+  // The server's answer, not ours: the row shows what came back from the PUT.
   await expect(input).toHaveValue(weight);
 }
 

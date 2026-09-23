@@ -9,7 +9,7 @@ import {
 } from "./settingsForm";
 
 /**
- * The four tuning values, as text and back.
+ * The five tuning values, as text and back.
  *
  * **The empty case is the one that matters.** Every setting is provisional (`reqs.md` 3.10), so
  * an emptied field must stay empty and travel as null: a score scale of 100 nobody chose is the
@@ -84,16 +84,32 @@ describe("what a blank setting costs", () => {
     refetch_older_than_days: "365",
   };
 
-  it("finds nothing unset when all four are filled", () => {
+  it("finds nothing unset when all five are filled", () => {
     expect(unsetFields(filled)).toEqual([]);
     expect(isBlocked(filled)).toBe(false);
   });
 
+  /**
+   * The order is the screen's, not the record's: the coverage floor leads and the score scale
+   * follows it, so a list that came back in declaration order would read differently from the
+   * fields it is describing.
+   */
   it("names the fields left blank, in the order they are shown", () => {
-    const draft = { ...filled, min_coverage: "", run_spend_cap_eur: "" };
+    const draft = { ...filled, score_scale_max: "", min_coverage: "" };
     expect(unsetFields(draft).map((field) => field.name)).toEqual([
       "min_coverage",
-      "run_spend_cap_eur",
+      "score_scale_max",
+    ]);
+  });
+
+  /** Every field is counted in something, and a field with no unit would print a bare box. */
+  it("counts every setting in a stated unit", () => {
+    expect(SETTING_FIELDS.map((field) => field.unit)).toEqual([
+      "%",
+      "points",
+      "candidates",
+      "€",
+      "days",
     ]);
   });
 
@@ -103,7 +119,7 @@ describe("what a blank setting costs", () => {
 
   /**
    * The distinction the design's R3 turns on: an unset score scale stops the product working,
-   * while the other three merely leave a rule off. One red, three amber.
+   * while the other four merely leave a rule off. One red, four amber.
    */
   it("blocks only on the score scale", () => {
     expect(isBlocked({ ...filled, score_scale_max: "" })).toBe(true);

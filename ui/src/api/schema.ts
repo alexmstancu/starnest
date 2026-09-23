@@ -1120,6 +1120,12 @@ export interface components {
                 candidate: string;
                 attribute: string;
             }[];
+            /** @description What each source contributed: the items it stored a figure for, and the items it failed on. Derived from the value and failure rows rather than stored, for the reason Q217 settled for items_unanswered -- a second record of the same arithmetic can disagree with the first. The two counts are independent and do not sum to anything: a source may fail on an item another source then answers, and both are true of that run. */
+            by_source?: {
+                data_source: string;
+                items_stored: number;
+                items_failed: number;
+            }[];
             failures?: {
                 /** @description Which source failed. Two may answer one attribute, and a retry asks only the one that failed. */
                 data_source: string;

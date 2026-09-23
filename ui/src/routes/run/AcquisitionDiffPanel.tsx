@@ -100,18 +100,30 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
 
       {values.resource.status === "ready" && (
         <>
-          <dl className="stat-list stat-list--inline">
-            <Stat
+          {/* **Four counts, not three.** "Refreshed" used to mean both "the figure moved" and
+              "the same figure came back", which are different answers to the only question
+              this panel asks. A run that re-fetched a thousand figures and moved none of them
+              cost something and changed nothing, and one count hid exactly that. */}
+          <dl className="tiles">
+            <Tile
               label="Newly acquired"
               value={formatCount(values.resource.data.newlyAcquired)}
+              note="No figure for that pair before this run"
             />
-            <Stat
+            <Tile
               label="Refreshed"
               value={formatCount(values.resource.data.refreshed)}
+              note="A figure that moved"
             />
-            <Stat
+            <Tile
+              label="Unchanged"
+              value={formatCount(values.resource.data.unchanged)}
+              note="Re-fetched and identical"
+            />
+            <Tile
               label="Went missing"
               value={formatCount(values.resource.data.wentMissing)}
+              note="The later run produced none — the earlier figure is still stored"
             />
           </dl>
 
@@ -119,7 +131,7 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
             <p className="screen__note">
               Neither acquisition produced a figure for any candidate, so there
               is nothing to compare. Two runs that produced the same pairs are
-              not empty — every pair reads as refreshed.
+              not empty — every pair reads as refreshed or unchanged.
             </p>
           ) : (
             <div className="table-card">
@@ -129,7 +141,15 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
                     <th scope="col">Candidate</th>
                     <th scope="col">Attribute</th>
                     <th scope="col">Source</th>
-                    <th scope="col">Change</th>
+                    {/* The two figures themselves, which is what makes the verdict in the
+                        last column checkable rather than something to take on trust. */}
+                    <th scope="col" className="col--right">
+                      Earlier
+                    </th>
+                    <th scope="col" className="col--right">
+                      Later
+                    </th>
+                    <th scope="col">What happened</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -138,6 +158,8 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
                       <th scope="row">{row.candidate}</th>
                       <td>{row.attribute}</td>
                       <td>{row.data_source ?? "—"}</td>
+                      <td className="col--right">{row.earlier ?? "—"}</td>
+                      <td className="col--right">{row.later ?? "—"}</td>
                       <td>
                         <span className={`chip ${chipFor(row.change)}`}>
                           {row.change}
@@ -155,10 +177,12 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
   );
 }
 
-/** Three outcomes, three tints: they are three different facts, not degrees of one. */
+/** Four outcomes, four tints: they are four different facts, not degrees of one. */
 function chipFor(change: string): string {
   if (change === "newly acquired") return "chip--accent";
   if (change === "refreshed") return "chip--neutral";
+  // A figure that did not move is the quietest thing on the screen, and reads that way.
+  if (change === "unchanged") return "chip--quiet";
   return "chip--not_matching";
 }
 
@@ -166,11 +190,21 @@ function labelFor(run: Run): string {
   return `Acquisition ${run.id} — ${formatDateTime(run.started_at)}`;
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+/** A count with what it counts said underneath, because "refreshed" alone is ambiguous. */
+function Tile({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: string;
+  note: string;
+}) {
   return (
-    <div className="stat">
-      <dt className="stat__label">{label}</dt>
-      <dd className="stat__value">{value}</dd>
+    <div className="tile">
+      <dt className="tile__label">{label}</dt>
+      <dd className="tile__value">{value}</dd>
+      <dd className="tile__note">{note}</dd>
     </div>
   );
 }

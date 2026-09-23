@@ -135,6 +135,36 @@ describe("the design is a plugin", () => {
     expect(styled).toEqual([]);
   });
 
+  it("names no custom property it never declares", () => {
+    /**
+     * **An undeclared custom property fails in silence.** CSS drops the whole declaration and
+     * the property falls back to its initial value, so `gap: var(--space-3)` becomes
+     * `gap: normal` and `padding: var(--space-4)` becomes `padding: 0` -- a card with no
+     * spacing at all, on a stylesheet that parses cleanly and reports nothing. It shipped
+     * exactly once, in an appended block that invented a scale this sheet does not have.
+     *
+     * A comment may name a token in prose, which is why only declarations are read.
+     */
+    const stylesheet = readFileSync(join(SOURCE, "styles.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const declared = new Set(
+      [...stylesheet.matchAll(/^\s*(--[a-z0-9-]+)\s*:/gm)].map(
+        (match) => match[1],
+      ),
+    );
+    const used = [
+      ...new Set(
+        [...stylesheet.matchAll(/var\(\s*(--[a-z0-9-]+)/g)].map(
+          (match) => match[1],
+        ),
+      ),
+    ];
+
+    expect(used.filter((token) => !declared.has(token))).toEqual([]);
+  });
+
   it("is not what the tests depend on", () => {
     /**
      * A test that found an element by class name would break on the redesign, which is the one

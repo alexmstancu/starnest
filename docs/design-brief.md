@@ -174,3 +174,40 @@ already derived in SQL for the detail.
 
 Both are noted rather than worked around: a number on this screen is the server's or it is not
 shown.
+
+## A fifth pass: the Acquire screen, and the one control the contract has no verb for (2026-09-23)
+
+The acquisition card now leads the screen, as the design has it: a reader arriving mid-run, or
+just after one, came for that and was reading past it to standing figures. It carries the
+status as a word, the scope as a sentence, the progress bar, **source by source**, what the run
+came to, and what it was charged.
+
+**"Source by source" needed the backend, and got it rather than an approximation.** A value row
+already names both its run and its source, and so does a failure row, so what each source
+contributed is a `GROUP BY` and not a new column: `RunDetail.by_source` gives `items_stored` and
+`items_failed` per source, derived and never stored, for the reason Q217 settled for
+`items_unanswered` -- a second record of the same arithmetic can disagree with the first. The
+two counts are deliberately independent and sum to nothing: OECD may fail on an item the
+estimate then answers, and both are true of that run.
+
+**Each remedy's estimate moved inside the card that raised it.** Three remedies stand side by
+side and a single panel under them saying "this would cost €0.32" cannot say which of the three
+it is about -- a reader who clicked *Retry* was reading the figure for *Ask again*. The
+confirmation moved with it, and *Cancel* became *Not yet*.
+
+**The acquisition diff gained a fourth count, and it is the one that was missing.** "Refreshed"
+meant both *the figure moved* and *the same figure came back*, which are opposite answers to the
+only question the panel asks: a run that re-fetched a thousand values and moved none of them
+cost something and changed nothing. Splitting them needed the figures themselves, which the
+table now prints in an Earlier and a Later column -- so the verdict in the last column is
+checkable rather than trusted. Two figures that could not both be read are called *refreshed*,
+never *unchanged*: inventing agreement out of ignorance is the one thing this application exists
+not to do.
+
+**One control in the design has no verb in the contract: "Stop — keep what completed".** There
+is no cancel operation on a run. It is not a screen gap: a run is a background pass, and
+stopping it means a cooperative check the acquisition loop does not have. Closing it would be a
+`POST /data-acquisition-runs/{runId}/stop`, the loop reading a stop flag between items, and the
+run ending `halted_by_user` -- a fifth status beside the four we have. **Not faked in the
+meantime**: a Stop button that did nothing would be worse than none, because the spend cap is
+the only halt this application currently honours and a reader must not believe there are two.

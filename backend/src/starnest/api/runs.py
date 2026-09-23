@@ -131,11 +131,22 @@ class RetryBody(BaseModel):
     """
 
 
+class SourceReachBody(BaseModel):
+    """How far one source got. Derived from the value and failure rows, never stored."""
+
+    data_source: str
+    items_stored: int
+    items_failed: int
+
+
 class RunDetailBody(RunBody):
     scope: RunScopeBody | None = None
     progress: ProgressBody | None = None
     failures: tuple[FailureBody, ...] = ()
     unanswered: tuple[UnansweredBody, ...] = ()
+    # Source by source. A run's totals say how far it got; this says which source got it there,
+    # which is the question behind every retry.
+    by_source: tuple[SourceReachBody, ...] = ()
 
 
 class RunsBody(BaseModel):
@@ -391,6 +402,14 @@ async def get_run(run_id: int, runs: Runs) -> RunDetailBody:
         unanswered=tuple(
             UnansweredBody(candidate=item.candidate, attribute=item.attribute)
             for item in run.unanswered
+        ),
+        by_source=tuple(
+            SourceReachBody(
+                data_source=str(reach.data_source),
+                items_stored=reach.items_stored,
+                items_failed=reach.items_failed,
+            )
+            for reach in run.by_source
         ),
     )
 

@@ -27,13 +27,18 @@ describe("estimating a run", () => {
 
     await estimate();
 
-    expect(
-      await screen.findByText(/what this acquisition would do/i),
-    ).toBeInTheDocument();
+    // **Inside the card that raised it.** Three remedies stand side by side, and an estimate
+    // under the row of them cannot say which of the three it is about.
+    const card = within(
+      screen.getByRole("region", { name: /an acquisition over every country/i }),
+    );
+    expect(await card.findByText("Items")).toBeInTheDocument();
+    expect(card.getByText("96")).toBeInTheDocument();
+    expect(card.getByText("At most")).toBeInTheDocument();
+    // The per-source detail stays under the row: it is a table, and the row has to stay a row.
     expect(
       screen.getByRole("table", { name: /per source/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText("96")).toBeInTheDocument();
   });
 
   it("says what a cost rests on, because a free plan has nothing to explain", async () => {
@@ -41,8 +46,9 @@ describe("estimating a run", () => {
 
     await estimate();
 
-    await screen.findByText(/what this acquisition would do/i);
-    expect(screen.queryByText(/a ceiling, not a forecast/i)).not.toBeInTheDocument();
+    await screen.findByText("At most");
+    // A free plan has no assumptions to state, so the "i" is absent rather than empty.
+    expect(screen.queryByTitle(/a ceiling, not a forecast/i)).not.toBeInTheDocument();
   });
 
   it("shows the cost and its assumptions when the run would spend", async () => {
@@ -55,12 +61,14 @@ describe("estimating a run", () => {
 
     await estimate();
 
-    await screen.findByText(/what this acquisition would do/i);
+    await screen.findByText("At most");
     // The money, which is the only figure on this plan that is not also a count of items.
     expect(screen.getByText(/2\.10/)).toBeInTheDocument();
+    // The assumptions sit on the figure, not in a paragraph under it: a cost with no stated
+    // assumptions can only be trusted, never judged.
     expect(
-      screen.getByText(/a ceiling, not a forecast/i),
-    ).toHaveTextContent(/12,000 input tokens per call/);
+      screen.getByTitle(/a ceiling, not a forecast/i),
+    ).toHaveAttribute("title", expect.stringContaining("12,000 input tokens per call"));
   });
 
   it("does not start a run until the estimate is accepted", async () => {
@@ -192,17 +200,25 @@ describe("what nobody answered", () => {
   it("counts them beside what answered and what failed", async () => {
     await openTheRun();
 
-    // **Scoped to this acquisition's report.** The strip at the top of the screen says
-    // "Failed" too, about the last acquisition rather than about this one, and an unscoped
-    // query would read whichever happened to render first.
+    // **Scoped to this acquisition's report.** The strip at the top of the screen counts the
+    // last acquisition rather than this one, and an unscoped query would read whichever
+    // happened to render first.
     const report = within(
       screen.getByRole("region", { name: /acquisition 8/i }),
     );
-    // A `dd` takes no accessible name from its `dt`, so the label is found and its value read
-    // beside it -- which is also what a reader does.
-    expect(report.getByText("Unanswered").nextSibling).toHaveTextContent("2");
-    expect(report.getByText("Failed").nextSibling).toHaveTextContent("1");
-    expect(report.getByText("Answered").nextSibling).toHaveTextContent("93");
+
+    // All three in one sentence, which is the arithmetic Q217 closed: 93 answered, 1 failed
+    // and 2 nobody answered account for every item the run asked about. Read as a sentence
+    // rather than as three figures a reader has to add up themselves.
+    expect(
+      report.getByText(/93 figures stored, 1 failed, 2 nobody answered/),
+    ).toBeInTheDocument();
+    // And again on the bar, which is what a screen reader gets.
+    expect(
+      report.getByRole("img", {
+        name: "93 of 96 answered, 1 failed, 2 unanswered",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("names the items, so the reader knows which country learned nothing", async () => {
@@ -559,7 +575,9 @@ describe("re-asking about part of a run", () => {
     );
 
     const strip = await screen.findByRole("alert");
-    await userEvent.click(within(strip).getByRole("button", { name: "Cancel" }));
+    await userEvent.click(
+      within(strip).getByRole("button", { name: "Not yet" }),
+    );
 
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     expect(started).toEqual([]);
@@ -863,14 +881,19 @@ describe("what changed between two acquisitions", () => {
    * Comparing a run to itself is not an empty diff: every pair it produced reads as
    * refreshed. The empty case is two runs that produced nothing.
    */
-  it("reads a run against itself as entirely refreshed", async () => {
+  it("reads a run against itself as entirely unchanged", async () => {
+    // **The figure is what decides, not the pair.** Comparing a run with itself produces the
+    // same figure on both sides for every pair, which is "unchanged" -- and the reason that
+    // distinction is worth drawing: this used to read as a run that refreshed everything.
     renderShell("/acquire");
     const panel = await compare("7", "7");
 
     const row = await panel.findByRole("row", {
       name: /cost_of_living_index/i,
     });
-    expect(row).toHaveTextContent("refreshed");
+    expect(row).toHaveTextContent("unchanged");
+    // And the figure itself in both columns, so the verdict is checkable rather than trusted.
+    expect(within(row).getAllByText("94.5 index_eu27_100")).toHaveLength(2);
     expect(panel.queryByText(/newly acquired/i)).toBeInTheDocument();
   });
 
@@ -882,5 +905,85 @@ describe("what changed between two acquisitions", () => {
     expect(
       await panel.findByText(/neither acquisition produced a figure/i),
     ).toBeInTheDocument();
+  });
+});
+
+describe("the acquisition card", () => {
+  /**
+   * The screen's lead, and the design's: a reader arriving mid-run, or just after one, came
+   * for this. The card reads outward from the whole to the parts -- what it is, what it was
+   * asked to cover, how far it got, which source got it there, and what it came to.
+   */
+  async function theCard() {
+    renderShell("/acquire");
+    await estimate();
+    await userEvent.click(
+      screen.getByRole("button", { name: /start this acquisition/i }),
+    );
+    await screen.findByRole("heading", { name: /acquisition 8/i });
+    return within(screen.getByRole("region", { name: /acquisition 8/i }));
+  }
+
+  it("leads the screen, above the standing figures", async () => {
+    await theCard();
+    const card = screen.getByRole("region", { name: /acquisition 8/i });
+    const holds = screen.getByRole("heading", {
+      name: /what the database holds/i,
+    });
+
+    // `compareDocumentPosition` rather than a class or an index: the question is which one a
+    // reader meets first, and that is exactly what document order means.
+    expect(
+      card.compareDocumentPosition(holds) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("says how big the pass was, rather than leaving two counts to multiply", async () => {
+    const card = await theCard();
+
+    expect(card.getByText(/32 candidates over 41 attributes/)).toBeInTheDocument();
+  });
+
+  it("names the status as a word, not only as a colour", async () => {
+    const card = await theCard();
+
+    expect(card.getByText("completed")).toBeInTheDocument();
+  });
+
+  it("breaks the run down by source, including the one that answered nothing", async () => {
+    // OECD's front door is Cloudflare-challenged, so a run where it answers nothing is the
+    // shipped case -- and the source a reader came to this panel to find.
+    const card = await theCard();
+
+    expect(
+      card.getByRole("img", { name: "eurostat: 93 stored" }),
+    ).toBeInTheDocument();
+    expect(
+      card.getByRole("img", { name: "oecd: 0 stored, 1 failed" }),
+    ).toBeInTheDocument();
+  });
+
+  it("states what was charged even when nothing was", async () => {
+    // Every source shipped today is free. A spend line that appeared only when money moved
+    // would leave a reader unable to tell "free" from "not reported".
+    const card = await theCard();
+
+    expect(card.getByText("No paid call, nothing charged")).toBeInTheDocument();
+  });
+
+  it("puts the run away without touching the run", async () => {
+    const card = await theCard();
+
+    await userEvent.click(card.getByRole("button", { name: "Dismiss" }));
+
+    expect(
+      screen.queryByRole("region", { name: /acquisition 8/i }),
+    ).toBeNull();
+    // The history is untouched: dismissing puts away the screen's view of the run, not the
+    // run. Anything else would make a card that looks closeable into one that deletes.
+    expect(
+      screen.getByRole("heading", { name: /every acquisition so far/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "7" })).toBeInTheDocument();
   });
 });

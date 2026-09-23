@@ -67,3 +67,33 @@ export function describeCommitment(facts: CommitmentFacts): Commitment {
     uncapped: false,
   };
 }
+
+/**
+ * What a run actually cost, once it has run.
+ *
+ * **Spelled out even when it is nothing.** Every source shipped today is free, so the honest
+ * line is almost always "nothing was charged" -- and a spend line that appears only when money
+ * moved would leave a reader unable to tell "free" from "not reported".
+ */
+export function describeSpend(
+  llmCallCount: number | null | undefined,
+  costEur: number | null | undefined,
+): string {
+  const calls = llmCallCount ?? 0;
+  const cost = costEur ?? 0;
+  if (calls <= 0 && cost <= 0) return "No paid call, nothing charged";
+  return `${formatCount(calls)} paid ${calls === 1 ? "call" : "calls"}, ${formatMoney(cost, "EUR")}`;
+}
+
+/**
+ * Why an estimate's money is the figure it is.
+ *
+ * **"At most" is a ceiling, not a forecast**, and the reason belongs on the figure rather than
+ * in a paragraph under it -- a cost with no stated assumptions can only be trusted, never
+ * judged. The assumptions themselves are the server's: it priced the run and it knows what it
+ * assumed.
+ */
+export function describeCeiling(basis: string | null | undefined): string | null {
+  if (basis === null || basis === undefined || basis === "") return null;
+  return `A ceiling, not a forecast: ${basis}`;
+}

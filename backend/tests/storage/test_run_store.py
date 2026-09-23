@@ -188,19 +188,110 @@ class TestWhatNobodyAnswered:
         assert run.unanswered == ()
 
 
-def a_figure(run: int, candidate: str, attribute: str) -> Value:
+def a_figure(run: int, candidate: str, attribute: str, source: str = "eurostat") -> Value:
     """One stored figure, with the provenance every value carries and nothing incidental."""
     return Value(
         candidate=candidate,
         attribute=attribute,
         value_type=ValueType.RATIO,
-        data_source="eurostat",
+        data_source=source,
         reference_period=ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 12, 31)),
         retrieval_date=datetime.now(UTC),
         confidence_level=ConfidenceLevel.HIGH,
         payload=Ratio(value=Decimal("6.3"), basis="households"),
         data_acquisition_run=run,
     )
+
+
+class TestWhichSourceGotItThere:
+    """Source by source: what each stored, and what each failed on.
+
+    A run's totals say how far it got. They do not say which source got it there, which is the
+    question behind every retry -- and the one a reader asks first when a run half-filled.
+    """
+
+    @pytest.fixture
+    async def a_two_source_run(self, pool: AsyncConnectionPool) -> int:
+        return await PostgresRunStore(pool).start_run(
+            RunScope(
+                level="country",
+                candidates=("country.liechtenstein", "country.portugal"),
+                attributes=(OVERBURDEN, OVERCROWDING),
+            ),
+            triggered_by="test",
+        )
+
+    async def test_each_source_reports_what_it_stored(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        store = PostgresRunStore(pool)
+        await PostgresValueStore(pool).append(
+            [
+                a_figure(a_two_source_run, "country.portugal", OVERBURDEN, source="eurostat"),
+                a_figure(a_two_source_run, "country.portugal", OVERCROWDING, source="eurostat"),
+                a_figure(a_two_source_run, "country.liechtenstein", OVERBURDEN, source="oecd"),
+            ]
+        )
+
+        reach = {
+            r.data_source: r.items_stored
+            for r in (await store.read_run(a_two_source_run)).by_source
+        }
+
+        assert reach == {"eurostat": 2, "oecd": 1}
+
+    async def test_a_source_that_only_failed_still_appears(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        """A breakdown that lists only the sources that worked is not a breakdown: the source a
+        reader came here to find is precisely the one that answered nothing."""
+        store = PostgresRunStore(pool)
+        await store.record_failures(
+            a_two_source_run,
+            [
+                AcquisitionFailure(
+                    OVERBURDEN, "403", candidate="country.portugal", data_source="oecd"
+                )
+            ],
+        )
+
+        reach = {
+            r.data_source: (r.items_stored, r.items_failed)
+            for r in (await store.read_run(a_two_source_run)).by_source
+        }
+
+        assert reach == {"oecd": (0, 1)}
+
+    async def test_one_source_failing_where_another_answered_reports_both(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        """The two counts are independent on purpose. OECD failed on the item and Eurostat
+        answered it; the run counts it complete, and OECD's failure is still worth retrying."""
+        store = PostgresRunStore(pool)
+        await PostgresValueStore(pool).append(
+            [a_figure(a_two_source_run, "country.portugal", OVERBURDEN, source="eurostat")]
+        )
+        await store.record_failures(
+            a_two_source_run,
+            [
+                AcquisitionFailure(
+                    OVERBURDEN, "403", candidate="country.portugal", data_source="oecd"
+                )
+            ],
+        )
+
+        run = await store.read_run(a_two_source_run)
+
+        assert run.items_completed == 1
+        assert {r.data_source: (r.items_stored, r.items_failed) for r in run.by_source} == {
+            "eurostat": (1, 0),
+            "oecd": (0, 1),
+        }
+
+    async def test_a_run_that_reached_nobody_has_an_empty_breakdown(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        assert (await PostgresRunStore(pool).read_run(a_two_source_run)).by_source == ()
 
 
 class TestSweepingRunsAProcessAbandoned:

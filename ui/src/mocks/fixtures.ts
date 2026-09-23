@@ -477,6 +477,14 @@ export const STARTED_RUN: Run = {
   finished_at: "2026-09-12T09:00:12Z",
   llm_call_count: 0,
   cost_eur: 0,
+  // The size of the pass, which the server sends on every run and this fixture used to omit.
+  // A mock narrower than the server certifies a screen that would be blank against the real
+  // one -- the fault the `is_enabled` switches shipped with.
+  scope_candidates: 32,
+  scope_attributes: 41,
+  items_total: 96,
+  items_completed: 93,
+  items_failed: 1,
 };
 
 export const STARTED_RUN_DETAIL: RunDetail = {
@@ -508,6 +516,14 @@ export const STARTED_RUN_DETAIL: RunDetail = {
       candidate: "country.liechtenstein",
       attribute: "country.overcrowding_rate",
     },
+  ],
+  // **One source that answered everything and one that answered nothing**, which is the
+  // shipped shape: OECD's front door is Cloudflare-challenged. A mock where every source
+  // succeeded would never exercise the barren bar, and the barren bar is the one a reader
+  // came to this panel to find.
+  by_source: [
+    { data_source: "eurostat", items_stored: 93, items_failed: 0 },
+    { data_source: "oecd", items_stored: 0, items_failed: 1 },
   ],
 };
 

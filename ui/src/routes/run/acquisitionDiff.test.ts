@@ -67,6 +67,7 @@ describe("what changed between two acquisitions", () => {
       rows: [],
       newlyAcquired: 0,
       refreshed: 0,
+      unchanged: 0,
       wentMissing: 0,
     });
   });
@@ -129,5 +130,84 @@ describe("the run a choice names", () => {
   it("refuses anything that is not a whole run id", () => {
     expect(runIdFrom("seven")).toBeNull();
     expect(runIdFrom("7.5")).toBeNull();
+  });
+});
+
+describe("a figure that moved, and one that did not", () => {
+  /**
+   * **They were one word until the figures themselves were read.** A run that re-fetched a
+   * thousand values and moved none of them cost something and changed nothing, and a single
+   * "refreshed" count is exactly where that disappears.
+   */
+  const pair = { candidate: "country.portugal", attribute: "country.rent" };
+
+  it("calls a pair unchanged when both runs produced the same figure", () => {
+    const diff = diffAcquisitions(
+      [{ ...pair, payload: { magnitude: 780, unit: "EUR" } }],
+      [{ ...pair, payload: { magnitude: 780, unit: "EUR" } }],
+    );
+
+    expect(diff.unchanged).toBe(1);
+    expect(diff.refreshed).toBe(0);
+  });
+
+  it("calls it refreshed when the figure moved", () => {
+    const diff = diffAcquisitions(
+      [{ ...pair, payload: { magnitude: 780, unit: "EUR" } }],
+      [{ ...pair, payload: { magnitude: 812, unit: "EUR" } }],
+    );
+
+    expect(diff.refreshed).toBe(1);
+    expect(diff.unchanged).toBe(0);
+  });
+
+  it("carries both figures, so the verdict can be checked rather than trusted", () => {
+    const [row] = diffAcquisitions(
+      [{ ...pair, payload: { magnitude: 780, unit: "EUR" } }],
+      [{ ...pair, payload: { magnitude: 812, unit: "EUR" } }],
+    ).rows;
+
+    expect(row?.earlier).toBe("780 EUR");
+    expect(row?.later).toBe("812 EUR");
+  });
+
+  it("leaves the later figure empty for a pair that went missing", () => {
+    const [row] = diffAcquisitions(
+      [{ ...pair, payload: { magnitude: 780, unit: "EUR" } }],
+      [],
+    ).rows;
+
+    expect(row?.change).toBe("went missing");
+    expect(row?.earlier).toBe("780 EUR");
+    expect(row?.later).toBeNull();
+  });
+
+  it("refuses to call two unreadable figures identical", () => {
+    // Inventing agreement out of ignorance is the one thing this application exists not to
+    // do. With no payload on either side the weaker, true claim is that the pair was
+    // produced again.
+    const diff = diffAcquisitions([{ ...pair }], [{ ...pair }]);
+
+    expect(diff.refreshed).toBe(1);
+    expect(diff.unchanged).toBe(0);
+  });
+
+  it("puts the rows nobody has to act on last", () => {
+    const diff = diffAcquisitions(
+      [
+        { candidate: "a", attribute: "x", payload: { count: 1 } },
+        { candidate: "b", attribute: "x", payload: { count: 1 } },
+      ],
+      [
+        { candidate: "a", attribute: "x", payload: { count: 1 } },
+        { candidate: "c", attribute: "x", payload: { count: 9 } },
+      ],
+    );
+
+    expect(diff.rows.map((row) => row.change)).toEqual([
+      "newly acquired",
+      "went missing",
+      "unchanged",
+    ]);
   });
 });

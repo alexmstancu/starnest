@@ -112,7 +112,7 @@ test.describe("configuring", () => {
     await page.goto("/configure");
     // A textbox rather than a spinbutton: the field takes a decimal by `inputMode`, not a
     // number input with its stepper.
-    const cap = page.getByRole("textbox", { name: /Run spend cap/ });
+    const cap = page.getByRole("textbox", { name: /Spend cap per acquisition/ });
     await expect.poll(() => cap.inputValue()).not.toBe("");
     const before = await cap.inputValue();
     const after = before === "12" ? "13" : "12";
@@ -226,22 +226,24 @@ test.describe("criteria sets", () => {
   test("locks a criterion's weight and unlocks it again", async ({ page }) => {
     await page.goto("/configure");
     const criteria = await attributesInside(page, "governance");
-    const lock = criteria.getByRole("checkbox").first();
+    // **A button, not a checkbox.** The design draws a filled or hollow disc, and a native
+    // checkbox cannot be one without being hidden and faked -- so the control is a button
+    // carrying `aria-pressed`, the same as the pillar lock beside it.
+    const lock = criteria
+      .getByRole("button", { name: /^Lock the weight for/ })
+      .first();
 
-    const before = await lock.isChecked();
+    const before = await lock.getAttribute("aria-pressed");
+    const after = before === "true" ? "false" : "true";
 
-    // **`click()` and then poll, never `setChecked()`.** This checkbox is controlled: it
-    // flips only once the PATCH resolves, and `setChecked` asserts the new state the moment
-    // it has clicked, so it throws "did not change its state" while the request is still in
-    // flight. `toBeChecked` retries, which is what a server-backed toggle needs.
-    //
-    // Rule 3 of this suite still holds -- clicking is driving the real control. It was
-    // `setChecked`'s impatience that did not fit, not the control.
+    // **Click and then poll.** The lock is controlled: it flips only once the PATCH resolves,
+    // so an assertion made the moment the click lands reads the state before the server
+    // answered. `toHaveAttribute` retries, which is what a server-backed toggle needs.
     await lock.click();
-    await expect(lock).toBeChecked({ checked: !before });
+    await expect(lock).toHaveAttribute("aria-pressed", after);
 
     await lock.click();
-    await expect(lock).toBeChecked({ checked: before });
+    await expect(lock).toHaveAttribute("aria-pressed", before ?? "false");
   });
 
   test("shows what each pillar's criteria come to", async ({ page }) => {
@@ -268,7 +270,7 @@ test.describe("a setting nobody has decided", () => {
     page,
   }) => {
     await page.goto("/configure");
-    const limit = page.getByRole("textbox", { name: /Comparator limit/ });
+    const limit = page.getByRole("textbox", { name: /Candidates you can compare at once/ });
     await expect.poll(() => limit.inputValue()).not.toBe("");
     const before = await limit.inputValue();
 
@@ -289,10 +291,14 @@ test.describe("a run", () => {
     await page.goto("/acquire");
     await page.getByRole("button", { name: /Estimate an acquisition/ }).click();
 
-    // The estimate is the whole point: what it would cost, before it costs it.
-    await expect(
-      page.getByRole("heading", { name: /What this acquisition would do/ }),
-    ).toBeVisible();
+    // The estimate is the whole point: what it would cost, before it costs it. **It lives
+    // inside the card that asked for it** -- three remedies stand side by side, and a panel
+    // under the row of them cannot say which of the three its figures are about.
+    const card = page.getByRole("region", {
+      name: /An acquisition over every country candidate/,
+    });
+    await expect(card.getByText("At most")).toBeVisible();
+    await expect(card.getByText("Items")).toBeVisible();
     await expect(
       page.getByRole("button", { name: /Start this acquisition/ }),
     ).toBeEnabled();
@@ -317,18 +323,24 @@ test.describe("what this session changed", () => {
    */
   test("records a weight change and takes it back", async ({ page }) => {
     await page.goto("/configure");
-    const history = page.getByRole("region", { name: "Recent changes" });
+    // The heading carries a count beside its words, so the region's name begins with them
+    // rather than being them.
+    const history = page.getByRole("region", { name: /^Recent changes/ });
     await expect(history.getByText(/Nothing has been changed/)).toBeVisible();
 
-    const criteria = await attributesInside(page, "governance");
-    const row = criteria.getByRole("row").filter({ hasText: "country.rule_of_law" });
-    const weight = row.getByRole("spinbutton");
+    await attributesInside(page, "governance");
+    // **A slider that commits on release**, as the design draws it: a weight is a proportion,
+    // and the question asked of it is "more or less than the one above". There is no Save --
+    // letting go is the save.
+    const weight = page.getByRole("slider", {
+      name: "Weight for country.rule_of_law",
+    });
     await expect.poll(() => weight.inputValue()).not.toBe("");
     const before = await weight.inputValue();
     const after = before === "30" ? "35" : "30";
 
     await weight.fill(after);
-    await row.getByRole("button", { name: "Save" }).click();
+    await weight.dispatchEvent("pointerup");
     await expect(weight).toHaveValue(after);
 
     const entry = history.getByRole("listitem").filter({ hasText: "country.rule_of_law" });
@@ -342,12 +354,9 @@ test.describe("what this session changed", () => {
     // server's, so a reload closes it -- which is the point of reloading here: the value is
     // re-read from the server rather than from what the page still held.
     await page.reload();
-    const reopened = await attributesInside(page, "governance");
+    await attributesInside(page, "governance");
     await expect(
-      reopened
-        .getByRole("row")
-        .filter({ hasText: "country.rule_of_law" })
-        .getByRole("spinbutton"),
+      page.getByRole("slider", { name: "Weight for country.rule_of_law" }),
     ).toHaveValue(before);
   });
 });

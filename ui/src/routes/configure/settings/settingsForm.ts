@@ -23,38 +23,60 @@ export type UnsetSeverity = "blocking" | "advisory";
 export interface SettingField {
   name: SettingName;
   label: string;
+  /**
+   * What the figure is counted in, printed beside the box.
+   *
+   * **Without it every field is a bare number and two of them are ambiguous**: a coverage
+   * floor of 60 could be a percentage or a count of attributes, and a spend cap of 10 could
+   * be euros or calls. The unit is not part of the label, because a label is read out as the
+   * field's name and "Spend cap per acquisition €" is not what it is called.
+   */
+  unit: string;
   description: string;
   /** What is true *while this is blank*, in plain words. */
   consequence: string;
   severity: UnsetSeverity;
 }
 
+/**
+ * The five limits, in the order the design puts them.
+ *
+ * **The floor leads and the ceilings follow**, which is the order they are decided in: what
+ * makes a score trustworthy enough to show, then how high a score goes, then how much may be
+ * compared, spent and re-fetched. The labels are the design's; the descriptions and the
+ * consequences are this project's, because they state what our contract actually does with
+ * each value rather than what a prototype assumed.
+ */
 export const SETTING_FIELDS = [
   {
-    name: "score_scale_max",
-    label: "Score scale maximum",
-    description: "The top of every score. Nothing assumes 100.",
-    consequence: "Nothing can be ranked or compared until this is set.",
-    severity: "blocking",
-  },
-  {
     name: "min_coverage",
-    label: "Minimum coverage",
+    label: "Minimum coverage to score",
+    unit: "%",
     description: "Below this, a candidate is insufficient_data.",
     consequence:
       "No coverage floor is in force, so a candidate is scored however little is known about it.",
     severity: "advisory",
   },
   {
+    name: "score_scale_max",
+    label: "Top of the score range",
+    unit: "points",
+    description: "The top of every score. Nothing assumes 100.",
+    consequence: "Nothing can be ranked or compared until this is set.",
+    severity: "blocking",
+  },
+  {
     name: "comparator_limit",
-    label: "Comparator limit",
+    label: "Candidates you can compare at once",
+    unit: "candidates",
     description: "How many comparators one comparison may hold.",
     consequence: "A comparison accepts as many comparators as you pick.",
     severity: "advisory",
   },
   {
     name: "run_spend_cap_eur",
-    label: "Run spend cap (EUR)",
+    label: "Spend cap per acquisition",
+    unit: "€",
     description: "A run halts here, keeping what it fetched.",
     consequence:
       "A run that can spend refuses to start until a cap is set, or the request accepts going uncapped.",
@@ -62,7 +84,8 @@ export const SETTING_FIELDS = [
   },
   {
     name: "refetch_older_than_days",
-    label: "Refetch data older than (days)",
+    label: "Refetch data older than",
+    unit: "days",
     description:
       "How old a figure must be before a run asks about it again. Not what decides which figure scores.",
     consequence:
@@ -97,7 +120,7 @@ export function isBlocked(draft: SettingsDraft): boolean {
 
 export type SettingsDraft = Record<SettingName, string>;
 
-/** The four values as the text of four inputs, which is what a half-typed number has to be. */
+/** The five values as the text of five inputs, which is what a half-typed number has to be. */
 export function draftOf(settings: Settings): SettingsDraft {
   return Object.fromEntries(
     SETTING_FIELDS.map((field) => [field.name, asText(settings[field.name])]),

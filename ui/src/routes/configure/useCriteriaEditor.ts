@@ -95,6 +95,10 @@ export function useCriteriaEditor(
           );
           history?.note({
             target: `criterion:${attribute}`,
+            // The stage it was made in, named: a criterion's weight is a share of its
+            // pillar's, so it is changed inside the pillar weights rather than anywhere of
+            // its own.
+            stage: "Pillar weights",
             label: `Weight for ${attribute}: ${String(was)} to ${String(weight)}`,
             before: was,
             after: weight,
@@ -131,6 +135,7 @@ export function useCriteriaEditor(
           );
           history?.note({
             target: `lock:${attribute}`,
+            stage: "Pillar weights",
             label: `${weightLocked ? "Locked" : "Unlocked"} ${attribute}`,
             before: !weightLocked,
             after: weightLocked,

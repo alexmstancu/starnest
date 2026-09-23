@@ -6,7 +6,7 @@ import { mockServer } from "../../../mocks/server";
 import { renderShell } from "../../../testing/renderShell";
 
 /**
- * The four tuning values.
+ * The five tuning values.
  *
  * **The behaviour worth testing is the empty one.** Every setting is provisional (`reqs.md`
  * 3.10), and an emptied field must stay empty rather than acquiring a plausible default --
@@ -23,14 +23,37 @@ function field(name: string): HTMLInputElement {
 }
 
 describe("the settings panel", () => {
-  it("shows the four stored values", async () => {
+  it("shows the five stored values", async () => {
     renderShell("/configure");
     await panel();
 
-    expect(field("Score scale maximum")).toHaveValue("100");
-    expect(field("Minimum coverage")).toHaveValue("60");
-    expect(field("Comparator limit")).toHaveValue("5");
-    expect(field("Run spend cap (EUR)")).toHaveValue("10");
+    expect(field("Minimum coverage to score")).toHaveValue("60");
+    expect(field("Top of the score range")).toHaveValue("100");
+    expect(field("Candidates you can compare at once")).toHaveValue("5");
+    expect(field("Spend cap per acquisition")).toHaveValue("10");
+    // Empty in the shipped database, and empty here: an undecided setting shows as nothing.
+    expect(field("Refetch data older than")).toHaveValue("");
+  });
+
+  /**
+   * **A bare number is ambiguous and two of these are the reason.** A coverage floor of 60
+   * could be a percentage or a count of attributes, and a cap of 10 could be euros or calls.
+   * The unit is announced with the field rather than hidden, so it is part of what the field
+   * says rather than decoration beside it.
+   */
+  it("says what each figure is counted in, as part of the field", async () => {
+    renderShell("/configure");
+    const settings = await panel();
+
+    expect(field("Minimum coverage to score")).toHaveAccessibleDescription(
+      /^%/,
+    );
+    expect(field("Spend cap per acquisition")).toHaveAccessibleDescription(
+      /^€/,
+    );
+    expect(settings.getByText("candidates")).toBeInTheDocument();
+    expect(settings.getByText("points")).toBeInTheDocument();
+    expect(settings.getByText("days")).toBeInTheDocument();
   });
 
   it("saves a changed value and shows what came back", async () => {
@@ -38,12 +61,12 @@ describe("the settings panel", () => {
     renderShell("/configure");
     const settings = await panel();
 
-    await user.clear(field("Comparator limit"));
-    await user.type(field("Comparator limit"), "3");
+    await user.clear(field("Candidates you can compare at once"));
+    await user.type(field("Candidates you can compare at once"), "3");
     await user.click(settings.getByRole("button", { name: "Save settings" }));
 
     expect(await settings.findByText("Saved.")).toBeInTheDocument();
-    await waitFor(() => expect(field("Comparator limit")).toHaveValue("3"));
+    await waitFor(() => expect(field("Candidates you can compare at once")).toHaveValue("3"));
   });
 
   it("leaves an emptied setting empty instead of inventing a default", async () => {
@@ -51,11 +74,11 @@ describe("the settings panel", () => {
     renderShell("/configure");
     const settings = await panel();
 
-    await user.clear(field("Score scale maximum"));
+    await user.clear(field("Top of the score range"));
     await user.click(settings.getByRole("button", { name: "Save settings" }));
 
     expect(await settings.findByText("Saved.")).toBeInTheDocument();
-    await waitFor(() => expect(field("Score scale maximum")).toHaveValue(""));
+    await waitFor(() => expect(field("Top of the score range")).toHaveValue(""));
   });
 
   it("shows a refusal, and does not claim to have saved", async () => {
@@ -63,8 +86,8 @@ describe("the settings panel", () => {
     renderShell("/configure");
     const settings = await panel();
 
-    await user.clear(field("Score scale maximum"));
-    await user.type(field("Score scale maximum"), "0");
+    await user.clear(field("Top of the score range"));
+    await user.type(field("Top of the score range"), "0");
     await user.click(settings.getByRole("button", { name: "Save settings" }));
 
     expect(
@@ -109,7 +132,7 @@ describe("a setting that is not set", () => {
     const settings = await panel();
 
     expect(
-      await settings.findByRole("textbox", { name: "Minimum coverage" }),
+      await settings.findByRole("textbox", { name: "Minimum coverage to score" }),
     ).toHaveAttribute("placeholder", "Not set");
   });
 
@@ -172,7 +195,7 @@ describe("a setting that is not set", () => {
     renderShell("/configure");
     const settings = await panel();
 
-    await settings.findByRole("textbox", { name: "Score scale maximum" });
+    await settings.findByRole("textbox", { name: "Top of the score range" });
     expect(settings.queryByRole("alert")).toBeNull();
     expect(settings.queryByText(/is not set/i)).toBeNull();
   });
@@ -195,7 +218,7 @@ describe("a setting that is not set", () => {
     const settings = await panel();
 
     await user.clear(
-      await settings.findByRole("textbox", { name: "Score scale maximum" }),
+      await settings.findByRole("textbox", { name: "Top of the score range" }),
     );
 
     expect(await settings.findByRole("alert")).toHaveTextContent(

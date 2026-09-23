@@ -77,9 +77,9 @@ export function PillarWeightsPanel({
             Pillar weights
           </h3>
           <p className="stage__lead">
-            What each pillar is worth within the level. They sum to{" "}
-            {formatPercentage(total, 0)}; moving one rebalances the rest, which
-            the server computes.
+            What matters, and how much. Moving one weight rebalances the
+            unlocked others in proportion — locks hold, the total is always 100.
+            Open a pillar to see the attributes inside it.
           </p>
         </div>
       </header>
@@ -89,6 +89,9 @@ export function PillarWeightsPanel({
       {failure !== null && <ErrorNotice error={failure} />}
 
       <div className="stage__summary">
+        {/* **The rule this total is held to.** The attribute rule is stated inside an opened
+            pillar, beside the attribute total it governs; putting it here would caption the
+            pillar total with a rule about a different hundred. */}
         <span>Pillar weights sum to 100 within the level</span>
         <span className="stage__summary-total">
           Total
@@ -166,15 +169,30 @@ function PillarRow({
    * for one gesture, and every answer would rebalance the other ten pillars under the thumb.
    * The position is local while the pointer is down and goes to the server when it lifts.
    */
-  function commit() {
+  /**
+   * **The value comes from the input, never from state.** The DOM node always holds what the
+   * pointer left there, whatever React has rendered -- so a release that lands before the
+   * re-render after the drag still sends the weight the reader chose, rather than the one the
+   * previous render saw and deciding nothing moved.
+   */
+  function commit(asked: string) {
     setMoving(false);
     // A range input always holds a number, so this never fires -- it is here because
     // `weightFrom` is honest about text that might not be one, and silently sending `NaN`
     // would be worse than doing nothing.
-    const asked = weightFrom(typed);
-    if (asked === null || asked === weight.weight) return;
-    void onMove(weight.pillar, asked);
+    const moved = weightFrom(asked);
+    if (moved === null || moved === weight.weight) return;
+    void onMove(weight.pillar, moved);
   }
+
+  /**
+   * The four ways a weight gesture ends: a pointer lifts, a mouse lifts, a key comes up after
+   * the arrow keys moved it, or focus leaves with the drag unfinished. One handler, because
+   * they are one event -- "the reader has stopped moving this" -- and four inline arrows would
+   * be four functions saying the same sentence.
+   */
+  const release = (event: { currentTarget: { value: string } }) =>
+    commit(event.currentTarget.value);
 
   const meta =
     count === undefined
@@ -227,10 +245,10 @@ function PillarRow({
             setMoving(true);
             setTyped(event.target.value);
           }}
-          onPointerUp={commit}
-          onMouseUp={commit}
-          onKeyUp={commit}
-          onBlur={commit}
+          onPointerUp={release}
+          onMouseUp={release}
+          onKeyUp={release}
+          onBlur={release}
         />
 
         <span className="weight-row__value">

@@ -44,6 +44,7 @@ export function RankingTable({
   onToggle,
   detail,
   codes,
+  home,
 }: {
   ranking: Ranking;
   open?: readonly OpenRow[];
@@ -62,6 +63,13 @@ export function RankingTable({
    * candidate whose name is not a country's.
    */
   codes?: ReadonlyMap<string, string>;
+  /**
+   * The candidates the household already lives in (`reqs.md` 1.1).
+   *
+   * **A set rather than one id**, because home is a candidate at every level and this table
+   * draws one level at a time -- see `homeCandidates`.
+   */
+  home?: ReadonlySet<string>;
 }) {
   // Where the ranking stops and the set below it starts. Null when everything matches.
   const band = excludedBand(ranking.candidates);
@@ -75,6 +83,7 @@ export function RankingTable({
   }
 
   return (
+    <>
     <div className="table-card">
       {/* Named, because it stops being the only table on the screen the moment a candidate's
           figures are opened -- and several can be open at once. */}
@@ -123,12 +132,21 @@ export function RankingTable({
                 onToggle={onToggle}
                 detail={detail}
                 code={codes?.get(result.candidate)}
+                atHome={home?.has(result.candidate) === true}
               />
             </Fragment>
           ))}
         </tbody>
       </table>
     </div>
+    {/* **Under the table, not over it.** It answers two things a reader only wonders about
+        once they have met a row that has them -- an empty rank cell, and a score cell that
+        says "No score" -- and neither is a caveat about the ranking as a whole. */}
+    <p className="table-note">
+      A candidate a gate ruled out has no rank and keeps its score. One with
+      insufficient data shows no score at all — never a zero.
+    </p>
+    </>
   );
 }
 
@@ -200,6 +218,7 @@ function CandidateRow({
   onToggle,
   detail,
   code,
+  atHome,
 }: {
   result: CandidateResult;
   open: boolean;
@@ -207,6 +226,8 @@ function CandidateRow({
   detail?: (row: OpenRow) => ReactNode;
   /** This candidate's ISO 3166-1 alpha-2, where the catalog holds one. */
   code?: string;
+  /** Whether the household lives here, which is what makes its delta column read as zero. */
+  atHome: boolean;
 }) {
   const matching = result.match_status === "matching";
   const row: OpenRow = {
@@ -266,6 +287,11 @@ function CandidateRow({
         ) : (
           result.name
         )}
+        {/* **Beside the name, not in the delta column.** Home is the row every other row is
+            measured against, and a reader who has not found it cannot read a single delta on
+            the screen. The dash in its own delta cell says what it is, only after you know
+            which row it is. */}
+        {atHome && <span className="chip chip--home">home</span>}
       </th>
       <ScoreCell result={result} />
       {/* Against staying put (`reqs.md` 1.2). Null for home itself and wherever a score is

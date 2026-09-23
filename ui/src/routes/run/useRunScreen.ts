@@ -40,6 +40,16 @@ export type RunAct =
  */
 
 /**
+ * Which of the screen's three remedies raised an estimate.
+ *
+ * **The estimate belongs to the card that asked for it.** Three remedies stand side by side,
+ * and a single panel underneath them saying "this would cost €0.32" cannot say which of the
+ * three it is about -- a reader who clicked *Retry* reads the figure for *Ask again* and has
+ * no way to tell.
+ */
+export type GapKind = "failed" | "unanswered" | "everything";
+
+/**
  * A run that has been estimated and is waiting to be agreed to.
  *
  * **Nothing that can spend fires on a click.** The estimate panel already showed items, paid
@@ -51,10 +61,13 @@ export interface ArmedRun {
   scope: RunScope;
   plan: RunPlan;
   commitment: Commitment;
+  origin: GapKind;
 }
 
 export interface RunScreenState {
   plan: RunPlan | null;
+  /** Which card the estimate belongs to, so it can be shown inside that one. */
+  planOrigin: GapKind | null;
   /** The run awaiting a yes, or null when nothing is armed. */
   armed: ArmedRun | null;
   current: RunDetail | null;
@@ -66,12 +79,14 @@ export interface RunScreenState {
   estimate: (levelId: string) => void;
   start: (levelId: string) => void;
   refresh: () => void;
+  /** Put the run away. It stays in the history; this is the screen's view of it, not the run. */
+  close: () => void;
   /**
    * Estimate a scoped run and arm it. **Scoped rather than a retry**, because
    * `POST /{runId}/retry` takes only `failed | unanswered` over a whole run -- anything
    * narrower has to go through `/plan` and then `POST /data-acquisition-runs`.
    */
-  propose: (scope: RunScope, act: string) => void;
+  propose: (scope: RunScope, act: string, origin: GapKind) => void;
   /** Start the armed run. Only reachable once something has been armed. */
   commit: () => void;
   cancel: () => void;
@@ -82,6 +97,7 @@ export interface RunScreenState {
 
 export function useRunScreen(): RunScreenState {
   const [plan, setPlan] = useState<RunPlan | null>(null);
+  const [planOrigin, setPlanOrigin] = useState<GapKind | null>(null);
   const [current, setCurrent] = useState<RunDetail | null>(null);
   const [busy, setBusy] = useState<RunAct | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
@@ -135,6 +151,7 @@ export function useRunScreen(): RunScreenState {
 
   return {
     plan,
+    planOrigin,
     armed,
     current,
     busy,
@@ -144,18 +161,21 @@ export function useRunScreen(): RunScreenState {
     dismissFailure: () => setFailure(null),
     estimate: (levelId) =>
       void act("planning", async () => {
-        setCurrent(null);
+        setArmed(null);
+        setPlanOrigin("everything");
         setPlan(await planRun({ level: levelId }));
       }),
     start: (levelId) =>
       void act("running", async () => {
         const started = await startRun({ level: levelId });
         setPlan(null);
+        setPlanOrigin(null);
         await watch(started);
       }),
-    propose: (scope, what) =>
+    propose: (scope, what, origin) =>
       void act("planning", async () => {
         setPlan(null);
+        setPlanOrigin(null);
         const planned = await planRun(scope);
         // The cap is read at the moment of arming, not cached: it is a setting somebody may
         // have just changed, and a stale ceiling in a confirmation is worse than none.
@@ -163,6 +183,7 @@ export function useRunScreen(): RunScreenState {
         setArmed({
           scope,
           plan: planned,
+          origin,
           commitment: describeCommitment({
             act: what,
             itemsTotal: planned.items_total,
@@ -183,11 +204,16 @@ export function useRunScreen(): RunScreenState {
         setArmed(null);
         await watch(started);
       }),
-    cancel: () => setArmed(null),
+    cancel: () => {
+      setArmed(null);
+      setPlan(null);
+      setPlanOrigin(null);
+    },
     refresh: () =>
       void act("opening", async () => {
         if (current) setCurrent(await fetchRun(current.id));
       }),
+    close: () => setCurrent(null),
     again: (items) =>
       void act(items === "failed" ? "retrying" : "asking", async () => {
         if (current) await watch(await retryRun(current.id, items));

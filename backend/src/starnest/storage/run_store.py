@@ -23,6 +23,7 @@ from starnest.data_acquisition import (
     RunScope,
     RunStatus,
     RunStore,
+    SourceReach,
     UnansweredItem,
     UnknownRunError,
 )
@@ -127,7 +128,13 @@ class PostgresRunStore(RunStore):
                     connection, data_acquisition_run=run
                 )
             ]
-        return _run_from(row, failures, unanswered)
+            by_source = [
+                reach
+                async for reach in self._queries.select_run_by_source(
+                    connection, data_acquisition_run=run
+                )
+            ]
+        return _run_from(row, failures, unanswered, by_source)
 
     async def read_runs(self, *, limit: int = 20, offset: int = 0) -> tuple[Run, ...]:
         async with acquire(self._pool) as connection:
@@ -180,7 +187,12 @@ class PostgresRunStore(RunStore):
         return tuple(swept)
 
 
-def _run_from(row: Any, failures: Sequence[Any], unanswered: Sequence[Any]) -> Run:
+def _run_from(
+    row: Any,
+    failures: Sequence[Any],
+    unanswered: Sequence[Any],
+    by_source: Sequence[Any] = (),
+) -> Run:
     return Run(
         id=int(row.id),
         status=RunStatus(row.run_status),
@@ -194,6 +206,11 @@ def _run_from(row: Any, failures: Sequence[Any], unanswered: Sequence[Any]) -> R
             candidates=tuple(row.scope_candidates),
             attributes=tuple(row.scope_attributes),
         ),
+        # **The same two counts the history row carries**, derived from the scope this read
+        # already has rather than left at zero. A detail that reported a scope of nothing while
+        # listing its candidates by name would disagree with itself, and with its own list row.
+        scope_candidates=len(row.scope_candidates),
+        scope_attributes=len(row.scope_attributes),
         items_total=int(row.items_total),
         items_completed=int(row.items_completed),
         items_failed=int(row.items_failed),
@@ -210,6 +227,14 @@ def _run_from(row: Any, failures: Sequence[Any], unanswered: Sequence[Any]) -> R
         unanswered=tuple(
             UnansweredItem(candidate=item.candidate, attribute=item.attribute)
             for item in unanswered
+        ),
+        by_source=tuple(
+            SourceReach(
+                data_source=DataSourceId(reach.data_source),
+                items_stored=int(reach.items_stored),
+                items_failed=int(reach.items_failed),
+            )
+            for reach in by_source
         ),
     )
 

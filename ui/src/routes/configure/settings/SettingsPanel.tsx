@@ -6,7 +6,7 @@ import { SETTING_FIELDS, isBlocked, unsetFields } from "./settingsForm";
 import { useSettingsForm } from "./useSettingsForm";
 
 /**
- * The four tuning values (`reqs.md` 3.10).
+ * The five tuning values (`reqs.md` 3.10).
  *
  * **Every one may be empty, and empty is the shipped state.** An empty field is a decision not
  * yet made, so it is sent as null rather than filled in with something plausible.
@@ -47,7 +47,7 @@ function SettingsFields({ settings }: { settings: Settings }) {
           </h3>
           <p className="stage__lead">
             The floor and the ceilings an acquisition respects. Below the coverage floor a
-            candidate shows no score rather than a wrong one. All four are provisional by
+            candidate shows no score rather than a wrong one. All five are provisional by
             design: leave one empty and it stays undecided.
           </p>
         </div>
@@ -84,7 +84,7 @@ function SettingsFields({ settings }: { settings: Settings }) {
         {/* Five short numbers across, as the design has them: a column of them reads as five
             decisions to make in order, and they are independent. */}
         <div className="field-grid">
-        {SETTING_FIELDS.map(({ name, label, description, consequence, severity }) => {
+        {SETTING_FIELDS.map(({ name, label, unit, description, consequence, severity }) => {
           const blank = form.draft[name].trim() === "";
           return (
           <div
@@ -99,15 +99,26 @@ function SettingsFields({ settings }: { settings: Settings }) {
             <label className="field__label" htmlFor={`setting-${name}`}>
               {label}
             </label>
-            <input
-              id={`setting-${name}`}
-              className="field__control"
-              value={form.draft[name]}
-              placeholder="Not set"
-              inputMode="decimal"
-              aria-describedby={`setting-${name}-hint`}
-              onChange={(event) => form.change(name, event.target.value)}
-            />
+            {/* The unit sits beside the box rather than inside the label: a label is the
+                field's name, and "Spend cap per acquisition €" is not what it is called --
+                it is what a screen reader would then announce and what a test would have to
+                match. */}
+            <div className="field__row">
+              <input
+                id={`setting-${name}`}
+                className="field__control"
+                value={form.draft[name]}
+                placeholder="Not set"
+                inputMode="decimal"
+                aria-describedby={`setting-${name}-unit setting-${name}-hint`}
+                onChange={(event) => form.change(name, event.target.value)}
+              />
+              {/* Described by, not hidden: the unit is what the number means, and a reader
+                  who cannot see it beside the box needs it announced with the field. */}
+              <span className="field__affix" id={`setting-${name}-unit`}>
+                {unit}
+              </span>
+            </div>
             <span className="field__note" id={`setting-${name}-hint`}>
               {description}
               {/* What is true *while it is blank*. A description says what the setting is

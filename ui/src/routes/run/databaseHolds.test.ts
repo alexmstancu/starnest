@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  describeGaps,
   describeScope,
   filledOf,
   newestRun,
@@ -135,5 +136,30 @@ describe("how big a pass was", () => {
   it("says nothing rather than zero where there is no scope", () => {
     expect(describeScope({})).toBe("—");
     expect(describeScope({ scope_candidates: 5, scope_attributes: 0 })).toBe("—");
+  });
+});
+
+describe("the line over the three remedies", () => {
+  it("names the acquisition the three counts belong to", () => {
+    // "62 unanswered" is 62 items *that acquisition* asked about and nobody answered, not a
+    // standing property of the corpus. A lead that does not say which run leaves them adrift.
+    expect(describeGaps({ id: 142, progress: { items_total: 1312 } })).toMatch(
+      /All 1312 values acquisition 142 asked for/,
+    );
+  });
+
+  it("falls back to the standing sentence when no run is open", () => {
+    expect(describeGaps(null)).toBe(
+      "Each of these starts a new acquisition. Nothing is fetched or charged until you agree to an estimate.",
+    );
+    expect(describeGaps(undefined)).toBe(describeGaps(null));
+  });
+
+  it("does not claim a run asked for nothing", () => {
+    // A total of zero is a run whose scope never resolved, not a run with nothing to do.
+    expect(describeGaps({ id: 3, progress: { items_total: 0 } })).toBe(
+      describeGaps(null),
+    );
+    expect(describeGaps({ id: 3 })).toBe(describeGaps(null));
   });
 });

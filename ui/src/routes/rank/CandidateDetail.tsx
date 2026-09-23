@@ -25,6 +25,7 @@ import {
   valuesInPillar,
   type Judgement,
 } from "./pillarFilter";
+import { pillarCompleteness, type Completeness } from "./pillarCompleteness";
 import { type PillarScore, pillarBars } from "./rankTable";
 
 /**
@@ -116,6 +117,15 @@ export function CandidateDetail({
         </h4>
       )}
       {values.resource.status === "ready" && (
+        <CompletenessNote
+          completeness={pillarCompleteness(
+            setCriteria,
+            values.resource.data.items,
+            pillar,
+          )}
+        />
+      )}
+      {values.resource.status === "ready" && (
         <ValueTable
           judgements={judgements}
           values={valuesInPillar(
@@ -145,6 +155,42 @@ export function CandidateDetail({
         <ExternalScoreTable scores={external.resource.data.items} />
       )}
     </section>
+  );
+}
+
+/**
+ * How much of what is being scored has a figure at all, said above the figures.
+ *
+ * **The design says "weight was redistributed"; this says what we can see.** A ranking reports
+ * a pillar's weight after redistribution but never which criterion lost its share, so naming
+ * redistribution here would be the interface asserting something the server did not tell it.
+ * The count of attributes with nothing stored is the same fact from the side we can check --
+ * and the reader can check it against the table directly below.
+ *
+ * Amber when something is missing, a quiet line when nothing is: a state worth noticing and a
+ * state worth confirming are not the same thing, and tinting both teaches the reader to ignore
+ * the tint.
+ */
+function CompletenessNote({
+  completeness,
+}: {
+  completeness: Completeness | null;
+}) {
+  if (completeness === null) return null;
+
+  if (completeness.missing === 0) {
+    return <p className="drill__complete">{completeness.sentence}</p>;
+  }
+
+  return (
+    <div className="drill__gap">
+      {/* The disc carries no information the sentence does not; it is what makes the block
+          read as a warning at a glance. */}
+      <span className="drill__gap-mark" aria-hidden="true">
+        !
+      </span>
+      <p className="drill__gap-text">{completeness.sentence}</p>
+    </div>
   );
 }
 
@@ -403,45 +449,50 @@ function ExternalScoreTable({ scores }: { scores: ExternalScore[] }) {
     );
   }
   return (
-    <table className="table table--external">
-      <caption>Not part of any score.</caption>
-      <thead>
-        <tr>
-          <th scope="col">Publisher</th>
-          <th scope="col">Published</th>
-          <th scope="col">Scale</th>
-          <th scope="col">Caveats</th>
-        </tr>
-      </thead>
-      <tbody>
-        {scores.map((score) => (
-          // A publisher may have more than one opinion of a candidate: the natural key in
-          // `external_score` is the publisher, the period and the moment it was read, so the
-          // key here is the same one. Keyed on publisher alone, two Numbeo indices for one
-          // country collided and React rendered one of them twice.
-          <tr
-            key={[
-              score.data_source,
-              score.reference_period?.start ?? "",
-              score.retrieval_date ?? "",
-            ].join("-")}
-          >
-            <th scope="row">
-              <PublisherName
-                publisher={score.data_source}
-                methodology={score.methodology_url}
-              />
-            </th>
-            <td>
-              {score.published_value ?? "—"}
-              {score.published_rank != null &&
-                ` (rank ${score.published_rank})`}
-            </td>
-            <td>{score.published_scale}</td>
-            <td>{score.caveats ?? ""}</td>
+    // **Dashed, and the design means it**: a solid card is what every table that feeds the
+    // score is drawn in, so the broken border is the one visual difference saying this one
+    // does not (`reqs.md` 3.5a). The caption that said so in words is gone -- the heading
+    // above already says these are never counted, and saying it twice reads as a hedge.
+    <div className="table-card table-card--outside">
+      <table className="table table--external" aria-label="Outside opinions">
+        <thead>
+          <tr>
+            <th scope="col">Publisher</th>
+            <th scope="col">Published</th>
+            <th scope="col">Scale</th>
+            <th scope="col">Caveats</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {scores.map((score) => (
+            // A publisher may have more than one opinion of a candidate: the natural key in
+            // `external_score` is the publisher, the period and the moment it was read, so the
+            // key here is the same one. Keyed on publisher alone, two Numbeo indices for one
+            // country collided and React rendered one of them twice.
+            <tr
+              key={[
+                score.data_source,
+                score.reference_period?.start ?? "",
+                score.retrieval_date ?? "",
+              ].join("-")}
+            >
+              <th scope="row">
+                <PublisherName
+                  publisher={score.data_source}
+                  methodology={score.methodology_url}
+                />
+              </th>
+              <td>
+                {score.published_value ?? "—"}
+                {score.published_rank != null &&
+                  ` (rank ${score.published_rank})`}
+              </td>
+              <td>{score.published_scale}</td>
+              <td>{score.caveats ?? ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

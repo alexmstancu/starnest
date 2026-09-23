@@ -11,6 +11,8 @@
  * a configuration screen that lies about what is stored is worse than one with no undo at all.
  */
 
+import { DISPLAY_LOCALE } from "../../format/display";
+
 export interface Change<Value = unknown> {
   /** Unique and increasing, so "everything after this" is a comparison rather than a search. */
   id: number;
@@ -21,6 +23,16 @@ export interface Change<Value = unknown> {
   target: string;
   /** What to call it on screen. */
   label: string;
+  /**
+   * The stage the change was made in, named rather than numbered.
+   *
+   * **A number would be a second copy of the order.** The stages are numbered by a CSS
+   * counter precisely so that moving a card moves its numeral with it; "Stage 3" written
+   * here would be the one place that could then disagree with the screen.
+   */
+  stage: string;
+  /** When it was made, so a list of six changes reads as a sequence rather than a heap. */
+  at: Date;
   before: Value;
   after: Value;
 }
@@ -43,6 +55,9 @@ export function record<Value>(
 ): Change<Value>[] {
   const latest = history[0];
   if (latest?.target === change.target) {
+    // The latest `at`, because the collapsed entry is the gesture as it now stands -- the
+    // reading a user checks it against is "when did I last touch this", not when they
+    // started.
     return [{ ...change, before: latest.before }, ...history.slice(1)];
   }
   return [change, ...history];
@@ -68,6 +83,20 @@ export function describeReach(reach: number): string {
   if (reach <= 0) return "Nothing to undo";
   if (reach === 1) return "Undo this";
   return `Undo this and the ${reach - 1} after it`;
+}
+
+/**
+ * When a change was made, to the minute.
+ *
+ * **The clock, not the date.** Every entry here was made in this session, so a date would be
+ * the same on all of them and say nothing; the minute is what separates two edits to the same
+ * weight. Local time, because this is a record of what the person at the keyboard just did.
+ */
+export function describeWhen(at: Date): string {
+  return new Intl.DateTimeFormat(DISPLAY_LOCALE, {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(at);
 }
 
 /** What is left once these have been undone. */

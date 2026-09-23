@@ -298,3 +298,35 @@ SET    run_status  = 'failed',
        finished_at = :finished_at
 WHERE  run_status = 'running'
 RETURNING id;
+
+-- name: select_run_by_source(data_acquisition_run)
+-- What each source contributed to one run: the items it stored a figure for, and the items it
+-- failed on.
+--
+-- **Derived, never stored**, for the reason Q217 settled for items_unanswered: a second record
+-- of the same arithmetic can disagree with the first, and then neither is trustworthy. A value
+-- row already names both its run and its source, and so does a failure row.
+--
+-- The source list is the union of the two sides, so a source that only failed and a source
+-- that only answered both appear. Leaving either out would make a "source by source" panel
+-- silently incomplete, which is worse than not drawing it.
+--
+-- A source's two counts are independent and deliberately not made to sum to anything: OECD may
+-- fail on an item the estimate then answers, and both facts are true of that run.
+SELECT reached.data_source,
+       (SELECT count(DISTINCT (v.candidate, v.attribute))
+        FROM   value AS v
+        WHERE  v.data_acquisition_run = :data_acquisition_run
+          AND  v.data_source = reached.data_source) AS items_stored,
+       (SELECT count(DISTINCT (f.candidate, f.attribute))
+        FROM   data_acquisition_failure AS f
+        WHERE  f.data_acquisition_run = :data_acquisition_run
+          AND  f.data_source = reached.data_source) AS items_failed
+FROM   (SELECT DISTINCT data_source
+        FROM   value
+        WHERE  data_acquisition_run = :data_acquisition_run
+        UNION
+        SELECT DISTINCT data_source
+        FROM   data_acquisition_failure
+        WHERE  data_acquisition_run = :data_acquisition_run) AS reached
+ORDER  BY reached.data_source;

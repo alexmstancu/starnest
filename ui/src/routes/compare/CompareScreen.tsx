@@ -4,6 +4,7 @@ import { ComparisonMatrix } from "./ComparisonMatrix";
 import { ViewChoices } from "./ViewChoices";
 import type { Measure } from "./pillarMatrix";
 import { droppedByLimit, withinLimit } from "./comparatorLimit";
+import { tagByImpact, type TaggedLine } from "./synthesisImpact";
 import {
   fetchCandidates,
   fetchComparison,
@@ -315,51 +316,11 @@ function ComparisonTable({
           between pairs. A key has to be unique among siblings, not meaningful. */}
       <div className="synthesis">
       {(comparison.synthesis ?? []).map((pair, at) => (
-        <section key={`${pair.comparator ?? "pair"}-${at}`} className="panel synthesis__card">
-          <div className="panel__head">
-            <h4 className="synthesis__name">
-              {nameOf(comparison, pair.comparator ?? "")}
-            </h4>
-            <span
-              className={
-                pair.score_delta != null && pair.score_delta < 0
-                  ? "synthesis__delta synthesis__delta--behind"
-                  : "synthesis__delta synthesis__delta--ahead"
-              }
-            >
-              {formatSigned(pair.score_delta)}
-            </span>
-          </div>
-          <p className="synthesis__lead">
-            By impact on the total, not by how large the gap looks.
-          </p>
-          {/* Stacked, not label-and-value: a list is not a figure, and pushing it to the
-              right of its own label left a column of text hard against the card's edge. The
-              design colours the two labels instead -- ahead in the success green, behind in
-              the danger red -- so the direction is readable before the words are. */}
-          <dl className="stat-list stat-list--stacked">
-            <div className="stat stat--ahead">
-              <dt className="stat__label">Ahead on</dt>
-              <dd className="stat__value">
-                <ul className="line-list">
-                  {(pair.advantages ?? []).map((line, at) => (
-                    <li key={`${at}-${line}`}>{line}</li>
-                  ))}
-                </ul>
-              </dd>
-            </div>
-            <div className="stat stat--behind">
-              <dt className="stat__label">Behind on</dt>
-              <dd className="stat__value">
-                <ul className="line-list">
-                  {(pair.disadvantages ?? []).map((line, at) => (
-                    <li key={`${at}-${line}`}>{line}</li>
-                  ))}
-                </ul>
-              </dd>
-            </div>
-          </dl>
-        </section>
+        <SynthesisCard
+          key={`${pair.comparator ?? "pair"}-${at}`}
+          name={nameOf(comparison, pair.comparator ?? "")}
+          pair={pair}
+        />
       ))}
       </div>
 
@@ -437,6 +398,83 @@ function ComparisonTable({
         </tbody>
       </table>
     </>
+  );
+}
+
+/**
+ * One comparator's synthesis: the score gap, then what made it, ordered by what each gap is
+ * worth.
+ *
+ * **The three tags are the only thing here this screen decides, and they decide nothing.**
+ * They mark which lines the server's own numbers put first when both lists are read together
+ * -- see `tagByImpact`, which withholds every tag rather than guess at one.
+ */
+function SynthesisCard({
+  name,
+  pair,
+}: {
+  name: string;
+  pair: NonNullable<Comparison["synthesis"]>[number];
+}) {
+  const ranked = tagByImpact(pair.advantages, pair.disadvantages);
+
+  return (
+    <section className="panel synthesis__card">
+      <div className="panel__head">
+        <h4 className="synthesis__name">{name}</h4>
+        <span
+          className={
+            pair.score_delta != null && pair.score_delta < 0
+              ? "synthesis__delta synthesis__delta--behind"
+              : "synthesis__delta synthesis__delta--ahead"
+          }
+        >
+          {formatSigned(pair.score_delta)}
+        </span>
+      </div>
+      <p className="synthesis__lead">
+        By impact on the total, not by how large the gap looks.
+      </p>
+      {/* Stacked, not label-and-value: a list is not a figure, and pushing it to the
+          right of its own label left a column of text hard against the card's edge. The
+          design colours the two labels instead -- ahead in the success green, behind in
+          the danger red -- so the direction is readable before the words are. */}
+      <dl className="stat-list stat-list--stacked">
+        <div className="stat stat--ahead">
+          <dt className="stat__label">Ahead on</dt>
+          <dd className="stat__value">
+            <ImpactLines lines={ranked.advantages} />
+          </dd>
+        </div>
+        <div className="stat stat--behind">
+          <dt className="stat__label">Behind on</dt>
+          <dd className="stat__value">
+            <ImpactLines lines={ranked.disadvantages} />
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
+/**
+ * The sentences of one list, each with its place across both lists where it has one.
+ *
+ * **The tag leads the line rather than trailing it.** Every sentence ends in the number it was
+ * ranked on, and a "#1" after that number reads as part of the arithmetic.
+ */
+function ImpactLines({ lines }: { lines: readonly TaggedLine[] }) {
+  return (
+    <ul className="line-list">
+      {lines.map((each, at) => (
+        <li key={`${at}-${each.line}`}>
+          {each.tag !== null && (
+            <span className="line-list__tag">{each.tag}</span>
+          )}
+          <span className="line-list__line">{each.line}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

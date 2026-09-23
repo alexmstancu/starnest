@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
+import { HOUSEHOLD } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -97,6 +98,45 @@ describe("the ranking table", () => {
     expect(rank.getByText("Computed").nextSibling).toHaveTextContent(
       "30 Aug 2026, 09:15",
     );
+  });
+});
+
+describe("the row the household lives in", () => {
+  /**
+   * Home is the row every delta on the screen is measured against, and nothing said which row
+   * it was -- the dash in its own delta cell only makes sense once you already know.
+   */
+  it("marks the home country beside its name", async () => {
+    mockServer.use(
+      http.get("/v1/household", () =>
+        HttpResponse.json({ ...HOUSEHOLD, home_country_candidate: "country.portugal" }),
+      ),
+    );
+    renderShell("/rank");
+
+    const pill = await screen.findByText("home");
+
+    expect(pill.closest("tr")).toHaveTextContent("Portugal");
+  });
+
+  /** The shipped household lives outside the roster, and an unmarked table is the right answer. */
+  it("marks nothing when no ranked candidate is home", async () => {
+    renderShell("/rank");
+
+    await screen.findByRole("table", { name: /ranked candidates/i });
+    expect(screen.queryByText("home")).toBeNull();
+  });
+});
+
+describe("what the table cannot say inside itself", () => {
+  it("explains the rows with no rank and the ones with no score", async () => {
+    renderShell("/rank");
+
+    await screen.findByRole("table", { name: /ranked candidates/i });
+
+    expect(
+      screen.getByText(/a candidate a gate ruled out has no rank/i),
+    ).toHaveTextContent("never a zero");
   });
 });
 
@@ -378,8 +418,10 @@ describe("the drill-down", () => {
       within(await rankingRow("Portugal")).getByRole("button"),
     );
 
+    // Named by the section it belongs to. The caption that used to name it said "Not part of
+    // any score", which the heading above the table already says.
     const outside = await screen.findByRole("table", {
-      name: /not part of any score/i,
+      name: /outside opinions/i,
     });
     expect(
       within(outside).getByRole("link", { name: "numbeo" }),
@@ -424,6 +466,66 @@ describe("the drill-down", () => {
     expect(within(estimate).queryByRole("link", { name: /source 2/i })).toBeNull();
   });
 
+  /**
+   * The drill-down showed the figures a candidate has and said nothing about the ones it does
+   * not, so a pillar scored from three attributes out of eight looked complete.
+   */
+  it("says how many of the set's attributes have no stored value", async () => {
+    renderShell("/rank");
+
+    await userEvent.click(
+      within(await rankingRow("Portugal")).getByRole("button"),
+    );
+
+    // The set scores seven attributes; the mock stores figures for two of them.
+    expect(
+      await screen.findByText(
+        "5 of the 7 attributes this set scores have no stored value.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says so plainly when nothing is missing, rather than tinting that too", async () => {
+    mockServer.use(
+      http.get("/v1/values", () =>
+        HttpResponse.json({
+          items: [
+            "country.cost_of_living_index",
+            "country.total_tax_rate_effective",
+            "country.economic_outlook",
+            "country.housing_cost_overburden_rate",
+            "country.overcrowding_rate",
+            "country.homicide_rate",
+            "country.perceived_safety_index",
+          ].map((attribute, at) => ({
+            id: 700 + at,
+            candidate: "country.portugal",
+            attribute,
+            value_type: "Count",
+            payload: { count: at },
+            data_source: "eurostat",
+            reference_period: { start: "2025-01-01", end: "2025-12-31" },
+            retrieval_date: "2026-09-11T08:00:00Z",
+            confidence_level: "high",
+            is_active: true,
+          })),
+          total: 7,
+        }),
+      ),
+    );
+    renderShell("/rank");
+
+    await userEvent.click(
+      within(await rankingRow("Portugal")).getByRole("button"),
+    );
+
+    expect(
+      await screen.findByText(
+        "Every attribute this set scores has a stored value.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("keeps outside opinions in their own table, not among the figures", async () => {
     renderShell("/rank");
     const row = await rankingRow("Portugal");
@@ -434,8 +536,10 @@ describe("the drill-down", () => {
       within(row).getByRole("button"),
     );
 
+    // Named by the section it belongs to. The caption that used to name it said "Not part of
+    // any score", which the heading above the table already says.
     const outside = await screen.findByRole("table", {
-      name: /not part of any score/i,
+      name: /outside opinions/i,
     });
     expect(
       within(outside).getByRole("rowheader", { name: "numbeo" }),

@@ -165,9 +165,6 @@ dl,
 dd,
 fieldset {
   margin: 0;
-}
-
-fieldset {
   border: 0;
   padding: 0;
 }
@@ -2541,7 +2538,7 @@ select.field__control {
 .pillar-cards {
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(146px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(162px, 1fr));
   gap: 8px;
   margin: 0;
   padding: 0;
@@ -2580,13 +2577,15 @@ select.field__control {
   gap: 8px;
 }
 
+/* A card reads as a heading with a number under it, not as a row of a table. */
 .pillar-card__name {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13.5px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
 }
 
 .pillar-card__score {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: var(--weight-strong);
   font-variant-numeric: tabular-nums;
 }
@@ -3365,4 +3364,624 @@ select.field__control {
   margin-top: var(--space-single);
   padding-top: var(--space-single);
   border-top: var(--border-width) solid var(--colour-border);
+}
+
+/* ── The note that explains a stage's two lists ───────────────────────────────────────
+   A round disc carrying an "i" in front of the sentence. **The shape says which kind of
+   message this is before the sentence is read**, which is the job the tint alone cannot do
+   on a screen that also tints warnings and refusals.
+
+   Flex here and not on `.rule-note` itself: a flex container makes every child a flex item,
+   and the emphasised words in that sentence are children -- so the sentence has to be
+   wrapped in one span for this to be two columns rather than five. */
+.rule-note--marked {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+
+.rule-note__mark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border-radius: 8px;
+  background: var(--colour-accent);
+  color: var(--colour-accent-contrast);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* ── The rail's collapsible cards ─────────────────────────────────────────────────────
+   A caret, the title and its count, all one button inside the heading. **The heading stays
+   a heading**: the card's region is named by it, and turning the title into a bare button
+   would take the card out of the list a screen reader navigates by. */
+.rail__disclosure {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.rail__caret {
+  font-size: 10px;
+  color: var(--colour-text-muted);
+}
+
+/* Where a change was made and when, above what it was. The stage is the louder of the two:
+   it is what tells a reader which card to look at, while the time only separates two edits
+   to the same weight. */
+.history__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.history__stage {
+  font-size: 10.5px;
+  font-weight: var(--weight-strong);
+  color: var(--colour-text-label);
+}
+
+.history__when {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--colour-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── The acquisition card ─────────────────────────────────────────────────────
+   The Acquire screen's lead. A reader arriving mid-run, or just after one, came for this,
+   so it sits above the standing figures rather than under them -- the design draws it in
+   that order too, and for the same reason.
+
+   It is `.panel` with a heading row and a footer added, not a new kind of box: the border,
+   the radius and the raised shadow are the same, because a card that looked different would
+   read as a different kind of thing. */
+.acquisition {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-raised);
+}
+
+.acquisition__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.acquisition__heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.acquisition__scope {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--colour-text-label);
+}
+
+/* What the run came to, set apart from the numbers above it: those are the parts, this is
+   the reading of them. A tinted block rather than another paragraph, so the eye can stop. */
+.acquisition__outcome {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--colour-text);
+  background: var(--colour-surface-sunken);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-medium);
+}
+
+.acquisition__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+  border-top: 1px solid var(--colour-surface-hair);
+}
+
+.acquisition__spend {
+  font-size: 12px;
+  color: var(--colour-text-muted);
+}
+
+.acquisition__acts {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── A status as a pill ───────────────────────────────────────────────────────
+   Four run statuses, three tones. `halted_on_spend_cap` is neither success nor failure -- it
+   stopped on purpose and kept everything it had written -- so it warns rather than borrowing
+   one of the other two. `running` is the accent, because it is the only one still moving. */
+.pill {
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.pill--good {
+  color: var(--colour-success);
+  background: var(--colour-success-surface);
+  border-color: var(--colour-success-border);
+}
+
+.pill--warn {
+  color: var(--colour-warning);
+  background: var(--colour-warning-surface);
+  border-color: var(--colour-warning-border);
+}
+
+.pill--bad {
+  color: var(--colour-danger);
+  background: var(--colour-danger-surface);
+  border-color: var(--colour-danger-border);
+}
+
+.pill--live {
+  color: var(--colour-accent);
+  background: var(--colour-accent-surface);
+  border-color: var(--colour-accent-border);
+}
+
+/* ── Source by source ─────────────────────────────────────────────────────────
+   Each source on its own track: the fill is that source's success rate, never its share of
+   the run. Sharing one track would make a source asked about ten items look small beside one
+   asked about a thousand, which inverts what the panel is for. */
+.reach {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reach__heading {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--colour-text-label);
+}
+
+.reach__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reach__row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(80px, 2fr) 74px;
+  gap: 10px;
+  align-items: center;
+}
+
+.reach__source {
+  font-size: 12px;
+  color: var(--colour-text-strong);
+}
+
+.reach__track {
+  display: block;
+  width: 100%;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--colour-border);
+  overflow: hidden;
+}
+
+.reach__fill {
+  fill: var(--colour-success-bar);
+}
+
+/* A source that stored nothing is drawn in the failure colour rather than as an empty
+   success. The bar is zero-width either way; the difference is what the track says. */
+.reach__fill--barren {
+  fill: var(--colour-danger-bar);
+}
+
+.reach__reading {
+  font-size: 11.5px;
+  color: var(--colour-text-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   Rank and Compare: what the design's second sync asks for that this sheet
+   did not yet say. Appended rather than edited in place -- the rules above
+   are unchanged and these supersede them by order, which is worth folding
+   back into their own blocks when nobody else is holding this file open.
+   ========================================================================== */
+
+/* The row the household already lives in. Teal, because it is a fact about the reader rather
+   than a judgement about the candidate -- every status tint on this screen is a judgement. */
+.chip--home {
+  padding: 1px 6px;
+  background: var(--colour-accent-surface);
+  border-color: var(--colour-accent-border);
+  color: var(--colour-accent);
+}
+
+/* What the table could not say inside itself: why a row has no rank, and why a score cell
+   says "No score" rather than nothing at all. */
+.table-note {
+  margin: var(--space-half) 0 0;
+  font-size: 12px;
+  color: var(--colour-text-muted);
+}
+
+/* How much of the pillar has a figure, above the figures.
+
+   The amber block is the design's: a disc, then the sentence, in the deep text that reads on
+   its own tint. The quiet line is deliberately not tinted -- two tinted states teach the
+   reader to skip the tint. */
+.drill__gap {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px;
+  border: var(--border-width) solid var(--colour-warning-border);
+  border-radius: var(--radius-medium);
+  background: var(--colour-warning-surface);
+}
+
+.drill__gap-mark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border-radius: 8px;
+  background: var(--colour-warning);
+  color: var(--colour-accent-contrast);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drill__gap-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--colour-warning-deep);
+}
+
+.drill__complete {
+  margin: 0;
+  font-size: 12px;
+  color: var(--colour-text-muted);
+}
+
+/* Outside opinions. Every table that feeds a score is drawn in a solid card, so the dashed
+   border is the one visual difference saying this one does not (`reqs.md` 3.5a). The grey
+   rule the table used to carry on its left said the same thing more quietly and now says it
+   twice, so it goes. */
+.table-card--outside {
+  border-style: dashed;
+  border-color: var(--colour-border-strong);
+  box-shadow: none;
+  max-height: none;
+}
+
+.table-card--outside .table--external {
+  border-left: 0;
+  padding-left: 0;
+}
+
+/* The three lines that move a comparison's total most, marked in the accent. Fixed width, so
+   the sentences start on one edge whether or not their line carries a tag. */
+.line-list__tag {
+  display: inline-block;
+  width: 20px;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--colour-accent);
+}
+
+.line-list__line {
+  color: inherit;
+}
+
+/* ── An attribute inside an opened pillar ─────────────────────────────────────────────
+   **A block, not a table row.** A criterion is one sentence about one attribute -- what it
+   measures, which way is better, what rules a candidate out, how it is scaled -- and a table
+   splits that sentence into columns that read as independent facts. The block keeps the name
+   and its weight on one line, the bar under them, and the rule in chips below that. */
+.criterion-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.criterion-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px 0;
+  border-bottom: var(--border-width) solid var(--colour-surface-hair);
+}
+
+.criterion-row:last-child {
+  border-bottom-color: transparent;
+}
+
+.criterion-row__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.criterion-row__what {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.criterion-row__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--colour-text);
+}
+
+/* What the figure behind this row actually is, in plain words. The catalog's, not the
+   criterion's: the type is a fact about the attribute and the rule above it is a judgement. */
+.criterion-row__type {
+  font-size: 11px;
+  color: var(--colour-text-muted);
+}
+
+.criterion-row__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* 104px, which is the design's: short enough that a column of them reads as one control
+   repeated, long enough that half a point is still a distinguishable position. */
+.criterion-row__slider {
+  width: 104px;
+  cursor: ew-resize;
+  accent-color: var(--colour-accent);
+}
+
+.criterion-row__value {
+  width: 46px;
+  font-size: 13px;
+  font-weight: var(--weight-strong);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The pillar row's lock at the size a nested row can carry. Filled when held, hollow when
+   free: a lock is a state, so it is drawn as one. */
+.criterion-row__lock {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  padding: 0;
+  border: var(--border-width) solid var(--colour-border-strong);
+  border-radius: var(--radius-medium);
+  background: var(--colour-surface);
+  color: var(--colour-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.criterion-row__lock--on {
+  border-color: var(--colour-accent);
+  background: var(--colour-accent-surface);
+  color: var(--colour-accent);
+}
+
+.criterion-row__lock:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* The weight again, as a length. **Two readings of one number**: the percentage answers "how
+   much", the bar answers "how much next to the others" without the eye doing arithmetic. */
+.criterion-row__bar {
+  display: block;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.criterion-row__track {
+  fill: var(--colour-border);
+}
+
+.criterion-row__fill {
+  fill: var(--colour-accent);
+}
+
+/* Amber where nothing would fill the attribute: the weight is real and the figure behind it
+   is not, which is a different thing from a small weight. */
+.criterion-row__fill--unsourced {
+  fill: var(--colour-warning-bar);
+}
+
+.criterion-row__chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* The one chip drawn as an outline on the page's own ground. Required is not a state of the
+   data -- it is a demand this criterion makes -- so it reads as a mark rather than a tint. */
+.chip--required {
+  background: var(--colour-surface);
+  border-color: var(--colour-accent);
+  color: var(--colour-accent);
+}
+
+/* The disclosure sits at the foot of the block, left-aligned under the chips it extends. */
+.criterion-row > .action {
+  align-self: flex-start;
+  min-width: 0;
+}
+
+/* ── A remedy's estimate, in its own card ─────────────────────────────────────
+   Three remedies stand side by side, so the figures a reader chooses on belong to the card
+   they chose. `margin-top: auto` pins the footer to the bottom of whichever card is tallest,
+   which is what lets the three be compared by reading across rather than by hunting. */
+.gap-card__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: auto;
+  padding-top: 11px;
+  border-top: 1px solid var(--colour-surface-hair);
+}
+
+/* The "i" beside a figure whose assumptions matter. `abbr[title]` rather than a span: the
+   title is the whole point, and a browser already treats it as something to reveal. */
+.stat__note {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  margin-left: 4px;
+  border: 1px solid var(--colour-border-strong);
+  border-radius: 7px;
+  color: var(--colour-text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: help;
+}
+
+/* ── The step between reading a cost and it happening ─────────────────────────
+   Amber, inside the card that raised it. An uncapped run goes red: `run_spend_cap_eur` is
+   nullable and null is the shipped state, so "no ceiling" is the default condition and the
+   one most worth interrupting for. */
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid var(--colour-warning-border);
+  background: var(--colour-warning-surface);
+  border-radius: var(--radius-medium);
+}
+
+.confirm--uncapped {
+  border-color: var(--colour-danger-border);
+  background: var(--colour-danger-surface);
+}
+
+.confirm__message {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--colour-warning-deep);
+}
+
+.confirm--uncapped .confirm__message {
+  color: var(--colour-danger-deep);
+}
+
+.confirm__acts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Counted outcomes, as tiles ───────────────────────────────────────────────
+   A count with what it counts said underneath. "Refreshed" and "unchanged" are one word
+   apart and mean opposite things to a reader deciding whether a run was worth its cost, so
+   the tile carries the definition rather than leaving it to a caption somewhere else. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 14px;
+  margin: 0;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-medium);
+  background: var(--colour-surface-raised);
+}
+
+.tile__label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--colour-text-label);
+}
+
+.tile__value {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tile__note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--colour-text-muted);
+}
+
+/* The quietest chip there is. A figure that did not move is the one row nobody has to act
+   on, and it should not compete with the three that need a decision. */
+.chip--quiet {
+  color: var(--colour-text-muted);
+  background: var(--colour-surface-hair);
+  border-color: var(--colour-border);
+}
+
+/* The identifier under a criterion row's name. Quiet, monospaced and small: it is what the
+   rest of the application calls that attribute -- a run's scope, a failure, a stand-in row --
+   and a screen that hid it would leave those unmatchable, but it is not the label. */
+.criterion-row__id {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--colour-text-muted);
 }

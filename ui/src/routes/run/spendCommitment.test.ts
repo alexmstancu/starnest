@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeCommitment } from "./spendCommitment";
+import { describeCommitment, describeSpend } from "./spendCommitment";
 
 describe("what a run commits you to", () => {
   /**
@@ -77,5 +77,26 @@ describe("what a run commits you to", () => {
     const commitment = describeCommitment({ act: "Start this run" });
     expect(commitment.sentence).toContain("0 values");
     expect(commitment.spends).toBe(false);
+  });
+});
+
+describe("what a run cost", () => {
+  it("says so plainly when nothing was charged", () => {
+    // Every source shipped today is free. A spend line that appeared only when money moved
+    // would leave a reader unable to tell "free" from "not reported".
+    expect(describeSpend(0, 0)).toBe("No paid call, nothing charged");
+    expect(describeSpend(null, null)).toBe("No paid call, nothing charged");
+  });
+
+  it("names the calls and the money once either is non-zero", () => {
+    expect(describeSpend(4, 0.32)).toBe("4 paid calls, €0.32");
+  });
+
+  it("agrees with itself about one call", () => {
+    expect(describeSpend(1, 0.08)).toBe("1 paid call, €0.08");
+  });
+
+  it("reports a cost that arrived with no call count", () => {
+    expect(describeSpend(0, 1.5)).toBe("0 paid calls, €1.50");
   });
 });

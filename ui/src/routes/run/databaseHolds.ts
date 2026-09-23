@@ -101,3 +101,26 @@ export function describeScope(run: RunReach): string {
     ` over ${String(attributes)} ${attributes === 1 ? "attribute" : "attributes"}`
   );
 }
+
+/**
+ * The line over the three remedies, naming the acquisition they are about.
+ *
+ * **The three cards account for one run, not for the database.** "62 unanswered" is 62 items
+ * *that acquisition* asked about and nobody answered -- not a standing property of the corpus
+ * -- and a lead that does not say which run it means leaves the three counts unanchored.
+ */
+export interface AskedAbout {
+  id: number;
+  progress?: { items_total?: number | null } | null;
+}
+
+export function describeGaps(run: AskedAbout | null | undefined): string {
+  const asked = run?.progress?.items_total ?? 0;
+  if (run === null || run === undefined || asked <= 0) {
+    return "Each of these starts a new acquisition. Nothing is fetched or charged until you agree to an estimate.";
+  }
+  return (
+    `All ${String(asked)} values acquisition ${String(run.id)} asked for, by outcome. ` +
+    "Each action starts a new acquisition, and nothing is fetched or charged until you agree to an estimate."
+  );
+}

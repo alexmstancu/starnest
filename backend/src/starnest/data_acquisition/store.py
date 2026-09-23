@@ -19,6 +19,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
+from starnest.data import DataSourceId
 from starnest.data_acquisition.adapter import AcquisitionFailure
 
 
@@ -64,6 +65,20 @@ class UnansweredItem:
 
 
 @dataclass(frozen=True)
+class SourceReach:
+    """How far one source got in one run.
+
+    **The two counts do not sum to anything.** A source that failed on an item another source
+    then answered contributes to both a failure here and a completed item in the run's totals,
+    and both are true. Forcing them into one figure would have to pick which fact to drop.
+    """
+
+    data_source: DataSourceId
+    items_stored: int
+    items_failed: int
+
+
+@dataclass(frozen=True)
 class Run:
     """One pass, as it stands."""
 
@@ -90,6 +105,9 @@ class Run:
     items_unanswered: int = 0
     failures: tuple[AcquisitionFailure, ...] = field(default=())
     unanswered: tuple[UnansweredItem, ...] = field(default=())
+    # Source by source, for a run being read back. Empty on a history row, which reports the
+    # pass's size rather than its makeup.
+    by_source: tuple[SourceReach, ...] = field(default=())
 
 
 class RunStore(ABC):

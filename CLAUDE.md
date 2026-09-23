@@ -19,7 +19,7 @@ arriving is a row rather than a change — which is the "nothing hardcoded" inva
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
 | `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. `target_range` scores its band and falls linearly to its zero points (built 2026-09-11). The rules are applied: a compound rule warns or rules out, a gate answered `not_matching` makes a candidate not match while keeping its score, and **an undecided rule never fires** -- which both shipped compound rules are. **The two compound-rule shapes that read a household field belong to the city level.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
-| `api/`, `data_acquisition/`, `data_sources/` | **Written.** **All 42 of the contract's operations**; seven source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, and an estimate from Eurostat's tax-benefit figures); values served with both dates, manual entry where the attribute permits it, and the gates' answers; runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
+| `api/`, `data_acquisition/`, `data_sources/` | **Written.** **All 42 of the contract's operations**; seven source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, and an estimate from Eurostat's tax-benefit figures); values served with both dates, manual entry where the attribute permits it, and the gates' answers; runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. `RunDetail.by_source` says what each source stored and what it failed on -- **derived from the value and failure rows, never stored**, for the reason Q217 settled for `items_unanswered`; the two counts are independent and sum to nothing, because a source may fail on an item another source then answers. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | **Written.** Focus against comparators, deltas in the attribute's own unit, weighted contribution, and a synthesis templated from the numbers and ordered by what each gap is worth |
 | `ui/` | The shell and **all four tabs**: Configure with its eight panels (household, settings, criteria sets, pillar weights, criteria, rules, gate proposals, source priority), Acquire, Rank with its drill-down, Compare. **A criterion's rule is editable per row** -- goal, normalisation method, target band, scale anchors, matching threshold -- which is the subjective half of the ontology becoming data rather than migration. 297 unit tests and 23 browser tests, the latter including a functional sanity suite that walks all four tabs. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
 
@@ -331,6 +331,22 @@ message: "An inline style is design in a component, which is what makes a redesi
 A data-driven bar is drawn as SVG, whose geometry is an attribute rather than a style. And a
 `.tsx` under those folders may not call `Number`, `parseInt`, `parseFloat` or `toFixed`, so the
 arithmetic behind a bar lives in a plain module beside it.
+
+**An undeclared custom property fails in silence, so a test now reads the sheet against
+itself** (2026-09-23). CSS drops the whole declaration and the property falls back to its
+initial value: `gap: var(--space-3)` becomes `gap: normal` and `padding: var(--space-4)` becomes
+`padding: 0`. A card with no spacing at all, on a stylesheet that parses cleanly and reports
+nothing -- the browser never complains, and neither did lint, typecheck or 688 unit tests. It
+shipped once, from an appended block that invented a `--space-2/3/4` scale this sheet does not
+have (its tokens are `--space-quarter/half/single/double/triple`, and for these values the sheet
+uses literal pixels). `src/app/architecture.test.ts` now fails on any `var(--token)` the sheet
+never declares.
+
+**Parallel agents append to `styles.css` and never rewrite it**, because concurrent
+read-modify-write on one file loses whichever write landed first. The cost is duplicate
+selectors that CSS resolves by source order, which is a "later equals never" mess -- so folding
+the appended overrides back into the rules they override is part of finishing the work, not a
+follow-up.
 
 **The interface's folders are the product's shape, not a filing cabinet.** `ui/src/routes/`
 holds one folder per screen -- `compare/`, `configure/`, `rank/`, `run/` -- and each keeps what

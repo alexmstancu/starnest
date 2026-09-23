@@ -474,6 +474,64 @@ class TestRetryingARun:
 NO_SOURCE_COVERS = "country.liechtenstein"
 
 
+class TestHowBigThePassWas:
+    async def test_the_detail_and_the_list_agree_on_the_scope(self, database_url: str) -> None:
+        """A detail that reported a scope of nothing while listing its candidates by name would
+        disagree with itself, and with its own row in the history."""
+        async with an_api(database_url, (a_stub_source(silent_about=()),)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+            listed = (await api.get("/v1/data-acquisition-runs?limit=1")).json()["items"][0]
+
+        assert detail["scope_candidates"] == len(detail["scope"]["candidates"]) == 32
+        assert detail["scope_attributes"] == len(detail["scope"]["attributes"])
+        assert detail["scope_candidates"] == listed["scope_candidates"]
+        assert detail["scope_attributes"] == listed["scope_attributes"]
+
+
+class TestWhichSourceGotItThere:
+    """`RunDetail.by_source`. A run's totals say how far it got, not which source got it there.
+
+    **Derived from the value and failure rows**, never stored -- the reason Q217 settled for
+    `items_unanswered`: a second record of the same arithmetic can disagree with the first.
+    """
+
+    async def test_each_source_reports_what_it_stored_and_what_it_failed_on(
+        self, database_url: str
+    ) -> None:
+        # One source answers everything, the other declines on one country -- the shipped
+        # shape, with OECD's Cloudflare-challenged front door.
+        working = a_stub_source(silent_about=())
+        broken = a_stub_source(data_source="oecd", silent_about=("country.portugal",))
+        async with an_api(database_url, (working, broken)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        reach = {r["data_source"]: r for r in detail["by_source"]}
+        assert reach["eurostat"]["items_stored"] == 32 * 2
+        assert reach["eurostat"]["items_failed"] == 0
+        # The source that broke is listed with what it broke on, which is what a retry needs.
+        assert reach["oecd"]["items_failed"] == 2
+        # And the run itself is complete: the working source answered every item the other
+        # failed on, so a failure here is not a gap in the corpus.
+        assert detail["progress"]["items_failed"] == 0
+
+    async def test_every_entry_names_a_source_and_carries_both_counts(
+        self, database_url: str
+    ) -> None:
+        """No entry may report one count and leave the other out. A source with a stored count
+        and no failure count reads as a source that cannot fail, which is never true."""
+        async with an_api(database_url, (a_stub_source(silent_about=()),)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        assert detail["by_source"]
+        assert all(
+            set(entry) == {"data_source", "items_stored", "items_failed"}
+            for entry in detail["by_source"]
+        )
+
+
 class TestWhatNobodyAnswered:
     """`reqs.md` Q217. An item every source answered without having a row for that candidate.
 

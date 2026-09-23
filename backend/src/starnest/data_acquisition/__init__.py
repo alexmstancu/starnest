@@ -53,6 +53,7 @@ from starnest.data_acquisition.store import (
     RunScope,
     RunStatus,
     RunStore,
+    SourceReach,
     UnansweredItem,
     UnknownRunError,
 )
@@ -79,6 +80,7 @@ __all__ = [
     "RunStatus",
     "RunStore",
     "SourceAdapter",
+    "SourceReach",
     "SpendCapNotSetError",
     "UnansweredItem",
     "UnknownRunError",

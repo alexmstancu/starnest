@@ -164,11 +164,11 @@ describe("changing the rule", () => {
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toMatchObject({ goal: "maximise" });
-    // The table's own Goal column, re-rendered from the response rather than from the draft.
+    // The row's own goal chip, re-rendered from the response rather than from the draft.
     await waitFor(() =>
-      expect(
-        screen.getByRole("row", { name: new RegExp(ANCHORED) }),
-      ).toHaveTextContent("maximise"),
+      expect(screen.getByRole("group", { name: ANCHORED })).toHaveTextContent(
+        "goal: maximise",
+      ),
     );
   });
 

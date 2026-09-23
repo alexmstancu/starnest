@@ -2,17 +2,29 @@ import { describe, expect, it } from "vitest";
 import {
   type Change,
   describeReach,
+  describeWhen,
   reachOf,
   record,
   without,
 } from "./changeHistory";
+
+const AT = new Date("2026-09-23T14:32:00Z");
 
 const change = (
   id: number,
   target: string,
   before: number,
   after: number,
-): Change<number> => ({ id, target, label: target, before, after });
+  at: Date = AT,
+): Change<number> => ({
+  id,
+  target,
+  label: target,
+  stage: "Pillar weights",
+  at,
+  before,
+  after,
+});
 
 describe("recording a change", () => {
   it("puts the newest first", () => {
@@ -29,6 +41,21 @@ describe("recording a change", () => {
     expect(history).toHaveLength(1);
     // The original `before`, because that is what undoing the whole gesture must put back.
     expect(history[0]).toMatchObject({ id: 2, before: 10, after: 28 });
+  });
+
+  /**
+   * The collapsed entry is the gesture as it now stands, so it carries the newest time: what
+   * a reader checks a line against is when they last touched that weight, not when the drag
+   * they have since forgotten began.
+   */
+  it("keeps the latest time when a repeat collapses", () => {
+    const later = new Date("2026-09-23T14:41:00Z");
+    const history = record(
+      record([], change(1, "housing", 10, 20)),
+      change(2, "housing", 20, 28, later),
+    );
+
+    expect(history[0]?.at).toBe(later);
   });
 
   /**
@@ -90,5 +117,26 @@ describe("what undoing a change would take with it", () => {
     history = record(history, change(2, "b", 1, 2));
 
     expect(without(history, reachOf(history, 1))).toEqual([]);
+  });
+});
+
+/**
+ * **The clock, not the date.** Every entry was made in this session, so a date would read the
+ * same on all of them; the minute is what separates two edits to the same weight.
+ */
+describe("when a change was made", () => {
+  it("reads as a time of day, to the minute", () => {
+    expect(describeWhen(AT)).toMatch(/^\d{2}:\d{2}$/);
+  });
+
+  /**
+   * Asserted as a difference rather than as a literal: the string depends on the machine's
+   * timezone, and a test that pinned one would fail everywhere but here without saying
+   * anything true about the formatting.
+   */
+  it("separates two changes made minutes apart", () => {
+    expect(describeWhen(new Date("2026-09-23T14:32:00Z"))).not.toBe(
+      describeWhen(new Date("2026-09-23T14:41:00Z")),
+    );
   });
 });

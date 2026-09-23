@@ -331,3 +331,31 @@ export function codesByCandidate(
   }
   return codes;
 }
+
+/** The household as the ranking needs it: only which candidates it already lives in. */
+export interface AtHome {
+  home_country_candidate?: string | null;
+  home_city_candidate?: string | null;
+}
+
+/**
+ * The candidates the household is already in.
+ *
+ * **Both places, never the one belonging to the level on screen.** Staying put is one of the
+ * options being measured (`reqs.md` 1.1), so the row for it is worth marking -- but a level is
+ * an ordered record rather than a known pair (`reqs.md` 3.1), and picking the home by matching
+ * the level's id would be this client deciding there are exactly two of them. Candidate ids
+ * are unique across levels, so a set of both is right at every level and wrong at none.
+ */
+export function homeCandidates(
+  household: AtHome | null | undefined,
+): Set<string> {
+  const home = new Set<string>();
+  for (const candidate of [
+    household?.home_country_candidate,
+    household?.home_city_candidate,
+  ]) {
+    if (candidate) home.add(candidate);
+  }
+  return home;
+}

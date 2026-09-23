@@ -1763,6 +1763,25 @@ components:
           title: Score Scale Max
       title: SettingsBody
       type: object
+    SourceReachBody:
+      description: How far one source got. Derived from the value and failure rows,
+        never stored.
+      properties:
+        data_source:
+          title: Data Source
+          type: string
+        items_failed:
+          title: Items Failed
+          type: integer
+        items_stored:
+          title: Items Stored
+          type: integer
+      required:
+      - data_source
+      - items_stored
+      - items_failed
+      title: SourceReachBody
+      type: object
     SynthesisBody:
       properties:
         advantages:

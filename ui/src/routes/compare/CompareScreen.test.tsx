@@ -98,10 +98,38 @@ describe("the comparison", () => {
 
     const advantages = await screen.findByText(/ahead on/i);
     const lines = within(advantages.parentElement!).getAllByRole("listitem");
-    expect(lines.map((line) => line.textContent)).toEqual([
+    // The sentence is its own element inside the line, because a line may also carry the
+    // place its gap takes across both lists. Matched whole and in place, so a screen that
+    // reworded a sentence or reordered the list still fails.
+    const sentences = [
       "Cost of living: 82 against 41, worth +4.9 points",
       "Coastline access: 70 against 64, worth +0.2 points",
-    ]);
+    ];
+    expect(lines).toHaveLength(sentences.length);
+    sentences.forEach((sentence, at) => {
+      expect(within(lines[at]!).getByText(sentence)).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * The two lists arrive ordered separately, so neither says whether the largest disadvantage
+   * outweighs the second advantage. These tags are the only thing the screen adds to the
+   * synthesis, and they add no number: the fixture's own figures put the disadvantage worth
+   * -1.8 above the advantage worth +0.2.
+   */
+  it("marks the three gaps that move the total most, across both lists", async () => {
+    renderShell("/compare");
+
+    await compare("Portugal", "Netherlands");
+
+    const advantages = await screen.findByText(/ahead on/i);
+    const ahead = within(advantages.parentElement!).getAllByRole("listitem");
+    expect(ahead[0]).toHaveTextContent("#1");
+    expect(ahead[1]).toHaveTextContent("#3");
+
+    const disadvantages = screen.getByText(/behind on/i);
+    const behind = within(disadvantages.parentElement!).getAllByRole("listitem");
+    expect(behind[0]).toHaveTextContent("#2");
   });
 
   it("heads each pair with the score difference", async () => {

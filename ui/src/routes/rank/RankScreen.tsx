@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import {
   fetchCandidates,
+  fetchHousehold,
   fetchRanking,
   type Ranking,
 } from "../../api/endpoints";
@@ -11,7 +12,7 @@ import { AttributeDrillDown } from "./AttributeDrillDown";
 import { CandidateDetail } from "./CandidateDetail";
 import { type OpenRow, toggleRow } from "./openRows";
 import { RankingMeta, RankingTable } from "./RankingTable";
-import { codesByCandidate } from "./rankTable";
+import { codesByCandidate, homeCandidates } from "./rankTable";
 import { SaveControl } from "./SaveControl";
 import { SavedRankingsPanel } from "./SavedRankingsPanel";
 import { useSelection } from "../../shell/SelectionContext";
@@ -96,6 +97,14 @@ function TheRanking({
   const codes = codesByCandidate(
     roster.resource.status === "ready" ? roster.resource.data.items : null,
   );
+  // Which candidate the household already lives in, for the pill beside its name. Its own
+  // read: a ranking says what a candidate scored, never who lives there.
+  const household = useResource(
+    useCallback((signal: AbortSignal) => fetchHousehold({ signal }), []),
+  );
+  const home = homeCandidates(
+    household.resource.status === "ready" ? household.resource.data : null,
+  );
   // Which candidates' evidence is open. Client state in the sense `arch.md` 8.1 permits: it
   // decides nothing, and the evidence itself is fetched.
   const [open, setOpen] = useState<readonly OpenRow[]>([]);
@@ -154,6 +163,7 @@ function TheRanking({
           open={open}
           onToggle={toggle}
           codes={codes}
+          home={home}
           detail={(row) => (
             <CandidateDetail
               candidate={row.candidate}

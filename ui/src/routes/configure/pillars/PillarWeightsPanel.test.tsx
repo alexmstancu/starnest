@@ -1,6 +1,8 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
+import { mockServer } from "../../../mocks/server";
 import { renderShell } from "../../../testing/renderShell";
 
 /**
@@ -10,6 +12,8 @@ import { renderShell } from "../../../testing/renderShell";
  * prints the rebalanced list, so a test that computed an expected rebalance would be testing
  * arithmetic the interface deliberately does not have (`arch.md` 8.3).
  */
+
+const BASE = "/v1";
 
 async function panel() {
   return within(await screen.findByRole("region", { name: "Pillar weights" }));
@@ -59,7 +63,14 @@ describe("the pillar weights panel", () => {
     ).toHaveValue("40");
     expect(weightBox("housing")).toHaveValue("35");
     expect(weightBox("safety")).toHaveValue("25");
-    expect(pillars.getByText(/sum to 100%/)).toBeInTheDocument();
+    // The total is the summary's, beside the rule it is held to -- the lead above it no
+    // longer repeats the figure, because a number in prose is a number nobody checks. **The
+    // rule is the pillar one**, because this is the pillar total; the attribute rule is
+    // stated inside an opened pillar, beside the hundred it actually governs.
+    expect(
+      pillars.getByText(/Pillar weights sum to 100 within the level/),
+    ).toBeInTheDocument();
+    expect(pillars.getByText("100%")).toBeInTheDocument();
   });
 
   it("shows the weights the server rebalanced to", async () => {
@@ -69,14 +80,82 @@ describe("the pillar weights panel", () => {
     await setWeight("economics", "50");
 
     // Housing and safety absorbed the ten points between them, in proportion. The figures are
-    // the response's.
-    // The slider snaps to its half-point step; the reading beside it is the server's own
-    // figure, which is the number that decides anything.
-    await waitFor(() =>
-      expect(within(rowOf("housing")).getByText("29.2%")).toBeInTheDocument(),
+    // the response's: the slider snaps to its half-point step, and the reading beside it is
+    // the server's own number, which is the one that decides anything.
+    //
+    // **All three inside one `waitFor`, and every row re-queried inside it.** They arrive in a
+    // single PATCH response, so checking one and then asserting the other two against elements
+    // captured earlier would read a subtree that had since re-rendered.
+    // **A longer budget than the suite's five seconds, for this one assertion.** It waits on
+    // a write round trip *and* a re-render of the whole Configure screen, which since the
+    // attribute blocks landed draws every pillar's criteria and reads the catalog. It timed
+    // out twice in `make check` and never in a direct run -- the difference is machine load,
+    // not correctness, and the assertion below is the one that proves the rebalance is the
+    // server's rather than ours.
+    await waitFor(
+      () => {
+        expect(within(rowOf("housing")).getByText("29.2%")).toBeInTheDocument();
+        expect(within(rowOf("safety")).getByText("20.8%")).toBeInTheDocument();
+        expect(within(rowOf("economics")).getByText("50.0%")).toBeInTheDocument();
+      },
+      { timeout: 15_000 },
     );
-    expect(within(rowOf("safety")).getByText("20.8%")).toBeInTheDocument();
-    expect(within(rowOf("economics")).getByText("50.0%")).toBeInTheDocument();
+  });
+
+  it("sends the weight the pointer left, and sends it once", async () => {
+    /**
+     * **The request, not the re-render.** The test below reads the rebalanced figures back off
+     * the screen, which means it waits for a PUT *and* a full re-render of a screen that now
+     * draws every pillar's attributes. This one waits only for the request, so "the gesture
+     * sends the right weight" stays provable when the render is slow.
+     *
+     * One entry, not several: `change` fires on every pixel of a drag and only the release
+     * sends, which is the whole reason the commit is on `pointerUp`.
+     */
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.put(
+        `${BASE}/criteria-sets/:criteriaSetId/pillar-weights/:pillarId`,
+        async ({ request }) => {
+          sent.push(await request.json());
+          return HttpResponse.json({ items: [] });
+        },
+      ),
+    );
+    renderShell("/configure");
+    const slider = await screen.findByRole("slider", {
+      name: "economics weight",
+    });
+
+    fireEvent.change(slider, { target: { value: "50" } });
+    fireEvent.pointerUp(slider);
+
+    await waitFor(() => expect(sent).toEqual([{ weight: 50 }]));
+  });
+
+  it("commits a weight set with the arrow keys, not only one dragged", async () => {
+    // A range input moves on arrow keys, and a keyboard user never lifts a pointer. The four
+    // handlers -- pointer up, mouse up, key up, blur -- are one event ("the reader has stopped
+    // moving this"), and this is the one a mouse test can never reach.
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.put(
+        `${BASE}/criteria-sets/:criteriaSetId/pillar-weights/:pillarId`,
+        async ({ request }) => {
+          sent.push(await request.json());
+          return HttpResponse.json({ items: [] });
+        },
+      ),
+    );
+    renderShell("/configure");
+    const slider = await screen.findByRole("slider", {
+      name: "economics weight",
+    });
+
+    fireEvent.change(slider, { target: { value: "45" } });
+    fireEvent.keyUp(slider, { key: "ArrowRight" });
+
+    await waitFor(() => expect(sent).toEqual([{ weight: 45 }]));
   });
 
   it("refuses the change when every other pillar is locked, and says which", async () => {

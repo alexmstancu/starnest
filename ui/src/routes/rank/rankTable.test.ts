@@ -8,6 +8,7 @@ import {
   deltaTone,
   excludedBand,
   formatDelta,
+  homeCandidates,
   pillarBars,
 } from "./rankTable";
 
@@ -263,5 +264,34 @@ describe("the flag beside a candidate", () => {
 
   it("is empty before the roster arrives", () => {
     expect(codesByCandidate(null).size).toBe(0);
+  });
+});
+
+describe("the home pill", () => {
+  it("marks the country the household lives in", () => {
+    const home = homeCandidates({
+      home_country_candidate: "country.romania",
+      home_city_candidate: null,
+    });
+    expect(home.has("country.romania")).toBe(true);
+    expect(home.size).toBe(1);
+  });
+
+  /**
+   * **Both, because the ranking is drawn per level and this set is not.** A city level whose
+   * home row went unmarked would be the same screen telling the truth about countries and
+   * saying nothing about cities.
+   */
+  it("marks the home city as well as the home country", () => {
+    const home = homeCandidates({
+      home_country_candidate: "country.romania",
+      home_city_candidate: "city.bucharest",
+    });
+    expect([...home].sort()).toEqual(["city.bucharest", "country.romania"]);
+  });
+
+  it("marks nothing before the household arrives", () => {
+    expect(homeCandidates(null).size).toBe(0);
+    expect(homeCandidates(undefined).size).toBe(0);
   });
 });

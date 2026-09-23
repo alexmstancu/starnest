@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -23,45 +23,55 @@ import { renderShell } from "../../testing/renderShell";
  */
 async function openThePillarOf(attribute: string): Promise<void> {
   const named = { name: `Weight for ${attribute}` };
-  if (screen.queryByRole("spinbutton", named) !== null) return;
+  if (screen.queryByRole("slider", named) !== null) return;
 
   const weights = await screen.findByRole("region", { name: "Pillar weights" });
+  // The pillar rows only: an opened pillar puts a group of its own around every criterion
+  // inside it, and clicking one of those would close the pillar this loop just opened.
   const pillars = within(weights)
     .getAllByRole("group")
-    .map((row) => row.getAttribute("aria-label") ?? "");
+    .map((row) => row.getAttribute("aria-label") ?? "")
+    .filter((label) => !label.includes("."));
   for (const pillar of pillars) {
     await userEvent.click(
       screen.getByRole("button", { name: new RegExp(`^${pillar}`) }),
     );
-    if (screen.queryByRole("spinbutton", named) !== null) return;
+    if (screen.queryByRole("slider", named) !== null) return;
   }
 }
 
-/** A criterion's lock, opening the pillar it lives in first. */
-async function findLockAnywhere(attribute: string): Promise<HTMLInputElement> {
+/**
+ * A criterion's lock, opening the pillar it lives in first.
+ *
+ * **A button that is pressed or not, never a checkbox.** The design draws a disc, and a
+ * checkbox cannot be one without hiding behind a label -- the shape that shipped a lock
+ * nobody could click (P52).
+ */
+async function findLockAnywhere(attribute: string): Promise<HTMLElement> {
   await openThePillarOf(attribute);
-  return screen.getByRole<HTMLInputElement>("checkbox", {
+  return screen.getByRole("button", {
     name: `Lock the weight for ${attribute}`,
   });
 }
 
-async function weightInput(attribute: string): Promise<HTMLInputElement> {
+async function weightSlider(attribute: string): Promise<HTMLInputElement> {
   await openThePillarOf(attribute);
-  return await screen.findByRole("spinbutton", {
+  return await screen.findByRole("slider", {
     name: `Weight for ${attribute}`,
   });
 }
 
 /**
- * The weight the table currently shows, read synchronously.
+ * The weight the row currently shows, read synchronously.
  *
- * **Never call `weightInput` inside a `waitFor`.** `findByRole` is itself a retry loop with its
- * own one-second budget, so nesting the two means each `waitFor` attempt can spend a second in
- * the inner one -- five real attempts out of a five-second budget, which passes alone and times
- * out under load. `getByRole` throws at once and lets `waitFor` poll at its own interval.
+ * **Never call `weightSlider` inside a `waitFor`.** `findByRole` is itself a retry loop with
+ * its own one-second budget, so nesting the two means each `waitFor` attempt can spend a
+ * second in the inner one -- five real attempts out of a five-second budget, which passes
+ * alone and times out under load. `getByRole` throws at once and lets `waitFor` poll at its
+ * own interval.
  */
-function shownWeight(attribute: string): number | string | string[] | null {
-  return screen.getByRole<HTMLInputElement>("spinbutton", {
+function shownWeight(attribute: string): string {
+  return screen.getByRole<HTMLInputElement>("slider", {
     name: `Weight for ${attribute}`,
   }).value;
 }
@@ -86,15 +96,19 @@ async function settled(): Promise<void> {
   );
 }
 
+/**
+ * Moves a weight and lets go, which is the whole gesture.
+ *
+ * **Dragging shows; letting go sends.** A range input fires `change` on every pixel of a
+ * drag, so the row commits when the pointer lifts -- and so does this, rather than reaching
+ * past the control to the request.
+ */
 async function saveWeight(attribute: string, weight: string): Promise<void> {
-  const user = userEvent.setup();
-  const input = await weightInput(attribute);
+  const slider = await weightSlider(attribute);
   await settled();
-  const row = input.closest("tr")!;
 
-  await user.clear(input);
-  await user.type(input, weight);
-  await user.click(within(row).getByRole("button", { name: "Save" }));
+  fireEvent.change(slider, { target: { value: weight } });
+  fireEvent.pointerUp(slider);
 }
 
 describe("the criteria list", () => {
@@ -106,13 +120,14 @@ describe("the criteria list", () => {
   it("shows every criterion in a pillar with its weight, once the pillar is open", async () => {
     renderShell("/configure");
 
-    expect(await weightInput("country.cost_of_living_index")).toHaveValue(50);
-    expect(await weightInput("country.total_tax_rate_effective")).toHaveValue(30);
-
-    const row = (await weightInput("country.homicide_rate")).closest("tr")!;
-    expect(within(row).getByRole("rowheader")).toHaveTextContent(
-      "country.homicide_rate",
+    expect(await weightSlider("country.cost_of_living_index")).toHaveValue("50");
+    expect(await weightSlider("country.total_tax_rate_effective")).toHaveValue(
+      "30",
     );
+
+    await weightSlider("country.homicide_rate");
+    const row = screen.getByRole("group", { name: "country.homicide_rate" });
+    expect(row).toHaveTextContent("country.homicide_rate");
     // The pillar names the block these rows are in, so the row itself no longer repeats it.
     expect(row).not.toHaveTextContent("safety");
     expect(
@@ -120,19 +135,77 @@ describe("the criteria list", () => {
     ).toHaveAttribute("aria-expanded", "true");
   });
 
+  /**
+   * **The rule in words, before it is opened for editing.** A criterion is one sentence about
+   * one attribute -- which way is better, what rules a candidate out, how it is scaled -- and
+   * a row that showed only a number would make the reader open every rule to read the set.
+   */
+  it("says what each criterion's rule is, and what the attribute measures", async () => {
+    renderShell("/configure");
+    await weightSlider("country.cost_of_living_index");
+
+    const row = screen.getByRole("group", {
+      name: "country.cost_of_living_index",
+    });
+    expect(row).toHaveTextContent("goal: minimise");
+    expect(row).toHaveTextContent("scored by percentile");
+    expect(row).toHaveTextContent("no threshold");
+    // From the catalog, not the criterion: what the figure is is a fact about the attribute.
+    expect(row).toHaveTextContent("Measured in index_eu27_100");
+  });
+
+  /**
+   * The two facts a weight cannot carry. **A weight on an attribute nothing answers is a
+   * share of the pillar going nowhere**, and one whose absence blocks costs the candidate its
+   * whole score -- both are worth knowing before the weight is chosen rather than after a run
+   * has come back empty.
+   */
+  it("says when nothing would ever fill an attribute, and when its absence blocks", async () => {
+    mockServer.use(
+      http.get("/v1/criteria-sets/:id", () =>
+        HttpResponse.json({
+          id: "default",
+          name: "Default",
+          pillar_weights: [
+            { pillar: "family", weight: 100, weight_locked: false },
+          ],
+          // In the catalog with no source at all, which is the case this row exists to show.
+          criteria: [
+            {
+              attribute: "country.nobody_measures_this",
+              pillar: "family",
+              weight: 100,
+              goal: "maximise",
+              normalisation_method: "fixed",
+              blocks_if_missing: true,
+            },
+          ],
+        }),
+      ),
+    );
+    renderShell("/configure");
+    await weightSlider("country.nobody_measures_this");
+
+    const row = screen.getByRole("group", {
+      name: "country.nobody_measures_this",
+    });
+    expect(row).toHaveTextContent("No source yet");
+    expect(row).toHaveTextContent("Required");
+  });
+
   it("follows the criteria set chosen in the sidebar", async () => {
     const user = userEvent.setup();
     renderShell("/configure");
-    await weightInput("country.cost_of_living_index");
+    await weightSlider("country.cost_of_living_index");
 
     await user.selectOptions(
       screen.getByRole("combobox", { name: /active criteria set/i }),
       "remote-only",
     );
 
-    expect(await weightInput("country.broadband_coverage")).toHaveValue(70);
+    expect(await weightSlider("country.broadband_coverage")).toHaveValue("70");
     expect(
-      screen.queryByRole("spinbutton", {
+      screen.queryByRole("slider", {
         name: "Weight for country.cost_of_living_index",
       }),
     ).not.toBeInTheDocument();
@@ -168,8 +241,8 @@ describe("changing a weight", () => {
       expect(shownWeight("country.total_tax_rate_effective")).toBe("40"),
     );
     expect(
-      await weightInput("country.housing_cost_overburden_rate"),
-    ).toHaveValue(60);
+      await weightSlider("country.housing_cost_overburden_rate"),
+    ).toHaveValue("60");
   });
 
   it("shows the refusal, and which locks caused it, when nothing can absorb the change", async () => {
@@ -197,7 +270,7 @@ describe("changing a weight", () => {
     await saveWeight("country.homicide_rate", "80");
 
     await screen.findByRole("alert");
-    expect(await weightInput("country.homicide_rate")).toHaveValue(65);
+    expect(await weightSlider("country.homicide_rate")).toHaveValue("65");
   });
 
   it("reports a failed save rather than letting it look like it worked", async () => {
@@ -213,30 +286,42 @@ describe("changing a weight", () => {
     expect(await screen.findByText("client.unreachable")).toBeInTheDocument();
   });
 
-  it("refuses to send a weight that is not a number", async () => {
-    const user = userEvent.setup();
+  /**
+   * **The control cannot express a wrong answer.** A text field could hold "ten", which the
+   * row used to have to report; a slider holds a number or nothing, so a nonsense value is
+   * not refused here -- the browser never lets it reach React. What is still worth asserting
+   * is that nothing is sent and nothing moves.
+   */
+  it("never sends a weight that is not a number", async () => {
     renderShell("/configure");
-    const input = await weightInput("country.cost_of_living_index");
-    const row = input.closest("tr")!;
-    await settled();
+    await weightSlider("country.cost_of_living_index");
 
-    await user.clear(input);
-    await user.click(within(row).getByRole("button", { name: "Save" }));
+    await saveWeight("country.cost_of_living_index", "ten");
 
-    expect(await within(row).findByRole("alert")).toHaveTextContent(
-      /must be a number/i,
-    );
-    // Nothing was sent, so nothing was rebalanced.
-    expect(await weightInput("country.total_tax_rate_effective")).toHaveValue(30);
+    expect(shownWeight("country.cost_of_living_index")).toBe("50");
+    expect(shownWeight("country.total_tax_rate_effective")).toBe("30");
   });
 
-  it("offers nothing to save until the weight is actually changed", async () => {
+  /** Letting go without having moved is not a change, and a PATCH would rebalance a pillar
+      to the weights it already holds. */
+  it("sends nothing when the weight was not actually moved", async () => {
+    const sent: string[] = [];
+    mockServer.use(
+      http.patch(
+        "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+        ({ params }) => {
+          sent.push(String(params["attributeId"]));
+          return HttpResponse.json({ pillar: "economics", criteria: [] });
+        },
+      ),
+    );
     renderShell("/configure");
-    const row = (await weightInput("country.cost_of_living_index")).closest(
-      "tr",
-    )!;
+    const slider = await weightSlider("country.cost_of_living_index");
+    await settled();
 
-    expect(within(row).getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.pointerUp(slider);
+
+    expect(sent).toEqual([]);
   });
 });
 
@@ -312,16 +397,16 @@ describe("when the criteria set cannot be shown", () => {
  */
 describe("locking a criterion's weight", () => {
   // `settled()` waits for the last panel to arrive, which can happen before the criteria
-  // table does -- so the first read of a row has to be a `findBy`, as `saveWeight` already is.
-  async function findLock(attribute: string): Promise<HTMLInputElement> {
+  // rows do -- so the first read of a row has to be a `findBy`, as `saveWeight` already is.
+  async function findLock(attribute: string): Promise<HTMLElement> {
     await openThePillarOf(attribute);
-    return screen.findByRole<HTMLInputElement>("checkbox", {
+    return screen.findByRole("button", {
       name: `Lock the weight for ${attribute}`,
     });
   }
 
-  function lockFor(attribute: string): HTMLInputElement {
-    return screen.getByRole<HTMLInputElement>("checkbox", {
+  function lockFor(attribute: string): HTMLElement {
+    return screen.getByRole("button", {
       name: `Lock the weight for ${attribute}`,
     });
   }
@@ -331,8 +416,14 @@ describe("locking a criterion's weight", () => {
     renderShell("/configure");
     await settled();
 
-    expect(await findLock("country.economic_outlook")).toBeChecked();
-    expect(lockFor("country.cost_of_living_index")).not.toBeChecked();
+    expect(await findLock("country.economic_outlook")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(lockFor("country.cost_of_living_index")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("locks a weight, and the lock stays on", async () => {
@@ -343,7 +434,10 @@ describe("locking a criterion's weight", () => {
     await user.click(await findLock("country.cost_of_living_index"));
 
     await waitFor(() =>
-      expect(lockFor("country.cost_of_living_index")).toBeChecked(),
+      expect(lockFor("country.cost_of_living_index")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
     );
   });
 
@@ -351,7 +445,7 @@ describe("locking a criterion's weight", () => {
   it("leaves a locked sibling's weight untouched when another moves", async () => {
     renderShell("/configure");
     await settled();
-    await weightInput("country.economic_outlook");
+    await weightSlider("country.economic_outlook");
     expect(shownWeight("country.economic_outlook")).toBe("20");
 
     await saveWeight("country.cost_of_living_index", "40");
@@ -370,7 +464,10 @@ describe("locking a criterion's weight", () => {
     // Lock the one unlocked sibling, leaving nowhere for a change to be absorbed.
     await user.click(await findLock("country.total_tax_rate_effective"));
     await waitFor(() =>
-      expect(lockFor("country.total_tax_rate_effective")).toBeChecked(),
+      expect(lockFor("country.total_tax_rate_effective")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
     );
 
     await saveWeight("country.cost_of_living_index", "40");
@@ -395,7 +492,7 @@ describe("a locked weight holds where it is", () => {
   it("refuses a weight change on a criterion that is itself locked", async () => {
     renderShell("/configure");
     await settled();
-    await weightInput("country.economic_outlook");
+    await weightSlider("country.economic_outlook");
 
     await saveWeight("country.economic_outlook", "25");
 
@@ -414,7 +511,9 @@ describe("a locked weight holds where it is", () => {
 
     await user.click(lock);
 
-    await waitFor(() => expect(lock).not.toBeChecked());
+    await waitFor(() =>
+      expect(lock).toHaveAttribute("aria-pressed", "false"),
+    );
     // Unlocking moves nothing: it says the weight may move, not that it has.
     expect(shownWeight("country.economic_outlook")).toBe("20");
 
@@ -481,6 +580,48 @@ describe("what this session changed", () => {
     expect(panel.getByText(/reloading clears it/i)).toBeInTheDocument();
   });
 
+  /**
+   * **The stage and the time, because a list of six weight changes is otherwise a heap.** The
+   * stage is named rather than numbered: the stages are numbered by a CSS counter so that
+   * moving a card moves its numeral, and a "Stage 3" written into a history entry would be
+   * the one place that could then disagree with the screen.
+   */
+  it("says which stage a change came from, and when it was made", async () => {
+    renderShell("/configure");
+    await settled();
+
+    await saveWeight("country.cost_of_living_index", "40");
+
+    const panel = await historyPanel();
+    await panel.findByText(/Weight for country\.cost_of_living_index: 50 to 40/);
+    expect(panel.getByText("Pillar weights")).toBeInTheDocument();
+    expect(panel.getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument();
+  });
+
+  /** The rail never scrolls away, so the way to get the screen back is to fold it up. */
+  it("folds the list away and brings it back", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    await saveWeight("country.cost_of_living_index", "40");
+    const panel = await historyPanel();
+    await panel.findByText(/Weight for country\.cost_of_living_index: 50 to 40/);
+
+    await user.click(panel.getByRole("button", { name: /recent changes/i }));
+
+    expect(
+      panel.queryByText(/Weight for country\.cost_of_living_index: 50 to 40/),
+    ).toBeNull();
+    // The count stays, so a folded card still says how much it is holding.
+    expect(panel.getByText("1 in this session")).toBeInTheDocument();
+
+    await user.click(panel.getByRole("button", { name: /recent changes/i }));
+
+    expect(
+      panel.getByText(/Weight for country\.cost_of_living_index: 50 to 40/),
+    ).toBeInTheDocument();
+  });
+
   it("lists a weight change once it has been made", async () => {
     renderShell("/configure");
     await settled();
@@ -503,7 +644,7 @@ describe("what this session changed", () => {
     // reach this test is about.
     await openThePillarOf("country.homicide_rate");
     await userEvent.click(
-      await screen.findByRole("checkbox", {
+      await screen.findByRole("button", {
         name: "Lock the weight for country.homicide_rate",
       }),
     );
