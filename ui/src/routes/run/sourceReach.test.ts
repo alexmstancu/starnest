@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { outcomeSentence, sourceBars } from "./sourceReach";
+import { outcomeSentence, runState, sourceBars } from "./sourceReach";
 
 describe("source by source", () => {
   it("fills each source's bar by its own success rate, not by its share of the run", () => {
@@ -123,5 +123,27 @@ describe("what the run came to", () => {
   it("has nothing to say about a status it was never given", () => {
     expect(outcomeSentence(null, { items_completed: 3 })).toBe("");
     expect(outcomeSentence(undefined, null)).toBe("");
+  });
+});
+
+
+describe("what to call a run's state", () => {
+  it("says stopping for a run somebody asked to stop", () => {
+    // Still `running` on the server, and will be until the source in flight finishes. Telling
+    // a reader "running" there is true and useless: they have just clicked Stop.
+    expect(runState("running", "2026-09-24T09:00:00Z")).toBe("stopping");
+  });
+
+  it("leaves every other status alone", () => {
+    expect(runState("running", null)).toBe("running");
+    expect(runState("completed", null)).toBe("completed");
+    // A finished run that was stopped reports what it ended as, not that it is stopping.
+    expect(runState("halted_by_user", "2026-09-24T09:00:00Z")).toBe("halted_by_user");
+    expect(runState("halted_on_spend_cap", null)).toBe("halted_on_spend_cap");
+  });
+
+  it("has nothing to say about a status it was never given", () => {
+    expect(runState(null, null)).toBe("");
+    expect(runState(undefined, "2026-09-24T09:00:00Z")).toBe("");
   });
 });

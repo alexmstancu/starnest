@@ -211,6 +211,38 @@ checkable rather than trusted. Two figures that could not both be read are calle
 never *unchanged*: inventing agreement out of ignorance is the one thing this application exists
 not to do.
 
+## The Stop control, built (2026-09-24)
+
+`POST /data-acquisition-runs/{runId}/stop`. The run ends **`halted_by_user`** -- a fifth status
+beside `running`, `completed`, `halted_on_spend_cap` and `failed`, because the three ways of not
+finishing are three different facts and recording a stop as either of the others would make the
+history lie about why the figures stop where they do.
+
+**It takes effect between sources, not between items.** The loop iterates per adapter, and a
+source's fetch is one request over every candidate in most of them -- so that is the finest
+grain at which a run can be interrupted without abandoning a request a publisher has already
+answered. The design's wording is still exactly right: everything completed is kept, which is
+the same guarantee the spend cap gives and the one Gate D proves by killing a process mid-run.
+
+**The request is a column, not a flag in memory.** The loop runs as a background task; an
+in-process flag would be invisible to the poll that reports the run's state and lost entirely
+the moment anything ran in a second process. `stop_requested_at` is a nullable timestamp rather
+than a boolean, for the same reason every value carries two dates: it answers "was it asked for"
+and "when" in one column, and the second question is the one a reader has when a stop took a
+while to land.
+
+**The screen says `stopping`, which is not a status the server has.** It is the pair (running,
+stop asked) said in one word. A run somebody has just stopped is still `running` until the
+source in flight finishes, and telling a reader "running" there is true and useless. The button
+withdraws once asked, because the first request is the one recorded and a live control after it
+invites the thought that it did not work.
+
+**Asking a finished run to stop is not an error and leaves no trace.** The outcome the caller
+wanted is already true, and stamping a time would make a run that ended on its own read as one
+somebody intervened in.
+
+**The original entry, kept for the record.**
+
 **One control in the design has no verb in the contract: "Stop — keep what completed".** There
 is no cancel operation on a run. It is not a screen gap: a run is a background pass, and
 stopping it means a cooperative check the acquisition loop does not have. Closing it would be a

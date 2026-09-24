@@ -102,6 +102,24 @@ class PostgresRunStore(RunStore):
                     error_message=failure.reason,
                 )
 
+    async def request_stop(self, run: int) -> bool:
+        """Stamp the request on the row, and say whether there was a running run to stamp.
+
+        The loop reads it between items, so a stop never interrupts a fetch in flight and never
+        loses what had already been written.
+        """
+        async with acquire(self._pool) as connection:
+            row = await self._queries.request_run_stop(
+                connection, data_acquisition_run=run, asked_at=datetime.now(tz=UTC)
+            )
+        return row is not None
+
+    async def stop_was_requested(self, run: int) -> bool:
+        async with acquire(self._pool) as connection:
+            return bool(
+                await self._queries.select_run_stop_requested(connection, data_acquisition_run=run)
+            )
+
     async def add_spend(self, run: int, *, calls: int, cost_eur: Decimal) -> None:
         async with acquire(self._pool) as connection:
             await self._queries.add_run_spend(
@@ -215,6 +233,7 @@ def _run_from(
         items_completed=int(row.items_completed),
         items_failed=int(row.items_failed),
         items_unanswered=int(row.items_unanswered),
+        stop_requested_at=row.stop_requested_at,
         failures=tuple(
             AcquisitionFailure(
                 attribute=failure.attribute,
@@ -267,4 +286,7 @@ def _run_header_from(row: Any) -> Run:
         # The third count closes the arithmetic (Q217) and is derived rather than read: asked
         # about, and neither answered nor failed.
         items_unanswered=max(0, total - completed - failed),
+        # On the history row too: a run still `running` with a stop asked for is one the list
+        # should not describe as simply running.
+        stop_requested_at=row.stop_requested_at,
     )

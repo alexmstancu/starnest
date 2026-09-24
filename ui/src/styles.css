@@ -3968,3 +3968,16 @@ select.field__control {
   font-size: 10.5px;
   color: var(--colour-text-muted);
 }
+
+/* **The one outlined-red control in the application.** The design draws Stop as a white button
+   with a danger border and danger text, never a filled one: filling it would make it compete
+   with the single primary this screen has, which is the button that STARTS a run. A stop is
+   not the action the screen exists to take. */
+.button--danger {
+  border-color: var(--colour-danger-border);
+  color: var(--colour-danger);
+}
+
+.button--danger:hover:not(:disabled) {
+  background: var(--colour-danger-surface);
+}

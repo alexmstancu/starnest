@@ -107,6 +107,19 @@ test.describe("the ranking", () => {
   });
 });
 
+/**
+ * What marks a saved evaluation as one a test made, so the boot sweep can discard it.
+ *
+ * **The contract has no delete for a saved evaluation, on purpose**: one is a measurement
+ * somebody chose to keep. This suite saves one per run to prove that saving works, and chose
+ * nothing -- so the boot sequence discards the marked ones (`arch.md` 9.2).
+ *
+ * The other half of this string is `TEST_EVALUATION_MARKER` in
+ * `backend/src/starnest/storage/evaluation_store.py`. The two sides share no code, not even DTO
+ * definitions, so an acceptance test pins the literal instead of an import doing it.
+ */
+const TEST_EVALUATION_MARKER = "[e2e] ";
+
 test.describe("configuring", () => {
   test("saves a settings change and reads it back", async ({ page }) => {
     await page.goto("/configure");
@@ -152,7 +165,7 @@ test.describe("saved rankings", () => {
     await expect(save).toBeEnabled();
     await save.click();
 
-    const note = `sanity suite ${Date.now()}`;
+    const note = `${TEST_EVALUATION_MARKER}sanity suite ${Date.now()}`;
     await page.getByLabel(/worth keeping/).fill(note);
     await page.getByRole("button", { name: "Save", exact: true }).click();
 

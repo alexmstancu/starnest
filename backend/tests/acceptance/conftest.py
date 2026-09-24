@@ -10,7 +10,7 @@ and it holds the seeded catalog. Values are written by the tests that need them 
 afterwards, exactly as the storage suite does.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import httpx
@@ -287,6 +287,7 @@ def a_stub_source(
     no_row_for: tuple[str, ...] = (),
     charges: bool = False,
     eur_per_call: str = "0.05",
+    before_answering: "Callable[[], Awaitable[None]] | None" = None,
 ) -> SourceAdapter:
     """A source that answers instantly with figures the test controls.
 
@@ -353,6 +354,12 @@ def a_stub_source(
             return answers
 
         async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+            # **A handshake, for the one thing a race cannot test.** Stopping a run means
+            # intervening while it is in flight, and a stub that answers instantly leaves no
+            # moment to intervene in. A test hands a callback in here, waits to be told the
+            # source was reached, acts, and releases it.
+            if before_answering is not None:
+                await before_answering()
             if unreachable:
                 # A whole source failing, for no candidate in particular -- OECD behind a
                 # browser challenge -- which is how an adapter reports an HTTP refusal.

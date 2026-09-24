@@ -11,6 +11,7 @@ the order and the refusals rather than FastAPI's event plumbing.
 
 import re
 from collections.abc import Sequence
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,14 @@ from starnest.candidates import Candidate
 from starnest.data import Attribute, DataSourceId
 from starnest.data_acquisition import Acquired, RunScope, SourceAdapter
 from starnest.main import AdapterDeclarationError, start_up
-from starnest.storage import PostgresCatalogStore, PostgresRunStore, SchemaBehindError
+from starnest.storage import (
+    PostgresCatalogStore,
+    PostgresCriteriaStore,
+    PostgresEvaluationStore,
+    PostgresRunStore,
+    SchemaBehindError,
+)
+from starnest.storage.evaluation_store import TEST_EVALUATION_MARKER
 
 pytestmark = pytest.mark.storage
 
@@ -59,6 +67,7 @@ async def boot(
         catalog=PostgresCatalogStore(pool),
         runs=PostgresRunStore(pool),
         adapters=adapters or (StubSource(),),
+        evaluations=PostgresEvaluationStore(pool),
         migrations=migrations,
     )
 
@@ -146,3 +155,72 @@ async def test_a_sweep_is_a_warning_rather_than_a_note(
     assert [
         record.levelname for record in caplog.records if "left running" in record.getMessage()
     ] == ["WARNING"]
+
+
+class TestSweepingWhatATestSaved:
+    """`arch.md` 9.2, last step. The one saved evaluation nobody chose.
+
+    The contract has no delete for a saved evaluation, on purpose: one is a measurement somebody
+    decided to keep. The browser suite saves one per run to prove saving works and decided
+    nothing, so the boot sequence discards the ones it marked.
+    """
+
+    async def _save(self, pool: AsyncConnectionPool, note: str) -> int:
+        from datetime import UTC, datetime
+
+        from starnest.evaluation import CandidateResult, MatchStatus
+
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set("minimal", level="country")
+        saved = await PostgresEvaluationStore(pool).save(
+            criteria=criteria,
+            level="country",
+            results=[
+                CandidateResult(
+                    candidate="country.portugal",
+                    score=71,
+                    rank=1,
+                    coverage=Decimal("100"),
+                    match_status=MatchStatus.MATCHING,
+                )
+            ],
+            score_scale_max=100,
+            computed_at=datetime.now(tz=UTC),
+            note=note,
+        )
+        return saved.id
+
+    async def test_the_boot_discards_what_the_browser_suite_saved(
+        self, pool: AsyncConnectionPool, database_url: str
+    ) -> None:
+        await self._save(pool, f"{TEST_EVALUATION_MARKER}sanity suite 1790")
+
+        booted = await boot(pool, database_url)
+
+        assert booted.test_evaluations_swept == 1
+
+    async def test_it_leaves_an_evaluation_somebody_chose_to_keep(
+        self, pool: AsyncConnectionPool, database_url: str
+    ) -> None:
+        """The step must be safe to run on every boot of a real installation, which is the only
+        reason it can be in the boot sequence at all."""
+        kept = await self._save(pool, "the one I am going to act on")
+
+        booted = await boot(pool, database_url)
+
+        assert booted.test_evaluations_swept == 0
+        assert (await PostgresEvaluationStore(pool).read_evaluation(kept)).id == kept
+
+    async def test_a_boot_with_no_evaluation_store_sweeps_nothing(
+        self, pool: AsyncConnectionPool, database_url: str
+    ) -> None:
+        """`evaluations` is optional so the other startup tests need not build one. A boot that
+        was not given a store reports nothing swept rather than failing."""
+        booted = await start_up(
+            database_url=database_url,
+            pool=pool,
+            catalog=PostgresCatalogStore(pool),
+            runs=PostgresRunStore(pool),
+            adapters=(StubSource(),),
+        )
+
+        assert booted.test_evaluations_swept == 0

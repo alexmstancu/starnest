@@ -67,6 +67,8 @@ let matchRuleResults: MatchRuleResult[] = [...MATCH_RULE_RESULTS];
 let dataSources: DataSource[] = DATA_SOURCES.map((each) => ({ ...each }));
 let savedEvaluations: EvaluationSummary[] = [];
 let nextEvaluationId = 1;
+/** When a stopped run records that somebody asked. Fixed, so a test can assert on it. */
+const STOPPED_AT = "2026-09-12T09:00:06Z";
 
 export function resetMockData(): void {
   criteriaSetDetails = makeCriteriaSetDetails();
@@ -568,6 +570,25 @@ export const handlers = [
 
   http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
     HttpResponse.json({ ...STARTED_RUN_DETAIL, id: Number(params["runId"]) }),
+  ),
+
+  /**
+   * Stop a run, keeping what it completed.
+   *
+   * **Mutable, like the criteria sets.** A stop that did not stick would not exercise the
+   * screen it exists for: the button goes, the pill reads `stopping`, and neither happens
+   * unless the run comes back carrying `stop_requested_at`.
+   */
+  http.post(`${BASE}/data-acquisition-runs/:runId/stop`, ({ params }) =>
+    HttpResponse.json(
+      {
+        ...STARTED_RUN_DETAIL,
+        id: Number(params["runId"]),
+        run_status: "running",
+        stop_requested_at: STOPPED_AT,
+      },
+      { status: 202 },
+    ),
   ),
 
   http.post(

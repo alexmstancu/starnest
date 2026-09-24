@@ -533,6 +533,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/data-acquisition-runs/{runId}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop a run, keeping everything it completed
+         * @description **Nothing is lost.** The acquisition loop reads the request between sources, so every
+         *     figure already written stays written — the same guarantee the spend cap gives.
+         *
+         *     **It takes effect when the source in flight finishes.** A source's fetch is one request
+         *     over every candidate in most adapters, so that is the finest grain at which a run can be
+         *     interrupted without abandoning a request the publisher has already answered.
+         *
+         *     The run ends `halted_by_user`, which is neither `halted_on_spend_cap` (the money ran
+         *     out) nor `failed` (it broke). Recording it as either would make the history lie about
+         *     why the figures stop where they do.
+         *
+         *     Asking a run that has already finished to stop is not an error — the outcome asked for
+         *     is already true — and it leaves no trace on that run.
+         */
+        post: operations["stopRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/data-acquisition-runs/{runId}/retry": {
         parameters: {
             query?: never;
@@ -1112,8 +1144,16 @@ export interface components {
         };
         Run: {
             id: number;
-            /** @enum {string} */
-            run_status: "running" | "completed" | "halted_on_spend_cap" | "failed";
+            /**
+             * @description The three ways of not finishing are three different facts: halted_on_spend_cap means the money ran out, halted_by_user means a person stopped it, and failed means it broke or its process died.
+             * @enum {string}
+             */
+            run_status: "running" | "completed" | "halted_on_spend_cap" | "halted_by_user" | "failed";
+            /**
+             * Format: date-time
+             * @description When somebody asked this run to stop, or null. A run still `running` with this set will stop when the source in flight finishes -- which is a different thing to tell a reader than "running".
+             */
+            stop_requested_at?: string | null;
             triggered_by?: string;
             /** Format: date-time */
             started_at: string;
@@ -2256,6 +2296,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    stopRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request was recorded. The run stops at its next source. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
                 };
             };
             404: components["responses"]["NotFound"];

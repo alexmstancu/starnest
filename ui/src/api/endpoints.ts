@@ -258,6 +258,22 @@ export function retryRun(
   );
 }
 
+/**
+ * Ask a run to stop. **Nothing it completed is lost.**
+ *
+ * 202, not 200: the run has not stopped yet. The acquisition loop reads the request between
+ * sources, so it ends when the fetch in flight finishes -- the finest grain at which a run can
+ * be interrupted without abandoning a request a publisher has already answered. The run comes
+ * back so the screen can show `stop_requested_at` straight away rather than waiting for the
+ * next poll to explain why the button has gone.
+ */
+export function stopRun(runId: number, options?: RequestOptions): Promise<Run> {
+  return postJson("/data-acquisition-runs/{runId}/stop", undefined, {
+    ...options,
+    pathParams: { runId },
+  });
+}
+
 export type StoredValue = components["schemas"]["Value"];
 export type ExternalScore = components["schemas"]["ExternalScore"];
 

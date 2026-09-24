@@ -2908,6 +2908,55 @@ paths:
       summary: Retry
       tags:
       - acquisition
+  /v1/data-acquisition-runs/{run_id}/stop:
+    post:
+      description: 'Ask a run to stop. **Nothing it completed is lost.**
+
+
+        202 rather than 200 because the run has not stopped yet: the loop reads the
+        request between
+
+        sources, so it ends when the fetch in flight finishes. That is the finest
+        grain at which a
+
+        run can be interrupted without abandoning a request a publisher has already
+        answered.
+
+
+        **Asking a finished run to stop is not an error.** The outcome the caller
+        wanted is already
+
+        true, and raising here would turn a harmless double-click into something a
+        screen has to
+
+        explain. The store leaves no trace on a run that was not running, so a run
+        that ended on its
+
+        own never reads as one somebody intervened in.'
+      operationId: stopRun
+      parameters:
+      - in: path
+        name: run_id
+        required: true
+        schema:
+          title: Run Id
+          type: integer
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Stop
+      tags:
+      - acquisition
   /v1/data-sources:
     get:
       description: 'Every source, in the global priority order (`reqs.md` 6.6).

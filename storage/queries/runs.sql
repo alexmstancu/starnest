@@ -106,6 +106,7 @@ SELECT r.id,
        r.llm_call_count,
        r.cost_eur,
        r.level,
+       r.stop_requested_at,
        (SELECT count(*) FROM data_acquisition_run_candidate AS scope
         WHERE  scope.data_acquisition_run = r.id) AS scope_candidates,
        (SELECT count(*) FROM data_acquisition_run_attribute AS scope
@@ -154,6 +155,7 @@ SELECT r.id,
        r.llm_call_count,
        r.cost_eur,
        r.level,
+       r.stop_requested_at,
        COALESCE(
            (SELECT jsonb_agg(scope.candidate ORDER BY scope.candidate)
             FROM   data_acquisition_run_candidate AS scope
@@ -330,3 +332,26 @@ FROM   (SELECT DISTINCT data_source
         FROM   data_acquisition_failure
         WHERE  data_acquisition_run = :data_acquisition_run) AS reached
 ORDER  BY reached.data_source;
+
+-- name: request_run_stop(data_acquisition_run, asked_at)<!
+-- Ask a run to stop, and say whether there was a running one to ask.
+--
+-- **Only a running run.** Asking a finished one to stop is not an error worth raising -- the
+-- outcome the caller wanted is already true -- but it must not stamp a time onto a run that
+-- ended on its own, because `stop_requested_at` is read afterwards as "somebody intervened".
+--
+-- **First ask wins.** A second request leaves the first time in place, so the record is when
+-- the stop was asked for rather than when it was last asked for again.
+UPDATE data_acquisition_run
+SET    stop_requested_at = coalesce(stop_requested_at, :asked_at)
+WHERE  id = :data_acquisition_run
+  AND  run_status = 'running'
+RETURNING id;
+
+-- name: select_run_stop_requested(data_acquisition_run)$
+-- Whether somebody has asked this run to stop. Read by the loop between items.
+--
+-- One boolean per item is a cheap question next to the HTTP fetch it sits beside, and reading
+-- it from the row rather than from memory is what lets a stop reach a run whose loop is in a
+-- background task -- which every run's is (P35 made the 202 true).
+SELECT stop_requested_at IS NOT NULL FROM data_acquisition_run WHERE id = :data_acquisition_run;

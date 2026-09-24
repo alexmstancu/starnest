@@ -14,7 +14,12 @@ import { describeGaps, describeScope } from "./databaseHolds";
 import { ItemGroups } from "./ItemGroups";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";
 import { type Progress, progressBar } from "./runProgress";
-import { outcomeSentence, type SourceReach, sourceBars } from "./sourceReach";
+import {
+  outcomeSentence,
+  runState,
+  type SourceReach,
+  sourceBars,
+} from "./sourceReach";
 import { describeCeiling, describeSpend } from "./spendCommitment";
 import {
   type GapKind,
@@ -60,8 +65,10 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
         <RunReport
           run={run.current}
           busy={run.busy === "opening"}
+          stopping={run.busy === "stopping"}
           onRefresh={run.refresh}
           onDismiss={run.close}
+          onStop={run.stop}
         />
       )}
 
@@ -427,17 +434,26 @@ function RunProgress({ progress }: { progress?: Progress | null }) {
 function RunReport({
   run,
   busy,
+  stopping,
   onRefresh,
   onDismiss,
+  onStop,
 }: {
   run: RunDetail;
   busy: boolean;
+  stopping: boolean;
   onRefresh: () => void;
   onDismiss: () => void;
+  onStop: () => void;
 }) {
   const failures = run.failures ?? [];
   const unanswered = run.unanswered ?? [];
   const outcome = outcomeSentence(run.run_status, run.progress);
+  const state = runState(run.run_status, run.stop_requested_at);
+  // **Offered only while there is something to stop, and withdrawn once asked.** A second
+  // click would change nothing -- the first request is the one recorded -- and a button that
+  // stays live after it has been used invites the reader to think it did not work.
+  const canStop = run.run_status === "running" && run.stop_requested_at == null;
   return (
     // A labelled region, so "the run report" is something a reader -- or a screen reader --
     // can address, rather than the nearest box that happens to contain the heading.
@@ -446,7 +462,7 @@ function RunReport({
         <h3 id={`run-${run.id}`} className="acquisition__heading">
           Acquisition {run.id}
         </h3>
-        <RunStatusPill status={run.run_status} />
+        <RunStatusPill status={state} />
       </header>
 
       {/* What it was asked to cover, as a sentence rather than as two counts to multiply in
@@ -541,6 +557,20 @@ function RunReport({
           >
             {busy ? "Reading…" : "Refresh"}
           </button>
+          {canStop && (
+            /* **Says what it keeps, because that is the question.** "Stop" alone reads as
+               "throw away what it has done", and the one thing a reader must know before
+               clicking is that it does not. The loop reads the request between sources, so
+               everything already written stays written. */
+            <button
+              type="button"
+              className="button button--danger"
+              disabled={stopping}
+              onClick={onStop}
+            >
+              {stopping ? "Stopping…" : "Stop — keep what completed"}
+            </button>
+          )}
           <button type="button" className="button" onClick={onDismiss}>
             Dismiss
           </button>
@@ -645,6 +675,8 @@ function statusTone(status: string): string {
     case "failed":
       return "bad";
     case "halted_on_spend_cap":
+    case "halted_by_user":
+    case "stopping":
       return "warn";
     default:
       return "live";

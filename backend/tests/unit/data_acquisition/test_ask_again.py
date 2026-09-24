@@ -128,6 +128,13 @@ class RecordingRunStore(RunStore):
     async def record_failures(self, run, failures) -> None:
         return None
 
+    async def request_stop(self, run: int) -> bool:
+        """Nothing here runs long enough to stop. Implemented because the port declares it."""
+        return False
+
+    async def stop_was_requested(self, run: int) -> bool:
+        return False
+
     async def add_spend(self, run: int, *, calls: int, cost_eur: Decimal) -> None:
         """Nothing here charges: every source in this file is a stub. Implemented because the
         port declares it."""

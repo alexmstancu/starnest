@@ -210,6 +210,25 @@ async def open_run(
     )
 
 
+async def _halt(
+    run: int,
+    runs: RunStore,
+    candidates: Sequence[Candidate],
+    failures: Sequence[AcquisitionFailure],
+    status: RunStatus,
+) -> Run:
+    """End a run early, keeping everything it had written.
+
+    **One path for both halts**, because they differ only in the word they record. A second
+    copy of "write the failures, close the run, read it back" is where the spend cap and a
+    user's stop would quietly stop behaving the same -- and "nothing is lost" is the promise
+    both of them make.
+    """
+    await runs.record_failures(run, _item_by_item(failures, candidates))
+    await runs.finish_run(run, status=status, finished_at=datetime.now(tz=UTC))
+    return await runs.read_run(run)
+
+
 async def continue_run(opened: OpenedRun) -> Run:
     """Fetch everything the opened run covers, record what happened, and close it.
 
@@ -227,6 +246,15 @@ async def continue_run(opened: OpenedRun) -> Run:
     failures: list[AcquisitionFailure] = []
     try:
         for adapter in opened.adapters:
+            # **Asked between sources, never mid-fetch.** A source's fetch is one request over
+            # every candidate in most adapters, so this is the finest grain at which a run can
+            # be interrupted without abandoning a request already in flight -- and abandoning
+            # one would lose figures the publisher had already sent. It is the same checkpoint
+            # the spend cap uses, for the same reason.
+            if await runs.stop_was_requested(run):
+                _log.info("run %d was stopped before %s was asked", run, adapter.data_source)
+                return await _halt(run, runs, candidates, failures, RunStatus.HALTED_BY_USER)
+
             outcome = await acquire(
                 adapter=adapter,
                 attributes=opened.answerable,
@@ -256,14 +284,12 @@ async def continue_run(opened: OpenedRun) -> Run:
             if meter.is_exhausted:
                 # The cap is a stop, not a failure. What was fetched is stored and the status
                 # says why it stopped -- so a retry over the rest is the obvious next step.
+                #
+                # **Checked before the stop request**, so a run that hit its cap reports the
+                # cap even if somebody also clicked Stop: it would have halted either way, and
+                # the money is the fact a reader needs.
                 _log.warning("run %d halted on its spend cap: %s", run, meter.describe())
-                await runs.record_failures(run, _item_by_item(failures, candidates))
-                await runs.finish_run(
-                    run,
-                    status=RunStatus.HALTED_ON_SPEND_CAP,
-                    finished_at=datetime.now(tz=UTC),
-                )
-                return await runs.read_run(run)
+                return await _halt(run, runs, candidates, failures, RunStatus.HALTED_ON_SPEND_CAP)
 
             for failure in outcome.failures:
                 # The only way a parse failure is diagnosable (`arch.md` 9.4, 5.3): the source,

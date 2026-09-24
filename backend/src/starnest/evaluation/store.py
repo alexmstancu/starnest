@@ -75,3 +75,14 @@ class EvaluationStore(ABC):
     @abstractmethod
     async def read_candidate(self, evaluation: int, candidate: str) -> CandidateResult:
         """One candidate with its per-attribute detail: the drill-down behind a total."""
+
+    @abstractmethod
+    async def sweep_test_evaluations(self) -> int:
+        """Discard the evaluations a test saved, and return how many. Called once, at boot.
+
+        **The one kind of saved evaluation nobody chose.** Everything else here exists because
+        a human decided a ranking was worth keeping, which is why there is no delete in the
+        contract. The browser suite saves one per run to prove that saving works; left alone
+        they accumulate under a count that means "rankings I kept" and they pin their criteria
+        set for ever, since a frozen-criteria row holds it by foreign key.
+        """

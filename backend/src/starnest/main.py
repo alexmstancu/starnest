@@ -33,6 +33,7 @@ from starnest.data_acquisition import (
     SourceAdapter,
     declarations_that_disagree,
 )
+from starnest.evaluation import EvaluationStore
 from starnest.storage import refuse_if_behind
 
 if TYPE_CHECKING:
@@ -158,6 +159,7 @@ def build() -> tuple[Environment, "FastAPI"]:
     catalog = PostgresCatalogStore(pool)
     runs = PostgresRunStore(pool)
     adapters = _the_sources(catalog, environment)
+    evaluations = PostgresEvaluationStore(pool)
     app = build_app(
         households=PostgresHouseholdStore(pool),
         criteria_store=PostgresCriteriaStore(pool),
@@ -166,7 +168,7 @@ def build() -> tuple[Environment, "FastAPI"]:
         catalog_store=catalog,
         run_store=runs,
         match_rule_results=PostgresMatchRuleResultStore(pool),
-        evaluation_store=PostgresEvaluationStore(pool),
+        evaluation_store=evaluations,
         # The one place a concrete source is named. `api/` holds only the interface, which is
         # what lets the acceptance suite drive the same endpoints against a stub.
         adapters=adapters,
@@ -184,6 +186,7 @@ def build() -> tuple[Environment, "FastAPI"]:
             catalog=catalog,
             runs=runs,
             adapters=adapters,
+            evaluations=evaluations,
         )
         # **The last source joins here, because its declaration is derived.** The fallback asks
         # a model about attributes *no other source covers*, and which those are is a fact about
@@ -207,6 +210,7 @@ class Booted:
     migrations_applied: int
     sources_registered: tuple[str, ...]
     runs_swept: tuple[int, ...]
+    test_evaluations_swept: int = 0
 
 
 async def start_up(
@@ -216,6 +220,7 @@ async def start_up(
     catalog: CatalogStore,
     runs: RunStore,
     adapters: Sequence[SourceAdapter],
+    evaluations: EvaluationStore | None = None,
     migrations: Path | None = None,
 ) -> Booted:
     """`arch.md` 9.2, in order, and it fails loudly rather than degrading.
@@ -267,8 +272,19 @@ async def start_up(
     else:
         boot.info("no abandoned run to sweep")
 
+    # **The one saved evaluation nobody chose.** Everything else in that table is there because
+    # somebody decided a ranking was worth keeping, which is why the contract has no delete for
+    # one. The browser suite saves one per run to prove saving works; left alone they pile up
+    # under a count that means "rankings I kept", and each pins its criteria set for ever.
+    discarded = 0 if evaluations is None else await evaluations.sweep_test_evaluations()
+    if discarded:
+        boot.info("%d evaluation(s) a test saved were discarded", discarded)
+
     return Booted(
-        migrations_applied=len(state.applied), sources_registered=registered, runs_swept=swept
+        migrations_applied=len(state.applied),
+        sources_registered=registered,
+        runs_swept=swept,
+        test_evaluations_swept=discarded,
     )
 
 

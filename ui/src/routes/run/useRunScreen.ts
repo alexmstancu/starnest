@@ -17,6 +17,7 @@ import {
   planRun,
   retryRun,
   startRun,
+  stopRun,
   type Run,
   type RunDetail,
   type RunPlan,
@@ -31,7 +32,8 @@ export type RunAct =
   | "running"
   | "retrying"
   | "asking"
-  | "opening";
+  | "opening"
+  | "stopping";
 /**
  * `opening` covers reading a run back: opening one from the history, and refreshing the one on
  * screen. Both used to be something else -- refreshing claimed to be `planning`, which relabelled
@@ -81,6 +83,11 @@ export interface RunScreenState {
   refresh: () => void;
   /** Put the run away. It stays in the history; this is the screen's view of it, not the run. */
   close: () => void;
+  /**
+   * Ask the run on screen to stop. **Nothing it completed is lost** -- the loop reads the
+   * request between sources, so it ends when the fetch in flight finishes.
+   */
+  stop: () => void;
   /**
    * Estimate a scoped run and arm it. **Scoped rather than a retry**, because
    * `POST /{runId}/retry` takes only `failed | unanswered` over a whole run -- anything
@@ -214,6 +221,14 @@ export function useRunScreen(): RunScreenState {
         if (current) setCurrent(await fetchRun(current.id));
       }),
     close: () => setCurrent(null),
+    stop: () =>
+      void act("stopping", async () => {
+        if (!current) return;
+        // The 202 carries the run back, so `stop_requested_at` is on screen immediately
+        // rather than after the next poll -- which is what lets the card explain why the
+        // button has gone before the run has actually ended.
+        await watch(await stopRun(current.id));
+      }),
     again: (items) =>
       void act(items === "failed" ? "retrying" : "asking", async () => {
         if (current) await watch(await retryRun(current.id, items));

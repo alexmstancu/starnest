@@ -99,17 +99,28 @@ still worth having; it is not the only ceiling.
 
 ### Still open, and deliberately
 
-- [ ] **P, the per-source enable toggle.** `data_source` has no enabled column and there is no
-      write endpoint, so the source panel is read-only. Needs a migration and a 43rd operation.
-- [ ] **Q, the acquisition diff.** No endpoint and no changed-since field. Derivable client
-      side from `/values?include_superseded=true`, which is real client work rather than a
-      field to render.
+- [x] **P, the per-source enable toggle.** Done: `0480` added the column and the panel
+      switches a source off.
+- [x] **Q, the acquisition diff.** Done, client side from `/values?include_superseded=true` as
+      predicted. Extended 2026-09-23 with the Earlier and Later figures, which is what let
+      "refreshed" split from "unchanged" -- one word that meant both *the figure moved* and
+      *the same figure came back*.
 - [ ] **"Refetch data older than N days."** The design's stage 6 offers a global knob we do not
       model: staleness is per-attribute `max_age` (`reqs.md` 7.1). Decide before building.
 - [ ] **The hand-entry form behind "Enter a value by hand."** `POST /values/manual` is served
       and waiting; what it needs is a payload editor per value type. Parked by the design too.
-- [ ] **A saved evaluation cannot be deleted.** The contract has no `DELETE /evaluations`, on
-      purpose -- a saved evaluation is a measurement somebody chose to keep. The browser suite
-      therefore leaves one row behind per run, and marks what it creates.
+- [x] **A saved evaluation cannot be deleted.** Still true, and still on purpose -- a saved
+      evaluation is a measurement somebody chose to keep, and the protection is the absent
+      operation. Done 2026-09-24: **a test chose nothing**, so the browser suite prefixes its
+      notes with `[e2e] ` and the boot sequence discards those (`arch.md` 9.2). Needed `0482`,
+      which cascades an evaluation's snapshot, because a delete was not merely refused at the
+      API -- it was impossible at all. The two halves of the marker are in different languages
+      and cannot share a constant, so `tests/unit/test_architecture.py` reads the spec file and
+      pins the literal.
+
+- [x] **Stop a run.** Done 2026-09-24. `POST /data-acquisition-runs/{runId}/stop`, a
+      `stop_requested_at` column the loop reads **between sources**, and a fifth status
+      `halted_by_user`. See `docs/design-brief.md` for why it is a fifth status and not a reuse
+      of one of the four.
 
 ## TODOs for Alex

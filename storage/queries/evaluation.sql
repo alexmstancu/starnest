@@ -333,3 +333,29 @@ cleared_criteria AS (
     DELETE FROM evaluation_criterion WHERE evaluation = :evaluation
 )
 DELETE FROM evaluation WHERE id = :evaluation;
+
+-- name: sweep_test_evaluations(marker)<!
+-- Discard the evaluations a test saved, and say how many.
+--
+-- **A test chose nothing.** A saved evaluation is a measurement somebody decided to keep, which
+-- is why the contract has no delete for one. The browser suite saves one per run to prove that
+-- saving works, and those are not decisions -- left alone they pile up in the sidebar under a
+-- count that is supposed to mean "rankings I kept", and they pin their criteria set for ever
+-- through the frozen-criteria foreign key, so a spec that owns a set can never make a fresh one.
+--
+-- **The marker is a prefix a human would not type.** It is applied by the suite when it saves
+-- and by nothing else; `test_the_sweep_only_takes_what_a_test_marked` pins the literal string,
+-- because the two halves live in different languages and cannot share a constant.
+--
+-- The children go with it: `0482` made every foreign key into an evaluation's snapshot cascade.
+-- **`starts_with`, not `LIKE`.** A LIKE pattern would have to carry a literal `%`, which
+-- psycopg reads as one of its own placeholders, and escaping it would leave the query saying
+-- `'%%'` -- a wildcard hiding inside what is meant to be an exact prefix. `starts_with` says
+-- the thing itself, and a marker containing `%` or `_` could never behave oddly in it. A null
+-- note yields null, so an evaluation with no note is never swept.
+WITH swept AS (
+    DELETE FROM evaluation
+    WHERE  starts_with(note, :marker)
+    RETURNING id
+)
+SELECT count(*) AS discarded FROM swept;

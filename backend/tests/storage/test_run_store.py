@@ -354,3 +354,70 @@ class TestSweepingRunsAProcessAbandoned:
         await PostgresRunStore(pool).sweep_abandoned_runs(finished_at=moment)
 
         assert (await PostgresRunStore(pool).read_run(a_run)).finished_at is not None
+
+
+class TestAskingARunToStop:
+    """`reqs.md` 6.4. A person can stop a run, and the run says so afterwards.
+
+    **The request is a row, not a flag in memory.** The loop runs as a background task, so an
+    in-process flag would be invisible to the poll that reports the run's state and lost
+    entirely the moment anything ran in a second process.
+    """
+
+    async def test_a_running_run_takes_the_request(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        store = PostgresRunStore(pool)
+
+        assert await store.request_stop(a_run) is True
+        assert await store.stop_was_requested(a_run) is True
+        assert (await store.read_run(a_run)).stop_requested_at is not None
+
+    async def test_a_run_nobody_stopped_says_so(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        store = PostgresRunStore(pool)
+
+        assert await store.stop_was_requested(a_run) is False
+        assert (await store.read_run(a_run)).stop_requested_at is None
+
+    async def test_a_finished_run_is_left_unmarked(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """**Not an error, and not a mark.** The outcome the caller wanted is already true, and
+        stamping a time would make a run that ended on its own read as one somebody intervened
+        in -- which is exactly what the fifth status exists to keep apart."""
+        store = PostgresRunStore(pool)
+        await store.finish_run(a_run, status=RunStatus.COMPLETED, finished_at=datetime.now(UTC))
+
+        assert await store.request_stop(a_run) is False
+        assert (await store.read_run(a_run)).stop_requested_at is None
+
+    async def test_the_first_ask_is_the_one_recorded(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """A second click records nothing new: the fact worth keeping is when the stop was
+        asked for, not when somebody last asked again."""
+        store = PostgresRunStore(pool)
+        await store.request_stop(a_run)
+        first = (await store.read_run(a_run)).stop_requested_at
+
+        await store.request_stop(a_run)
+
+        assert (await store.read_run(a_run)).stop_requested_at == first
+
+    async def test_a_run_that_does_not_exist_takes_nothing(self, pool: AsyncConnectionPool) -> None:
+        assert await PostgresRunStore(pool).request_stop(999_999) is False
+
+    async def test_a_stopped_run_records_the_fifth_status(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """The schema allows it and the three ways of not finishing stay three facts."""
+        store = PostgresRunStore(pool)
+        await store.request_stop(a_run)
+
+        await store.finish_run(
+            a_run, status=RunStatus.HALTED_BY_USER, finished_at=datetime.now(UTC)
+        )
+
+        assert (await store.read_run(a_run)).status is RunStatus.HALTED_BY_USER

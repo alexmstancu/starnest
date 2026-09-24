@@ -31,6 +31,7 @@ from starnest.data_acquisition import (
     NOTHING,
     Run,
     RunAlreadyInFlightError,
+    RunStatus,
     ask_again,
     asked_this_run,
     continue_run,
@@ -92,6 +93,9 @@ class RunBody(ContractBody):
     items_total: int = 0
     items_completed: int = 0
     items_failed: int = 0
+    # A run still `running` with this set will stop when the source in flight finishes, which
+    # is a different thing to tell a reader than "running".
+    stop_requested_at: datetime | None = None
 
 
 class ProgressBody(BaseModel):
@@ -286,6 +290,29 @@ async def start_run(
 
 
 @router.post(
+    "/data-acquisition-runs/{run_id}/stop",
+    operation_id="stopRun",
+    status_code=202,
+    response_model=RunBody,
+)
+async def stop(run_id: int, runs: Runs) -> RunBody:
+    """Ask a run to stop. **Nothing it completed is lost.**
+
+    202 rather than 200 because the run has not stopped yet: the loop reads the request between
+    sources, so it ends when the fetch in flight finishes. That is the finest grain at which a
+    run can be interrupted without abandoning a request a publisher has already answered.
+
+    **Asking a finished run to stop is not an error.** The outcome the caller wanted is already
+    true, and raising here would turn a harmless double-click into something a screen has to
+    explain. The store leaves no trace on a run that was not running, so a run that ended on its
+    own never reads as one somebody intervened in.
+    """
+    read = await runs.read_run(run_id)
+    await runs.request_stop(run_id)
+    return _run_body(await runs.read_run(run_id) if read.status is RunStatus.RUNNING else read)
+
+
+@router.post(
     "/data-acquisition-runs/{run_id}/retry",
     operation_id="retryRun",
     status_code=202,
@@ -449,6 +476,7 @@ def _run_body(run: Run) -> RunBody:
         items_total=run.items_total,
         items_completed=run.items_completed,
         items_failed=run.items_failed,
+        stop_requested_at=run.stop_requested_at,
     )
 
 

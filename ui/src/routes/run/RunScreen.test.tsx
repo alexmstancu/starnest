@@ -2,7 +2,11 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { PAID_RUN_PLAN, RUN_PLAN } from "../../mocks/fixtures";
+import {
+  PAID_RUN_PLAN,
+  RUN_PLAN,
+  STARTED_RUN_DETAIL,
+} from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -985,5 +989,121 @@ describe("the acquisition card", () => {
       screen.getByRole("heading", { name: /every acquisition so far/i }),
     ).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "7" })).toBeInTheDocument();
+  });
+});
+
+describe("stopping a run", () => {
+  /**
+   * `reqs.md` 6.4. **The control says what it keeps, because that is the question.** "Stop"
+   * alone reads as "throw away what it has done", and the one thing a reader must know before
+   * clicking is that it does not: the loop reads the request between sources, so everything
+   * already written stays written.
+   */
+  async function aRunningAcquisition() {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          run_status: "running",
+          finished_at: null,
+        }),
+      ),
+    );
+    renderShell("/acquire");
+    await screen.findByRole("heading", { name: /acquisition 7/i });
+    return within(screen.getByRole("region", { name: /acquisition 7/i }));
+  }
+
+  it("is offered only while something is running", async () => {
+    const card = await aRunningAcquisition();
+
+    expect(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("is not offered for a run that has finished", async () => {
+    // Nothing to stop, and a live control would invite a click that does nothing.
+    renderShell("/acquire");
+    await screen.findByRole("heading", { name: /acquisition 7/i });
+
+    expect(
+      screen.queryByRole("button", { name: /stop — keep what completed/i }),
+    ).toBeNull();
+  });
+
+  it("says stopping, and withdraws the control once asked", async () => {
+    // Still `running` on the server until the source in flight finishes. Telling the reader
+    // "running" there is true and useless -- they have just clicked Stop. And a second click
+    // would change nothing, because the first request is the one recorded.
+    //
+    // **The mock has to remember the stop**, because the server does: the request is a column
+    // on the run, so the next read carries it. A mock that forgot would certify a card that
+    // reverts to "running" the moment it refreshes -- kinder than the server in exactly the
+    // way that ships a fault.
+    let asked = false;
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          run_status: "running",
+          finished_at: null,
+          stop_requested_at: asked ? "2026-09-12T09:00:06Z" : null,
+        }),
+      ),
+      http.post(`${BASE}/data-acquisition-runs/:runId/stop`, ({ params }) => {
+        asked = true;
+        return HttpResponse.json(
+          { ...STARTED_RUN_DETAIL, id: Number(params["runId"]) },
+          { status: 202 },
+        );
+      }),
+    );
+    renderShell("/acquire");
+    await screen.findByRole("heading", { name: /acquisition 7/i });
+    const card = within(screen.getByRole("region", { name: /acquisition 7/i }));
+
+    await userEvent.click(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+
+    await waitFor(() => {
+      const open = within(
+        screen.getByRole("region", { name: /acquisition 7/i }),
+      );
+      expect(open.getByText("stopping")).toBeInTheDocument();
+      expect(
+        open.queryByRole("button", { name: /stop — keep what completed/i }),
+      ).toBeNull();
+    });
+  });
+
+  it("reports a refusal rather than leaving the button looking ignored", async () => {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          run_status: "running",
+          finished_at: null,
+        }),
+      ),
+      http.post(`${BASE}/data-acquisition-runs/:runId/stop`, () =>
+        HttpResponse.json(
+          { code: "run_not_found", message: "there is no run numbered 7" },
+          { status: 404 },
+        ),
+      ),
+    );
+    renderShell("/acquire");
+    await screen.findByRole("heading", { name: /acquisition 7/i });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+
+    expect(await screen.findByText(/run_not_found/)).toBeInTheDocument();
   });
 });

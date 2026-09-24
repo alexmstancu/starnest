@@ -40,6 +40,15 @@ from starnest.evaluation import (
 from starnest.storage.connections import acquire
 from starnest.storage.queries import load_queries
 
+TEST_EVALUATION_MARKER = "[e2e] "
+"""What the browser suite prefixes its notes with, so the boot sweep can find them.
+
+**Square brackets, and a prefix rather than a substring**, because a human typing a note is
+choosing to keep something and must not lose it to a match. The other half of this string is in
+`ui/e2e/sanity.spec.ts`: the two sides share no code, not even DTO definitions, so an acceptance
+test pins the literal rather than an import doing it.
+"""
+
 
 class PostgresEvaluationStore(EvaluationStore):
     def __init__(self, pool: AsyncConnectionPool) -> None:
@@ -216,6 +225,14 @@ class PostgresEvaluationStore(EvaluationStore):
         return _result_from(
             head, attribute_scores=tuple(_attribute_score_from(row) for row in rows)
         )
+
+    async def sweep_test_evaluations(self) -> int:
+        """Discard what the browser suite saved. `0482` cascades the snapshot with it."""
+        async with acquire(self._pool) as connection:
+            row = await self._queries.sweep_test_evaluations(
+                connection, marker=TEST_EVALUATION_MARKER
+            )
+        return int(row.discarded)
 
 
 def _frozen(criterion: Criterion, pillar_weights: dict[str, Decimal]) -> dict[str, Any]:

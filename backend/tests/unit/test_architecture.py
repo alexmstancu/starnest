@@ -162,3 +162,30 @@ def test_the_layering_names_nothing_that_has_gone() -> None:
     does. `import-linter` treats an unknown module as an error, so this mostly guards the
     spelling in this file's own parser."""
     assert _layered_modules() - _modules_that_exist() == set()
+
+
+REPOSITORY = Path(__file__).resolve().parents[3]
+THE_SANITY_SPEC = REPOSITORY / "ui" / "e2e" / "sanity.spec.ts"
+
+
+def test_both_sides_agree_on_what_marks_a_test_made_evaluation() -> None:
+    """The one string the backend and the interface both have to know, pinned from here.
+
+    **A guard, not a dependency.** `arch.md` 6.1 keeps `backend/` and `ui/` as peers that share
+    no code -- not even DTO definitions -- so the marker cannot be imported across. Nothing in
+    `src/` reaches over this boundary; this test reads a file and compares two literals, which
+    is the only way an agreement between two languages can be held to.
+
+    **Why it has to be held.** The interface writes the marker when the browser suite saves a
+    ranking; the boot sequence discards what carries it. If one side changes the string and the
+    other does not, the sweep silently stops finding anything -- and the failure shows up weeks
+    later as a sidebar full of test rows, with nothing having gone red in between.
+    """
+    from starnest.storage.evaluation_store import TEST_EVALUATION_MARKER
+
+    spec = THE_SANITY_SPEC.read_text(encoding="utf-8")
+
+    assert f'"{TEST_EVALUATION_MARKER}"' in spec, (
+        f"the browser suite no longer writes {TEST_EVALUATION_MARKER!r}, so the boot sweep in "
+        f"main.py would discard nothing and saved test rankings would accumulate for ever"
+    )

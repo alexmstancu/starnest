@@ -24,11 +24,19 @@ from starnest.data_acquisition.adapter import AcquisitionFailure
 
 
 class RunStatus(StrEnum):
-    """The four states a run can be in, spelled as the schema spells them."""
+    """The five states a run can be in, spelled as the schema spells them.
+
+    **The three ways of not finishing are three different facts.** `halted_on_spend_cap` means
+    the money ran out, `halted_by_user` means a person stopped it, and `failed` means it broke
+    or its process died. Collapsing any two would make the history lie about why the figures
+    stop where they do -- which is the question somebody has when they come back to a
+    half-filled corpus.
+    """
 
     RUNNING = "running"
     COMPLETED = "completed"
     HALTED_ON_SPEND_CAP = "halted_on_spend_cap"
+    HALTED_BY_USER = "halted_by_user"
     FAILED = "failed"
 
 
@@ -108,6 +116,9 @@ class Run:
     # Source by source, for a run being read back. Empty on a history row, which reports the
     # pass's size rather than its makeup.
     by_source: tuple[SourceReach, ...] = field(default=())
+    # When somebody asked it to stop. A run still `running` with this set is one that will stop
+    # at its next item -- which is a different thing to tell a reader than "running".
+    stop_requested_at: datetime | None = None
 
 
 class RunStore(ABC):
@@ -129,6 +140,19 @@ class RunStore(ABC):
     @abstractmethod
     async def record_failures(self, run: int, failures: Sequence[AcquisitionFailure]) -> None:
         """Attach what did not work, so a retry knows what to address."""
+
+    @abstractmethod
+    async def request_stop(self, run: int) -> bool:
+        """Ask a run to stop, and say whether there was a running one to ask.
+
+        **Stored rather than held in memory.** The run is a row and the loop is a background
+        task; an in-process flag would be invisible to the poll that reports the run's state,
+        and would be lost entirely the moment anything ran in a second process.
+        """
+
+    @abstractmethod
+    async def stop_was_requested(self, run: int) -> bool:
+        """Whether somebody has asked this run to stop. Read between items, never mid-fetch."""
 
     @abstractmethod
     async def add_spend(self, run: int, *, calls: int, cost_eur: Decimal) -> None:

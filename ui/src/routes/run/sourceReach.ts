@@ -113,3 +113,20 @@ function opening(status: string): string {
       return `${status}.`;
   }
 }
+
+
+/**
+ * What to call a run's state, which is not always its status.
+ *
+ * **A run somebody has asked to stop is still `running`**, and will be until the source in
+ * flight finishes. Telling a reader "running" there is true and useless: they have just
+ * clicked Stop and want to know whether it took. `stopping` is not a status the server has --
+ * it is the pair (running, stop asked) said in one word.
+ */
+export function runState(
+  status: string | null | undefined,
+  stopRequestedAt: string | null | undefined,
+): string {
+  if (status === "running" && stopRequestedAt != null) return "stopping";
+  return status ?? "";
+}

@@ -21,6 +21,8 @@ from starnest.evaluation import (
     UnknownEvaluationError,
 )
 from starnest.storage import PostgresCriteriaStore, PostgresEvaluationStore
+from starnest.storage.connections import acquire
+from starnest.storage.evaluation_store import TEST_EVALUATION_MARKER
 
 pytestmark = pytest.mark.storage
 
@@ -199,3 +201,80 @@ class TestTheRulesTravelWithTheResult:
         assert [str(r.match_rule) for r in read.non_match_reasons] == ["uk_skilled_worker"]
         assert read.non_match_reasons[0].reason_detail == "no sponsor"
         assert read.non_match_reasons[0].compound_rule is None
+
+
+class TestSweepingWhatATestSaved:
+    """The one kind of saved evaluation nobody chose.
+
+    Every other row here is a measurement a human decided to keep, which is why the contract
+    has no delete for one. The browser suite saves one per run to prove saving works.
+    """
+
+    async def _save(self, pool: AsyncConnectionPool, note: str | None):
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        store = PostgresEvaluationStore(pool)
+        return store, await store.save(
+            criteria=criteria,
+            level=COUNTRY,
+            results=[a_result(PORTUGAL, 71, 1)],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+            note=note,
+        )
+
+    async def test_it_discards_a_marked_evaluation(self, pool: AsyncConnectionPool) -> None:
+        store, saved = await self._save(pool, f"{TEST_EVALUATION_MARKER}sanity suite 1790")
+
+        discarded = await store.sweep_test_evaluations()
+
+        assert discarded == 1
+        with pytest.raises(UnknownEvaluationError):
+            await store.read_evaluation(saved.id)
+
+    async def test_it_leaves_an_evaluation_somebody_chose_to_keep(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """The whole reason the marker is a prefix a human would not type."""
+        store, saved = await self._save(pool, "the one I am going to act on")
+
+        assert await store.sweep_test_evaluations() == 0
+        assert (await store.read_evaluation(saved.id)).id == saved.id
+
+    async def test_a_note_that_merely_mentions_the_marker_is_not_swept(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """A prefix, never a substring: a note *about* the suite is still somebody's note."""
+        store, saved = await self._save(pool, f"why the {TEST_EVALUATION_MARKER}rows keep coming")
+
+        assert await store.sweep_test_evaluations() == 0
+        assert (await store.read_evaluation(saved.id)).id == saved.id
+
+    async def test_an_evaluation_with_no_note_at_all_is_left(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        store, saved = await self._save(pool, None)
+
+        assert await store.sweep_test_evaluations() == 0
+        assert (await store.read_evaluation(saved.id)).id == saved.id
+
+    async def test_the_whole_snapshot_goes_with_it(self, pool: AsyncConnectionPool) -> None:
+        """`0482` cascades. A frozen criterion left behind would pin the criteria set for ever,
+        which is the fault that made the browser suite adopt a leftover set instead of making
+        a fresh one."""
+        store, saved = await self._save(pool, f"{TEST_EVALUATION_MARKER}sanity suite 1791")
+
+        await store.sweep_test_evaluations()
+
+        async with acquire(pool) as connection:
+            for table in (
+                "evaluation_criterion",
+                "candidate_result",
+                "evaluation_scale_anchor",
+            ):
+                left = await connection.execute(
+                    f"SELECT count(*) FROM {table} WHERE evaluation = %s", (saved.id,)
+                )
+                assert (await left.fetchone())[0] == 0, f"{table} kept a row"
+
+    async def test_sweeping_nothing_is_not_an_error(self, pool: AsyncConnectionPool) -> None:
+        assert await PostgresEvaluationStore(pool).sweep_test_evaluations() == 0

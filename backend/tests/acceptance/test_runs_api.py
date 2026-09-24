@@ -13,6 +13,7 @@ import pytest
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.data_acquisition import SourceAdapter
+from starnest.storage import PostgresRunStore
 
 from .conftest import A_SECOND_SOURCE_ANSWERS, a_stub_source, an_api
 
@@ -886,3 +887,75 @@ class TestTheResponseComesBeforeTheWork:
 
         assert refused.status_code == 409
         assert refused.json()["code"] == "spend_cap_not_set"
+
+
+class TestStoppingARun:
+    """`reqs.md` 6.4. A person can stop a run, and nothing it completed is lost.
+
+    **The stop arrives from inside the run**, because there is no moment outside it to send one
+    from: FastAPI's background task runs before the 202 reaches the caller under ASGI transport,
+    so a test that tried to intervene between them would deadlock on its own stub. Asking the
+    store directly is the same event the endpoint produces -- a row with a time on it -- and it
+    makes the test about what the loop does with it rather than about scheduling.
+    """
+
+    async def test_it_halts_before_the_next_source_and_keeps_what_was_written(
+        self, database_url: str
+    ) -> None:
+        asked_after = []
+
+        async with AsyncConnectionPool(database_url, min_size=1, max_size=2) as pool:
+            store = PostgresRunStore(pool)
+
+            async def stop_this_run() -> None:
+                in_flight = await store.run_in_flight()
+                assert in_flight is not None, "the run must be open before its sources are asked"
+                await store.request_stop(in_flight)
+
+            async def note() -> None:
+                asked_after.append("asked")
+
+            first = a_stub_source(silent_about=(), before_answering=stop_this_run)
+            second = a_stub_source(data_source="oecd", silent_about=(), before_answering=note)
+
+            async with an_api(database_url, (first, second)) as api:
+                run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+                detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        assert detail["run_status"] == "halted_by_user"
+        assert detail["stop_requested_at"] is not None
+        # The source that had already answered kept its figures: a stop is a stop, not a
+        # rollback -- the same guarantee the spend cap gives.
+        assert detail["progress"]["items_completed"] > 0
+        # And the source after it was never asked, which is what stopping means.
+        assert asked_after == []
+
+    async def test_a_run_nobody_stopped_finishes_and_is_unmarked(self, database_url: str) -> None:
+        """The other half of the pair: the loop's new check must not end a run by itself."""
+        async with an_api(database_url, (a_stub_source(),)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        assert detail["run_status"] == "completed"
+        assert detail["stop_requested_at"] is None
+
+    async def test_stopping_a_run_that_already_finished_is_not_an_error(
+        self, database_url: str
+    ) -> None:
+        """The outcome the caller wanted is already true. Raising here would turn a harmless
+        double-click into something a screen has to explain."""
+        async with an_api(database_url, (a_stub_source(),)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+            stopped = await api.post(f"/v1/data-acquisition-runs/{run['id']}/stop")
+
+        assert stopped.status_code == 202
+        # **And it leaves no trace.** A run that ended on its own must never read as one
+        # somebody intervened in, which is the whole reason the fifth status exists.
+        assert stopped.json()["run_status"] == "completed"
+        assert stopped.json()["stop_requested_at"] is None
+
+    async def test_stopping_a_run_that_does_not_exist_is_a_404(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        assert (await api.post("/v1/data-acquisition-runs/999999/stop")).status_code == 404

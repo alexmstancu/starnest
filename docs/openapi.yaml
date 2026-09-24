@@ -734,6 +734,33 @@ paths:
             application/json: { schema: { $ref: "#/components/schemas/RunDetail" } }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /data-acquisition-runs/{runId}/stop:
+    post:
+      tags: [acquisition]
+      summary: Stop a run, keeping everything it completed
+      description: |
+        **Nothing is lost.** The acquisition loop reads the request between sources, so every
+        figure already written stays written — the same guarantee the spend cap gives.
+
+        **It takes effect when the source in flight finishes.** A source's fetch is one request
+        over every candidate in most adapters, so that is the finest grain at which a run can be
+        interrupted without abandoning a request the publisher has already answered.
+
+        The run ends `halted_by_user`, which is neither `halted_on_spend_cap` (the money ran
+        out) nor `failed` (it broke). Recording it as either would make the history lie about
+        why the figures stop where they do.
+
+        Asking a run that has already finished to stop is not an error — the outcome asked for
+        is already true — and it leaves no trace on that run.
+      operationId: stopRun
+      parameters: [ { name: runId, in: path, required: true, schema: { type: integer } } ]
+      responses:
+        "202":
+          description: The request was recorded. The run stops at its next source.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Run" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /data-acquisition-runs/{runId}/retry:
     post:
       tags: [data acquisition]
@@ -1550,7 +1577,20 @@ components:
       required: [id, run_status, started_at]
       properties:
         id: { type: integer }
-        run_status: { type: string, enum: [running, completed, halted_on_spend_cap, failed] }
+        run_status:
+          type: string
+          enum: [running, completed, halted_on_spend_cap, halted_by_user, failed]
+          description: >-
+            The three ways of not finishing are three different facts: halted_on_spend_cap
+            means the money ran out, halted_by_user means a person stopped it, and failed
+            means it broke or its process died.
+        stop_requested_at:
+          type: [string, "null"]
+          format: date-time
+          description: >-
+            When somebody asked this run to stop, or null. A run still `running` with this set
+            will stop when the source in flight finishes -- which is a different thing to tell
+            a reader than "running".
         triggered_by: { type: string }
         started_at: { type: string, format: date-time }
         finished_at: { type: [string, "null"], format: date-time }
