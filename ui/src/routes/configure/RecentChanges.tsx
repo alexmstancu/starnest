@@ -64,11 +64,10 @@ export function RecentChanges({ history }: { history: ChangeHistory }) {
 
       {shown &&
         (history.changes.length === 0 ? (
-          <p className="rail__empty">
-            Nothing has been changed in this session. This list is not stored:
-            reloading clears it, because it is a record of what this session did
-            rather than of what the configuration has been through.
-          </p>
+          /* Four words, as the design has it. The paragraph that stood here explained that
+             the list is session-scoped, which is true and is not what an empty panel is for:
+             a reader meets it before they have made a change and needs only to know that. */
+          <p className="rail__empty">No changes yet.</p>
         ) : (
           <ul className="history">
             {history.changes.map((change) => {

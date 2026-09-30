@@ -570,14 +570,17 @@ describe("what this session changed", () => {
     return within(await screen.findByRole("region", { name: /^recent changes/i }));
   }
 
-  it("says nothing has changed, and that the list is not stored", async () => {
+  it("says nothing has changed", async () => {
+    // Four words, as the design has it. The paragraph that stood here explained that the list
+    // is session-scoped -- true, and not what an empty panel is for: a reader meets it before
+    // they have made a change and needs only to know that.
     renderShell("/configure");
-    const panel = await historyPanel();
 
-    expect(
-      panel.getByText(/nothing has been changed in this session/i),
-    ).toBeInTheDocument();
-    expect(panel.getByText(/reloading clears it/i)).toBeInTheDocument();
+    const rail = within(
+      await screen.findByRole("region", { name: /^Recent changes/ }),
+    );
+
+    expect(rail.getByText("No changes yet.")).toBeInTheDocument();
   });
 
   /**

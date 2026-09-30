@@ -74,7 +74,7 @@ export function CriteriaSetsPanel() {
               )}
 
               {inUse && <span className="chip chip--accent">in use</span>}
-              <span className="set-row__meta">{set.id}</span>
+
 
               {/* **Four slots, always in the same order.** Unavailable is drawn as
                   unavailable rather than as absent: "Use" on the set already in use, and

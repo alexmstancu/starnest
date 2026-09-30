@@ -35,16 +35,12 @@ export interface CatalogAttribute {
 export type AttributeCatalog = ReadonlyMap<string, CatalogAttribute>;
 
 /**
- * What to call the attribute, and what to print under it.
+ * What to call the attribute.
  *
- * **The catalog's name leads and the id follows.** A configuration screen whose rows are
- * headed `country.cost_of_living_index` asks the reader to parse an identifier before they can
- * decide anything. The id still shows, quietly, because it is what the rest of the application
- * -- a run's scope, a failure, a stand-in row -- calls that attribute, and a screen that hid it
- * would leave those unmatchable.
- *
- * **The id alone when the catalog has not answered.** Inventing a title case of the id would
- * be this screen guessing at what an attribute measures.
+ * **The catalog's name, and the id only when there is no name.** The design bars programmatic
+ * identifiers from rendered text -- no attribute keys, rule ids or settings field names -- so
+ * the id is a last resort rather than a second line. Inventing a title case of the id would be
+ * this screen guessing at what an attribute measures, which is worse than showing the key.
  */
 export function titleOf(
   attributeId: string,

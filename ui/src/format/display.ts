@@ -23,8 +23,11 @@ export const ABSENT = "—";
  */
 export function formatPercentage(value: number | null | undefined, fractionDigits = 1): string {
   if (!isFiniteNumber(value)) return ABSENT;
+  // **The decimal is kept, never dropped.** The design writes every percentage to one place --
+  // "100.0%", "14.0%", "93.8% covered" -- and a total that reads "100%" beside weights reading
+  // "14.0%" looks like a different kind of number rather than the same one summed.
   return `${new Intl.NumberFormat(DISPLAY_LOCALE, {
-    minimumFractionDigits: 0,
+    minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   }).format(value)}%`;
 }

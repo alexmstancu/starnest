@@ -14,8 +14,8 @@ import {
 describe("formatPercentage", () => {
   it("prints a 0-100 percentage without rescaling it", () => {
     expect(formatPercentage(92.4)).toBe("92.4%");
-    expect(formatPercentage(100)).toBe("100%");
-    expect(formatPercentage(0)).toBe("0%");
+    expect(formatPercentage(100)).toBe("100.0%");
+    expect(formatPercentage(0)).toBe("0.0%");
   });
 
   it("rounds to the requested number of fraction digits", () => {

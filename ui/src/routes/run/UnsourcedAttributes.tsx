@@ -87,9 +87,20 @@ export function UnsourcedAttributes({ level }: { level: string }) {
       className={asked ? "panel panel--asked-for" : "panel"}
       aria-labelledby={headingId}
     >
-      <h3 id={headingId} className="panel__heading">
-        Attributes with no data source at all
-      </h3>
+      <div className="panel__head">
+        <h3 id={headingId} className="panel__heading">
+          Attributes with no data source at all
+        </h3>
+        {/* The count as a badge, which is what the design puts here: the heading says what the
+            card is, and this says how much of it there is before the table is read. */}
+        {gaps.length > 0 && (
+          <span className="chip chip--warning">
+            {gaps.length === 1
+              ? "1 attribute affected"
+              : `${String(gaps.length)} attributes affected`}
+          </span>
+        )}
+      </div>
 
       {gaps.length === 0 ? (
         <p className="panel__hint">

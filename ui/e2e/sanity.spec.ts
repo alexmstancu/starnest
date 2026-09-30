@@ -339,7 +339,7 @@ test.describe("what this session changed", () => {
     // The heading carries a count beside its words, so the region's name begins with them
     // rather than being them.
     const history = page.getByRole("region", { name: /^Recent changes/ });
-    await expect(history.getByText(/Nothing has been changed/)).toBeVisible();
+    await expect(history.getByText("No changes yet.")).toBeVisible();
 
     await attributesInside(page, "governance");
     // **A slider that commits on release**, as the design draws it: a weight is a proportion,
@@ -361,7 +361,7 @@ test.describe("what this session changed", () => {
 
     // The way back, and it must reach the server: the value is re-read after a reload.
     await entry.getByRole("button", { name: /^Undo this$/ }).click();
-    await expect(history.getByText(/Nothing has been changed/)).toBeVisible();
+    await expect(history.getByText("No changes yet.")).toBeVisible();
 
     // **Reopened after the reload.** Which pillar is open is this screen's state, not the
     // server's, so a reload closes it -- which is the point of reloading here: the value is

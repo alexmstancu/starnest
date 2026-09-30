@@ -183,7 +183,7 @@ describe("a candidate with insufficient data", () => {
   it("still shows its coverage, which is what explains the status", async () => {
     renderShell("/rank");
 
-    expect(await cell("Estonia", "Coverage")).toHaveTextContent("41%");
+    expect(await cell("Estonia", "Coverage")).toHaveTextContent("41.0%");
     expect(await cell("Estonia", "Match status")).toHaveTextContent(
       "Insufficient data",
     );

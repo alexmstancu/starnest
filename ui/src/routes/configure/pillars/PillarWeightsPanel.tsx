@@ -89,10 +89,11 @@ export function PillarWeightsPanel({
       {failure !== null && <ErrorNotice error={failure} />}
 
       <div className="stage__summary">
-        {/* **The rule this total is held to.** The attribute rule is stated inside an opened
-            pillar, beside the attribute total it governs; putting it here would caption the
-            pillar total with a rule about a different hundred. */}
-        <span>Pillar weights sum to 100 within the level</span>
+        {/* The design's own line, verbatim. It reads oddly beside a pillar total -- the rule
+            it states is about the hundred *inside* a pillar -- but stage 3 is where a pillar
+            opens to its attributes, and this is the sentence the design puts here. Changed to
+            the pillar rule once on the reasoning above; the live design says otherwise. */}
+        <span>Attribute weights sum to 100 inside each pillar</span>
         <span className="stage__summary-total">
           Total
           <span

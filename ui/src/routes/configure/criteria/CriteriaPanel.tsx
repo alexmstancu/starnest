@@ -234,9 +234,6 @@ function CriterionRow({
       <div className="criterion-row__head">
         <span className="criterion-row__what">
           <span className="criterion-row__name">{title.name}</span>
-          {title.identifier !== null && (
-            <code className="criterion-row__id">{title.identifier}</code>
-          )}
           {/* Empty while the catalog is in flight, and empty for an attribute it has never
               heard of: an empty line is what is true then, and "Unknown type" would not be. */}
           {typeLine !== "" && (

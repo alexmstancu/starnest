@@ -28,7 +28,7 @@ describe("what each attribute put into the total", () => {
 
     expect(readings.get("country.rent")?.score).toBe("—");
     // Zero weight and zero points are real figures, and they are printed.
-    expect(readings.get("country.rent")?.weightUsed).toBe("0%");
+    expect(readings.get("country.rent")?.weightUsed).toBe("0.0%");
     expect(readings.get("country.rent")?.pointsAdded).toBe("0.0");
   });
 

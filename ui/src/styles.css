@@ -118,7 +118,6 @@
   /* Type. **`tnum` is the load-bearing one**: with proportional figures a column of scores
      and coverage percentages does not line up, and every screen here is a column of numbers. */
   --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --font-features: "tnum" 1, "cv05" 1;
   --font-size-small: 0.75rem;
   --font-size-base: 0.875rem;
@@ -287,22 +286,6 @@ fieldset {
 
 /* The household card, first and loudest: teal on teal. Every attribute default, warning and
    gate reads the household, so the rest of the sidebar is relative to it. */
-.panel--household {
-  gap: 9px;
-  padding: 13px;
-  border-color: var(--colour-accent-border);
-  background: var(--colour-accent-surface);
-}
-
-.panel--household .panel__heading {
-  font-size: 12.5px;
-  color: var(--colour-accent);
-}
-
-.panel--household .stat-list {
-  gap: 7px;
-}
-
 .panel--household .stat {
   align-items: baseline;
   gap: 10px;
@@ -603,6 +586,24 @@ a:hover {
   border: var(--border-width) solid var(--colour-border);
   border-radius: var(--radius-medium);
   box-shadow: var(--shadow-card);
+}
+
+/* Placed after `.panel`, not before: equal specificity, so source order decides. This
+   block sat above the base rule and lost its background, border and padding to it. */
+.panel--household {
+  gap: 9px;
+  padding: 13px;
+  border-color: var(--colour-accent-border);
+  background: var(--colour-accent-surface);
+}
+
+.panel--household .panel__heading {
+  font-size: 12.5px;
+  color: var(--colour-accent);
+}
+
+.panel--household .stat-list {
+  gap: 7px;
 }
 
 .screen .panel {
@@ -2234,7 +2235,6 @@ select.field__control {
 }
 
 .notice__code {
-  font-family: var(--font-mono);
   color: var(--colour-text-muted);
 }
 
@@ -3116,7 +3116,6 @@ select.field__control {
 .lock-list {
   margin: 0;
   padding-left: var(--space-double);
-  font-family: var(--font-mono);
   font-size: var(--font-size-small);
 }
 
@@ -3960,14 +3959,6 @@ select.field__control {
   border-color: var(--colour-border);
 }
 
-/* The identifier under a criterion row's name. Quiet, monospaced and small: it is what the
-   rest of the application calls that attribute -- a run's scope, a failure, a stand-in row --
-   and a screen that hid it would leave those unmatchable, but it is not the label. */
-.criterion-row__id {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--colour-text-muted);
-}
 
 /* **The one outlined-red control in the application.** The design draws Stop as a white button
    with a danger border and danger text, never a filled one: filling it would make it compete

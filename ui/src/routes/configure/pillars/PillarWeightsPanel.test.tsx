@@ -63,14 +63,14 @@ describe("the pillar weights panel", () => {
     ).toHaveValue("40");
     expect(weightBox("housing")).toHaveValue("35");
     expect(weightBox("safety")).toHaveValue("25");
-    // The total is the summary's, beside the rule it is held to -- the lead above it no
-    // longer repeats the figure, because a number in prose is a number nobody checks. **The
-    // rule is the pillar one**, because this is the pillar total; the attribute rule is
-    // stated inside an opened pillar, beside the hundred it actually governs.
+    // The total is the summary's, beside the design's own line. That line states the rule for
+    // the hundred *inside* a pillar while sitting beside the pillar total, which reads oddly
+    // and is what the live design says; it was changed to the pillar rule once on that
+    // reasoning and changed back when the design was read again.
     expect(
-      pillars.getByText(/Pillar weights sum to 100 within the level/),
+      pillars.getByText(/Attribute weights sum to 100 inside each pillar/),
     ).toBeInTheDocument();
-    expect(pillars.getByText("100%")).toBeInTheDocument();
+    expect(pillars.getByText("100.0%")).toBeInTheDocument();
   });
 
   it("shows the weights the server rebalanced to", async () => {
