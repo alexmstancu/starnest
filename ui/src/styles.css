@@ -4036,3 +4036,45 @@ select.field__control {
 .button--quiet:hover:not(:disabled) {
   text-decoration: underline;
 }
+
+/* ── The card a link sent you to ──────────────────────────────────────────────
+   Configure's "No source yet →" lands here, and the mark says which of six cards was meant.
+   Amber because the thing being pointed at is a gap, and the same amber the chip carried --
+   the reader should recognise where they arrived. It fades rather than staying for ever: it
+   answers "which one", and once answered it is noise. */
+.panel--asked-for {
+  border-color: var(--colour-warning-border);
+  box-shadow: 0 0 0 3px var(--colour-warning-surface);
+  animation: asked-for 4s ease-out forwards;
+}
+
+@keyframes asked-for {
+  0%,
+  60% {
+    border-color: var(--colour-warning-border);
+    box-shadow: 0 0 0 3px var(--colour-warning-surface);
+  }
+  100% {
+    border-color: var(--colour-border);
+    box-shadow: none;
+  }
+}
+
+/* **A reader who asks for no motion gets none.** The highlight is information, so it stays --
+   it simply arrives without the fade. */
+@media (prefers-reduced-motion: reduce) {
+  .panel--asked-for {
+    animation: none;
+  }
+}
+
+/* The chip that is a way through rather than a label. It keeps the chip's own colour: the
+   underline on hover is what says it is a link, not a second hue. */
+.chip__link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.chip__link:hover {
+  text-decoration: underline;
+}

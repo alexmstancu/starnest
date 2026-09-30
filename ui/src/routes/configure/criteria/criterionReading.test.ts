@@ -188,7 +188,12 @@ describe("the chips on a row", () => {
       id: "country.cost_of_living_index",
       effective_source_priority: [],
     });
-    expect(chips.map((chip) => chip.text)).toContain("No source yet");
+    expect(chips.map((chip) => chip.text)).toContain("No source yet →");
+    // **And it goes somewhere.** The other chips state the rule; this one states a gap, and a
+    // gap with no route out leaves a reader holding a problem. The arrow says so.
+    expect(chips.find((chip) => chip.key === "no-source")?.to).toBe(
+      "/acquire?show=unsourced",
+    );
   });
 
   it("says nothing about sources for an attribute that has one", () => {

@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { NavLink } from "react-router-dom";
 import type { Criterion, CriterionRule } from "../../../api/endpoints";
 import { lockedAttributes } from "../../../api/errorPresentation";
 import { formatPercentage } from "../../../format/display";
@@ -321,7 +322,16 @@ function CriterionRow({
       <ul className="criterion-row__chips" aria-label={`Rule for ${criterion.attribute}`}>
         {chipsFor(criterion, attribute).map((chip) => (
           <li key={chip.key} className={CHIP_CLASS[chip.tone]}>
-            {chip.text}
+            {/* A chip that names a gap is a link out of it; the rest state the rule and are
+                text. A `NavLink` rather than a click handler, so it can be opened in a new
+                window and copied -- the gap is worth sending to somebody. */}
+            {chip.to === undefined ? (
+              chip.text
+            ) : (
+              <NavLink className="chip__link" to={chip.to}>
+                {chip.text}
+              </NavLink>
+            )}
           </li>
         ))}
       </ul>

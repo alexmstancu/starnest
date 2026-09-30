@@ -318,7 +318,17 @@ property in `styles.css` -- and that bet paid: reproducing the design moved one 
 and touched no component, because there was no hard-coded colour outside it to find.
 
 **The design lives at `claude.ai/design`, project "Starnest design", file
-`Starnest Product.dc.html`** -- a white ground, a teal `#0f766e` accent, Public Sans with
+`Starnest Product.dc.html`. Fetch it with `DesignSync`, project id
+`adb96384-f1ce-4f96-9612-ad5760163c0f`** -- `list_files` then `get_file`. **It will not appear
+in `DesignSync list_projects`**, which lists only writable design-*system* projects (Modernist,
+Nocturne); a design canvas is a different thing and needs the id. It is not in the Artifact
+listings either. Nothing is copied into this repo on purpose: the live file is the design, and a
+copy would go stale the first time it is edited. **The handoff folder is the part worth reading
+first** -- `design_handoff_starnest_app/README.md` is a full written specification of all four
+tabs with every token, `UX-REVIEW.md` has the open findings and the parked backlog, and
+`screens/` holds 27 captures, 01-17 at the full 1560px width and 20-27 unscaled for pixel work.
+**Where a screenshot and the README disagree, the live `.dc.html` wins**, because that is the
+thing that was reviewed -- a white ground, a teal `#0f766e` accent, Public Sans with
 tabular numerals, 4px radii. Claude Design **reads this repository**, so `docs/design-brief.md`
 is the return channel for anything the mockup cannot express. Two things it could not: the
 interaction states, taken instead from the rule the same designer wrote into their Nocturne

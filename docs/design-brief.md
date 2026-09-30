@@ -251,10 +251,21 @@ run ending `halted_by_user` -- a fifth status beside the four we have. **Not fak
 meantime**: a Stop button that did nothing would be worse than none, because the spend cap is
 the only halt this application currently honours and a reader must not believe there are two.
 
-## The hand-entry form, built without a design (2026-09-30)
+## The hand-entry form, built past the design's own scope (2026-09-30)
 
-`docs/todos.md` records this one as *"Parked by the design too"*, so there was nothing to be 1:1
-with. It is built in the design's own idiom — its `.field` markup, its tokens, its notice shapes
+`UX-REVIEW.md` is explicit under *Out of scope by decision*: **"A working hand-entry form behind
+'Enter a value by hand' — the button is a signpost."** So this is not a divergence from the
+design; it is the codebase going past where the prototype stopped, which the prototype invited
+by naming the remedy and binding it to `POST /values/manual`. There was nothing to be 1:1 with.
+
+**One thing the design assumed that the catalog does not bear out.** Item H puts hand entry
+inside *"Attributes with no data source at all"*. Against the real catalog those two sets are
+**disjoint**: every attribute that declares `manual_entry` also declares sources
+(`international_employers` names the LLM path, `residency_admin_ease` names national law), and
+no attribute with zero sources permits hand entry. So the card's remedy column honestly reads
+"hand entry is not permitted for this attribute", and the form lives in a second card,
+*"Figures you can enter by hand"*. **The design's intent is kept and its placement is not** --
+if the prototype's seeded data had matched the catalog, item H would have found this too. It is built in the design's own idiom — its `.field` markup, its tokens, its notice shapes
 — and what follows is the request for the next sync. **Nothing here should be taken as the
 design's decision; it is ours, and it is reversible.**
 

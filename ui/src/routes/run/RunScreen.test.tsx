@@ -1289,3 +1289,42 @@ describe("a figure typed by hand", () => {
     ).toHaveLength(1);
   });
 });
+
+describe("arriving from a gap in Configure", () => {
+  /**
+   * The design's item H: an unsourced attribute carries a clickable "No source yet →" that
+   * jumps here and marks the card it means.
+   *
+   * **The mark is in the URL, not in memory.** A reload keeps it, a copied link keeps it, and
+   * a reader sent one lands on the same card the sender meant. In memory it would survive
+   * neither.
+   */
+  async function theCard() {
+    return await screen.findByRole("region", {
+      name: /attributes with no data source at all/i,
+    });
+  }
+
+  it("moves the reader to the card the link named", async () => {
+    // **Focus, not just a tint.** A jump that only coloured a card leaves anyone reading by
+    // keyboard or screen reader where they were, on a screen of six cards, with nothing saying
+    // which one was meant. Asserted on focus rather than on a class name, because a test
+    // coupled to the stylesheet breaks on a redesign for reasons that are not about behaviour.
+    renderShell("/acquire?show=unsourced");
+
+    await waitFor(async () => expect(await theCard()).toHaveFocus());
+  });
+
+  it("moves nobody when arriving the ordinary way", async () => {
+    renderShell("/acquire");
+
+    expect(await theCard()).not.toHaveFocus();
+  });
+
+  it("ignores a card name it does not know", async () => {
+    // A URL somebody edited by hand is not an error; it is a URL that says nothing.
+    renderShell("/acquire?show=whatever");
+
+    expect(await theCard()).not.toHaveFocus();
+  });
+});

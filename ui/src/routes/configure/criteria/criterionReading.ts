@@ -14,6 +14,7 @@
  */
 
 import type { Criterion } from "../../../api/endpoints";
+import { linkTo, UNSOURCED } from "../../../navigation/highlight";
 import { formatCount } from "../../../format/display";
 
 /**
@@ -116,6 +117,8 @@ export interface CriterionChip {
   key: string;
   text: string;
   tone: ChipTone;
+  /** Where the chip goes, for the one that names a gap rather than stating the rule. */
+  to?: string;
 }
 
 /**
@@ -155,7 +158,15 @@ export function chipsFor(
   }
 
   if (hasNoSource(attribute)) {
-    chips.push({ key: "no-source", text: "No source yet", tone: "warning" });
+    // **The one chip that goes somewhere.** The others state the rule; this one states a gap,
+    // and a gap with no route out leaves a reader holding a problem. The arrow is the design's,
+    // and says the chip is a way through rather than another label.
+    chips.push({
+      key: "no-source",
+      text: "No source yet →",
+      tone: "warning",
+      to: linkTo("/acquire", UNSOURCED),
+    });
   }
 
   return chips;
