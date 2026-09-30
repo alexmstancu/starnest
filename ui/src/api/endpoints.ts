@@ -693,3 +693,24 @@ export function fetchRankedCandidateDetail(
     { ...options, pathParams: { candidateId } },
   );
 }
+
+export type ManualValueInput =
+  components["schemas"]["ManualValueInput"];
+
+/**
+ * Record a figure somebody typed.
+ *
+ * **Manual entry is a real source, ranked last, and permitted only where the attribute declares
+ * it** (`reqs.md` 6.5) — the server answers `409 manual_entry_not_permitted` otherwise, which is
+ * the authority on it. The screen offers the form only where the catalog says yes, so the 409 is
+ * a backstop rather than the everyday path.
+ *
+ * **The source is implicitly `manual` and cannot be set.** A hand-typed figure must never arrive
+ * wearing a publisher's name.
+ */
+export function enterValueManually(
+  input: ManualValueInput,
+  options?: RequestOptions,
+): Promise<StoredValue> {
+  return postJson("/values/manual", input, options);
+}

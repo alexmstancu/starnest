@@ -67,15 +67,44 @@ describe("attributes with nobody to ask", () => {
    */
   it("offers hand entry only where the catalog permits it", () => {
     const [allowed] = unsourcedAttributes(
-      [{ ...unsourced, manual_entry: true }],
+      [{ ...unsourced, manual_entry: true, value_type: "LabelSet" }],
       [],
     );
     expect(allowed?.manualEntry).toBe(true);
+    expect(allowed?.manualKind).toBe("LabelSet");
     expect(allowed?.remedy).toBe("Enter a value by hand");
 
     const [barred] = unsourcedAttributes([unsourced], []);
     expect(barred?.manualEntry).toBe(false);
+    expect(barred?.manualKind).toBeNull();
     expect(barred?.remedy).toMatch(/not permitted/i);
+  });
+
+  it("names the two types an editor exists for", () => {
+    // Five attributes declare `manual_entry` and their types are LabelSet, AssignedScore and
+    // one Quantity that a source already answers. Monetary, Count and Ratio have no attribute
+    // that would accept one, so an editor for them would be a form nobody can open.
+    const kinds = unsourcedAttributes(
+      [
+        { ...unsourced, id: "a", manual_entry: true, value_type: "LabelSet" },
+        { ...unsourced, id: "b", manual_entry: true, value_type: "AssignedScore" },
+      ],
+      [],
+    ).map((gap) => gap.manualKind);
+
+    expect(kinds).toEqual(["LabelSet", "AssignedScore"]);
+  });
+
+  it("says so rather than offering a form that cannot submit", () => {
+    // Permitted by the catalog, but no editor built for that type. A button leading to a form
+    // with no fields is worse than a sentence saying why there is no button.
+    const [gap] = unsourcedAttributes(
+      [{ ...unsourced, manual_entry: true, value_type: "Monetary" }],
+      [],
+    );
+
+    expect(gap?.manualKind).toBeNull();
+    expect(gap?.remedy).toMatch(/no editor is built for a Monetary/);
   });
 
   it("names a pillar even when the attribute has none", () => {

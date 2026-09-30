@@ -560,6 +560,55 @@ export const handlers = [
     );
   }),
 
+  /**
+   * A figure typed by hand.
+   *
+   * **Refuses what the server refuses.** The catalog decides which attributes accept one, and a
+   * mock that accepted every attribute would certify a form the backend rejects -- the fault the
+   * locked-criterion PATCH shipped with.
+   */
+  http.post(`${BASE}/values/manual`, async ({ request }) => {
+    const body = (await request.json()) as {
+      candidate: string;
+      attribute: string;
+      payload: unknown;
+      reference_period: { start: string; end: string };
+      retrieval_date: string;
+      confidence_level?: string;
+      quote?: string | null;
+      citations?: string[];
+    };
+    const attribute = ATTRIBUTES.find((each) => each.id === body.attribute);
+    if (attribute?.manual_entry !== true) {
+      return HttpResponse.json(
+        {
+          code: "manual_entry_not_permitted",
+          message: `${body.attribute} does not accept a figure typed by hand`,
+        },
+        { status: 409 },
+      );
+    }
+    return HttpResponse.json(
+      {
+        id: 9001,
+        candidate: body.candidate,
+        attribute: body.attribute,
+        value_type: attribute.value_type,
+        payload: body.payload,
+        // Never the publisher's name: a hand-typed figure arrives as `manual` and ranks last.
+        data_source: "manual",
+        reference_period: body.reference_period,
+        retrieval_date: body.retrieval_date,
+        confidence_level: body.confidence_level ?? "medium",
+        is_active: true,
+        quote: body.quote ?? null,
+        citations: body.citations ?? [],
+        data_acquisition_run: null,
+      },
+      { status: 201 },
+    );
+  }),
+
   http.post(`${BASE}/data-acquisition-runs/plan`, () =>
     HttpResponse.json(RUN_PLAN),
   ),

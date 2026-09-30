@@ -12,6 +12,7 @@ import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
 import { describeGaps, describeScope } from "./databaseHolds";
 import { ItemGroups } from "./ItemGroups";
+import { OpenToHandEntry } from "./OpenToHandEntry";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";
 import { type Progress, progressBar } from "./runProgress";
 import {
@@ -195,6 +196,10 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
       {/* Beside the failures deliberately: the three reasons a figure is missing look the
           same in a ranking and have entirely different remedies. */}
       {levelId !== null && <UnsourcedAttributes level={levelId} />}
+
+      {/* Beside it, and separate: "no source at all" means nobody would be asked, while these
+          are attributes the catalog says a person may answer. The two lists never overlap. */}
+      {levelId !== null && <OpenToHandEntry level={levelId} />}
 
       {run.history.status === "ready" && (
         <AcquisitionDiffPanel runs={run.history.data.items} />

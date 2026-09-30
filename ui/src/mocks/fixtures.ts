@@ -565,6 +565,47 @@ export const ATTRIBUTES = [
     allowed_labels: [],
     effective_source_priority: [],
   },
+  /**
+   * The two shapes hand entry is actually for, mirroring the real catalog: five attributes
+   * declare `manual_entry` and their types are `LabelSet`, `AssignedScore` and one `Quantity`
+   * a source already answers. A mock carrying only the Quantity would exercise no editor.
+   */
+  {
+    id: "country.international_employers",
+    name: "International employers",
+    pillar: "career",
+    level: "country",
+    value_type: "LabelSet",
+    unit: null,
+    description: "named firms",
+    manual_entry: true,
+    max_age_months: 24,
+    breakdown_scheme: null,
+    breakdown_options: [],
+    allowed_range: null,
+    // No fixed vocabulary: only `climate_zone` has one, because named firms cannot be enumerated
+    // in advance and a picker would refuse the answer.
+    allowed_labels: [],
+    // As the server has it. A mock with no sources here would put this in the unsourced card
+    // as well, and the two lists never overlap against the real catalog.
+    effective_source_priority: ["llm", "company_website"],
+  },
+  {
+    id: "country.residency_admin_ease",
+    name: "Residency admin ease",
+    pillar: "governance",
+    level: "country",
+    value_type: "AssignedScore",
+    unit: null,
+    description: "a judgement, on a scale the person assigning it states",
+    manual_entry: true,
+    max_age_months: 24,
+    breakdown_scheme: null,
+    breakdown_options: [],
+    allowed_range: null,
+    allowed_labels: [],
+    effective_source_priority: ["national_law", "world_bank"],
+  },
 ];
 
 /**

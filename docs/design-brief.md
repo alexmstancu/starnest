@@ -250,3 +250,40 @@ stopping it means a cooperative check the acquisition loop does not have. Closin
 run ending `halted_by_user` -- a fifth status beside the four we have. **Not faked in the
 meantime**: a Stop button that did nothing would be worse than none, because the spend cap is
 the only halt this application currently honours and a reader must not believe there are two.
+
+## The hand-entry form, built without a design (2026-09-30)
+
+`docs/todos.md` records this one as *"Parked by the design too"*, so there was nothing to be 1:1
+with. It is built in the design's own idiom — its `.field` markup, its tokens, its notice shapes
+— and what follows is the request for the next sync. **Nothing here should be taken as the
+design's decision; it is ours, and it is reversible.**
+
+**Two editors, not ten, because two is what the catalog permits.** Five attributes declare
+`manual_entry`, and their types are `LabelSet` (`international_employers`,
+`remote_work_tax_treaty`), `AssignedScore` (`residency_admin_ease`, `pension_portability`) and
+one `Quantity` a source already answers. Monetary, Count and Ratio have no attribute that would
+accept a hand-typed figure, so an editor for them would be a form nobody can open. A permitted
+type with no editor **says so in its remedy** rather than offering a button that leads nowhere.
+
+**It opens inside the row that reports the gap**, not in a dialog. The table says what each gap
+is worth, which is the thing a reader is deciding on, and a dialog would cover it. One form at a
+time: two would put two candidate pickers and two date pairs on screen with nothing saying which
+belonged to which attribute.
+
+**Three things it refuses to guess**, all the same shape:
+
+- **No default scale.** An `AssignedScore` of 7 means nothing without knowing it is out of 10 or
+  out of 2.5. `0–10` is the obvious default and still a guess, so the form asks.
+- **No period inferred from the clock.** Typing a figure today says nothing about the year it
+  measures. The reference period and the retrieval date are different questions and are never
+  merged (`reqs.md` 3.6), so both dates are required and the retrieval date is stamped for you.
+- **`assigned_by` is always `human`.** The field exists to keep a judgement somebody made apart
+  from one a model produced; a form that could send `llm` would make the distinction worthless.
+
+**It reads back what it stored**, not "done" — a typo is invisible in a success message, and a
+hand-typed value is the one kind that cannot be re-fetched at any price (Gate D).
+
+**What the design could still rule on:** whether the two editors should look alike at all (a
+comma-separated text field and four numeric fields are very different shapes), whether the
+confidence picker belongs in the form or should default silently, and whether the success line
+should link to the value in the Rank drill-down.

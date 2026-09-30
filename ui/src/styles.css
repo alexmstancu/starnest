@@ -3981,3 +3981,58 @@ select.field__control {
 .button--danger:hover:not(:disabled) {
   background: var(--colour-danger-surface);
 }
+
+/* ── A figure typed by hand ───────────────────────────────────────────────────
+   Opens inside the row that reports the gap, so the table saying what the gap is worth stays
+   on screen while it is filled. Sunken rather than raised: it is nested inside a card already,
+   and a second shadow would read as a second card floating over the first. */
+.manual-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  background: var(--colour-surface-sunken);
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-medium);
+}
+
+.manual-entry__heading {
+  margin: 0;
+  font-size: 15px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+
+/* The outcome of a write, which the design has no tint for because it draws no form that
+   writes. Success borrows the match-status green already in the palette. */
+.notice--good {
+  margin: 0;
+  background: var(--colour-success-surface);
+  border: var(--border-width) solid var(--colour-success-border);
+  color: var(--colour-success);
+}
+
+.notice__list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-quarter);
+}
+
+/* A button that lives inside a table cell. The design's table cells carry text, so a control
+   there reads as the cell's own words rather than as a control bolted into it: no border, no
+   fill, the accent and an underline on hover. */
+.button--quiet {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--colour-accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.button--quiet:hover:not(:disabled) {
+  text-decoration: underline;
+}

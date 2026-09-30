@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import {
   PAID_RUN_PLAN,
   RUN_PLAN,
   STARTED_RUN_DETAIL,
+  STORED_VALUES,
 } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
@@ -768,7 +769,29 @@ describe("attributes with no data source at all", () => {
     expect(card.queryByRole("button", { name: /retry/i })).toBeNull();
   });
 
-  it("names hand entry as the remedy where the catalog permits it", async () => {
+  it("does not offer hand entry, because the two lists never overlap", async () => {
+    // Every attribute the catalog lets a person answer also declares a source, so none of them
+    // ever appears among the attributes with nobody to ask. The form lives in its own card;
+    // putting it here first made it unreachable, which opening the screen showed and no test did.
+    renderShell("/acquire");
+
+    const card = within(
+      await screen.findByRole("region", {
+        name: /attributes with no data source at all/i,
+      }),
+    );
+    await card.findByRole("rowheader", { name: "Nobody measures this" });
+
+    expect(
+      card.queryByRole("row", { name: /international employers/i }),
+    ).toBeNull();
+    expect(card.queryByRole("button", { name: /by hand/i })).toBeNull();
+  });
+
+  it("says why there is no form where the type has no editor", async () => {
+    // Permitted by the catalog, but no editor built for a Quantity: five attributes declare
+    // `manual_entry` and the only Quantity among them already has a figure from a source. A
+    // button leading to a form with no fields is worse than a sentence saying why.
     renderShell("/acquire");
 
     const card = within(
@@ -777,7 +800,9 @@ describe("attributes with no data source at all", () => {
       }),
     );
     const row = await card.findByRole("row", { name: /nobody measures this/i });
-    expect(row).toHaveTextContent(/enter a value by hand/i);
+
+    expect(row).toHaveTextContent(/no editor is built for a Quantity/i);
+    expect(within(row).queryByRole("button")).toBeNull();
   });
 
   it("says an attribute the active set does not score is not weighed", async () => {
@@ -1105,5 +1130,162 @@ describe("stopping a run", () => {
     );
 
     expect(await screen.findByText(/run_not_found/)).toBeInTheDocument();
+  });
+});
+
+describe("a figure typed by hand", () => {
+  /**
+   * `reqs.md` 6.5. **The only route for a value that cannot be fetched at any price** — which is
+   * why Gate D's `pg_restore` test exists to prove one survives a restore.
+   */
+  async function theForm(attribute: RegExp) {
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", {
+        name: /figures you can enter by hand/i,
+      }),
+    );
+    const row = await card.findByRole("row", { name: attribute });
+    await userEvent.click(
+      within(row).getByRole("button", { name: /enter a value by hand/i }),
+    );
+    return within(await screen.findByRole("region", { name: /enter a value for/i }));
+  }
+
+  it("stores a label set and reads back what it wrote", async () => {
+    // **What it stored, not "done".** A typo is invisible in a success message.
+    const form = await theForm(/international employers/i);
+
+    await userEvent.selectOptions(
+      form.getByRole("combobox", { name: "Candidate" }),
+      "country.portugal",
+    );
+    await userEvent.type(form.getByRole("textbox", { name: "Values" }), "Farfetch, OutSystems");
+    fireEvent.change(form.getByLabelText("Describes, from"), {
+      target: { value: "2026-01-01" },
+    });
+    fireEvent.change(form.getByLabelText("Describes, to"), {
+      target: { value: "2026-12-31" },
+    });
+    await userEvent.click(form.getByRole("button", { name: /store this figure/i }));
+
+    expect(await form.findByRole("status")).toHaveTextContent(
+      /Farfetch, OutSystems.*country\.portugal.*manual/i,
+    );
+  });
+
+  it("stores the score as a human's, never the model's", async () => {
+    // The field exists to keep a judgement somebody made apart from one a model produced.
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.post(`${BASE}/values/manual`, async ({ request }) => {
+        const body = await request.json();
+        sent.push(body);
+        return HttpResponse.json({ ...STORED_VALUES[0], payload: {} }, { status: 201 });
+      }),
+    );
+    const form = await theForm(/residency admin ease/i);
+
+    await userEvent.selectOptions(
+      form.getByRole("combobox", { name: "Candidate" }),
+      "country.portugal",
+    );
+    await userEvent.type(form.getByRole("textbox", { name: "Score" }), "7");
+    await userEvent.type(form.getByRole("textbox", { name: "Scale, lowest" }), "0");
+    await userEvent.type(form.getByRole("textbox", { name: "Scale, highest" }), "10");
+    fireEvent.change(form.getByLabelText("Describes, from"), {
+      target: { value: "2026-01-01" },
+    });
+    fireEvent.change(form.getByLabelText("Describes, to"), {
+      target: { value: "2026-12-31" },
+    });
+    await userEvent.click(form.getByRole("button", { name: /store this figure/i }));
+
+    await waitFor(() =>
+      expect(sent).toEqual([
+        expect.objectContaining({
+          payload: expect.objectContaining({ assigned_by: "human" }),
+        }),
+      ]),
+    );
+  });
+
+  it("says what is missing rather than sending an incomplete figure", async () => {
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.post(`${BASE}/values/manual`, async ({ request }) => {
+        sent.push(await request.json());
+        return HttpResponse.json({}, { status: 201 });
+      }),
+    );
+    const form = await theForm(/international employers/i);
+
+    await userEvent.click(form.getByRole("button", { name: /store this figure/i }));
+
+    const problems = await form.findByRole("alert");
+    expect(problems).toHaveTextContent(/choose the candidate/i);
+    expect(problems).toHaveTextContent(/what period this figure describes/i);
+    expect(problems).toHaveTextContent(/name at least one/i);
+    // Nothing was sent: the form can answer these without a round trip, and a refusal naming
+    // an empty field tells the reader less than the form already can.
+    expect(sent).toEqual([]);
+  });
+
+  it("shows the server's refusal when the two disagree", async () => {
+    // The API is the authority on which attributes accept a hand-typed figure. The screen only
+    // offers the form where the catalog says yes, so this is a backstop rather than the path.
+    mockServer.use(
+      http.post(`${BASE}/values/manual`, () =>
+        HttpResponse.json(
+          {
+            code: "manual_entry_not_permitted",
+            message: "this attribute does not accept a figure typed by hand",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    const form = await theForm(/international employers/i);
+
+    await userEvent.selectOptions(
+      form.getByRole("combobox", { name: "Candidate" }),
+      "country.portugal",
+    );
+    await userEvent.type(form.getByRole("textbox", { name: "Values" }), "Farfetch");
+    fireEvent.change(form.getByLabelText("Describes, from"), {
+      target: { value: "2026-01-01" },
+    });
+    fireEvent.change(form.getByLabelText("Describes, to"), {
+      target: { value: "2026-12-31" },
+    });
+    await userEvent.click(form.getByRole("button", { name: /store this figure/i }));
+
+    expect(
+      await form.findByText(/manual_entry_not_permitted/),
+    ).toBeInTheDocument();
+  });
+
+  it("opens one form at a time", async () => {
+    // Two open at once would put two candidate pickers and two date pairs on screen with
+    // nothing saying which belongs to which attribute.
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", {
+        name: /figures you can enter by hand/i,
+      }),
+    );
+
+    const first = await card.findByRole("row", { name: /international employers/i });
+    await userEvent.click(
+      within(first).getByRole("button", { name: /enter a value by hand/i }),
+    );
+    const second = await card.findByRole("row", { name: /residency admin ease/i });
+    await userEvent.click(
+      within(second).getByRole("button", { name: /enter a value by hand/i }),
+    );
+
+    expect(
+      screen.getAllByRole("region", { name: /enter a value for/i }),
+    ).toHaveLength(1);
   });
 });

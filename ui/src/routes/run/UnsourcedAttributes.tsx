@@ -14,9 +14,10 @@ import { unsourcedAttributes } from "./unsourced";
  * beside the failures deliberately: the three reasons a figure is missing look identical in a
  * ranking and have completely different remedies.
  *
- * **The hand-entry form itself is not built**, and that is the design's own decision -- the
- * button is a signpost (`UX-REVIEW.md`, parked). `POST /values/manual` is served and waiting;
- * what it needs is a payload editor per value type, which is a piece of work of its own.
+ * **Hand entry is not offered here**, and the two lists are why: every attribute the catalog
+ * lets a person answer also declares a source, so none of them ever appears in this one. The
+ * form lives in `OpenToHandEntry` beside this card. Putting it here first made it unreachable,
+ * which opening the screen showed and no test did.
  */
 export function UnsourcedAttributes({ level }: { level: string }) {
   const headingId = useId();
