@@ -1419,16 +1419,6 @@ select.field__control {
    rather than squeezing the bars until one column's cannot be compared with the next's.
    ══════════════════════════════════════════════════════════════════════════════════════ */
 
-.table-card--matrix {
-  max-height: none;
-}
-
-.table--matrix {
-  display: block;
-  width: max-content;
-  min-width: 100%;
-}
-
 .table--matrix > thead,
 .table--matrix > tbody {
   display: block;
@@ -2262,6 +2252,21 @@ select.field__control {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+}
+
+/* **After `.table-card` and `.table`, not before.** Both are one class deep, so a tie is
+   broken by source order: written above their bases, `max-height: none` and
+   `width: max-content` were taken straight back. The matrix card was being capped at
+   `calc(100vh - 150px)` and the matrix itself held to the container's width, which is the
+   opposite of what the design asks for -- it scrolls sideways and never vertically. */
+.table-card--matrix {
+  max-height: none;
+}
+
+.table--matrix {
+  display: block;
+  width: max-content;
+  min-width: 100%;
 }
 
 .table th,

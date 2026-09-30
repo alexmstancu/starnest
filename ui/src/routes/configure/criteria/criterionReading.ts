@@ -45,11 +45,9 @@ export type AttributeCatalog = ReadonlyMap<string, CatalogAttribute>;
 export function titleOf(
   attributeId: string,
   attribute: CatalogAttribute | undefined,
-): { name: string; identifier: string | null } {
+): string {
   const name = attribute?.name ?? "";
-  return name === "" || name === attributeId
-    ? { name: attributeId, identifier: null }
-    : { name, identifier: attributeId };
+  return name === "" ? attributeId : name;
 }
 
 export function catalogOf(

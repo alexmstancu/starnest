@@ -342,6 +342,16 @@ A data-driven bar is drawn as SVG, whose geometry is an attribute rather than a 
 `.tsx` under those folders may not call `Number`, `parseInt`, `parseFloat` or `toFixed`, so the
 arithmetic behind a bar lives in a plain module beside it.
 
+**A modifier written above its base is silently taken back** (2026-09-30). `.panel--household`
+and `.panel` are both one class deep, so CSS breaks the tie by source order -- and the modifier
+sat 300 lines above the rule it modifies. The rule parses, the class is applied, the markup is
+right, and the page ignores it. The sidebar's household card rendered white for as long as the
+teal had existed; the Compare matrix was vertically capped and held to its container's width,
+both the opposite of the design. **No behavioural test can catch this** -- only a browser
+reading computed styles. `src/app/architecture.test.ts` now fails on any `.x--y` whose `.x` is
+declared after it, naming the properties lost; it caught two live cases the moment it was
+written. The rule is: **a base always comes before its modifiers.**
+
 **An undeclared custom property fails in silence, so a test now reads the sheet against
 itself** (2026-09-23). CSS drops the whole declaration and the property falls back to its
 initial value: `gap: var(--space-3)` becomes `gap: normal` and `padding: var(--space-4)` becomes

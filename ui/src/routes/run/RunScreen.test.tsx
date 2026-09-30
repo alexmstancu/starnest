@@ -1290,6 +1290,36 @@ describe("a figure typed by hand", () => {
   });
 });
 
+describe("how much of a gap there is", () => {
+  it("counts the affected attributes in the heading", async () => {
+    // The heading says what the card is; the badge says how much of it there is, before the
+    // table has been read. The design puts the count here for that reason.
+    renderShell("/acquire");
+
+    const card = within(
+      await screen.findByRole("region", {
+        name: /attributes with no data source at all/i,
+      }),
+    );
+
+    expect(card.getByText(/attributes? affected/)).toBeInTheDocument();
+  });
+
+  it("agrees with the number of rows it draws", async () => {
+    // A count beside a table that disagrees with the table is worse than no count.
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", {
+        name: /attributes with no data source at all/i,
+      }),
+    );
+    const badge = await card.findByText(/attributes? affected/);
+    const rows = card.getAllByRole("rowheader");
+
+    expect(badge.textContent).toContain(String(rows.length));
+  });
+});
+
 describe("arriving from a gap in Configure", () => {
   /**
    * The design's item H: an unsourced attribute carries a clickable "No source yet →" that

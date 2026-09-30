@@ -233,7 +233,7 @@ function CriterionRow({
     <div className="criterion-row" role="group" aria-label={criterion.attribute}>
       <div className="criterion-row__head">
         <span className="criterion-row__what">
-          <span className="criterion-row__name">{title.name}</span>
+          <span className="criterion-row__name">{title}</span>
           {/* Empty while the catalog is in flight, and empty for an attribute it has never
               heard of: an empty line is what is true then, and "Unknown type" would not be. */}
           {typeLine !== "" && (

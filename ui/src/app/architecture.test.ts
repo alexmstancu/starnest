@@ -165,6 +165,75 @@ describe("the design is a plugin", () => {
     expect(used.filter((token) => !declared.has(token))).toEqual([]);
   });
 
+  it("declares no modifier its own base rule takes back", () => {
+    /**
+     * **CSS breaks a tie by source order, and a modifier is the same weight as its base.**
+     * `.panel--household` and `.panel` are both one class deep, so a `background` on the
+     * modifier written *above* the base is simply undone — the rule parses, the class is
+     * applied, the markup is right, and the page ignores it.
+     *
+     * It shipped three times before anything noticed: the household card rendered white for
+     * as long as it had existed, and the Compare matrix was vertically capped and held to its
+     * container's width, both the opposite of what the design asks for. **No behavioural test
+     * could catch any of them** — only a browser reading computed styles, or this.
+     *
+     * The rule: for `.x--y`, every `.x` rule must come first. Descendant and compound
+     * selectors are left alone, since those carry their own specificity.
+     */
+    const stylesheet = readFileSync(join(SOURCE, "styles.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+
+    const rules = [...stylesheet.matchAll(/^([^@\s][^{]*)\{([^}]*)\}/gm)].map(
+      (match) => ({
+        selector: (match[1] ?? "").trim(),
+        at: match.index ?? 0,
+        properties: new Set(
+          (match[2] ?? "")
+            .split(";")
+            .filter((line) => line.includes(":"))
+            .map((line) => (line.split(":")[0] ?? "").trim()),
+        ),
+      }),
+    );
+
+    const bases = new Map<string, { at: number; properties: Set<string> }[]>();
+    for (const rule of rules) {
+      const base = /^\.([a-z0-9-]+)$/.exec(rule.selector);
+      if (base === null) continue;
+      const name = base[1] ?? "";
+      bases.set(name, [...(bases.get(name) ?? []), rule]);
+    }
+
+    const cancelled: string[] = [];
+    for (const rule of rules) {
+      const modifier = /^\.([a-z0-9-]+)--[a-z0-9-]+$/.exec(rule.selector);
+      if (modifier === null) continue;
+      for (const base of bases.get(modifier[1] ?? "") ?? []) {
+        if (base.at < rule.at) continue;
+        const lost = [...rule.properties].filter((property) =>
+          base.properties.has(property),
+        );
+        if (lost.length > 0) {
+          cancelled.push(
+            `${rule.selector} loses ${lost.join(", ")} to .${modifier[1] ?? ""}, which is declared after it`,
+          );
+        }
+      }
+    }
+
+    expect(cancelled).toEqual([]);
+  });
+
+  it("uses no monospace, which the design forbids outright", () => {
+    // "No monospace anywhere" is the design's own rule and was broken three times, most
+    // recently by an identifier this application had no business rendering at all.
+    const stylesheet = readFileSync(join(SOURCE, "styles.css"), "utf8");
+
+    expect(stylesheet).not.toMatch(/monospace/i);
+  });
+
   it("is not what the tests depend on", () => {
     /**
      * A test that found an element by class name would break on the redesign, which is the one

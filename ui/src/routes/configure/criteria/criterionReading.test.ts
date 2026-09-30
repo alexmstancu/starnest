@@ -258,36 +258,23 @@ describe("the catalog", () => {
 
 
 describe("what a row is called", () => {
-  it("leads with the catalog's name and keeps the id underneath", () => {
-    // A configuration screen headed `country.cost_of_living_index` asks the reader to parse an
-    // identifier before deciding anything. The id still shows, because it is what a run's
-    // scope, a failure and a stand-in row all call that attribute.
+  it("uses the catalog's name", () => {
+    // The design bars programmatic identifiers from rendered text -- no attribute keys, rule
+    // ids or settings field names -- so the id is not shown beside the name.
     expect(
       titleOf("country.cost_of_living_index", {
         id: "country.cost_of_living_index",
         name: "Cost of living index",
       }),
-    ).toEqual({
-      name: "Cost of living index",
-      identifier: "country.cost_of_living_index",
-    });
+    ).toBe("Cost of living index");
   });
 
-  it("shows the id alone when the catalog has not answered", () => {
-    // Title-casing the id would be this screen guessing at what an attribute measures.
-    expect(titleOf("country.rent", undefined)).toEqual({
-      name: "country.rent",
-      identifier: null,
-    });
-  });
-
-  it("does not print the same string twice", () => {
-    expect(
-      titleOf("country.rent", { id: "country.rent", name: "country.rent" }),
-    ).toEqual({ name: "country.rent", identifier: null });
-    expect(titleOf("country.rent", { id: "country.rent", name: "" })).toEqual({
-      name: "country.rent",
-      identifier: null,
-    });
+  it("falls back to the id only when the catalog has not answered", () => {
+    // Title-casing the id would be this screen guessing at what an attribute measures, which
+    // is worse than showing the key: a wrong name reads as a fact.
+    expect(titleOf("country.rent", undefined)).toBe("country.rent");
+    expect(titleOf("country.rent", { id: "country.rent", name: "" })).toBe(
+      "country.rent",
+    );
   });
 });
