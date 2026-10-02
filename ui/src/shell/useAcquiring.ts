@@ -26,16 +26,20 @@ export function useAcquiring(): Acquiring | null {
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // **The request is cancelled, not just its answer ignored.** `live` stopped the setState
+    // and left the fetch itself running, so a poll begun just before a tab change outlived
+    // the component that wanted it -- and this one polls on a timer, so they accumulate.
+    const controller = new AbortController();
 
     async function look(): Promise<void> {
       try {
-        const { items } = await fetchRuns(1);
+        const { items } = await fetchRuns(1, { signal: controller.signal });
         const newest = items[0];
         if (!live) return;
         if (newest?.run_status !== "running") {
           setAcquiring(null);
         } else {
-          const detail = await fetchRun(newest.id);
+          const detail = await fetchRun(newest.id, { signal: controller.signal });
           if (!live) return;
           setAcquiring({
             run: detail,
@@ -55,6 +59,7 @@ export function useAcquiring(): Acquiring | null {
     void look();
     return () => {
       live = false;
+      controller.abort();
       if (timer !== undefined) clearTimeout(timer);
     };
   }, []);

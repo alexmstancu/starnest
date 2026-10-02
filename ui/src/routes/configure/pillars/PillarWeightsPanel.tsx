@@ -1,9 +1,15 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { updatePillarWeight, type CriteriaSet } from "../../../api/endpoints";
+import { usePillarNames, type PillarNames } from "../../../api/usePillarNames";
+import {
+  updatePillarLock,
+  updatePillarWeight,
+  type CriteriaSet,
+} from "../../../api/endpoints";
 import type { components } from "../../../api/schema";
-import { formatPercentage } from "../../../format/display";
+import { formatPercentage, pillarName } from "../../../format/display";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
 import {
+  comesToAHundred,
   PILLAR_CEILING_FLOOR,
   PILLAR_SLIDER,
   sliderCeiling,
@@ -39,21 +45,32 @@ export function PillarWeightsPanel({
    */
   criteriaFor?: (pillar: string) => ReactNode;
 }) {
+  const names = usePillarNames();
   const [weights, setWeights] = useState<PillarWeight[]>(
     criteriaSet.pillar_weights ?? [],
   );
   const [failure, setFailure] = useState<unknown>(null);
 
   const move = useCallback(
-    async (pillar: string, weight: number, locked?: boolean) => {
+    async (pillar: string, weight: number) => {
       setFailure(null);
       try {
-        const rebalanced = await updatePillarWeight(
-          criteriaSet.id,
-          pillar,
-          weight,
-          locked,
-        );
+        const rebalanced = await updatePillarWeight(criteriaSet.id, pillar, weight);
+        setWeights(rebalanced.items);
+      } catch (error) {
+        setFailure(error);
+      }
+    },
+    [criteriaSet.id],
+  );
+
+  // **Its own request, carrying no weight** (P68). See `updatePillarLock`: a lock sent with a
+  // weight can be set and never released, because the move is refused before the flag is read.
+  const lock = useCallback(
+    async (pillar: string, locked: boolean) => {
+      setFailure(null);
+      try {
+        const rebalanced = await updatePillarLock(criteriaSet.id, pillar, locked);
         setWeights(rebalanced.items);
       } catch (error) {
         setFailure(error);
@@ -98,7 +115,7 @@ export function PillarWeightsPanel({
           Total
           <span
             className={
-              total === 100 ? "chip chip--matching" : "chip chip--warning"
+              comesToAHundred(total) ? "chip chip--matching" : "chip chip--warning"
             }
           >
             {formatPercentage(total, 1)}
@@ -113,6 +130,7 @@ export function PillarWeightsPanel({
           {weights.map((weight) => (
             <PillarRow
               key={weight.pillar}
+              names={names}
               weight={weight}
               ceiling={ceiling}
               count={criteriaCounts?.get(weight.pillar)}
@@ -123,6 +141,7 @@ export function PillarWeightsPanel({
                   : () => setOpen(open === weight.pillar ? null : weight.pillar)
               }
               onMove={move}
+              onLock={lock}
             >
               {criteriaFor?.(weight.pillar)}
             </PillarRow>
@@ -134,20 +153,24 @@ export function PillarWeightsPanel({
 }
 
 function PillarRow({
+  names,
   weight,
   ceiling,
   count,
   open,
   onOpen,
   onMove,
+  onLock,
   children,
 }: {
+  names: PillarNames;
   weight: PillarWeight;
   ceiling: number;
   count?: number;
   open: boolean;
   onOpen?: () => void;
-  onMove: (pillar: string, weight: number, locked?: boolean) => Promise<void>;
+  onMove: (pillar: string, weight: number) => Promise<void>;
+  onLock: (pillar: string, locked: boolean) => Promise<void>;
   children?: ReactNode;
 }) {
   const stored = String(weight.weight);
@@ -209,12 +232,14 @@ function PillarRow({
       {/* **A group, named for its pillar.** The row holds three controls that are all about
           one pillar -- the slider, the reading, the lock -- and saying so is what lets a
           reader and a test find "economics" rather than "the fifth row". */}
-      <div className="weight-row" role="group" aria-label={weight.pillar}>
+      <div className="weight-row" role="group" aria-label={pillarName(names, weight.pillar)}>
         {/* **The name is the way in.** A criterion's weight is a share of its pillar's, so
           opening the pillar is what reveals the attributes it is shared among. */}
         {onOpen === undefined ? (
           <span className="weight-row__name">
-            <span className="weight-row__label">{weight.pillar}</span>
+            <span className="weight-row__label">
+              {pillarName(names, weight.pillar)}
+            </span>
             <span className="weight-row__meta">{meta}</span>
           </span>
         ) : (
@@ -228,7 +253,7 @@ function PillarRow({
               <span className="weight-row__caret" aria-hidden="true">
                 {open ? "▾" : "▸"}
               </span>
-              {weight.pillar}
+              {pillarName(names, weight.pillar)}
             </span>
             <span className="weight-row__meta">{meta}</span>
           </button>
@@ -241,7 +266,7 @@ function PillarRow({
           max={ceiling}
           step={PILLAR_SLIDER.step}
           value={typed}
-          aria-label={`${weight.pillar} weight`}
+          aria-label={`${pillarName(names, weight.pillar)} weight`}
           onChange={(event) => {
             setMoving(true);
             setTyped(event.target.value);
@@ -267,7 +292,7 @@ function PillarRow({
               ? "weight-row__lock weight-row__lock--on"
               : "weight-row__lock"
           }
-          aria-label={`Lock ${weight.pillar}`}
+          aria-label={`Lock ${pillarName(names, weight.pillar)}`}
           aria-pressed={weight.weight_locked}
           title={
             weight.weight_locked
@@ -275,7 +300,7 @@ function PillarRow({
               : "Moves in proportion when another weight changes"
           }
           onClick={() =>
-            void onMove(weight.pillar, weight.weight, !weight.weight_locked)
+            void onLock(weight.pillar, !weight.weight_locked)
           }
         >
           <span aria-hidden="true">

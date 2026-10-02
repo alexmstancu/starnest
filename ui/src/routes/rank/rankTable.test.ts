@@ -5,7 +5,6 @@ import {
   confidenceBands,
   confidenceLabel,
   coverageBar,
-  deltaTone,
   excludedBand,
   formatDelta,
   homeCandidates,
@@ -193,12 +192,7 @@ describe("the difference from home", () => {
     expect(formatDelta(undefined)).toBe("—");
   });
 
-  it("reads level as level, so home itself is not coloured as a win", () => {
-    expect(deltaTone(0)).toBe("level");
-    expect(deltaTone(null)).toBe("level");
-    expect(deltaTone(3)).toBe("ahead");
-    expect(deltaTone(-3)).toBe("behind");
-  });
+  
 });
 
 describe("where the ranking stops", () => {

@@ -118,6 +118,35 @@ export function updateCriterionWeight(
 }
 
 /**
+ * Include a criterion in the score, or exclude it.
+ *
+ * **`is_scored` is the first thing `reqs.md` says a user does** -- "includes/excludes
+ * attributes from scoring" -- and it had no client at all: the contract accepts the field,
+ * the backend honours it, and nothing here could send it (P86). The three criteria excluded
+ * in the shipped sets got there by migration.
+ *
+ * **Excluding is not the same as missing data** (`reqs.md` 5.3, Q82). An excluded criterion
+ * is a decision that it does not apply: its weight renormalises across what is left and it
+ * does not count against coverage, where a missing figure redistributes *and* costs coverage.
+ * The stored weight is untouched either way, so ticking it back restores exactly what was
+ * there.
+ *
+ * Sent alone, like the lock, because the server applies a weight before it reads the flags.
+ */
+export function updateCriterionScored(
+  criteriaSetId: string,
+  attributeId: string,
+  isScored: boolean,
+  options?: RequestOptions,
+): Promise<RebalancedPillar> {
+  return patchJson(
+    "/criteria-sets/{criteriaSetId}/criteria/{attributeId}",
+    { is_scored: isScored },
+    { ...options, pathParams: { criteriaSetId, attributeId } },
+  );
+}
+
+/**
  * Lock or unlock one criterion's weight.
  *
  * **The lock travels alone, without a weight.** A lock holds its weight where it is, and the
@@ -311,15 +340,41 @@ export function fetchValues(
  * run that produced it for the life of the row, so this answers the same way however much has
  * happened since.
  */
-export function fetchValuesFromRun(
+/** How many values one request asks for. The server's own ceiling is higher than this. */
+const A_PAGE_OF_VALUES = 500;
+
+/**
+ * Every value one run wrote, following the pages until there are none left.
+ *
+ * **A single request could not hold a sweep.** This asked for 1 000 and discarded `total`, and
+ * a country-level run writes 32 candidates times ~43 attributes -- about 1 376 rows. So the
+ * acquisition diff compared a truncated page against a full one and reported the difference as
+ * though it were the run's (P89). `total` exists to say when there is more; it has to be read.
+ */
+export async function fetchValuesFromRun(
   run: number,
   options?: RequestOptions,
 ): Promise<{ items: StoredValue[]; total: number }> {
-  return getJson(
-    "/values",
-    { data_acquisition_run: run, include_superseded: true, limit: 1000 },
-    options,
-  );
+  const collected: StoredValue[] = [];
+  let total = 0;
+  for (;;) {
+    const page: { items: StoredValue[]; total: number } = await getJson(
+      "/values",
+      {
+        data_acquisition_run: run,
+        include_superseded: true,
+        limit: A_PAGE_OF_VALUES,
+        offset: collected.length,
+      },
+      options,
+    );
+    collected.push(...page.items);
+    total = page.total;
+    // **Stops on a short page as well as on the count.** A server that reported a `total`
+    // larger than it will serve would otherwise spin here for ever.
+    if (page.items.length < A_PAGE_OF_VALUES || collected.length >= total) break;
+  }
+  return { items: collected, total };
 }
 
 export function fetchValuesForAttribute(
@@ -381,16 +436,40 @@ export function updatePillarWeight(
   criteriaSetId: string,
   pillarId: string,
   weight: number,
-  weightLocked?: boolean,
   options?: RequestOptions,
-): Promise<{ items: components["schemas"]["PillarWeight"][] }> {
+): Promise<RebalancedPillarWeights> {
   return putJson(
     "/criteria-sets/{criteriaSetId}/pillar-weights/{pillarId}",
-    weightLocked === undefined
-      ? { weight }
-      : { weight, weight_locked: weightLocked },
+    { weight },
     { ...options, pathParams: { criteriaSetId, pillarId } },
   );
+}
+
+/**
+ * Lock or unlock one pillar's weight.
+ *
+ * **The lock travels alone, without a weight** -- the same protocol `updateCriterionLock`
+ * already follows, and for the same reason. A locked weight may not be moved even to the value
+ * it already holds, so a request carrying both could lock a pillar and never release it: the
+ * server applies the move first and refuses before it reads the flag. The disc sent both, so
+ * unlocking answered 409 `weights_all_locked` for ever and the lock could not be undone (P68).
+ */
+export function updatePillarLock(
+  criteriaSetId: string,
+  pillarId: string,
+  weightLocked: boolean,
+  options?: RequestOptions,
+): Promise<RebalancedPillarWeights> {
+  return putJson(
+    "/criteria-sets/{criteriaSetId}/pillar-weights/{pillarId}",
+    { weight_locked: weightLocked },
+    { ...options, pathParams: { criteriaSetId, pillarId } },
+  );
+}
+
+/** Every pillar weight at the level, as the server left them. */
+export interface RebalancedPillarWeights {
+  items: components["schemas"]["PillarWeight"][];
 }
 
 export function createCriteriaSet(
@@ -713,4 +792,21 @@ export function enterValueManually(
   options?: RequestOptions,
 ): Promise<StoredValue> {
   return postJson("/values/manual", input, options);
+}
+
+export type Pillar = components["schemas"]["Pillar"];
+
+/**
+ * The eleven verticals, with their display names and the order they are read in.
+ *
+ * **Served since the contract was written, and called by nothing until now** — the eighth
+ * operation found that way. Every screen that shows a pillar had been title-casing its id,
+ * so `economics` read "Economics" where the catalog says "Economy", and `connectivity` read
+ * "Connectivity" where it says "Transport".
+ *
+ * A pillar carries no level (`reqs.md` Q187): the level lives on the weight, so this list is
+ * the same whichever level is being scored and is fetched once per screen.
+ */
+export function fetchPillars(options?: RequestOptions): Promise<{ items: Pillar[] }> {
+  return getJson("/pillars", undefined, options);
 }

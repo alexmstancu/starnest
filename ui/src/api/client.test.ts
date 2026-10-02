@@ -1,7 +1,15 @@
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { ApiError, CLIENT_ERROR_CODES, isApiError } from "./ApiError";
-import { API_PREFIX, buildUrl, getJson, postJson } from "./client";
+import {
+  API_PREFIX,
+  buildUrl,
+  deleteResource,
+  getJson,
+  patchJson,
+  postJson,
+  putJson,
+} from "./client";
 import { fetchCandidates, fetchLevels, fetchRanking, fetchRuns } from "./endpoints";
 import { mockServer } from "../mocks/server";
 
@@ -138,7 +146,12 @@ describe("error handling", () => {
   });
 
   it("answers an unmocked path with a code rather than silence", async () => {
-    const error = (await getJson("/pillars").catch((thrown: unknown) => thrown)) as ApiError;
+    // **A path the mock will never have**, rather than one that simply has no handler yet:
+    // this test used `/pillars` until that operation got a client, and then it was asserting
+    // that a real endpoint was missing.
+    const error = (await getJson(
+      "/nothing-the-contract-describes" as never,
+    ).catch((thrown: unknown) => thrown)) as ApiError;
 
     expect(error.code).toBe("not_mocked");
     expect(error.status).toBe(501);
@@ -163,5 +176,106 @@ describe("postJson", () => {
     mockServer.use(http.post("/v1/criteria-sets", () => new HttpResponse(null, { status: 204 })));
 
     await expect(postJson("/criteria-sets", { id: "empty", name: "Empty" })).resolves.toBeUndefined();
+  });
+});
+
+describe("the paths and the query a request is built from", () => {
+  it("repeats a list parameter rather than joining it", () => {
+    // **The contract types `comparators` as an array.** Joining with commas would send one
+    // candidate called "country.spain,country.greece", which the server reads as a candidate
+    // id it has never heard of -- a 404 for what is actually a client bug.
+    const url = buildUrl("/comparisons", {
+      focus: "country.portugal",
+      comparators: ["country.spain", "country.greece"],
+    });
+
+    expect(url).toContain("comparators=country.spain");
+    expect(url).toContain("comparators=country.greece");
+    expect(url).not.toContain("country.spain%2C");
+  });
+
+  it("leaves an undefined parameter out rather than sending the word undefined", () => {
+    expect(buildUrl("/values", { attribute: undefined, limit: 10 })).toBe(
+      `${API_PREFIX}/values?limit=10`,
+    );
+  });
+
+  it("sends an empty list as no parameter at all", () => {
+    expect(buildUrl("/comparisons", { comparators: [] })).toBe(
+      `${API_PREFIX}/comparisons`,
+    );
+  });
+
+  it("substitutes a path parameter", () => {
+    expect(
+      buildUrl("/criteria-sets/{criteriaSetId}", undefined, {
+        criteriaSetId: "alex",
+      }),
+    ).toBe(`${API_PREFIX}/criteria-sets/alex`);
+  });
+
+  it("throws on a missing path value rather than sending the placeholder", () => {
+    // A request to `/criteria-sets/%7BcriteriaSetId%7D` comes back as a 404 that reads like a
+    // missing criteria set instead of the programming error it is.
+    expect(() => buildUrl("/criteria-sets/{criteriaSetId}", undefined, {})).toThrow();
+  });
+});
+
+describe("the writes", () => {
+  it("sends a PUT and returns what came back", async () => {
+    mockServer.use(
+      http.put("/v1/settings", async ({ request }) =>
+        HttpResponse.json({ echoed: await request.json() }),
+      ),
+    );
+
+    const answer = await putJson("/settings", { score_scale_max: 100 });
+
+    expect(answer).toEqual({ echoed: { score_scale_max: 100 } });
+  });
+
+  it("sends a PATCH and returns what came back", async () => {
+    mockServer.use(
+      http.patch("/v1/data-sources/:id", async ({ request }) =>
+        HttpResponse.json({ echoed: await request.json() }),
+      ),
+    );
+
+    const answer = await patchJson(
+      "/data-sources/{dataSourceId}",
+      { is_enabled: false },
+      { pathParams: { dataSourceId: "oecd" } },
+    );
+
+    expect(answer).toEqual({ echoed: { is_enabled: false } });
+  });
+
+  it("sends a DELETE and tolerates the empty body a 204 has", async () => {
+    // **A 204 carries no JSON.** Parsing one as JSON throws, and the throw would surface as
+    // "the backend answered with something that is not JSON" for a delete that worked.
+    mockServer.use(
+      http.delete("/v1/criteria-sets/:id", () => new HttpResponse(null, { status: 204 })),
+    );
+
+    await expect(
+      deleteResource("/criteria-sets/{criteriaSetId}", {
+        pathParams: { criteriaSetId: "scratch" },
+      }),
+    ).resolves.not.toThrow();
+  });
+
+  it("raises the server's refusal on a write, with its code", async () => {
+    mockServer.use(
+      http.put("/v1/settings", () =>
+        HttpResponse.json(
+          { code: "score_scale_not_set", message: "no scale" },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    await expect(putJson("/settings", {})).rejects.toMatchObject({
+      code: "score_scale_not_set",
+    });
   });
 });

@@ -131,7 +131,7 @@ describe("the criteria list", () => {
     // The pillar names the block these rows are in, so the row itself no longer repeats it.
     expect(row).not.toHaveTextContent("safety");
     expect(
-      screen.getByRole("button", { name: /^safety/ }),
+      screen.getByRole("button", { name: /^Safety/ }),
     ).toHaveAttribute("aria-expanded", "true");
   });
 
@@ -534,14 +534,14 @@ describe("what each pillar's criteria come to", () => {
     expect(
       within(
         await screen.findByRole("list", { name: /weight totals by pillar/i }),
-      ).getByText(/^economics 100/i),
+      ).getByText(/^Economy 100/i),
     ).toBeInTheDocument();
 
     await openThePillarOf("country.overcrowding_rate");
     expect(
       within(
         await screen.findByRole("list", { name: /weight totals by pillar/i }),
-      ).getByText(/^housing 100/i),
+      ).getByText(/^Housing 100/i),
     ).toBeInTheDocument();
   });
 
@@ -557,7 +557,7 @@ describe("what each pillar's criteria come to", () => {
     const totals = within(
       await screen.findByRole("list", { name: /weight totals by pillar/i }),
     );
-    expect(totals.getByText(/^economics 100/i)).toBeInTheDocument();
+    expect(totals.getByText(/^Economy 100/i)).toBeInTheDocument();
   });
 });
 

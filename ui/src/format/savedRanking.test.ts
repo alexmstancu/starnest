@@ -3,6 +3,7 @@ import {
   describeSaved,
   detailOf,
   newestFirst,
+  requestedSavedRanking,
   summariseSaved,
   type SavedRankingLike,
 } from "./savedRanking";
@@ -84,5 +85,40 @@ describe("the saved rankings list", () => {
     const summary = summariseSaved(saved());
     expect(summary).toContain("local_employment");
     expect(summary).not.toMatch(/\d\d:\d\d/);
+  });
+});
+
+describe("which saved ranking the address bar is asking for", () => {
+  /**
+   * **The one function here that parses input a person can type.** Everything else formats
+   * what the server sent; this reads a query parameter, and a query parameter is whatever
+   * somebody put in the URL -- or whatever an old bookmark still holds.
+   */
+  it("reads a positive whole number", () => {
+    expect(requestedSavedRanking("42")).toBe(42);
+  });
+
+  it("asks for nothing when the parameter is absent", () => {
+    expect(requestedSavedRanking(null)).toBeNull();
+  });
+
+  it("refuses anything that is not a plain number", () => {
+    // `Number("")` is 0 and `Number(" 7 ")` is 7, so a bare cast would turn an empty or padded
+    // parameter into a request for a ranking -- id 0 does not exist and the screen would show
+    // a "not found" for something nobody asked for.
+    expect(requestedSavedRanking("")).toBeNull();
+    expect(requestedSavedRanking(" 7 ")).toBeNull();
+    expect(requestedSavedRanking("7.5")).toBeNull();
+    expect(requestedSavedRanking("7e2")).toBeNull();
+    expect(requestedSavedRanking("abc")).toBeNull();
+  });
+
+  it("refuses zero and negatives, because no evaluation has those ids", () => {
+    expect(requestedSavedRanking("0")).toBeNull();
+    expect(requestedSavedRanking("-3")).toBeNull();
+  });
+
+  it("refuses a leading zero rather than silently reinterpreting it", () => {
+    expect(requestedSavedRanking("007")).toBeNull();
   });
 });

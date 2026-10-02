@@ -311,7 +311,13 @@ async function request<Result>(
 
   try {
     return (await response.json()) as Result;
-  } catch {
+  } catch (cause) {
+    // **An abort landing mid-body is still an abort.** Reading the body is a second await, so
+    // a cancellation arriving between the headers and the end of the stream threw here -- and
+    // was reported as "the backend answered with something that is not JSON", which blames the
+    // server for the caller walking away. `useResource` hides it by checking `signal.aborted`;
+    // a hook awaiting this directly shows it to the reader.
+    if (isAbort(cause)) throw cause;
     throw new ApiError({
       code: CLIENT_ERROR_CODES.malformedBody,
       message: `${url} answered HTTP ${response.status} with a body that is not JSON.`,

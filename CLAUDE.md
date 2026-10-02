@@ -21,7 +21,7 @@ arriving is a row rather than a change — which is the "nothing hardcoded" inva
 | `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. `target_range` scores its band and falls linearly to its zero points (built 2026-09-11). The rules are applied: a compound rule warns or rules out, a gate answered `not_matching` makes a candidate not match while keeping its score, and **an undecided rule never fires** -- which both shipped compound rules are. **The two compound-rule shapes that read a household field belong to the city level.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
 | `api/`, `data_acquisition/`, `data_sources/` | **Written.** **All 44 of the contract's operations**; seven source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, and an estimate from Eurostat's tax-benefit figures); values served with both dates, manual entry where the attribute permits it, and the gates' answers; runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. `RunDetail.by_source` says what each source stored and what it failed on -- **derived from the value and failure rows, never stored**, for the reason Q217 settled for `items_unanswered`; the two counts are independent and sum to nothing, because a source may fail on an item another source then answers. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | **Written.** Focus against comparators, deltas in the attribute's own unit, weighted contribution, and a synthesis templated from the numbers and ordered by what each gap is worth |
-| `ui/` | The shell and **all four tabs**: Configure with its eight panels (household, settings, criteria sets, pillar weights, criteria, rules, gate proposals, source priority), Acquire, Rank with its drill-down, Compare. **A criterion's rule is editable per row** -- goal, normalisation method, target band, scale anchors, matching threshold -- which is the subjective half of the ontology becoming data rather than migration. 297 unit tests and 23 browser tests, the latter including a functional sanity suite that walks all four tabs. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
+| `ui/` | The shell and **all four tabs**: Configure with its eight panels (household, settings, criteria sets, pillar weights, criteria, rules, gate proposals, source priority), Acquire, Rank with its drill-down, Compare. **A criterion's rule is editable per row** -- goal, normalisation method, target band, scale anchors, matching threshold -- which is the subjective half of the ontology becoming data rather than migration. 819 unit tests and 32 browser tests, the latter including a functional sanity suite that walks all four tabs. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
 
 **GATE D closed 2026-09-12** — the four failure modes, executable
 (`backend/tests/acceptance/test_gate_d.py`): a process that dies mid-run keeps every figure it
@@ -68,8 +68,8 @@ attribute answered for every country (proved live by `make live`), the four spot
 matching their publishers by routes the adapters never use, and selective retry built. **The
 family pillar is the one known gap**: OECD blocks scripts, so it waits rather than being
 unfinished. **GATE A closed 2026-09-05** — `backend/tests/acceptance/test_gate_a.py` is the gate written
-down, seven steps in order against a real database plus two standing checks. 2,135 backend
-tests, 297 interface tests and 23 browser tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
+down, seven steps in order against a real database plus two standing checks. 2,470 backend
+tests, 819 interface tests and 32 browser tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
 deliberately does not cover.
 
 **Two tables looked dead in the schema diagram and only one was** (Q229). `settings` is a
@@ -134,7 +134,7 @@ a published figure. **Liechtenstein is ranked on Switzerland's figures for three
 stands in where no source covers a candidate, and the copy is stored under the `stand_in`
 source at `low` confidence, never as the candidate's own measurement. **Every ranked candidate
 now reports `coverage_by_confidence`** (`reqs.md` 5.7) — 51% of Liechtenstein's covered weight
-is low-confidence, 8% for the five on the estimate. **Coverage is 57%** since the household
+is low-confidence, 8% for the five on the estimate. **Coverage is 72-76% per candidate** (the 57% this line used to quote was measured 2026-09-11, before several data migrations) since the household
 anchored the seven `fixed` criteria with data (Q209, `0462`); what remains uncovered has no data
 at all, not merely no anchor.
 
@@ -157,6 +157,46 @@ as an `ExternalScore`, which needs no attribute and no subscription until somebo
 screen. The old attribute is `lifecycle_status = 'retired'`, not deleted.
 
 **The schema was hardened before `evaluation/` was written** (2026-09-05, migrations `0106`-`0114`). Findings from `docs/known-issues.md` closed while every affected table still had zero rows: an evaluation freezes the score scale it used and nothing it stores may leave that scale, a result belongs to its evaluation's level, a non-match reason names the frozen criterion rather than the live one, and a criterion may only judge an attribute that has a pillar. **`evaluation/` must supply `score_scale_max` when it saves, and must refuse rather than substitute 100 when `settings.score_scale_max` is unset.** **Freshness has inputs** (`0111`): `reqs.md` 7.1 gives every attribute a `max_age`, derived from its source's publication interval rather than chosen one by one. **A monetary conversion must name a rate the ECB published** (`0112`). **A criterion may only score a figure with a magnitude** (`0122`, D6): three `LabelSet` criteria claimed to be scoreable and a CHECK now forbids it. Eleven findings remain open, all low; `known-issues.md` opens with what they are.
+
+**Six read-only agents reviewed every package and found 34 things; 31 are fixed**
+(2026-10-02). The two patterns worth keeping are both mechanical. **The first: a correct
+implementation already existed and one call site did not use it.** `switched_on` had two
+callers and needed four, so a retry asked sources the household had switched off and paid for
+them. `ROUNDING_SLACK` had one caller and needed two, so the pillar total read "100.0%" in
+amber about a quarter of the time. `updateCriterionLock` sends a lock alone and the pillar twin
+was never written, so **a locked pillar could never be unlocked** -- 409 for ever. `rules.py`
+looks a rule up before storing it and `criteria.py` did not, so enforcing a gate that does not
+exist answered 500. `record_failures` was called on three of four exits, so **a run that died
+kept its figures and lost every failure it had collected** -- and a retry then answered
+"failed on nothing". Enumerating helpers with few callers and asking which call sites *should*
+call them finds these without reading for bugs.
+
+**The second: compare two artifacts that ought to agree.** Every high-yield guard here is set
+subtraction over things already parsed. `test_contract_drift` compared operations and not
+*parameters*, so `/attributes` served `include_retired` and `/criteria-sets/{id}` served
+`level`, neither declared anywhere. The dead-SQL guard matched a name as a substring, so
+`insert_candidate` passed as live because `insert_candidate_results` exists -- three queries
+with no caller hid behind it. `test_migration_hygiene` now holds all 73 migrations to a
+`depends:` line, a rollback and a predecessor that exists, and found a wrong assumption in its
+own first draft in four seconds.
+
+**The biggest find was a wrong number that looked right.** An excluded criterion's weight was
+never renormalised, so the shipped sets were scored out of 93.35 and 87.48 while coverage read
+100% -- and the drill-down showed a pillar at full marks beside a total that disagreed with it.
+Weights now renormalise **within a pillar first, then across pillars**: excluding one criterion
+inside a pillar must not move weight *between* pillars, which is the one number the user set
+most deliberately. Every score rose and **the order changed** -- Germany 4th to 8th, Croatia
+9th to 6th. `reqs.md` Q82 had said so since the beginning.
+
+**A test can name the right example and still not ask the question that fails.**
+`test_an_excluded_criterion_takes_no_weight_and_leaves_no_gap` asserted coverage and the
+breakdown, never the score -- the only thing that was wrong. Strengthening
+`test_it_agrees_with_the_saved_evaluation` from three fields to `assert live == saved` found
+three defects in sequence, the third of which no reviewer had seen: a saved ranking lost its
+confidence split, its reason **and** its whole pillar rollup. **Break the code and watch the
+test fail**; three of the fixes in that session were wrong on the first attempt and an existing
+test said so each time -- a `UNIQUE` on source priority makes every reorder impossible, because
+moving a source one place means briefly sharing the place it moves to.
 
 ## Layout
 

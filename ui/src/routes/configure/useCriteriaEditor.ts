@@ -33,6 +33,14 @@ export interface CriteriaEditor {
   criteria: Criterion[];
   /** The attribute whose weight is being saved right now, so its row can say so. */
   savingAttribute: string | null;
+  /**
+   * The attribute whose *rule* is being saved, which is not the same question.
+   *
+   * A weight drag and a lock both set `savingAttribute` as well, and the rule editor
+   * reverts its draft when a save it was waiting for finishes -- so dragging a weight
+   * threw away an unsent rule edit on the same row, with nothing said (P82).
+   */
+  savingRuleFor: string | null;
   /** The failure of the last weight change. Shown; never swallowed. */
   saveError: unknown;
   setWeight: (attribute: string, weight: number) => void;
@@ -68,6 +76,7 @@ export function useCriteriaEditor(
   const { resource, reload } = useResource(fetcher, criteriaSetId !== null);
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [savingAttribute, setSavingAttribute] = useState<string | null>(null);
+  const [savingRuleFor, setSavingRuleFor] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
 
   // A newly fetched set replaces everything, including a stale refusal: the error belonged to
@@ -160,6 +169,7 @@ export function useCriteriaEditor(
       if (criteriaSetId === null) return;
 
       setSavingAttribute(attribute);
+      setSavingRuleFor(attribute);
       setSaveError(null);
 
       void updateCriterionRule(criteriaSetId, attribute, rule)
@@ -169,7 +179,10 @@ export function useCriteriaEditor(
           setCriteria((current) => applyRebalance(current, changed.criteria));
         })
         .catch((error: unknown) => setSaveError(error))
-        .finally(() => setSavingAttribute(null));
+        .finally(() => {
+          setSavingAttribute(null);
+          setSavingRuleFor(null);
+        });
     },
     [criteriaSetId],
   );
@@ -180,6 +193,7 @@ export function useCriteriaEditor(
     error: resource.error,
     criteria,
     savingAttribute,
+    savingRuleFor,
     saveError,
     setWeight,
     setLock,

@@ -35,6 +35,19 @@ export interface PillarTotal {
 const ROUNDING_SLACK = 0.0001;
 
 /**
+ * Whether a set of weights has come to 100.
+ *
+ * **Exported so there is one answer to the question.** `totalsByPillar` compared with slack
+ * and the pillar panel's own total compared with `===`, so the same arithmetic was right in
+ * one place on the screen and wrong a few lines above it: a rebalance returns weights at full
+ * `Decimal` precision, summing them as doubles misses 100 about a quarter of the time, and the
+ * chip read "Total 100.0%" in amber (P79).
+ */
+export function comesToAHundred(total: number): boolean {
+  return Math.abs(total - 100) < ROUNDING_SLACK;
+}
+
+/**
  * What each pillar's criteria currently sum to.
  *
  * **Criterion weights sum to 100 within a pillar** (`reqs.md` 3.4), and the server enforces
@@ -60,7 +73,7 @@ export function totalsByPillar(
   return [...totals].map(([pillar, total]) => ({
     pillar,
     total,
-    balanced: Math.abs(total - 100) < ROUNDING_SLACK,
+    balanced: comesToAHundred(total),
   }));
 }
 

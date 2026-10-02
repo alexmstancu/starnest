@@ -14,7 +14,12 @@ import {
 } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
 import type { RouteDefinition } from "../../navigation/routes";
-import { ABSENT, formatScore, formatSigned } from "../../format/display";
+import {
+  ABSENT,
+  deltaTone,
+  formatScore,
+  formatSigned,
+} from "../../format/display";
 import { describeFigure } from "../../format/figure";
 import { UnsetSetting } from "../../shell/UnsetSetting";
 import { useSelection } from "../../shell/SelectionContext";
@@ -140,7 +145,15 @@ function TheComparison({
               onMeasure={setMeasure}
             />
           }
-          onFocus={setFocus}
+          // **Choosing a focus drops it from the comparators** (P81). The chips already hide
+          // the focus, so a candidate ticked first and then made the focus vanished from the
+          // screen while staying in the request -- and the server refuses comparing a
+          // candidate with itself, so every Compare answered 409 with nothing on screen to
+          // untick. Pruning here keeps what is sent and what is shown the same list.
+          onFocus={(candidate) => {
+            setFocus(candidate);
+            setComparators((chosen) => chosen.filter((each) => each !== candidate));
+          }}
           onToggleComparator={(candidate) =>
             setComparators((chosen) =>
               chosen.includes(candidate)
@@ -423,11 +436,11 @@ function SynthesisCard({
       <div className="panel__head">
         <h4 className="synthesis__name">{name}</h4>
         <span
-          className={
-            pair.score_delta != null && pair.score_delta < 0
-              ? "synthesis__delta synthesis__delta--behind"
-              : "synthesis__delta synthesis__delta--ahead"
-          }
+          // **Three states, because there are three** (P83). A null delta fell into the
+          // `else` and was coloured as an advantage, so "—" rendered green: the screen
+          // claiming a lead where it has nothing to compare. The ranked table's own
+          // `deltaTone` already keeps a level state for exactly this.
+          className={`synthesis__delta synthesis__delta--${deltaTone(pair.score_delta)}`}
         >
           {formatSigned(pair.score_delta)}
         </span>

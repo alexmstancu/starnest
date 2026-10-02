@@ -644,7 +644,14 @@ describe("what a stored figure looks like, whatever its type", () => {
       { amount: 1410, currency: "EUR", amount_eur: 1410 },
       "1410 EUR",
     ],
-    ["Ratio", { value: 26.4, basis: "households" }, "26.4"],
+    [
+      // **A ratio is a share of something** (P78), and the contract makes `basis` required.
+      // This row expected the bare "26.4" -- the same mistake as the Index below, for the
+      // same reason, and it sat four lines above the comment explaining it.
+      "Ratio",
+      { value: 26.4, basis: "households" },
+      "26.4% of Households",
+    ],
     ["Count", { count: 42 }, "42"],
     [
       // **An index means nothing without its bounds** (P57). This row used to expect the bare
@@ -661,7 +668,8 @@ describe("what a stored figure looks like, whatever its type", () => {
     ],
     ["LabelSet", { labels: ["Csb", "Csa"] }, "Csb, Csa"],
     ["Text", { body: "a note" }, "a note"],
-    ["Boolean", { value: true }, "true"],
+    // `true` is what JSON carries; it is not what anybody calls the state of an agreement.
+    ["Boolean", { value: true }, "Yes"],
     [
       "ShareComposition",
       { shares: [{ label: "rail", share: 40 }] },

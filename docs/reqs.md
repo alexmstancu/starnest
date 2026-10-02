@@ -2145,6 +2145,14 @@ way by the active-value rule (section 3.6).
 > describes — never from the retrieval date, because rent from 2019 fetched this morning is
 > stale rent.
 
+> **These headings describe a pillar's scope; they are not what the interface calls it.** A
+> pillar's display name is catalog data (`pillar.name`, migration `0484`) and is one word, so
+> that it fits a weight row without wrapping: Economy, Housing, Career, Safety, Health, Climate,
+> Transport, Nature, Culture, Governance, Family. "Career & work" and "Governance &
+> administration" say what belongs in the pillar, which is what a requirements document is for;
+> "Career" and "Governance" are what a reader sees. The order the screens use is
+> `pillar.display_order`, which is the order below.
+
 #### Economics — 14%
 
 | Attribute | Weight | Value type | Sources | Max age |

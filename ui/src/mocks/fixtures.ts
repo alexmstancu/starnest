@@ -25,6 +25,9 @@ type RunPlan = components["schemas"]["RunPlan"];
 type RunDetail = components["schemas"]["RunDetail"];
 type StoredValue = components["schemas"]["Value"];
 type ExternalScore = components["schemas"]["ExternalScore"];
+type Attribute = components["schemas"]["Attribute"];
+type AttributeScore = components["schemas"]["AttributeScore"];
+type Pillar = components["schemas"]["Pillar"];
 
 export const LEVELS: Level[] = [
   { id: "country", depth_order: 1, parent_level: null },
@@ -532,7 +535,7 @@ export const STARTED_RUN_DETAIL: RunDetail = {
  * superseded figure is still there, with the source that produced it (`reqs.md` 3.6).
  */
 /** The catalog's attributes, for the one-attribute-every-candidate drill-down (`reqs.md` 8.4). */
-export const ATTRIBUTES = [
+export const ATTRIBUTES: Attribute[] = [
   {
     id: "country.cost_of_living_index",
     name: "Cost of living index",
@@ -617,7 +620,7 @@ export const ATTRIBUTES = [
  * out, because an attribute with a figure the active set does not score is exactly the case
  * those columns must say nothing about rather than nought.
  */
-export const ATTRIBUTE_SCORES = [
+export const ATTRIBUTE_SCORES: AttributeScore[] = [
   {
     attribute: "country.cost_of_living_index",
     pillar: "economics",
@@ -892,4 +895,26 @@ export const DATA_SOURCES: DataSource[] = [
     reliability_tier: "indicative",
     is_enabled: false,
   },
+];
+
+
+/**
+ * The eleven verticals as the catalog has them: one word each, in the order they are read.
+ *
+ * **Names, not title-cased ids.** `economics` is "Economy" and `connectivity` is "Transport",
+ * and a mock that returned the id would let a screen pass while showing a word the catalog
+ * never chose -- which is exactly what it did before `/pillars` had a client.
+ */
+export const PILLARS: Pillar[] = [
+  { id: "economics", name: "Economy", display_order: 1 },
+  { id: "housing", name: "Housing", display_order: 2 },
+  { id: "career", name: "Career", display_order: 3 },
+  { id: "safety", name: "Safety", display_order: 4 },
+  { id: "health", name: "Health", display_order: 5 },
+  { id: "climate", name: "Climate", display_order: 6 },
+  { id: "connectivity", name: "Transport", display_order: 7 },
+  { id: "nature", name: "Nature", display_order: 8 },
+  { id: "culture", name: "Culture", display_order: 9 },
+  { id: "governance", name: "Governance", display_order: 10 },
+  { id: "family", name: "Family", display_order: 11 },
 ];

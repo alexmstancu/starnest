@@ -1,6 +1,6 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse, delay, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { mockServer } from "../../../mocks/server";
 import { renderShell } from "../../../testing/renderShell";
@@ -28,8 +28,8 @@ const PLAIN = "country.homicide_rate";
  * is what these tests now do before touching a rule.
  */
 const PILLAR_OF: Record<string, string> = {
-  [ANCHORED]: "housing",
-  [PLAIN]: "safety",
+  [ANCHORED]: "Housing",
+  [PLAIN]: "Safety",
 };
 
 /**
@@ -283,5 +283,39 @@ describe("changing the rule", () => {
 
     expect(goalSelect().value).toBe("minimise");
     expect(screen.getByRole("button", { name: "Save rule" })).toBeDisabled();
+  });
+
+  it("keeps an unsent draft when the weight on the same row is saved", async () => {
+    // **A weight save is not this draft's save** (P82). The rule fields go back to the
+    // stored rule once the save they were waiting on ends -- correct for a rule save, and
+    // the flag they watched was set by every save on the row. So editing a goal and then
+    // nudging the weight threw the edit away with nothing said, which is the one thing a
+    // configuration screen must never do quietly.
+    await openTheRuleFor(ANCHORED);
+    const user = userEvent.setup();
+    await user.selectOptions(goalSelect(), "maximise");
+
+    // **Slowed on purpose.** The revert fires on the transition from saving to not saving, so
+    // a save that resolves before React renders never exposes it -- the test would pass
+    // against the bug. A delay makes the in-flight state real.
+    mockServer.use(
+      http.patch("/v1/criteria-sets/:id/criteria/:attribute", async () => {
+        await delay(20);
+        return HttpResponse.json({ pillar: "housing", criteria: [] });
+      }),
+    );
+
+    const slider = screen.getByRole("slider", {
+      name: `Weight for ${ANCHORED}`,
+    });
+    fireEvent.change(slider, { target: { value: "30" } });
+    fireEvent.pointerUp(slider);
+    // The save is in flight: the controls on the row are disabled while it is.
+    await waitFor(() => expect(slider).toBeDisabled());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save rule" })).toBeEnabled(),
+    );
+
+    expect(goalSelect().value).toBe("maximise");
   });
 });

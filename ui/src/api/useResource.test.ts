@@ -144,3 +144,106 @@ describe("asking again", () => {
     expect(result.current.resource.data).toBeNull();
   });
 });
+
+describe("the two switches a caller holds", () => {
+  /**
+   * `enabled` and `freshness` are the whole of this hook's API beyond the fetcher, and neither
+   * was exercised: `enabled` is how a screen says "a prerequisite is missing, ask nothing",
+   * and `freshness` is how it says "something elsewhere made this stale".
+   */
+  it("asks nothing while it is disabled, and says idle rather than loading", async () => {
+    let asked = 0;
+    const { result } = renderHook(() => {
+      const fetcher = useCallback(() => {
+        asked += 1;
+        return Promise.resolve("a figure");
+      }, []);
+      return useResource(fetcher, false);
+    });
+
+    await waitFor(() => expect(result.current.resource.status).toBe("idle"));
+    expect(asked).toBe(0);
+  });
+
+  it("asks as soon as the prerequisite arrives", async () => {
+    // A spinner shown while nothing is being fetched tells the reader something false, so the
+    // idle state is deliberately not "loading" -- and the flip to enabled has to start the
+    // request, or a screen waits for ever on a prerequisite it already has.
+    let asked = 0;
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => {
+        const fetcher = useCallback(() => {
+          asked += 1;
+          return Promise.resolve("a figure");
+        }, []);
+        return useResource(fetcher, enabled);
+      },
+      { initialProps: { enabled: false } },
+    );
+    await waitFor(() => expect(result.current.resource.status).toBe("idle"));
+
+    rerender({ enabled: true });
+
+    await waitFor(() => expect(result.current.resource.status).toBe("ready"));
+    expect(asked).toBe(1);
+  });
+
+  it("goes back to idle when the prerequisite disappears again", async () => {
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => {
+        const fetcher = useCallback(() => Promise.resolve("a figure"), []);
+        return useResource(fetcher, enabled);
+      },
+      { initialProps: { enabled: true } },
+    );
+    await waitFor(() => expect(result.current.resource.status).toBe("ready"));
+
+    rerender({ enabled: false });
+
+    await waitFor(() => expect(result.current.resource.status).toBe("idle"));
+    // Idle carries no data: holding the last answer would show a figure for a prerequisite
+    // nobody has any more.
+    expect(result.current.resource.data).toBeNull();
+  });
+
+  it("asks again when the freshness number changes", async () => {
+    let asked = 0;
+    const { result, rerender } = renderHook(
+      ({ freshness }: { freshness: number }) => {
+        const fetcher = useCallback(() => {
+          asked += 1;
+          return Promise.resolve(asked);
+        }, []);
+        return useResource(fetcher, true, freshness);
+      },
+      { initialProps: { freshness: 0 } },
+    );
+    await waitFor(() => expect(result.current.resource.data).toBe(1));
+
+    rerender({ freshness: 1 });
+
+    await waitFor(() => expect(result.current.resource.data).toBe(2));
+  });
+
+  it("does not ask again when the freshness number is unchanged", async () => {
+    // **It is not part of the request.** A re-render that changes nothing must not re-fetch,
+    // or every parent render costs a round trip.
+    let asked = 0;
+    const { result, rerender } = renderHook(
+      ({ freshness }: { freshness: number }) => {
+        const fetcher = useCallback(() => {
+          asked += 1;
+          return Promise.resolve(asked);
+        }, []);
+        return useResource(fetcher, true, freshness);
+      },
+      { initialProps: { freshness: 7 } },
+    );
+    await waitFor(() => expect(result.current.resource.status).toBe("ready"));
+
+    rerender({ freshness: 7 });
+    rerender({ freshness: 7 });
+
+    expect(asked).toBe(1);
+  });
+});

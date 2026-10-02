@@ -246,6 +246,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * @description `level` narrows the criteria and the pillar weights together, never one without the
+         *     other: weights sum to 100 within a level, so narrowing only the criteria would describe
+         *     a set whose pillar weights summed to 200.
+         */
         get: operations["getCriteriaSet"];
         put?: never;
         post?: never;
@@ -306,6 +311,12 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /**
+         * @description Move a pillar's weight, lock it, or both — and neither field is required, because a
+         *     lock has to be able to travel alone. A locked weight may not be moved *even to the
+         *     value it already holds*, so a request carrying both could lock a pillar and never
+         *     release it: the move is applied first and refused before the flag is read.
+         */
         put: operations["updatePillarWeight"];
         post?: never;
         delete?: never;
@@ -810,6 +821,8 @@ export interface components {
             id: string;
             name: string;
             description?: string;
+            /** @description Where this pillar sits in the sequence the eleven are read in -- left to right across the Rank table, top to bottom in Configure. A fact about the catalog rather than a list in a client, so adding a pillar is still a data change. */
+            display_order: number;
         };
         /** @enum {string} */
         ValueTypeName: "Monetary" | "Quantity" | "Count" | "Ratio" | "Index" | "LabelSet" | "ShareComposition" | "Boolean" | "AssignedScore" | "Text";
@@ -1518,6 +1531,11 @@ export interface operations {
                 pillar?: string;
                 /** @description Exclude descriptive attributes. */
                 scorable_only?: boolean;
+                /**
+                 * @description Include attributes whose `lifecycle_status` is `retired`. They keep every stored
+                 *     value and drop out of scoring, so a caller that wants them has to say so.
+                 */
+                include_retired?: boolean;
             };
             header?: never;
             path?: never;
@@ -1612,6 +1630,7 @@ export interface operations {
                     "application/json": components["schemas"]["DataSource"];
                 };
             };
+            404: components["responses"]["NotFound"];
         };
     };
     listCandidates: {
@@ -1773,7 +1792,10 @@ export interface operations {
     };
     getCriteriaSet: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description `country` or `city` */
+                level?: components["parameters"]["LevelFilter"];
+            };
             header?: never;
             path: {
                 criteriaSetId: components["parameters"]["CriteriaSetId"];
@@ -1905,8 +1927,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Percentage, 0-100. Weights sum to 100 within a pillar, and pillar weights sum to 100 within a level. */
-                    weight: number;
+                    /** @description Percentage, 0-100. Weights sum to 100 within a pillar, and pillar weights sum to 100 within a level. Omitted to change only the lock. */
+                    weight?: number;
                     weight_locked?: boolean;
                 };
             };

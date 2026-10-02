@@ -96,24 +96,52 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     if (criteriaSetId === null || (wasThere && isGone)) setCriteriaSetId(available[0]!);
   }, [criteriaSetId, availableCriteriaSets]);
 
+  // **Depends on the two `reload` functions, not on the resources that carry them.**
+  // `useResource` returns a fresh object every render, so `[levels, criteriaSets]` changed on
+  // every render and the `useCallback` memoised nothing -- which in turn made the context
+  // value below new every render. No consumer puts it in a dependency array today; the one
+  // that did would re-run its effect for ever, which is the shape behind the 137,316-request
+  // loop this project has already filed once.
+  const reloadLevels = levels.reload;
+  const reloadCriteriaSets = criteriaSets.reload;
   const reload = useCallback(() => {
-    levels.reload();
-    criteriaSets.reload();
-  }, [levels, criteriaSets]);
+    reloadLevels();
+    reloadCriteriaSets();
+  }, [reloadLevels, reloadCriteriaSets]);
 
-  const value: Selection = {
-    levels: orderedLevels,
-    criteriaSets: availableCriteriaSets,
-    levelId,
-    criteriaSetId,
-    selectLevel: setLevelId,
-    selectCriteriaSet: setCriteriaSetId,
-    savedRankingsVersion,
-    noteSavedRanking,
-    status: combineStatus(levels.resource.status, criteriaSets.resource.status),
-    error: levels.resource.error ?? criteriaSets.resource.error,
-    reload,
-  };
+  // **Memoised, so the context has a stable identity.** `orderedLevels` and
+  // `availableCriteriaSets` are already memoised and `reload` is now genuinely stable, so this
+  // object was the last thing making every consumer re-render on every render of the shell --
+  // and the only thing standing between a consumer that reads `selection` in a dependency
+  // array and an endless effect.
+  const status = combineStatus(levels.resource.status, criteriaSets.resource.status);
+  const error = levels.resource.error ?? criteriaSets.resource.error;
+  const value: Selection = useMemo(
+    () => ({
+      levels: orderedLevels,
+      criteriaSets: availableCriteriaSets,
+      levelId,
+      criteriaSetId,
+      selectLevel: setLevelId,
+      selectCriteriaSet: setCriteriaSetId,
+      savedRankingsVersion,
+      noteSavedRanking,
+      status,
+      error,
+      reload,
+    }),
+    [
+      orderedLevels,
+      availableCriteriaSets,
+      levelId,
+      criteriaSetId,
+      savedRankingsVersion,
+      noteSavedRanking,
+      status,
+      error,
+      reload,
+    ],
+  );
 
   return <SelectionContext.Provider value={value}>{children}</SelectionContext.Provider>;
 }

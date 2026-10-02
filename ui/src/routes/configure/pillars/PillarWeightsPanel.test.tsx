@@ -58,11 +58,11 @@ describe("the pillar weights panel", () => {
 
     expect(
       await screen.findByRole<HTMLInputElement>("slider", {
-        name: "economics weight",
+        name: "Economy weight",
       }),
     ).toHaveValue("40");
-    expect(weightBox("housing")).toHaveValue("35");
-    expect(weightBox("safety")).toHaveValue("25");
+    expect(weightBox("Housing")).toHaveValue("35");
+    expect(weightBox("Safety")).toHaveValue("25");
     // The total is the summary's, beside the design's own line. That line states the rule for
     // the hundred *inside* a pillar while sitting beside the pillar total, which reads oddly
     // and is what the live design says; it was changed to the pillar rule once on that
@@ -75,9 +75,9 @@ describe("the pillar weights panel", () => {
 
   it("shows the weights the server rebalanced to", async () => {
     renderShell("/configure");
-    await screen.findByRole("slider", { name: "economics weight" });
+    await screen.findByRole("slider", { name: "Economy weight" });
 
-    await setWeight("economics", "50");
+    await setWeight("Economy", "50");
 
     // Housing and safety absorbed the ten points between them, in proportion. The figures are
     // the response's: the slider snaps to its half-point step, and the reading beside it is
@@ -94,9 +94,9 @@ describe("the pillar weights panel", () => {
     // server's rather than ours.
     await waitFor(
       () => {
-        expect(within(rowOf("housing")).getByText("29.2%")).toBeInTheDocument();
-        expect(within(rowOf("safety")).getByText("20.8%")).toBeInTheDocument();
-        expect(within(rowOf("economics")).getByText("50.0%")).toBeInTheDocument();
+        expect(within(rowOf("Housing")).getByText("29.2%")).toBeInTheDocument();
+        expect(within(rowOf("Safety")).getByText("20.8%")).toBeInTheDocument();
+        expect(within(rowOf("Economy")).getByText("50.0%")).toBeInTheDocument();
       },
       { timeout: 15_000 },
     );
@@ -124,7 +124,7 @@ describe("the pillar weights panel", () => {
     );
     renderShell("/configure");
     const slider = await screen.findByRole("slider", {
-      name: "economics weight",
+      name: "Economy weight",
     });
 
     fireEvent.change(slider, { target: { value: "50" } });
@@ -149,7 +149,7 @@ describe("the pillar weights panel", () => {
     );
     renderShell("/configure");
     const slider = await screen.findByRole("slider", {
-      name: "economics weight",
+      name: "Economy weight",
     });
 
     fireEvent.change(slider, { target: { value: "45" } });
@@ -158,19 +158,55 @@ describe("the pillar weights panel", () => {
     await waitFor(() => expect(sent).toEqual([{ weight: 45 }]));
   });
 
+  it("locks a pillar and unlocks it again", async () => {
+    // **The round trip, which nothing covered** (P68). The disc sent the lock *with* the
+    // weight, and the server refuses moving a locked weight even to the value it already
+    // holds -- so the second click answered 409 and the disc stayed filled for ever. The
+    // mock accepted both together, so no unit test could see it.
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await screen.findByRole("slider", { name: "Economy weight" });
+    const disc = () => screen.getByRole("button", { name: "Lock Economy" });
+
+    await user.click(disc());
+    await waitFor(() => expect(disc()).toHaveAttribute("aria-pressed", "true"));
+
+    await user.click(disc());
+
+    await waitFor(() => expect(disc()).toHaveAttribute("aria-pressed", "false"));
+    // Nothing was refused on the way back out.
+    expect(screen.queryByText(/weights_all_locked/)).toBeNull();
+  });
+
+  it("sends the lock without a weight, because a locked weight cannot be moved", async () => {
+    const sent: unknown[] = [];
+    mockServer.events.on("request:start", async ({ request }) => {
+      if (request.method === "PUT" && request.url.includes("pillar-weights")) {
+        sent.push(await request.clone().json());
+      }
+    });
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await screen.findByRole("slider", { name: "Economy weight" });
+
+    await user.click(screen.getByRole("button", { name: "Lock Economy" }));
+
+    await waitFor(() => expect(sent).toEqual([{ weight_locked: true }]));
+  });
+
   it("refuses the change when every other pillar is locked, and says which", async () => {
     const user = userEvent.setup();
     renderShell("/configure");
-    await screen.findByRole("slider", { name: "economics weight" });
+    await screen.findByRole("slider", { name: "Economy weight" });
 
-    await user.click(screen.getByRole("button", { name: "Lock housing" }));
-    await user.click(screen.getByRole("button", { name: "Lock safety" }));
-    await setWeight("economics", "10");
+    await user.click(screen.getByRole("button", { name: "Lock Housing" }));
+    await user.click(screen.getByRole("button", { name: "Lock Safety" }));
+    await setWeight("Economy", "10");
 
     const pillars = await panel();
     expect(await pillars.findByText(/weights_all_locked/)).toBeInTheDocument();
     // The refused weight is not shown as though it had been stored.
-    expect(weightBox("housing")).toHaveValue("35");
+    expect(weightBox("Housing")).toHaveValue("35");
   });
 
   /**
@@ -181,13 +217,13 @@ describe("the pillar weights panel", () => {
    */
   it("never sends a weight that is not a number", async () => {
     renderShell("/configure");
-    await screen.findByRole("slider", { name: "economics weight" });
+    await screen.findByRole("slider", { name: "Economy weight" });
 
-    await setWeight("economics", "ten");
+    await setWeight("Economy", "ten");
 
     // Nothing moved, and nothing was sent: the browser refused the value before React saw it.
-    expect(weightBox("housing")).toHaveValue("35");
-    expect(within(rowOf("economics")).getByText("40.0%")).toBeInTheDocument();
+    expect(weightBox("Housing")).toHaveValue("35");
+    expect(within(rowOf("Economy")).getByText("40.0%")).toBeInTheDocument();
   });
 
   it("says so when the set weighs no pillar yet", async () => {

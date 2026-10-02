@@ -14,6 +14,7 @@ import { http, HttpResponse } from "msw";
 import type { components } from "../api/schema";
 import {
   ATTRIBUTES,
+  PILLARS,
   ATTRIBUTE_SCORES,
   COMPOUND_RULES,
   CRITERIA_SETS,
@@ -59,7 +60,10 @@ let criteriaSetDetails = makeCriteriaSetDetails();
 let criteriaSetSummaries: CriteriaSetSummary[] = [...CRITERIA_SETS];
 let settings: Settings = { ...SETTINGS };
 let household: Household = { ...HOUSEHOLD };
-let matchRuleResults: MatchRuleResult[] = [...MATCH_RULE_RESULTS];
+// Copied element by element, as `dataSources` is: a spread clones the array and leaves every
+// element shared with the constant, so one in-place assignment would write into the fixture
+// and leak into every test that ran afterwards.
+let matchRuleResults: MatchRuleResult[] = MATCH_RULE_RESULTS.map((each) => ({ ...each }));
 // Nothing is saved until somebody saves it, so the list starts empty -- which is also the
 // state a reader meets on a fresh install, and the one the empty message is written for.
 // A copy, because the switch writes to it: serving the shared constant would let one test's
@@ -75,7 +79,7 @@ export function resetMockData(): void {
   criteriaSetSummaries = [...CRITERIA_SETS];
   settings = { ...SETTINGS };
   household = { ...HOUSEHOLD };
-  matchRuleResults = [...MATCH_RULE_RESULTS];
+  matchRuleResults = MATCH_RULE_RESULTS.map((each) => ({ ...each }));
   dataSources = DATA_SOURCES.map((each) => ({ ...each }));
   savedEvaluations = [];
   nextEvaluationId = 1;
@@ -214,11 +218,31 @@ export const handlers = [
       if (!edited) return notFound(pillarId);
 
       const body = (await request.json()) as {
-        weight: number;
+        weight?: number;
         weight_locked?: boolean;
       };
+
+      // **A locked weight cannot be moved, not even to the value it already holds** (P68).
+      // `rebalancing.py` refuses it, and this accepted it -- so the mock certified a protocol
+      // the server rejects, which is how the disc came to send a lock and a weight together
+      // and lock a pillar that could then never be released. `rebalancePillarWeights` only
+      // ever checked whether the *others* were locked.
+      if (body.weight !== undefined && edited.weight_locked) {
+        return HttpResponse.json(
+          {
+            code: "weights_all_locked",
+            message: `${pillarId} is itself locked. A lock holds that weight where it is, so unlock it before moving it.`,
+          },
+          { status: 409 },
+        );
+      }
+
       if (body.weight_locked !== undefined)
         edited.weight_locked = body.weight_locked;
+      // A lock-only request moves nothing; the weights come back as they are.
+      if (body.weight === undefined) {
+        return HttpResponse.json({ items: weights });
+      }
       return rebalancePillarWeights(weights, edited, body.weight);
     },
   ),
@@ -295,9 +319,12 @@ export const handlers = [
     `${BASE}/match-rule-results/:matchRuleId/:candidateId`,
     async ({ params, request }) => {
       const body = (await request.json()) as Partial<MatchRuleResult>;
+      // **Only the fields the contract lets a caller send.** Spreading the whole body echoed
+      // anything at all back, so the mock could never be seen refusing a field the server
+      // refuses -- and a test sending one would pass on a response the API would not give.
       const answer: MatchRuleResult = {
-        ...body,
         match_result: body.match_result ?? "unknown",
+        reason: body.reason ?? null,
         data_source: body.data_source ?? "manual",
         match_rule: String(params["matchRuleId"]),
         candidate: String(params["candidateId"]),
@@ -541,6 +568,18 @@ export const handlers = [
         { status: 409 },
       );
     }
+    // **Refused here because the server refuses it** (P81). `comparison.py` answers 409
+    // "cannot be compared with itself", and a mock that accepted it certified a protocol the
+    // backend rejects -- which is how the screen came to build that request at all.
+    if (comparators.includes(focus)) {
+      return HttpResponse.json(
+        {
+          code: "invalid_comparison",
+          message: `${focus} cannot be compared with itself`,
+        },
+        { status: 409 },
+      );
+    }
     if (comparators.length > (settings.comparator_limit ?? 0)) {
       return HttpResponse.json(
         {
@@ -696,12 +735,44 @@ export const handlers = [
           String(value.data_acquisition_run ?? "") === fromRun) &&
         (superseded || value.is_active),
     );
-    return HttpResponse.json({ items, total: items.length });
+    // **Paged as the server pages.** `limit` and `offset` were read from nobody, so every
+    // request got the whole corpus and a caller that forgot to page looked correct here and
+    // truncated in production -- `total` is the field that tells them, and it has to mean
+    // something for that to work.
+    const offset = Number(query.get("offset") ?? 0);
+    const limit = Number(query.get("limit") ?? items.length);
+    return HttpResponse.json({
+      items: items.slice(offset, offset + limit),
+      total: items.length,
+    });
   }),
 
-  http.get(`${BASE}/attributes`, () =>
-    HttpResponse.json({ items: ATTRIBUTES }),
-  ),
+  // A pillar carries no level (`reqs.md` Q187), so one list serves every level.
+  http.get(`${BASE}/pillars`, () => HttpResponse.json({ items: PILLARS })),
+
+  // **The filters the server applies, applied here** (P85). This returned the whole catalog
+  // whatever it was asked, so a test asserting "the city level has no attributes" passed
+  // because the fixture happens to hold only country ones -- it would keep passing with the
+  // filter deleted from the server, and start lying the day one city attribute is added.
+  // `pillar` and `scorable_only` are in the contract and not yet served; honoured here so the
+  // mock is never the laxer of the two.
+  http.get(`${BASE}/attributes`, ({ request }) => {
+    const query = new URL(request.url).searchParams;
+    const level = query.get("level");
+    const pillar = query.get("pillar");
+    const scorableOnly = query.get("scorable_only") === "true";
+    // `include_retired` is not filtered here: `Attribute` carries no `lifecycle_status`, so a
+    // retired attribute is indistinguishable from an active one on the wire. The server knows
+    // because it reads the catalog; this only ever sees what the catalog chose to send.
+    return HttpResponse.json({
+      items: ATTRIBUTES.filter(
+        (attribute) =>
+          (level === null || attribute.level === level) &&
+          (pillar === null || attribute.pillar === pillar) &&
+          (!scorableOnly || attribute.pillar !== null),
+      ),
+    });
+  }),
 
   http.get(`${BASE}/external-scores`, ({ request }) => {
     const candidate = new URL(request.url).searchParams.get("candidate");

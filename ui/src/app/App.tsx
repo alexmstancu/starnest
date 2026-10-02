@@ -55,9 +55,12 @@ export function App() {
                 element={<Navigate to={DEFAULT_ROUTE} replace />}
               />
               {ROUTES.map((route) => {
-                // Total by construction: `SCREENS` is keyed by the route table's own paths.
-                // `noUncheckedIndexedAccess` cannot see that, hence the assertion.
-                const Screen = SCREENS[route.path]!;
+                // Total by construction, and now provably so: `RoutePath` is a union of the
+                // route table's own literals, so `SCREENS` must name every one of them and
+                // this lookup cannot miss. It used to need a `!` -- which was not a
+                // `noUncheckedIndexedAccess` limitation as its comment claimed, but the
+                // symptom of `RoutePath` having widened to `string` (P77).
+                const Screen = SCREENS[route.path];
                 return (
                   <Route
                     key={route.path}

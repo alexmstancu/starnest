@@ -520,3 +520,69 @@ already broken that a restyle made visible.
 | # | Finding | Status |
 |---|---|---|
 | **P69** | **The attribute drill-down of `reqs.md` 8.4 does not exist.** "Select one attribute and see every candidate on it alone: raw value, active source, reference date, retrieval date" is a v1 requirement, and `navigation/routes.ts` advertises it in the Rank tab's own summary text -- so the screen claims it. Nothing implements it, and **the API cannot support it either**: `GET /v1/values` filters by candidate only, with no attribute parameter. The drill-down that exists is the opposite axis, one candidate across every attribute | **Fixed 2026-09-20.** And the finding was half wrong: **the API had always taken the filter** -- `GET /v1/values?attribute=` returns all 32 candidates and always did. Only the interface was missing, which is a sharper version of the same point: nothing was ever *out of step* with anything, so no drift check could fire. The view is on Rank, one row per candidate with its figure, source and both dates; an attribute nobody measures says so rather than rendering an empty table. Four tests, plus seven on the pillar filter extracted with it |
+
+## Found by the six-agent review, 2026-10-02
+
+Six read-only agents, one per package group. **Everything below the table is closed**; the
+table is what is left and why.
+
+### Still open
+
+| # | Where | What |
+|---|---|---|
+| P90 | `ui/src/routes/configure/criteria/` | **`is_scored` has a client and no control.** `updateCriterionScored` is written and tested; nothing on screen calls it, because the design has not placed an include/exclude control and inventing one would deviate from the 1:1 fidelity this interface is held to. The three criteria excluded in the shipped sets got there by migration |
+| P91 | `backend/src/starnest/data_acquisition/run.py:108` | **The spend cap is read between attributes**, and one `fetch` is one attribute over all 32 candidates, each a billed call — so a cap can be overrun by a whole sweep. Closing it means letting a source be interrupted mid-sweep, which is a change to the `SourceAdapter` contract rather than a repair |
+| P92 | `docs/openapi.implemented.yaml` | Seven payload schemas collapse to bare `type: object`, because `api/bodies.py`'s wrap serialiser is annotated `-> dict[str, Any]`. The generated contract describes none of the four largest payloads. A narrower return annotation would fix it and would have to be written per body |
+| — | `backend/src/starnest/storage/run_store.py:288` | `items_unanswered` has two definitions — derived in SQL for one query, `max(0, total - completed - failed)` in Python for the other. Not firing today: no run has a value row outside its planned scope |
+| — | `storage/queries/criteria.sql:483` | `update_pillar_weights` is UPDATE-only, so a pillar with no weight row is skipped silently. Uncalled today and exempted |
+| — | — | *(the stale pillar names in `reqs.md` are closed: those headings describe a pillar's scope and the display name is catalog data, which the section now says outright)* |
+
+### Closed on the day
+
+**Scoring.** An excluded criterion deflated every score — `local_employment` capped at 93.35,
+`remote_only` at 87.48, coverage reading 100% and the drill-down showing a pillar at full marks
+beside a total that disagreed. Weights now renormalise within a pillar and then across pillars,
+so a pillar keeps the share the user gave it and a fully-excluded pillar's share spreads over
+the rest (`reqs.md` Q82). **The order changes**: Germany 4th→8th, Croatia 9th→6th.
+
+**Acquisition.** A run that died mid-flight discarded every failure it had collected — two
+fixes, because `acquire` kept them in a local list and only returned them on the way out, which
+is P30's lesson applied to figures and not to failures. A retry asked sources the household had
+switched off, and paid for them. A stop was never seen if it arrived during the last source. A
+billed LLM answer with no text metered as free. `{"employers": "Google"}` was iterated into a
+`LabelSet` of six single characters.
+
+**Evaluation.** A saved ranking lost its confidence split, its reason, *and* its pillar rollup —
+the last found by strengthening `test_it_agrees_with_the_saved_evaluation` from three fields to
+the whole body. The `coverage == 0` sentence said "no figure was found" where figures had been
+found and could not be placed.
+
+**API.** Enforcing a gate that does not exist answered 500. `PATCH /data-sources/{id}` with
+an id the catalog does not hold answered 422 — alone among the endpoints that address a thing by
+id — and the 404 it should have given was not declared in the contract either; the error split
+in two, because `rules.py` raises the same exception for a source named in a request *body*,
+where 422 is right. `/attributes` served
+`include_retired` and `/criteria-sets/{id}` served `level`, neither declared anywhere — the
+drift test compared operations and not parameters.
+
+**Interface.** The pillar names were fetched five times per page and are now fetched once,
+with the shared promise forgotten between tests so one test's answer cannot serve the next. The
+context value and its `reload` had no stable identity, which is the shape behind the 137,316-request
+loop already filed here. An abort landing mid-body was reported as "the backend answered with
+something that is not JSON". A locked pillar could never be unlocked: the disc sent the lock with a weight,
+and a locked weight may not be moved even to the value it already holds. `RoutePath` had
+widened to `string`, so `App`'s totality check held nothing. `figure.ts` dropped a `Ratio`'s
+basis and printed `true` — P57 for the two types its fix had not reached — in a file with no
+tests at all. The pillar total chip warned on a balanced set. Making a ticked comparator the
+focus built a request the server always refuses. A weight drag reverted an unsent rule edit.
+The confidence bar drew four grades and the words beside it read three.
+
+**Storage.** The dead-SQL guard matched prefixes, so three queries with no caller passed as
+live. `select_attribute_coverage`'s level filter counted rows it should have excluded. `ecb`
+and `unodc` shared a priority. `0482`–`0484` carried no `depends:` line.
+
+**Guards and mocks.** The modifier/base CSS check skipped every rule inside an `@media` block,
+dark mode included. The class-selector check missed `querySelectorAll`. The monospace check
+would have failed on a comment explaining itself. Six mock/server divergences, including a mock
+that accepted the pillar lock the server refuses — which is why no unit test could see it.
+

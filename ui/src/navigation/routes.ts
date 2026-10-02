@@ -13,7 +13,12 @@ export interface RouteDefinition {
   summary: string;
 }
 
-export const ROUTES: readonly RouteDefinition[] = [
+// **No type annotation, deliberately.** An annotation on a `const` wins over the `as const`
+// after it, so `ROUTES: readonly RouteDefinition[]` widened every `path` back to `string` and
+// `RoutePath` below evaluated to `string` -- which made `App`'s `Record<RoutePath, …>` a
+// `Record<string, …>` that accepts anything and requires nothing. `satisfies` does the
+// checking an annotation would, and alone it keeps the literals (P77).
+export const ROUTES = [
   {
     path: "/configure",
     label: "Configure",
@@ -43,8 +48,9 @@ export const ROUTES: readonly RouteDefinition[] = [
 /** Every path the shell routes, as literals, so `App` must name a screen for each of them. */
 export type RoutePath = (typeof ROUTES)[number]["path"];
 
+
 /** Where `/` lands. The household is configured first on a fresh installation (`reqs.md` 8.2). */
-export const DEFAULT_ROUTE = ROUTES[0]!.path;
+export const DEFAULT_ROUTE = ROUTES[0].path;
 
 export function findRouteByPath(path: string): RouteDefinition | undefined {
   return ROUTES.find((route) => route.path === path);

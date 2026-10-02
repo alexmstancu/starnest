@@ -6,6 +6,8 @@
  * types gets dragged along by the next contract change. Callers pass their `StoredValue`
  * unchanged; this only ever reads the payload.
  */
+import { ABSENT, formatIdentifier } from "./display";
+
 export interface HasPayload {
   payload: unknown;
 }
@@ -15,6 +17,10 @@ export interface HasPayload {
  * what the figure is; nothing here converts, rounds or rescales it.
  */
 export function describeFigure(value: HasPayload): string {
+  // **A missing payload is absent, not a thrown error.** `"magnitude" in null` raises, and a
+  // provenance panel is the wrong place to discover that the server sent something the
+  // contract says it never sends. The screen says it has nothing and stays up.
+  if (typeof value.payload !== "object" || value.payload === null) return ABSENT;
   const payload = value.payload as Record<string, unknown>;
   if ("magnitude" in payload)
     return `${String(payload["magnitude"])} ${String(payload["unit"])}`;
@@ -36,13 +42,33 @@ export function describeFigure(value: HasPayload): string {
       `${String(payload["value"])} on ${String(payload["range_min"])}` +
       `–${String(payload["range_max"])} (assigned by ${String(payload["assigned_by"])})`
     );
+  // **A ratio is a share *of* something, and the something is required** (P78). The contract
+  // makes `basis` mandatory on `RatioPayload` -- `land_area`, `workforce`, `households` -- and
+  // this fell through to the bare branch below, printing `17.3` where the figure means 17.3%
+  // of the country's land area. Same argument as the index above: the number alone is not the
+  // measurement. P57 made it for `Index` and `AssignedScore` and stopped there.
+  if ("value" in payload && typeof payload["basis"] === "string")
+    return `${String(payload["value"])}% of ${formatIdentifier(payload["basis"])}`;
+  // **A boolean reads as an answer, not as a wire word.** `true` is what JSON carries; it is
+  // not what anybody calls the state of a visa agreement.
+  if ("value" in payload && typeof payload["value"] === "boolean")
+    return payload["value"] ? "Yes" : "No";
   if ("value" in payload) return String(payload["value"]);
-  if ("count" in payload) return String(payload["count"]);
+  // A count's basis is optional and means the same thing when it is there: 412 protected areas
+  // is a different figure from 412 per capita.
+  if ("count" in payload) {
+    const basis = payload["basis"];
+    return typeof basis === "string" && basis !== ""
+      ? `${String(payload["count"])} per ${formatIdentifier(basis)}`
+      : String(payload["count"]);
+  }
   if ("labels" in payload) return (payload["labels"] as string[]).join(", ");
   if ("body" in payload) return String(payload["body"]);
   if ("shares" in payload)
     return (payload["shares"] as { label: string; share: number }[])
       .map((share) => `${share.label} ${share.share}%`)
       .join(", ");
-  return "—";
+  // The one mark for an absent figure, shared with every other formatter rather than written
+  // out again here -- two spellings of "nothing" is one too many.
+  return ABSENT;
 }

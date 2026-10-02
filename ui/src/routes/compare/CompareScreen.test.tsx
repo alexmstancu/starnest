@@ -45,6 +45,30 @@ describe("choosing what to compare", () => {
     expect(screen.queryByRole("checkbox", { name: "Portugal" })).toBeNull();
   });
 
+  it("drops a comparator that is then chosen as the focus", async () => {
+    renderShell("/compare");
+
+    // **The order that used to break it** (P81). Ticking first and choosing second left
+    // Portugal in `comparators` while its chip disappeared, so it could not be unticked and
+    // every Compare sent `focus=portugal&comparators=...,portugal` -- which the server
+    // refuses with 409 "cannot be compared with itself". The test above only ever exercised
+    // the order that works.
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Portugal" }));
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Spain" }));
+    await chooseFocus("Portugal");
+
+    // Spain survives, so this is a prune rather than a reset.
+    expect(screen.getByRole("checkbox", { name: "Spain" })).toBeChecked();
+    expect(await screen.findByRole("button", { name: /^compare$/i })).toBeEnabled();
+
+    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+
+    // The real assertion: the request the screen builds is one the server accepts.
+    expect(
+      await screen.findByRole("table", { name: /pillar/i }),
+    ).toBeInTheDocument();
+  });
+
   it("asks for nothing until a focus and a comparator are chosen", async () => {
     renderShell("/compare");
 

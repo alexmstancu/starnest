@@ -179,13 +179,23 @@ describe("the design is a plugin", () => {
      *
      * The rule: for `.x--y`, every `.x` rule must come first. Descendant and compound
      * selectors are left alone, since those carry their own specificity.
+     *
+     * **Rules inside an `@media` block are read too.** The selector regex wanted a selector at
+     * column 0, so every rule nested in one was skipped -- including the whole dark-mode
+     * block, where the same cancellation is exactly as easy to write and no easier to see.
+     * Nesting is removed before matching rather than special-cased, because the hazard is
+     * about source order within a cascade and that is what the flattened text preserves.
      */
     const stylesheet = readFileSync(join(SOURCE, "styles.css"), "utf8").replace(
       /\/\*[\s\S]*?\*\//g,
       "",
     );
 
-    const rules = [...stylesheet.matchAll(/^([^@\s][^{]*)\{([^}]*)\}/gm)].map(
+    // **Every rule that holds declarations, wherever it sits.** A pattern anchored at column
+    // zero read only top-level rules, so everything inside an `@media` block was invisible to
+    // this -- the dark-mode block above all. Matching a body with no brace in it picks out
+    // leaf rules exactly, and skips the `@media` wrapper itself, whose body has braces.
+    const rules = [...stylesheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(
       (match) => ({
         selector: (match[1] ?? "").trim(),
         at: match.index ?? 0,
@@ -229,7 +239,14 @@ describe("the design is a plugin", () => {
   it("uses no monospace, which the design forbids outright", () => {
     // "No monospace anywhere" is the design's own rule and was broken three times, most
     // recently by an identifier this application had no business rendering at all.
-    const stylesheet = readFileSync(join(SOURCE, "styles.css"), "utf8");
+    //
+    // **Comments are stripped first.** The sheet was read whole, so a comment explaining why
+    // monospace is forbidden would have failed the test that forbids it -- which is the kind
+    // of guard people delete rather than satisfy.
+    const stylesheet = readFileSync(join(SOURCE, "styles.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
 
     expect(stylesheet).not.toMatch(/monospace/i);
   });
@@ -247,7 +264,9 @@ describe("the design is a plugin", () => {
       .filter((path) => {
         const source = readFileSync(path, "utf8");
         return (
-          /querySelector\(["'`]\./.test(source) ||
+          // `querySelectorAll` as well as `querySelector`: the same reach by a different
+          // name, and the pattern matched only one spelling of it.
+          /querySelectorAll?\(["'`]\./.test(source) ||
           source.includes("getElementsByClassName") ||
           /closest\(["'`]\./.test(source)
         );
