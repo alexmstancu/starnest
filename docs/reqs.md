@@ -70,12 +70,17 @@ set optimises for, and it has consequences worth seeing plainly:
 - Small localities are penalised in a way they would not be under remote work, because the
   local market has to be real.
 
-> **The risk this exposes, stated rather than buried.** The two heaviest attributes in the
-> career pillar — `tech_software_jobs` and `tech_product_jobs`, 44% of it between them — have no
-> confirmed source (section 9). Local employment is therefore the v1 assumption whose evidence base is
-> weakest. section 5.3's redistribution handles it correctly (the weight moves to attributes that do
-> have data, and coverage falls to disclose it), but a country ranked on a hollow career pillar
-> should be read with that in mind.
+> **The risk this exposed, and what closed it.** The two heaviest attributes in the career
+> pillar — `tech_software_jobs` and `tech_product_jobs`, 44% of it between them — had no
+> confirmed source, which made local employment the v1 assumption with the weakest evidence
+> behind it. Section 5.3's redistribution handled that correctly, but a country ranked on a
+> hollow career pillar had to be read with the hollowness in mind.
+>
+> **Closed on 2026-10-02** (migration `0487`): the search ended in a no, both attributes are
+> retired, and their weight sits on `country.tech_employment_share`, which Eurostat answers for
+> 30 of the 32. Career's scored criteria are now all answered and coverage rose from 72-76% to
+> 80-84% per candidate. What remains unsourced is 14.3 points across six other pillars, led by
+> nature (4.8) and housing (3.1).
 
 A **`remote-only` criteria set is post-MVP** — the same 74 attributes, re-weighted, with
 `connectivity` raised and `career` largely excluded. It needs no new attributes and no new
@@ -2205,17 +2210,32 @@ way by the active-value rule (section 3.6).
 
 | Attribute | Weight | Value type | Sources | Max age |
 |---|---|---|---|---|
-| `country.tech_software_jobs` | 22% | **Count** — open postings | Job-posting counts — **source unresolved, see `datasources.md` 11** | 3 months |
-| `country.tech_product_jobs` | 22% | **Count** — open postings | Job-posting counts — same source | 3 months |
+| `country.tech_employment_share` | 57% | **Ratio** — share of workforce | Eurostat `isoc_sks_itspt` (ICT specialists, % of employment) | 24 months |
 | `country.international_employers` | 18% | **LabelSet** — named firms | LLM + search, company sites | 12 months |
 | `country.average_working_hours` | 15% | **Quantity** — hours/week | OECD Employment Database, Eurostat `lfsa_ewhun2` | 24 months |
-| `country.tech_employment_share` | 13% | **Ratio** — share of workforce | Eurostat ICT/high-tech employment, ILO | 24 months |
 | `country.statutory_paid_leave` | 10% | **Quantity** — days/year | OECD, EU Working Time Directive, national law | 24 months |
 
-> **Four measures, four different questions** — they look redundant and are not:
+> **`country.tech_employment_share` absorbed the two posting counts on 2026-10-02** (migration
+> `0487`). `country.tech_software_jobs` and `country.tech_product_jobs` carried 44% of this
+> pillar between them with **no figure for any country and no source settled**, and the search
+> recorded in `datasources.md` 11 ended in a no: Adzuna, the only credible candidate with a
+> vacancy-count endpoint, serves 10 of our 32 and misses Ireland, Portugal, Denmark, Sweden,
+> Finland and Norway. Scoring a criterion worth 6.8 points of the level for under a third of
+> the roster would compare two groups on different evidence.
 >
-> - `country.tech_software_jobs` / `country.tech_product_jobs` — **flow**: how many roles are open *now*, and
->   how badly product roles trail engineering ones.
+> **The replacement measures a stock where they measured a flow**: how much of a country's
+> workforce does this work, rather than how many openings were advertised the day somebody
+> looked — which also answers the volatility objection `datasources.md` 11 raised against
+> postings. **What is lost is the software/product split**, since Eurostat has one ICT
+> occupation class. Both attributes are `lifecycle_status = 'retired'`, not deleted, so the
+> distinction returns the day a source can draw it. The city level keeps them: a city-level
+> posting count is a different question and `datasources.md` 11's national-employment-service
+> route remains open for it.
+
+> **Three measures, three different questions** — they look redundant and are not:
+>
+> - `country.tech_employment_share` — **stock**: how much of the workforce already does this
+>   work, which is the best available proxy for whether a job market exists at all.
 > - `country.international_employers` — **type, not volume**: do firms that hire foreigners, work in
 >   English and handle relocation operate here? A country with 5,000 postings all at local
 >   firms in the local language is far less employable than one with 500 at international

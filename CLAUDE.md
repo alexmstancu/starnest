@@ -109,6 +109,25 @@ convenience** (`devplan.md` D7): World Bank WGI, then Eurostat extended (career,
 nature), then WHO (health), the IMF (economics), OECD (tax) and Open-Meteo (climate). Seven
 adapters, no shared machinery beyond the `SourceAdapter` contract.
 
+**Career is answered, by retiring the question** (2026-10-02, `0487`).
+`tech_software_jobs` and `tech_product_jobs` carried **44% of the career pillar with no figure
+for any country**, and `datasources.md` 11 left one question open: does Adzuna, the only
+credible source with a vacancy-count endpoint, cover our roster? **It covers 10 of 32** and
+misses Ireland, which ranks third. Scoring a 6.8-point criterion for under a third of the
+roster compares two groups on different evidence, so both attributes are **retired** and their
+weight moved to `tech_employment_share` -- Eurostat `isoc_sks_itspt`, ICT specialists as a share
+of employment, which answers 30 of 32 **and was already being fetched**. It measures a *stock*
+where a posting count measures a *flow*, which also disposes of the volatility objection. The
+software/product split is what is lost, and the attributes are retired rather than deleted so
+it returns the day a source can draw it. **Coverage rose from 72-76% to 80-84%**; what remains
+unsourced is 14.3 points, led by nature (4.8) and housing (3.1).
+
+**The lesson was where to look.** `datasources.md` said "source unresolved" and the adapter had
+already mapped the dataset that resolved it -- so the gap was never a missing source, it was a
+catalog asking a question nothing could answer beside an attribute already answering a better
+version of it. **Check what the code already does before researching what it should do**, which
+is the same finding as `/pillars` serving a client nobody had written.
+
 **Family is the one pillar left, and it is blocked on something real rather than on effort.**
 It is OECD's, and OECD's API now serves scripts a Cloudflare browser challenge
 (`docs/catalog-blockers.md` item 5). **Climate is answered** (D4, Q210): temperature is the

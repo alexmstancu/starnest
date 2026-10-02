@@ -126,7 +126,7 @@ def test_criterion_weights_sum_to_one_hundred_within_every_pillar(
     assert _criterion_weights_that_do_not_sum(connection) == []
 
 
-def test_the_country_catalog_has_forty_four_active_attributes(
+def test_the_country_catalog_has_forty_two_active_attributes(
     connection: psycopg.Connection,
 ) -> None:
     """**Active**, not total, and the distinction arrived with `0442`.
@@ -134,12 +134,16 @@ def test_the_country_catalog_has_forty_four_active_attributes(
     A retired attribute keeps its row so the account of why it existed outlives it, but it is
     not part of the catalog anybody can use. Counting rows would have made retiring one look
     like adding one.
+
+    Was 44 until `0487` retired `tech_software_jobs` and `tech_product_jobs`: two attributes
+    carrying 44% of the career pillar that no source could answer, whose weight moved to
+    `tech_employment_share`.
     """
     count = connection.execute(
         "SELECT count(*) FROM attribute WHERE id LIKE %s AND lifecycle_status = %s",
         (f"{COUNTRY}.%", "active"),
     ).fetchone()[0]
-    assert count == 44
+    assert count == 42
 
 
 def test_a_retired_attribute_keeps_its_row_and_loses_its_criterion(
@@ -298,7 +302,7 @@ def test_every_attribute_declares_the_max_age_reqs_gives_it(
     failed against a correctly seeded catalog.
     """
     declared = _max_ages_reqs_declares()
-    assert len(declared) == 44, "reqs.md 7.1 should list all 44 country attributes"
+    assert len(declared) == 42, "reqs.md 7.1 should list all 42 country attributes"
 
     with_a_horizon = {a: v for a, v in declared.items() if v != NO_HORIZON}
     disagreeing = connection.execute(

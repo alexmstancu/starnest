@@ -35,7 +35,7 @@ class TestTheAttributes:
         """43 since `0466` added a summer day and a winter day (Q213)."""
         body = (await api.get("/v1/attributes", params={"level": COUNTRY})).json()
 
-        assert len(body["items"]) == 44
+        assert len(body["items"]) == 42
 
     async def test_each_declares_the_type_that_decides_what_a_value_may_be(
         self, api: httpx.AsyncClient
@@ -72,7 +72,10 @@ class TestTheAttributes:
             for attribute in body["items"]
             if attribute["max_age_months"] is not None
         }
-        assert horizons == {3, 12, 24, 60, 72}
+        # **No 3-month horizon any more.** It belonged only to the two job-posting counts,
+        # whose whole problem was that they measured a flow fast enough to need one -- and
+        # `0487` retired them. What is left ages over a year or more.
+        assert horizons == {12, 24, 60, 72}
 
     async def test_the_four_attributes_with_no_horizon_say_null(
         self, api: httpx.AsyncClient

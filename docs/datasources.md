@@ -559,7 +559,29 @@ that the decision was the right one.
 
 ---
 
-## 11. Job-posting counts — source unresolved
+## 11. Job-posting counts — resolved by retiring the question (2026-10-02)
+
+> **Settled.** Open question 1 below was the blocker: *does Adzuna cover the EU member states
+> we care about?* **It does not.** Adzuna serves 19 countries, 10 of our 32 — Austria, Belgium,
+> Switzerland, Germany, Spain, France, Italy, the Netherlands, Poland and the UK. The 22 it
+> misses include **Ireland**, which ranks third, and Portugal, Denmark, Sweden, Finland and
+> Norway. One lookup, as predicted, and the answer rules out the one-adapter option.
+>
+> Scoring a 6.8-point criterion for under a third of the roster would compare two groups on
+> different evidence, so **both attributes are retired** (`0487`) rather than partly answered,
+> and their weight moves to `country.tech_employment_share` — Eurostat `isoc_sks_itspt`,
+> employed ICT specialists as a share of total employment, which answers 30 of the 32 directly
+> and was already being fetched.
+>
+> **It measures a stock where a posting count measures a flow**: how much of a country's
+> workforce does this work, rather than how many openings were advertised the day somebody
+> looked. That answers open question 4 below, about volatility, by not having the problem.
+>
+> **What is lost is the software/product split** — Eurostat has one ICT occupation class. The
+> attributes are retired, not deleted, so the distinction returns the day a source can make it.
+> The analysis below is kept as the record of what was ruled out and why.
+
+### The original analysis
 
 Two attributes at both levels (`tech_software_jobs`, `tech_product_jobs`) need counts of open
 roles by role family and location. **No source is settled.** Candidates, with what is and is
