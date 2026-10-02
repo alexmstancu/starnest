@@ -75,14 +75,38 @@ async def acquire(
     # process dying mid-source lose every figure it had already fetched -- found by Gate D's
     # first failure mode, which exists to ask exactly this. One append per attribute keeps the
     # loss window to the attribute in flight.
+    # **A paid source gets the meter, and then does its own accounting** (P91). The check below
+    # runs between attributes, and for a source billing per candidate one attribute is 32
+    # calls -- all of them committed before anything here looks at the meter. A source holding
+    # the meter records each call as it makes it and stops when the cap is reached, so the
+    # overrun is one call rather than a whole sweep. Only a source that says it charges is
+    # given it, so the free adapters are never handed a hook they cannot use.
+    if meter is not None and adapter.costs_money:
+        adapter.meter_with(meter)
+
     for attribute in answerable:
+        spent_before = meter.spent_eur if meter is not None else Decimal(0)
+        calls_before = meter.calls if meter is not None else 0
         acquired = await adapter.fetch(attribute, candidates)
         cost += acquired.cost_eur
         calls += acquired.calls
         # Recorded before the append, because the call is already billed whatever happens to
         # the figures it returned.
-        if meter is not None and (acquired.cost_eur or acquired.calls):
-            meter.spent(cost_eur=acquired.cost_eur, calls=acquired.calls)
+        #
+        # **Whatever the source did not record itself.** A paid source holding the meter
+        # records each call as it makes it, so adding its total again would charge the run
+        # twice. Taking the difference covers both: a source that recorded everything adds
+        # nothing here, and one that declares `costs_money` and then ignores the meter is
+        # accounted for in full -- so the cap is never weaker than it was before the hook
+        # existed, which is a guarantee that must not rest on an adapter's good behaviour.
+        if meter is not None:
+            unrecorded_cost = acquired.cost_eur - (meter.spent_eur - spent_before)
+            unrecorded_calls = acquired.calls - (meter.calls - calls_before)
+            if unrecorded_cost > 0 or unrecorded_calls > 0:
+                meter.spent(
+                    cost_eur=max(unrecorded_cost, Decimal(0)),
+                    calls=max(unrecorded_calls, 0),
+                )
 
         # Every value carries the run that fetched it (`reqs.md` 3.8), stamped here rather than
         # by each adapter: which occasion a figure came from is a fact about the run, and an

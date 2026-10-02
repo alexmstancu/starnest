@@ -28,7 +28,13 @@ from starnest.data import (
     Measurements,
     Value,
 )
-from starnest.data_acquisition import Acquired, AcquisitionFailure, Estimate, SourceAdapter
+from starnest.data_acquisition import (
+    Acquired,
+    AcquisitionFailure,
+    Estimate,
+    RunningSpend,
+    SourceAdapter,
+)
 from starnest.data_sources.llm.client import Answered, LlmUnavailableError, LlmWithSearch
 from starnest.data_sources.llm.reading import a_json_object, the_period_now
 
@@ -59,6 +65,9 @@ class LlmEmployersAdapter(SourceAdapter):
 
     def __init__(self, llm: LlmWithSearch) -> None:
         self._llm = llm
+        # **No meter until a run gives it one.** A source used outside a run -- an estimate,
+        # a test -- must not refuse to answer because of a cap it was never told about.
+        self._meter: RunningSpend | None = None
 
     @property
     def data_source(self) -> DataSourceId:
@@ -80,6 +89,19 @@ class LlmEmployersAdapter(SourceAdapter):
     @property
     def attributes(self) -> tuple[AttributeId, ...]:
         return (INTERNATIONAL_EMPLOYERS,)
+
+    def _record(self, cost_eur: Decimal, calls: int) -> None:
+        """Tell the run's meter what this one call billed, as it bills it (P91).
+
+        Without this the run learns the whole sweep's cost only when `fetch` returns, so the
+        check above has nothing to see and the cap stops the *next* attribute after this one
+        has been paid for in full.
+        """
+        if self._meter is not None and (cost_eur or calls):
+            self._meter.spent(cost_eur=cost_eur, calls=calls)
+
+    def meter_with(self, meter: RunningSpend) -> None:
+        self._meter = meter
 
     async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
         if attribute.id != INTERNATIONAL_EMPLOYERS:
@@ -108,6 +130,20 @@ class LlmEmployersAdapter(SourceAdapter):
         # One question per country, because the answer is about one country: asking for thirty-two
         # at once would return a list nobody could attribute to a page.
         for candidate in candidates:
+            # **Checked before the call, never after** (P91). A sweep of 32 countries is 32
+            # billed calls, and the run above reads its meter only between attributes -- so
+            # without this the cap stops the *next attribute* after this one has already been
+            # paid for in full. The candidates not asked about are reported as unanswered,
+            # which is what a retry works from.
+            if self._meter is not None and self._meter.is_exhausted:
+                failures.append(
+                    AcquisitionFailure(
+                        attribute=attribute.id,
+                        candidate=str(candidate.id),
+                        reason="the run reached its spend cap before this candidate was asked",
+                    )
+                )
+                continue
             try:
                 answered = await self._llm.ask(PROMPT.format(country=candidate.name))
             except LlmUnavailableError as unavailable:
@@ -117,6 +153,7 @@ class LlmEmployersAdapter(SourceAdapter):
                 # the call never reached the provider, which the exception states.
                 cost += unavailable.cost_eur
                 calls += unavailable.calls
+                self._record(unavailable.cost_eur, unavailable.calls)
                 failures.append(
                     AcquisitionFailure(
                         attribute=attribute.id,
@@ -126,6 +163,7 @@ class LlmEmployersAdapter(SourceAdapter):
                 )
                 continue
             cost += answered.cost_eur
+            self._record(answered.cost_eur, answered.calls)
             calls += answered.calls
             searches += answered.web_searches
 

@@ -15,7 +15,7 @@ attribute's `description` -- and each was found by validating a real response ag
 design rather than by reading the schema carefully.
 """
 
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer
 
@@ -25,10 +25,17 @@ class ContractBody(BaseModel):
 
     omit_when_absent: ClassVar[frozenset[str]] = frozenset()
 
+    # **No return annotation, deliberately** (P92). Pydantic reads one as the serialisation
+    # schema and replaces the model's own with it, so `-> dict[str, Any]` made every body
+    # extending this class document as a bare `{"type": "object", "additionalProperties":
+    # true}`. Seven of them did: Attribute, Criterion, Pillar, Run, RunDetail and both
+    # comparison bodies -- the four largest payloads this API serves, described nowhere in
+    # `openapi.implemented.yaml`, whose entire job is to make the gap between the design and
+    # the code countable. Without the annotation Pydantic falls back to the fields, which is
+    # the honest description: this serialiser only ever *omits* a null, it never changes a
+    # shape. The `noqa` is for the missing annotation, which is the point.
     @model_serializer(mode="wrap")
-    def _omit_what_the_design_wants_absent(
-        self, serialise: SerializerFunctionWrapHandler
-    ) -> dict[str, Any]:
+    def _omit_what_the_design_wants_absent(self, serialise: SerializerFunctionWrapHandler):
         serialised = serialise(self)
         for field in self.omit_when_absent:
             if serialised.get(field) is None:

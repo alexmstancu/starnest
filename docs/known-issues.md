@@ -523,16 +523,16 @@ already broken that a restyle made visible.
 
 ## Found by the six-agent review, 2026-10-02
 
-Six read-only agents, one per package group. **Everything below the table is closed**; the
-table is what is left and why.
+Six read-only agents, one per package group. **Everything below the table is closed**, and the three that were open on the day are
+closed too -- the table records what each turned out to be.
 
-### Still open
+### The three that were open, and what they turned out to be
 
 | # | Where | What |
 |---|---|---|
-| P90 | `ui/src/routes/configure/criteria/` | **`is_scored` has a client and no control.** `updateCriterionScored` is written and tested; nothing on screen calls it, because the design has not placed an include/exclude control and inventing one would deviate from the 1:1 fidelity this interface is held to. The three criteria excluded in the shipped sets got there by migration |
-| P91 | `backend/src/starnest/data_acquisition/run.py:108` | **The spend cap is read between attributes**, and one `fetch` is one attribute over all 32 candidates, each a billed call — so a cap can be overrun by a whole sweep. Closing it means letting a source be interrupted mid-sweep, which is a change to the `SourceAdapter` contract rather than a repair |
-| P92 | `docs/openapi.implemented.yaml` | Seven payload schemas collapse to bare `type: object`, because `api/bodies.py`'s wrap serialiser is annotated `-> dict[str, Any]`. The generated contract describes none of the four largest payloads. A narrower return annotation would fix it and would have to be written per body |
+| P90 | — | **Closed as not a gap.** `is_scored` has no client because the design has no control for it: the handoff is scope-locked (2026-09-20) and an include/exclude toggle appears in none of the 17 built items, the four lower-priority ones, or the parked backlog. **The design's mechanism for "this must not count" is a weight of 0**, which the attribute slider's 0-60 range allows, and which costs no coverage either. A wrapper written against it was deleted rather than left uncalled: the capability stays where it is reachable, in a migration, which is how the shipped sets' three exclusions got there |
+| P91 | — | **Closed.** A paid source is handed the run's meter (`SourceAdapter.meter_with`) and records each call as it bills it, so a sweep stops at the cap rather than after it. **The run records whatever the source did not** -- the difference between what `fetch` reported and what the meter already saw -- so a source that declares `costs_money` and ignores the hook is still accounted for in full. The guarantee does not rest on an adapter behaving well |
+| P92 | — | **Closed.** `ContractBody`'s wrap serialiser carried a `-> dict[str, Any]` annotation, and Pydantic reads a serialiser's return annotation as *the* serialisation schema, replacing the model's own. Dropping it restored 358 lines of schema. A guard now fails on any generated schema that is a bare object with no properties |
 | — | `backend/src/starnest/storage/run_store.py:288` | `items_unanswered` has two definitions — derived in SQL for one query, `max(0, total - completed - failed)` in Python for the other. Not firing today: no run has a value row outside its planned scope |
 | — | `storage/queries/criteria.sql:483` | `update_pillar_weights` is UPDATE-only, so a pillar with no weight row is skipped silently. Uncalled today and exempted |
 | — | — | *(the stale pillar names in `reqs.md` are closed: those headings describe a pillar's scope and the display name is catalog data, which the section now says outright)* |

@@ -118,35 +118,6 @@ export function updateCriterionWeight(
 }
 
 /**
- * Include a criterion in the score, or exclude it.
- *
- * **`is_scored` is the first thing `reqs.md` says a user does** -- "includes/excludes
- * attributes from scoring" -- and it had no client at all: the contract accepts the field,
- * the backend honours it, and nothing here could send it (P86). The three criteria excluded
- * in the shipped sets got there by migration.
- *
- * **Excluding is not the same as missing data** (`reqs.md` 5.3, Q82). An excluded criterion
- * is a decision that it does not apply: its weight renormalises across what is left and it
- * does not count against coverage, where a missing figure redistributes *and* costs coverage.
- * The stored weight is untouched either way, so ticking it back restores exactly what was
- * there.
- *
- * Sent alone, like the lock, because the server applies a weight before it reads the flags.
- */
-export function updateCriterionScored(
-  criteriaSetId: string,
-  attributeId: string,
-  isScored: boolean,
-  options?: RequestOptions,
-): Promise<RebalancedPillar> {
-  return patchJson(
-    "/criteria-sets/{criteriaSetId}/criteria/{attributeId}",
-    { is_scored: isScored },
-    { ...options, pathParams: { criteriaSetId, attributeId } },
-  );
-}
-
-/**
  * Lock or unlock one criterion's weight.
  *
  * **The lock travels alone, without a weight.** A lock holds its weight where it is, and the

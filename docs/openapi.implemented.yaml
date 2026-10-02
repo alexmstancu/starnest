@@ -29,7 +29,76 @@ components:
       title: ApplicationBody
       type: object
     AttributeBody:
-      additionalProperties: true
+      properties:
+        allowed_labels:
+          default: []
+          items:
+            type: string
+          title: Allowed Labels
+          type: array
+        allowed_range:
+          anyOf:
+          - $ref: '#/components/schemas/AllowedRangeBody'
+          - type: 'null'
+        breakdown_options:
+          default: []
+          items:
+            type: string
+          title: Breakdown Options
+          type: array
+        breakdown_scheme:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Breakdown Scheme
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        effective_source_priority:
+          default: []
+          items:
+            type: string
+          title: Effective Source Priority
+          type: array
+        id:
+          title: Id
+          type: string
+        level:
+          title: Level
+          type: string
+        manual_entry:
+          default: false
+          title: Manual Entry
+          type: boolean
+        max_age_months:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Age Months
+        name:
+          title: Name
+          type: string
+        pillar:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pillar
+        unit:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Unit
+        value_type:
+          title: Value Type
+          type: string
+      required:
+      - id
+      - name
+      - level
+      - value_type
+      title: AttributeBody
       type: object
     AttributeScoreBody:
       properties:
@@ -275,7 +344,32 @@ components:
       title: CandidatesBody
       type: object
     ComparatorCellBody:
-      additionalProperties: true
+      properties:
+        candidate:
+          title: Candidate
+          type: string
+        delta:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Delta
+        normalised_score:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Normalised Score
+        value:
+          anyOf:
+          - $ref: '#/components/schemas/ValueBody'
+          - type: 'null'
+        weighted_contribution:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Weighted Contribution
+      required:
+      - candidate
+      title: ComparatorCellBody
       type: object
     ComparisonAttributeRowBody:
       properties:
@@ -334,7 +428,24 @@ components:
       title: ComparisonBody
       type: object
     ComparisonSideBody:
-      additionalProperties: true
+      description: 'One side of one row. **`value` is omitted, never null, when that
+        side has no figure**:
+
+        the design types it as an object and leaves it optional, and null would be
+        a different
+
+        claim (`api/bodies.py`).'
+      properties:
+        normalised_score:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Normalised Score
+        value:
+          anyOf:
+          - $ref: '#/components/schemas/ValueBody'
+          - type: 'null'
+      title: ComparisonSideBody
       type: object
     CompoundRuleBody:
       description: 'A rule over more than one figure. **A null threshold is one nobody
@@ -543,7 +654,84 @@ components:
       title: CriteriaSetsBody
       type: object
     CriterionBody:
-      additionalProperties: true
+      description: A criterion as the contract's `Criterion` shape.
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        blocks_if_missing:
+          title: Blocks If Missing
+          type: boolean
+        breakdown_option:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Breakdown Option
+        goal:
+          title: Goal
+          type: string
+        is_scored:
+          title: Is Scored
+          type: boolean
+        matching_threshold:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Matching Threshold
+        normalisation_method:
+          title: Normalisation Method
+          type: string
+        pillar:
+          title: Pillar
+          type: string
+        reducer_mode:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reducer Mode
+        scale_anchors:
+          default: []
+          items:
+            $ref: '#/components/schemas/ScaleAnchorBody'
+          title: Scale Anchors
+          type: array
+        target_range_max:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Target Range Max
+        target_range_min:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Target Range Min
+        weight:
+          title: Weight
+          type: number
+        weight_locked:
+          title: Weight Locked
+          type: boolean
+        zero_score_above:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Zero Score Above
+        zero_score_below:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Zero Score Below
+      required:
+      - attribute
+      - pillar
+      - is_scored
+      - weight
+      - weight_locked
+      - goal
+      - normalisation_method
+      - blocks_if_missing
+      title: CriterionBody
       type: object
     CriterionInput:
       additionalProperties: false
@@ -1306,7 +1494,26 @@ components:
       title: NormalisationMethod
       type: string
     PillarBody:
-      additionalProperties: true
+      properties:
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        display_order:
+          title: Display Order
+          type: integer
+        id:
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+      required:
+      - id
+      - name
+      - display_order
+      title: PillarBody
       type: object
     PillarScoreBody:
       description: One pillar's part in a candidate's total (`reqs.md` 5.2).
@@ -1611,10 +1818,154 @@ components:
       title: RetryBody
       type: object
     RunBody:
-      additionalProperties: true
+      properties:
+        cost_eur:
+          default: 0
+          title: Cost Eur
+          type: number
+        finished_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Finished At
+        id:
+          title: Id
+          type: integer
+        items_completed:
+          default: 0
+          title: Items Completed
+          type: integer
+        items_failed:
+          default: 0
+          title: Items Failed
+          type: integer
+        items_total:
+          default: 0
+          title: Items Total
+          type: integer
+        llm_call_count:
+          default: 0
+          title: Llm Call Count
+          type: integer
+        run_status:
+          title: Run Status
+          type: string
+        scope_attributes:
+          default: 0
+          title: Scope Attributes
+          type: integer
+        scope_candidates:
+          default: 0
+          title: Scope Candidates
+          type: integer
+        started_at:
+          format: date-time
+          title: Started At
+          type: string
+        stop_requested_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Stop Requested At
+        triggered_by:
+          title: Triggered By
+          type: string
+      required:
+      - id
+      - run_status
+      - started_at
+      - triggered_by
+      title: RunBody
       type: object
     RunDetailBody:
-      additionalProperties: true
+      properties:
+        by_source:
+          default: []
+          items:
+            $ref: '#/components/schemas/SourceReachBody'
+          title: By Source
+          type: array
+        cost_eur:
+          default: 0
+          title: Cost Eur
+          type: number
+        failures:
+          default: []
+          items:
+            $ref: '#/components/schemas/FailureBody'
+          title: Failures
+          type: array
+        finished_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Finished At
+        id:
+          title: Id
+          type: integer
+        items_completed:
+          default: 0
+          title: Items Completed
+          type: integer
+        items_failed:
+          default: 0
+          title: Items Failed
+          type: integer
+        items_total:
+          default: 0
+          title: Items Total
+          type: integer
+        llm_call_count:
+          default: 0
+          title: Llm Call Count
+          type: integer
+        progress:
+          anyOf:
+          - $ref: '#/components/schemas/ProgressBody'
+          - type: 'null'
+        run_status:
+          title: Run Status
+          type: string
+        scope:
+          anyOf:
+          - $ref: '#/components/schemas/RunScopeBody'
+          - type: 'null'
+        scope_attributes:
+          default: 0
+          title: Scope Attributes
+          type: integer
+        scope_candidates:
+          default: 0
+          title: Scope Candidates
+          type: integer
+        started_at:
+          format: date-time
+          title: Started At
+          type: string
+        stop_requested_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Stop Requested At
+        triggered_by:
+          title: Triggered By
+          type: string
+        unanswered:
+          default: []
+          items:
+            $ref: '#/components/schemas/UnansweredBody'
+          title: Unanswered
+          type: array
+      required:
+      - id
+      - run_status
+      - started_at
+      - triggered_by
+      title: RunDetailBody
       type: object
     RunPlanBody:
       properties:

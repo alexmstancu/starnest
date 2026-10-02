@@ -13,6 +13,7 @@ lets a declared neighbour stand in where nothing did.
 from starnest.data_acquisition.adapter import (
     Acquired,
     AcquisitionFailure,
+    RunningSpend,
     SourceAdapter,
 )
 from starnest.data_acquisition.declarations import declarations_that_disagree
@@ -79,6 +80,7 @@ __all__ = [
     "RunScope",
     "RunStatus",
     "RunStore",
+    "RunningSpend",
     "SourceAdapter",
     "SourceReach",
     "SpendCapNotSetError",

@@ -24,6 +24,7 @@ from starnest.data_acquisition import (
     Acquired,
     AcquisitionFailure,
     CostMeter,
+    RunningSpend,
     SourceAdapter,
     acquire,
 )
@@ -46,6 +47,8 @@ def an_attribute(identifier: str = OVERBURDEN) -> Attribute:
 
 
 PORTUGAL = Candidate(id="country.portugal", name="Portugal", level=COUNTRY, country_code="PT")
+SPAIN = Candidate(id="country.spain", name="Spain", level=COUNTRY, country_code="ES")
+GREECE = Candidate(id="country.greece", name="Greece", level=COUNTRY, country_code="GR")
 
 
 def a_value(attribute: str = OVERBURDEN) -> Value:
@@ -267,3 +270,127 @@ class TestWhenTheCapIsReachedInsideOneSource:
         )
 
         assert len(outcome.stored) == 1
+
+
+class ASourceThatBillsPerCandidate(SourceAdapter):
+    """One billed call per candidate, which is the shape of both LLM adapters.
+
+    It honours `stop_when`, as a paid source must: the run reads its meter between
+    *attributes*, and for this shape one attribute is one call per candidate.
+    """
+
+    def __init__(self, *, eur_per_candidate: str) -> None:
+        self._price = Decimal(eur_per_candidate)
+        self.asked_about: list[str] = []
+        self._meter: RunningSpend | None = None
+
+    @property
+    def data_source(self) -> DataSourceId:
+        return DataSourceId("llm")
+
+    @property
+    def attributes(self) -> tuple:
+        return (OVERBURDEN,)
+
+    @property
+    def costs_money(self) -> bool:
+        return True
+
+    def meter_with(self, meter: RunningSpend) -> None:
+        self._meter = meter
+
+    async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+        cost, calls = Decimal(0), 0
+        for candidate in candidates:
+            if self._meter is not None and self._meter.is_exhausted:
+                continue
+            self.asked_about.append(str(candidate.id))
+            cost += self._price
+            calls += 1
+            # Recorded as it is billed, which is what makes the check above see anything.
+            if self._meter is not None:
+                self._meter.spent(cost_eur=self._price, calls=1)
+        return Acquired(values=(), cost_eur=cost, calls=calls)
+
+
+class ASourceThatIgnoresTheCap(ASourceThatBillsPerCandidate):
+    """A paid source that never asks. The cap still has to hold to within one attribute."""
+
+    def meter_with(self, meter: RunningSpend) -> None:
+        return
+
+
+class TestTheCapInsideOneCandidateSweep:
+    """The residue P47 left behind (P91).
+
+    P47 moved the check from between sources to between attributes, and one `fetch` is one
+    attribute over *every* candidate. For a source billing per candidate that is 32 calls, all
+    of them committed before anything looks at the meter -- so a 1.00 EUR cap could bill about
+    1.60 on the first attribute alone.
+    """
+
+    async def asking(self, adapter: SourceAdapter, meter: CostMeter) -> object:
+        return await acquire(
+            adapter=adapter,
+            attributes=[an_attribute(OVERBURDEN)],
+            candidates=[PORTUGAL, SPAIN, GREECE],
+            values=RecordingValueStore(),
+            meter=meter,
+        )
+
+    async def test_it_stops_partway_through_the_candidates(self) -> None:
+        # Each candidate costs the whole cap, so only the first may be asked about.
+        adapter = ASourceThatBillsPerCandidate(eur_per_candidate="1.00")
+
+        await self.asking(adapter, CostMeter(cap_eur=Decimal(1)))
+
+        assert adapter.asked_about == [str(PORTUGAL.id)]
+
+    async def test_what_was_paid_for_is_still_counted(self) -> None:
+        """The cap is a stop, not a refund: the call that reached it was billed."""
+        adapter = ASourceThatBillsPerCandidate(eur_per_candidate="1.00")
+        meter = CostMeter(cap_eur=Decimal(1))
+
+        await self.asking(adapter, meter)
+
+        assert meter.spent_eur == Decimal("1.00")
+        assert meter.is_exhausted
+
+    async def test_an_uncapped_run_asks_about_every_candidate(self) -> None:
+        """The other half, so the stop cannot be "never ask about more than one"."""
+        adapter = ASourceThatBillsPerCandidate(eur_per_candidate="1.00")
+
+        await self.asking(adapter, CostMeter(cap_eur=None))
+
+        assert len(adapter.asked_about) == 3
+
+    async def test_a_free_source_is_never_told_to_stop(self) -> None:
+        """`stop_when` is called only for a source that says it charges, so the eight free
+        adapters are never handed a hook they cannot use."""
+        told: list[bool] = []
+
+        class AFreeSource(StubAdapter):
+            def meter_with(self, meter: RunningSpend) -> None:
+                told.append(True)
+
+        adapter = AFreeSource({OVERBURDEN: Acquired()}, declares=(OVERBURDEN,))
+        await acquire(
+            adapter=adapter,
+            attributes=[an_attribute(OVERBURDEN)],
+            candidates=[PORTUGAL],
+            values=RecordingValueStore(),
+            meter=CostMeter(cap_eur=Decimal(1)),
+        )
+
+        assert told == []
+
+    async def test_a_paid_source_that_ignores_the_hook_is_still_bounded(self) -> None:
+        """**The guarantee does not rest on an adapter's good behaviour.** One that never asks
+        overruns by at most its own attribute, because the check between attributes remains."""
+        adapter = ASourceThatIgnoresTheCap(eur_per_candidate="1.00")
+        meter = CostMeter(cap_eur=Decimal(1))
+
+        await self.asking(adapter, meter)
+
+        assert len(adapter.asked_about) == 3
+        assert meter.is_exhausted

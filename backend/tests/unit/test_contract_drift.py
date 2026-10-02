@@ -134,6 +134,36 @@ class TestNothingIsServedThatWasNotDesigned:
     ) -> None:
         assert set(_operations(recorded, prefix=API_PREFIX)) <= set(_operations(designed))
 
+    def test_every_generated_schema_describes_its_shape(self, recorded: dict) -> None:
+        """**A schema that says only "an object" describes nothing** (P92).
+
+        Seven of them did, including Attribute, Criterion, Run and RunDetail -- the largest
+        payloads this API serves. `ContractBody`'s wrap serialiser was annotated
+        `-> dict[str, Any]`, and Pydantic reads a serialiser's return annotation as *the*
+        serialisation schema, replacing the model's own. Every body extending that class
+        documented as `{"type": "object", "additionalProperties": true}`.
+
+        This file exists to make the gap between the design and the code countable. For a
+        third of the catalog it was uncountable, and nothing said so.
+        """
+        schemas = recorded.get("components", {}).get("schemas", {})
+        assert schemas, "the generated contract declares no schemas at all"
+
+        shapeless = sorted(
+            name
+            for name, schema in schemas.items()
+            if schema.get("type") == "object"
+            and not schema.get("properties")
+            and "$ref" not in schema
+            and not schema.get("allOf")
+            and not schema.get("anyOf")
+        )
+
+        assert shapeless == [], (
+            f"these schemas describe nothing but their type: {shapeless}. A body that "
+            "documents as a bare object is a body no consumer can generate a client for."
+        )
+
     def test_no_query_parameter_was_invented_in_code(self, served: dict, designed: dict) -> None:
         """**Operations were compared and parameters were not** (P84).
 

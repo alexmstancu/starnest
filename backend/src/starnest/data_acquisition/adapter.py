@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import Protocol
 
 from starnest.candidates import Candidate
 from starnest.data import Attribute, AttributeId, DataSourceId, Value
@@ -65,6 +66,19 @@ class Acquired:
         )
 
 
+class RunningSpend(Protocol):
+    """What a paid source needs of the run's meter: record a call, and ask if that was the last.
+
+    A protocol rather than `CostMeter` itself, so `data_sources/` depends on the shape it uses
+    and not on the class that happens to implement it.
+    """
+
+    def spent(self, *, cost_eur: Decimal, calls: int = 1) -> None: ...
+
+    @property
+    def is_exhausted(self) -> bool: ...
+
+
 class SourceAdapter(ABC):
     """One publisher, and the attributes it can answer for."""
 
@@ -83,6 +97,31 @@ class SourceAdapter(ABC):
         cap set, unless the request accepts an uncapped run (`spend.py`).
         """
         return False
+
+    def meter_with(self, meter: "RunningSpend") -> None:  # noqa: B027
+        """Give a paid source the run's meter, to record against and to ask (P91).
+
+        **The cap is read between attributes, and one `fetch` is one attribute over every
+        candidate.** For a free source that is the whole request and there is nothing to
+        interrupt. For a source billing per candidate it is 32 calls, every one of them
+        committed before anything looks at the meter -- so a 1.00 EUR cap could bill about 1.60
+        on the first attribute alone, which is a receipt rather than a ceiling. P47 moved the
+        check from between sources to between attributes and nothing claimed the residue.
+
+        **Opt-in, and called only for an adapter whose `costs_money` is True**, so the eight
+        free adapters keep a signature with nothing in it they cannot use. A source that
+        charges and ignores this still cannot exceed the cap by more than one of its own
+        attributes, because the check between attributes remains.
+
+        **Recording and asking are one hook, because asking alone answers nothing.** The run
+        adds a source's cost after `fetch` returns, so a meter the adapter only *reads* is a
+        meter that still knows nothing about the sweep in progress. A source given this records
+        each call as it makes it, and `acquire` then does not add that cost a second time.
+
+        Does nothing by default: a source that cannot spend has nothing to record. The `noqa`
+        says that deliberately -- this is a hook with a working default, not an abstract method
+        every adapter must answer.
+        """
 
     def estimate_for(self, items: int) -> Estimate:
         """What asking this source about `items` candidate-attribute pairs would cost.

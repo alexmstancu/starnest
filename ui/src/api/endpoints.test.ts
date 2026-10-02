@@ -13,7 +13,6 @@ import { mockServer } from "../mocks/server";
 import {
   fetchValuesFromRun,
   updateCriterionLock,
-  updateCriterionScored,
   updateCriterionWeight,
   updatePillarLock,
   updatePillarWeight,
@@ -34,6 +33,13 @@ function bodySentTo(method: "patch" | "put", path: string): { seen: unknown } {
 const CRITERION = "/v1/criteria-sets/:id/criteria/:attribute";
 const PILLAR = "/v1/criteria-sets/:id/pillar-weights/:pillar";
 
+/**
+ * **`is_scored` has no wrapper here, deliberately.** The contract accepts it and the backend
+ * honours it, and the design -- scope-locked 2026-09-20 -- places no include/exclude control
+ * anywhere: an attribute that should not count is dragged to a weight of 0, which its slider
+ * (0-60) allows. A wrapper nobody can reach is a wrapper that rots, so the capability stays
+ * where it is reachable: a migration. See P90 in `known-issues.md`.
+ */
 describe("changing one criterion", () => {
   it("sends a weight alone", async () => {
     const body = bodySentTo("patch", CRITERION);
@@ -51,24 +57,7 @@ describe("changing one criterion", () => {
     expect(body.seen).toEqual({ weight_locked: true });
   });
 
-  it("sends the scoring flag alone", async () => {
-    // **The first thing the Roles section says a user does**, and it had no client at all
-    // (P86): the contract accepts `is_scored`, the backend honours it, and nothing could
-    // send it. The three criteria excluded in the shipped sets got there by migration.
-    const body = bodySentTo("patch", CRITERION);
 
-    await updateCriterionScored("alex", "country.climate_zone", false);
-
-    expect(body.seen).toEqual({ is_scored: false });
-  });
-
-  it("can put an excluded criterion back", async () => {
-    const body = bodySentTo("patch", CRITERION);
-
-    await updateCriterionScored("alex", "country.climate_zone", true);
-
-    expect(body.seen).toEqual({ is_scored: true });
-  });
 });
 
 describe("changing one pillar", () => {
