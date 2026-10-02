@@ -102,6 +102,32 @@ def redistribute(weights: AttributeWeights, answered: Set[str]) -> dict[str, Dec
     }
 
 
+def renormalise(weights: AttributeWeights) -> dict[str, Decimal]:
+    """The same weights in the same proportions, summing to `TOTAL`.
+
+    **For weights that are all that is left of a larger set.** Excluding a criterion is a
+    decision that it does not apply (`reqs.md` 5.3, Q82), so what remains has to carry the
+    whole 100 between it -- otherwise the share the excluded criterion used to hold simply
+    stops existing, and every candidate is scored out of less than the scale without anything
+    on screen able to say so (P64).
+
+    Distinct from `redistribute`, which answers a different question. Redistribution spreads
+    the weight of criteria that are *missing a figure* over those that have one, and the weight
+    it spreads is still part of the total. This spreads the weight of criteria that are *not
+    being scored at all*, and reconstitutes the total itself. A set can need both: a candidate
+    may be missing figures for criteria that are also the only ones left after an exclusion.
+
+    Proportions survive exactly, so a criterion twice as important as another before is still
+    twice as important after.
+    """
+    total = _total_of(weights)
+    if total == TOTAL:
+        # Already whole. Returned untouched rather than multiplied by one, so the common case
+        # carries none of `Decimal`'s division tails into a figure a test will read back.
+        return dict(weights)
+    return {attribute: weight / total * TOTAL for attribute, weight in weights.items()}
+
+
 def _total_of(weights: AttributeWeights) -> Decimal:
     """The weight the criteria set actually put on this pillar's worth of criteria.
 

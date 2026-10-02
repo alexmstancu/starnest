@@ -32,6 +32,7 @@ from starnest.evaluation import MatchStatus, RankingError, rank_candidates
 
 from .builders import (
     A_CANDIDATE,
+    A_PILLAR,
     A_SMALL_SCALE,
     AN_ATTRIBUTE,
     RENT,
@@ -44,6 +45,7 @@ from .builders import (
 )
 
 HOUSING = "housing"
+A_THIRD_ATTRIBUTE = "country.life_satisfaction"
 
 
 def rank(criteria, values, *, scale: int = A_SMALL_SCALE, min_coverage=None, **rules):
@@ -315,6 +317,23 @@ class TestTheTwoLevelWeighting:
             )
 
 
+def every_attribute_answered(*attributes: str, portugal: int, spain: int) -> dict[str, tuple]:
+    """A figure for each named attribute, for both candidates.
+
+    **So that redistribution is a no-op.** `values_for` answers the default attribute only, and
+    a candidate missing the rest has their weight redistributed onto the one it has -- which is
+    correct, and makes `effective_weight` useless for asking where a *pillar's* share went.
+    Answer everything and the effective weight is the flattened weight.
+    """
+    return {
+        f"country.{candidate}": tuple(
+            a_value(candidate=f"country.{candidate}", attribute=attribute, payload=Count(count=n))
+            for attribute in attributes
+        )
+        for candidate, n in (("portugal", portugal), ("spain", spain))
+    }
+
+
 class TestExcludingACriterionIsNotMissingOne:
     def test_an_excluded_criterion_takes_no_weight_and_leaves_no_gap(self) -> None:
         """`is_scored = false` is a decision that it does not apply, so coverage is unaffected
@@ -334,6 +353,88 @@ class TestExcludingACriterionIsNotMissingOne:
             a_criterion().attribute
         ]
 
+    def test_the_candidate_on_top_of_what_is_left_reaches_the_top_of_the_scale(self) -> None:
+        """**The assertion this class was missing, and the bug it let through** (P64).
+
+        The weights of what is still scored have to come back to 100, or every candidate is
+        scored out of less than the scale. It read as three numbers on one screen that could
+        not all be true: this pillar at 10 of 10, coverage at 100%, and a total of 5.
+
+        Coverage was asserted here from the start and is not what was wrong -- which is the
+        point. A test can name the right example and still not ask the question that fails.
+        """
+        criteria = a_set(
+            [
+                a_criterion(weight=Decimal("100")),
+                a_criterion(attribute=RENT, pillar=HOUSING, weight=Decimal("100"), is_scored=False),
+            ],
+            [a_pillar_weight(weight="50"), a_pillar_weight(pillar=HOUSING, weight="50")],
+        )
+
+        found = by_candidate(rank(criteria, values_for(portugal=90, spain=10)))
+
+        assert found["country.portugal"].score == A_SMALL_SCALE
+        assert found["country.portugal"].coverage == Decimal(100)
+
+    def test_excluding_one_criterion_inside_a_pillar_leaves_the_pillar_its_share(self) -> None:
+        """**The share stays where the user put it.** Renormalising the flattened weights in
+        one pass would also come to 100, and would move weight *between* pillars because one
+        criterion inside one of them was unticked -- editing the number the user set most
+        deliberately. Here housing's criterion is the only one with a figure, so housing's 50%
+        is the whole of what Portugal can earn."""
+        criteria = a_set(
+            [
+                a_criterion(weight=Decimal("60")),
+                a_criterion(attribute=A_THIRD_ATTRIBUTE, weight=Decimal("40"), is_scored=False),
+                a_criterion(attribute=RENT, pillar=HOUSING, weight=Decimal("100")),
+            ],
+            [a_pillar_weight(weight="50"), a_pillar_weight(pillar=HOUSING, weight="50")],
+        )
+
+        found = by_candidate(
+            rank(
+                criteria,
+                every_attribute_answered(AN_ATTRIBUTE, RENT, portugal=90, spain=10),
+            )
+        )
+        economics = {
+            row.attribute: row.effective_weight
+            for row in found["country.portugal"].attribute_scores
+            if row.pillar == A_PILLAR
+        }
+
+        assert sum(economics.values()) == Decimal(50)
+
+    def test_excluding_a_pillars_only_criterion_spreads_its_share_over_the_others(self) -> None:
+        """A pillar with nothing left to score has no share to hold, so the pillars still
+        scoring come back to 100 between them (`reqs.md` Q82).
+
+        **Different from the pillar `_refuse_a_pillar_nothing_scores_into` refuses**: a pillar
+        with no criteria at all is a set mid-build, while a pillar whose criteria are all
+        excluded is a decision somebody made."""
+        criteria = a_set(
+            [
+                a_criterion(weight=Decimal("60")),
+                a_criterion(attribute=A_THIRD_ATTRIBUTE, weight=Decimal("40")),
+                a_criterion(attribute=RENT, pillar=HOUSING, weight=Decimal("100"), is_scored=False),
+            ],
+            [a_pillar_weight(weight="50"), a_pillar_weight(pillar=HOUSING, weight="50")],
+        )
+
+        found = by_candidate(
+            rank(
+                criteria,
+                every_attribute_answered(AN_ATTRIBUTE, A_THIRD_ATTRIBUTE, portugal=90, spain=10),
+            )
+        )
+        weights = {
+            row.attribute: row.effective_weight
+            for row in found["country.portugal"].attribute_scores
+        }
+
+        assert sum(weights.values()) == Decimal(100)
+        assert weights[a_criterion().attribute] == Decimal(60)
+
 
 class TestWhenThereIsNoRankingToProduce:
     def test_a_set_that_scores_nothing_at_this_level_is_refused(self) -> None:
@@ -348,6 +449,29 @@ class TestWhenThereIsNoRankingToProduce:
         found = by_candidate(rank(a_set([a_criterion()]), values_for(portugal=90)))
 
         assert found["country.portugal"].coverage == Decimal(0)
+
+    def test_the_reason_says_the_figure_could_not_be_placed_not_that_none_was_found(
+        self,
+    ) -> None:
+        """**The sentence has to agree with the drill-down beside it** (P70).
+
+        A figure *was* found for this candidate -- the breakdown names the attribute -- and it
+        is the normalisation that had nowhere to stand it. "No figure was found" sends the
+        reader to fetch something they already have, and fetching changes nothing.
+        """
+        found = by_candidate(rank(a_set([a_criterion()]), values_for(portugal=90)))
+        reason = found["country.portugal"].insufficient_reason or ""
+
+        assert "none could be scored" in reason
+        assert str(a_criterion().attribute) in reason
+        assert "no figure was found" not in reason
+
+    def test_a_candidate_with_nothing_at_all_still_says_no_figure_was_found(self) -> None:
+        """The other half, so the branch above cannot swallow the honest case."""
+        found = by_candidate(rank(a_set([a_criterion()]), {"country.portugal": ()}))
+        reason = found["country.portugal"].insufficient_reason or ""
+
+        assert "no figure was found" in reason
         assert found["country.portugal"].score is None
 
 

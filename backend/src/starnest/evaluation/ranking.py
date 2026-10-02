@@ -32,7 +32,12 @@ from starnest.evaluation.results import (
     PillarScore,
 )
 from starnest.evaluation.rules import gates_that_rule_out, judgements_of
-from starnest.evaluation.weighting import confidence_split, coverage_of, redistribute
+from starnest.evaluation.weighting import (
+    confidence_split,
+    coverage_of,
+    redistribute,
+    renormalise,
+)
 
 ValuesByCandidate = Mapping[str, Sequence[Value]]
 
@@ -196,16 +201,61 @@ def _level_wide_weights(
     `CriteriaSet` has already refused a criterion whose pillar carries no weight at its own
     level, so the lookup below cannot miss. Re-checking here would be a branch no test could
     reach, which is worse than no check at all: it would read as a case that happens.
+
+    **`scored` is what is left after the exclusions, so both levels are renormalised** (P64).
+    An excluded criterion takes no weight and leaves no gap (`reqs.md` 5.3, Q82), and that is
+    two separate sums to put back:
+
+    * *Within a pillar.* The criteria still scoring into it share its weight between them, so
+      the pillar keeps exactly the share the user gave it. Renormalising globally instead would
+      move weight *between* pillars because one criterion inside one of them was unticked --
+      quietly editing the number the user set most deliberately.
+    * *Across pillars.* A pillar every one of whose criteria is excluded has no share to hold,
+      so the pillars still scoring renormalise to 100 between them. This is a different case
+      from the one `_refuse_a_pillar_nothing_scores_into` refuses: a pillar with *no criteria*
+      is a set mid-build, while a pillar whose criteria are all excluded is a decision.
+
+    Without this, every candidate was scored out of less than the scale while coverage read
+    100%: the shipped `local_employment` set excludes three criteria worth 6.65 points and
+    `remote_only` three worth 12.52, so a candidate answering everything perfectly reached
+    93.35 and 87.48 and nothing on screen could account for the rest. The ranking *order* was
+    unaffected -- the shortfall is one constant factor on every candidate -- which is why it
+    survived four e2e gates: the drill-down showed a pillar at 100 beside a total that
+    disagreed with it.
     """
     pillar_weights = {
         (weight.pillar, weight.level): weight.weight for weight in criteria.pillar_weights
     }
+    within_pillar = _renormalised_within_each_pillar(scored)
+    scoring_pillars = {criterion.pillar for criterion in scored}
+    across_pillars = renormalise(
+        {
+            str(pillar): weight
+            for (pillar, weight_level), weight in pillar_weights.items()
+            if weight_level == level and pillar in scoring_pillars
+        }
+    )
     return {
-        str(criterion.attribute): criterion.weight
-        * pillar_weights[(criterion.pillar, level)]
+        str(criterion.attribute): within_pillar[str(criterion.attribute)]
+        * across_pillars[str(criterion.pillar)]
         / TOTAL
         for criterion in scored
     }
+
+
+def _renormalised_within_each_pillar(scored: Sequence[Criterion]) -> dict[str, Decimal]:
+    """Each criterion's weight inside its own pillar, the pillar's criteria summing to 100.
+
+    Criterion weights sum to 100 within a pillar by the ontology's own rule, so for a pillar
+    with nothing excluded this returns them unchanged.
+    """
+    by_pillar: dict[str, dict[str, Decimal]] = {}
+    for criterion in scored:
+        by_pillar.setdefault(str(criterion.pillar), {})[str(criterion.attribute)] = criterion.weight
+    renormalised: dict[str, Decimal] = {}
+    for weights in by_pillar.values():
+        renormalised.update(renormalise(weights))
+    return renormalised
 
 
 @dataclass(frozen=True)
@@ -521,6 +571,22 @@ def _why_it_cannot_be_scored(
             + ", which this criteria set requires before scoring a candidate at all"
         )
     if coverage == 0:
+        # **The same two ways apart, for the same reason** (P70). This branch said "no figure
+        # was found" flatly, and shipped that sentence beside a drill-down listing the
+        # attribute whose figure *had* been found and simply could not be placed -- one
+        # candidate under `percentile` has no standing to score against. Telling the reader to
+        # fetch something they already have is the one wrong answer here.
+        unplaceable = sorted(
+            f"{c.attribute} (normalised {c.normalisation_method.value})"
+            for c in scored_criteria
+            if str(c.attribute) in found
+        )
+        if unplaceable:
+            return (
+                "figures were found but none could be scored: "
+                + ", ".join(unplaceable)
+                + ", so there is nothing to compute a total from"
+            )
         return (
             "no figure was found for any scored criterion, so there is nothing to compute a "
             "total from"

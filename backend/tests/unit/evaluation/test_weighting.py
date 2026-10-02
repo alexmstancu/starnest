@@ -11,7 +11,13 @@ from decimal import Decimal
 import pytest
 
 from starnest.data import ConfidenceLevel
-from starnest.evaluation import WeightingError, confidence_split, coverage_of, redistribute
+from starnest.evaluation import (
+    WeightingError,
+    confidence_split,
+    coverage_of,
+    redistribute,
+    renormalise,
+)
 
 
 def weights(**named: str) -> dict[str, Decimal]:
@@ -162,3 +168,53 @@ class TestHowTheCoveredWeightSplitsByConfidence:
     def test_no_criteria_at_all_is_refused_as_coverage_is(self) -> None:
         with pytest.raises(WeightingError):
             confidence_split({}, {})
+
+
+class TestRenormalisingWhatIsLeftOfASet:
+    """What an excluded criterion's share becomes (`reqs.md` 5.3, Q82).
+
+    Separate from redistribution, which spreads the weight of a criterion that is *missing a
+    figure*. This reconstitutes the total after a criterion stops being scored at all -- and
+    without it every candidate was scored out of less than the scale while coverage read 100%.
+    """
+
+    def test_what_is_left_carries_the_whole_hundred(self) -> None:
+        assert renormalise(weights(rent="50", jobs="30")) == weights(rent="62.5", jobs="37.5")
+
+    def test_a_criterion_twice_as_important_stays_twice_as_important(self) -> None:
+        """Asserted as the figures rather than as the ratio: a ratio between two weights that
+        were never scaled holds just as well, so a ratio alone proves nothing happened."""
+        assert renormalise(weights(rent="40", jobs="20", safety="20")) == weights(
+            rent="50", jobs="25", safety="25"
+        )
+
+    def test_shares_that_do_not_divide_still_come_to_a_hundred(self) -> None:
+        """40 and 20 of a total of 60 are two thirds and one third, which no decimal holds
+        exactly. The total is what the score is computed against, so the total is what has to
+        land on 100 -- and it does, because the last place of one share absorbs the other's."""
+        renormalised = renormalise(weights(rent="40", jobs="20"))
+
+        assert sum(renormalised.values()) == Decimal(100)
+
+    def test_a_set_already_whole_is_returned_untouched(self) -> None:
+        """Not multiplied by one: `Decimal` division would leave a tail on every weight, and
+        the common case is the one a reader checks against the number they typed."""
+        assert renormalise(ALL_THREE) == ALL_THREE
+
+    def test_one_criterion_left_takes_everything(self) -> None:
+        assert renormalise(weights(rent="20")) == weights(rent="100")
+
+    def test_weights_summing_past_a_hundred_are_scaled_down(self) -> None:
+        """The function restores the total rather than assuming which side of it the input is
+        on -- rebalancing passes through states that overshoot (`criteria/rebalancing.py`)."""
+        assert renormalise(weights(rent="150", jobs="50")) == weights(rent="75", jobs="25")
+
+    def test_nothing_to_renormalise_is_refused_as_coverage_is(self) -> None:
+        """An empty mapping has no proportions to preserve, so there is no answer to give."""
+        with pytest.raises(WeightingError):
+            renormalise({})
+
+    def test_weights_that_come_to_nothing_are_refused(self) -> None:
+        """Scaling zero to a hundred would have to invent the split between them."""
+        with pytest.raises(WeightingError):
+            renormalise(weights(rent="0", jobs="0"))

@@ -28,6 +28,7 @@ from starnest.evaluation.weighting import (
     confidence_split,
     coverage_of,
     redistribute,
+    renormalise,
 )
 
 __all__ = [
@@ -53,5 +54,6 @@ __all__ = [
     "magnitude_of",
     "rank_candidates",
     "redistribute",
+    "renormalise",
     "scores_for",
 ]
