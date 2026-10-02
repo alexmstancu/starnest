@@ -428,6 +428,40 @@ class TestRetryingARun:
 
         assert asked_again == 0
 
+    async def test_a_source_the_household_switched_off_is_not_asked_again(
+        self, database_url: str
+    ) -> None:
+        """**A retry consults the same sources a fresh run would** (P65).
+
+        `start` and `plan` both filter through `switched_on`; this endpoint passed the raw
+        registry, so a source switched off in Configure was asked again anyway -- and the same
+        switch keeps its figures out of the active-value comparison, so the work could not
+        score. For a source that charges, the retry billed for it.
+        """
+        both = (
+            a_stub_source(silent_on=(OVERBURDEN,)),
+            a_stub_source(data_source="world_bank", answers=("country.overcrowding_rate",)),
+        )
+        async with an_api(database_url, both) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            await api.patch("/v1/data-sources/world_bank", json={"is_enabled": False})
+
+            retried = (await api.post(f"/v1/data-acquisition-runs/{first['id']}/retry")).json()
+
+            # **Counted from the failure rows, not the value rows.** The switched-off source
+            # declines Portugal, so it stores nothing whether or not it was asked -- a count of
+            # values is zero either way and proves nothing. A failure row is written only by a
+            # source that was actually consulted.
+            asked_again = await _count(
+                database_url,
+                "SELECT count(*) FROM data_acquisition_failure"
+                " WHERE data_acquisition_run = %s AND data_source = 'world_bank'",
+                retried["id"],
+            )
+            await api.patch("/v1/data-sources/world_bank", json={"is_enabled": True})
+
+        assert asked_again == 0
+
     async def test_a_source_is_asked_again_only_about_what_it_failed_on(
         self, database_url: str
     ) -> None:

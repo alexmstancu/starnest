@@ -206,8 +206,15 @@ ORDER  BY v.id;
 -- row -- and a never-fetched attribute is precisely the one a planner most needs to see. The
 -- comment said "for each attribute" throughout while the statement could only answer for each
 -- attribute that already had a figure.
+--
+-- **Counted over the joined candidate, not over the value's own column.** The join narrows the
+-- candidates to the level asked for, and `count(DISTINCT v.candidate)` then ignored that
+-- entirely: a candidate at another level failed the ON clause, so `c` came back NULL while the
+-- `v` row stayed in the group and was counted anyway. The filter was a no-op (P73). Counting
+-- `c.id` makes the join do what it was written to do, because a NULL is not counted. Latent
+-- while every candidate is a country, and wrong the day the city level arrives.
 SELECT a.id AS attribute,
-       count(DISTINCT v.candidate) AS candidates_with_a_value
+       count(DISTINCT c.id) AS candidates_with_a_value
 FROM   attribute AS a
 LEFT   JOIN active_value AS v ON v.attribute = a.id
 LEFT   JOIN candidate AS c

@@ -80,6 +80,48 @@ def chosen(*values: Value, priority: SourcePriority = GLOBAL_ORDER) -> Value | N
     return select_active_value(values, attribute=RENT, priority=priority, on=TODAY)
 
 
+class TestRuleOneAValueFromASwitchedOffSourceNeverCompetes:
+    """The view's rule 1a, which the Python rule did not have (P87).
+
+    `active_value` requires `source_is_enabled`; `select_active_value` kept every unrejected
+    value. The module's stated contract with the SQL is "same inputs, same winner", and with a
+    switched-off source holding the top-priority figure the two named different ones.
+    """
+
+    def test_the_top_source_switched_off_passes_to_the_next(self) -> None:
+        switched_off = SourcePriority.global_order(
+            (EUROSTAT.model_copy(update={"is_enabled": False}), NUMBEO, MANUAL)
+        )
+        from_eurostat = a_value(data_source="eurostat")
+        from_numbeo = a_value(data_source="numbeo")
+
+        assert chosen(from_eurostat, from_numbeo, priority=switched_off) is from_numbeo
+
+    def test_it_is_the_last_one_standing_rather_than_a_fallback(self) -> None:
+        """Nothing is substituted: with every source off there is no active value at all,
+        which is the honest answer and the same one the view gives."""
+        all_off = SourcePriority.global_order(
+            tuple(source.model_copy(update={"is_enabled": False}) for source in CATALOG)
+        )
+
+        assert chosen(a_value(data_source="eurostat"), priority=all_off) is None
+
+    def test_a_switched_on_source_is_unaffected(self) -> None:
+        """The other half, so the rule cannot be "nothing ever wins"."""
+        assert chosen(a_value(data_source="eurostat")) is not None
+
+    def test_the_value_is_not_discarded_only_beaten(self) -> None:
+        """A switched-off source keeps every figure it ever stored -- the switch decides what
+        scores, never what is kept (`reqs.md` 6.6, Q232)."""
+        switched_off = SourcePriority.global_order(
+            (EUROSTAT.model_copy(update={"is_enabled": False}), NUMBEO, MANUAL)
+        )
+        from_eurostat = a_value(data_source="eurostat")
+
+        assert from_eurostat.is_rejected is False
+        assert chosen(from_eurostat, priority=switched_off) is None
+
+
 class TestRuleOneRejectedValuesNeverCompete:
     def test_a_rejected_value_loses_to_a_worse_but_credible_one(self) -> None:
         rejected = a_value(data_source="eurostat", rejection_reason="45000 is not a rent")

@@ -36,7 +36,18 @@ class LlmUnavailableError(Exception):
     One exception for every way that can happen, carrying a sentence: a refusal, a timeout, an
     empty answer. They are the same fact to whoever reads a run's failures -- the source did not
     answer -- which is how the structured sources report the same thing (`transport.py`).
+
+    **It carries what the attempt cost** (P71). A provider that replied bills for the reply
+    whether or not it contained anything we could use, and an exception that dropped the figure
+    made the spend cap unenforceable in exactly the case where a model is misbehaving: 32 empty
+    answers metered as 0.00 EUR. Zero where the call never reached the provider at all, which is
+    the honest figure for a connection that failed.
     """
+
+    def __init__(self, message: str, *, cost_eur: Decimal = Decimal(0), calls: int = 0) -> None:
+        super().__init__(message)
+        self.cost_eur = cost_eur
+        self.calls = calls
 
 
 @dataclass(frozen=True)
@@ -141,15 +152,19 @@ class LlmWithSearch:
         except Exception as unavailable:  # the SDK's own errors, whatever it raises
             raise LlmUnavailableError(str(unavailable)) from unavailable
 
-        text = _the_prose(answer)
-        if not text.strip():
-            raise LlmUnavailableError("the model answered with no text at all")
-
         searches = _web_searches(answer)
         billed_in, billed_out = _usage(answer, "input_tokens"), _usage(answer, "output_tokens")
         cost = self._pricing.cost_of(
             input_tokens=billed_in, output_tokens=billed_out, web_searches=searches
         )
+
+        # **Priced before it is judged.** The provider answered and billed for it; whether the
+        # answer was usable is our problem, not a reason to forget the charge.
+        text = _the_prose(answer)
+        if not text.strip():
+            raise LlmUnavailableError(
+                "the model answered with no text at all", cost_eur=cost, calls=1
+            )
         answered = Answered(
             text=text,
             citations=_pages_read(answer),

@@ -60,7 +60,7 @@ def select_active_value(
     wins only when it is the last one standing, and it is still returned as what it is, with
     its own dates, for the reader to see.
     """
-    survivors = _the_values_this_attribute_may_rank(values, attribute)
+    survivors = _the_values_this_attribute_may_rank(values, attribute, priority)
     if not survivors:
         return None
     return min(
@@ -83,7 +83,7 @@ def select_active_values(
     Which option a score uses is a criterion's choice, made later and never here.
     """
     grouped: dict[ActiveValueKey, list[Value]] = {}
-    for value in _the_values_this_attribute_may_rank(values, attribute):
+    for value in _the_values_this_attribute_may_rank(values, attribute, priority):
         grouped.setdefault((value.candidate, value.breakdown_option), []).append(value)
     return {
         key: chosen
@@ -94,11 +94,16 @@ def select_active_values(
 
 
 def _the_values_this_attribute_may_rank(
-    values: Iterable[Value], attribute: Attribute
+    values: Iterable[Value], attribute: Attribute, priority: SourcePriority
 ) -> list[Value]:
-    """Rule 1, and the guard that the caller is comparing comparable things.
+    """Rules 1 and 1a, and the guard that the caller is comparing comparable things.
 
     A rejected value stays stored and visible with its reason; it simply never competes.
+
+    **A value from a switched-off source is the same case** (P87). The `active_value` view
+    requires `source_is_enabled` and this did not, so with a switched-off source holding the
+    top-priority figure the two disagreed about the winner -- which this module exists to make
+    impossible: "same inputs, same winner" is its whole contract with the SQL.
     """
     kept = []
     for value in values:
@@ -106,7 +111,7 @@ def _the_values_this_attribute_may_rank(
             raise MismatchedAttributeError(
                 f"{value.attribute!r} cannot be ranked by the rules of {attribute.id!r}"
             )
-        if not value.is_rejected:
+        if not value.is_rejected and not priority.is_switched_off(value.data_source):
             kept.append(value)
     return kept
 

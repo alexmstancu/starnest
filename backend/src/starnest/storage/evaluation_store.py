@@ -26,7 +26,14 @@ from starnest.criteria import (
     PillarWeight,
     ScaleAnchor,
 )
-from starnest.data import AttributeId, CompoundRuleId, MatchRuleId, PillarId, ValueType
+from starnest.data import (
+    AttributeId,
+    CompoundRuleId,
+    ConfidenceLevel,
+    MatchRuleId,
+    PillarId,
+    ValueType,
+)
 from starnest.evaluation import (
     AttributeScore,
     CandidateResult,
@@ -37,6 +44,7 @@ from starnest.evaluation import (
     SavedEvaluation,
     UnknownEvaluationError,
 )
+from starnest.evaluation.ranking import pillars_of
 from starnest.storage.connections import acquire
 from starnest.storage.queries import load_queries
 
@@ -266,6 +274,14 @@ def _result(result: CandidateResult) -> dict[str, Any]:
         # so that the saved row says what this evaluation actually knew.
         "parent_not_matching": False,
         "rank": result.rank,
+        # **Stored, never recomputed on the way out** (`0486`). Recomputing the split would
+        # read today's values through today's source priority, and an evaluation exists
+        # precisely so that it does not move.
+        **{
+            f"coverage_{grade.value}": _number(result.coverage_by_confidence.get(grade))
+            for grade in ConfidenceLevel
+        },
+        "insufficient_reason": result.insufficient_reason,
     }
 
 
@@ -291,7 +307,22 @@ def _result_from(row: Any, attribute_scores: tuple[AttributeScore, ...] = ()) ->
         coverage=Decimal(row.coverage),
         match_status=MatchStatus(row.match_status),
         rank=row.rank,
+        # An evaluation saved before `0486` has no split: an empty mapping is what the domain
+        # already means by "nothing covered", and it is the honest answer for a row that never
+        # recorded one. A share that was stored as zero comes back as zero.
+        coverage_by_confidence={
+            grade: Decimal(share)
+            for grade in ConfidenceLevel
+            if (share := getattr(row, f"coverage_{grade.value}", None)) is not None
+        },
+        insufficient_reason=getattr(row, "insufficient_reason", None),
         attribute_scores=attribute_scores,
+        # **Derived from the breakdown, never stored** -- the same shape as `RunDetail.by_source`
+        # and for the same reason: a rollup kept beside the rows it rolls up is a second copy
+        # that can disagree with them. The live path calls this function on the same input, so
+        # the two cannot drift; leaving it empty here is what made a saved drill-down show no
+        # pillar cards at all while the live one showed eleven.
+        pillar_scores=pillars_of(attribute_scores),
         warnings=tuple(
             RuleWarning(compound_rule=CompoundRuleId(flag["compound_rule"]), detail=flag["detail"])
             for flag in getattr(row, "warnings", []) or []

@@ -27,7 +27,7 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.bodies import ContractBody
-from starnest.api.dependencies import Criteria
+from starnest.api.dependencies import Catalog, Criteria
 from starnest.criteria import (
     BooleanThreshold,
     CriteriaSet,
@@ -44,6 +44,7 @@ from starnest.criteria import (
     UnknownCriterionError,
 )
 from starnest.criteria.criteria_set import THE_SCORING_RULE
+from starnest.data import UnknownCompoundRuleError, UnknownMatchRuleError
 
 router = APIRouter(tags=["criteria"])
 
@@ -426,7 +427,17 @@ class RenameBody(BaseModel):
 
 
 class PillarWeightInput(BaseModel):
-    weight: float = Field(ge=0, le=100)
+    """A pillar's weight, its lock, or both.
+
+    **The weight is optional so a lock can travel alone** (P68). A lock holds its weight where
+    it is, and `rebalancing.py` refuses moving a locked weight *even to the value it already
+    holds* -- so a request carrying both could never release a lock: the move is applied first
+    and refused before the flag is read. The criterion endpoint has always accepted a
+    lock-only body; this one required a weight and so could express the lock but never the
+    unlock.
+    """
+
+    weight: float | None = Field(default=None, ge=0, le=100)
     weight_locked: bool | None = None
 
 
@@ -510,7 +521,14 @@ async def update_pillar_weight(
     """
     current = await criteria.read_criteria_set(criteria_set_id)
     level = _the_level_of(current, pillar_id)
-    changed = current.with_pillar_weight(pillar_id, level, Decimal(str(body.weight)))
+    # **Only when a weight was sent.** A lock-only request moves nothing, and asking the domain
+    # to move a locked weight to the value it already holds is refused -- correctly, since that
+    # is still a move. Unlocking is its own change, and the move comes after.
+    changed = (
+        current
+        if body.weight is None
+        else current.with_pillar_weight(pillar_id, level, Decimal(str(body.weight)))
+    )
     if body.weight_locked is not None:
         changed = changed.model_copy(
             update={
@@ -564,13 +582,24 @@ def _the_level_of(criteria_set: CriteriaSet, pillar: str) -> str:
     status_code=204,
 )
 async def set_match_rule_enforcement(
-    criteria_set_id: str, match_rule_id: str, body: EnforcementBody, criteria: Criteria
+    criteria_set_id: str,
+    match_rule_id: str,
+    body: EnforcementBody,
+    criteria: Criteria,
+    catalog: Catalog,
 ) -> Response:
     """Whether this set enforces a gate.
 
     **A preference, not a fact** (`arch.md` 3.6): the gate's answer belongs to the candidate and
     stays stored either way; this decides only whether it counts against the score.
+
+    **The gate is looked up before it is stored** (P67). `criteria_set_match_rule.match_rule`
+    is a foreign key and nothing translated its violation, so naming a gate that does not exist
+    reached psycopg and answered 500 -- a request that is merely wrong reported as a fault in
+    the server. `api/rules.py` has always done this lookup; these two toggles did not.
     """
+    if not any(str(rule.id) == match_rule_id for rule in await catalog.read_match_rules()):
+        raise UnknownMatchRuleError(f"there is no gate {match_rule_id!r}")
     current = await criteria.read_criteria_set(criteria_set_id)
     enforced = set(current.enforced_match_rules)
     enforced.add(match_rule_id) if body.is_enforced else enforced.discard(match_rule_id)
@@ -586,10 +615,19 @@ async def set_match_rule_enforcement(
     status_code=204,
 )
 async def set_compound_rule_application(
-    criteria_set_id: str, compound_rule_id: str, body: ApplicationBody, criteria: Criteria
+    criteria_set_id: str,
+    compound_rule_id: str,
+    body: ApplicationBody,
+    criteria: Criteria,
+    catalog: Catalog,
 ) -> Response:
     """Whether this set applies a compound rule. An undecided rule fires either way -- which is
-    to say, not at all (`reqs.md` 7.4)."""
+    to say, not at all (`reqs.md` 7.4).
+
+    Looked up before it is stored, for the reason given on the gate toggle above.
+    """
+    if not any(str(rule.id) == compound_rule_id for rule in await catalog.read_compound_rules()):
+        raise UnknownCompoundRuleError(f"there is no compound rule {compound_rule_id!r}")
     current = await criteria.read_criteria_set(criteria_set_id)
     applied = set(current.applied_compound_rules)
     applied.add(compound_rule_id) if body.is_applied else applied.discard(compound_rule_id)

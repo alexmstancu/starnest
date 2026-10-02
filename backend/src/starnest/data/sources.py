@@ -20,7 +20,23 @@ from starnest.data.identifiers import DataSourceId, ReliabilityTierId
 
 
 class UnknownDataSourceError(LookupError):
-    """A source was asked for that the catalog does not contain."""
+    """A request named a source the catalog does not contain, in its body.
+
+    **A fault in what was sent**, which is why the API answers 422: the request reached a real
+    resource and asked it to record something impossible. `NoSuchDataSourceError` is the other
+    half -- a path naming a source that is not there -- and the two are kept apart because the
+    remedy differs. One means "correct the value you sent"; the other means "there is nothing
+    at this address".
+    """
+
+
+class NoSuchDataSourceError(LookupError):
+    """A path named a source the catalog does not contain.
+
+    404, like every other named resource that is not there (P93). This used to share
+    `UnknownDataSourceError` and so answered 422, alone among the endpoints that address a
+    thing by id.
+    """
 
 
 class InvalidSourcePriorityError(ValueError):
@@ -101,8 +117,14 @@ class SourcePriority:
         sources: Iterable[DataSource],
         overrides: Iterable[SourcePriorityOverride] = (),
     ) -> None:
+        sources = list(sources)
         self._default_priority = _distinct_default_priorities(sources)
         self._override_rank = _distinct_override_ranks(overrides, known=self._default_priority)
+        # **Which sources are switched off, so the Python rule can apply the view's rule 1a.**
+        # `active_value` requires `source_is_enabled` and `select_active_value` did not, so the
+        # two could name different winners for the same rows -- the one thing this module's
+        # docstring says must never happen (P87).
+        self._switched_off = frozenset(source.id for source in sources if not source.is_enabled)
 
     @classmethod
     def global_order(cls, sources: Iterable[DataSource]) -> Self:
@@ -125,6 +147,15 @@ class SourcePriority:
             raise UnknownDataSourceError(
                 f"no source {source!r}; this priority knows {sorted(self._default_priority)}"
             ) from None
+
+    def is_switched_off(self, source: DataSourceId | str) -> bool:
+        """Whether the household has switched this source off (`reqs.md` 2, Q232).
+
+        A switched-off source keeps every value it ever stored and simply stops competing for
+        the active one -- the same shape as a rejected value, and for the same reason: nothing
+        is discarded, it just does not win.
+        """
+        return source in self._switched_off
 
     @property
     def ordered(self) -> tuple[DataSourceId, ...]:

@@ -45,10 +45,15 @@ OVERBURDEN = "country.housing_cost_overburden_rate"
 
 
 class ADyingSource(SourceAdapter):
-    """Answers one attribute and then dies, which is the shape of a process killed mid-run."""
+    """Answers one attribute and then dies, which is the shape of a process killed mid-run.
 
-    def __init__(self) -> None:
+    `declines` makes it refuse a candidate on the attribute it does answer, so the run reaches
+    its death with a failure already in hand -- the state that proved the fault in P66.
+    """
+
+    def __init__(self, declines: tuple[str, ...] = ()) -> None:
         self._asked = 0
+        self._declines = declines
 
     @property
     def data_source(self):  # type: ignore[no-untyped-def]
@@ -64,7 +69,7 @@ class ADyingSource(SourceAdapter):
         self._asked += 1
         if self._asked > 1:
             raise RuntimeError("the process died here")
-        return await a_stub_source(answers=(str(attribute.id),), silent_about=()).fetch(
+        return await a_stub_source(answers=(str(attribute.id),), silent_about=self._declines).fetch(
             attribute, candidates
         )
 
@@ -106,6 +111,36 @@ class TestAProcessThatDiedMidRun:
             runs = (await api.get("/v1/data-acquisition-runs?limit=1")).json()["items"]
 
         assert runs[0]["run_status"] == "failed"
+
+    async def test_what_it_had_failed_on_survives_the_death_too(self, database_url: str) -> None:
+        """**The failures are written before the run is closed** (P66).
+
+        This exit used to call `finish_run` without `record_failures`, which the success path
+        and both halts do -- so a run that declined three items and then died was recorded as
+        having failed on nothing, and a retry answered "failed on nothing, so there is nothing
+        to retry" about it. The figures surviving was already proved above; what the run could
+        not get is the other half of the same trace, and the path where a source's outage is
+        likeliest is exactly this one.
+        """
+        async with an_api(database_url, (ADyingSource(declines=("country.portugal",)),)) as api:
+            with pytest.raises(RuntimeError, match="the process died"):
+                await api.post(
+                    "/v1/data-acquisition-runs",
+                    json={
+                        "level": COUNTRY,
+                        "attributes": [OVERBURDEN, "country.overcrowding_rate"],
+                    },
+                )
+
+            run = (await api.get("/v1/data-acquisition-runs?limit=1")).json()["items"][0]
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        assert detail["run_status"] == "failed"
+        assert detail["items_failed"] >= 1
+        assert [failure["candidate"] for failure in detail["failures"]] == ["country.portugal"]
+        # **The rows are what a retry asks about**, and the endpoint refuses with 409 when
+        # there are none. Not retried here: this source dies on its second call by
+        # construction, so the retry would die too and prove nothing about the rows.
 
     async def test_a_run_the_kill_left_running_is_swept_at_the_next_boot(
         self, database_url: str

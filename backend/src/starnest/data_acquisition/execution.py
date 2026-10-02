@@ -265,8 +265,12 @@ async def continue_run(opened: OpenedRun) -> Run:
                 # (P47). It records each answer's cost itself, which is why nothing accumulates
                 # into it below.
                 meter=meter,
+                # **This run's own list, filled as each attribute is answered.** The outcome
+                # carries the same failures, and extending from it here would double them --
+                # what this buys is that a `fetch` raising partway through leaves the ones
+                # already found in hand (P66).
+                collecting=failures,
             )
-            failures.extend(outcome.failures)
             _log.info(
                 "run %d: %s answered %d figure(s) and failed on %d",
                 run,
@@ -302,6 +306,15 @@ async def continue_run(opened: OpenedRun) -> Run:
                     failure.candidate or "any candidate",
                     failure.reason,
                 )
+        # **Asked once more after the last source** (P88). The check above runs *before* each
+        # adapter, so a run with one source -- or a stop arriving while the last one was
+        # working -- finished `completed` with `stop_requested_at` set, and went on to borrow
+        # stand-ins after the person had asked it to stop. A stop is a request to stop doing
+        # more work, and borrowing is more work.
+        if await runs.stop_was_requested(run):
+            _log.info("run %d was stopped before the stand-ins were applied", run)
+            return await _halt(run, runs, candidates, failures, RunStatus.HALTED_BY_USER)
+
         # Last, so a substitute's figure fetched in this same run is the one borrowed.
         borrowed = await stand_in(
             stand_ins=opened.stand_ins,
@@ -315,7 +328,20 @@ async def continue_run(opened: OpenedRun) -> Run:
         # The run stays visible as one that could not proceed, rather than as one still
         # running for ever. Re-raised because an unexpected failure is a bug, and a tidy
         # record of it is not a reason to swallow it.
+        #
+        # **The failures collected before the fault are written first** (P66). This path used
+        # to close the run without them, so a source that declined three items and a later
+        # source that raised produced a `failed` run with `items_failed` 0 and no failure rows
+        # -- and a retry answering "failed on nothing, so there is nothing to retry" about a
+        # run that failed on three things. The success path and both halts have always recorded
+        # them; this was the one exit that did not, on the path where a source's outage is
+        # likeliest. A second fault while recording must not mask the first, so it is logged
+        # and the original exception is the one that propagates.
         _log.exception("run %d could not proceed and is recorded as failed", run)
+        try:
+            await runs.record_failures(run, _item_by_item(failures, candidates))
+        except Exception:
+            _log.exception("run %d could not even record what it had failed on", run)
         await runs.finish_run(run, status=RunStatus.FAILED, finished_at=datetime.now(tz=UTC))
         raise
 

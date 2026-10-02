@@ -176,8 +176,13 @@ class TestSwitchingASourceOff:
     ) -> None:
         answer = await api.patch("/v1/data-sources/no_such_source", json={"is_enabled": False})
 
-        assert answer.status_code == 422
-        assert answer.json()["code"] == "unknown_data_source"
+        # **404, like every other named resource that is not there** (P93). This answered 422
+        # alone among the endpoints that address a thing by id -- 422 says the request was
+        # understood and its content refused, which is the wrong story for a path pointing at
+        # nothing. `UnknownDataSourceError` is still 422 and still right: `rules.py` raises it
+        # for a source named in a request *body*.
+        assert answer.status_code == 404
+        assert answer.json()["code"] == "not_found"
 
     async def test_nothing_else_about_a_source_may_be_changed(self, api: httpx.AsyncClient) -> None:
         """What a source *is* stays catalog, changed by migration (`arch.md` 1.2)."""

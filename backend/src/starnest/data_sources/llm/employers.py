@@ -111,6 +111,12 @@ class LlmEmployersAdapter(SourceAdapter):
             try:
                 answered = await self._llm.ask(PROMPT.format(country=candidate.name))
             except LlmUnavailableError as unavailable:
+                # **What the attempt billed is kept** (P71). A provider that replied charges
+                # for the reply whether or not we could use it, so dropping the cost here made
+                # the spend cap unenforceable exactly when a model is misbehaving. Zero when
+                # the call never reached the provider, which the exception states.
+                cost += unavailable.cost_eur
+                calls += unavailable.calls
                 failures.append(
                     AcquisitionFailure(
                         attribute=attribute.id,
@@ -130,6 +136,10 @@ class LlmEmployersAdapter(SourceAdapter):
                 values.append(outcome)
 
         return Acquired(values=tuple(values), failures=tuple(failures), cost_eur=cost, calls=calls)
+
+
+MOST_EMPLOYERS_WORTH_NAMING = 12
+"""What the prompt asks for, as a number the code can hold it to."""
 
 
 def _the_employers_named(
@@ -157,7 +167,22 @@ def _the_employers_named(
     except (json.JSONDecodeError, ValueError) as unreadable:
         return refused(f"the model's reply was not the JSON object it was asked for: {unreadable}")
 
-    named = [str(name).strip() for name in reply.get("employers", []) if str(name).strip()]
+    # **A list, checked for being one** (P72). `reply` is whatever the model returned, and
+    # `{"employers": "Google"}` is a shape it can produce -- iterating a string yields its
+    # characters, so that stored a `LabelSet` of G, o, g, l, e with real citations attached to
+    # it. A reply that is not the asked-for shape has not answered.
+    listed = reply.get("employers", [])
+    if not isinstance(listed, list):
+        return refused(
+            "the model replied with a single value where a list of employers was asked for: "
+            f"{type(listed).__name__}"
+        )
+
+    named = [str(name).strip() for name in listed if str(name).strip()]
+    # **The ceiling the prompt states, enforced** (`reqs.md` 6.10 asks for a bounded list).
+    # A prompt is a request; a model that names forty is not refused outright, because the
+    # first twelve are still a usable answer and the rest are the part nobody asked for.
+    named = named[:MOST_EMPLOYERS_WORTH_NAMING]
     if not named:
         return refused(
             f"the model found no international employer it could cite for {candidate.name}: "

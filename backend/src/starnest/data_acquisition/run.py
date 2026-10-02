@@ -45,6 +45,7 @@ async def acquire(
     values: ValueStore,
     run: int | None = None,
     meter: CostMeter | None = None,
+    collecting: list[AcquisitionFailure] | None = None,
 ) -> RunOutcome:
     """Fetch every attribute this source can answer, and append what it found.
 
@@ -97,9 +98,20 @@ async def acquire(
             stored.extend(await values.append(fetched))
         # Which source failed, stamped for the same reason as the run above: two sources answer
         # the total tax rate, and a retry has to know which one to ask again.
-        failures.extend(
+        #
+        # **Handed to the caller as they happen, not only in the return value** (P66). The
+        # comment above explains why figures are appended per attribute rather than once at the
+        # end -- a process dying mid-source would lose the lot. Failures are the other half of
+        # what a run produces and were returned only on the way out, so the same death lost
+        # every one of them and the run was recorded as having failed on nothing. `collecting`
+        # is the caller's own list, so what is known survives an exception from the next
+        # `fetch`.
+        stamped = [
             replace(failure, data_source=adapter.data_source) for failure in acquired.failures
-        )
+        ]
+        failures.extend(stamped)
+        if collecting is not None:
+            collecting.extend(stamped)
 
         # After this answer is stored, never before it: the cap stops the *next* call, and
         # what has already been paid for is kept. The run one level up sees the exhausted meter

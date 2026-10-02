@@ -30,6 +30,7 @@ ALTER TABLE data_acquisition_run
 -- A run that ended because somebody stopped it must have been asked to stop. The reverse is not
 -- required: a stop asked for while the last item was already in flight leaves a run that
 -- completed, which is the honest outcome and not a failure of the stop.
+-- depends: 0482-an-evaluations-snapshot-dies-with-it
 ALTER TABLE data_acquisition_run
     ADD CONSTRAINT data_acquisition_run_halted_by_user_was_asked_to_stop
         CHECK (run_status <> 'halted_by_user' OR stop_requested_at IS NOT NULL);

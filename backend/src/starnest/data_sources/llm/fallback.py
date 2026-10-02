@@ -135,6 +135,12 @@ class LlmFallbackAdapter(SourceAdapter):
                     )
                 )
             except LlmUnavailableError as unavailable:
+                # **What the attempt billed is kept** (P71). A provider that replied charges
+                # for the reply whether or not we could use it, so dropping the cost here made
+                # the spend cap unenforceable exactly when a model is misbehaving. Zero when
+                # the call never reached the provider, which the exception states.
+                cost += unavailable.cost_eur
+                calls += unavailable.calls
                 failures.append(
                     AcquisitionFailure(
                         attribute=attribute.id,

@@ -196,6 +196,31 @@ class TestWhatItRefuses:
         with pytest.raises(LlmUnavailableError, match="no text"):
             await a_model({"content": [], "usage": {}}).ask("q")
 
+    async def test_a_refusal_for_an_empty_answer_still_carries_what_it_billed(self) -> None:
+        """**The provider replied, so the provider charged** (P71). Throwing the cost away with
+        the answer made the spend cap unenforceable in the one case where it matters most: a
+        model returning nothing, over and over, metered at 0.00 EUR a call. This method's own
+        docstring already promised "priced at whatever the provider charged"."""
+        empty_but_billed = {
+            "content": [],
+            "usage": {"input_tokens": 1_000_000, "output_tokens": 0},
+        }
+
+        with pytest.raises(LlmUnavailableError) as refused:
+            await a_model(empty_but_billed).ask("q")
+
+        assert refused.value.calls == 1
+        assert refused.value.cost_eur > 0
+
+    async def test_a_call_that_never_reached_the_provider_billed_nothing(self) -> None:
+        """The other half: an SDK error is a call that did not happen, and charging for it
+        would make the cap stop runs that had spent nothing."""
+        with pytest.raises(LlmUnavailableError) as refused:
+            await a_model(RuntimeError("connection refused")).ask("q")
+
+        assert refused.value.calls == 0
+        assert refused.value.cost_eur == 0
+
 
 class TestWhatOneCallWouldCost:
     """Pricing a call **before** making it, which is what a dry-run estimate is (`reqs.md` 6.3).

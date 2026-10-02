@@ -128,6 +128,12 @@ QUERIES_NOTHING_CALLS_YET = {
     "select_currencies": "no endpoint lists the currencies a Monetary may carry",
     "select_confidence_levels": "no endpoint lists the four grades",
     "select_household_fields": "no endpoint lists the household numbers a rule may read",
+    # **Hidden behind a longer name until the guard stopped matching prefixes** (P74). Each was
+    # read as called because another query's name contains it: `insert_candidate_results`,
+    # `select_candidate_result`, `select_levels`. None has ever had a caller.
+    "insert_candidate": "the roster is catalog data, seeded by migration; cities arrive post-MVP",
+    "select_candidate": "every caller wants the roster, so `select_candidates` is what they use",
+    "select_level": "the levels are read as a set; nothing asks about one by id",
 }
 """Queries that exist and nothing calls, each with the reason it is still here (P62).
 
@@ -144,13 +150,36 @@ remembers the SQL, and `Later Equals Never` says the list should not grow quietl
 
 
 def _called_from_source(name: str) -> bool:
-    """Whether any Python under `src/` names this query.
+    """Whether any Python under `src/` calls this query.
 
     A text search rather than an import graph, because aiosql attaches queries by name at
     runtime: `self._queries.select_criteria_set(...)` is the only evidence there is, and it is
     the same evidence a reader has.
+
+    **The call, not the name** (P74). A plain substring search matched a *prefix* of a longer
+    query's name -- `insert_candidate` is a substring of `insert_candidate_results`, and
+    `select_candidate` of `select_candidate_result` -- so two queries with no caller at all
+    passed this guard as live, which is the one thing it exists to prevent. Matching the open
+    bracket that follows a call makes a prefix no longer enough, and `select_run` can no longer
+    stand in for `select_runs`.
     """
-    return any(name in path.read_text() for path in SOURCE.rglob("*.py"))
+    called = f"{name}("
+    return any(called in path.read_text() for path in SOURCE.rglob("*.py"))
+
+
+def test_the_caller_search_does_not_match_a_longer_name() -> None:
+    """**The guard's own guard** (P74).
+
+    `_called_from_source` is a text search, and a text search for a name that is a prefix of
+    another name finds the wrong one. That is not hypothetical: it hid three queries with no
+    caller at all, for as long as this test has existed. A regression here would be silent
+    again, so the prefix case is asserted directly rather than trusted.
+    """
+    # `insert_candidate_results` is real and called; `insert_candidate` is real and is not.
+    assert _called_from_source("insert_candidate_results")
+    assert not _called_from_source("insert_candidate")
+    assert _called_from_source("select_candidates")
+    assert not _called_from_source("select_candidate")
 
 
 def test_every_query_is_either_called_or_accounted_for() -> None:

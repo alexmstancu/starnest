@@ -16,6 +16,7 @@
 -- plus `ON DELETE CASCADE`. Nothing else about any of them changes: the composite keys that
 -- `0107` and `0108` added to stop a result drifting from its evaluation's level and scale are
 -- reproduced exactly.
+-- depends: 0481-a-refetch-age
 
 ALTER TABLE candidate_attribute_score DROP CONSTRAINT candidate_attribute_score_candidate_result_fkey;
 ALTER TABLE candidate_attribute_score ADD CONSTRAINT candidate_attribute_score_candidate_result_fkey

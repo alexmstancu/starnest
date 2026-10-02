@@ -46,6 +46,49 @@ def _operations(document: dict, *, prefix: str = "") -> dict[str, tuple[str, str
     }
 
 
+def _query_parameters(document: dict, *, prefix: str = "") -> dict[str, set[str]]:
+    """Every operation's query parameters, by operation id.
+
+    Path parameters are left out: they are part of the path shape, which
+    `TestWhatIsImplementedKeptItsDesignedIdentity` already compares. A query parameter is the
+    one that can appear in code without appearing in the design and change nothing visible.
+    """
+    found: dict[str, set[str]] = {}
+    for item in document["paths"].values():
+        shared = item.get("parameters", [])
+        for method, operation in item.items():
+            if method == "parameters" or not isinstance(operation, dict):
+                continue
+            name = operation.get("operationId")
+            if not name:
+                continue
+            found[name] = {
+                resolved["name"]
+                for parameter in [*shared, *operation.get("parameters", [])]
+                for resolved in [_resolved(parameter, document)]
+                if resolved.get("in") == "query"
+            }
+    return found
+
+
+def _resolved(parameter: dict, document: dict) -> dict:
+    """A parameter, following a `$ref` into the document's own components if it is one.
+
+    The design shares `LevelFilter`, `Limit` and `Offset` across a dozen operations, which is
+    the point of components -- and a comparison that does not follow the reference reads every
+    one of them as undeclared.
+    """
+    reference = parameter.get("$ref")
+    if not reference:
+        return parameter
+    target: object = document
+    for step in reference.removeprefix("#/").split("/"):
+        if not isinstance(target, dict):
+            return {}
+        target = target.get(step, {})
+    return target if isinstance(target, dict) else {}
+
+
 @pytest.fixture(scope="module")
 def served() -> dict:
     return _served()
@@ -90,6 +133,30 @@ class TestNothingIsServedThatWasNotDesigned:
         self, recorded: dict, designed: dict
     ) -> None:
         assert set(_operations(recorded, prefix=API_PREFIX)) <= set(_operations(designed))
+
+    def test_no_query_parameter_was_invented_in_code(self, served: dict, designed: dict) -> None:
+        """**Operations were compared and parameters were not** (P84).
+
+        `/attributes` served `include_retired` for as long as it has existed and the design
+        never mentioned it -- so a parameter that changes which rows a caller gets back was
+        reachable, undocumented, and invisible to the one test whose job is to say what the
+        gap between design and reality is. The design is deliberately ahead of the code, so a
+        parameter it declares and nothing serves is fine; one the code serves and it does not
+        declare is the direction this file exists to forbid.
+        """
+        served_parameters = _query_parameters(served, prefix=API_PREFIX)
+        designed_parameters = _query_parameters(designed)
+
+        invented = {
+            name: sorted(parameters - designed_parameters.get(name, set()))
+            for name, parameters in served_parameters.items()
+            if parameters - designed_parameters.get(name, set())
+        }
+
+        assert invented == {}, (
+            f"these operations accept query parameters the design does not declare: "
+            f"{invented}. Add them to docs/openapi.yaml, or stop accepting them."
+        )
 
 
 class TestWhatIsImplementedKeptItsDesignedIdentity:

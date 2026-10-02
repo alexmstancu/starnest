@@ -12,6 +12,7 @@ import pytest
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.criteria import Goal, NormalisationMethod
+from starnest.data import ConfidenceLevel
 from starnest.evaluation import (
     AttributeScore,
     CandidateResult,
@@ -278,3 +279,123 @@ class TestSweepingWhatATestSaved:
 
     async def test_sweeping_nothing_is_not_an_error(self, pool: AsyncConnectionPool) -> None:
         assert await PostgresEvaluationStore(pool).sweep_test_evaluations() == 0
+
+
+class TestWhatAKeptRankingStillKnowsWhenItIsReopened:
+    """The two fields a save used to lose (`0486`).
+
+    `coverage_by_confidence` (`reqs.md` 5.7) and `insufficient_reason` (5.3) are computed when a
+    ranking is produced and both reach the live screen. Neither had a column, so reopening a
+    kept evaluation showed an empty split and no sentence -- while warnings and non-match
+    reasons round-tripped perfectly, which is what made it look fine.
+    """
+
+    async def test_the_confidence_split_survives_the_round_trip(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        store = PostgresEvaluationStore(pool)
+        split = {
+            ConfidenceLevel.ABSOLUTE: Decimal("0"),
+            ConfidenceLevel.HIGH: Decimal("49"),
+            ConfidenceLevel.MEDIUM: Decimal("0"),
+            ConfidenceLevel.LOW: Decimal("51"),
+        }
+        saved = await store.save(
+            criteria=criteria,
+            level=COUNTRY,
+            results=[a_result(PORTUGAL, 71, 1, coverage_by_confidence=split)],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+        )
+
+        (reopened,) = await store.read_results(saved.id)
+
+        assert reopened.coverage_by_confidence == split
+
+    async def test_a_zero_share_comes_back_as_zero_rather_than_absent(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """ "Of which 0% low" is a fact a screen shows, and a missing key is not the same
+        claim as a zero."""
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        store = PostgresEvaluationStore(pool)
+        saved = await store.save(
+            criteria=criteria,
+            level=COUNTRY,
+            results=[
+                a_result(
+                    PORTUGAL,
+                    71,
+                    1,
+                    coverage_by_confidence={
+                        grade: Decimal(100) if grade is ConfidenceLevel.HIGH else Decimal(0)
+                        for grade in ConfidenceLevel
+                    },
+                )
+            ],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+        )
+
+        (reopened,) = await store.read_results(saved.id)
+
+        assert reopened.coverage_by_confidence[ConfidenceLevel.LOW] == 0
+
+    async def test_the_reason_a_candidate_could_not_be_scored_survives(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        store = PostgresEvaluationStore(pool)
+        saved = await store.save(
+            criteria=criteria,
+            level=COUNTRY,
+            results=[
+                a_result(
+                    GREECE,
+                    None,
+                    None,
+                    insufficient_reason="no figure was found for any scored criterion",
+                )
+            ],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+        )
+
+        (reopened,) = await store.read_results(saved.id)
+
+        assert reopened.insufficient_reason == ("no figure was found for any scored criterion")
+
+    async def test_a_candidate_that_scored_carries_no_reason(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """A row holding both a score and an explanation of why it has none is two answers to
+        one question, and the schema refuses it."""
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        store = PostgresEvaluationStore(pool)
+        saved = await store.save(
+            criteria=criteria,
+            level=COUNTRY,
+            results=[a_result(PORTUGAL, 71, 1)],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+        )
+
+        (reopened,) = await store.read_results(saved.id)
+
+        assert reopened.insufficient_reason is None
+
+    async def test_a_scored_candidate_with_a_reason_is_refused_by_the_schema(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        store = PostgresEvaluationStore(pool)
+
+        with pytest.raises(Exception, match="explains_only_what_it_could_not_score"):
+            await store.save(
+                criteria=criteria,
+                level=COUNTRY,
+                results=[a_result(PORTUGAL, 71, 1, insufficient_reason="but it did score")],
+                score_scale_max=100,
+                computed_at=COMPUTED_AT,
+            )

@@ -1355,19 +1355,38 @@ components:
       title: PillarWeightBody
       type: object
     PillarWeightInput:
+      description: 'A pillar''s weight, its lock, or both.
+
+
+        **The weight is optional so a lock can travel alone** (P68). A lock holds
+        its weight where
+
+        it is, and `rebalancing.py` refuses moving a locked weight *even to the value
+        it already
+
+        holds* -- so a request carrying both could never release a lock: the move
+        is applied first
+
+        and refused before the flag is read. The criterion endpoint has always accepted
+        a
+
+        lock-only body; this one required a weight and so could express the lock but
+        never the
+
+        unlock.'
       properties:
         weight:
-          maximum: 100.0
-          minimum: 0.0
+          anyOf:
+          - maximum: 100.0
+            minimum: 0.0
+            type: number
+          - type: 'null'
           title: Weight
-          type: number
         weight_locked:
           anyOf:
           - type: boolean
           - type: 'null'
           title: Weight Locked
-      required:
-      - weight
       title: PillarWeightInput
       type: object
     PillarWeightsBody:
@@ -2441,7 +2460,10 @@ paths:
       description: 'Whether this set applies a compound rule. An undecided rule fires
         either way -- which is
 
-        to say, not at all (`reqs.md` 7.4).'
+        to say, not at all (`reqs.md` 7.4).
+
+
+        Looked up before it is stored, for the reason given on the gate toggle above.'
       operationId: setCompoundRuleApplication
       parameters:
       - in: path
@@ -2591,7 +2613,19 @@ paths:
         **A preference, not a fact** (`arch.md` 3.6): the gate''s answer belongs to
         the candidate and
 
-        stays stored either way; this decides only whether it counts against the score.'
+        stays stored either way; this decides only whether it counts against the score.
+
+
+        **The gate is looked up before it is stored** (P67). `criteria_set_match_rule.match_rule`
+
+        is a foreign key and nothing translated its violation, so naming a gate that
+        does not exist
+
+        reached psycopg and answered 500 -- a request that is merely wrong reported
+        as a fault in
+
+        the server. `api/rules.py` has always done this lookup; these two toggles
+        did not.'
       operationId: setMatchRuleEnforcement
       parameters:
       - in: path

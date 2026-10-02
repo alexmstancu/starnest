@@ -48,6 +48,14 @@ class UnknownMatchRuleError(LookupError):
     """A gate was named that the catalog does not have."""
 
 
+class UnknownCompoundRuleError(LookupError):
+    """A compound rule was named that the catalog does not have.
+
+    Separate from `UnknownMatchRuleError` because the two name different things and a reader of
+    the refusal should be told which kind of rule was not found.
+    """
+
+
 class MatchResult(StrEnum):
     """What one gate says about one candidate.
 

@@ -166,7 +166,12 @@ class TestARefusalTheStopRuleRequires:
         response = await api.get("/v1/rankings", params={"criteria_set": MINIMAL, "level": COUNTRY})
 
         assert response.status_code == 409
-        assert "score_scale_max" in response.text
+        # **The code, not a substring of the body.** `"score_scale_max" in response.text` is
+        # true of `{"detail": {...}}` too -- FastAPI's own validation shape -- so this passed
+        # for either of the two error shapes P14 exists to keep apart, which is the one thing
+        # it was written to distinguish.
+        assert response.json()["code"] == "score_scale_not_set"
+        assert "score_scale_max" in response.json()["message"]
 
 
 async def _set_the_score_scale(database_url: str, scale: int | None) -> None:

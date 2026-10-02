@@ -141,10 +141,52 @@ class TestTheRulesASetEnforces:
     ) -> None:
         path = f"/v1/criteria-sets/{a_scratch_criteria_set}/compound-rules/cheap_but_taxed"
 
-        await api.put(path, json={"is_applied": True})
+        applied = await api.put(path, json={"is_applied": True})
         after = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+        dropped = await api.put(path, json={"is_applied": False})
+        without = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
 
+        assert applied.status_code == 204
+        assert dropped.status_code == 204
         assert "cheap_but_taxed" in after["applied_compound_rules"]
+        assert "cheap_but_taxed" not in without["applied_compound_rules"]
+
+    async def test_a_gate_the_catalog_does_not_have_is_a_404(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """**Not a 500** (P67). The stored column is a foreign key and nothing translated its
+        violation, so naming a gate that does not exist reached the driver and was reported as
+        a fault in the server -- for a request that is merely wrong."""
+        response = await api.put(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/match-rules/no_such_gate",
+            json={"is_enforced": True},
+        )
+
+        assert response.status_code == 404
+        assert response.json()["code"] == "not_found"
+
+    async def test_a_compound_rule_the_catalog_does_not_have_is_a_404(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        response = await api.put(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/compound-rules/no_such_rule",
+            json={"is_applied": True},
+        )
+
+        assert response.status_code == 404
+        assert response.json()["code"] == "not_found"
+
+    async def test_releasing_a_gate_that_does_not_exist_is_refused_too(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """Releasing an unknown gate would otherwise answer 204 for a no-op, which reads as
+        confirmation that a gate nobody has was switched off."""
+        response = await api.put(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/match-rules/no_such_gate",
+            json={"is_enforced": False},
+        )
+
+        assert response.status_code == 404
 
 
 class TestSettings:

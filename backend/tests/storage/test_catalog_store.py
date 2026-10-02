@@ -74,6 +74,39 @@ async def test_every_pillar_has_a_name(catalog: PostgresCatalogStore) -> None:
     assert len({pillar.id for pillar in pillars}) == len(pillars)
 
 
+async def test_the_pillars_come_back_in_the_order_the_catalog_states(
+    catalog: PostgresCatalogStore,
+) -> None:
+    """**The order is catalog data, not the query's accident** (`0484`).
+
+    Before `display_order` existed every screen showed whatever sequence the plan returned,
+    which sorted alphabetically and put Career before Economy. The order a reader sees is a
+    decision somebody made, so it is a column.
+    """
+    pillars = await catalog.read_pillars()
+    slots = [pillar.display_order for pillar in pillars]
+
+    assert slots == sorted(slots), "read_pillars does not return them in their stated order"
+    assert len(set(slots)) == len(slots), "two pillars claim the same slot"
+    assert slots == list(range(1, len(slots) + 1)), "the order has a gap or does not start at 1"
+
+
+async def test_no_two_sources_claim_the_same_priority(catalog: PostgresCatalogStore) -> None:
+    """**A tie makes the order arbitrary** (P76). `ecb` and `unodc` shipped on the same number
+    for months; the listing now breaks ties by id so a reader sees a stable order, but two
+    sources on one number is still a catalog mistake rather than a preference, and nothing
+    looked. `attribute_source_priority` has `UNIQUE (attribute, rank)` -- the per-attribute
+    override is forced unique and the global order it overrides was not."""
+    sources = await catalog.read_data_sources()
+    priorities = [source.default_priority for source in sources]
+
+    duplicated = sorted({rank for rank in priorities if priorities.count(rank) > 1})
+    assert not duplicated, (
+        f"these priorities are claimed by more than one source: {duplicated}. "
+        "Give each its own place, or the order between them is whatever the plan returns."
+    )
+
+
 async def test_an_attribute_carries_the_declarations_of_its_own_type(
     catalog: PostgresCatalogStore,
 ) -> None:

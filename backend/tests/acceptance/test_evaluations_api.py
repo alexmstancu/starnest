@@ -140,9 +140,13 @@ class TestTheDrillDownOnALiveRanking:
             )
         ).json()
 
-        assert live["candidate"] == saved["candidate"]
-        assert live["score"] == saved["score"]
-        assert live["attribute_scores"] == saved["attribute_scores"]
+        # **Every field, not three of them.** This compared the candidate, the score and the
+        # breakdown, and passed for months while `coverage_by_confidence` and
+        # `insufficient_reason` were not stored at all -- a saved ranking showed an empty
+        # confidence split and no sentence, and the test whose whole job is "these two paths
+        # agree" was looking the other way (`0486`). Comparing the body is the assertion the
+        # docstring already claimed to be making.
+        assert live == saved
 
     async def test_the_contributions_add_up_to_the_score(
         self, api: httpx.AsyncClient, stored_figures: None

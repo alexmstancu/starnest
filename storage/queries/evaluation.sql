@@ -83,16 +83,26 @@ JOIN   evaluation AS parent ON parent.id = :evaluation;
 -- non-matching candidate keeps its score and stays visible (reqs.md 5.4).
 INSERT INTO candidate_result (
     evaluation, candidate, level, score, coverage, match_status, parent_not_matching, rank,
-    score_scale_max)
+    score_scale_max, coverage_absolute, coverage_high, coverage_medium, coverage_low,
+    insufficient_reason)
 SELECT :evaluation, result.candidate, parent.level, result.score, result.coverage,
-       result.match_status, result.parent_not_matching, result.rank, parent.score_scale_max
+       result.match_status, result.parent_not_matching, result.rank, parent.score_scale_max,
+       result.coverage_absolute, result.coverage_high, result.coverage_medium,
+       result.coverage_low, result.insufficient_reason
 FROM   jsonb_to_recordset(:results::jsonb) AS result(
            candidate           text,
            score               integer,
            coverage            numeric,
            match_status        text,
            parent_not_matching boolean,
-           rank                integer)
+           rank                integer,
+           -- The confidence split behind the coverage, and the sentence shown instead of a
+           -- score. Both reach the live screen and neither used to be kept (`0486`).
+           coverage_absolute   numeric,
+           coverage_high       numeric,
+           coverage_medium     numeric,
+           coverage_low        numeric,
+           insufficient_reason text)
 JOIN   evaluation AS parent ON parent.id = :evaluation
 RETURNING id, candidate;
 
@@ -191,6 +201,11 @@ SELECT r.id,
        r.match_status,
        r.parent_not_matching,
        r.rank,
+       r.coverage_absolute,
+       r.coverage_high,
+       r.coverage_medium,
+       r.coverage_low,
+       r.insufficient_reason,
        COALESCE(
            (SELECT jsonb_agg(jsonb_build_object(
                        'attribute',     reason.attribute,
@@ -259,7 +274,16 @@ SELECT r.id,
        r.coverage,
        r.match_status,
        r.parent_not_matching,
-       r.rank
+       r.rank,
+       -- The same columns `select_evaluation_results` returns. Two statements read this table
+       -- and both feed `_result_from`, so a column added to one and not the other reads as
+       -- absent on exactly one screen -- which is how the drill-down on a saved ranking
+       -- showed an empty confidence split while the list beside it showed a full one.
+       r.coverage_absolute,
+       r.coverage_high,
+       r.coverage_medium,
+       r.coverage_low,
+       r.insufficient_reason
 FROM   candidate_result AS r
 JOIN   candidate AS c ON c.id = r.candidate
 WHERE  r.evaluation = :evaluation
@@ -275,6 +299,13 @@ WHERE  r.evaluation = :evaluation
 --
 -- The frozen pillar and weight come from evaluation_criterion rather than from the live
 -- catalog, so the drill-down reproduces the total it is explaining.
+--
+-- The *order* is the one exception, and deliberately reads the live pillar: ordering by
+-- pillar id put career before economics, while the live drill-down orders by display_order,
+-- so the two paths returned the same rows in different orders and saving a ranking appeared
+-- to reshuffle it. Order is presentation, never a frozen figure -- a later reordering of the
+-- pillars re-sorts an old drill-down, which is wanted, because the alternative is one screen
+-- disagreeing with the other.
 SELECT s.attribute,
        ec.pillar,
        ec.weight,
@@ -299,10 +330,11 @@ FROM   candidate_result AS r
 JOIN   candidate_attribute_score AS s ON s.candidate_result = r.id
 LEFT   JOIN evaluation_criterion AS ec
             ON ec.evaluation = r.evaluation AND ec.attribute = s.attribute
+LEFT   JOIN pillar AS frozen_pillar ON frozen_pillar.id = ec.pillar
 LEFT   JOIN value AS used ON used.id = s.used_value
 WHERE  r.evaluation = :evaluation
   AND  r.candidate = :candidate
-ORDER  BY ec.pillar NULLS LAST, s.attribute;
+ORDER  BY frozen_pillar.display_order NULLS LAST, s.attribute;
 
 -- name: delete_evaluation(evaluation)!
 -- A kept result may be discarded. One statement, children first, for the same reason

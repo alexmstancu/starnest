@@ -351,11 +351,18 @@ async def retry(
     # household edits, so a cap set after a refusal takes effect on the next request. This
     # endpoint used to read nothing, and both acts below ran with `spend_cap_eur=None` (P42).
     cap = (await households.get_settings()).run_spend_cap_eur
+    # **Filtered as `start` and `plan` filter it, and for the same reason** (P65). Both of them
+    # consult only the switched-on sources; this endpoint passed the raw registry, so a source
+    # the household had switched off was asked again -- and its figures stored where
+    # `active_value` then discards them by `source_is_enabled`, which is work nobody wanted and,
+    # for a source that charges, work paid for. `switched_on` existed and had exactly two
+    # callers, both of them the endpoints that already did this.
+    consulted = switched_on(adapters, await catalog.read_data_sources())
 
     if asked_for.items == "unanswered":
         asked = await ask_again(
             run=earlier,
-            adapters=adapters,
+            adapters=consulted,
             attributes=attributes,
             candidates=roster,
             values=values,
@@ -368,7 +375,7 @@ async def retry(
 
     retried = await retry_run(
         failed=earlier,
-        adapters=adapters,
+        adapters=consulted,
         attributes=attributes,
         candidates=roster,
         values=values,

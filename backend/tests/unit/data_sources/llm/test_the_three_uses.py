@@ -96,6 +96,31 @@ class TestNamingTheEmployers:
         assert acquired.calls == 2
         assert acquired.cost_eur == Decimal("2.0200")
 
+    async def test_one_name_where_a_list_was_asked_for_is_refused(self) -> None:
+        """**Not iterated into its characters** (P72). `{"employers": "Google"}` is a shape a
+        model produces, and a bare `for name in reply["employers"]` over a string yields G, o,
+        o, g, l, e -- stored as a `LabelSet` of six employers with the model's real citations
+        attached, which is a fabricated figure wearing a source."""
+        acquired = await LlmEmployersAdapter(
+            a_model(an_answer('{"employers": "Google"}', pages=(A_PAGE,)))
+        ).fetch(employers_attribute(), [PORTUGAL])
+
+        assert acquired.values == ()
+        (failure,) = acquired.failures
+        assert "a list of employers was asked for" in failure.reason
+
+    async def test_more_names_than_the_prompt_asked_for_are_cut_to_the_ceiling(self) -> None:
+        """The prompt says at most twelve and a prompt is a request, not a constraint. The
+        first twelve are a usable answer, so the surplus is dropped rather than the lot."""
+        many = ", ".join(f'"Firm {n}"' for n in range(20))
+        acquired = await LlmEmployersAdapter(
+            a_model(an_answer(f'{{"employers": [{many}]}}', pages=(A_PAGE,)))
+        ).fetch(employers_attribute(), [PORTUGAL])
+
+        (value,) = acquired.values
+        assert value.payload is not None
+        assert len(value.payload.labels) == 12
+
     async def test_an_answer_that_read_nothing_is_refused(self) -> None:
         acquired = await LlmEmployersAdapter(
             a_model(an_answer('{"employers": ["From memory Ltd"]}', pages=()))

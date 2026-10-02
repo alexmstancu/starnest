@@ -33,7 +33,9 @@ from starnest.data import (
     InvalidManualValueError,
     MalformedMatchRuleResultError,
     ManualEntryNotPermittedError,
+    NoSuchDataSourceError,
     UnknownAttributeError,
+    UnknownCompoundRuleError,
     UnknownDataSourceError,
     UnknownMatchRuleError,
 )
@@ -70,6 +72,8 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     UnknownRunError: _refusal(404, "not_found"),
     UnknownEvaluationError: _refusal(404, "not_found"),
     UnknownCandidateError: _refusal(404, "not_found"),
+    UnknownCompoundRuleError: _refusal(404, "not_found"),
+    NoSuchDataSourceError: _refusal(404, "not_found"),
     UnknownMatchRuleError: _refusal(404, "not_found"),
     HouseholdNotConfiguredError: _refusal(404, "household_not_configured"),
     # 409 -- the request is well formed and the state refuses it.
