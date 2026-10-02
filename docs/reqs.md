@@ -2202,7 +2202,25 @@ way by the active-value rule (section 3.6).
 
 | Attribute | Weight | Value type | Sources | Max age |
 |---|---|---|---|---|
-| `country.house_price_to_income_ratio` | 40% | **Quantity** — a home's price as a multiple of annual income | *None yet* — to be derived (Q204). OECD publishes only its change over time | 24 months |
+| `country.housing_price_level` | 40% | **Quantity** — what housing, water and energy cost against EU27 = 100 | Eurostat `prc_ppp_ind_1`, price level index for COICOP `A0104` | 24 months |
+
+> **`country.housing_price_level` replaced `country.house_price_to_income_ratio` on 2026-10-02**
+> (migration `0488`). Q204 deferred the ratio to a derivation "from an absolute house price
+> level and median income"; both halves were probed and neither works. Eurostat *does* publish
+> a price-to-income series, `tipsho60`, and **none of its three units is a ratio** — an index
+> 2015 = 100, a percentage of each country's own long-term average, and a rate of change — so it
+> is the same OECD figure Q204 already rejected. An average transaction price *is* derivable,
+> from `prc_hpi_hsva` over `prc_hpi_hsna`, and across every year and purchase category it covers
+> **14 of the 32**, missing Germany, Spain and Italy.
+>
+> **It was also the wrong question.** Housing is around half of a household's monthly outgoings
+> and none of this pillar's three attributes said what that half would cost: overburden is a
+> population statistic, overcrowding is space, and price-to-income is a purchase. The
+> replacement is the price level for housing, water and energy — the monthly bill — on the
+> EU27 = 100 base `cost_of_living_index` already uses, one COICOP category narrower. Bulgaria
+> 38.5 to Switzerland 215.4. Covered for 30 of the 32 directly and 31 with Liechtenstein
+> borrowing Switzerland's; the United Kingdom left the category breakdown and the older vintage
+> stops at 2020, so a figure for it would be a second quantity wearing this one's name.
 | `country.housing_cost_overburden_rate` | 35% | **Ratio** — share of households | Eurostat `ilc_lvho07a` | 24 months |
 | `country.overcrowding_rate` | 25% | **Ratio** — share of households | Eurostat `ilc_lvho05a` | 24 months |
 

@@ -17,9 +17,10 @@ pytestmark = pytest.mark.storage
 
 LIECHTENSTEIN = "country.liechtenstein"
 SWITZERLAND = "country.switzerland"
-THE_THREE_NO_SOURCE_COVERS_FOR_LIECHTENSTEIN = (
+THE_GAPS_NO_SOURCE_COVERS_FOR_LIECHTENSTEIN = (
     "country.cost_of_living_index",
     "country.healthcare_system_quality",
+    "country.housing_price_level",
     "country.total_tax_rate_effective",
 )
 AN_ATTRIBUTE_NOT_YET_BORROWED = "country.homicide_rate"
@@ -42,15 +43,18 @@ def _declare(
 
 
 class TestWhatIsSeeded:
-    async def test_switzerland_stands_in_for_liechtenstein_on_exactly_the_three_gaps(
+    async def test_switzerland_stands_in_for_liechtenstein_on_exactly_the_gaps(
         self, pool: AsyncConnectionPool
     ) -> None:
-        """The three blocking attributes whose sources cover 31 of the 32, and nothing else:
-        Switzerland's homicide rate or protected land says nothing about Liechtenstein."""
+        """The blocking attributes whose sources cover 31 of the 32, and nothing else:
+        Switzerland's homicide rate or protected land says nothing about Liechtenstein.
+
+        Four since `0488`: Eurostat does not survey Liechtenstein's prices, so its housing
+        price level is borrowed for the reason its cost of living already was."""
         declared = await PostgresCatalogStore(pool).read_stand_ins(level="country")
 
-        assert [(d.candidate, d.substitute) for d in declared] == [(LIECHTENSTEIN, SWITZERLAND)] * 3
-        assert tuple(d.attribute for d in declared) == THE_THREE_NO_SOURCE_COVERS_FOR_LIECHTENSTEIN
+        assert [(d.candidate, d.substitute) for d in declared] == [(LIECHTENSTEIN, SWITZERLAND)] * 4
+        assert tuple(d.attribute for d in declared) == THE_GAPS_NO_SOURCE_COVERS_FOR_LIECHTENSTEIN
 
     async def test_each_comes_back_with_both_names_and_its_reason(
         self, pool: AsyncConnectionPool
@@ -68,7 +72,9 @@ class TestWhatIsSeeded:
         assert await PostgresCatalogStore(pool).read_stand_ins(level="city") == ()
 
     async def test_no_level_named_reads_every_declaration(self, pool: AsyncConnectionPool) -> None:
-        assert len(await PostgresCatalogStore(pool).read_stand_ins()) == 3
+        # Four since `0488`: housing's price level joins the cost of living, the tax rate and
+        # healthcare quality, all borrowed from Switzerland for the same reason.
+        assert len(await PostgresCatalogStore(pool).read_stand_ins()) == 4
 
 
 class TestWhatIsRefused:

@@ -1,0 +1,43 @@
+# data_source: wri
+# attribute: country.coastline_access
+# publication: World Resources Institute, coastline length from the World Vector Shoreline
+# publisher_url: https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html
+# transcribed_on: 2026-10-02
+# confidence: medium
+# period: WRI computed these lengths in 2000 from the World Vector Shoreline (US Defense Mapping Agency, 1989). A coastline does not move on a decadal scale, which is why a figure of this age is still the figure; the period states when it was measured, not when it was read.
+# route: WRI's own page died with EarthTrends and survives on archive.org, so the column was read from Wikipedia's copy of it and cross-checked against the archived original. Medium confidence for that reason.
+# scale: **one stated resolution for every country** -- 1:250,000. That is the whole reason this source was chosen over the CIA World Factbook, whose figures Wikipedia itself notes are measured at scales that "are not stated, nor is it known whether the figures are all reported using the same scale, thus the figures are necessarily not comparable across different countries". Coastline length is resolution-dependent, so a comparable figure needs one scale or it is not a measurement at all. The disagreement is large and real: the Factbook puts Finland at 1 250 km and Sweden at 3 218; at this resolution they are 31 119 and 26 384.
+# workings: km of coast per 1000 km2 of land. The land area is Eurostat `reg_area3` (`landuse=TOTAL`, `unit=KM2`, 2023) rather than WRI's own, because Eurostat is maintained, covers all 32 and follows the household's territory ruling -- France is metropolitan (total minus the overseas regions `FRY`) and Norway is mainland (total minus Svalbard `NO0B`). **The two conventions are not identical** and that is the known cost of this figure: WRI's coastline for France and Norway was measured against its own territorial extents. Stated rather than hidden.
+country_code,figure,period,page,workings
+AT,0.0,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,0 km coast / 83878 km2 land; landlocked, so no coast
+BE,2.48,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,76 km coast / 30667 km2 land
+BG,4.12,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,457 km coast / 110996 km2 land
+CH,0.0,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,0 km coast / 41287 km2 land; landlocked, so no coast
+CY,72.52,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,671 km coast / 9253 km2 land
+CZ,0.0,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,0 km coast / 78871 km2 land; landlocked, so no coast
+DE,10.14,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,3624 km coast / 357569 km2 land
+DK,123.84,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,5316 km coast / 42925 km2 land
+EE,65.2,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,2956 km coast / 45336 km2 land
+ES,14.36,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,7268 km coast / 505983 km2 land
+FI,91.96,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,31119 km coast / 338411 km2 land
+FR,13.35,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,7330 km coast / 549060 km2 land; Eurostat FR 638475 minus overseas FRY 89415
+GB,80.67,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,19717 km coast / 244423 km2 land
+GR,115.02,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,15147 km coast / 131694 km2 land
+HR,100.08,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,5664 km coast / 56594 km2 land
+HU,0.0,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,0 km coast / 93012 km2 land; landlocked, so no coast
+IE,92.03,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,6437 km coast / 69947 km2 land
+IS,82.84,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,8506 km coast / 102679 km2 land
+IT,30.54,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,9226 km coast / 302079 km2 land
+LI,0.0,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,0 km coast / 160 km2 land; landlocked, so no coast
+LT,3.95,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,258 km coast / 65284 km2 land
+LU,0.0,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,0 km coast / 2595 km2 land; landlocked, so no coast
+LV,8.76,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,566 km coast / 64586 km2 land
+MT,626.58,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,198 km coast / 316 km2 land
+NL,51.21,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,1914 km coast / 37378 km2 land
+NO,164.29,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,53199 km coast / 323810 km2 land; Eurostat NO 384486 minus Svalbard NO0B 60676
+PL,3.31,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,1032 km coast / 311928 km2 land
+PT,30.69,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,2830 km coast / 92227 km2 land
+RO,2.92,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,696 km coast / 238398 km2 land
+SE,58.97,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,26384 km coast / 447424 km2 land
+SI,2.02,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,41 km coast / 20273 km2 land
+SK,0.0,2000,https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html,0 km coast / 49035 km2 land; landlocked, so no coast

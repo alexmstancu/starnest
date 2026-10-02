@@ -129,6 +129,9 @@ class TestWhatIsActuallyWiredIn:
             "rsf",
             "ef_epi",
             "mipex",
+            # Coastline length at one stated resolution for every country (`0489`), which is
+            # what the Factbook's figures cannot offer and why they were not transcribed.
+            "wri",
             # Statutory paid leave is national law in 31 jurisdictions and no publisher prints
             # it as one table, so the transcription is stored under `national_law` -- the
             # source the catalog already ranks for it.

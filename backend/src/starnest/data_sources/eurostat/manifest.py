@@ -128,6 +128,13 @@ QUERIES: Final = MappingProxyType(
         AttributeId("country.cost_of_living_index"): EurostatQuery(
             "tec00120", freq="A", indic_ppp="PLI_EU27_2020", ppp_cat18="E011"
         ),
+        # The same price level index one COICOP category narrower: `A0104` is housing, water,
+        # electricity, gas and other fuels -- the monthly bill rather than the whole basket.
+        # `tec00120` is a cut-down table carrying only the `E011` aggregate, so the housing
+        # category has to come from the full dataset it is cut from (`0488`).
+        AttributeId("country.housing_price_level"): EurostatQuery(
+            "prc_ppp_ind_1", freq="A", indic_ppp="PLI_EU27_2020", ppp_cat18="A0104"
+        ),
         AttributeId("country.average_working_hours"): EurostatQuery(
             "lfsa_ewhun2",
             freq="A",
