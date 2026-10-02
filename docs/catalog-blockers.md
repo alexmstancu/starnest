@@ -116,6 +116,30 @@ Also `blocks_if_missing`.
 - **(b) Derive it** from Eurostat's house price level and median income, both of which exist.
   More work, no new dependency, and the derivation would be ours rather than a publisher's.
 
+> **Both options probed properly on 2026-10-02, and the answer is coverage, not feasibility.**
+>
+> **(a) is dead on the data, not only on the host.** Eurostat *does* publish a price-to-income
+> ratio -- `tipsho60`, "Standardised house price-to-income ratio", which this document said did
+> not exist. It carries three units and **none of them is a ratio**: an index 2015 = 100, a
+> percentage of each country's own long-term average, and a rate of change. It is the same
+> OECD-derived series, so swapping the priority changes nothing. `sdmx.oecd.org` was also
+> Cloudflare-challenged when probed, but that is the lesser problem.
+>
+> **(b) is arithmetically sound and covers 14 of 32.** The inputs this document named -- a
+> price *level* and an income -- cannot be divided into years of income, because the level is an
+> index. The inputs that work are `prc_hpi_hsva` (house sales **value**, unit `EUR`) and
+> `prc_hpi_hsna` (house sales **number**, unit `NR`): value over number is an average
+> transaction price in euros, and the figures are plausible -- Austria 342 221, Denmark 343 513,
+> Bulgaria 61 679.
+>
+> Both series exist for 24 and 21 countries, and their intersection with our roster is **14**.
+> **Missing: Germany, Spain, Italy, Switzerland, Sweden, Poland, Luxembourg, Czechia, Greece,
+> Cyprus, Estonia, Iceland, Latvia, Malta, Romania, Slovakia, the UK and Liechtenstein.**
+>
+> That is the same objection that retired the job-posting counts in `0487`: scoring a criterion
+> for under half the roster compares two groups on different evidence. 14 of 32 is better than
+> Adzuna's 10, and it still leaves out the three largest economies on the list.
+
 ---
 
 ## 4. Climate is blocked on D4, which the plan already names
