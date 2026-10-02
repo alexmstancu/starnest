@@ -88,6 +88,11 @@ export function pillarMatrix(
   focus: Compared,
   comparators: readonly Compared[],
   measure: Measure = "points",
+  /**
+   * What to call each pillar. Passed in rather than looked up, so this module stays a pure
+   * function of its arguments -- it has no React in it and must not grow any.
+   */
+  name: (pillar: string) => string = (pillar) => pillar,
 ): MatrixRow[] {
   const focusTotal = scoreOf(focus.score);
   const total: MatrixRow = {
@@ -111,7 +116,7 @@ export function pillarMatrix(
   const rows = (focus.pillar_scores ?? []).map((pillar) => {
     const here = readingOf(pillar);
     return {
-      label: pillar.pillar,
+      label: name(pillar.pillar),
       weight: pillar.weight,
       total: false,
       focus: here,

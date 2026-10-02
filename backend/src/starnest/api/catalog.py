@@ -49,6 +49,7 @@ class PillarBody(ContractBody):
     id: str
     name: str
     description: str | None = None
+    display_order: int
 
 
 class AllowedRangeBody(BaseModel):
@@ -163,7 +164,12 @@ async def list_pillars(catalog: Catalog) -> PillarsBody:
     """
     return PillarsBody(
         items=tuple(
-            PillarBody(id=str(pillar.id), name=pillar.name, description=pillar.description)
+            PillarBody(
+                id=str(pillar.id),
+                name=pillar.name,
+                description=pillar.description,
+                display_order=pillar.display_order,
+            )
             for pillar in await catalog.read_pillars()
         )
     )

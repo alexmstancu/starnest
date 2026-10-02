@@ -76,6 +76,10 @@ class Pillar(BaseModel):
 
     id: PillarId
     name: str = Field(min_length=1)
+    # Where it sits in the sequence the eleven are read in -- left to right across the Rank
+    # table, top to bottom in Configure. A fact about the catalog, so it travels with the
+    # pillar rather than being an ordered list somewhere in the client.
+    display_order: int = Field(ge=1)
     description: str | None = None
 
 

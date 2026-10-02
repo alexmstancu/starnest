@@ -190,6 +190,11 @@ function rampColour(position: number, lift: number): string {
  */
 export function pillarBars(
   pillars: readonly PillarScore[] | null | undefined,
+  /**
+   * What to call each pillar in its tooltip. Passed in rather than looked up, so this module
+   * stays a pure function and the hover reads "Economy" where the catalog says so.
+   */
+  name: (pillar: string) => string = (pillar) => pillar,
 ): PillarBar[] {
   const roster = pillars ?? [];
   if (roster.length === 0) {
@@ -220,8 +225,8 @@ export function pillarBars(
         ? { top: rampColour(position, 16), bottom: rampColour(position, -12) }
         : null,
       title: scored
-        ? `${pillar.pillar}: ${round(score)}, weight ${pillar.weight.toFixed(1)}%`
-        : `${pillar.pillar}: no value stored`,
+        ? `${name(pillar.pillar)}: ${round(score)}, weight ${pillar.weight.toFixed(1)}%`
+        : `${name(pillar.pillar)}: no value stored`,
     };
   });
 }
@@ -229,15 +234,21 @@ export function pillarBars(
 /**
  * The confidence split as three readings rather than one.
  *
- * **All three, always.** The column used to print the low share alone, which answered half of
+ * **All four, always.** The column used to print the low share alone, which answered half of
  * the question it raised: a candidate that is 5% low-confidence and one that is 5% low and 60%
  * medium are not the same candidate, and only showing both makes that visible.
+ *
+ * **Including `absolute`, which it used to omit** (P80). The domain defines four grades, the
+ * contract sends four, `confidenceBands` above draws four, and the hand-entry form offers
+ * `absolute` as a choice -- so a candidate resting on hand-entered figures drew a full-width
+ * band over the words "high 0% medium 0% low 0%". The bar and the sentence beside it have to
+ * be reading the same split.
  */
 export function confidenceReadings(
   split: ConfidenceSplit | null | undefined,
 ): { grade: string; reading: string; loud: boolean }[] {
   if (!split) return [];
-  return (["high", "medium", "low"] as const).map((grade) => {
+  return (["absolute", "high", "medium", "low"] as const).map((grade) => {
     const share = split[grade] ?? 0;
     return {
       grade,
@@ -257,16 +268,6 @@ export function formatDelta(delta: number | null | undefined): string {
   // **U+2212, not a hyphen.** A hyphen is narrower than a plus at the same size, so a column
   // of signed deltas does not line up on it -- and this screen is a column of signed deltas.
   return delta > 0 ? `+${round(delta)}` : `\u2212${round(Math.abs(delta))}`;
-}
-
-/** Which way the difference goes, for the colour the design gives it. */
-export function deltaTone(
-  delta: number | null | undefined,
-): "ahead" | "behind" | "level" {
-  if (typeof delta !== "number" || Number.isNaN(delta) || delta === 0) {
-    return "level";
-  }
-  return delta > 0 ? "ahead" : "behind";
 }
 
 /** A candidate as the band below needs to see one: only whether it matches. */

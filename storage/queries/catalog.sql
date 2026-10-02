@@ -28,11 +28,17 @@ WHERE  l.id = :level_id;
 -- name: select_pillars()
 -- The eleven verticals. A pillar carries no level (reqs.md Q187) -- the level lives on the
 -- weight, so this list is the same whichever level is being scored.
+--
+-- **Ordered by the catalog's own order, never by name.** The eleven read left to right in the
+-- Rank table and top to bottom in Configure, and the sequence is a judgement about what gets
+-- weighed first -- which is a fact about the catalog, so it is a column rather than a list in
+-- the client (`arch.md` 1.2).
 SELECT p.id,
        p.name,
-       p.description
+       p.description,
+       p.display_order
 FROM   pillar AS p
-ORDER  BY p.id;
+ORDER  BY p.display_order;
 
 -- name: select_attributes(level, attribute_id, include_retired)
 -- The attribute catalog with every per-attribute declaration attached: its type parameters,
@@ -81,10 +87,15 @@ LEFT   JOIN attribute_ratio_parameter AS ratio_parameter
             ON ratio_parameter.attribute = a.id
 LEFT   JOIN attribute_allowed_range AS allowed_range
             ON allowed_range.attribute = a.id
+LEFT   JOIN pillar AS listing_pillar ON listing_pillar.id = a.pillar
 WHERE  (:level::text IS NULL OR a.level = :level)
   AND  (:attribute_id::text IS NULL OR a.id = :attribute_id)
   AND  (:include_retired OR a.lifecycle_status = 'active')
-ORDER  BY a.level, a.pillar NULLS LAST, a.id;
+-- **By the pillar's stated order, as `select_criteria_set` reads it.** Ordering by the pillar
+-- *id* sorts alphabetically -- career, climate, connectivity -- which is not the order the
+-- catalog states and not the order the other listing uses, so two screens showed the same
+-- pillars in two different sequences (P75).
+ORDER  BY a.level, listing_pillar.display_order NULLS LAST, a.id;
 
 -- name: select_data_sources()
 -- Where values come from, in the global priority order of reqs.md 6.6. Lower rank first, so
@@ -99,7 +110,12 @@ FROM   data_source AS s
 -- Switched-off sources keep their place in the order rather than sinking to the bottom: the
 -- order is what they would take if switched back on, and moving them would make the toggle
 -- look like it renumbered the catalog.
-ORDER  BY s.default_priority;
+--
+-- **Broken by id, because the priorities are not unique.** `ecb` and `unodc` both ship at 16,
+-- and `update_data_source` lets a household set any number, so a tie is reachable at any time.
+-- Without a tiebreak the panel's order for a tied pair is whatever the plan happens to return,
+-- which changes under the reader for no reason they can see (P76).
+ORDER  BY s.default_priority, s.id;
 
 -- name: update_data_source(data_source, is_enabled, default_priority)<!
 -- Switch a source on or off, and set where it stands. Either may be left null to keep what is

@@ -238,7 +238,7 @@ test.describe("criteria sets", () => {
 
   test("locks a criterion's weight and unlocks it again", async ({ page }) => {
     await page.goto("/configure");
-    const criteria = await attributesInside(page, "governance");
+    const criteria = await attributesInside(page, "Governance");
     // **A button, not a checkbox.** The design draws a filled or hollow disc, and a native
     // checkbox cannot be one without being hidden and faked -- so the control is a button
     // carrying `aria-pressed`, the same as the pillar lock beside it.
@@ -261,7 +261,7 @@ test.describe("criteria sets", () => {
 
   test("shows what each pillar's criteria come to", async ({ page }) => {
     await page.goto("/configure");
-    await attributesInside(page, "governance");
+    await attributesInside(page, "Governance");
     const totals = page.getByRole("list", {
       name: "Weight totals by pillar",
     });
@@ -341,7 +341,7 @@ test.describe("what this session changed", () => {
     const history = page.getByRole("region", { name: /^Recent changes/ });
     await expect(history.getByText("No changes yet.")).toBeVisible();
 
-    await attributesInside(page, "governance");
+    await attributesInside(page, "Governance");
     // **A slider that commits on release**, as the design draws it: a weight is a proportion,
     // and the question asked of it is "more or less than the one above". There is no Save --
     // letting go is the save.
@@ -367,7 +367,7 @@ test.describe("what this session changed", () => {
     // server's, so a reload closes it -- which is the point of reloading here: the value is
     // re-read from the server rather than from what the page still held.
     await page.reload();
-    await attributesInside(page, "governance");
+    await attributesInside(page, "Governance");
     await expect(
       page.getByRole("slider", { name: "Weight for country.rule_of_law" }),
     ).toHaveValue(before);

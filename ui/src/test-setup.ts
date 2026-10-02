@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { cleanup, configure } from "@testing-library/react";
+import { forgetPillarNames } from "./api/usePillarNames";
 import { resetMockData } from "./mocks/handlers";
 import { mockServer } from "./mocks/server";
 
@@ -30,6 +31,11 @@ afterEach(() => {
   // The mock's criteria sets are writable, so one test's weight change must not become the
   // next test's starting point. `resetHandlers()` restores handlers, not what they wrote.
   resetMockData();
+  // The pillar names are fetched once and kept for the life of the module, which is right in a
+  // browser and wrong across tests: one test's answer -- or its failure -- would be the next
+  // test's starting point, and a test that stubbed `/pillars` would silently serve every test
+  // that ran after it.
+  forgetPillarNames();
 });
 
 afterAll(() => {

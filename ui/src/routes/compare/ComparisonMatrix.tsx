@@ -1,6 +1,7 @@
 import type { Comparison } from "../../api/endpoints";
-import { formatPercentage, formatScore } from "../../format/display";
+import { formatPercentage, formatScore, pillarName } from "../../format/display";
 import { barStart, divergingBar } from "./divergingBar";
+import { usePillarNames } from "../../api/usePillarNames";
 import {
   pillarMatrix,
   type MatrixCell,
@@ -28,7 +29,10 @@ export function ComparisonMatrix({
   measure: Measure;
 }) {
   const comparators = comparison.comparators ?? [];
-  const rows = pillarMatrix(comparison.focus, comparators, measure);
+  const names = usePillarNames();
+  const rows = pillarMatrix(comparison.focus, comparators, measure, (pillar) =>
+    pillarName(names, pillar),
+  );
 
   return (
     <div className="table-card table-card--matrix">

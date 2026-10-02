@@ -8,10 +8,11 @@ import {
   type StoredValue,
 } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
+import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
+import { pillarName } from "../../format/display";
 import {
   ABSENT,
   formatDate,
-  formatIdentifier,
   formatDateTime,
   formatPercentage,
   formatSigned,
@@ -51,6 +52,7 @@ export function CandidateDetail({
   name: string;
   pillars?: readonly PillarScore[] | null;
 }) {
+  const names = usePillarNames();
   const values = useResource(
     useCallback(
       (signal: AbortSignal) => fetchValues(candidate, { signal }),
@@ -130,6 +132,7 @@ export function CandidateDetail({
       </div>
 
       <PillarContributions
+        names={names}
         pillars={pillars}
         chosen={pillar}
         onChoose={(each) => setPillar(each === pillar ? null : each)}
@@ -145,7 +148,7 @@ export function CandidateDetail({
         <h4 className="drill__title">
           {pillar === null
             ? "Every stored value"
-            : `${formatIdentifier(pillar)} — stored values`}
+            : `${pillarName(names, pillar)} — stored values`}
         </h4>
       )}
       {values.resource.status === "ready" && (
@@ -386,16 +389,18 @@ function ValueTable({
  * words here, where the chart only has a flat bar to say it with.
  */
 function PillarContributions({
+  names,
   pillars,
   chosen,
   onChoose,
 }: {
+  names: PillarNames;
   pillars?: readonly PillarScore[] | null;
   chosen: string | null;
   onChoose: (pillar: string) => void;
 }) {
   const headingId = useId();
-  const bars = pillarBars(pillars);
+  const bars = pillarBars(pillars, (pillar) => pillarName(names, pillar));
   if (bars.length === 0) {
     return null;
   }
@@ -420,7 +425,7 @@ function PillarContributions({
             >
               <div className="pillar-card__head">
                 <span className="pillar-card__name">
-                  {formatIdentifier(pillar.pillar)}
+                  {pillarName(names, pillar.pillar)}
                 </span>
                 <span className="pillar-card__score">
                   {typeof pillar.score === "number" ? pillar.score : "No score"}

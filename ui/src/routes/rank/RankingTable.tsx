@@ -1,5 +1,10 @@
 import { Fragment, useId, type ReactNode } from "react";
 import { type CandidateResult, type Ranking } from "../../api/endpoints";
+import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
+import {
+  deltaTone,
+  pillarName,
+} from "../../format/display";
 import {
   ABSENT,
   formatDateTime,
@@ -15,7 +20,6 @@ import {
   confidenceBands,
   confidenceReadings,
   coverageBar,
-  deltaTone,
   excludedBand,
   formatDelta,
   pillarBars,
@@ -71,6 +75,7 @@ export function RankingTable({
    */
   home?: ReadonlySet<string>;
 }) {
+  const names = usePillarNames();
   // Where the ranking stops and the set below it starts. Null when everything matches.
   const band = excludedBand(ranking.candidates);
 
@@ -103,7 +108,10 @@ export function RankingTable({
             </th>
             <th scope="col" className="col--pillars">
               Pillars
-              <PillarKey pillars={ranking.candidates[0]?.pillar_scores} />
+              <PillarKey
+                names={names}
+                pillars={ranking.candidates[0]?.pillar_scores}
+              />
             </th>
             <th scope="col">Coverage</th>
             <th scope="col">Confidence</th>
@@ -127,6 +135,7 @@ export function RankingTable({
                 </tr>
               )}
               <CandidateRow
+                names={names}
                 result={result}
                 open={isOpen(open, result.candidate)}
                 onToggle={onToggle}
@@ -184,7 +193,13 @@ function Meta({ label, value }: { label: string; value: string }) {
  * is unlabelled is decoration. Minus 45 degrees is the angle at which a word reads with the
  * least head-tilt while still fitting a narrow column.
  */
-function PillarKey({ pillars }: { pillars?: readonly PillarScore[] | null }) {
+function PillarKey({
+  names,
+  pillars,
+}: {
+  names: PillarNames;
+  pillars?: readonly PillarScore[] | null;
+}) {
   const roster = pillars ?? [];
   if (roster.length === 0) return null;
 
@@ -192,9 +207,11 @@ function PillarKey({ pillars }: { pillars?: readonly PillarScore[] | null }) {
     <span className="pillar-key" aria-hidden="true">
       {roster.map((pillar) => (
         <span key={pillar.pillar} className="pillar-key__slot">
-          {/* Capitalised: the catalog ships ids, and a reader is shown a name. */}
+          {/* The catalog's name. A ranking carries pillar *ids*, and title-casing one gives
+              "Economics" where the catalog says "Economy" -- a screen guessing where somebody
+              had already decided. */}
           <span className="pillar-key__name">
-            {formatIdentifier(pillar.pillar)}
+            {pillarName(names, pillar.pillar)}
           </span>
         </span>
       ))}
@@ -213,6 +230,7 @@ function PillarKey({ pillars }: { pillars?: readonly PillarScore[] | null }) {
  * clickable never becomes the only way in.
  */
 function CandidateRow({
+  names,
   result,
   open,
   onToggle,
@@ -220,6 +238,7 @@ function CandidateRow({
   code,
   atHome,
 }: {
+  names: PillarNames;
   result: CandidateResult;
   open: boolean;
   onToggle?: (row: OpenRow) => void;
@@ -301,7 +320,7 @@ function CandidateRow({
         {formatDelta(result.delta_vs_home)}
       </td>
       <td className="col--pillars">
-        <PillarChart pillars={result.pillar_scores} />
+        <PillarChart names={names} pillars={result.pillar_scores} />
       </td>
       <td>
         <CoverageBar coverage={result.coverage} />
@@ -366,8 +385,14 @@ function CandidateRow({
  * geometry attribute and a colour in `fill`, so nothing here is an inline style, and the
  * reader still gets the figure as well as the shape.
  */
-function PillarChart({ pillars }: { pillars?: readonly PillarScore[] | null }) {
-  const bars = pillarBars(pillars);
+function PillarChart({
+  names,
+  pillars,
+}: {
+  names: PillarNames;
+  pillars?: readonly PillarScore[] | null;
+}) {
+  const bars = pillarBars(pillars, (pillar) => pillarName(names, pillar));
   const hatch = useId();
   if (bars.length === 0) return null;
 

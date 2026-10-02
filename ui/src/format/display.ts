@@ -146,3 +146,40 @@ export function formatIdentifier(identifier: string): string {
   const spaced = identifier.replace(/_/g, " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
+
+/**
+ * One pillar's name, or its id made readable.
+ *
+ * **The catalog's name, not the id title-cased.** A ranking and a criteria set both carry
+ * pillar *ids* -- `economics`, `connectivity` -- and capitalising one gives "Economics" and
+ * "Connectivity" where the catalog says "Economy" and "Transport". The difference is not
+ * cosmetic: a name is a decision somebody made and a title-cased id is this screen guessing.
+ *
+ * **A plain function, taking the map rather than fetching it**, so a screen that already has
+ * the names does not ask for them again, and so this is testable without React.
+ */
+export function pillarName(names: ReadonlyMap<string, string>, pillar: string): string {
+  return names.get(pillar) ?? formatIdentifier(pillar);
+}
+
+
+/**
+ * Which way a difference goes, for the colour the design gives it.
+ *
+ * **Three states, because an absent difference is not a small one.** A null delta coloured as
+ * an advantage is the screen claiming a lead it cannot support, which is the failure this app
+ * exists to avoid; `level` is the honest third answer and a zero takes it too.
+ *
+ * **In `format/` because two screens need it.** It lived in `routes/rank/`, and Compare
+ * reimplemented it with two states and got the null case wrong (P83). `rank/` and `compare/`
+ * are siblings, so their nearest shared home is this leaf -- the layering has no loose file
+ * directly under `routes/`.
+ */
+export function deltaTone(
+  delta: number | null | undefined,
+): "ahead" | "behind" | "level" {
+  if (typeof delta !== "number" || Number.isNaN(delta) || delta === 0) {
+    return "level";
+  }
+  return delta > 0 ? "ahead" : "behind";
+}

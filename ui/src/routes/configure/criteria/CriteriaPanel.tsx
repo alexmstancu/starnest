@@ -1,8 +1,9 @@
 import { useId } from "react";
+import { usePillarNames, type PillarNames } from "../../../api/usePillarNames";
 import { NavLink } from "react-router-dom";
 import type { Criterion, CriterionRule } from "../../../api/endpoints";
 import { lockedAttributes } from "../../../api/errorPresentation";
-import { formatPercentage } from "../../../format/display";
+import { formatPercentage, pillarName } from "../../../format/display";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { useEffect, useRef, useState } from "react";
 import type { CriteriaEditor } from "../useCriteriaEditor";
@@ -60,6 +61,7 @@ export function CriteriaPanel({
   /** The catalog, for what each attribute measures and whether anything would answer it. */
   catalog?: AttributeCatalog;
 }) {
+  const names = usePillarNames();
   const headingId = useId();
   const shown =
     pillar === undefined
@@ -84,7 +86,7 @@ export function CriteriaPanel({
         go, which the backend refuses rather than silently absorbing.
       </p>
 
-      <PillarTotals criteria={shown} />
+      <PillarTotals names={names} criteria={shown} />
 
       {editor.saveError !== null && <SaveFailure error={editor.saveError} />}
 
@@ -98,7 +100,8 @@ export function CriteriaPanel({
               criterion={criterion}
               attribute={catalog?.get(criterion.attribute)}
               ceiling={ceiling}
-              saving={editor.savingAttribute === criterion.attribute}
+              savingWeight={editor.savingAttribute === criterion.attribute}
+              savingRule={editor.savingRuleFor === criterion.attribute}
               onSave={editor.setWeight}
               onSetLock={editor.setLock}
               onSaveRule={editor.setRule}
@@ -117,7 +120,13 @@ export function CriteriaPanel({
  * rebalancing; showing the total back lets a reader watch the rule hold instead of taking it
  * on trust -- and makes a pillar that has drifted visible rather than merely wrong.
  */
-function PillarTotals({ criteria }: { criteria: readonly Criterion[] }) {
+function PillarTotals({
+  names,
+  criteria,
+}: {
+  names: PillarNames;
+  criteria: readonly Criterion[];
+}) {
   const totals = totalsByPillar(criteria);
   if (totals.length === 0) return null;
 
@@ -132,7 +141,7 @@ function PillarTotals({ criteria }: { criteria: readonly Criterion[] }) {
               : "chip chip--not_matching"
           }
         >
-          {each.pillar} {formatPercentage(each.total)}
+          {pillarName(names, each.pillar)} {formatPercentage(each.total)}
         </li>
       ))}
     </ul>
@@ -151,7 +160,8 @@ function CriterionRow({
   criterion,
   attribute,
   ceiling,
-  saving,
+  savingWeight,
+  savingRule,
   onSave,
   onSetLock,
   onSaveRule,
@@ -160,7 +170,14 @@ function CriterionRow({
   /** The catalog's entry, or undefined while the catalog is still in flight. */
   attribute?: CatalogAttribute;
   ceiling: number;
-  saving: boolean;
+  /**
+   * **Two flags, because two things revert** (P82). The slider goes back to the stored weight
+   * when a weight save ends, and the rule fields go back to the stored rule when a *rule*
+   * save ends. One flag served both, and `savingAttribute` is set by every save on the row --
+   * so dragging a weight silently discarded an unsent rule edit beside it.
+   */
+  savingWeight: boolean;
+  savingRule: boolean;
   onSave: (attribute: string, weight: number) => void;
   onSetLock: (attribute: string, weightLocked: boolean) => void;
   onSaveRule: (attribute: string, rule: CriterionRule) => void;
@@ -179,7 +196,7 @@ function CriterionRow({
   // can read. Local state, because which row is open is this component's own business and
   // nothing outside it needs to know.
   const [editingRule, setEditingRule] = useState(false);
-  const rule = useCriterionRule(criterion, saving, onSaveRule);
+  const rule = useCriterionRule(criterion, savingRule, onSaveRule);
 
   // A rebalance moves this row's weight without this row having been dragged, and a refused
   // change leaves it exactly where it was. Either way the slider follows the stored weight --
@@ -193,9 +210,9 @@ function CriterionRow({
   // is what a reader takes for the weight being scored.
   const wasSaving = useRef(false);
   useEffect(() => {
-    if (wasSaving.current && !saving) setTyped(stored);
-    wasSaving.current = saving;
-  }, [saving, stored]);
+    if (wasSaving.current && !savingWeight) setTyped(stored);
+    wasSaving.current = savingWeight;
+  }, [savingWeight, stored]);
 
   /**
    * **Dragging shows; letting go sends.** A range input has no "committed" event -- `change`
@@ -249,7 +266,7 @@ function CriterionRow({
             max={ceiling}
             step={CRITERION_SLIDER.step}
             value={typed}
-            disabled={saving}
+            disabled={savingWeight || savingRule}
             aria-label={`Weight for ${criterion.attribute}`}
             onChange={(event) => {
               setMoving(true);
@@ -279,7 +296,7 @@ function CriterionRow({
             }
             aria-label={`Lock the weight for ${criterion.attribute}`}
             aria-pressed={locked}
-            disabled={saving}
+            disabled={savingWeight || savingRule}
             title={
               locked
                 ? "Held where it is, and takes no share of a rebalance"
@@ -345,7 +362,7 @@ function CriterionRow({
         <CriterionRuleFields
           form={rule}
           attribute={criterion.attribute}
-          saving={saving}
+          saving={savingRule}
         />
       )}
     </div>

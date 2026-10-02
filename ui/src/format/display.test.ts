@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   ABSENT,
+  deltaTone,
   formatCount,
   formatDate,
   formatDateTime,
+  formatIdentifier,
   formatMatchStatus,
   formatMoney,
   formatPercentage,
   formatScore,
+  formatSigned,
+  pillarName,
   safeHttpUrl,
 } from "./display";
 
@@ -126,5 +130,93 @@ describe("a link out to a publisher", () => {
     expect(safeHttpUrl(undefined)).toBeNull();
     expect(safeHttpUrl("")).toBeNull();
     expect(safeHttpUrl("   ")).toBeNull();
+  });
+});
+
+describe("what to call a pillar", () => {
+  it("uses the catalog's name", () => {
+    // `economics` reads "Economy" and `connectivity` reads "Transport". Title-casing the id
+    // gives neither, and the difference is a decision somebody made versus a screen guessing.
+    const names = new Map([
+      ["economics", "Economy"],
+      ["connectivity", "Transport"],
+    ]);
+
+    expect(pillarName(names, "economics")).toBe("Economy");
+    expect(pillarName(names, "connectivity")).toBe("Transport");
+  });
+
+  it("falls back to the id made readable when the catalog has not answered", () => {
+    // The names are a label; the weights and bars beside them do not wait for it. An empty map
+    // is what a failed or in-flight read looks like, and it must not blank the column heads.
+    expect(pillarName(new Map(), "governance")).toBe("Governance");
+    expect(pillarName(new Map(), "rule_of_law")).toBe("Rule of law");
+  });
+
+  it("falls back for a pillar the catalog does not have", () => {
+    expect(pillarName(new Map([["housing", "Housing"]]), "nowhere")).toBe(
+      "Nowhere",
+    );
+  });
+});
+
+describe("which way a difference goes", () => {
+  it("calls a positive difference ahead and a negative one behind", () => {
+    expect(deltaTone(3)).toBe("ahead");
+    expect(deltaTone(-3)).toBe("behind");
+  });
+
+  it("calls no difference level rather than ahead", () => {
+    // **The case Compare got wrong** (P83): a null delta fell into the `else` and rendered
+    // "—" in green, the screen claiming a lead it has nothing to support.
+    expect(deltaTone(0)).toBe("level");
+    expect(deltaTone(null)).toBe("level");
+    expect(deltaTone(undefined)).toBe("level");
+    expect(deltaTone(Number.NaN)).toBe("level");
+  });
+});
+
+describe("a delta, signed", () => {
+  it("writes a plus on a gain, because a signed number reads as a direction", () => {
+    expect(formatSigned(3.5)).toBe("+3.5");
+  });
+
+  it("keeps the minus a negative already has, rather than adding a second", () => {
+    expect(formatSigned(-3.5)).toBe("-3.5");
+  });
+
+  it("gives zero no sign, because it is neither direction", () => {
+    expect(formatSigned(0)).toBe("0.0");
+  });
+
+  it("keeps the decimal place, so a column of deltas lines up", () => {
+    expect(formatSigned(4)).toBe("+4.0");
+    expect(formatSigned(4, 2)).toBe("+4.00");
+  });
+
+  it("marks an absent delta rather than printing a zero for it", () => {
+    // A zero here would sit in a column of real differences looking like one.
+    expect(formatSigned(null)).toBe(ABSENT);
+    expect(formatSigned(undefined)).toBe(ABSENT);
+    expect(formatSigned(Number.NaN)).toBe(ABSENT);
+  });
+});
+
+describe("a catalog identifier as a name", () => {
+  it("capitalises and unpicks the underscores", () => {
+    expect(formatIdentifier("local_employment")).toBe("Local employment");
+    expect(formatIdentifier("country")).toBe("Country");
+  });
+
+  it("capitalises only the first word, because this is a name and not a title", () => {
+    expect(formatIdentifier("rule_of_law")).toBe("Rule of law");
+  });
+
+  it("leaves an already readable word alone", () => {
+    expect(formatIdentifier("Housing")).toBe("Housing");
+  });
+
+  it("does not throw on an empty identifier", () => {
+    expect(formatIdentifier("")).toBe("");
   });
 });

@@ -35,6 +35,7 @@ from starnest.data import (
     LifecycleStatus,
     MatchRule,
     MatchRuleId,
+    NoSuchDataSourceError,
     Pillar,
     PillarId,
     PopulationCentre,
@@ -46,7 +47,6 @@ from starnest.data import (
     StandIn,
     UnitId,
     UnknownAttributeError,
-    UnknownDataSourceError,
     ValueType,
 )
 from starnest.data.identifiers import HouseholdFieldId, ReliabilityTierId
@@ -81,7 +81,13 @@ class PostgresCatalogStore(CatalogStore):
         async with acquire(self._pool) as connection:
             rows = [row async for row in self._queries.select_pillars(connection)]
         return tuple(
-            Pillar(id=PillarId(row.id), name=row.name, description=row.description) for row in rows
+            Pillar(
+                id=PillarId(row.id),
+                name=row.name,
+                description=row.description,
+                display_order=row.display_order,
+            )
+            for row in rows
         )
 
     async def read_attributes(
@@ -161,7 +167,7 @@ class PostgresCatalogStore(CatalogStore):
                 default_priority=default_priority,
             )
         if row is None:
-            raise UnknownDataSourceError(f"no data source called {data_source!r}")
+            raise NoSuchDataSourceError(f"no data source called {data_source!r}")
         return DataSource(
             id=DataSourceId(row[0]),
             name=row[1],

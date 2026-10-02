@@ -91,9 +91,10 @@ SELECT s.id,
                                     ORDER BY share_threshold.label)
                             FROM   criterion_threshold_share AS share_threshold
                             WHERE  share_threshold.criterion = c.id), '[]'::jsonb))
-                     ORDER BY c.pillar, c.attribute)
+                     ORDER BY criterion_pillar.display_order, c.attribute)
             FROM   criterion AS c
             JOIN   attribute AS a ON a.id = c.attribute
+            JOIN   pillar AS criterion_pillar ON criterion_pillar.id = c.pillar
             WHERE  c.criteria_set = s.id
               AND  (:level::text IS NULL OR a.level = :level)),
            '[]'::jsonb) AS criteria,
@@ -103,8 +104,9 @@ SELECT s.id,
                        'level',         w.level,
                        'weight',        w.weight,
                        'weight_locked', w.weight_locked)
-                     ORDER BY w.level, w.pillar)
+                     ORDER BY w.level, p.display_order)
             FROM   pillar_weight AS w
+            JOIN   pillar AS p ON p.id = w.pillar
             WHERE  w.criteria_set = s.id
               AND  (:level::text IS NULL OR w.level = :level)),
            '[]'::jsonb) AS pillar_weights,

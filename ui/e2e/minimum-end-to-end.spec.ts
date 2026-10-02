@@ -185,23 +185,33 @@ async function openPillarOf(
   // set is still in flight when a test has just navigated -- so the list comes back empty and
   // the scan below concludes no pillar holds anything.
   await weights.getByRole("group").first().waitFor({ state: "visible" });
-  const rows = await weights.getByRole("group").all();
+  // **Names, never indices.** `all()` hands back `nth(i)` locators resolved when they are
+  // used, and opening a pillar inserts its attribute rows into the same region -- so every
+  // index after the one just opened addresses something else. The scan below opens pillars as
+  // it goes, which is exactly the mutation that invalidates them. Each row is addressed by its
+  // accessible name instead, which survives the insertion. (`sanity.spec.ts` carries the same
+  // warning for the ranked table, where opening a row inserts its evidence.)
+  const names: string[] = [];
+  for (const row of await weights.getByRole("group").all()) {
+    names.push((await row.getAttribute("aria-label")) ?? "");
+  }
 
   // **The likely pillar first.** An attribute is usually named after the pillar it is in --
   // `country.housing_cost_overburden_rate` is housing -- so trying that one first turns a scan
   // of eleven into a single click. It is a shortcut, not a rule: anything it misses is found
   // by the scan that follows, which is why the pillar is never written down here.
-  const named: { row: (typeof rows)[number]; pillar: string }[] = [];
-  for (const row of rows) {
-    named.push({ row, pillar: (await row.getAttribute("aria-label")) ?? "" });
-  }
-  named.sort(
+  //
+  // **Compared without case.** The attribute is a catalog id and the pillar is now a display
+  // name -- `housing` against "Housing" -- so a case-sensitive test matched nothing the day
+  // `0484` gave the pillars real names, and the shortcut silently stopped shortening anything.
+  names.sort(
     (left, right) =>
-      Number(attribute.includes(right.pillar)) -
-      Number(attribute.includes(left.pillar)),
+      Number(attribute.includes(right.toLowerCase())) -
+      Number(attribute.includes(left.toLowerCase())),
   );
 
-  for (const { row, pillar } of named) {
+  for (const pillar of names) {
+    const row = weights.getByRole("group", { name: pillar, exact: true });
     const opener = row.getByRole("button", { name: new RegExp(`^${pillar}`) });
     if ((await opener.getAttribute("aria-expanded")) !== "true") {
       await opener.click();
