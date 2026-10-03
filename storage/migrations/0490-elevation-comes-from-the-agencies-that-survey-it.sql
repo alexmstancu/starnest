@@ -18,7 +18,13 @@
 -- **So it is transcribed from the agencies that survey it**, one per country: Ordnance Survey
 -- for Ben Nevis, CUZK for Snezka, Statistik Austria, GUS, INSSE, stat.gov.lv, the Liechtenstein
 -- statistics portal, the Bavarian environment agency for the Zugspitze. `national_statistics`
--- is the source they already share in this catalog. Two low points -- Denmark's and Italy's --
+-- `national_statistics` is the nearest source this catalog has for them. It was seeded at
+-- priority 40 by `0101` and **had no attribute pointing at it until now** -- this is its first
+-- user, not a source it shared. Eight of the 32 rows do not come from a statistics office at
+-- all (a peer-reviewed survey, a university paper, an encyclopedia, a heritage site, a
+-- university release, and an Italian regional government for Mont Blanc), and the table's
+-- `# route:` line names every one. That attribution is the weakest claim here and it is
+-- stated rather than implied.
 -- are Wikipedia-routed and say so in their own rows, as `statutory_paid_leave` does.
 --
 -- **The Factbook's fingerprints were found and removed.** Luxembourg's low point is widely

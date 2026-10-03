@@ -9,6 +9,7 @@ Found missing on `0482`, `0483` and `0484` by a review, days after they shipped,
 looked.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -63,3 +64,57 @@ def test_the_predecessor_named_is_a_migration_that_exists(migration: Path) -> No
                 assert (MIGRATIONS / f"{named}.sql").exists(), (
                     f"{migration.name} depends on {named!r}, which is not a migration"
                 )
+
+
+def tables_written_by(sql: str) -> set[str]:
+    """Every table the statement writes to, by name.
+
+    Comments are stripped first: these migrations carry long explanatory headers that name
+    tables in prose, and a comment is not a write.
+    """
+    without_comments = re.sub(r"^\s*--.*$", "", sql, flags=re.M)
+    # `DO UPDATE SET` inside an upsert is not a write to a table called "set", and `UPDATE` as
+    # a bare keyword appears there too -- so the upsert clause goes before anything is matched.
+    without_upserts = re.sub(
+        r"on\s+conflict.*?do\s+update", " ", without_comments, flags=re.I | re.S
+    )
+    # A TEMP table lives and dies inside the transaction, so nothing has to undo it.
+    temporary = set(
+        re.findall(r"create\s+temp(?:orary)?\s+table\s+\"?([a-z_]+)\"?", without_upserts, re.I)
+    )
+    without_temps = re.sub(
+        r"create\s+temp(?:orary)?\s+table\s+\"?[a-z_]+\"?", " ", without_upserts, flags=re.I
+    )
+    written = re.findall(
+        r"(?:insert\s+into|update|delete\s+from|alter\s+table|"
+        r"create\s+table(?:\s+if\s+not\s+exists)?|drop\s+table(?:\s+if\s+exists)?)"
+        r"\s+\"?([a-z_]+)\"?",
+        without_temps,
+        re.I,
+    )
+    return {name.lower() for name in written} - {"set", "only"} - temporary
+
+
+@pytest.mark.parametrize("migration", forward_migrations(), ids=lambda p: p.stem)
+def test_a_rollback_touches_every_table_its_migration_wrote(migration: Path) -> None:
+    """**A rollback that never mentions a table cannot undo what was done to it.**
+
+    Proving a rollback truly inverts would mean applying and reversing each one against a real
+    database, which is slow and would have to run in order. This is the cheap half of the same
+    question, and it catches the failure that actually happens: a migration grows a second
+    statement and the rollback is not updated with it. `0488` shipped exactly that way for an
+    hour -- it added an attribute, a quantity parameter, a source priority, a stand-in and two
+    criteria, and the first rollback undid some of them.
+
+    A rollback may legitimately touch *more* tables than its migration; it may not touch fewer.
+    """
+    rollback = migration.with_name(f"{migration.stem}.rollback.sql")
+    if not rollback.exists():
+        return  # the test above owns that failure, and says it better
+
+    forgotten = tables_written_by(migration.read_text()) - tables_written_by(rollback.read_text())
+
+    assert forgotten == set(), (
+        f"{migration.name} writes to {sorted(forgotten)} and its rollback never mentions "
+        f"{'them' if len(forgotten) > 1 else 'it'}, so reversing it would leave that behind."
+    )

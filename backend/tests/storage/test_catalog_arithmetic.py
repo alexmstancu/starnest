@@ -18,6 +18,8 @@ REQS = Path(__file__).resolve().parents[3] / "docs" / "reqs.md"
 """`docs/reqs.md`, from `backend/tests/storage/`. Read rather than restated: this file checks
 the document against the database, so the document is where the expectation comes from."""
 
+MIGRATIONS = Path(__file__).resolve().parents[2].parent / "storage" / "migrations"
+
 pytestmark = pytest.mark.storage
 
 COUNTRY = "country"
@@ -160,6 +162,36 @@ def test_a_retired_attribute_keeps_its_row_and_loses_its_criterion(
 
     assert retired, "0442 retired country.crime_safety_index; this test needs one to look at"
     assert retired.isdisjoint(scored)
+
+
+def test_no_migration_deletes_a_stored_figure() -> None:
+    """**"Retired, not deleted" is a promise about the figures, not only about the row.**
+
+    Four migrations rest on it -- `0442`, `0445`, `0487`, `0488` -- and each says the attribute
+    is retired so the account of why it existed outlives it. That account is worth nothing if
+    the figures go: an evaluation saved before the retirement explains its score from values
+    that would no longer be there, and the drill-down it promises would be a list of blanks.
+
+    **Checked against the files rather than against rows**, because the test database is built
+    fresh from these migrations and holds no values at all -- so the only place the promise can
+    be broken is in the SQL, and the only place it can be caught is here.
+
+    `0473` is the shape a removal is supposed to take: 156 LLM figures stamped with the wrong
+    date were given a `rejection_reason`, which takes them out of `active_value` and leaves them
+    readable with the reason attached. Rejecting, never deleting (`reqs.md` 3.6).
+    """
+    deleting = [
+        path.name
+        for path in sorted(MIGRATIONS.glob("*.sql"))
+        if not path.name.endswith(".rollback.sql")
+        and re.search(r"delete\s+from\s+value\b", path.read_text(), re.I)
+    ]
+
+    assert deleting == [], (
+        f"these migrations delete stored figures: {deleting}. A figure is rejected with a "
+        "reason, never removed -- an evaluation saved before it was rejected still has to be "
+        "explainable."
+    )
 
 
 def test_every_attribute_declares_a_real_value_type(connection: psycopg.Connection) -> None:
@@ -504,4 +536,60 @@ def test_every_transcribed_attribute_has_a_criterion_that_can_actually_score_it(
     assert unscoreable == [], (
         "these attributes have transcribed figures and a criterion that cannot place them, "
         f"so the figures score nothing: {unscoreable}"
+    )
+
+
+def test_no_attribute_with_a_stored_figure_has_a_criterion_that_cannot_place_it(
+    connection: psycopg.Connection,
+) -> None:
+    """**The same rule, over every attribute rather than only the transcribed ones** (`0491`).
+
+    The guard above was written the day a transcription landed and changed nothing, so it scoped
+    itself to transcriptions. `country.forest_cover` comes from the World Bank, held a figure for
+    all 32 candidates, was `fixed` with no anchors in both shipped sets, and therefore scored
+    exactly nothing -- for as long as it had existed. The drill-down read
+    `normalised_score: null, contribution: 0.0` beside a figure that was present and correct.
+    **Where the figure comes from was never the point**; having one and not being able to place
+    it is.
+
+    **It must run against values, not against the catalog alone.** Several attributes are
+    anchorless today and hold nothing yet -- sunshine, child benefit, projected heat days -- and
+    choosing their anchors is a judgement nobody has made. An anchorless criterion is a job not
+    yet finished; an anchorless criterion *with figures behind it* is a job that looks finished
+    and is not.
+
+    The test database is built fresh from the migrations and holds no values, so this asks the
+    **adapters** instead: an attribute some shipped adapter declares it can answer is one that
+    will have figures the next time a run happens. A row in `attribute_source_priority` is not
+    the same claim -- sunshine, child benefit and projected heat days all name a source that no
+    adapter implements, and their anchors are a judgement nobody has made yet.
+    """
+    from starnest.main import build
+
+    _, app = build()
+    answerable = sorted(
+        {str(attribute) for adapter in app.state.adapters for attribute in adapter.attributes}
+    )
+    assert answerable, "no adapter declares anything; this test would pass vacuously"
+
+    unscoreable = connection.execute(
+        """
+        SELECT c.criteria_set, c.attribute
+        FROM   criterion c
+        WHERE  c.is_scored
+          AND  c.attribute = ANY(%s)
+          AND  c.normalisation_method = 'fixed'
+          AND  NOT (
+                   (c.goal = 'target_range'
+                    AND c.target_range_min IS NOT NULL AND c.target_range_max IS NOT NULL)
+                OR (SELECT count(*) FROM criterion_scale_anchor a WHERE a.criterion = c.id) >= 2
+               )
+        ORDER  BY 1, 2
+        """,
+        (answerable,),
+    ).fetchall()
+
+    assert unscoreable == [], (
+        "an adapter answers these attributes and their criterion cannot place what it returns, "
+        f"so the figures would score nothing: {unscoreable}"
     )

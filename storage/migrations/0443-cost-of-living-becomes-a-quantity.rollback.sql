@@ -11,3 +11,9 @@ INSERT INTO criterion (
 SELECT 'local_employment', a.id, a.pillar, a.value_type, true, 35, 'minimise', 'as_is', true
 FROM   attribute AS a
 WHERE  a.id = 'country.cost_of_living_index';
+-- The vocabulary row this added, removed. `ON CONFLICT DO NOTHING` on the way in means the
+-- insert is idempotent and an existing row was left alone, so this deletes only what nothing
+-- else now references -- which is what the attribute check below enforces.
+DELETE FROM unit
+WHERE  id = 'eu27_average_100'
+  AND  NOT EXISTS (SELECT 1 FROM attribute_quantity_parameter q WHERE q.unit = 'eu27_average_100');

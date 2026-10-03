@@ -15,3 +15,9 @@ INSERT INTO criterion (
     blocks_if_missing)
 SELECT criteria_set, attribute, pillar, 'Ratio', is_scored, weight, goal, normalisation_method, true
 FROM   held_criterion;
+-- The vocabulary row this added, removed. `ON CONFLICT DO NOTHING` on the way in means the
+-- insert is idempotent and an existing row was left alone, so this deletes only what nothing
+-- else now references -- which is what the attribute check below enforces.
+DELETE FROM unit
+WHERE  id = 'years_of_income'
+  AND  NOT EXISTS (SELECT 1 FROM attribute_quantity_parameter q WHERE q.unit = 'years_of_income');

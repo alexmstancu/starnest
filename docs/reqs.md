@@ -2337,7 +2337,7 @@ way by the active-value rule (section 3.6).
 |---|---|---|---|---|
 | `country.natural_diversity` | 25% | **Count** — 0–6, feature types present | **Derived**, see below | — |
 | `country.protected_land_share` | 25% | **Ratio** — share of territory | WDPA / Protected Planet, Eurostat | 24 months |
-| `country.coastline_access` | 20% | **Quantity** — km coast per 1000 km² | Natural Earth, Eurostat — length relative to area | — |
+| `country.coastline_access` | 20% | **Quantity** — km coast per 1000 km² | WRI coastline at a stated 1:250 000, over Eurostat `reg_area3` land area; Natural Earth second | — |
 | `country.forest_cover` | 15% | **Ratio** — share of land area | FAO, Corine Land Cover | 60 months |
 | `country.elevation_range` | 15% | **Quantity** — m | National mapping agencies and statistics offices, transcribed; Copernicus DEM second | — |
 

@@ -16,3 +16,9 @@ WHERE criteria_set = 'local_employment' AND attribute = 'country.homicide_rate';
 DELETE FROM attribute_source_priority WHERE attribute = 'country.homicide_rate';
 DELETE FROM attribute_quantity_parameter WHERE attribute = 'country.homicide_rate';
 DELETE FROM attribute WHERE id = 'country.homicide_rate';
+-- The vocabulary row this added, removed. `ON CONFLICT DO NOTHING` on the way in means the
+-- insert is idempotent and an existing row was left alone, so this deletes only what nothing
+-- else now references -- which is what the attribute check below enforces.
+DELETE FROM unit
+WHERE  id = 'per_100000_population'
+  AND  NOT EXISTS (SELECT 1 FROM attribute_quantity_parameter q WHERE q.unit = 'per_100000_population');
