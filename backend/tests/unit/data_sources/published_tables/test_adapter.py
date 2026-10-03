@@ -174,16 +174,37 @@ class TestWhatItAnswers:
         assert acquired.values == ()
         assert "answers only country.press_freedom" in acquired.failures[0].reason
 
-    async def test_a_type_a_table_cannot_carry_is_a_catalog_fault_raised_once(self) -> None:
-        employers = Attribute(
+    # **Every type a transcription may not carry, not just one of them.** This asserted
+    # `LabelSet` alone, and the type that actually gets attempted is `AssignedScore`: a rubric
+    # applied to an official page looks exactly like a transcription and is not one. A table
+    # carries a figure *a publisher printed*; a rubric score is the household's reading of the
+    # law, so storing it under the publisher's id would attribute our judgement to them
+    # (`reqs.md` 6.9, 2026-10-03). The two `AssignedScore` attributes carry `manual_entry`
+    # instead, which is the path that keeps the provenance honest.
+    @pytest.mark.parametrize(
+        "rejected",
+        [
+            ValueType.MONETARY,
+            ValueType.COUNT,
+            ValueType.LABEL_SET,
+            ValueType.SHARE_COMPOSITION,
+            ValueType.BOOLEAN,
+            ValueType.ASSIGNED_SCORE,
+            ValueType.TEXT,
+        ],
+    )
+    async def test_a_type_a_table_cannot_carry_is_a_catalog_fault_raised_once(
+        self, rejected: ValueType
+    ) -> None:
+        wrongly_typed = Attribute(
             id=PRESS_FREEDOM,
             name="Press freedom",
             level="country",
-            value_type=ValueType.LABEL_SET,
+            value_type=rejected,
             pillar="career",
         )
 
         with pytest.raises(ValueError, match="index, quantity and ratio"):
             await PublishedTableAdapter(a_table(a_row("AT", "79.43"))).fetch(
-                employers, [a_country("austria", "AT")]
+                wrongly_typed, [a_country("austria", "AT")]
             )

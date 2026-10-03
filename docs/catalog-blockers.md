@@ -193,6 +193,19 @@ on something outside the MVP boundary, not on an adapter.
 >   alternatives are retrying later, or OECD's own export from its Data Explorer as a file.
 >   Worth deciding only if the block persists.
 
+> **A second publisher does the same thing** (2026-10-03). `llv.li`, Liechtenstein's own
+> government, serves a Cloudflare browser challenge to both a plain fetch and `curl` with a
+> browser user agent -- so a country's primary source on its own residence rules is closed to a
+> script, exactly as OECD's is. It was routed around rather than through: the quota figure comes
+> from the Commission's own review of the EEA sectoral adaptation on EUR-Lex, **a better source
+> than the one that was blocked**, because it is the body that negotiated the limit rather than
+> the one applying it. Two notes for whoever meets this next. EUR-Lex itself serves **nothing**
+> to `curl` and only the `legal-content/EN/TXT/HTML/?uri=CELEX:` URL form to a fetch -- the
+> `eli/` and `legal-content/EN/TXT/?uri=celex:` forms return empty. And the pattern worth
+> keeping is that **the blocked door was not the only door**: a national government publishing
+> its own rule is one source, and the supranational body that imposed the rule is another, often
+> better one.
+
 ### The original item, as filed
 
 Three family attributes plus `income_tax_effective` and `house_price_to_income_ratio` are

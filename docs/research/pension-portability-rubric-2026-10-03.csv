@@ -1,0 +1,49 @@
+# NOT A SHIPPED TABLE. `country.pension_portability` is an AssignedScore with manual_entry=true,
+# and the published-table adapter accepts Index, Quantity and Ratio only -- deliberately, because
+# a transcribed table carries a figure a publisher printed, and nobody printed these. The European
+# Commission states the LAW; the 0-100 is our rubric applied to it. Entering these is a manual-entry
+# decision for the household, not a transcription. Researched 2026-10-03; pages per row are real.
+# intended_source: manual
+# attribute: country.pension_portability
+# publication: Pension portability, 0-100, on the three-part rubric reqs.md 6.9 names: statutory aggregation + occupational portability + liquidity on departure
+# publisher_url: https://employment-social-affairs.ec.europa.eu/node/76_en
+# transcribed_on: 2026-10-03
+# confidence: medium
+# period: the law in force in 2026. A legal entitlement is a constant rather than a measurement, so the period is the year of the law and not a reference year.
+# scale: AssignedScore 0-100, scored as_is and maximised. A = statutory aggregation (50 full Reg 883/2004 | 30 narrower instrument | 0 none). B = occupational second pillar (30 bound by Dir 2014/50 | 20 equivalent protection outside it | 10 national law only | 0 none). C = liquidity on departure (20 payable abroad | 10 mandatory portion blocked until retirement age | 0 rights lost). Every row's workings carry its A/B/C so the figure is recomputable.
+# route: There is no dataset. Reg 883/2004 and Dir 2014/50 are instruments whose geographic scope the Commission prints as prose - "The rules apply across the EU as well as Iceland Liechtenstein Norway and Switzerland" and "Specific coordination rules also apply to the United Kingdom" - so the figures are read off the law rather than fetched. Transcribed from the Commission's own pages plus EFTA for the EEA incorporation and the Swiss occupational-pension authority for the blocked account.
+# coverage: 32 of 32. The whole informational content is two penalties - CH 70 and GB 60 - because 30 rows are identical at 100. reqs.md 6.9 predicted exactly this ("earns its 5% only for the UK"); Switzerland is the second outlier it did not predict, and the Swiss case turns on liquidity, which the 6.9 rubric does not name.
+# workings: ASSUMES THE HOUSEHOLD HOLDS EU/EEA/SWISS CITIZENSHIP. The household table is empty so citizenship is unknown; for a third-country national this table is void, because the legal regime is a different one and GB stops being the outlier. Three further caveats. IS/LI/NO component B rests on EFTA's page saying "the Directive on Supplementary Pension Rights" was among 60 acts incorporated on 25 September 2014 - the page does not print the number 2014/50 and that identification is the transcriber's. CH component B is scored at the conservative 10 because no page was found stating Swiss vesting rules meet the Directive's floor even though Swiss law is likely more generous. GB component A rests on the existence of the TCA Protocol on Social Security Coordination rather than on its contents - the Protocol text was never reached in readable form and the DWP guide that looked relevant covers people who moved before 2021.
+country_code,figure,period,page,workings
+AT,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+BE,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+BG,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+CH,70,2026,https://sfbvg.ch/en/tasks/cash-payment-on-departure-abroad,A50 Reg 883/2004 applies via the free-movement agreement; B10 outside Dir 2014/50 being neither EU nor EEA; C10 mandatory portion held on a blocked vested-benefits account and paid out only at ordinary retirement age for departures after 31.5.2007
+CY,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+CZ,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+DE,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+DK,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+EE,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+ES,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+FI,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+FR,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+GB,60,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A30 specific coordination rules apply to the United Kingdom under the TCA Protocol rather than Reg 883/2004; B10 no longer bound by Dir 2014/50; C20
+GR,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+HR,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+HU,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+IE,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+IS,100,2026,https://efta.int/EEA/news/EU-Directive-Supplementary-Pension-Rights-extended-EEA-EFTA-States-3146,A50 Reg 883/2004 applies as an EEA state; B30 the Directive on Supplementary Pension Rights incorporated into the EEA Agreement on 25 September 2014 - the page does not print the number 2014/50; C20
+IT,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+LI,100,2026,https://efta.int/EEA/news/EU-Directive-Supplementary-Pension-Rights-extended-EEA-EFTA-States-3146,A50 Reg 883/2004 applies as an EEA state; B30 the Directive on Supplementary Pension Rights incorporated into the EEA Agreement on 25 September 2014 - the page does not print the number 2014/50; C20
+LT,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+LU,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+LV,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+MT,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+NL,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+NO,100,2026,https://efta.int/EEA/news/EU-Directive-Supplementary-Pension-Rights-extended-EEA-EFTA-States-3146,A50 Reg 883/2004 applies as an EEA state; B30 the Directive on Supplementary Pension Rights incorporated into the EEA Agreement on 25 September 2014 - the page does not print the number 2014/50; C20
+PL,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+PT,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+RO,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+SE,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+SI,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20
+SK,100,2026,https://employment-social-affairs.ec.europa.eu/node/76_en,A50 Reg 883/2004 in full; B30 Dir 2014/50; C20

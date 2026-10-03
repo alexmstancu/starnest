@@ -2041,6 +2041,75 @@ reproducible from the evidence rather than impressionistic:
 > 883/2004 applies uniformly. It earns its 5% only for the UK, where post-Brexit arrangements
 > differ. Worth revisiting after the first run.
 
+**Both were researched for all 32 on 2026-10-03, and the prediction above is confirmed. Neither
+ships.** The sourced figures and every page behind them are at
+`docs/research/pension-portability-rubric-2026-10-03.csv`; the residency findings are in this
+section rather than in a file, because they are reasons not to score rather than figures to store.
+
+**The rubric above is incomplete for pensions, and the research says where.** The spread is three
+values -- 100 for thirty countries, Switzerland 70, the United Kingdom 60 -- so it is a constant
+plus two penalties rather than a gradient. The British penalty is the one predicted. **The Swiss
+one was not, and it turns on liquidity**, which the three elements listed above do not name: the
+mandatory second-pillar portion is held on a blocked vested-benefits account and paid out only at
+ordinary retirement age for departures after 31 May 2007. A rubric scoring only aggregation,
+vesting and totalisation would score Switzerland 100 and lose the only thing that is true about it.
+
+**For residency the world supplies no gradient at all.** Directive 2004/38/EC caps three of the
+five elements above across all thirty free-movement states -- the registration certificate is
+*"issued immediately"* and its fee capped at *"the price nationals pay for identity cards"* -- so
+statutory processing time is legally instant everywhere. Of the two elements left, **neither has a
+per-country publisher**: the EU's own eGovernment Benchmark measures exactly this (its *Moving*
+life event scores "obtain a registration certificate" and "register new address in the municipality
+register") and publishes per-country values **only as rendered chart images**, giving prose figures
+for the EU as a whole -- 48% and 47% cross-border online availability, and *"15% of services remain
+inaccessible to cross-border users"* -- without saying which states. What is left scores 6 distinct
+values with 26 of 32 at 80 or 90.
+
+> **The 70-100 band is refused, not merely thin.** EURES's level of detail varies by country, so a
+> ten-point gap inside that band partly measures how thoroughly each country's page was written:
+> Denmark's and Liechtenstein's are stubs, Croatia's, France's and Lithuania's omit the EU-citizen
+> procedure, and Italy's contradicts itself within one section. That is a plausible-looking number
+> standing in for a measurement, which section 10 forbids outright. **The precedent is Q228**, where
+> `european_air_connectivity` was fetched correctly for every candidate and still not scored: a
+> figure can be right and not be a distinction. The difference is that air connectivity's figures
+> were true and merely flat, while these differ partly because of how well each page was written --
+> so this is the weaker case of the two, not the stronger. `country.residency_admin_ease` keeps its
+> row and its weight and stays uncovered.
+
+**The two outliers are gate-shaped, and the gates were already built.** Section 3.7's MatchRules
+are *"named gates attached to no attribute -- visa pathways, quota availability, two-role
+feasibility"*. Britain's barrier is a **visa pathway** and
+Liechtenstein's is a **quota** (the EEA Agreement's sectoral adaptation grants *"a minimum of 56
+new residence permits"* a year). Scoring them 0 and 30 on a 15%-weighted criterion says "somewhat
+harder"; a gate says "not without being sponsored or winning a draw", which is what is true. The
+catalog already holds `eu_free_movement`, `uk_skilled_worker` and `ch_eu_efta_quota` as
+country-level `match_rule` rows -- **declared, enforced by no criteria set, and answered for no
+candidate**, which is the designed state for an undecided rule. Enforcing and answering them is
+the household's decision; a Liechtenstein quota gate is the one row missing.
+
+**An AssignedScore cannot be transcribed, and that is deliberate.** Both attributes carry
+`manual_entry = true`, and the published-table adapter accepts `Index`, `Quantity` and `Ratio`
+only. A transcribed table carries a figure *a publisher printed*; the Commission publishes the
+**law**, and the 0-100 is this household's rubric applied to it. Storing it under
+`european_commission` would attribute our interpretation to them, which is the
+`ExternalScore` rule (section 3.5a) pointed the other way round. **Entering these is manual entry,
+by a person, under the `manual` source** -- no adapter, no migration.
+
+**Everything here rests on one unverified assumption: that the household holds EU, EEA or Swiss
+citizenship.** The `household` table is empty and no migration seeds one, so citizenship is
+unknown. For a third-country national both tables are void -- a different legal regime, and
+Britain stops being the outlier. That assumption does more work than any figure in either table.
+
+**Routes that failed**, so nobody pays for them twice: `llv.li`, Liechtenstein's own government,
+serves a Cloudflare browser challenge to a script exactly as OECD does (`catalog-blockers.md`
+item 5), and the quota is cited to the Commission's own review on EUR-Lex instead; EUR-Lex serves
+**nothing** to `curl` and only the `legal-content/EN/TXT/HTML/?uri=CELEX:` URL form to a fetch;
+`efta.int` PDFs refuse `curl`; `migracija.lt` is a JavaScript application, which makes Lithuania
+the one country with no procedure read from a page. **UN EGDI was abandoned rather than routed
+around**: it blends online services with telecoms infrastructure and human capital, three goods,
+so Q223 bars it, and using it as a proxy would have laundered a barred composite into an
+AssignedScore.
+
 ### 6.10 Where the LLM is used, and where it is not
 
 **This application is data-first, and must stay that way.** A language model introduces
