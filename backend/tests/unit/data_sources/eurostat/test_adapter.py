@@ -47,6 +47,18 @@ def an_attribute(**overrides: object) -> Attribute:
     return Attribute(**(fields | overrides))  # type: ignore[arg-type]
 
 
+def a_price_level_attribute() -> Attribute:
+    """`country.housing_price_level` as the catalog declares it: a Quantity on the EU27 base."""
+    return Attribute(
+        id="country.housing_price_level",
+        name="Housing price level",
+        level="country",
+        value_type=ValueType.QUANTITY,
+        pillar="housing",
+        quantity_parameters=QuantityParameters(unit="eu27_average_100"),
+    )
+
+
 def a_country(name: str, code: str | None) -> Candidate:
     return Candidate(id=f"country.{name}", name=name.title(), level=COUNTRY, country_code=code)
 
@@ -464,6 +476,51 @@ async def test_the_live_api_still_answers_the_shape_we_parse() -> None:
         )
 
     assert acquired.values, "Eurostat no longer answers the query the manifest describes"
+
+
+class TestTheHousingPriceLevel:
+    """`country.housing_price_level`, added by `0488` and fetched from the PPP programme.
+
+    **The dataset code and the category are the whole of the correctness here.** The same
+    endpoint answers the shape we parse for dozens of series, so a typo in either fetches a
+    *different quantity* and stores it under this attribute's name -- real numbers, correctly
+    parsed, measuring something else. That is a fault no parsing test can see, and the reason
+    this asserts the manifest rather than only the result.
+    """
+
+    def test_it_asks_the_ppp_dataset_for_the_housing_category(self) -> None:
+        from starnest.data_sources.eurostat.manifest import QUERIES
+
+        query = QUERIES["country.housing_price_level"]
+
+        assert query.dataset == "prc_ppp_ind_1"
+        # `A0104` is housing, water, electricity, gas and other fuels -- the monthly bill.
+        # `E011` is the whole consumption basket and belongs to `cost_of_living_index`.
+        assert query.filters["ppp_cat18"] == "A0104"
+        assert query.filters["indic_ppp"] == "PLI_EU27_2020"
+
+    async def test_a_captured_response_becomes_a_price_level(self) -> None:
+        acquired = await adapter_returning("prc_ppp_ind_1").fetch(
+            a_price_level_attribute(),
+            [a_country("bulgaria", "BG"), a_country("switzerland", "CH")],
+        )
+
+        by_candidate = {str(v.candidate): v.payload.magnitude for v in acquired.values}
+        assert by_candidate["country.bulgaria"] < 60, "Bulgaria is far below the EU average"
+        assert by_candidate["country.switzerland"] > 150, "Switzerland is far above it"
+
+    async def test_the_base_is_the_eu_average_and_not_a_percentage(self) -> None:
+        """**A price level index has a base, not a range** (`0443`). A figure above 100 is not
+        an error: Switzerland pays over twice the EU average for housing, and a type that
+        capped at 100 could not hold it, which is why this is a `Quantity` whose unit names the
+        base rather than a `Ratio`."""
+        acquired = await adapter_returning("prc_ppp_ind_1").fetch(
+            a_price_level_attribute(),
+            [a_country("switzerland", "CH")],
+        )
+
+        (value,) = acquired.values
+        assert value.payload.magnitude > 100
 
 
 class TestADensityAcrossTwoDatasets:
