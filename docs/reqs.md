@@ -2308,13 +2308,23 @@ way by the active-value rule (section 3.6).
 | Attribute | Weight | Value type | Sources | Max age |
 |---|---|---|---|---|
 | `country.rail_network_density` | 30% | **Quantity** — km of line per 1,000 km² | Eurostat rail infrastructure statistics | 24 months |
-| `country.international_air_connectivity` | 25% | **Count** — international destinations served, worldwide | No dataset covers it; the LLM path answers it with the pages it read (6.10 use 1) | 24 months |
+| `country.international_air_connectivity` | 25% | **Count** — international destinations served, worldwide | No *current* dataset covers it; the LLM path answers it with the pages it read (6.10 use 1) | 24 months |
 | `country.european_air_connectivity` | *descriptive* | **Count** — European countries served by direct passenger flights, 0-35 | Eurostat `avia_paocc`, counting partner countries with passenger traffic | 24 months |
 | `country.broadband_coverage` | 25% | **Ratio** — share of households with high-speed or fibre access | Eurostat DESI, national regulators | 24 months |
 | `country.road_network_quality` | 20% | **Quantity** — km of motorway per 1,000 km² | Eurostat road transport statistics | 24 months |
 
 > Each pairs with a city criterion without duplicating it, on the `safety_national` /
 > `city.safety` pattern: national broadband coverage **sets the ceiling**, while Ookla tiles report what
+> **OpenFlights was checked properly on 2026-10-03 and is stale, not absent.** The catalog
+> declares it rank 2 for this attribute and `routes.dat` does answer the question exactly --
+> counting distinct foreign destinations served from a country's airports gives Germany 314,
+> the Netherlands 253, Portugal 137, Malta 76, Iceland 32, a tenfold spread with real
+> discrimination in it, unlike the European count Q228 made descriptive. **It last changed on
+> 2017-02-02.** Nine years against a 24-month `max_age`: route networks turn over, and a figure
+> stamped with its true reference date would be marked stale and downgraded the moment it
+> landed. So "no dataset covers it" is wrong about existence and right about usability, and the
+> line above now says which.
+
 > a given street actually gets; `country.international_air_connectivity` asks whether the country
 > connects to the world, while `city.flights_to_home` asks whether you can get home from *this*
 > town; intercity rail is a different question from local trams. Rail matters most for the
