@@ -2364,7 +2364,41 @@ way by the active-value rule (section 3.6).
 > **Computed** as the count of these six conditions that hold, giving 0–6:
 > coastline length > 0, terrain above 1,500 m, a lake larger than 100 km², a river longer
 > than 500 km, forest cover above 20%, three or more distinct Köppen zones.
-> Each input is already fetched for another criterion or fact, so this adds no new source.
+>
+> ~~Each input is already fetched for another criterion or fact, so this adds no new source.~~
+> **That sentence was never true and is corrected here (2026-10-03).** Checked against the
+> catalog one condition at a time: coastline, elevation and forest cover are answered;
+> `country.climate_zone` has twenty allowed Köppen codes and **no values**; and **a lake area
+> and a river length have no attribute row at all**. Two new attributes and a raster are not
+> "no new source", and anyone planning from that line would have planned wrongly.
+>
+> **It stays deferred by Q142 regardless**, which defers derived attributes to post-MVP and says
+> a derivation will be an adapter reading other attributes rather than a formula in config. So
+> this is out of scope by decision, not blocked by data — and the data is now known to exist.
+>
+> **The lake and river facts were sourced for all 32 on 2026-10-03** and are transcribable: no
+> scriptable route survives (HydroLAKES is 763 MB and carries neither lake name nor country,
+> HydroRIVERS 544 MB with no river names and no per-system length, EEA's WISE tables return 410,
+> and ICPDR is Cloudflare-challenged like OECD). **Both conditions discriminate, and nearly
+> independently** — the lake test splits the 32 **17 yes / 15 no**, the best-balanced input in
+> the whole six-condition set, and the river test **24 / 8**, whose eight noes overlap the lake's
+> fifteen by only five. Together the pair gives 2 points to 14 countries, 1 to 13 and 0 to five,
+> so it separates the field three ways rather than handing nearly everyone a point. Both turn on
+> a rule that has to be stated before anything is counted: a shared lake counts only where the country's own share exceeds 100 km² (which is the
+> difference between yes and no for Greece, whose Prespa share is 38 km² and whose largest
+> domestic lake misses by 1.4 km²), and a river counts at its total length where it runs through
+> or along the country (which is what qualifies Liechtenstein on 27 km of Rhine). Four countries
+> qualify on a reservoir or a dammed inlet rather than a natural lake. **None of that is a data
+> problem; it is the formula needing a decision**, which is what Q142 deferred.
+>
+> The sourced figures are kept at `docs/research/lakes-and-rivers-2026-10-03.csv`, one page cited
+> per row. **They are encyclopedia transcriptions, not publisher tables** — the national-agency
+> route that answered elevation has no live equivalent for lake area — so they would store at
+> `low` confidence and are not peers of the RSF, EF EPI or MIPEX tables. The raw wikitext was
+> parsed directly rather than summarised, because the river list is actively vandalised and a
+> summarised read of it returned the Elbe at 1 329 km and the Vistula at 1 211. Two rows sit
+> close enough to the threshold that a better source would change the answer: Greece at
+> 98.6 km² and Poland at 114.
 
 #### Culture & community — 6%
 

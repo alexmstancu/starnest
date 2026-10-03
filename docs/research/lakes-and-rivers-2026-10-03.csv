@@ -1,0 +1,33 @@
+country_code,largest_lake_km2,lake_name,lake_page,lake_over_100km2,longest_river_km,river_name,river_page,river_over_500km
+AT,315,Lake Neusiedl (AT share 240),https://en.wikipedia.org/wiki/Lake_Neusiedl,yes,2850,Danube,https://en.wikipedia.org/wiki/Danube,yes
+BE,,none >=100,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,no,925,Meuse,https://en.wikipedia.org/wiki/Meuse,yes
+BG,,none >=100,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,no,2850,Danube,https://en.wikipedia.org/wiki/Danube,yes
+CH,581,Lake Geneva (CH share ~345); Neuchatel 218 wholly CH,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes,1230,Rhine,https://en.wikipedia.org/wiki/Rhine,yes
+CY,,none >=100,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,no,98,Pedieos,https://en.wikipedia.org/wiki/Pedieos,no
+CZ,,none >=100,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,no,1112,Elbe,https://en.wikipedia.org/wiki/Elbe,yes
+DE,541,Lake Constance (shared); Muritz 117 wholly DE,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes,2850,Danube,https://en.wikipedia.org/wiki/Danube,yes
+DK,,none >=100 (Arreso 40.7),https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,no,149,Gudenaa,https://en.wikipedia.org/wiki/Guden%C3%A5,no
+EE,3555,Lake Peipus (EE share ~1570); Vortsjarv 270 wholly EE,https://en.wikipedia.org/wiki/Lake_Peipus,yes,166,Vohandu (Narva only 77),https://en.wikipedia.org/wiki/V%C3%B5handu,no
+ES,170,Mar Menor (coastal lagoon; largest natural lake Sanabria 3.48),https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes*,1007,Tagus,https://en.wikipedia.org/wiki/Tagus,yes
+FI,4377,Saimaa,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes,550,Kemijoki (Torne 510 border),https://en.wikipedia.org/wiki/Kemijoki,yes
+FR,581,Lake Geneva (FR share ~234); Etang de Berre 155,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes,1006,Loire,https://en.wikipedia.org/wiki/Loire,yes
+GB,383,Lough Neagh (Northern Ireland),https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes,354,River Severn,https://en.wikipedia.org/wiki/River_Severn,no
+GR,318,Great Prespa (GR share ~38); largest domestic Trichonida 98.6,https://en.wikipedia.org/wiki/Lake_Trichonida,no*,480,Maritsa (border); Haliacmon 297 domestic,https://en.wikipedia.org/wiki/Maritsa,no
+HR,,none >=100 (Vransko 30.7),https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,no,2850,Danube (Sava 990),https://en.wikipedia.org/wiki/Danube,yes
+HU,592,Balaton,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes,2850,Danube (Tisza 966),https://en.wikipedia.org/wiki/Danube,yes
+IE,200,Lough Corrib,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes,360,River Shannon,https://en.wikipedia.org/wiki/River_Shannon,no
+IS,88,Thorisvatn (reservoir),https://en.wikipedia.org/wiki/%C3%9E%C3%B3risvatn,no,230,Thjorsa,https://en.wikipedia.org/wiki/%C3%9Ej%C3%B3rs%C3%A1,no
+IT,370,Lake Garda,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes,652,Po,https://en.wikipedia.org/wiki/Po_(river),yes
+LI,,none,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,no,1230,Rhine (borders LI ~27 km),https://en.wikipedia.org/wiki/Rhine,yes*
+LT,,none >=100 (Kauno marios 63.5),https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,no,937,Neman,https://en.wikipedia.org/wiki/Neman,yes
+LU,,none,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,no,546,Moselle (borders LU),https://en.wikipedia.org/wiki/Moselle,yes*
+LV,,none >=100 (Lubans 25-100),https://en.wikipedia.org/wiki/Lub%C4%81ns,no,1020,Daugava (352 km in LV),https://en.wikipedia.org/wiki/Daugava,yes
+MT,,none,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,no,0,no permanent rivers,https://en.wikipedia.org/wiki/Geography_of_Malta,no
+NL,1100,IJsselmeer (dammed sea inlet),https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes*,1230,Rhine (Meuse 925),https://en.wikipedia.org/wiki/Rhine,yes
+NO,365,Mjosa,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes,621,Glomma,https://en.wikipedia.org/wiki/Glomma,yes
+PL,114,Sniardwy,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes,1047,Vistula,https://en.wikipedia.org/wiki/Vistula,yes
+PT,250,Alqueva (reservoir; no natural lake >=100),https://en.wikipedia.org/wiki/Alqueva_Dam,yes*,1007,Tagus,https://en.wikipedia.org/wiki/Tagus,yes
+RO,415,Razim (coastal lagoon),https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes,2850,Danube,https://en.wikipedia.org/wiki/Danube,yes
+SE,5655,Vanern,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,yes,520,Dalalven (Torne 510 border),https://en.wikipedia.org/wiki/Dal%C3%A4lven,yes
+SI,,none >=100 (Cerknica 26),https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,no,990,Sava (Drava 709.8),https://en.wikipedia.org/wiki/Sava,yes
+SK,,none >=100,https://en.wikipedia.org/wiki/List_of_largest_lakes_of_Europe,no,2850,Danube (Tisza 966),https://en.wikipedia.org/wiki/Danube,yes
