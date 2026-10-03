@@ -1,0 +1,44 @@
+# data_source: national_statistics
+# attribute: country.elevation_range
+# publication: highest and lowest points, from each country's statistics office or mapping agency
+# publisher_url: https://ec.europa.eu/eurostat/web/national-statistical-institutes
+# transcribed_on: 2026-10-03
+# confidence: medium
+# period: a country's relief is not a measurement with a year. The period is the survey behind each figure where the page gives one -- Snezka 2014, Mont Blanc 2023, Kebnekaise 2025 -- and otherwise the publication's own date. Stated as 2025 throughout because that is the year every figure below was in force, not the year any of them was measured.
+# route: no publisher prints this for 32 countries. Each figure was read from the national statistics office, mapping agency or ministry that publishes it -- Ordnance Survey, CUZK, Statistik Austria, GUS, INSSE, stat.gov.lv, statistikportal.li and others, named per row. Two low points are Wikipedia-routed and say so in their workings: Denmark's and Italy's. Medium confidence for the assembly, not for the individual figures.
+# scale: metres above (or below) each country's own vertical datum, which differ -- NAP in the Netherlands, TAW in Belgium, Ostend, Amsterdam, Kronstadt. The differences are centimetres to a few decimetres and this attribute is a range of hundreds to thousands of metres, so they are below its precision. Stated because a datum difference is exactly the kind of thing that is invisible until it is not.
+# coverage: 32 of 32. Seven countries have a point below sea level (NL, DK, DE, PL, GB, SE, IT); Belgium probably has an eighth at De Moeren but no page fixes it, so sea level is used as a floor there and the range may be understated by about 3 m.
+# workings: the range is the highest point minus the lowest. For a coastal country with no recorded depression the lowest is sea level, 0 m.
+country_code,figure,period,page,workings
+AT,3684,2025,https://www.statistik.at/fileadmin/publications/oesterreich_zahlen_daten_fakten.pdf,"Großglockner 3798 m minus Apetlon, Seewinkel 114 m"
+BE,694,2025,https://connaitrelawallonie.wallonie.be/fr/histoire-et-symboles/histoire/atlas-historique/relief-de-la-wallonie,"Signal de Botrange 694 m minus North Sea coast 0 m; De Moeren near Veurne lies roughly 2-3 m below the Ostend reference level, but no page fixes an official point, so sea level is used as a floor and the true range may be ~3 m larger"
+BG,2925,2025,https://www.nsi.bg/sites/default/files/files/publications/StatBook2024.pdf,"Musala, Rila 2925 m minus Black Sea coast 0 m"
+CH,4441,2025,https://www.aboutswitzerland.eda.admin.ch/en/geography,"Dufourspitze 4634 m minus Lake Maggiore 193 m"
+CY,1953,2025,https://library.cystat.gov.cy/Documents/Publication/CYPRUS_IN_FIGURES-2020-EN-240521.pdf,"Chionistra, Troodos 1953 m minus Mediterranean coast 0 m"
+CZ,1488.3,2025,https://cuzk.gov.cz/Aktuality-resort/20140225/Snezka.aspx,"Sněžka 1603.3 m minus the Elbe at Hřensko 115 m; CUZK levelled the summit at 1603.296 m in 2014 and states it stands on Polish territory; the Czech-side high point on the border is about 10 cm lower, which is below the precision of this figure"
+DE,2965.54,2025,https://www.lfu.bayern.de/geologie/permafrost/zugspitze/index.htm,"Zugspitze 2962 m minus Neuendorf-Sachsenbande -3.54 m"
+DK,177.86,2025,https://www.dst.dk/pukora/epub/upload/14849/dkital.pdf,"Møllehøj 170.86 m minus Lammefjord -7.0 m; the low point is Wikipedia-routed; the high point is Danmarks Statistik"
+EE,318,2025,https://www.stat.ee/sites/default/files/2020-07/Minifacts_about_Estonia_2013.pdf,"Suur Munamägi 318 m minus Baltic coast 0 m"
+ES,3715,2025,https://educativo.ign.es/atlas-didactico/relieve-bach/el_relieve_insular.html,"Teide, Tenerife 3715 m minus coast 0 m; the Canaries are admitted by the territory ruling"
+FI,1324,2025,https://otos.stat.fi/server/api/core/bitstreams/f3e835da-b220-4251-8079-7b7309d1d2a4/content,"Halti, Finnish side 1324 m minus Baltic coast 0 m"
+FR,4805.59,2025,https://www.regione.vda.it/notizie/details_f.asp?id=447077,"Mont Blanc 4805.59 m minus coast 0 m; metropolitan France; the summit is a snow cap re-surveyed biennially and the figure moves"
+GB,1347.28,2025,https://www.ordnancesurvey.co.uk/blog/britains-tallest-mountain-is-taller,"Ben Nevis 1344.527 m minus Holme Fen -2.75 m"
+GR,2917.73,2025,https://link.springer.com/article/10.1007/s11629-022-7866-8,"Mytikas, Mount Olympus 2917.727 m minus coast 0 m"
+HR,1831,2025,https://www.haop.hr/hr/novosti/proglasen-park-prirode-dinara,"Dinara 1831 m minus Adriatic coast 0 m"
+HU,938,2025,https://www.ksh.hu/stadat_files/fol/hu/fol0001.html,"Kékes, Mátra 1014 m minus Gyálarét, Szeged 76 m"
+IE,1039,2025,https://www.npws.ie/sites/default/files/protected-sites/synopsis/SY000365.pdf,"Carrauntoohil 1039 m minus coast 0 m; NPWS says 1039 m; Ordnance Survey Ireland says 1038"
+IS,2110,2025,https://www.vedur.is/eldfjoll/helstu-eldfjoll/oraefajokull/,"Hvannadalshnjúkur 2110 m minus coast 0 m"
+IT,4809.03,2025,https://www.regione.vda.it/notizie/details_f.asp?id=447077,"Monte Bianco 4805.59 m minus Contane, Jolanda di Savoia -3.44 m; sovereignty of the summit is contested with France; the highest peak wholly in Italy is Gran Paradiso at 4061 m. The low point is Wikipedia-routed"
+LI,2169,2025,https://www.statistikportal.li/statistikportal/publications/103-liechtenstein-in-figures/2024/01/1/103.2024.01.1_01_liechtenstein-in-figures-2024.pdf,"Grauspitz 2599 m minus Ruggeller Riet 430 m"
+LT,293.84,2025,https://www.vle.lt/straipsnis/aukstojas/,"Aukštojas 293.84 m minus Baltic coast 0 m"
+LU,430,2025,https://act.public.lu/fr/actualites/2010/01/point-culminant-luxembourg.html,"Kneiff, Wilwerdange 560 m minus Wasserbillig 130 m; 130 m, not the 133 m the CIA World Factbook prints"
+LV,311.94,2025,https://stat.gov.lv/en/statistics-themes/environment/nature-resources/other/8249-highest-peaks-latvia,"Gaiziņkalns 311.94 m minus Baltic coast 0 m"
+MT,253,2025,https://staff.um.edu.mt/csav1/srg/intro_geog.pdf,"Ta' Dmejrek, Dingli Cliffs 253 m minus coast 0 m"
+NL,329.16,2025,https://hollandsecirkel.nl/documentatie/monumenten/hoogste-en-laagste-punt-nap/,"Vaalserberg 322.4 m minus Zuidplaspolder -6.76 m; the European Netherlands; the source says so in its own words, which excludes Saba"
+NO,2469,2025,https://www.miljodirektoratet.no/globalassets/publikasjoner/M925/M925.pdf,"Galdhøpiggen 2469 m minus coast 0 m; mainland Norway"
+PL,2500.8,2025,https://stat.gov.pl/files/gfx/portalinformacyjny/en/defaultaktualnosci/3316/9/17/1/polska_w_liczbach_2023_ang_pi.pdf,"Rysy 2499 m minus Raczki Elbląskie -1.8 m"
+PT,2351,2025,https://roteirodasminas.dgeg.gov.pt/pt/lista-de-pontos/montanha-do-pico-geossitio-pt-1/,"Montanha do Pico 2351 m minus coast 0 m; the Azores are admitted by the territory ruling"
+RO,2544,2025,https://insse.ro/cms/sites/default/files/field/publicatii/anuarul_statistic_al_romaniei_carte-ed.2022.pdf,"Moldoveanu, Făgăraș 2544 m minus Black Sea coast 0 m"
+SE,2099.12,2025,https://www.su.se/english/news/articles/2025-09-12-kebnekaises-southern-peak-continues-to-melt,"Kebnekaise north peak 2096.8 m minus Kristianstad -2.32 m; the ice-free north peak has held the title since 2019; the glaciated south peak has lost ~30 m since 1951 and is not a catalog figure"
+SI,2864,2025,https://www.stat.si/doc/letopis/2000/01_00/01-05-00.htm,"Triglav 2864 m minus Adriatic coast 0 m"
+SK,2561,2025,https://slovak.statistics.sk/wps/wcm/connect/7e577625-1475-4728-ba09-319132bae48c/Slovenska_republika_v_cislach_2023_EN.pdf?MOD=AJPERES,"Gerlachovský štít 2655 m minus the Bodrog at Klin nad Bodrogom 94 m"

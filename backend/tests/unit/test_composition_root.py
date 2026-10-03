@@ -132,6 +132,10 @@ class TestWhatIsActuallyWiredIn:
             # Coastline length at one stated resolution for every country (`0489`), which is
             # what the Factbook's figures cannot offer and why they were not transcribed.
             "wri",
+            # Highest and lowest points, one national mapping agency or statistics office per
+            # country (`0490`). No publisher prints this for 32, and the DEM routes all read
+            # low or publish rasters rather than extremes.
+            "national_statistics",
             # Statutory paid leave is national law in 31 jurisdictions and no publisher prints
             # it as one table, so the transcription is stored under `national_law` -- the
             # source the catalog already ranks for it.

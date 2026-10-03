@@ -2339,7 +2339,23 @@ way by the active-value rule (section 3.6).
 | `country.protected_land_share` | 25% | **Ratio** — share of territory | WDPA / Protected Planet, Eurostat | 24 months |
 | `country.coastline_access` | 20% | **Quantity** — km coast per 1000 km² | Natural Earth, Eurostat — length relative to area | — |
 | `country.forest_cover` | 15% | **Ratio** — share of land area | FAO, Corine Land Cover | 60 months |
-| `country.elevation_range` | 15% | **Quantity** — m | Copernicus DEM — relief variety | — |
+| `country.elevation_range` | 15% | **Quantity** — m | National mapping agencies and statistics offices, transcribed; Copernicus DEM second | — |
+
+> **Transcribed on 2026-10-03, after every computed route failed.** GMTED2010 publishes minimum
+> and maximum as per-cell rasters with no country summary; the EEA's EU-DEM elevation breakdown
+> is archived and gives relief typologies rather than extremes; Open Topo Data against EU-DEM
+> reads low (Mont Blanc 4 780 m against 4 805.59) and needs summit coordinates we do not have;
+> and GeoNames — already a dependency here — is wrong for this, reading Grossglockner 62 m low
+> and carrying the `-9999` nodata sentinel for a Netherlands with no peak features at all.
+>
+> So each figure comes from the agency that surveys it: Ordnance Survey, ČÚZK, Statistik
+> Austria, GUS, INSSE, the Bavarian environment agency, and the rest. **Seven countries have a
+> point below sea level**, not the three a first pass assumed — Poland, the United Kingdom,
+> Sweden and Italy join the Netherlands, Denmark and Germany — and Luxembourg's widely printed
+> 133 m is the Factbook's; its own government says 130. Three figures are contested and the
+> table says so per row: Sněžka's summit stands on Polish soil, Mont Blanc's sovereignty is
+> disputed and its snow cap is re-surveyed biennially, and Kebnekaise's glaciated south peak has
+> lost about 30 m since 1951, so the ice-free north peak is the figure.
 
 > A large country can host sea, high mountains, lakes and forest **simultaneously**, and that
 > combination is the thing worth measuring. `country.natural_diversity` measures coexistence rather
