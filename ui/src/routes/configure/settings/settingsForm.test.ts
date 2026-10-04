@@ -140,9 +140,18 @@ describe("what a blank setting costs", () => {
     expect(isBlocked(blank)).toBe(true);
   });
 
+  /**
+   * **Read by someone deciding whether to fill the box in**, so a consequence has to be a
+   * sentence about what happens next and not a second label. The two things a reader notices
+   * at once are what is asserted: no identifier from the contract leaks into it, and it reads
+   * as a sentence. A length greater than zero stood here and could not fail for any wording.
+   */
   it("gives every setting a consequence written in plain words", () => {
     for (const field of SETTING_FIELDS) {
-      expect(field.consequence.length).toBeGreaterThan(0);
+      // `insufficient_data` and `score_scale_max` are the contract's words, not a reader's --
+      // and a `description` is allowed them, because it says what the setting is for.
+      expect(field.consequence).not.toMatch(/[a-z]+_[a-z_]+/);
+      expect(field.consequence).toMatch(/^[A-Z].*\.$/);
       // A consequence is what is true while it is blank, so it must not merely restate the
       // description of what the setting is for.
       expect(field.consequence).not.toBe(field.description);

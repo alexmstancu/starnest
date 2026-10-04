@@ -58,9 +58,12 @@ export function useResource<Data>(
         if (current) setResource({ status: "ready", data, error: null });
       })
       .catch((error: unknown) => {
-        if (current && !controller.signal.aborted) {
-          setResource({ status: "error", data: null, error });
-        }
+        // `current` alone. The cleanup below sets it false and aborts the controller in the
+        // same breath, and nothing else touches either, so `!controller.signal.aborted` was
+        // the same question asked twice -- and a branch no test can reach reads as a case
+        // that happens. An abandoned request rejects *because* it was abandoned, so its
+        // failure is not news and must not replace a good answer with an error notice.
+        if (current) setResource({ status: "error", data: null, error });
       });
 
     return () => {

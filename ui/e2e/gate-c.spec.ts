@@ -264,7 +264,7 @@ test.describe("a run", () => {
     await expect(card.getByText("At most")).toBeVisible();
     await expect(card.getByText("Paid calls")).toBeVisible();
     // **Named, not filtered.** The last acquisition's report opens with the screen now, and
-    // its failures table has a Source column too.
+    // its per-source breakdown names each source.
     await expect(page.getByRole("table", { name: /per source/i })).toBeVisible();
     await expect(card.getByRole("button", { name: "Start this acquisition" })).toBeVisible();
 
@@ -282,8 +282,11 @@ test.describe("a run", () => {
     // The acquisition's own number is what opens it, as the design has it.
     await row.getByRole("button", { name: String(run) }).click();
 
-    const report = page.getByRole("heading", { name: `Acquisition ${run}` });
-    await expect(report).toBeVisible();
+    // **The region, not the heading.** The card is headed by its *state* -- "Acquiring now",
+    // "Acquisition finished", "Acquisition did not finish" -- as the design has it, so the
+    // number is on the line beneath and in the region's accessible name. The region is what
+    // the rest of this test already reads.
+    await expect(page.getByRole("region", { name: `Acquisition ${run}` })).toBeVisible();
     await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
 
     // **Polled, because a run no longer finishes before the request returns.** P35 made the

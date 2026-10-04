@@ -2,9 +2,28 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
+import { CITY_CANDIDATES, COUNTRY_CANDIDATES } from "../mocks/fixtures";
 import { mockServer } from "../mocks/server";
 import { TEST_CONFIG, renderShell } from "../testing/renderShell";
 import { ROUTES } from "../navigation/routes";
+
+/**
+ * How many candidates the roster holds, per level, taken from the fixture rather than written
+ * down beside the assertion.
+ *
+ * **A literal here has drifted twice in one session** -- 4, then 5 when Romania joined the
+ * roster, then 6 when the United Kingdom did -- and the third break would have landed on
+ * somebody who had not added a country and had no reason to connect the two. A count asserted
+ * against a number that moves for reasons outside the test is scaffolding pretending to be a
+ * subject.
+ *
+ * **This is not the test agreeing with itself.** The figure on screen travels from the fixture
+ * through the msw handler, `GET /candidates`, `useResource` and the sidebar's render, and
+ * asserting it equals the roster's length checks every step of that. What it gives up is
+ * catching "the fixture changed", which is this test's input and never was its subject.
+ */
+const EVERY_COUNTRY = String(COUNTRY_CANDIDATES.length);
+const EVERY_CITY = String(CITY_CANDIDATES.length);
 
 /**
  * Waits until the sidebar has adopted its defaults. The catalog arrives in one render and the
@@ -106,15 +125,24 @@ describe("the sidebar selectors", () => {
     renderShell("/rank");
     await sidebarIsLoaded();
     const counts = within(await screen.findByRole("region", { name: /candidates/i }));
-    await waitFor(() => expect(counts.getByText("Total").nextSibling).toHaveTextContent("4"));
+    // **Total counts candidates; the other three count ranked results**, so the four need not
+    // agree — the design keeps Total when the score range is unset precisely because it needs
+    // no score. That is why the roster is larger than the ranking, and why only Total is read
+    // off the roster.
+    await waitFor(() =>
+      expect(counts.getByText("Total").nextSibling).toHaveTextContent(EVERY_COUNTRY),
+    );
 
     await user.click(screen.getByRole("button", { name: "City" }));
 
     const rank = within(screen.getByRole("region", { name: "Rank" }));
     // Capitalised: the catalog ships ids, and a reader is shown a name.
     await waitFor(() => expect(rank.getByText("Level").nextSibling).toHaveTextContent("City"));
-    // Two city candidates in the mock, one of them insufficient_data.
-    await waitFor(() => expect(counts.getByText("Total").nextSibling).toHaveTextContent("2"));
+    // The deeper level's roster, read the same way. The count beneath it is the ranking's and
+    // stays a literal: it is what this test is about.
+    await waitFor(() =>
+      expect(counts.getByText("Total").nextSibling).toHaveTextContent(EVERY_CITY),
+    );
     expect(counts.getByText("Insufficient data").nextSibling).toHaveTextContent("1");
   });
 
@@ -143,7 +171,13 @@ describe("the sidebar counts and last run", () => {
     const counts = within(
       await screen.findByRole("region", { name: /candidates/i }),
     );
-    await waitFor(() => expect(counts.getByText("Total").nextSibling).toHaveTextContent("4"));
+    // **Total counts candidates; the other three count ranked results**, so the four need not
+    // agree — the design keeps Total when the score range is unset precisely because it needs
+    // no score. That is why the roster is larger than the ranking, and why only Total is read
+    // off the roster.
+    await waitFor(() =>
+      expect(counts.getByText("Total").nextSibling).toHaveTextContent(EVERY_COUNTRY),
+    );
     expect(counts.getByText("Matching").nextSibling).toHaveTextContent("2");
     expect(counts.getByText("Not matching").nextSibling).toHaveTextContent("1");
     expect(counts.getByText("Insufficient data").nextSibling).toHaveTextContent("1");

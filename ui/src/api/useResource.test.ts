@@ -35,7 +35,10 @@ describe("the four states", () => {
   });
 
   it("loads, then holds what came back", async () => {
-    const { result } = renderHook(() => useResource(() => Promise.resolve(42)));
+    const { result } = renderHook(() => {
+      const fetcher = useCallback(() => Promise.resolve(42), []);
+      return useResource(fetcher);
+    });
 
     expect(result.current.resource.status).toBe("loading");
     await waitFor(() => expect(result.current.resource.status).toBe("ready"));
@@ -44,7 +47,10 @@ describe("the four states", () => {
 
   it("holds the error a failed request threw, rather than an empty ready", async () => {
     const boom = new Error("the backend is down");
-    const { result } = renderHook(() => useResource(() => Promise.reject(boom)));
+    const { result } = renderHook(() => {
+      const fetcher = useCallback(() => Promise.reject(boom), []);
+      return useResource(fetcher);
+    });
 
     await waitFor(() => expect(result.current.resource.status).toBe("error"));
     expect(result.current.resource.error).toBe(boom);
@@ -67,32 +73,94 @@ describe("what it does with a request it no longer wants", () => {
     expect(signals[0]?.aborted).toBe(true);
   });
 
-  it("ignores an answer that arrives after it was abandoned", async () => {
-    // **The out-of-order race this exists to close.** Without the `current` flag a slow first
-    // request could resolve after a second one and overwrite the newer answer with the older.
-    const slow = deferred<string>();
-    const { result, unmount } = renderHook(() => useResource(() => slow.promise));
+  /**
+   * **These two stay mounted on purpose, and the first drafts did not.**
+   *
+   * Both used to `unmount()` and then settle the promise, which proves nothing at all:
+   * React 18 makes `setState` on an unmounted component a silent no-op, so the hook's last
+   * render is frozen whether the guard exists or not. Deleting the `current` flag *and* the
+   * `!signal.aborted` check left all thirteen tests green.
+   *
+   * The race the hook exists to close needs a live component and two requests in flight: ask
+   * again, let the **newer** request answer, and only then let the older one land. Without the
+   * flag the stale answer overwrites the fresh one, which is a screen showing last candidate's
+   * figures under this candidate's name.
+   *
+   * **Both wait for each request to be taken rather than assuming it has been**, via
+   * `requests`. A first draft handed out promises from a counter and called `reload()` straight
+   * after mounting, which assumes the mount request is already in flight -- true on an idle
+   * machine, and it failed once in a full-suite run on a loaded one, where the stale answer won.
+   * `vite.config.ts` says why that matters: a slow machine should make this suite slower and
+   * not red. Draining a queue makes the ordering the test depends on something it checks, and
+   * a request the hook never made is then a timeout naming the step rather than two promises
+   * quietly swapping roles.
+   */
+  /** The requests the hook will make, in order, each settled by the test when it chooses. */
+  function requestQueue(count: number) {
+    const pending = Array.from({ length: count }, () => deferred<string>());
+    const queue = [...pending];
+    return {
+      request: (index: number) => pending[index]!,
+      taken: () => count - queue.length,
+      /** A request beyond the ones arranged is a bug in the hook, so it says so out loud. */
+      fetcher: () =>
+        queue.shift()?.promise ??
+        Promise.reject(new Error(`the hook asked ${count + 1} times, not ${count}`)),
+    };
+  }
 
-    unmount();
-    await act(async () => {
-      slow.settle("too late");
+  it("keeps the newer answer when a request it replaced resolves afterwards", async () => {
+    const requests = requestQueue(2);
+    const { result } = renderHook(() => {
+      const fetcher = useCallback(() => requests.fetcher(), []);
+      return useResource(fetcher);
     });
 
-    expect(result.current.resource.data).toBeNull();
+    // The first request has to be in flight *before* we ask again, or the two swap roles and
+    // the test proves the opposite of what it says.
+    await waitFor(() => expect(requests.taken()).toBe(1));
+    act(() => result.current.reload());
+    await waitFor(() => expect(requests.taken()).toBe(2));
+
+    await act(async () => {
+      requests.request(1).settle("the answer we asked for");
+    });
+    expect(result.current.resource.data).toBe("the answer we asked for");
+
+    await act(async () => {
+      requests.request(0).settle("the answer we abandoned");
+    });
+
+    expect(result.current.resource.data).toBe("the answer we asked for");
+    expect(result.current.resource.status).toBe("ready");
   });
 
-  it("reports a rejection that arrives after an abort as nothing at all", async () => {
-    const abandoned = deferred<string>();
-    const { result, unmount } = renderHook(() =>
-      useResource(() => abandoned.promise),
-    );
-
-    unmount();
-    await act(async () => {
-      abandoned.fail(new Error("aborted"));
+  it("keeps the newer answer when a request it replaced rejects afterwards", async () => {
+    // The abandoned request rejects *because* it was aborted, so its failure is not news. An
+    // unguarded `catch` would replace a perfectly good answer with an error notice -- which is
+    // what every reload would look like if the second request won the race.
+    const requests = requestQueue(2);
+    const { result } = renderHook(() => {
+      const fetcher = useCallback(() => requests.fetcher(), []);
+      return useResource(fetcher);
     });
 
-    expect(result.current.resource.status).toBe("loading");
+    await waitFor(() => expect(requests.taken()).toBe(1));
+    act(() => result.current.reload());
+    await waitFor(() => expect(requests.taken()).toBe(2));
+
+    await act(async () => {
+      requests.request(1).settle("the answer we asked for");
+    });
+
+    await act(async () => {
+      requests
+        .request(0)
+        .fail(new DOMException("The operation was aborted.", "AbortError"));
+    });
+
+    expect(result.current.resource.status).toBe("ready");
+    expect(result.current.resource.data).toBe("the answer we asked for");
     expect(result.current.resource.error).toBeNull();
   });
 });

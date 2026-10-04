@@ -109,7 +109,7 @@ describe("the comparison", () => {
       name: /every attribute/i,
     });
     const row = within(table).getByRole("row", {
-      name: /cost_of_living_index/i,
+      name: /cost of living index/i,
     });
     expect(within(row).getByText("82")).toBeInTheDocument();
     expect(row).toHaveTextContent("+4.9 points");
@@ -307,7 +307,7 @@ describe("raw figures", () => {
     await compare("Portugal", "Spain");
 
     const row = await screen.findByRole("row", {
-      name: /cost_of_living_index/i,
+      name: /cost of living index/i,
     });
     expect(row).toHaveTextContent("82");
     expect(row).not.toHaveTextContent("92.1");
@@ -316,11 +316,11 @@ describe("raw figures", () => {
   it("switches the attribute rows to the figure in its own unit", async () => {
     renderShell("/compare");
     await compare("Portugal", "Spain");
-    await screen.findByRole("row", { name: /cost_of_living_index/i });
+    await screen.findByRole("row", { name: /cost of living index/i });
 
     await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
 
-    const row = screen.getByRole("row", { name: /cost_of_living_index/i });
+    const row = screen.getByRole("row", { name: /cost of living index/i });
     expect(row).toHaveTextContent("92.1 index_eu27_100");
     expect(row).toHaveTextContent("105.5 index_eu27_100");
   });
@@ -329,11 +329,11 @@ describe("raw figures", () => {
   it("shows the gap in the attribute's unit rather than in points", async () => {
     renderShell("/compare");
     await compare("Portugal", "Spain");
-    await screen.findByRole("row", { name: /cost_of_living_index/i });
+    await screen.findByRole("row", { name: /cost of living index/i });
 
     await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
 
-    const row = screen.getByRole("row", { name: /cost_of_living_index/i });
+    const row = screen.getByRole("row", { name: /cost of living index/i });
     expect(row).toHaveTextContent("-13.4");
     expect(row).not.toHaveTextContent("points");
   });
@@ -342,11 +342,11 @@ describe("raw figures", () => {
   it("says nothing rather than zero where a figure is missing", async () => {
     renderShell("/compare");
     await compare("Portugal", "Spain");
-    await screen.findByRole("row", { name: /coastline_access/i });
+    await screen.findByRole("row", { name: /coastline access/i });
 
     await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
 
-    const row = screen.getByRole("row", { name: /coastline_access/i });
+    const row = screen.getByRole("row", { name: /coastline access/i });
     expect(row).toHaveTextContent("1793 km");
     expect(row).toHaveTextContent("—");
   });
@@ -354,14 +354,14 @@ describe("raw figures", () => {
   it("goes back to scores when asked", async () => {
     renderShell("/compare");
     await compare("Portugal", "Spain");
-    await screen.findByRole("row", { name: /cost_of_living_index/i });
+    await screen.findByRole("row", { name: /cost of living index/i });
 
     await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
     await userEvent.click(
       screen.getByRole("radio", { name: /score 0.*100/i }),
     );
 
-    const row = screen.getByRole("row", { name: /cost_of_living_index/i });
+    const row = screen.getByRole("row", { name: /cost of living index/i });
     expect(row).toHaveTextContent("82");
     expect(row).toHaveTextContent("points");
   });

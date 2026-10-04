@@ -27,16 +27,33 @@ describe("the household panel", () => {
     await panel();
 
     expect(field("Net annual income")).toHaveValue("90000");
-    expect(field("Adults")).toHaveValue("2");
-    expect(field("Children under 18")).toHaveValue("1");
-    expect(field("Citizenships")).toHaveValue("country.romania");
+    // Segments, not fields: the stored number shows as the pressed button.
+    expect(
+      within(screen.getByRole("group", { name: "Adults" })).getByRole("button", {
+        name: "2",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      within(
+        screen.getByRole("group", { name: "Children under 18" }),
+      ).getByRole("button", { name: "1" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    // Chips, not a comma-separated string: the passport shows by name. Awaited, because the
+    // roster is fetched and the chip reads the id until it lands.
+    expect(
+      await within(
+        await screen.findByRole("list", { name: /citizenships held/i }),
+      ).findByText("Romania"),
+    ).toBeInTheDocument();
   });
 
   it("shows no city rather than an empty one when the household lives in none", async () => {
     renderShell("/configure");
     await panel();
 
-    expect(field("Home city candidate")).toHaveValue("");
+    expect(
+      screen.getByRole("combobox", { name: "Home city candidate" }),
+    ).toHaveValue("");
   });
 
   it("saves the whole record and says so", async () => {
@@ -59,7 +76,10 @@ describe("the household panel", () => {
     renderShell("/configure");
     const household = await panel();
 
-    await user.clear(field("Citizenships"));
+    // Taking the one passport off, which is what "no citizenship" now looks like.
+    await user.click(
+      await screen.findByRole("button", { name: "Remove Romania" }),
+    );
 
     expect(
       household.getByRole("button", { name: "Save household" }),
@@ -152,7 +172,9 @@ describe("a household nobody has recorded yet", () => {
       await household.findByText(/Nothing has been recorded/),
     ).toBeInTheDocument();
     expect(field("Net annual income")).toHaveValue("");
-    expect(field("Citizenships")).toHaveValue("");
+    expect(
+      screen.queryByRole("list", { name: /citizenships held/i }),
+    ).not.toBeInTheDocument();
     expect(household.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -164,10 +186,36 @@ describe("a household nobody has recorded yet", () => {
     await household.findByText(/Nothing has been recorded/);
 
     await user.type(field("Net annual income"), "70000");
-    await user.type(field("Adults"), "2");
-    await user.type(field("Children under 18"), "0");
-    await user.type(field("Home country candidate"), "country.romania");
-    await user.type(field("Citizenships"), "country.romania");
+    await user.click(
+      within(screen.getByRole("group", { name: "Adults" })).getByRole("button", {
+        name: "2",
+      }),
+    );
+    await user.click(
+      within(
+        screen.getByRole("group", { name: "Children under 18" }),
+      ).getByRole("button", { name: "None" }),
+    );
+    // Chosen from the roster, never typed: the stored value is an id the database holds.
+    await user.type(
+      screen.getByRole("combobox", { name: "Home country candidate" }),
+      "Romania",
+    );
+    await user.click(
+      within(
+        screen.getByRole("listbox", { name: "Home country candidate" }),
+      ).getByRole("option", { name: "Romania" }),
+    );
+    await user.type(
+      screen.getByRole("combobox", { name: "Citizenships" }),
+      "Romania",
+    );
+    await user.click(
+      within(screen.getByRole("listbox", { name: "Citizenships" })).getByRole(
+        "option",
+        { name: "Romania" },
+      ),
+    );
     await user.click(household.getByRole("button", { name: "Save household" }));
 
     expect(await household.findByText("Saved.")).toBeInTheDocument();

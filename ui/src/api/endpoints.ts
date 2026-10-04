@@ -359,9 +359,16 @@ export function fetchValuesForAttribute(
   );
 }
 
-/** The catalog's attributes at one level, each with the pillar it belongs to. */
+/**
+ * The catalog's attributes, each with the pillar it belongs to.
+ *
+ * **The level is optional**, and omitting it asks for every level at once. A screen editing
+ * one level narrows; a lookup of what to *call* an attribute does not, because an id carries
+ * its own level (`country.rent`) and a map that held only one would silently fall back to the
+ * id for the other.
+ */
 export function fetchAttributes(
-  level: string,
+  level?: string,
   options?: RequestOptions,
 ): Promise<{ items: Attribute[] }> {
   return getJson("/attributes", { level }, options);

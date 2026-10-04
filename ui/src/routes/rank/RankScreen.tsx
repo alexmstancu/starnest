@@ -10,7 +10,7 @@ import type { RouteDefinition } from "../../navigation/routes";
 import { UnsetSetting } from "../../shell/UnsetSetting";
 import { AttributeDrillDown } from "./AttributeDrillDown";
 import { CandidateDetail } from "./CandidateDetail";
-import { type OpenRow, toggleRow } from "./openRows";
+import { type OpenCandidate, type OpenRow, choosePillar, toggleRow } from "./openRows";
 import { RankingMeta, RankingTable } from "./RankingTable";
 import { codesByCandidate, homeCandidates } from "./rankTable";
 import { SaveControl } from "./SaveControl";
@@ -109,7 +109,15 @@ function TheRanking({
   // decides nothing, and the evidence itself is fetched.
   const [open, setOpen] = useState<readonly OpenRow[]>([]);
   const toggle = useCallback(
-    (row: OpenRow) => setOpen((already) => toggleRow(already, row)),
+    (row: OpenCandidate) => setOpen((already) => toggleRow(already, row)),
+    [],
+  );
+  // **One handler for both ways in.** The chart in the row and the cards in the panel set the
+  // same thing, so they call the same function -- which is what makes them agree rather than
+  // two selections that happen to look alike.
+  const choose = useCallback(
+    (row: OpenCandidate, pillar: string) =>
+      setOpen((already) => choosePillar(already, row, pillar)),
     [],
   );
 
@@ -164,11 +172,14 @@ function TheRanking({
           onToggle={toggle}
           codes={codes}
           home={home}
+          onChoosePillar={choose}
           detail={(row) => (
             <CandidateDetail
               candidate={row.candidate}
               name={row.name}
               pillars={row.pillars}
+              chosen={row.chosenPillar ?? null}
+              onChoose={(pillar) => choose(row, pillar)}
             />
           )}
         />

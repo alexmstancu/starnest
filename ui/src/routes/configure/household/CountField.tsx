@@ -1,12 +1,18 @@
 /**
  * A small whole number, offered as the answers people actually give.
  *
- * **Segments for the common range, and the field for everything else.** The design draws
- * adults as 1 to 4 and children as none to 3, which is one click for almost every household
- * -- but the domain has no such ceiling (`number_adults` is any integer above zero), and a
- * control that cannot express five adults would be the interface deciding who is allowed to
- * use this. So the segments are a shortcut, not the whole control: a value outside them keeps
- * the field visible and selected.
+ * **Segments, and only segments** -- adults 1 to 4, children none to 3, which is what the
+ * design draws and what `adultOptions` / `childOptions` in the prototype enumerate. There was
+ * a "Or type another number" field beside them, on the reasoning that the domain has no
+ * ceiling (`number_adults` is any integer above zero) and a control that cannot express five
+ * adults decides who may use this. **That reasoning was wrong about where the decision
+ * belongs**: the range is a catalog-shaped choice, and widening it means adding a segment, not
+ * asking every household to read a sentence about an escape hatch it will never take. The
+ * field appeared on every render, held the same number as the button already pressed, and was
+ * the only thing on the panel asking to be read twice.
+ *
+ * A value outside the offered range still renders -- no segment is pressed, which is honest --
+ * and the way to support it is to offer it.
  */
 export function CountField({
   id,
@@ -26,21 +32,25 @@ export function CountField({
   noneLabel?: string;
 }) {
   const chosen = offered.find((each) => String(each) === value.trim());
-  const beyond = chosen === undefined && value.trim() !== "";
 
   return (
     <div className="field">
       <span className="field__label" id={`${id}-label`}>
         {label}
       </span>
-      <div className="toggle-group" role="group" aria-labelledby={`${id}-label`}>
+      {/* **The group carries the field's name**, because the buttons are now the whole
+          control: a screen reader, and a test, has to hear "Adults" from somewhere. */}
+      <div
+        className="toggle-group"
+        role="group"
+        id={id}
+        aria-labelledby={`${id}-label`}
+      >
         {offered.map((each) => (
           <button
             key={each}
             type="button"
-            className={
-              chosen === each ? "toggle toggle--chosen" : "toggle"
-            }
+            className={chosen === each ? "toggle toggle--chosen" : "toggle"}
             aria-pressed={chosen === each}
             onClick={() => onChange(String(each))}
           >
@@ -48,23 +58,6 @@ export function CountField({
           </button>
         ))}
       </div>
-      {/* Always reachable: the segments are the quick way in, never the only one.
-          **The field keeps the field's name.** `aria-label` rather than a second visible
-          label, because the sentence beside it says how to use the control and the control is
-          still "Adults" -- which is what a screen reader, and a test, has to hear. */}
-      <span className="field__more">
-        <span className="field__note">
-          {beyond ? "Outside the buttons:" : "Or type another number:"}
-        </span>
-        <input
-          id={id}
-          aria-label={label}
-          className="field__control field__control--narrow"
-          inputMode="numeric"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      </span>
     </div>
   );
 }

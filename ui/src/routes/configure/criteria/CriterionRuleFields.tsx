@@ -16,10 +16,21 @@ import type { RuleForm } from "./useCriterionRule";
 export function CriterionRuleFields({
   form,
   attribute,
+  title,
   saving,
 }: {
   form: RuleForm;
+  /**
+   * The attribute's id, which appears only in `id` and `htmlFor` attributes.
+   *
+   * **Both are needed, and they are not interchangeable.** A DOM id has to be unique and
+   * stable, so it is built from the key; a label is read by a person, so it says the name.
+   * Three anchor fields were labelled with the key, which is rendered text for the readers who
+   * only get the label.
+   */
   attribute: string;
+  /** What to call the attribute, as the row above calls it. */
+  title: string;
   saving: boolean;
 }) {
   const problemsId = `rule-problems-${attribute}`;
@@ -150,7 +161,7 @@ export function CriterionRuleFields({
                       type="number"
                       step="any"
                       value={anchor.input_value}
-                      aria-label={`Anchor ${index + 1} value for ${attribute}`}
+                      aria-label={`Anchor ${index + 1} value for ${title}`}
                       onChange={(event) =>
                         form.setAnchor(index, "input_value", event.target.value)
                       }
@@ -162,7 +173,7 @@ export function CriterionRuleFields({
                       type="number"
                       step="1"
                       value={anchor.score}
-                      aria-label={`Anchor ${index + 1} score for ${attribute}`}
+                      aria-label={`Anchor ${index + 1} score for ${title}`}
                       onChange={(event) =>
                         form.setAnchor(index, "score", event.target.value)
                       }
@@ -173,7 +184,7 @@ export function CriterionRuleFields({
                       className="field__control"
                       type="text"
                       value={anchor.label}
-                      aria-label={`Anchor ${index + 1} label for ${attribute}`}
+                      aria-label={`Anchor ${index + 1} label for ${title}`}
                       onChange={(event) =>
                         form.setAnchor(index, "label", event.target.value)
                       }

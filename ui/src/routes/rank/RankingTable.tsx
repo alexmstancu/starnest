@@ -24,7 +24,7 @@ import {
   formatDelta,
   pillarBars,
 } from "./rankTable";
-import { type OpenRow, isOpen } from "./openRows";
+import { type OpenCandidate, type OpenRow, chosenPillarOf, isOpen } from "./openRows";
 
 /**
  * The ranking table, and every cell in it.
@@ -46,19 +46,27 @@ export function RankingTable({
   ranking,
   open = [],
   onToggle,
+  onChoosePillar,
   detail,
   codes,
   home,
 }: {
   ranking: Ranking;
   open?: readonly OpenRow[];
-  onToggle?: (row: OpenRow) => void;
+  onToggle?: (row: OpenCandidate) => void;
+  /**
+   * Choose a pillar from the chart in the row, filtering the panel underneath it.
+   *
+   * **Omitted by a saved ranking**, like `detail` and for the same reason: there is no panel
+   * to filter, so the bars stay a picture.
+   */
+  onChoosePillar?: (row: OpenCandidate, pillar: string) => void;
   /**
    * What an open row shows underneath itself. **Passed in rather than imported**, because
    * the evidence behind a score is fetched, and a table that renders a live ranking and a
    * frozen one must not know the difference -- a saved ranking supplies none.
    */
-  detail?: (row: OpenRow) => ReactNode;
+  detail?: (row: OpenCandidate) => ReactNode;
   /**
    * Candidate id to ISO 3166-1 alpha-2, for the flag beside a name.
    *
@@ -138,7 +146,9 @@ export function RankingTable({
                 names={names}
                 result={result}
                 open={isOpen(open, result.candidate)}
+                chosenPillar={chosenPillarOf(open, result.candidate)}
                 onToggle={onToggle}
+                onChoosePillar={onChoosePillar}
                 detail={detail}
                 code={codes?.get(result.candidate)}
                 atHome={home?.has(result.candidate) === true}
@@ -233,7 +243,9 @@ function CandidateRow({
   names,
   result,
   open,
+  chosenPillar = null,
   onToggle,
+  onChoosePillar,
   detail,
   code,
   atHome,
@@ -241,18 +253,29 @@ function CandidateRow({
   names: PillarNames;
   result: CandidateResult;
   open: boolean;
-  onToggle?: (row: OpenRow) => void;
-  detail?: (row: OpenRow) => ReactNode;
+  /** Which of this candidate's pillars the panel underneath is filtered to. */
+  chosenPillar?: string | null;
+  onToggle?: (row: OpenCandidate) => void;
+  onChoosePillar?: (row: OpenCandidate, pillar: string) => void;
+  detail?: (row: OpenCandidate) => ReactNode;
   /** This candidate's ISO 3166-1 alpha-2, where the catalog holds one. */
   code?: string;
   /** Whether the household lives here, which is what makes its delta column read as zero. */
   atHome: boolean;
 }) {
   const matching = result.match_status === "matching";
-  const row: OpenRow = {
+  // **The chosen pillar travels on the row**, because this object is what `detail(row)` hands
+  // to the panel underneath. Left off, the chart marked itself chosen and the panel it was
+  // meant to filter never heard about it -- the two halves of one selection, disagreeing.
+  //
+  // **Rebuilt on every render, from the live result.** Nothing but `chosenPillar` is read back
+  // out of the open rows: the name and the rollup are this render's, so a refetched ranking
+  // reaches the panel underneath rather than the figures it was opened with.
+  const row: OpenCandidate = {
     candidate: result.candidate,
     name: result.name,
     pillars: result.pillar_scores,
+    chosenPillar,
   };
   const toggle = onToggle ? () => onToggle(row) : undefined;
 
@@ -320,7 +343,14 @@ function CandidateRow({
         {formatDelta(result.delta_vs_home)}
       </td>
       <td className="col--pillars">
-        <PillarChart names={names} pillars={result.pillar_scores} />
+        <PillarChart
+          names={names}
+          pillars={result.pillar_scores}
+          chosen={chosenPillar}
+          onChoose={
+            onChoosePillar && ((pillar) => onChoosePillar(row, pillar))
+          }
+        />
       </td>
       <td>
         <CoverageBar coverage={result.coverage} />
@@ -388,9 +418,20 @@ function CandidateRow({
 function PillarChart({
   names,
   pillars,
+  chosen = null,
+  onChoose,
 }: {
   names: PillarNames;
   pillars?: readonly PillarScore[] | null;
+  /** The pillar whose values the panel below is filtered to, drawn as the chosen bar. */
+  chosen?: string | null;
+  /**
+   * Choose this pillar, or undefined to leave the chart as a picture.
+   *
+   * **A saved ranking passes nothing**, and the bars stay inert: its evidence has moved on,
+   * so there is no drill-down for a click to filter.
+   */
+  onChoose?: (pillar: string) => void;
 }) {
   const bars = pillarBars(pillars, (pillar) => pillarName(names, pillar));
   const hatch = useId();
@@ -434,7 +475,50 @@ function PillarChart({
         )}
       </defs>
       {bars.map((bar, index) => (
-        <g key={bar.pillar}>
+        <g
+          key={bar.pillar}
+          className={
+            chosen === bar.pillar
+              ? "pillar-chart__slot pillar-chart__slot--chosen"
+              : "pillar-chart__slot"
+          }
+          role={onChoose ? "button" : undefined}
+          tabIndex={onChoose ? 0 : undefined}
+          aria-pressed={onChoose ? chosen === bar.pillar : undefined}
+          aria-label={onChoose ? bar.title : undefined}
+          onClick={
+            onChoose &&
+            ((event) => {
+              // **The row underneath is itself a click target** -- clicking it opens or closes
+              // the evidence. Without this, choosing a pillar on an open row would close the
+              // panel the choice was meant to filter.
+              event.stopPropagation();
+              onChoose(bar.pillar);
+            })
+          }
+          onKeyDown={
+            onChoose &&
+            ((event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              // Space scrolls the page otherwise, and a `g` is not a button to the browser.
+              event.preventDefault();
+              event.stopPropagation();
+              onChoose(bar.pillar);
+            })
+          }
+        >
+          {/* **A target the full height of the chart**, transparent and drawn first. A pillar
+              scoring 19 is a few pixels tall, and a control you have to aim at is one the
+              reader gives up on. It also gives the focus ring a constant shape. */}
+          {onChoose && (
+            <rect
+              className="pillar-chart__target"
+              x={bar.x}
+              y="0"
+              width={bar.width}
+              height={PILLAR_CHART.height}
+            />
+          )}
           <rect
             className="pillar-chart__bar"
             x={bar.x}

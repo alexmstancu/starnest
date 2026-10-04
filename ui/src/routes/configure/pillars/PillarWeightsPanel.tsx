@@ -8,12 +8,14 @@ import {
 import type { components } from "../../../api/schema";
 import { formatPercentage, pillarName } from "../../../format/display";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { useWeightDrag } from "../useWeightDrag";
 import {
   comesToAHundred,
   PILLAR_CEILING_FLOOR,
   PILLAR_SLIDER,
+  previewedTotal,
   sliderCeiling,
-  totalOf,
+  weightedPillars,
   weightFrom,
   weightReading,
 } from "../weights";
@@ -27,6 +29,11 @@ type PillarWeight = components["schemas"]["PillarWeight"];
  * level comes back, and this prints them. The running total is shown because a set that does
  * not sum to 100 is a broken score, and the server refuses one -- so the number beside the list
  * is a fact about what is stored rather than a client-side sum of what is typed.
+ *
+ * **While a pointer is down, the rows show a preview** (`useWeightDrag`), because the server is
+ * asked once and a gesture lasts longer than that. It is drawn from the same rule the server
+ * applies and replaced by the server's own answer when the pointer lifts; a figure on this
+ * screen is still never one the interface decided.
  */
 export function PillarWeightsPanel({
   criteriaSet,
@@ -50,6 +57,9 @@ export function PillarWeightsPanel({
     criteriaSet.pillar_weights ?? [],
   );
   const [failure, setFailure] = useState<unknown>(null);
+  // Destructured, because `ended` is listed as a dependency below and `react-hooks` reads a
+  // name rather than a member expression. `useWeightDrag` keeps it stable for exactly that.
+  const { preview, previewFor, moveTo, ended } = useWeightDrag();
 
   const move = useCallback(
     async (pillar: string, weight: number) => {
@@ -59,9 +69,14 @@ export function PillarWeightsPanel({
         setWeights(rebalanced.items);
       } catch (error) {
         setFailure(error);
+      } finally {
+        // **Here rather than on release**, so the preview stands until the answer that replaces
+        // it. A refusal ends the gesture too: the weights it previewed are not the stored ones
+        // and never will be, so the rows go back to what is stored and the notice says why.
+        ended();
       }
     },
-    [criteriaSet.id],
+    [criteriaSet.id, ended],
   );
 
   // **Its own request, carrying no weight** (P68). See `updatePillarLock`: a lock sent with a
@@ -79,7 +94,10 @@ export function PillarWeightsPanel({
     [criteriaSet.id],
   );
 
-  const total = totalOf(weights);
+  // The weights as a rebalance sees them: what the drag snapshots, and what the total is read
+  // from so that it counts the preview the rows are showing rather than the stored figures.
+  const items = weightedPillars(weights);
+  const total = previewedTotal(items, preview);
   const ceiling = sliderCeiling(weights.length, PILLAR_CEILING_FLOOR);
   const [open, setOpen] = useState<string | null>(null);
 
@@ -132,6 +150,7 @@ export function PillarWeightsPanel({
               key={weight.pillar}
               names={names}
               weight={weight}
+              previewed={previewFor(weight.pillar)}
               ceiling={ceiling}
               count={criteriaCounts?.get(weight.pillar)}
               open={open === weight.pillar}
@@ -140,6 +159,8 @@ export function PillarWeightsPanel({
                   ? undefined
                   : () => setOpen(open === weight.pillar ? null : weight.pillar)
               }
+              onDrag={(asked) => moveTo(items, weight.pillar, asked)}
+              onDragEnd={ended}
               onMove={move}
               onLock={lock}
             >
@@ -155,43 +176,65 @@ export function PillarWeightsPanel({
 function PillarRow({
   names,
   weight,
+  previewed,
   ceiling,
   count,
   open,
   onOpen,
+  onDrag,
+  onDragEnd,
   onMove,
   onLock,
   children,
 }: {
   names: PillarNames;
   weight: PillarWeight;
+  /**
+   * What this pillar would weigh if the drag in progress were let go -- and nothing when there
+   * is no drag, when the locks leave it no room, or when this is the row being dragged, which
+   * shows the pointer instead.
+   */
+  previewed?: number;
   ceiling: number;
   count?: number;
   open: boolean;
   onOpen?: () => void;
+  /** The pointer has moved this weight, to the value the slider now holds. */
+  onDrag: (asked: string) => void;
+  /** Nothing is being sent, so no answer is coming to end the gesture. */
+  onDragEnd: () => void;
   onMove: (pillar: string, weight: number) => Promise<void>;
   onLock: (pillar: string, locked: boolean) => Promise<void>;
   children?: ReactNode;
 }) {
   const stored = String(weight.weight);
+  // What the row shows: a preview while another pillar is being dragged, the stored weight the
+  // rest of the time. **The stored weight is still what `commit` compares against** -- a guard
+  // measured against the preview would find the pointer already there and send nothing.
+  const shown = previewed === undefined ? stored : String(previewed);
   const [typed, setTyped] = useState(stored);
-  // True only between the first move and letting go. **The reading follows the stored weight
-  // the rest of the time**: a range input snaps its value to the step, and a rebalance
-  // produces 29.17, so a readout taken from the slider would print 29.0 for a weight the
-  // server holds at 29.17 -- the screen contradicting the response it just rendered.
+  // True only between this row's first move and letting go. **The reading follows what the row
+  // is shown the rest of the time** -- the stored weight, or a preview while another row is
+  // being dragged: a range input snaps its value to the step, and a rebalance produces 29.17,
+  // so a readout taken from the slider would print 29.0 for a weight that is 29.17 -- the
+  // screen contradicting the figure it was given.
   const [moving, setMoving] = useState(false);
 
-  // A rebalance moves this row's weight without this row having been dragged, so the slider
-  // follows the stored weight. Without this, the pillars that absorbed a change would keep
-  // showing the weights they had before it -- the screen contradicting the response it just
-  // rendered the total from.
-  useEffect(() => setTyped(stored), [stored]);
+  // A rebalance moves this row's weight without this row having been dragged -- the server's
+  // on the way back, and the preview's while another row's pointer is down -- so the slider
+  // follows it. Without this, the pillars absorbing a change would keep showing the weights
+  // they had before it: the screen contradicting the total printed above it.
+  useEffect(() => setTyped(shown), [shown]);
 
   /**
-   * **Dragging shows; letting go sends.** A range input has no "committed" event -- `change`
-   * fires on every pixel of the drag -- so a naive binding would PATCH the server forty times
-   * for one gesture, and every answer would rebalance the other ten pillars under the thumb.
-   * The position is local while the pointer is down and goes to the server when it lifts.
+   * **Dragging shows the whole rebalance; letting go sends one weight.** A range input has no
+   * "committed" event -- `change` fires on every pixel of the drag -- so a naive binding would
+   * PUT forty times for one gesture, and every answer would rebalance the other ten pillars
+   * under the thumb. One request still goes, when the pointer lifts; what the siblings would
+   * become is worked out here meanwhile (`previewRebalance`), because a set that visibly sums
+   * to 97 for the length of a gesture reads as the rule being broken rather than as a request
+   * not yet made. The server's answer then replaces the preview, and is the only thing any of
+   * it is ever scored from.
    */
   /**
    * **The value comes from the input, never from state.** The DOM node always holds what the
@@ -205,7 +248,12 @@ function PillarRow({
     // `weightFrom` is honest about text that might not be one, and silently sending `NaN`
     // would be worse than doing nothing.
     const moved = weightFrom(asked);
-    if (moved === null || moved === weight.weight) return;
+    if (moved === null || moved === weight.weight) {
+      // Nothing is sent, so no answer is coming to replace the preview: this is the one
+      // release that has to end the gesture itself.
+      onDragEnd();
+      return;
+    }
     void onMove(weight.pillar, moved);
   }
 
@@ -270,6 +318,9 @@ function PillarRow({
           onChange={(event) => {
             setMoving(true);
             setTyped(event.target.value);
+            // The panel is told as well as this row, because it is the only thing that knows
+            // what the other ten weights are and which of them are locked.
+            onDrag(event.target.value);
           }}
           onPointerUp={release}
           onMouseUp={release}
@@ -278,7 +329,7 @@ function PillarRow({
         />
 
         <span className="weight-row__value">
-          {weightReading(moving ? typed : stored)}
+          {weightReading(moving ? typed : shown)}
         </span>
 
         {/* **A button, not a checkbox.** The design draws a filled or hollow disc, and a native

@@ -17,8 +17,19 @@ import { renderShell } from "../../../testing/renderShell";
  * -- that is one question with one answer, and it lives on the server.
  */
 
-const ANCHORED = "country.overcrowding_rate";
-const PLAIN = "country.homicide_rate";
+/**
+ * The two criteria these tests drive, **named as the screen names them**.
+ *
+ * Not by their ids, which is what these tests used to say. The design bars programmatic
+ * identifiers from rendered text -- and an accessible name is rendered text, the only text some
+ * readers get -- so every label on a criterion row now says what the attribute is called.
+ *
+ * These two are the id read as words rather than a catalog name: the mock's catalog carries an
+ * entry for four attributes and this screen shows seven criteria, so most rows exercise the
+ * fallback. Which is the path worth exercising, because it is the one that used to print a key.
+ */
+const ANCHORED = "Overcrowding rate";
+const PLAIN = "Homicide rate";
 
 /**
  * Which pillar each of them is weighed inside.

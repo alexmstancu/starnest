@@ -15,7 +15,7 @@
 
 import type { Criterion } from "../../../api/endpoints";
 import { linkTo, UNSOURCED } from "../../../navigation/highlight";
-import { formatCount } from "../../../format/display";
+import { attributeName, formatCount } from "../../../format/display";
 
 /**
  * What a row needs from the catalog, named structurally so the generated `Attribute` satisfies
@@ -37,18 +37,30 @@ export type AttributeCatalog = ReadonlyMap<string, CatalogAttribute>;
 /**
  * What to call the attribute.
  *
- * **The catalog's name, and the id only when there is no name.** The design bars programmatic
- * identifiers from rendered text -- no attribute keys, rule ids or settings field names -- so
- * the id is a last resort rather than a second line. Inventing a title case of the id would be
- * this screen guessing at what an attribute measures, which is worse than showing the key.
+ * **The catalog's name, and the id made readable when the catalog has not answered.** The
+ * design bars programmatic identifiers from rendered text -- no attribute keys, rule ids or
+ * settings field names -- and a fallback to the key breaks that rule exactly when the catalog
+ * is slowest to arrive, which is when a reader is most likely to be looking. `attributeName`
+ * holds that fallback for the whole interface: it drops the level and spaces the words, so
+ * `country.overcrowding_rate` reads "Overcrowding rate".
+ *
+ * **This used to fall back to the id on purpose**, the argument being that title-casing one is
+ * the screen guessing at what an attribute measures. The guess is narrower than it sounds --
+ * these ids are snake-cased English written beside the names they stand in for -- and the
+ * design rule overrules it either way, as four other screens had already settled.
  */
 export function titleOf(
   attributeId: string,
   attribute: CatalogAttribute | undefined,
 ): string {
   const name = attribute?.name ?? "";
-  return name === "" ? attributeId : name;
+  // An empty map asks `attributeName` for the fallback and nothing else, so the rule for what
+  // an unnamed attribute reads as lives in one place rather than two that can drift.
+  return name === "" ? attributeName(NO_NAMES, attributeId) : name;
 }
+
+/** No names at all. One map, rather than a new one per row. */
+const NO_NAMES: ReadonlyMap<string, string> = new Map();
 
 export function catalogOf(
   attributes: readonly CatalogAttribute[],

@@ -162,6 +162,45 @@ export function pillarName(names: ReadonlyMap<string, string>, pillar: string): 
   return names.get(pillar) ?? formatIdentifier(pillar);
 }
 
+/**
+ * One attribute's name, or its id made readable.
+ *
+ * **The design states this as a rule**: "No programmatic identifiers in rendered text -- no
+ * attribute keys, rule ids or settings field names." A screen showing
+ * `country.average_working_hours` is showing a database key to someone who never chose one,
+ * and the catalog has held "Average working hours" for that row since `0101`.
+ *
+ * **The fallback drops the level prefix**, which `formatIdentifier` alone does not: an id is
+ * `country.average_working_hours`, and title-casing that whole string gives
+ * "Country.average working hours" -- worse than the id it was trying to improve on. The level
+ * is already the thing the whole screen is about, so it says nothing here.
+ */
+export function attributeName(
+  names: ReadonlyMap<string, string>,
+  attribute: string,
+): string {
+  const named = names.get(attribute);
+  if (named !== undefined && named !== "") return named;
+  const withoutLevel = attribute.slice(attribute.indexOf(".") + 1);
+  return formatIdentifier(withoutLevel);
+}
+
+/**
+ * One candidate's name, or its id made readable.
+ *
+ * The ranking table never needed this -- a `Ranking` carries `name` beside every candidate --
+ * but a stored value, an acquisition failure and a comparison row all carry the id alone, and
+ * those three screens were printing `country.malta`.
+ */
+export function candidateName(
+  names: ReadonlyMap<string, string>,
+  candidate: string,
+): string {
+  const named = names.get(candidate);
+  if (named !== undefined && named !== "") return named;
+  return formatIdentifier(candidate.slice(candidate.indexOf(".") + 1));
+}
+
 
 /**
  * Which way a difference goes, for the colour the design gives it.

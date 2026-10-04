@@ -123,9 +123,9 @@ export function makeCriteriaSetDetails(): Record<string, CriteriaSet> {
       id: "default",
       name: "Default",
       pillar_weights: [
-        { pillar: "economics", weight: 40, weight_locked: false },
-        { pillar: "housing", weight: 35, weight_locked: false },
-        { pillar: "safety", weight: 25, weight_locked: false },
+        { pillar: "economics", level: "country", weight: 40, weight_locked: false },
+        { pillar: "housing", level: "country", weight: 35, weight_locked: false },
+        { pillar: "safety", level: "country", weight: 25, weight_locked: false },
       ],
       criteria: defaultCriteria(),
       enforced_match_rules: ["country.visa_route_exists"],
@@ -135,7 +135,7 @@ export function makeCriteriaSetDetails(): Record<string, CriteriaSet> {
       id: "remote-only",
       name: "Remote only",
       pillar_weights: [
-        { pillar: "connectivity", weight: 100, weight_locked: false },
+        { pillar: "connectivity", level: "country", weight: 100, weight_locked: false },
       ],
       criteria: remoteOnlyCriteria(),
       enforced_match_rules: [],
@@ -145,6 +145,20 @@ export function makeCriteriaSetDetails(): Record<string, CriteriaSet> {
 }
 
 export const COUNTRY_CANDIDATES: Candidate[] = [
+  {
+    /**
+     * **The household's own country, which the roster did not hold.** `HOUSEHOLD` has lived in
+     * `country.romania` since it was written, and the candidate list offered Portugal, Spain
+     * and the rest — so the fixture described a household in a country this mock says does not
+     * exist. It never showed while the field was free text. The moment the field had to choose
+     * from the roster, it did.
+     */
+    id: "country.romania",
+    name: "Romania",
+    level: "country",
+    parent_candidate: null,
+    country_code: "RO",
+  },
   {
     id: "country.portugal",
     name: "Portugal",
@@ -173,6 +187,22 @@ export const COUNTRY_CANDIDATES: Candidate[] = [
     parent_candidate: null,
     country_code: "EE",
   },
+  {
+    /**
+     * **The one candidate whose name a title-cased id cannot produce**, and the only reason a
+     * test here can tell `useCandidateNames` from `candidateName`'s own fallback. The catalog
+     * says "United Kingdom"; the id title-cases to "United kingdom", with a lower-case k.
+     * Every other candidate in this fixture names identically either way, so a suite built on
+     * them agrees with itself and stays green with the lookup deleted -- which is exactly the
+     * hole `country.total_tax_rate_effective` was added to `ATTRIBUTES` to close, one axis
+     * over. Both strings are real: `0102` names the country and `0120` gives it GB.
+     */
+    id: "country.united_kingdom",
+    name: "United Kingdom",
+    level: "country",
+    parent_candidate: null,
+    country_code: "GB",
+  },
 ];
 
 export const CITY_CANDIDATES: Candidate[] = [
@@ -190,6 +220,24 @@ export const CITY_CANDIDATES: Candidate[] = [
   },
 ];
 
+/**
+ * The pillar rollup the ranking row draws its chart from.
+ *
+ * **Added because its absence was hiding a whole control.** Without `pillar_scores` the chart
+ * renders nothing, so the eleven bars -- which are now the way a reader chooses which pillar
+ * the panel below is filtered to -- had no coverage at all, and a browser was the only thing
+ * that could see them. A fixture that omits an optional field quietly deletes every test that
+ * would have exercised it.
+ */
+const PORTUGAL_PILLARS = [
+  { pillar: "economics", score: 81, weight: 25, contribution: 20.25 },
+  { pillar: "safety", score: 64, weight: 12, contribution: 7.68 },
+  // **One pillar with no score**, because that bar is drawn hatched and full height rather
+  // than at zero, and the card beside it reads "No score". Absence is the case most likely to
+  // be rendered as a nought by accident.
+  { pillar: "family", score: null, weight: 4, contribution: 0 },
+];
+
 const COUNTRY_RESULTS: CandidateResult[] = [
   {
     candidate: "country.portugal",
@@ -199,6 +247,7 @@ const COUNTRY_RESULTS: CandidateResult[] = [
     coverage: 92.4,
     match_status: "matching",
     parent_not_matching: false,
+    pillar_scores: PORTUGAL_PILLARS,
   },
   {
     candidate: "country.netherlands",
@@ -537,6 +586,30 @@ export const STARTED_RUN_DETAIL: RunDetail = {
 /** The catalog's attributes, for the one-attribute-every-candidate drill-down (`reqs.md` 8.4). */
 export const ATTRIBUTES: Attribute[] = [
   {
+    /**
+     * **The one fixture whose name a title-cased id cannot produce**, and the only reason any
+     * test here can tell `useAttributeNames` from its own fallback. The catalog calls this
+     * "Total effective tax rate"; the id title-cases to "Total tax rate effective" -- the same
+     * five words in a different order. Every other attribute names identically either way, so
+     * a suite built on them agrees with itself and passes with the lookup deleted. Both of
+     * those strings are real: `0470` named the attribute and the id has always been the id.
+     */
+    id: "country.total_tax_rate_effective",
+    name: "Total effective tax rate",
+    pillar: "economics",
+    level: "country",
+    value_type: "Ratio",
+    unit: null,
+    description: "Every tax component over the whole cost of employment",
+    manual_entry: false,
+    max_age_months: 24,
+    breakdown_scheme: null,
+    breakdown_options: [],
+    allowed_range: null,
+    allowed_labels: [],
+    effective_source_priority: ["oecd"],
+  },
+  {
     id: "country.cost_of_living_index",
     name: "Cost of living index",
     pillar: "economics",
@@ -677,6 +750,33 @@ export const STORED_VALUES: StoredValue[] = [
     citations: [],
     data_acquisition_run: 7,
   },
+  /**
+   * **The same figure, stored a second time**, which is the case `foldRepeats` exists for: an
+   * acquisition appends what it fetched without asking whether it changed, so run 5 and run 7
+   * both wrote this count and neither is wrong. Byte-identical to the row above in everything
+   * the fingerprint reads -- source, period, payload, confidence -- and different only in the
+   * occasion, which is not a second opinion.
+   *
+   * Without it the folding is arithmetic no rendered row exercises: the panel's "Fetched
+   * again" line could stop appearing and nothing in the suite would say so.
+   */
+  {
+    id: 499,
+    candidate: "country.portugal",
+    attribute: "country.european_air_connectivity",
+    value_type: "Count",
+    payload: { count: 31 },
+    data_source: "eurostat",
+    reference_period: { start: "2025-01-01", end: "2025-12-31" },
+    retrieval_date: "2025-09-11T08:00:00Z",
+    confidence_level: "high",
+    // Superseded by the identical row above, which is what a re-fetch does. `is_active` is
+    // deliberately not part of the fingerprint: the newest copy is the one shown.
+    is_active: false,
+    quote: null,
+    citations: [],
+    data_acquisition_run: 5,
+  },
   {
     id: 501,
     candidate: "country.portugal",
@@ -725,6 +825,32 @@ export const STORED_VALUES: StoredValue[] = [
       "javascript:alert(1)",
     ],
     data_acquisition_run: 7,
+  },
+  /**
+   * **A second candidate's figure for one attribute**, so the one-attribute-every-candidate
+   * view has more than one row to draw -- and so the row it draws names a candidate whose
+   * name that screen could not have invented from the id (see `country.united_kingdom`).
+   *
+   * **No acquisition run, which the schema allows** (`0005-values.sql` leaves the column
+   * nullable; a hand-entered figure and a transcribed published table both have none). It is
+   * also what keeps this row out of every acquisition diff: `run/`'s tests name a diff row by
+   * its attribute alone, and a second cost-of-living row inside run 5 or 7 would make that
+   * query match two rows instead of one.
+   */
+  {
+    id: 504,
+    candidate: "country.united_kingdom",
+    attribute: "country.cost_of_living_index",
+    value_type: "Quantity",
+    payload: { magnitude: 112.8, unit: "index_eu27_100" },
+    data_source: "eurostat",
+    reference_period: { start: "2025-01-01", end: "2025-12-31" },
+    retrieval_date: "2026-09-11T08:00:00Z",
+    confidence_level: "high",
+    is_active: true,
+    quote: "Eurostat 2025: 112.8",
+    citations: [],
+    data_acquisition_run: null,
   },
 ];
 

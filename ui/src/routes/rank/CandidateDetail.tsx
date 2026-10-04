@@ -1,4 +1,5 @@
-import { useCallback, useId, useState } from "react";
+import { useCallback, useId } from "react";
+import { describeRepeats, foldRepeats } from "./repeatedValues";
 import {
   fetchCriteriaSet,
   fetchExternalScores,
@@ -9,7 +10,11 @@ import {
 } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
 import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
-import { pillarName } from "../../format/display";
+import {
+  useAttributeNames,
+  type AttributeNames,
+} from "../../api/useAttributeNames";
+import { attributeName, pillarName } from "../../format/display";
 import {
   ABSENT,
   formatDate,
@@ -47,12 +52,25 @@ export function CandidateDetail({
   candidate,
   name,
   pillars,
+  chosen = null,
+  onChoose,
 }: {
   candidate: string;
   name: string;
   pillars?: readonly PillarScore[] | null;
+  /**
+   * Which pillar's values to show, or null for all of them.
+   *
+   * **Held by the caller, not here.** The chart of pillar scores sits in the ranking row,
+   * outside this panel, and the two have to agree about which pillar is being read. A
+   * `useState` in here could not be seen by a sibling, so choosing a pillar on the chart did
+   * nothing and choosing one here left the chart unmarked.
+   */
+  chosen?: string | null;
+  onChoose?: (pillar: string) => void;
 }) {
   const names = usePillarNames();
+  const attributeNames = useAttributeNames();
   const values = useResource(
     useCallback(
       (signal: AbortSignal) => fetchValues(candidate, { signal }),
@@ -107,7 +125,6 @@ export function CandidateDetail({
       : null,
   );
 
-  const [pillar, setPillar] = useState<string | null>(null);
   const setCriteria =
     criteria.resource.status === "ready" ? criteria.resource.data.criteria : null;
   const byAttribute = pillarsByAttribute(setCriteria);
@@ -131,11 +148,14 @@ export function CandidateDetail({
         </span>
       </div>
 
+      {/* The toggle-off lives in `choosePillar`, with the rest of the selection rule, so
+          both ways in behave the same: clicking the chosen one again clears it, whether the
+          click landed on this card or on the chart up in the row. */}
       <PillarContributions
         names={names}
         pillars={pillars}
-        chosen={pillar}
-        onChoose={(each) => setPillar(each === pillar ? null : each)}
+        chosen={chosen}
+        onChoose={(each) => onChoose?.(each)}
       />
 
       {values.resource.status === "loading" && (
@@ -146,9 +166,9 @@ export function CandidateDetail({
       )}
       {values.resource.status === "ready" && (
         <h4 className="drill__title">
-          {pillar === null
+          {chosen === null
             ? "Every stored value"
-            : `${pillarName(names, pillar)} — stored values`}
+            : `${pillarName(names, chosen)} — stored values`}
         </h4>
       )}
       {values.resource.status === "ready" && (
@@ -156,20 +176,21 @@ export function CandidateDetail({
           completeness={pillarCompleteness(
             setCriteria,
             values.resource.data.items,
-            pillar,
+            chosen,
           )}
         />
       )}
       {values.resource.status === "ready" && (
         <ValueTable
+          names={attributeNames}
           judgements={judgements}
           contributions={contributions}
           values={valuesInPillar(
             values.resource.data.items,
             byAttribute,
-            pillar,
+            chosen,
           )}
-          pillar={pillar}
+          pillar={chosen}
         />
       )}
 
@@ -233,11 +254,14 @@ function CompletenessNote({
 function ValueTable({
   values,
   pillar,
+  names,
   judgements,
   contributions,
 }: {
   values: StoredValue[];
   pillar: string | null;
+  /** The catalog's attribute names, so no row prints a database key (`reqs.md` design rule). */
+  names: AttributeNames;
   /** What the active set decided about each attribute: its weight, and whether it blocks. */
   judgements: Map<string, Judgement>;
   /** What the pass made of each figure, from the ranking on screen. Empty until it arrives. */
@@ -274,14 +298,14 @@ function ValueTable({
               Weight used
             </th>
             <th scope="col" className="col--right">
-              Points added
+              Contribution
             </th>
             <th scope="col">Confidence</th>
-            <th scope="col">Status</th>
+            <th scope="col">In use</th>
           </tr>
         </thead>
         <tbody>
-          {values.map((value) => {
+          {foldRepeats(values).map(({ value, copies, firstRetrieved }) => {
             const judged = judgements.get(value.attribute);
             return (
               <tr
@@ -298,7 +322,9 @@ function ValueTable({
                     columns to compare across rows, so they read as a block. */}
                 <th scope="row" className="value-cell">
                   <span className="value-cell__head">
-                    <span className="value-cell__name">{value.attribute}</span>
+                    <span className="value-cell__name">
+                      {attributeName(names, value.attribute)}
+                    </span>
                     {judged?.required === true && (
                       <span className="chip chip--accent">Required</span>
                     )}
@@ -309,6 +335,17 @@ function ValueTable({
                       {value.data_source}
                       <Citations citations={value.citations} />
                     </span>
+                    {copies > 1 && (
+                      <>
+                        {/* **Said once, with a count, rather than as N identical rows.** Every
+                            copy is still stored; what is folded here is the repetition, not
+                            the evidence. A figure re-fetched unchanged is the same figure. */}
+                        <span className="value-cell__label">Fetched again</span>
+                        <span className="value-cell__fact">
+                          {describeRepeats(copies, firstRetrieved)}
+                        </span>
+                      </>
+                    )}
                     <span className="value-cell__label">Describes</span>
                     <span className="value-cell__fact">
                       {formatDate(value.reference_period.start)} to{" "}

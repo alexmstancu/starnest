@@ -301,6 +301,97 @@ describe("when the ranking cannot be shown", () => {
   });
 });
 
+describe("choosing a pillar, from either half", () => {
+  /**
+   * **The chart and the cards are one selection shown twice.** The chart lives in the ranking
+   * row and the cards in the panel underneath, and a reader who clicks one expects the other
+   * to agree -- so the chosen pillar is held on the open row, above both.
+   *
+   * **A browser found what these tests could not.** The chart marked itself chosen while the
+   * panel carried on showing every value, because `CandidateRow` built the row object it hands
+   * to `detail()` without the chosen pillar on it. Both halves rendered, both were "correct",
+   * and they disagreed. Asserting one and not the other is what let that through.
+   */
+  it("filters the panel when a bar in the row is clicked", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
+
+    await userEvent.click(
+      await within(row).findByRole("button", { name: /^Economy:/ }),
+    );
+
+    // The panel's own heading is the proof: it names the pillar it is filtered to.
+    expect(
+      await screen.findByRole("heading", { name: /economy — stored values/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("marks the bar in the row when a card in the panel is clicked", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
+
+    // Scoped to the panel: "Economy" names the bar in the row *and* the card below it, which
+    // is exactly what this feature is about, so an unscoped query is ambiguous by design.
+    const panel = await screen.findByRole("region", {
+      name: /Portugal: every value/i,
+    });
+    await userEvent.click(
+      within(panel).getByRole("button", { name: /^Economy\b/ }),
+    );
+
+    await waitFor(() =>
+      expect(
+        within(row).getByRole("button", { name: /^Economy:/ }),
+      ).toHaveAttribute("aria-pressed", "true"),
+    );
+  });
+
+  it("clears both halves when the chosen pillar is chosen again", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
+    const bar = await within(row).findByRole("button", { name: /^Economy:/ });
+
+    await userEvent.click(bar);
+    await waitFor(() => expect(bar).toHaveAttribute("aria-pressed", "true"));
+    await userEvent.click(bar);
+
+    await waitFor(() => expect(bar).toHaveAttribute("aria-pressed", "false"));
+    expect(
+      await screen.findByRole("heading", { name: /every stored value/i }),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * Clicking a bar must not toggle the row shut: the row itself is the open/close target, so
+   * the bar stops the click from reaching it.
+   *
+   * **This test is kept for its failure message, not for its coverage.** It detects exactly
+   * one mutation -- the lost `stopPropagation` in `RankingTable`'s pillar bar -- and the two
+   * tests above it detect that one too. What it adds is how it fails: a direct `expect` that
+   * goes red in under half a second and names the row closing, where the others fail by a
+   * five-second `waitFor` timeout on a heading that never arrives. In CI that is the
+   * difference between reading the cause and going looking for it. Were the bar's handler
+   * ever moved onto the row, this would be the test to delete rather than the one to fix.
+   */
+  it("leaves the row open when a bar inside it is clicked", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
+    await screen.findByRole("heading", { name: /every value behind the score/i });
+
+    await userEvent.click(
+      await within(row).findByRole("button", { name: /^Safety:/ }),
+    );
+
+    expect(
+      screen.getByRole("heading", { name: /every value behind the score/i }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("the drill-down", () => {
   it("shows every stored value for a candidate, the superseded ones included", async () => {
     renderShell("/rank");
@@ -309,7 +400,7 @@ describe("the drill-down", () => {
     await userEvent.click(
       // The candidate's name is the toggle: the whole row opens, and this is what a
       // keyboard reaches.
-      within(row).getByRole("button"),
+      within(row).getByRole("button", { name: "Portugal" }),
     );
 
     const table = await screen.findByRole("table", {
@@ -330,18 +421,68 @@ describe("the drill-down", () => {
     await userEvent.click(
       // The candidate's name is the toggle: the whole row opens, and this is what a
       // keyboard reaches.
-      within(row).getByRole("button"),
+      within(row).getByRole("button", { name: "Portugal" }),
     );
 
     const table = await screen.findByRole("table", {
       name: /every stored value/i,
     });
     const estimate = within(table).getByRole("row", {
-      name: /total_tax_rate_effective/i,
+      name: /total effective tax rate/i,
     });
     expect(estimate).toHaveTextContent("41.5");
     expect(estimate).toHaveTextContent("eurostat_estimate");
     expect(estimate).toHaveTextContent("low");
+  });
+
+  /**
+   * **The folding, as a reader meets it.** `repeatedValues.ts` is tested thoroughly and none
+   * of it was rendered: deleting the whole "Fetched again" block from `CandidateDetail` left
+   * every test in this folder green, so the feature could stop appearing and the only thing
+   * that would notice is a person looking at the screen.
+   *
+   * An acquisition appends what it fetched without asking whether it changed, so one Eurostat
+   * figure can sit in the store twenty-six times. The panel says that once, with a count, in
+   * place of twenty-six identical rows -- and says what did not change rather than printing a
+   * bare number beside a date.
+   */
+  it("says once that a figure was stored again, instead of repeating the row", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
+
+    const table = await screen.findByRole("table", {
+      name: /every stored value/i,
+    });
+    const connectivity = within(table).getByRole("row", {
+      name: /european air connectivity/i,
+    });
+    expect(connectivity).toHaveTextContent("Fetched again");
+    expect(connectivity).toHaveTextContent(
+      "unchanged across 2 acquisitions, first on 11 Sept 2025",
+    );
+  });
+
+  /**
+   * **The other half of the same claim.** "Fetched again" on a figure stored once would be a
+   * line about an event that did not happen, which is worse than no line -- and a test that
+   * only asserts the sentence appears would pass with the `copies > 1` guard deleted.
+   */
+  it("says nothing about repeats for a figure stored only once", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
+
+    const table = await screen.findByRole("table", {
+      name: /every stored value/i,
+    });
+    const estimate = within(table).getByRole("row", {
+      name: /total effective tax rate/i,
+    });
+    expect(estimate).not.toHaveTextContent("Fetched again");
+    expect(estimate).not.toHaveTextContent(/unchanged across/);
   });
 
   /**
@@ -352,12 +493,12 @@ describe("the drill-down", () => {
     renderShell("/rank");
 
     await userEvent.click(
-      within(await rankingRow("Portugal")).getByRole("button"),
+      within(await rankingRow("Portugal")).getByRole("button", { name: "Portugal" }),
     );
     await screen.findByRole("heading", { name: /Portugal: every value/i });
 
     await userEvent.click(
-      within(await rankingRow("Netherlands")).getByRole("button"),
+      within(await rankingRow("Netherlands")).getByRole("button", { name: "Netherlands" }),
     );
 
     expect(
@@ -376,7 +517,7 @@ describe("the drill-down", () => {
 
     for (const name of ["Portugal", "Netherlands"]) {
       await userEvent.click(
-        within(await rankingRow(name)).getByRole("button"),
+        within(await rankingRow(name)).getByRole("button", { name }),
       );
     }
 
@@ -391,13 +532,13 @@ describe("the drill-down", () => {
 
     for (const name of ["Portugal", "Netherlands"]) {
       await userEvent.click(
-        within(await rankingRow(name)).getByRole("button"),
+        within(await rankingRow(name)).getByRole("button", { name }),
       );
     }
     await screen.findByRole("heading", { name: /Netherlands: every value/i });
 
     await userEvent.click(
-      within(await rankingRow("Portugal")).getByRole("button"),
+      within(await rankingRow("Portugal")).getByRole("button", { name: "Portugal" }),
     );
 
     await waitFor(() =>
@@ -417,7 +558,7 @@ describe("the drill-down", () => {
   it("links a publisher to how it says it reached its number", async () => {
     renderShell("/rank");
     await userEvent.click(
-      within(await rankingRow("Portugal")).getByRole("button"),
+      within(await rankingRow("Portugal")).getByRole("button", { name: "Portugal" }),
     );
 
     // Named by the section it belongs to. The caption that used to name it said "Not part of
@@ -436,14 +577,14 @@ describe("the drill-down", () => {
   it("links a figure to the pages it was read from", async () => {
     renderShell("/rank");
     await userEvent.click(
-      within(await rankingRow("Portugal")).getByRole("button"),
+      within(await rankingRow("Portugal")).getByRole("button", { name: "Portugal" }),
     );
 
     const figures = await screen.findByRole("table", {
       name: /every stored value/i,
     });
     const estimate = within(figures).getByRole("row", {
-      name: /total_tax_rate_effective/i,
+      name: /total effective tax rate/i,
     });
     expect(within(estimate).getByRole("link", { name: /source 1/i })).toHaveAttribute(
       "href",
@@ -455,14 +596,14 @@ describe("the drill-down", () => {
   it("refuses to link a citation whose scheme would run something", async () => {
     renderShell("/rank");
     await userEvent.click(
-      within(await rankingRow("Portugal")).getByRole("button"),
+      within(await rankingRow("Portugal")).getByRole("button", { name: "Portugal" }),
     );
 
     const figures = await screen.findByRole("table", {
       name: /every stored value/i,
     });
     const estimate = within(figures).getByRole("row", {
-      name: /total_tax_rate_effective/i,
+      name: /total effective tax rate/i,
     });
     expect(within(estimate).getAllByRole("link")).toHaveLength(1);
     expect(within(estimate).queryByRole("link", { name: /source 2/i })).toBeNull();
@@ -476,7 +617,7 @@ describe("the drill-down", () => {
     renderShell("/rank");
 
     await userEvent.click(
-      within(await rankingRow("Portugal")).getByRole("button"),
+      within(await rankingRow("Portugal")).getByRole("button", { name: "Portugal" }),
     );
 
     // The set scores seven attributes; the mock stores figures for two of them.
@@ -518,7 +659,7 @@ describe("the drill-down", () => {
     renderShell("/rank");
 
     await userEvent.click(
-      within(await rankingRow("Portugal")).getByRole("button"),
+      within(await rankingRow("Portugal")).getByRole("button", { name: "Portugal" }),
     );
 
     expect(
@@ -535,7 +676,7 @@ describe("the drill-down", () => {
     await userEvent.click(
       // The candidate's name is the toggle: the whole row opens, and this is what a
       // keyboard reaches.
-      within(row).getByRole("button"),
+      within(row).getByRole("button", { name: "Portugal" }),
     );
 
     // Named by the section it belongs to. The caption that used to name it said "Not part of
@@ -557,10 +698,10 @@ describe("the drill-down", () => {
     await userEvent.click(
       // The candidate's name is the toggle: the whole row opens, and this is what a
       // keyboard reaches.
-      within(row).getByRole("button"),
+      within(row).getByRole("button", { name: "Portugal" }),
     );
     await userEvent.click(
-      within(row).getByRole("button"),
+      within(row).getByRole("button", { name: "Portugal" }),
     );
 
     expect(
@@ -577,7 +718,7 @@ describe("the drill-down", () => {
     await userEvent.click(
       // The candidate's name is the toggle: the whole row opens, and this is what a
       // keyboard reaches.
-      within(row).getByRole("button"),
+      within(row).getByRole("button", { name: "Portugal" }),
     );
     expect(
       await screen.findByRole("table", { name: /every stored value/i }),
@@ -598,7 +739,7 @@ describe("the drill-down", () => {
     await userEvent.click(
       // The candidate's name is the toggle: the whole row opens, and this is what a
       // keyboard reaches.
-      within(row).getByRole("button"),
+      within(row).getByRole("button", { name: "Portugal" }),
     );
     expect(
       await screen.findByRole("table", { name: /every stored value/i }),
@@ -623,7 +764,7 @@ describe("the drill-down", () => {
     await userEvent.click(
       // The candidate's name is the toggle: the whole row opens, and this is what a
       // keyboard reaches.
-      within(row).getByRole("button"),
+      within(row).getByRole("button", { name: "Estonia" }),
     );
 
     expect(
@@ -703,7 +844,7 @@ describe("what a stored figure looks like, whatever its type", () => {
     await userEvent.click(
       // The candidate's name is the toggle: the whole row opens, and this is what a
       // keyboard reaches.
-      within(row).getByRole("button"),
+      within(row).getByRole("button", { name: "Portugal" }),
     );
 
     const table = await screen.findByRole("table", {
@@ -729,7 +870,7 @@ describe("what a stored figure looks like, whatever its type", () => {
     await userEvent.click(
       // The candidate's name is the toggle: the whole row opens, and this is what a
       // keyboard reaches.
-      within(row).getByRole("button"),
+      within(row).getByRole("button", { name: "Portugal" }),
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -752,7 +893,7 @@ describe("what a stored figure looks like, whatever its type", () => {
     await userEvent.click(
       // The candidate's name is the toggle: the whole row opens, and this is what a
       // keyboard reaches.
-      within(row).getByRole("button"),
+      within(row).getByRole("button", { name: "Portugal" }),
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -792,7 +933,7 @@ describe("what a stored figure looks like, whatever its type", () => {
     await userEvent.click(
       // The candidate's name is the toggle: the whole row opens, and this is what a
       // keyboard reaches.
-      within(row).getByRole("button"),
+      within(row).getByRole("button", { name: "Portugal" }),
     );
 
     const table = await screen.findByRole("table", {
@@ -851,7 +992,7 @@ describe("what the pass made of each figure", () => {
   async function theValues() {
     renderShell("/rank");
     const row = await rankingRow("Portugal");
-    await userEvent.click(within(row).getByRole("button"));
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
     return within(
       await screen.findByRole("table", { name: /every stored value/i }),
     );
@@ -863,7 +1004,7 @@ describe("what the pass made of each figure", () => {
     // The active figure, not the one it superseded: both rows carry the attribute's name, and
     // the pass scored the one it is using.
     const row = table
-      .getAllByRole("row", { name: /cost_of_living_index/i })
+      .getAllByRole("row", { name: /cost of living index/i })
       .find((each) => each.textContent?.includes("Scored"));
     expect(row).toHaveTextContent("73");
     expect(row).toHaveTextContent("12.5%");
@@ -887,7 +1028,7 @@ describe("what the pass made of each figure", () => {
     // "not judged" and "judged to be worth nothing" are different claims.
     const table = await theValues();
 
-    const row = table.getByRole("row", { name: /european_air_connectivity/i });
+    const row = table.getByRole("row", { name: /european air connectivity/i });
     expect(row).toHaveTextContent("31");
     expect(row).not.toHaveTextContent(/[+-]?\d+\.\d/);
   });

@@ -154,8 +154,13 @@ describe("a setting that is not set", () => {
     expect(
       await settings.findByText(/no coverage floor is in force/i),
     ).toBeInTheDocument();
+    // **The wording, not either wording.** An alternation satisfied by both let the panel ship
+    // "1 setting" or "One setting" indifferently, which is not a thing a test can be neutral
+    // about: the sentence is what a reader gets.
     expect(
-      settings.getByText(/1 setting is not set|one setting is not set/i),
+      settings.getByText(
+        "One setting is not set, so the rule behind it is not in force.",
+      ),
     ).toBeInTheDocument();
   });
 

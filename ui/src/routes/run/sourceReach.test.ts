@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { outcomeSentence, runState, sourceBars } from "./sourceReach";
+import { inFlight, outcomeSentence, runState, sourceBars } from "./sourceReach";
 
 describe("source by source", () => {
   it("fills each source's bar by its own success rate, not by its share of the run", () => {
@@ -145,5 +145,41 @@ describe("what to call a run's state", () => {
   it("has nothing to say about a status it was never given", () => {
     expect(runState(null, null)).toBe("");
     expect(runState(undefined, "2026-09-24T09:00:00Z")).toBe("");
+  });
+});
+
+
+describe("whether a run is still going", () => {
+  /**
+   * What leads the Acquire screen turns on this. A reader arriving mid-run came for the run;
+   * a reader arriving afterwards came for the figures and the remedies.
+   */
+  it("counts a run that is running, and one that has not started asking yet", () => {
+    expect(inFlight("running")).toBe(true);
+    expect(inFlight("planned")).toBe(true);
+  });
+
+  it("counts no run that has stopped, however it stopped", () => {
+    expect(inFlight("completed")).toBe(false);
+    expect(inFlight("failed")).toBe(false);
+    expect(inFlight("halted_on_spend_cap")).toBe(false);
+    expect(inFlight("halted_by_user")).toBe(false);
+  });
+
+  /**
+   * It ends when the source in flight finishes, which is the one moment its progress is worth
+   * watching. **Asked with either of the two**, because `runState` hands back a state and the
+   * run hands back a status, and a predicate that disagreed with itself across them would be a
+   * trap for whoever next passed the other one.
+   */
+  it("counts a run somebody has asked to stop, because it has not stopped", () => {
+    expect(inFlight("running")).toBe(true);
+    expect(inFlight(runState("running", "2026-09-24T09:00:00Z"))).toBe(true);
+  });
+
+  it("counts nothing where there is no run", () => {
+    expect(inFlight(null)).toBe(false);
+    expect(inFlight(undefined)).toBe(false);
+    expect(inFlight("")).toBe(false);
   });
 });

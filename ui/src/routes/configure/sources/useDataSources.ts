@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { fetchDataSources, updateDataSource } from "../../../api/endpoints";
 import { useResource } from "../../../api/useResource";
-import { priorityForMove } from "./sourceOrder";
+import { priorityForMove, reorderForDrop } from "./sourceOrder";
 
 /**
  * Switching a source on or off, and moving it in the order.
@@ -66,6 +66,22 @@ export function useDataSources() {
       void change(id, { default_priority: swap.priority }, [
         { id: swap.neighbourId, default_priority: swap.neighbourPriority },
       ]);
+    },
+    /**
+     * A source dropped onto another's row, which is a splice rather than a swap.
+     *
+     * **Every change is the same `PATCH` the arrows send**, one per row whose number moves.
+     * There is no batch reorder in the contract and this does not invent one.
+     *
+     * **A drop that changes no number sends nothing**, which is what a drop where the row
+     * already was comes to. A request writing the number already stored would still be a
+     * request: it would flash the row as saving and re-read the whole list to show the order
+     * that was already on screen.
+     */
+    reorder: (draggedId: string, targetId: string) => {
+      const [first, ...rest] = reorderForDrop(sources, draggedId, targetId);
+      if (first === undefined) return;
+      void change(first.id, { default_priority: first.default_priority }, rest);
     },
   };
 }

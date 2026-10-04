@@ -69,8 +69,8 @@ describe("what a run commits you to", () => {
 
   it("carries the name of the act it is confirming", () => {
     expect(
-      describeCommitment({ act: "Ask again about 62", itemsTotal: 62 }).sentence,
-    ).toMatch(/^Ask again about 62 over 62 values/);
+      describeCommitment({ act: "Retry 62 unanswered", itemsTotal: 62 }).sentence,
+    ).toMatch(/^Retry 62 unanswered over 62 values/);
   });
 
   it("counts nothing as nothing rather than as unknown", () => {

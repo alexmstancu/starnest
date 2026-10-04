@@ -64,6 +64,106 @@ export function priorityForMove<Source extends OrderedSource>(
 }
 
 /**
+ * One source's new place in the order, as the one field the contract lets us write.
+ *
+ * There is no batch reorder and there is deliberately no new operation: a drop is a run of
+ * `PATCH /data-sources/{id}` with `default_priority`, which is the same request the arrows
+ * already send.
+ */
+export interface PriorityChange {
+  id: string;
+  default_priority: number;
+}
+
+/**
+ * What a drop costs, in priorities.
+ *
+ * **A drag is a splice, not a swap, so it cannot reuse the arrows' arithmetic.** Moving the
+ * top source to fourth place by exchanging two numbers would put it fourth and leave the two
+ * rows between it untouched, which is a different order from the one that was dropped.
+ *
+ * **So the affected rows are renumbered densely: position one upwards, one apart.** The
+ * alternative -- rotating the priorities the span already holds -- preserves the stored
+ * numbers but breaks on a tie, and ties are reachable: `ecb` and `unodc` both ship at 16, and
+ * the endpoint lets a household set any number. A row that lands tied with its new neighbour
+ * is then ordered by id rather than by where it was dropped, so the gesture would silently
+ * put it somewhere else. Dense numbering is the only assignment that cannot do that.
+ *
+ * `UNIQUE` on the column was tried and reverted for the reason this relies on: the changes are
+ * written one at a time, so the order passes through a moment where two sources share a
+ * number. That moment is legal.
+ *
+ * **Only the rows whose number actually changes are returned**, so a drop that lands where the
+ * row already was comes back empty and nothing is sent.
+ */
+export function reorderForDrop<Source extends OrderedSource>(
+  sources: readonly Source[],
+  draggedId: string,
+  targetId: string,
+): PriorityChange[] {
+  const dropped = droppedOrder(sources, draggedId, targetId);
+  const changes: PriorityChange[] = [];
+  dropped.forEach((source, index) => {
+    const priority = index + 1;
+    if (source.default_priority !== priority) {
+      changes.push({ id: source.id, default_priority: priority });
+    }
+  });
+  return changes;
+}
+
+/**
+ * Which edge of the target row the dragged row would come to rest against.
+ *
+ * **The edge follows the direction, and the design's does not.** The mockup draws the line on
+ * the target's top edge always, while its own handler removes the row and re-inserts it at the
+ * target's index -- which lands it *below* the target whenever the drag went downwards. One of
+ * the two is wrong, and an indicator that points at the wrong gap is the worse half to keep:
+ * the alternative reading, "always insert above", has a dead end, because then no drop can
+ * ever reach the last place in the list.
+ *
+ * Null for every row but the one being dropped onto, and null for a drop on the dragged row
+ * itself -- there is no gap it would move to.
+ */
+export function landingEdge<Source extends OrderedSource>(
+  sources: readonly Source[],
+  draggedId: string,
+  targetId: string,
+): "above" | "below" | null {
+  const ordered = inPriorityOrder(sources);
+  const from = ordered.findIndex((source) => source.id === draggedId);
+  const to = ordered.findIndex((source) => source.id === targetId);
+  if (from === -1 || to === -1 || from === to) return null;
+  return from > to ? "above" : "below";
+}
+
+/**
+ * The list as the drop leaves it: the dragged source taken out, then put back at the target's
+ * index.
+ *
+ * **Taken out first, which is what makes the last place reachable.** Removing the row shifts
+ * everything below it up one, so re-inserting at the target's old index lands the row after
+ * that target when the drag went down and before it when the drag went up. Every gap in the
+ * list, including the one at the very bottom, is the destination of some drop.
+ */
+function droppedOrder<Source extends OrderedSource>(
+  sources: readonly Source[],
+  draggedId: string,
+  targetId: string,
+): Source[] {
+  const ordered = inPriorityOrder(sources);
+  const from = ordered.findIndex((source) => source.id === draggedId);
+  const to = ordered.findIndex((source) => source.id === targetId);
+  if (from === -1 || to === -1 || from === to) return [];
+
+  const dragged = ordered[from];
+  if (dragged === undefined) return [];
+  ordered.splice(from, 1);
+  ordered.splice(to, 0, dragged);
+  return ordered;
+}
+
+/**
  * What position to show beside a source.
  *
  * A switched-off source has no position, because it is not in the contest -- showing one

@@ -1,9 +1,15 @@
 /**
- * Reading a typed weight. Shared by the two levels of weighting, and by neither's markup.
+ * Reading a weight, and what moving one would do to its siblings. Shared by the two levels of
+ * weighting, and by neither's markup.
  *
  * A weight is a percentage the user types, so it arrives as text and may not be a number at
  * all. **Nothing is sent until it is one**: the server would refuse it, and the refusal would
  * be about parsing rather than about weights -- which tells the user nothing they can act on.
+ *
+ * `previewRebalance` is the one piece of arithmetic here that the server also does, and the
+ * reason is in its own docs: the server is asked once, when the pointer lifts, so something
+ * has to answer "and the others?" for the length of the gesture. It is a preview, overwritten
+ * by the response within that same gesture, and never an authority on what a weight is.
  */
 
 /** The number a field holds, or null when it holds something that is not one. */
@@ -74,6 +80,166 @@ export function totalsByPillar(
     pillar,
     total,
     balanced: comesToAHundred(total),
+  }));
+}
+
+/**
+ * One weight in a rebalance: a pillar's within its level, or a criterion's within its pillar.
+ *
+ * **One shape for both levels**, as on the server -- `WeightedItem` in
+ * `criteria/rebalancing.py` -- because the arithmetic does not care which of the two hundreds
+ * is being shared out.
+ */
+export interface WeightedItem {
+  identifier: string;
+  weight: number;
+  locked: boolean;
+}
+
+/** A preview that says nothing: no drag is in progress, or the locks leave the move no room. */
+export const NOTHING_PREVIEWED: ReadonlyMap<string, number> = new Map();
+
+/** What a level's pillar weights look like to a rebalance. */
+export function weightedPillars(
+  weights: readonly { pillar: string; weight: number; weight_locked: boolean }[],
+): WeightedItem[] {
+  return weights.map((each) => ({
+    identifier: each.pillar,
+    weight: each.weight,
+    locked: each.weight_locked,
+  }));
+}
+
+/** What a pillar's criteria look like to a rebalance. */
+export function weightedCriteria(
+  criteria: readonly {
+    attribute: string;
+    weight?: number;
+    weight_locked?: boolean;
+  }[],
+): WeightedItem[] {
+  return criteria.map((each) => ({
+    identifier: each.attribute,
+    // Zero where the server sent no weight at all, which it never does -- `weight` is required
+    // on `Criterion` and optional only in the generated type.
+    weight: each.weight ?? 0,
+    locked: each.weight_locked ?? false,
+  }));
+}
+
+/** What a set of weights comes to, which is the one thing a rebalance may never change. */
+const TOTAL = 100;
+
+/**
+ * What every weight would become if the drag in progress were let go now.
+ *
+ * **A mirror of `rebalance()` in `backend/src/starnest/criteria/rebalancing.py`**, and the only
+ * arithmetic here that the server also does. It exists because the server is asked once, on
+ * release (`arch.md` 8.3): without it ten siblings sit still under the thumb and the total
+ * reads 97 for the length of a gesture, which looks like the rule being broken rather than a
+ * request not yet sent. **Nothing it produces is stored, scored or sent** -- the response
+ * replaces it within the same gesture -- so this is a presentational guard and not a second
+ * authority on what a weight is.
+ *
+ * The rule, in a sentence: the unlocked siblings absorb the change in proportion to what they
+ * already hold, a locked sibling does not move, and the residue of the division lands on the
+ * largest absorber. The fixtures in `weights.test.ts` are lifted from
+ * `backend/tests/unit/criteria/test_rebalancing.py`, so changing the Python breaks this.
+ *
+ * **An impossible move previews nothing, and the empty map is how it says so.** Locks that
+ * leave no room are a refusal, and the refusal is the server's to word (`reqs.md` 3.4): the
+ * rows stay where they are until the release brings back the 409 naming the locks in the way.
+ */
+export function previewRebalance(
+  items: readonly WeightedItem[],
+  moved: string,
+  to: number,
+): ReadonlyMap<string, number> {
+  const target = items.find((item) => item.identifier === moved);
+  // A lock is the user saying "not this one", and the one it was placed on is this one.
+  if (target === undefined || target.locked) return NOTHING_PREVIEWED;
+  // A range slider cannot ask for either of these; `weightFrom` can, so they are answered.
+  if (to < 0 || to > TOTAL) return NOTHING_PREVIEWED;
+  if (new Set(items.map((item) => item.identifier)).size !== items.length) {
+    return NOTHING_PREVIEWED;
+  }
+
+  const siblings = items.filter((item) => item.identifier !== moved);
+  const absorbers = siblings.filter((item) => !item.locked);
+  // Nothing to absorb the change: every sibling is locked, or there is no sibling at all
+  // because one weight in a pillar already holds the whole hundred of it.
+  if (absorbers.length === 0) return NOTHING_PREVIEWED;
+
+  const held = totalOf(siblings.filter((item) => item.locked));
+  // The locked weights already claim more than what is left, so no arrangement sums to 100.
+  if (to + held > TOTAL) return NOTHING_PREVIEWED;
+
+  const available = TOTAL - to - held;
+  const absorbed = totalOf(absorbers);
+  const shared = absorbers.map((absorber) => ({
+    identifier: absorber.identifier,
+    // An absorber at zero stays at zero under proportional sharing, so when every absorber is
+    // at zero there is no proportion to go by and the room is split evenly. That is the only
+    // sensible reading of "share this out among things that currently hold none".
+    weight:
+      available *
+      (absorbed > 0 ? absorber.weight / absorbed : 1 / absorbers.length),
+  }));
+
+  // **The residue goes on the largest absorber**, as `_corrected_for_rounding` does: dividing
+  // 100 three ways leaves a remainder in binary floating point as surely as in `Decimal`, and
+  // it has to land somewhere or the total reads 99.999. The largest is where it is least
+  // visible as a proportion of itself. A residue of zero added is the same act, so there is no
+  // case here to split.
+  const residue = available - totalOf(shared);
+  const largest = shared.reduce((biggest, each) =>
+    each.weight > biggest.weight ? each : biggest,
+  );
+  largest.weight += residue;
+
+  const previewed: [string, number][] = [
+    [moved, to],
+    ...shared.map((each): [string, number] => [each.identifier, each.weight]),
+    // Returned although they have not changed, the way `rebalance()` returns every identifier:
+    // a caller then reads one answer rather than working out which rows it covers.
+    ...siblings
+      .filter((item) => item.locked)
+      .map((item): [string, number] => [item.identifier, item.weight]),
+  ];
+  return new Map(previewed);
+}
+
+/**
+ * What a set of weights comes to as the screen is showing them.
+ *
+ * **The running total has to read what the rows read.** Mid-drag the rows show the preview, and
+ * a total summed from the stored weights would say 97 beside rows that visibly come to 100 --
+ * the screen disagreeing with itself, which is the fault the chip is there to report.
+ */
+export function previewedTotal(
+  items: readonly WeightedItem[],
+  preview: ReadonlyMap<string, number>,
+): number {
+  return totalOf(
+    items.map((item) => ({
+      weight: preview.get(item.identifier) ?? item.weight,
+    })),
+  );
+}
+
+/**
+ * The criteria as the screen is showing them, for the per-pillar totals beside them.
+ *
+ * Keeps only what `totalsByPillar` reads: the point is the weight a row is displaying, and
+ * carrying the rest of the criterion through would suggest the preview had changed more of it.
+ */
+export function previewedCriteria(
+  criteria: readonly { attribute: string; pillar: string; weight?: number }[],
+  preview: ReadonlyMap<string, number>,
+): { pillar: string; weight?: number }[] {
+  return criteria.map((criterion) => ({
+    pillar: criterion.pillar,
+    weight: preview.get(criterion.attribute) ?? criterion.weight,
   }));
 }
 

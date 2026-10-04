@@ -60,6 +60,47 @@ describe("the rules panel", () => {
     await waitFor(() => expect(toggle).toBeChecked());
   });
 
+  /**
+   * **The other direction, which nothing tested.** Every switch test here clicked from off to
+   * on, so the branch that takes a rule *out* of the enforced list was never run: replacing
+   * `current.filter(...)` with `current` — making "switch it off" a silent no-op — left all 49
+   * tests in this panel green.
+   *
+   * `CLAUDE.md` records the identical asymmetry one screen over: `updateCriterionLock` sent a
+   * lock and never its twin, so "a locked pillar could never be unlocked — 409 for ever". The
+   * cost is higher here, because an enforced gate decides whether a candidate is ranked at all,
+   * and a reader who cannot turn one off cannot get a country back.
+   */
+  it("stops enforcing a gate once the server has accepted that too", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    const toggle = await screen.findByRole("switch", {
+      name: "Enforce A visa route exists",
+    });
+    expect(toggle).toBeChecked();
+
+    await user.click(toggle);
+
+    await waitFor(() => expect(toggle).not.toBeChecked());
+  });
+
+  /** And back on again, so the two directions are not one lucky pass each. */
+  it("enforces it again after it has been switched off", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    const toggle = await screen.findByRole("switch", {
+      name: "Enforce A visa route exists",
+    });
+
+    await user.click(toggle);
+    await waitFor(() => expect(toggle).not.toBeChecked());
+    await user.click(toggle);
+
+    await waitFor(() => expect(toggle).toBeChecked());
+  });
+
   it("leaves the gate as it was when the write fails, and says why", async () => {
     mockServer.use(
       http.put(

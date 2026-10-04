@@ -1,5 +1,8 @@
 import { useId, useState } from "react";
+import { useAttributeNames } from "../../api/useAttributeNames";
+import { useCandidateNames } from "../../api/useCandidateNames";
 import { formatCount } from "../../format/display";
+import { groupLabel, groupMeta, itemDetail, itemPhrase } from "./itemNames";
 import { type Item, groupBy, keyOf, questionsIn, scopeFor } from "./runScope";
 
 /**
@@ -20,6 +23,7 @@ export function ItemGroups({
   caption,
   level,
   act,
+  detailKind,
   busy,
   onPropose,
 }: {
@@ -27,6 +31,8 @@ export function ItemGroups({
   groupedBy: "data_source" | "attribute";
   caption: string;
   level: string;
+  /** Which of the two details each row carries -- see `itemDetail`. */
+  detailKind: "failed" | "unanswered";
   /** What the button will be called, e.g. "Retry". */
   act: string;
   busy: boolean;
@@ -36,10 +42,19 @@ export function ItemGroups({
   ) => void;
 }) {
   const headingId = useId();
-  const [selected, setSelected] = useState<ReadonlySet<string>>(
-    () => new Set(items.map(keyOf)),
-  );
+  // **Nothing picked to begin with, as the design has it** (`selFail:{}` in its own state).
+  // The card's own action already covers the whole bucket -- "Retry 12 failed" -- so a list
+  // that opened with everything ticked made the selection say nothing: picking is how a reader
+  // narrows, and it cannot narrow from a state that is already everything.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+
+  // In the component that renders the names, not threaded from a parent. One shared promise
+  // serves every caller on the page.
+  const names = {
+    attributes: useAttributeNames(),
+    candidates: useCandidateNames(),
+  };
 
   const groups = groupBy(items, groupedBy);
   const chosen = items.filter((item) => selected.has(keyOf(item)));
@@ -101,7 +116,12 @@ export function ItemGroups({
                     })
                   }
                 >
-                  {group.key} ({formatCount(group.items.length)})
+                  {/* **"▸ oecd  12 items, 3 picked".** The design puts the count and the
+                      selection in one meta string beside the name rather than in a column of
+                      its own, so a collapsed list reads as a list and not as a table. */}
+                  <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>{" "}
+                  {groupLabel(names, groupedBy, group.key)}{" "}
+                  {groupMeta(group.items.length, picked)}
                 </button>
                 <button
                   type="button"
@@ -117,9 +137,6 @@ export function ItemGroups({
                 >
                   None
                 </button>
-                <span className="group__count">
-                  {formatCount(picked)} selected
-                </span>
               </div>
 
               {expanded && (
@@ -131,14 +148,19 @@ export function ItemGroups({
                         <label className="toggle toggle--item">
                           <input
                             type="checkbox"
-                            aria-label={`${item.candidate} ${item.attribute}`}
+                            aria-label={itemPhrase(names, item)}
                             checked={selected.has(key)}
                             onChange={(event) =>
                               toggle([key], event.target.checked)
                             }
                           />
                           <span aria-hidden="true">
-                            {item.candidate} {item.attribute}
+                            {itemPhrase(names, item)}
+                          </span>
+                          {/* The design gives every row a right-hand detail: why this one
+                              failed, or that nothing anywhere had a row. */}
+                          <span className="toggle__detail">
+                            {itemDetail(item, detailKind)}
                           </span>
                         </label>
                       </li>

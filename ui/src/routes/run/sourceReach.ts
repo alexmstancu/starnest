@@ -130,3 +130,29 @@ export function runState(
   if (status === "running" && stopRequestedAt != null) return "stopping";
   return status ?? "";
 }
+
+/**
+ * The states under which a run is still going to do something.
+ *
+ * **`stopping` is in here although no server ever sends it**, because `runState` does: a caller
+ * holding a state rather than a status must get the same answer, and a predicate that said
+ * "not in flight" for a run that is mid-stop would be a trap set for whoever next passes the
+ * wrong one of the two.
+ */
+const IN_FLIGHT = new Set(["planned", "running", "stopping"]);
+
+/**
+ * Whether the run is still going.
+ *
+ * **What leads the Acquire screen turns on this, not on there being a run at all.** A reader
+ * arriving mid-run came for the run, so it takes the top of the screen; a reader arriving
+ * afterwards came to see what the database now holds and what they can do about the gaps, and
+ * a finished run above those is an answer in front of the question.
+ *
+ * `planned` counts: the run exists, nothing has been asked yet, and it is about to move. A run
+ * somebody has asked to stop is still `running` and still in flight -- it ends when the source
+ * in flight finishes, which is the one moment its progress is worth watching.
+ */
+export function inFlight(status: string | null | undefined): boolean {
+  return status != null && IN_FLIGHT.has(status);
+}

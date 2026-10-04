@@ -269,12 +269,27 @@ describe("what a row is called", () => {
     ).toBe("Cost of living index");
   });
 
-  it("falls back to the id only when the catalog has not answered", () => {
-    // Title-casing the id would be this screen guessing at what an attribute measures, which
-    // is worse than showing the key: a wrong name reads as a fact.
-    expect(titleOf("country.rent", undefined)).toBe("country.rent");
-    expect(titleOf("country.rent", { id: "country.rent", name: "" })).toBe(
-      "country.rent",
+  it("reads the id as words when the catalog has not answered", () => {
+    /**
+     * **Never the key itself.** The design bars programmatic identifiers from rendered text,
+     * and the catalog being slow or silent is no licence to print one: `attributeName` drops
+     * the level, which is the thing the whole screen is about, and spaces the rest.
+     *
+     * This asserted the opposite until the rule was applied -- the id was the fallback on the
+     * argument that spacing one is a guess at what the attribute measures.
+     */
+    expect(titleOf("country.overcrowding_rate", undefined)).toBe(
+      "Overcrowding rate",
     );
+    expect(
+      titleOf("country.rent", { id: "country.rent", name: "" }),
+    ).toBe("Rent");
+  });
+
+  it("keeps a name that happens to look like an id", () => {
+    /** The catalog's answer is taken as given: it is somebody's decision, not a derivation. */
+    expect(
+      titleOf("country.rent", { id: "country.rent", name: "country.rent" }),
+    ).toBe("country.rent");
   });
 });

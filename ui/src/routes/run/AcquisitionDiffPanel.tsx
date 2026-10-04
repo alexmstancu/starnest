@@ -1,7 +1,14 @@
 import { useCallback, useId, useState } from "react";
 import { type Run, fetchValuesFromRun } from "../../api/endpoints";
+import { useAttributeNames } from "../../api/useAttributeNames";
+import { useCandidateNames } from "../../api/useCandidateNames";
 import { useResource } from "../../api/useResource";
-import { formatCount, formatDateTime } from "../../format/display";
+import {
+  attributeName,
+  candidateName,
+  formatCount,
+  formatDateTime,
+} from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { diffAcquisitions, runIdFrom } from "./acquisitionDiff";
 
@@ -20,6 +27,8 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
   const laterId = useId();
   const [earlier, setEarlier] = useState<number | null>(null);
   const [later, setLater] = useState<number | null>(null);
+  const attributes = useAttributeNames();
+  const candidates = useCandidateNames();
 
   const values = useResource(
     useCallback(
@@ -155,8 +164,10 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
                 <tbody>
                   {values.resource.data.rows.map((row) => (
                     <tr key={`${row.candidate}-${row.attribute}-${row.change}`}>
-                      <th scope="row">{row.candidate}</th>
-                      <td>{row.attribute}</td>
+                      <th scope="row">
+                        {candidateName(candidates, row.candidate)}
+                      </th>
+                      <td>{attributeName(attributes, row.attribute)}</td>
                       <td>{row.data_source ?? "—"}</td>
                       <td className="col--right">{row.earlier ?? "—"}</td>
                       <td className="col--right">{row.later ?? "—"}</td>

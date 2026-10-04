@@ -19,9 +19,11 @@ import {
   deltaTone,
   formatScore,
   formatSigned,
+  attributeName,
 } from "../../format/display";
 import { describeFigure } from "../../format/figure";
 import { UnsetSetting } from "../../shell/UnsetSetting";
+import { useAttributeNames } from "../../api/useAttributeNames";
 import { useSelection } from "../../shell/SelectionContext";
 
 /**
@@ -313,6 +315,7 @@ function ComparisonTable({
   measure: Measure;
 }) {
   const comparators = comparison.comparators ?? [];
+  const attributeNames = useAttributeNames();
   return (
     <>
       <h3 className="panel__heading">
@@ -366,7 +369,7 @@ function ComparisonTable({
         <tbody>
           {comparison.attributes.map((row) => (
             <tr key={row.attribute}>
-              <th scope="row">{row.attribute}</th>
+              <th scope="row">{attributeName(attributeNames, row.attribute)}</th>
               <td>
                 {shownAs === "raw"
                   ? (row.focus?.value

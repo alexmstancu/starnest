@@ -21,6 +21,8 @@ import type { Settings } from "../../../api/endpoints";
 export type UnsetSeverity = "blocking" | "advisory";
 
 export interface SettingField {
+  /** True where the setting counts things and a fraction of one is meaningless. */
+  whole: boolean;
   name: SettingName;
   label: string;
   /**
@@ -50,6 +52,8 @@ export interface SettingField {
 export const SETTING_FIELDS = [
   {
     name: "min_coverage",
+    // A percentage, and 57.5% is a real floor to want.
+    whole: false,
     label: "Minimum coverage to score",
     unit: "%",
     description: "Below this, a candidate is insufficient_data.",
@@ -59,6 +63,7 @@ export const SETTING_FIELDS = [
   },
   {
     name: "score_scale_max",
+    whole: true,
     label: "Top of the score range",
     unit: "points",
     description: "The top of every score. Nothing assumes 100.",
@@ -67,6 +72,7 @@ export const SETTING_FIELDS = [
   },
   {
     name: "comparator_limit",
+    whole: true,
     label: "Candidates you can compare at once",
     unit: "candidates",
     description: "How many comparators one comparison may hold.",
@@ -75,6 +81,8 @@ export const SETTING_FIELDS = [
   },
   {
     name: "run_spend_cap_eur",
+    // Money, so cents.
+    whole: false,
     label: "Spend cap per acquisition",
     unit: "€",
     description: "A run halts here, keeping what it fetched.",
@@ -84,6 +92,7 @@ export const SETTING_FIELDS = [
   },
   {
     name: "refetch_older_than_days",
+    whole: true,
     label: "Refetch data older than",
     unit: "days",
     description:

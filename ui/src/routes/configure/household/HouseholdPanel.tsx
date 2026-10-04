@@ -2,9 +2,17 @@ import { useCallback } from "react";
 import { isApiError } from "../../../api/ApiError";
 import { fetchHousehold, type Household } from "../../../api/endpoints";
 import { useResource } from "../../../api/useResource";
+import { CandidateField } from "./CandidateField";
+import { CitizenshipField } from "./CitizenshipField";
+import { candidateOptions } from "./candidateOptions";
 import { CountField } from "./CountField";
+import { useCandidateRoster } from "../../../api/useCandidateRoster";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
-import { NOTHING_RECORDED, type HouseholdDraft } from "./householdForm";
+import {
+  NOTHING_RECORDED,
+  onlyMoneyCharacters,
+  type HouseholdDraft,
+} from "./householdForm";
 import { HOUSEHOLD_LABELS } from "../../../format/vocabulary";
 import { useHouseholdForm } from "./useHouseholdForm";
 
@@ -58,6 +66,11 @@ function HouseholdFields({
   note?: string;
 }) {
   const form = useHouseholdForm(household);
+  // **One fetch for all three pickers.** Home country, home city and every citizenship come
+  // from the same roster; three reads of 32 rows would be three chances to disagree.
+  const roster = useCandidateRoster();
+  const countries = candidateOptions(roster, "country");
+  const cities = candidateOptions(roster, "city");
 
   return (
     <section className="stage" aria-labelledby="household-heading">
@@ -92,6 +105,7 @@ function HouseholdFields({
             label={HOUSEHOLD_LABELS.net_income}
             name="net_income"
             form={form}
+            numeric
             prefix="€"
             suffix="per year"
           />
@@ -115,6 +129,7 @@ function HouseholdFields({
             label={HOUSEHOLD_LABELS.target_monthly_spend}
             name="target_monthly_spend"
             form={form}
+            numeric
             prefix="€"
             suffix="per month"
           />
@@ -122,24 +137,33 @@ function HouseholdFields({
             label={HOUSEHOLD_LABELS.max_rent}
             name="max_rent"
             form={form}
+            numeric
             prefix="€"
             suffix="per month"
           />
-          <Field
+          <CandidateField
+            id="household-home_country_candidate"
             label={HOUSEHOLD_LABELS.home_country_candidate}
-            name="home_country_candidate"
-            form={form}
+            options={countries}
+            value={form.draft.home_country_candidate}
+            onChange={(id) => form.change("home_country_candidate", id)}
           />
-          <Field
+          {/* **Empty until the city level exists** (`reqs.md` 1.3). The roster holds no city
+              candidate, so the box says so rather than offering an empty list to search. */}
+          <CandidateField
+            id="household-home_city_candidate"
             label={HOUSEHOLD_LABELS.home_city_candidate}
-            name="home_city_candidate"
-            form={form}
+            options={cities}
+            value={form.draft.home_city_candidate}
+            onChange={(id) => form.change("home_city_candidate", id)}
+            nothingOffered="City level arrives after v1"
           />
-          <Field
+          <CitizenshipField
+            id="household-citizenships"
             label={HOUSEHOLD_LABELS.citizenships}
-            name="citizenships"
-            form={form}
-            hint="Country candidate ids, separated by commas."
+            options={countries}
+            value={form.draft.citizenships}
+            onChange={(value) => form.change("citizenships", value)}
           />
         </div>
 
@@ -172,6 +196,7 @@ function Field({
   hint,
   prefix,
   suffix,
+  numeric,
 }: {
   label: string;
   name: keyof HouseholdDraft;
@@ -179,6 +204,8 @@ function Field({
   hint?: string;
   prefix?: string;
   suffix?: string;
+  /** Digits and one decimal point only, filtered as it is typed. */
+  numeric?: boolean;
 }) {
   // The hint describes the field rather than naming it: wrapped inside the label it would be
   // read out as part of the name, so "Citizenships" would become "Citizenships Country
@@ -204,7 +231,15 @@ function Field({
               ? undefined
               : `${id}-hint`
           }
-          onChange={(event) => form.change(name, event.target.value)}
+          inputMode={numeric === true ? "decimal" : undefined}
+          onChange={(event) =>
+            form.change(
+              name,
+              numeric === true
+                ? onlyMoneyCharacters(event.target.value)
+                : event.target.value,
+            )
+          }
         />
       </span>
       {(hint ?? suffix) !== undefined && (

@@ -13,6 +13,13 @@ export interface Item {
   candidate: string;
   attribute: string;
   data_source?: string;
+  /**
+   * Why it failed, where something did. **Carried on the item because the design puts it on
+   * the item**: every row in a group list has a right-hand detail, and for a failure that
+   * detail is the message. It was left off this type, which is what forced the message into a
+   * table of its own.
+   */
+  error_message?: string;
 }
 
 export interface Group {

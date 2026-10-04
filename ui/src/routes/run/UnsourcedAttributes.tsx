@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useId, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { fetchAttributes, fetchCriteriaSet } from "../../api/endpoints";
+import { usePillarNames } from "../../api/usePillarNames";
 import { useResource } from "../../api/useResource";
-import { formatPercentage } from "../../format/display";
+import { formatPercentage, pillarName } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
 import { highlighted, UNSOURCED } from "../../navigation/highlight";
@@ -25,6 +26,7 @@ export function UnsourcedAttributes({ level }: { level: string }) {
   const headingId = useId();
   const { criteriaSetId } = useSelection();
 
+  const pillars = usePillarNames();
   const attributes = useResource(
     useCallback(
       (signal: AbortSignal) => fetchAttributes(level, { signal }),
@@ -128,7 +130,10 @@ export function UnsourcedAttributes({ level }: { level: string }) {
                 {gaps.map((gap) => (
                   <tr key={gap.id}>
                     <th scope="row">{gap.name}</th>
-                    <td>{gap.pillar}</td>
+                    {/* The catalog's pillar name, never the id: the catalog says "Economy"
+                        where the id says `economics`, and a title-cased id is this screen
+                        guessing at a name somebody already chose. */}
+                    <td>{pillarName(pillars, gap.pillar)}</td>
                     <td>
                       {gap.weight === null
                         ? "not scored here"

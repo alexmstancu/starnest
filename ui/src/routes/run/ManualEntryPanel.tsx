@@ -2,6 +2,7 @@ import { useCallback, useId } from "react";
 import { fetchCandidates } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
 import { ErrorNotice } from "../../shell/ErrorNotice";
+import { candidateName } from "../../format/display";
 import { describeFigure } from "../../format/figure";
 import type { ManualDraft, ManualKind } from "./manualEntry";
 import { useManualEntry } from "./useManualEntry";
@@ -38,6 +39,20 @@ export function ManualEntryPanel({
       [level],
     ),
   );
+
+  // **Read off the list this panel already fetched**, rather than asking `useCandidateNames`
+  // for the same rows a second time: the select below needs every candidate anyway, and the
+  // confirmation underneath needs one of their names. Empty while that request is in flight,
+  // which makes the name fall back to the id made readable rather than to the id.
+  const named =
+    candidates.resource.status === "ready"
+      ? new Map(
+          candidates.resource.data.items.map((candidate) => [
+            candidate.id,
+            candidate.name,
+          ]),
+        )
+      : new Map<string, string>();
 
   return (
     <section className="manual-entry" aria-labelledby={headingId}>
@@ -155,7 +170,8 @@ export function ManualEntryPanel({
         /* **What it stored, not "done".** A figure written into the corpus is worth reading
            back once, because a typo is invisible in a success message. */
         <p className="notice notice--good" role="status">
-          Stored {describeFigure(entry.saved)} for {entry.saved.candidate}, under{" "}
+          Stored {describeFigure(entry.saved)} for{" "}
+          {candidateName(named, entry.saved.candidate)}, under{" "}
           {entry.saved.data_source}.
         </p>
       )}

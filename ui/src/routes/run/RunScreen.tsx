@@ -11,11 +11,13 @@ import { useSelection } from "../../shell/SelectionContext";
 import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
 import { describeGaps, describeScope } from "./databaseHolds";
+import { describeFailures } from "./failureGroups";
 import { ItemGroups } from "./ItemGroups";
 import { OpenToHandEntry } from "./OpenToHandEntry";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";
 import { type Progress, progressBar } from "./runProgress";
 import {
+  inFlight,
   outcomeSentence,
   runState,
   type SourceReach,
@@ -29,18 +31,37 @@ import {
 } from "./useRunScreen";
 
 /**
- * Data acquisition: what a run would do, then what it did (`reqs.md` 6.3, 6.4).
+ * Data acquisition: what the database holds, what to do about the gaps, and what the last run
+ * did (`reqs.md` 6.3, 6.4).
  *
- * **A failure is a thing to act on, not a thing to read.** Each is listed with the source that
- * failed, and one action re-runs only what failed. An item nobody answered is listed too, and
- * asked again separately, because nothing failed there (`reqs.md` Q217).
+ * **A failure is a thing to act on, not a thing to read**, which decides the whole order of
+ * this screen. The standing figures lead, the three remedies follow, and the run's own report
+ * waits behind a fold unless the run is still going -- so a reader who arrives wanting to do
+ * something about 32 failures meets the button before the account. One action re-runs only what
+ * failed; an item nobody answered is listed separately and asked again separately, because
+ * nothing failed there (`reqs.md` Q217). And the failures themselves are grouped by source and
+ * message rather than listed, because one message repeated is one problem.
  *
  * **Markup only.** The estimate, the run, the watching and the going-again are
- * `useRunScreen.ts`.
+ * `useRunScreen.ts`; the grouping and the counting are `failureGroups.ts`.
  */
 export function RunScreen({ route }: { route: RouteDefinition }) {
   const { levelId } = useSelection();
   const run = useRunScreen();
+
+  // Built once and placed in one of two slots, because it is one card either way: the top of
+  // the screen while the run is in flight, and inside a fold under the remedies once it is not.
+  const report =
+    run.current === null ? null : (
+      <RunReport
+        run={run.current}
+        busy={run.busy === "opening"}
+        stopping={run.busy === "stopping"}
+        onRefresh={run.refresh}
+        onDismiss={run.close}
+        onStop={run.stop}
+      />
+    );
 
   return (
     <section className="screen screen--acquire" aria-labelledby="screen-heading">
@@ -58,20 +79,15 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
         <ErrorNotice error={run.failure} onRetry={run.dismissFailure} />
       )}
 
-      {/* **The acquisition leads, when there is one.** A reader arriving mid-run, or just
-          after one, came for this; putting the standing figures first would make them read
-          past the answer to reach the question. With nothing in flight the screen opens on
-          what is already known instead. */}
-      {run.current && (
-        <RunReport
-          run={run.current}
-          busy={run.busy === "opening"}
-          stopping={run.busy === "stopping"}
-          onRefresh={run.refresh}
-          onDismiss={run.close}
-          onStop={run.stop}
-        />
-      )}
+      {/* **The card leads whenever there is a run, and the design settles why.** It was a
+          full-size report with a table of every failure in it, which is what made leading with
+          it wrong -- so the first fix here folded it away once the run had finished. The
+          prototype does something better: the card is *compact* (a bar, a source breakdown, one
+          outcome sentence, and no item lists at all), which costs a reader four lines whether
+          the run is going or gone. `acqShow: !!s.acq` in the design's own state -- there is no
+          recency window, and Dismiss is what removes it, which is exactly `run.current` and
+          `run.close`. The failures live in the card below that can act on them. */}
+      {report}
 
       {run.history.status === "ready" && (
         <DatabaseHoldsPanel runs={run.history.data.items} />
@@ -96,14 +112,23 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
               tone="danger"
               count={formatCount(run.current.progress?.items_failed)}
               what="failed"
-              lead="A source broke. Worth retrying — the item itself is fine."
+              lead="A source broke. Worth retrying."
             >
+              {/* **The count that answers the complaint, in one line.** "32 failed" reads as
+                  thirty-two problems; "1 distinct message" says it is one problem with a wide
+                  blast radius, which is the thing a reader can act on. The design has no slot
+                  for this -- it is the only thing here the prototype does not describe, kept
+                  because a list of 32 identical messages is what sent this screen back. */}
+              <p className="gap-card__note">
+                {describeFailures(run.current.failures)}
+              </p>
               {levelId !== null && (
                 <ItemGroups
                   items={run.current.failures ?? []}
                   groupedBy="data_source"
                   caption="Which sources broke"
                   level={levelId}
+                  detailKind="failed"
                   act="Retry"
                   busy={run.busy === "planning"}
                   onPropose={(scope, describedAs) =>
@@ -111,6 +136,11 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                   }
                 />
               )}
+              {/* **"Retry 12 failed", the design's fixed copy.** The count in the label is
+                  not decoration: three cards stand side by side and each has an action at its
+                  foot, so a label that says only "Retry everything that failed" leaves the
+                  reader to look back up at the heading for the size of what they are about to
+                  start. */}
               <button
                 type="button"
                 className="button button--primary"
@@ -119,7 +149,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
               >
                 {run.busy === "retrying"
                   ? "Retrying…"
-                  : "Retry everything that failed"}
+                  : `Retry ${formatCount(run.current.progress?.items_failed)} failed`}
               </button>
               <GapEstimate kind="failed" run={run} />
             </GapCard>
@@ -138,13 +168,19 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                   groupedBy="attribute"
                   caption="Which values went unanswered"
                   level={levelId}
-                  act="Ask again about"
+                  detailKind="unanswered"
+                  act="Retry"
                   busy={run.busy === "planning"}
                   onPropose={(scope, describedAs) =>
                     run.propose(scope, describedAs, "unanswered")
                   }
                 />
               )}
+              {/* **"Retry 62 unanswered", and the verb is the design's, not ours.** This read
+                  "Ask again about all of them", which drew a distinction the card's own lead
+                  already draws -- retrying the same sources changes nothing, so this asks the
+                  ones that had no row. The design uses one verb for both buckets and puts the
+                  difference in the noun, which is the shorter way to say it. */}
               <button
                 type="button"
                 className="button"
@@ -152,8 +188,8 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                 onClick={() => run.again("unanswered")}
               >
                 {run.busy === "asking"
-                  ? "Asking…"
-                  : "Ask again about all of them"}
+                  ? "Retrying…"
+                  : `Retry ${formatCount(run.current.progress?.items_unanswered)} unanswered`}
               </button>
               <GapEstimate kind="unanswered" run={run} />
             </GapCard>
@@ -431,10 +467,22 @@ function RunProgress({ progress }: { progress?: Progress | null }) {
 /**
  * One acquisition, as the screen's lead.
  *
- * **The reading runs outward from the whole to the parts**: what it is and whether it is still
- * going, what it was asked to cover, how far it has got, which source got it there, and what it
- * came to. The two tables under it are the items themselves, which is the last thing a reader
- * needs and the first thing a list would have shown.
+ * **Compact on purpose, which is what makes leading with it right.** This was a full-size
+ * report carrying a table of every failure and every unanswered item, and on a run that failed
+ * 32 times with one message it buried the whole rest of the screen -- so the first attempt at a
+ * fix folded it away once the run had finished. The design does something better: the card is
+ * four things deep (a bar, a source breakdown, one outcome sentence, a footer) and holds **no
+ * item lists at all**. The items belong to the cards below that can act on them, and a reader
+ * who wants to know which country failed is a reader who wants to retry it.
+ *
+ * **The heading is the state**: "Acquiring now", "Acquisition finished", "Stopped early". The
+ * acquisition's number goes in the line under it rather than in the heading, because the state
+ * is what a reader arriving mid-run is checking and the number is what they already clicked.
+ *
+ * **Refresh is ours, not the design's.** The prototype animates a fake run on a timer, so it
+ * never needs one; `POST /data-acquisition-runs` really does return 202 and hand the fetching
+ * to a background task (P35), and nothing here polls. A card that could not be re-read would
+ * show "Acquiring now" for ever.
  */
 function RunReport({
   run,
@@ -451,10 +499,9 @@ function RunReport({
   onDismiss: () => void;
   onStop: () => void;
 }) {
-  const failures = run.failures ?? [];
-  const unanswered = run.unanswered ?? [];
   const outcome = outcomeSentence(run.run_status, run.progress);
   const state = runState(run.run_status, run.stop_requested_at);
+  const going = inFlight(state);
   // **Offered only while there is something to stop, and withdrawn once asked.** A second
   // click would change nothing -- the first request is the one recorded -- and a button that
   // stays live after it has been used invites the reader to think it did not work.
@@ -462,17 +509,25 @@ function RunReport({
   return (
     // A labelled region, so "the run report" is something a reader -- or a screen reader --
     // can address, rather than the nearest box that happens to contain the heading.
-    <section className="acquisition" aria-labelledby={`run-${run.id}`}>
+    <section
+      className={going ? "acquisition acquisition--going" : "acquisition"}
+      // **Labelled by the acquisition, headed by its state.** The design heads the card with
+      // the state because its prototype only ever has the run it just started; this screen can
+      // open any run in the history, so the region a reader -- or a test, or a screen reader --
+      // addresses has to say *which* acquisition, while the heading says what is happening to
+      // it. The number is visible on the line below either way.
+      aria-label={`Acquisition ${run.id}`}
+    >
       <header className="acquisition__head">
-        <h3 id={`run-${run.id}`} className="acquisition__heading">
-          Acquisition {run.id}
-        </h3>
+        <h3 className="acquisition__heading">{headingFor(state)}</h3>
         <RunStatusPill status={state} />
       </header>
 
-      {/* What it was asked to cover, as a sentence rather than as two counts to multiply in
-          your head. The scope is stored expanded, so this is its size and not its contents. */}
+      {/* **Which acquisition, and what it was asked to cover.** The scope is stored expanded,
+          so this is its size and not its contents -- and the number is here rather than in the
+          heading, which the design gives to the state. */}
       <p className="acquisition__scope">
+        Acquisition {run.id} {going ? "is asking for" : "asked for"}{" "}
         {describeScope(run)} — started {formatDateTime(run.started_at)}
         {run.finished_at !== null &&
           `, finished ${formatDateTime(run.finished_at)}`}
@@ -484,69 +539,6 @@ function RunReport({
 
       {outcome !== "" && <p className="acquisition__outcome">{outcome}</p>}
 
-
-      {unanswered.length > 0 && (
-        <>
-          <div className="table-card">
-            <table className="table">
-              <caption>
-                Asked about, and answered by nobody. Every source that could
-                answer did answer, and none of them had a figure for that
-                candidate -- which is not a failure and is not a score.
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Candidate</th>
-                  <th scope="col">Attribute</th>
-                </tr>
-              </thead>
-              <tbody>
-                {unanswered.map((item) => (
-                  <tr key={`${item.candidate}-${item.attribute}`}>
-                    <th scope="row">{item.candidate}</th>
-                    <td>{item.attribute}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {failures.length === 0 ? (
-        <p className="panel__hint">Nothing failed in this acquisition.</p>
-      ) : (
-        <>
-          <div className="table-card">
-            <table className="table">
-              <caption>
-                What went wrong, source by source. A source that failed on one
-                attribute may have answered on another.
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Source</th>
-                  <th scope="col">Candidate</th>
-                  <th scope="col">Attribute</th>
-                  <th scope="col">Why</th>
-                </tr>
-              </thead>
-              <tbody>
-                {failures.map((item) => (
-                  <tr
-                    key={`${item.data_source}-${item.candidate}-${item.attribute}`}
-                  >
-                    <th scope="row">{item.data_source}</th>
-                    <td>{item.candidate}</td>
-                    <td>{item.attribute}</td>
-                    <td>{item.error_message}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
       <footer className="acquisition__foot">
         <span className="acquisition__spend">
           {describeSpend(run.llm_call_count, run.cost_eur)}
@@ -576,13 +568,40 @@ function RunReport({
               {stopping ? "Stopping…" : "Stop — keep what completed"}
             </button>
           )}
-          <button type="button" className="button" onClick={onDismiss}>
-            Dismiss
-          </button>
+          {/* Dismiss only once there is nothing left to watch, as the design has it: putting a
+              run away while it is still writing values would look like cancelling it. */}
+          {!going && (
+            <button type="button" className="button" onClick={onDismiss}>
+              Dismiss
+            </button>
+          )}
         </div>
       </footer>
     </section>
   );
+}
+
+/**
+ * What to call the card, which is the run's state and not its number.
+ *
+ * **Four states where the design has three.** The prototype knows `running`, `cancelled` and
+ * finished; a real run can also have died, and "Acquisition finished" over a run whose process
+ * was killed would be the screen's worst habit -- a plausible sentence that is not true.
+ */
+function headingFor(state: string): string {
+  switch (state) {
+    case "running":
+    case "stopping":
+    case "planned":
+      return "Acquiring now";
+    case "halted_by_user":
+    case "halted_on_spend_cap":
+      return "Stopped early";
+    case "failed":
+      return "Acquisition did not finish";
+    default:
+      return "Acquisition finished";
+  }
 }
 
 function RunHistory({

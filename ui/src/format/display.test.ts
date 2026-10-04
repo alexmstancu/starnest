@@ -11,6 +11,8 @@ import {
   formatPercentage,
   formatScore,
   formatSigned,
+  attributeName,
+  candidateName,
   pillarName,
   safeHttpUrl,
 } from "./display";
@@ -218,5 +220,89 @@ describe("a catalog identifier as a name", () => {
 
   it("does not throw on an empty identifier", () => {
     expect(formatIdentifier("")).toBe("");
+  });
+});
+
+describe("naming an attribute", () => {
+  /** The design's rule: "No programmatic identifiers in rendered text." */
+  /**
+   * **The fixture has to be one the fallback cannot produce.** This test was written with
+   * `country.average_working_hours` → "Average working hours", which is exactly what
+   * `formatIdentifier` makes of the id — so it passed with the lookup stubbed to always miss,
+   * and proved only that the fallback works. The catalog calls
+   * `country.total_tax_rate_effective` **"Total effective tax rate"**: the same five words in a
+   * different order, which no title-casing of the id can reach.
+   */
+  it("uses the catalog's name, which the id cannot be read into", () => {
+    const names = new Map([
+      ["country.total_tax_rate_effective", "Total effective tax rate"],
+    ]);
+
+    expect(attributeName(names, "country.total_tax_rate_effective")).toBe(
+      "Total effective tax rate",
+    );
+    // What the fallback would have said, so the two are visibly different.
+    expect(attributeName(new Map(), "country.total_tax_rate_effective")).toBe(
+      "Total tax rate effective",
+    );
+  });
+
+  /**
+   * **The fallback is the whole reason this is not `formatIdentifier`.** An attribute id
+   * carries its level, so title-casing the whole string gives "Country.average working hours"
+   * -- worse than the id it set out to improve on, and the kind of thing that ships because
+   * nobody looked at the fallback path.
+   */
+  it("drops the level prefix when the catalog has not answered", () => {
+    expect(attributeName(new Map(), "country.average_working_hours")).toBe(
+      "Average working hours",
+    );
+    expect(attributeName(new Map(), "city.rent_one_bedroom")).toBe(
+      "Rent one bedroom",
+    );
+  });
+
+  it("falls back for an attribute the catalog does not have", () => {
+    const names = new Map([["country.homicide_rate", "Homicide rate"]]);
+
+    expect(attributeName(names, "country.nothing_here")).toBe("Nothing here");
+  });
+
+  /** An empty name is the same absence as a missing one, and reads worse: a blank cell. */
+  it("falls back when the catalog holds an empty name", () => {
+    expect(attributeName(new Map([["country.rent", ""]]), "country.rent")).toBe(
+      "Rent",
+    );
+  });
+
+  it("copes with an id carrying no level at all", () => {
+    expect(attributeName(new Map(), "rent")).toBe("Rent");
+  });
+});
+
+describe("naming a candidate", () => {
+  /** Same hole, same fix: "Malta" is what the fallback produces too. "United Kingdom" is not. */
+  it("uses the catalog's name, which the id cannot be read into", () => {
+    const names = new Map([["country.united_kingdom", "United Kingdom"]]);
+
+    expect(candidateName(names, "country.united_kingdom")).toBe(
+      "United Kingdom",
+    );
+    // The fallback title-cases only the first word, so the K is the difference.
+    expect(candidateName(new Map(), "country.united_kingdom")).toBe(
+      "United kingdom",
+    );
+  });
+
+  it("drops the level prefix when the catalog has not answered", () => {
+    expect(candidateName(new Map(), "country.united_kingdom")).toBe(
+      "United kingdom",
+    );
+  });
+
+  it("falls back when the catalog holds an empty name", () => {
+    expect(candidateName(new Map([["country.malta", ""]]), "country.malta")).toBe(
+      "Malta",
+    );
   });
 });

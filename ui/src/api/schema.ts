@@ -1050,7 +1050,15 @@ export interface components {
         };
         PillarWeight: {
             pillar: string;
+            /** @description A set weighs a pillar once per level, and the two sum to 100 independently (reqs.md Q187). */
+            level: string;
             /** @description Percentage, 0-100. Pillar weights sum to 100 within a level. */
+            weight: number;
+            weight_locked: boolean;
+        };
+        EvaluationPillarWeight: {
+            pillar: string;
+            /** @description Percentage, 0-100. Pillar weights sum to 100 within the evaluation's level. */
             weight: number;
             weight_locked: boolean;
         };
@@ -1841,7 +1849,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    name?: string;
+                    name: string;
                 };
             };
         };
@@ -2561,7 +2569,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        pillar_weights: components["schemas"]["PillarWeight"][];
+                        pillar_weights: components["schemas"]["EvaluationPillarWeight"][];
                         criteria: components["schemas"]["Criterion"][];
                     };
                 };

@@ -4,9 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import { CountField } from "./CountField";
 
 /**
- * **A shortcut, not a ceiling.** The design offers adults as 1 to 4, which is one click for
- * almost every household -- but the domain has no such limit, and a control that cannot
- * express five adults would be the interface deciding who is allowed to use this.
+ * **Segments, and only segments.** The design offers adults as 1 to 4 and children as none to
+ * 3, with no free-text escape beside them. There used to be one, labelled "Or type another
+ * number", and it showed on every render holding the number the pressed button already showed.
+ * Widening the range is adding a segment, not asking every household to read past a field it
+ * will never use.
  */
 function draw(value: string, onChange = vi.fn()) {
   render(
@@ -40,27 +42,35 @@ describe("a small whole number", () => {
     );
   });
 
-  it("takes a number none of the buttons offers", async () => {
-    const onChange = draw("");
-    await userEvent.type(screen.getByRole("textbox", { name: "Adults" }), "7");
-    expect(onChange).toHaveBeenCalledWith("7");
-  });
-
-  /** Nothing is pressed when the answer is outside the shortcut, because nothing is. */
+  /**
+   * A stored value the segments do not offer still renders, with nothing pressed, which is the
+   * honest reading: no button says 7. The remedy is to offer 7, not to carry a text field on
+   * every render for the household that has it.
+   */
   it("presses no button for an answer outside the buttons", () => {
     draw("7");
+
     for (const each of ["1", "2", "3", "4"]) {
       expect(screen.getByRole("button", { name: each })).toHaveAttribute(
         "aria-pressed",
         "false",
       );
     }
-    expect(screen.getByText(/outside the buttons/i)).toBeInTheDocument();
   });
 
-  it("keeps the field's own name, whatever the sentence beside it says", () => {
+  /** The field it replaced is gone, and nothing on the panel asks to be read twice. */
+  it("offers no free-text field beside the buttons", () => {
     draw("2");
-    expect(screen.getByRole("textbox", { name: "Adults" })).toHaveValue("2");
+
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByText(/type another number/i)).not.toBeInTheDocument();
+  });
+
+  /** The group carries the name now that the buttons are the whole control. */
+  it("names the control for a reader who cannot see the label", () => {
+    draw("2");
+
+    expect(screen.getByRole("group", { name: "Adults" })).toBeInTheDocument();
   });
 
   it("calls zero what the caller calls it", () => {

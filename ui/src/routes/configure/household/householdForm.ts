@@ -1,3 +1,5 @@
+import { onlyNumberCharacters } from "../numericInput";
+
 /**
  * The household form's arithmetic, with no React and no markup in it.
  *
@@ -105,4 +107,15 @@ function numberAsText(value: number | null | undefined): string {
 /** An empty optional field is absent, not zero -- a target spend of 0 would be a decision. */
 function optionalNumber(typed: string): number | undefined {
   return typed.trim() === "" ? undefined : Number(typed);
+}
+
+/**
+ * What a reader has typed, reduced to what a money field can hold.
+ *
+ * The rule itself lives in `../numericInput`, because Configure's limits ask the same question
+ * of a keystroke and two copies of it would drift. This name stays because the household's
+ * three money fields read better for it at the call site.
+ */
+export function onlyMoneyCharacters(typed: string): string {
+  return onlyNumberCharacters(typed);
 }

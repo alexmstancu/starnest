@@ -7,6 +7,7 @@ import {
   householdFrom,
   isIncomplete,
   type HouseholdDraft,
+  onlyMoneyCharacters,
 } from "./householdForm";
 
 /**
@@ -136,5 +137,46 @@ describe("what the form needs before it will send anything", () => {
   it("counts a list of empty entries as no citizenship at all", () => {
     expect(citizenshipsIn(draft({ citizenships: " , , " }))).toEqual([]);
     expect(isIncomplete(draft({ citizenships: " , , " }))).toBe(true);
+  });
+});
+
+describe("what a reader may type into a money field", () => {
+  it("keeps digits", () => {
+    expect(onlyMoneyCharacters("2000")).toBe("2000");
+  });
+
+  /**
+   * The owner's complaint: these were plain text, so "about 2000" went in, `Number()` made it
+   * `NaN`, and the next read rendered an empty box -- the figure vanished without a word.
+   */
+  it("drops letters", () => {
+    expect(onlyMoneyCharacters("about 2000 a month")).toBe("2000");
+    expect(onlyMoneyCharacters("abc")).toBe("");
+  });
+
+  it("drops a currency symbol, which the field already shows", () => {
+    expect(onlyMoneyCharacters("€2000")).toBe("2000");
+  });
+
+  it("keeps one decimal point", () => {
+    expect(onlyMoneyCharacters("1250.75")).toBe("1250.75");
+  });
+
+  it("accepts a comma as the decimal point, because half of Europe types one", () => {
+    expect(onlyMoneyCharacters("1250,75")).toBe("1250.75");
+  });
+
+  /** A second point ends the number rather than gluing the digits across it. */
+  it("stops at a second point", () => {
+    expect(onlyMoneyCharacters("1.2.3")).toBe("1.2");
+  });
+
+  /** Every field this guards is a cost or a stated income, and the schema floors them at 0. */
+  it("drops a minus sign", () => {
+    expect(onlyMoneyCharacters("-500")).toBe("500");
+  });
+
+  it("leaves an empty field empty, which is unanswered rather than zero", () => {
+    expect(onlyMoneyCharacters("")).toBe("");
   });
 });

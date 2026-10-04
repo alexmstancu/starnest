@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { fetchSettings, type Settings } from "../../../api/endpoints";
 import { useResource } from "../../../api/useResource";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { onlyNumberCharacters } from "../numericInput";
 import { SETTING_FIELDS, isBlocked, unsetFields } from "./settingsForm";
 import { useSettingsForm } from "./useSettingsForm";
 
@@ -84,7 +85,8 @@ function SettingsFields({ settings }: { settings: Settings }) {
         {/* Five short numbers across, as the design has them: a column of them reads as five
             decisions to make in order, and they are independent. */}
         <div className="field-grid">
-        {SETTING_FIELDS.map(({ name, label, unit, description, consequence, severity }) => {
+        {SETTING_FIELDS.map(
+          ({ name, label, unit, description, consequence, severity, whole }) => {
           const blank = form.draft[name].trim() === "";
           return (
           <div
@@ -109,9 +111,17 @@ function SettingsFields({ settings }: { settings: Settings }) {
                 className="field__control"
                 value={form.draft[name]}
                 placeholder="Not set"
-                inputMode="decimal"
+                inputMode={whole === true ? "numeric" : "decimal"}
                 aria-describedby={`setting-${name}-unit setting-${name}-hint`}
-                onChange={(event) => form.change(name, event.target.value)}
+                // **Filtered, not merely hinted at.** `inputMode` picks a keyboard on a
+                // phone and refuses nothing anywhere: this field accepted "abc12x" until
+                // now, and `Number()` made it NaN, which the form rendered as empty.
+                onChange={(event) =>
+                  form.change(
+                    name,
+                    onlyNumberCharacters(event.target.value, { whole }),
+                  )
+                }
               />
               {/* Described by, not hidden: the unit is what the number means, and a reader
                   who cannot see it beside the box needs it announced with the field. */}

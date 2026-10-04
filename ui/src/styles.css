@@ -3157,3 +3157,289 @@ select.field__control {
     min-width: 1124px;
   }
 }
+
+/* ── The ranking's pillar chart, made selectable ─────────────────────────────────────────
+   Appended after `.pillar-chart__bar` and `.table__detail`, never above them: both are one
+   class deep, so a modifier written first is silently taken back by its base. */
+
+/* The hit area behind each bar, drawn first so a fill reads as a highlighted column rather
+   than a box on top of the number. Transparent until the pillar is chosen, hovered or
+   focused. */
+.pillar-chart__target {
+  fill: transparent;
+}
+
+.pillar-chart__slot {
+  outline: none;
+}
+
+.pillar-chart__slot[role="button"] {
+  cursor: pointer;
+}
+
+/* `.pillar-chart__bar` asks for `cursor: help`, which is right for a picture and wrong for a
+   control. Where the chart is selectable the pointer says so over the bar as well. */
+.pillar-chart__slot[role="button"] .pillar-chart__bar {
+  cursor: pointer;
+}
+
+.pillar-chart__slot[role="button"]:hover .pillar-chart__target {
+  fill: var(--colour-accent-priority);
+}
+
+/* Focus is drawn on the target rather than as an outline on the group: an SVG `g` has no box
+   for an outline to follow, so Chrome draws one around the whole chart. */
+.pillar-chart__slot:focus-visible .pillar-chart__target {
+  fill: var(--colour-accent-surface);
+  stroke: var(--colour-accent);
+  stroke-width: 1.5;
+}
+
+.pillar-chart__slot--chosen .pillar-chart__target {
+  fill: var(--colour-accent-surface);
+  stroke: var(--colour-accent);
+  stroke-width: 1.5;
+}
+
+/* ── The open row's evidence, flush ──────────────────────────────────────────────────────
+   It was a card inside a band: `.panel` brings a border, a radius, a shadow and 12px, and the
+   detail row added 16px around that. Two insets and two surfaces for one panel, which is the
+   "box within a box" the design does not have. The band stays, the card goes, and the content
+   keeps the 16px gutter every other row uses so it lines up with the columns above. */
+.table--ranking > tbody > tr.table__detail {
+  padding: 0;
+}
+
+.table--ranking > tbody > tr.table__detail > td > .panel {
+  padding: 18px 16px 22px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* ── Choosing a place from the roster ────────────────────────────────────────────────────
+   Appended after `.field__note` and `.chip`, never above them: a modifier written before its
+   base is silently taken back, because both are one class deep and CSS breaks the tie by
+   source order. */
+
+.combo {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Over the fields below rather than pushing them down: a list that reflows the form while you
+   are reading it moves the thing you were about to click. */
+.combo__list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  margin: 2px 0 0;
+  padding: 4px;
+  max-height: 232px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--colour-surface);
+  border: var(--border-width) solid var(--colour-border-strong);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-raised);
+}
+
+.combo__option {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--colour-text);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+}
+
+.combo__option:hover,
+.combo__option:focus-visible {
+  background: var(--colour-accent-surface);
+  color: var(--colour-accent);
+}
+
+.combo__option--chosen {
+  color: var(--colour-accent);
+  font-weight: 600;
+}
+
+.combo__empty {
+  padding: 7px 9px;
+  font-size: 12.5px;
+  color: var(--colour-text-muted);
+}
+
+/* The passports already held, each with a way to take it off. */
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip__remove {
+  margin-left: 5px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.field__note--warning {
+  color: var(--colour-danger);
+}
+
+/* ── The acquisition card, and the row details inside the gap cards ─────────────────────
+   Appended at the end, never folded into the rules above: parallel agents append to this
+   sheet, and a read-modify-write on one file loses whichever write landed first.
+
+   This replaces an earlier block of mine for a `.failure*` list and a `.fold`, both of which
+   the design turned out not to have -- the failure message belongs on the item row inside the
+   card that can retry it, and a finished acquisition is a compact card rather than a full
+   report behind a disclosure. Dead selectors for deleted components are the "later equals
+   never" mess the project's own rules name, so they went with the components. */
+.acquisition {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 18px;
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-medium);
+  background: var(--colour-surface);
+  box-shadow: var(--shadow-raised);
+}
+
+/* **The running card is ringed in the accent.** The design's one use of a coloured border on
+   this screen, and it is the only state where the numbers inside are still moving. */
+.acquisition--going {
+  border-color: var(--colour-accent-border);
+}
+
+.acquisition__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.acquisition__heading {
+  margin: 0;
+  font-size: var(--font-size-large);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+
+.acquisition__scope {
+  color: var(--colour-text-label);
+  font-size: var(--font-size-base);
+}
+
+/* The outcome as the design draws it: a sunken strip rather than a loose paragraph, because
+   it is the card's conclusion and not another of its facts. */
+.acquisition__outcome {
+  padding: 10px 12px;
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-medium);
+  background: var(--colour-surface-sunken);
+  color: var(--colour-text);
+  font-size: var(--font-size-base);
+}
+
+.acquisition__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-single);
+  padding-top: var(--space-quarter);
+  border-top: var(--border-width) solid var(--colour-surface-hair);
+}
+
+.acquisition__spend {
+  color: var(--colour-text-muted);
+  font-size: var(--font-size-small);
+}
+
+.acquisition__acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-half);
+}
+
+/* The dedupe's one line, under the card's verdict. */
+.gap-card__note {
+  color: var(--colour-text-label);
+  font-size: var(--font-size-small);
+}
+
+/* **The right-hand detail on an item row**: why this one failed, or that nothing had a row.
+   Pushed to the right of the label so the column of reasons reads down the edge of the list,
+   which is what makes thirty-two identical ones obvious at a glance. */
+.toggle__detail {
+  margin-left: auto;
+  padding-left: var(--space-half);
+  color: var(--colour-text-muted);
+  font-size: var(--font-size-small);
+  text-align: right;
+}
+
+/* ── Reordering a source by dragging ──────────────────────────────────────────────────
+   Appended rather than folded into the `.source-row` block above, because parallel agents
+   append to this file and a rewrite loses whichever write landed first. Every modifier here
+   has its base declared far above it, which is the order that makes a modifier take effect
+   at all.
+
+   The row is the drag handle, not the grip: a handle that is 12px wide is a target nobody
+   hits, and the grip's job is to say that the row can be dragged. */
+
+.source-row__grip {
+  flex: none;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--colour-text-muted);
+  cursor: grab;
+}
+
+.source-row[draggable="true"] {
+  cursor: grab;
+}
+
+/* **Both drag states are attributes, not class modifiers**, selected on the way the switch's
+   `aria-checked` already is. A modifier would say the same thing and no unit test could read
+   it, so an indicator that stopped being applied would look exactly like one that was. It
+   also puts these above `.source-row` on specificity rather than on source order, which is
+   the hazard a modifier at one class deep carries. */
+
+/* The held row: faded onto the sunken ground, so the gap it came from stays readable while
+   the line shows where it is going. */
+.source-row[data-dragging="true"] {
+  background: var(--colour-surface-sunken);
+  opacity: 0.45;
+}
+
+/* **The line sits on the edge the row will actually land against** -- the top edge when the
+   drag went up, the bottom edge when it went down; see `landingEdge`. Drawn inset so it does
+   not displace a single pixel: a border would reflow the whole list under the pointer every
+   time the target changed. */
+.source-row[data-landing="above"] {
+  box-shadow: inset 0 2px 0 var(--colour-accent);
+}
+
+.source-row[data-landing="below"] {
+  box-shadow: inset 0 -2px 0 var(--colour-accent);
+}

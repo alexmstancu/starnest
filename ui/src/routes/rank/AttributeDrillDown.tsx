@@ -1,3 +1,4 @@
+import { useCandidateNames } from "../../api/useCandidateNames";
 import { useCallback, useState } from "react";
 import {
   fetchAttributes,
@@ -5,7 +6,7 @@ import {
   type StoredValue,
 } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
-import { formatDate, formatDateTime } from "../../format/display";
+import { formatDate, formatDateTime, candidateName} from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { describeFigure } from "../../format/figure";
 
@@ -93,6 +94,7 @@ export function AttributeDrillDown({ levelId }: { levelId: string | null }) {
 }
 
 function AcrossCandidates({ values }: { values: StoredValue[] }) {
+  const candidateNames = useCandidateNames();
   if (values.length === 0) {
     return (
       <p className="screen__note">
@@ -125,7 +127,7 @@ function AcrossCandidates({ values }: { values: StoredValue[] }) {
           <tbody>
             {values.map((value) => (
               <tr key={value.id} className="table__row">
-                <th scope="row">{value.candidate}</th>
+                <th scope="row">{candidateName(candidateNames, value.candidate)}</th>
                 <td title={value.quote ?? undefined}>
                   {describeFigure(value)}
                 </td>

@@ -54,8 +54,17 @@ describe("the attribute drill-down", () => {
     for (const column of ["Candidate", "Figure", "Source", "Describes", "Fetched"]) {
       expect(within(table).getByRole("columnheader", { name: column })).toBeInTheDocument();
     }
-    expect(within(table).getByRole("rowheader", { name: "country.portugal" })).toBeInTheDocument();
-    expect(within(table).getByText("eurostat")).toBeInTheDocument();
+    expect(within(table).getByRole("rowheader", { name: "Portugal" })).toBeInTheDocument();
+    // **The name the catalog holds, which this screen cannot derive.** A `StoredValue` carries
+    // the candidate id alone, so every name in this column is `useCandidateNames`' doing --
+    // and "United Kingdom" is the one name in the roster that proves it, because the fallback
+    // title-cases the id to "United kingdom". Asserting "Portugal" above proves nothing on its
+    // own: it is what both paths produce, so the lookup could be deleted and this test would
+    // still pass (it did).
+    expect(
+      within(table).getByRole("rowheader", { name: "United Kingdom" }),
+    ).toBeInTheDocument();
+    expect(within(table).getAllByText("eurostat")).toHaveLength(2);
   });
 
   it("says an attribute nobody measures is a hole in the score, not an empty table", async () => {

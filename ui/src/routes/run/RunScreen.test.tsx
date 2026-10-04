@@ -121,14 +121,22 @@ describe("running and retrying", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: /acquisition 8/i }),
+      await screen.findByRole("region", { name: /acquisition 8/i }),
     ).toBeInTheDocument();
-    const failures = screen.getByRole("table", { name: /what went wrong/i });
+    // **The group head counts; the message waits inside it.** The card used to carry a table
+    // with a row per failure and the whole message in each, which is what made a run that
+    // failed 32 times on one billing state unreadable.
+    const broke = within(
+      screen.getByRole("region", { name: /which sources broke/i }),
+    );
     expect(
-      within(failures).getByRole("rowheader", { name: "oecd" }),
+      broke.getByRole("button", { name: /^oecd 1 item$/i }),
     ).toBeInTheDocument();
+
+    await userEvent.click(broke.getByRole("button", { name: /^oecd 1 item$/i }));
+
     expect(
-      within(failures).getByText(/browser challenge/i),
+      broke.getByText(/the oecd's cloudflare front answered with a browser challenge/i),
     ).toBeInTheDocument();
   });
 
@@ -147,12 +155,12 @@ describe("running and retrying", () => {
     );
 
     await userEvent.click(
-      await screen.findByRole("button", { name: /retry everything that failed/i }),
+      await screen.findByRole("button", { name: /^Retry 1 failed$/i }),
     );
 
     expect(retried).toEqual([8]);
     expect(
-      await screen.findByRole("heading", { name: /acquisition 12/i }),
+      await screen.findByRole("region", { name: /acquisition 12/i }),
     ).toBeInTheDocument();
   });
 
@@ -176,12 +184,12 @@ describe("running and retrying", () => {
       screen.getByRole("button", { name: /start this acquisition/i }),
     );
 
-    expect(
-      await screen.findByText(/nothing failed in this acquisition/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /retry everything that failed/i }),
-    ).toBeNull();
+    // **The whole card goes, not just its button.** A remedy for a problem the run does not
+    // have is a control that can only disappoint, and the card leads with a count that would
+    // be a nought.
+    await screen.findByRole("region", { name: /acquisition 8/i });
+    expect(screen.queryByRole("region", { name: /which sources broke/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /failed$/i })).toBeNull();
   });
 });
 
@@ -199,7 +207,7 @@ describe("what nobody answered", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /start this acquisition/i }),
     );
-    return await screen.findByRole("heading", { name: /acquisition 8/i });
+    return await screen.findByRole("region", { name: /acquisition 8/i });
   }
 
   it("counts them beside what answered and what failed", async () => {
@@ -229,16 +237,26 @@ describe("what nobody answered", () => {
   it("names the items, so the reader knows which country learned nothing", async () => {
     await openTheRun();
 
-    const table = screen.getByRole("table", { name: /answered by nobody/i });
+    // **In the card that can ask again about them**, which is where the design puts them --
+    // the acquisition card itself carries no item lists at all.
+    const went = within(
+      screen.getByRole("region", { name: /which values went unanswered/i }),
+    );
+    await userEvent.click(
+      went.getByRole("button", { name: /^Overcrowding rate 1 item$/i }),
+    );
 
+    // **What a reader sees, not what the database calls it.** This asserted on
+    // `country.liechtenstein` and `country.overcrowding_rate`, which was the test codifying
+    // the bug: the design bars a programmatic identifier in rendered text, and the catalog has
+    // held a name for both since migration `0101`.
     expect(
-      within(table).getAllByRole("rowheader", {
-        name: "country.liechtenstein",
-      }),
-    ).toHaveLength(2);
-    expect(
-      within(table).getByText("country.overcrowding_rate"),
+      went.getByRole("checkbox", { name: /^Overcrowding rate for Liechtenstein$/i }),
     ).toBeInTheDocument();
+    // Every one of them has the same reason, so the design writes it once per row rather than
+    // fetching a message that does not exist.
+    expect(went.getByText("no row anywhere")).toBeInTheDocument();
+    expect(went.queryByText(/country\./)).toBeNull();
   });
 
   it("asks again about only those items, as a new run", async () => {
@@ -255,11 +273,11 @@ describe("what nobody answered", () => {
     );
     await openTheRun();
 
-    await userEvent.click(screen.getByRole("button", { name: /ask again about all of them/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^Retry 2 unanswered$/i }));
 
     expect(asked).toEqual([{ run: 8, items: "unanswered" }]);
     expect(
-      await screen.findByRole("heading", { name: /acquisition 14/i }),
+      await screen.findByRole("region", { name: /acquisition 14/i }),
     ).toBeInTheDocument();
   });
 
@@ -284,9 +302,9 @@ describe("what nobody answered", () => {
     );
     await openTheRun();
 
-    expect(screen.queryByRole("button", { name: /ask again about all of them/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Retry 2 unanswered$/i })).toBeNull();
     expect(
-      screen.queryByRole("table", { name: /answered by nobody/i }),
+      screen.queryByRole("region", { name: /which values went unanswered/i }),
     ).toBeNull();
   });
 
@@ -304,7 +322,7 @@ describe("what nobody answered", () => {
     );
     await openTheRun();
 
-    await userEvent.click(screen.getByRole("button", { name: /ask again about all of them/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^Retry 2 unanswered$/i }));
 
     expect(await screen.findByText(/no unanswered items/i)).toBeInTheDocument();
   });
@@ -335,7 +353,7 @@ describe("the run history", () => {
     await userEvent.click(within(row).getByRole("button", { name: "7" }));
 
     expect(
-      await screen.findByRole("heading", { name: /acquisition 7/i }),
+      await screen.findByRole("region", { name: /acquisition 7/i }),
     ).toBeInTheDocument();
   });
 
@@ -435,7 +453,7 @@ describe("a run's progress", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /start this acquisition/i }),
     );
-    await screen.findByRole("heading", { name: /acquisition 8/i });
+    await screen.findByRole("region", { name: /acquisition 8/i });
 
     expect(
       screen.getByRole("img", {
@@ -456,7 +474,7 @@ describe("re-asking about part of a run", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /start this acquisition/i }),
     );
-    await screen.findByRole("heading", { name: /acquisition 8/i });
+    await screen.findByRole("region", { name: /acquisition 8/i });
   }
 
   it("groups failures by the source that refused", async () => {
@@ -466,7 +484,7 @@ describe("re-asking about part of a run", () => {
       await screen.findByRole("region", { name: /which sources broke/i }),
     );
     expect(
-      group.getByRole("button", { name: /^oecd \(1\)$/i }),
+      group.getByRole("button", { name: /^oecd 1 item$/i }),
     ).toBeInTheDocument();
   });
 
@@ -479,28 +497,33 @@ describe("re-asking about part of a run", () => {
         name: /which values went unanswered/i,
       }),
     );
+    // The group head is the attribute's name. A source's head stays the source's own key --
+    // "oecd" is what the publisher is called, and naming it would print "Oecd".
     expect(
-      group.getByRole("button", {
-        name: /country\.overcrowding_rate \(1\)/i,
-      }),
+      group.getByRole("button", { name: /^Overcrowding rate 1 item$/i }),
     ).toBeInTheDocument();
   });
 
-  it("starts with everything selected, and clears on request", async () => {
+  /**
+   * **Nothing is picked until somebody picks**, which is the design's own initial state. The
+   * card's action already covers the whole bucket, so a list that opened with everything ticked
+   * made the selection meaningless -- it could only ever narrow, and it started at everything.
+   */
+  it("starts with nothing selected, and selects all on request", async () => {
     await openRun();
     const group = within(
       await screen.findByRole("region", { name: /which sources broke/i }),
     );
 
     expect(
-      group.getByRole("button", { name: /^Retry 1 selected$/ }),
-    ).toBeEnabled();
-
-    await userEvent.click(group.getByRole("button", { name: "Clear all" }));
-
-    expect(
       group.getByRole("button", { name: /^Retry 0 selected$/ }),
     ).toBeDisabled();
+
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
+
+    expect(
+      group.getByRole("button", { name: /^Retry 1 selected$/ }),
+    ).toBeEnabled();
   });
 
   /**
@@ -527,6 +550,7 @@ describe("re-asking about part of a run", () => {
       await screen.findByRole("region", { name: /which sources broke/i }),
     );
 
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
     await userEvent.click(
       group.getByRole("button", { name: /^Retry 1 selected$/ }),
     );
@@ -549,6 +573,7 @@ describe("re-asking about part of a run", () => {
       await screen.findByRole("region", { name: /which sources broke/i }),
     );
 
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
     await userEvent.click(
       group.getByRole("button", { name: /^Retry 1 selected$/ }),
     );
@@ -575,6 +600,7 @@ describe("re-asking about part of a run", () => {
     const group = within(
       await screen.findByRole("region", { name: /which sources broke/i }),
     );
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
     await userEvent.click(
       group.getByRole("button", { name: /^Retry 1 selected$/ }),
     );
@@ -600,6 +626,7 @@ describe("re-asking about part of a run", () => {
     const group = within(
       await screen.findByRole("region", { name: /which sources broke/i }),
     );
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
     await userEvent.click(
       group.getByRole("button", { name: /^Retry 1 selected$/ }),
     );
@@ -626,7 +653,7 @@ describe("picking out individual items", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /start this acquisition/i }),
     );
-    await screen.findByRole("heading", { name: /acquisition 8/i });
+    await screen.findByRole("region", { name: /acquisition 8/i });
     return within(
       await screen.findByRole("region", { name: /which sources broke/i }),
     );
@@ -634,7 +661,7 @@ describe("picking out individual items", () => {
 
   it("opens a group to show the items inside it", async () => {
     const group = await failureGroup();
-    const head = group.getByRole("button", { name: /^oecd \(1\)$/i });
+    const head = group.getByRole("button", { name: /^oecd 1 item$/i });
     expect(head).toHaveAttribute("aria-expanded", "false");
 
     await userEvent.click(head);
@@ -642,14 +669,18 @@ describe("picking out individual items", () => {
     expect(head).toHaveAttribute("aria-expanded", "true");
     expect(
       group.getByRole("checkbox", {
-        name: /country\.liechtenstein country\.total_tax_rate_effective/i,
+        name: /^Total effective tax rate for Liechtenstein$/i,
       }),
-    ).toBeChecked();
+    ).not.toBeChecked();
+    // The design gives every row a right-hand detail; for a failure it is the reason.
+    expect(
+      group.getByText(/the oecd's cloudflare front answered/i),
+    ).toBeInTheDocument();
   });
 
   it("closes a group that was open", async () => {
     const group = await failureGroup();
-    const head = group.getByRole("button", { name: /^oecd \(1\)$/i });
+    const head = group.getByRole("button", { name: /^oecd 1 item$/i });
 
     await userEvent.click(head);
     await userEvent.click(head);
@@ -657,19 +688,32 @@ describe("picking out individual items", () => {
     expect(head).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("clears and restores one group with All and None", async () => {
+  /**
+   * **The head counts what it holds and what is picked**, in one meta string beside the name:
+   * `12 items, 3 picked`. The design leaves the second half out at zero rather than writing a
+   * nought beside every group in a list that opens with nothing selected.
+   */
+  it("says in the group's own head how many of it are picked", async () => {
     const group = await failureGroup();
-
-    await userEvent.click(group.getByRole("button", { name: "None" }));
-    expect(group.getByText("0 selected")).toBeInTheDocument();
+    expect(
+      group.getByRole("button", { name: /^oecd 1 item$/i }),
+    ).toBeInTheDocument();
 
     await userEvent.click(group.getByRole("button", { name: "All" }));
-    expect(group.getByText("1 selected")).toBeInTheDocument();
+    expect(
+      group.getByRole("button", { name: /^oecd 1 item, 1 picked$/i }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(group.getByRole("button", { name: "None" }));
+    expect(
+      group.getByRole("button", { name: /^oecd 1 item$/i }),
+    ).toBeInTheDocument();
   });
 
   it("selects everything again after a clear", async () => {
     const group = await failureGroup();
 
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
     await userEvent.click(group.getByRole("button", { name: "Clear all" }));
     await userEvent.click(group.getByRole("button", { name: "Select all" }));
 
@@ -678,19 +722,19 @@ describe("picking out individual items", () => {
     ).toBeEnabled();
   });
 
-  it("unpicks a single item without touching the others", async () => {
+  it("picks a single item without touching the others", async () => {
     const group = await failureGroup();
-    await userEvent.click(group.getByRole("button", { name: /^oecd \(1\)$/i }));
+    await userEvent.click(group.getByRole("button", { name: /^oecd 1 item$/i }));
 
     await userEvent.click(
       group.getByRole("checkbox", {
-        name: /country\.liechtenstein country\.total_tax_rate_effective/i,
+        name: /^Total effective tax rate for Liechtenstein$/i,
       }),
     );
 
     expect(
-      group.getByRole("button", { name: /^Retry 0 selected$/ }),
-    ).toBeDisabled();
+      group.getByRole("button", { name: /^Retry 1 selected$/ }),
+    ).toBeEnabled();
   });
 
   /**
@@ -706,17 +750,19 @@ describe("picking out individual items", () => {
         await userEvent.click(
           screen.getByRole("button", { name: /start this acquisition/i }),
         );
-        await screen.findByRole("heading", { name: /acquisition 8/i });
+        await screen.findByRole("region", { name: /acquisition 8/i });
         return screen.findByRole("region", {
           name: /which values went unanswered/i,
         });
       })(),
     );
 
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
+
     // Two unanswered items share one candidate and differ by attribute, so the scope is one
     // candidate by two attributes -- two pairs for two items, a full rectangle.
     expect(
-      group.getByRole("button", { name: /^Ask again about 2 selected$/ }),
+      group.getByRole("button", { name: /^Retry 2 selected$/ }),
     ).toBeEnabled();
   });
 });
@@ -868,7 +914,7 @@ describe("what changed between two acquisitions", () => {
     const panel = await compare("5", "7");
 
     const row = await panel.findByRole("row", {
-      name: /total_tax_rate_effective/i,
+      name: /Total effective tax rate/i,
     });
     expect(row).toHaveTextContent("newly acquired");
   });
@@ -878,7 +924,7 @@ describe("what changed between two acquisitions", () => {
     const panel = await compare("5", "7");
 
     const row = await panel.findByRole("row", {
-      name: /cost_of_living_index/i,
+      name: /Cost of living index/i,
     });
     expect(row).toHaveTextContent("refreshed");
   });
@@ -892,7 +938,7 @@ describe("what changed between two acquisitions", () => {
     const panel = await compare("7", "5");
 
     const row = await panel.findByRole("row", {
-      name: /total_tax_rate_effective/i,
+      name: /Total effective tax rate/i,
     });
     expect(row).toHaveTextContent("went missing");
   });
@@ -918,7 +964,7 @@ describe("what changed between two acquisitions", () => {
     const panel = await compare("7", "7");
 
     const row = await panel.findByRole("row", {
-      name: /cost_of_living_index/i,
+      name: /Cost of living index/i,
     });
     expect(row).toHaveTextContent("unchanged");
     // And the figure itself in both columns, so the verdict is checkable rather than trusted.
@@ -949,7 +995,7 @@ describe("the acquisition card", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /start this acquisition/i }),
     );
-    await screen.findByRole("heading", { name: /acquisition 8/i });
+    await screen.findByRole("region", { name: /acquisition 8/i });
     return within(screen.getByRole("region", { name: /acquisition 8/i }));
   }
 
@@ -1017,6 +1063,358 @@ describe("the acquisition card", () => {
   });
 });
 
+/**
+ * The complaint this answers, in the owner's words: "the Acquisition 119 box is horrible, it's
+ * an endless list of API errors, unactionable. I see 32 failures but I can't do anything about
+ * it." Two faults, both of them placement: a settled run took the top of the screen, and its
+ * failures were an unbounded flat dump of one repeated message that pushed the retry card --
+ * which does exactly what the owner said they could not do -- below the fold.
+ */
+/**
+ * The complaint this answers, in the owner's words: "the Acquisition 119 box is horrible, it's
+ * an endless list of API errors, unactionable. I see 32 failures but I can't do anything about
+ * it."
+ *
+ * **The design's answer is a compact card, not a hidden one.** The first fix here folded the
+ * finished run away behind a disclosure, which was wrong: the prototype keeps the card at the
+ * top of the screen whenever there is a run (`acqShow: !!s.acq` -- no recency window, and
+ * Dismiss is what removes it) and makes it four things deep instead. It carries **no item
+ * lists at all**, which is what cost a reader the whole screen; the items belong to the cards
+ * below that can act on them.
+ */
+describe("the acquisition card the design asks for", () => {
+  function aRunWith(status: string) {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          run_status: status,
+          finished_at: status === "running" ? null : "2026-09-12T09:00:12Z",
+        }),
+      ),
+    );
+    renderShell("/acquire");
+    return screen.findByRole("region", { name: /acquisition 7/i });
+  }
+
+  it("leads the screen even once the run has stopped", async () => {
+    const card = await aRunWith("completed");
+    const holds = screen.getByRole("heading", {
+      name: /what the database holds/i,
+    });
+
+    // `compareDocumentPosition` rather than a class or an index: the question is which one a
+    // reader meets first, and that is exactly what document order means.
+    expect(
+      card.compareDocumentPosition(holds) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  /** The heading is the state, which is what a reader arriving mid-run is checking. */
+  it("is headed by what is happening, not by a number", async () => {
+    await aRunWith("running");
+
+    expect(
+      screen.getByRole("heading", { name: "Acquiring now" }),
+    ).toBeInTheDocument();
+  });
+
+  it("says the acquisition finished once it has", async () => {
+    await aRunWith("completed");
+
+    expect(
+      screen.getByRole("heading", { name: "Acquisition finished" }),
+    ).toBeInTheDocument();
+  });
+
+  it("says a run was stopped early rather than that it finished", async () => {
+    await aRunWith("halted_on_spend_cap");
+
+    expect(
+      screen.getByRole("heading", { name: "Stopped early" }),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * **The design has three states and a real run has four.** "Acquisition finished" over a run
+   * whose process was killed would be this screen's worst habit: a plausible sentence that is
+   * not true.
+   */
+  it("does not claim a run that died finished", async () => {
+    await aRunWith("failed");
+
+    expect(
+      screen.getByRole("heading", { name: "Acquisition did not finish" }),
+    ).toBeInTheDocument();
+  });
+
+  it("names which acquisition it is, on the line under the heading", async () => {
+    const card = within(await aRunWith("completed"));
+
+    expect(
+      card.getByText(/Acquisition 7 asked for 32 candidates over 41 attributes/),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * **The whole point of the card being compact.** It held a table of every failure and a
+   * table of every unanswered item; on the shipped run that meant 32 three-line paragraphs of
+   * one sentence above the button that could have fixed it.
+   */
+  it("carries no item lists at all", async () => {
+    const card = within(await aRunWith("completed"));
+
+    expect(card.queryByRole("table")).toBeNull();
+    expect(card.queryByRole("checkbox")).toBeNull();
+    // The failure's message is on the screen -- inside the card that can retry it -- but not
+    // in here, which is the move that gave the reader the screen back.
+    expect(card.queryByText(/cloudflare/i)).toBeNull();
+    expect(
+      screen.getByRole("region", { name: /which sources broke/i }),
+    ).toBeInTheDocument();
+  });
+
+  /** Putting a run away while it is still writing values would look like cancelling it. */
+  it("does not offer Dismiss while the run is still going", async () => {
+    const card = within(await aRunWith("running"));
+
+    expect(card.queryByRole("button", { name: "Dismiss" })).toBeNull();
+  });
+
+  it("offers Dismiss once there is nothing left to watch", async () => {
+    const card = within(await aRunWith("completed"));
+
+    expect(card.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+  });
+
+  it("shows a run opened from the history without a second click", async () => {
+    renderShell("/acquire");
+    const history = await screen.findByRole("table");
+
+    await userEvent.click(within(history).getByRole("button", { name: "6" }));
+
+    expect(
+      await screen.findByRole("region", { name: /acquisition 6/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("has no card at all where no run has ever been started", async () => {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, () =>
+        HttpResponse.json({ items: [], total: 0 }),
+      ),
+    );
+    renderShell("/acquire");
+
+    await screen.findByText(/no acquisition has been started yet/i);
+    // Scoped to the card's four possible headings: the screen's own "Acquire" heading and the
+    // history's "Every acquisition so far" both match a bare /acquisition/.
+    expect(screen.queryByRole("heading", { name: "Acquiring now" })).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Acquisition finished" }),
+    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Stopped early" })).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Acquisition did not finish" }),
+    ).toBeNull();
+  });
+});
+
+/**
+ * **One message repeated is one problem.** The run that sent this screen back asked the LLM
+ * about every country on a key with no credit left and failed 32 times with one sentence; the
+ * card drew 32 three-line paragraphs of it above the button that could have retried them.
+ *
+ * The design's answer is the shape rather than a count: the list is grouped by source and
+ * **collapsed**, so a wall of identical reasons is one line until somebody asks. The count of
+ * distinct messages is the one thing here the prototype does not have, kept because it is what
+ * tells a reader the 32 are one problem.
+ */
+describe("a wall of identical failures", () => {
+  const CREDIT =
+    "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', " +
+    "'message': 'Your credit balance is too low to access the Anthropic API.'}}";
+
+  const COUNTRIES = ["austria", "belgium", "croatia", "cyprus", "denmark"];
+
+  const outOfCredit = COUNTRIES.map((country) => ({
+    data_source: "llm",
+    candidate: `country.${country}`,
+    attribute: "country.pension_portability",
+    error_message: CREDIT,
+  }));
+
+  async function aRunThatFailed(failures: unknown) {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          unanswered: [],
+          by_source: [
+            { data_source: "llm", items_stored: 0, items_failed: COUNTRIES.length },
+          ],
+          progress: {
+            items_total: COUNTRIES.length,
+            items_completed: 0,
+            items_failed: COUNTRIES.length,
+            items_unanswered: 0,
+          },
+          failures,
+        }),
+      ),
+    );
+    renderShell("/acquire");
+    return within(
+      await screen.findByRole("region", { name: /which sources broke/i }),
+    );
+  }
+
+  /** The count that answers the complaint: five failures, one thing wrong. */
+  it("separates how many failed from how many things are wrong", async () => {
+    await aRunThatFailed(outOfCredit);
+
+    expect(
+      await screen.findByText(/5 failures from 1 source, 1 distinct message/),
+    ).toBeInTheDocument();
+  });
+
+  it("holds the whole wall behind one collapsed group", async () => {
+    const broke = await aRunThatFailed(outOfCredit);
+
+    expect(
+      broke.getByRole("button", { name: /^llm 5 items$/i }),
+    ).toBeInTheDocument();
+    // Nothing of the message, and none of the five candidates, until it is opened.
+    expect(screen.queryByText(/credit balance/i)).toBeNull();
+    expect(screen.queryByText(/for Austria/)).toBeNull();
+  });
+
+  it("names every candidate and its reason once opened", async () => {
+    const broke = await aRunThatFailed(outOfCredit);
+
+    await userEvent.click(broke.getByRole("button", { name: /^llm 5 items$/i }));
+
+    // **"Pension portability for Austria", never two keys with a space between them.** The
+    // design writes this phrase itself, and bars both a `·` and a bare identifier.
+    expect(
+      broke.getByRole("checkbox", { name: "Pension portability for Austria" }),
+    ).toBeInTheDocument();
+    expect(
+      broke.getByRole("checkbox", { name: "Pension portability for Denmark" }),
+    ).toBeInTheDocument();
+    expect(broke.queryByText(/country\./)).toBeNull();
+    // The reason reads as a sentence, not as the serialised payload it arrived in.
+    expect(
+      broke.getAllByText("Your credit balance is too low to access the Anthropic API."),
+    ).toHaveLength(COUNTRIES.length);
+  });
+
+  it("counts two different messages from one source as two problems", async () => {
+    await aRunThatFailed([
+      ...outOfCredit.slice(0, 2),
+      {
+        data_source: "llm",
+        candidate: "country.estonia",
+        attribute: "country.pension_portability",
+        error_message: "the model read no page that answered",
+      },
+    ]);
+
+    expect(
+      await screen.findByText(/3 failures from 1 source, 2 distinct messages/),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no remedy when the run reports no failures at all", async () => {
+    // `failures` is optional in the contract, so an absent array is not an empty one -- and a
+    // screen that read `.length` off it would have thrown rather than said so.
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          id: Number(params["runId"]),
+          run_status: "completed",
+          triggered_by: "user",
+          started_at: "2026-09-12T09:00:00Z",
+          progress: { items_total: 4, items_completed: 4 },
+        }),
+      ),
+    );
+    renderShell("/acquire");
+
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    expect(
+      screen.queryByRole("region", { name: /which sources broke/i }),
+    ).toBeNull();
+  });
+
+  /**
+   * **The one test here that proves the catalog is being read at all.**
+   *
+   * The shared fixtures now name `country.total_tax_rate_effective` "Total effective tax rate"
+   * where title-casing the id gives "Total tax rate effective" -- the same five words
+   * reordered -- so three assertions elsewhere discriminate. No shipped *candidate* does: every
+   * one of them title-cases to its own name. So this serves names from a stub that a fallback
+   * could not invent, and covers both halves of the phrase at once.
+   */
+  it("prefers the catalog's name over the id made readable", async () => {
+    mockServer.use(
+      http.get(`${BASE}/attributes`, () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: "country.pension_portability",
+              name: "Pension portability abroad",
+              pillar: "economics",
+              level: "country",
+              value_type: "Boolean",
+              unit: null,
+              description: "Whether a pension travels",
+              manual_entry: false,
+              max_age_months: 24,
+              breakdown_scheme: null,
+              breakdown_options: [],
+              allowed_range: null,
+              allowed_labels: [],
+              effective_source_priority: ["llm"],
+            },
+          ],
+        }),
+      ),
+      http.get(`${BASE}/candidates`, () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: "country.austria",
+              name: "Republic of Austria",
+              level: "country",
+              parent_candidate: null,
+              country_code: "AT",
+            },
+          ],
+        }),
+      ),
+    );
+    const broke = await aRunThatFailed(outOfCredit);
+
+    await userEvent.click(broke.getByRole("button", { name: /^llm 5 items$/i }));
+
+    expect(
+      await broke.findByRole("checkbox", {
+        name: "Pension portability abroad for Republic of Austria",
+      }),
+    ).toBeInTheDocument();
+    // And the fallback still covers a candidate the catalog did not answer for, in the same
+    // list, so one miss does not take the whole phrase down with it.
+    expect(
+      broke.getByRole("checkbox", {
+        name: "Pension portability abroad for Denmark",
+      }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("stopping a run", () => {
   /**
    * `reqs.md` 6.4. **The control says what it keeps, because that is the question.** "Stop"
@@ -1036,7 +1434,7 @@ describe("stopping a run", () => {
       ),
     );
     renderShell("/acquire");
-    await screen.findByRole("heading", { name: /acquisition 7/i });
+    await screen.findByRole("region", { name: /acquisition 7/i });
     return within(screen.getByRole("region", { name: /acquisition 7/i }));
   }
 
@@ -1050,8 +1448,9 @@ describe("stopping a run", () => {
 
   it("is not offered for a run that has finished", async () => {
     // Nothing to stop, and a live control would invite a click that does nothing.
+    //
     renderShell("/acquire");
-    await screen.findByRole("heading", { name: /acquisition 7/i });
+    await screen.findByRole("region", { name: /acquisition 7/i });
 
     expect(
       screen.queryByRole("button", { name: /stop — keep what completed/i }),
@@ -1087,7 +1486,7 @@ describe("stopping a run", () => {
       }),
     );
     renderShell("/acquire");
-    await screen.findByRole("heading", { name: /acquisition 7/i });
+    await screen.findByRole("region", { name: /acquisition 7/i });
     const card = within(screen.getByRole("region", { name: /acquisition 7/i }));
 
     await userEvent.click(
@@ -1123,7 +1522,7 @@ describe("stopping a run", () => {
       ),
     );
     renderShell("/acquire");
-    await screen.findByRole("heading", { name: /acquisition 7/i });
+    await screen.findByRole("region", { name: /acquisition 7/i });
 
     await userEvent.click(
       screen.getByRole("button", { name: /stop — keep what completed/i }),
@@ -1169,8 +1568,10 @@ describe("a figure typed by hand", () => {
     });
     await userEvent.click(form.getByRole("button", { name: /store this figure/i }));
 
+    // **"for Portugal", not "for country.portugal".** This panel already fetched every
+    // candidate to fill the select above, so the name was one lookup away in data it held.
     expect(await form.findByRole("status")).toHaveTextContent(
-      /Farfetch, OutSystems.*country\.portugal.*manual/i,
+      /Farfetch, OutSystems.*Portugal.*manual/i,
     );
   });
 
