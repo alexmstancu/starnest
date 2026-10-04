@@ -110,7 +110,8 @@ def _within(figure: Decimal | None, minimum: Decimal | None, maximum: Decimal | 
 def _detail(rule: CompoundRule, figures: Mapping[str, Decimal]) -> str:
     """Why it fired, in the figures that made it fire, so the reader can check it."""
     return f"{rule.name}: " + ", ".join(
-        f"{condition.attribute} {_figure(figures.get(str(condition.attribute)))}"
+        f"{condition.names_the_attribute}"
+        f" {_figure(figures.get(str(condition.attribute)))}"
         f" within {_bound(condition.threshold_min)} to {_bound(condition.threshold_max)}"
         for condition in rule.conditions
     )

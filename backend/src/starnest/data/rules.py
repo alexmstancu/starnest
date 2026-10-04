@@ -297,8 +297,27 @@ class CompoundRuleCondition(BaseModel):
         ),
     )
     attribute: AttributeId
+    attribute_name: str | None = Field(
+        default=None,
+        description=(
+            "What the catalog calls this attribute, for the sentence a fired rule writes. "
+            "Optional because a condition can be built without the catalog in hand -- in a "
+            "test, or before the join was added -- and the explanation then falls back to the "
+            "id rather than refusing to exist."
+        ),
+    )
     threshold_min: Decimal | None = Field(default=None, allow_inf_nan=False)
     threshold_max: Decimal | None = Field(default=None, allow_inf_nan=False)
+
+    @property
+    def names_the_attribute(self) -> str:
+        """What to call this attribute to a reader.
+
+        **`reqs.md` asks for no programmatic identifier in rendered text**, and this sentence is
+        rendered verbatim in the ranking's "Why this status" column. The id is the fallback
+        because an explanation naming the key is still better than no explanation.
+        """
+        return self.attribute_name or str(self.attribute)
 
     @model_validator(mode="after")
     def _reject_a_band_that_runs_backwards(self) -> "CompoundRuleCondition":

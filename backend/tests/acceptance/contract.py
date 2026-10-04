@@ -28,6 +28,24 @@ class ContractViolationError(AssertionError):
     """A response does not match the shape `docs/openapi.yaml` promises for it."""
 
 
+def _resolved_response(response: dict[str, Any]) -> dict[str, Any]:
+    """A response object with its `$ref` followed, where it has one.
+
+    **The design declares a shared response once and refs it.** `getHousehold`'s 200 is
+    `{ $ref: "#/components/responses/Household" }`, and the Household response holds the
+    `content` -- so reading `content` off the ref object itself finds nothing. This read it
+    without following the ref, returned `None`, and `validate()` treats `None` as "nothing to
+    check": eight 2xx responses behind such refs -- including `getCriteriaSet`, the most-read
+    endpoint -- validated against nothing while looking exactly like checks. A sentinel that
+    doubles as "no body" and "could not locate the body" is how a validator goes quiet.
+    """
+    ref = response.get("$ref")
+    if ref is None:
+        return response
+    name = ref.rsplit("/", 1)[-1]
+    return _CONTRACT["components"]["responses"][name]
+
+
 def response_schema(operation_id: str, status: int = 200) -> dict[str, Any] | None:
     """The JSON schema the design declares for one operation's response.
 
@@ -39,7 +57,10 @@ def response_schema(operation_id: str, status: int = 200) -> dict[str, Any] | No
         for method, operation in item.items():
             if method == "parameters" or operation.get("operationId") != operation_id:
                 continue
-            content = operation.get("responses", {}).get(str(status), {}).get("content", {})
+            response = operation.get("responses", {}).get(str(status))
+            if response is None:
+                return None
+            content = _resolved_response(response).get("content", {})
             return content.get("application/json", {}).get("schema") or None
     raise LookupError(f"the design declares no operation called {operation_id!r}")
 

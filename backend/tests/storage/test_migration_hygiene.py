@@ -12,7 +12,9 @@ looked.
 import re
 from pathlib import Path
 
+import psycopg
 import pytest
+from yoyo.migrations import read_sql_migration
 
 MIGRATIONS = Path(__file__).resolve().parents[2].parent / "storage" / "migrations"
 
@@ -24,8 +26,25 @@ def forward_migrations() -> list[Path]:
     return sorted(p for p in MIGRATIONS.glob("*.sql") if not p.name.endswith(".rollback.sql"))
 
 
+def predecessors_yoyo_can_see(migration: Path) -> list[str]:
+    """The predecessors `yoyo` will actually act on, read with `yoyo`'s own parser.
+
+    **Asking the file for the string `-- depends: ` is a different question**, and the gap
+    between the two shipped twice: `parse_metadata_from_sql_comments` reads directives only
+    from the leading comment block of the *first* statement and stops at the first line that
+    is not a comment, so a `depends:` written further down the file is prose. `0483` and `0484`
+    each carried one below an `ALTER TABLE`, and a test that searched the text passed while
+    `yoyo` had no predecessor for either and fell back to filename order.
+
+    Splitting on whitespace is `yoyo`'s own rule for the directive's value, so more than one
+    predecessor reads here exactly as it does there.
+    """
+    directives, _leading_comment, _statements = read_sql_migration(str(migration))
+    return directives.get("depends", "").split()
+
+
 def test_there_are_migrations_to_check() -> None:
-    """Guards the two tests below: a glob that matched nothing would pass them both."""
+    """Guards the tests below: a glob that matched nothing would pass them all."""
     assert len(forward_migrations()) > 50
 
 
@@ -33,9 +52,11 @@ def test_there_are_migrations_to_check() -> None:
 def test_every_migration_names_the_one_it_follows(migration: Path) -> None:
     if migration.stem == THE_ROOT:
         return
-    assert "-- depends: " in migration.read_text(), (
-        f"{migration.name} states no predecessor, so its position in the chain is whatever "
-        "sorting the filenames happens to give"
+    assert predecessors_yoyo_can_see(migration) != [], (
+        f"{migration.name} states no predecessor `yoyo` can see, so its position in the chain "
+        "is whatever sorting the filenames happens to give. A `-- depends:` line below the "
+        "first statement does not count: `yoyo` stops reading directives at the first line of "
+        "SQL, so it must sit in the leading comment block at the top of the file"
     )
 
 
@@ -58,12 +79,10 @@ def test_the_predecessor_named_is_a_migration_that_exists(migration: Path) -> No
     """
     if migration.stem == THE_ROOT:
         return
-    for line in migration.read_text().splitlines():
-        if line.startswith("-- depends: "):
-            for named in line.removeprefix("-- depends: ").split():
-                assert (MIGRATIONS / f"{named}.sql").exists(), (
-                    f"{migration.name} depends on {named!r}, which is not a migration"
-                )
+    for named in predecessors_yoyo_can_see(migration):
+        assert (MIGRATIONS / f"{named}.sql").exists(), (
+            f"{migration.name} depends on {named!r}, which is not a migration"
+        )
 
 
 def tables_written_by(sql: str) -> set[str]:
@@ -117,4 +136,74 @@ def test_a_rollback_touches_every_table_its_migration_wrote(migration: Path) -> 
     assert forgotten == set(), (
         f"{migration.name} writes to {sorted(forgotten)} and its rollback never mentions "
         f"{'them' if len(forgotten) > 1 else 'it'}, so reversing it would leave that behind."
+    )
+
+
+def rollbacks_that_delete_figures() -> list[Path]:
+    """Rollbacks with a `DELETE FROM value`, which is the statement that needs company.
+
+    `(?!_)` keeps `value_citation` and the ten magnitude tables out: those are the rows this
+    test is asking about, not the ones it is looking for.
+    """
+    deletes_a_figure = re.compile(r"\bdelete\s+from\s+value\b(?!_)", re.I)
+    return sorted(
+        p
+        for p in MIGRATIONS.glob("*.rollback.sql")
+        if deletes_a_figure.search(re.sub(r"^\s*--.*$", "", p.read_text(), flags=re.M))
+    )
+
+
+def test_there_are_rollbacks_that_delete_figures() -> None:
+    """Guards the test below, which a glob that matched nothing would pass silently."""
+    assert len(rollbacks_that_delete_figures()) >= 3
+
+
+@pytest.mark.parametrize(
+    "rollback", rollbacks_that_delete_figures(), ids=lambda p: p.name.removesuffix(".rollback.sql")
+)
+def test_a_rollback_clears_a_figures_own_rows_before_the_figure(
+    rollback: Path, connection: psycopg.Connection
+) -> None:
+    """**Eleven tables reference `value` and not one of them cascades.**
+
+    A figure's magnitude lives in `value_<type>` and the pages it came from live in
+    `value_citation`, so `DELETE FROM value` on its own fails with a `ForeignKeyViolation` the
+    moment any figure has actually been acquired. `0470`, `0488` and `0489` all shipped that
+    way and all three were walls on any real database -- `0470` on 310 rows, `0488` on 211,
+    `0489` on 32 -- while masking `0478`'s carefully written refusal, which sits downstream of
+    them and could never be reached.
+
+    **Nothing we had could catch it.** The test database is rebuilt from migrations and holds
+    no figures, so the delete matches nothing and the rollback runs; `make live` does not roll
+    back. The fault is only visible against stored data, which is why it is checked here as
+    text instead.
+
+    `candidate_attribute_score` is deliberately **not** required. A saved evaluation is a frozen
+    record that must still explain its score (`0107`), so its foreign key *should* refuse a
+    rollback that would empty one, rather than be cleared out of the way.
+    """
+    dependents = {
+        row[0]
+        for row in connection.execute(
+            "SELECT DISTINCT tc.table_name "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.constraint_column_usage ccu "
+            "  ON tc.constraint_name = ccu.constraint_name "
+            "WHERE tc.constraint_type = 'FOREIGN KEY' AND ccu.table_name = 'value' "
+            "  AND tc.table_name LIKE 'value\\_%'"
+        ).fetchall()
+    }
+    assert dependents, "no table was found referencing `value`, so this test proves nothing"
+
+    cleared = tables_written_by(rollback.read_text()) & dependents
+    magnitude_tables = dependents - {"value_citation"}
+
+    assert "value_citation" in cleared, (
+        f"{rollback.name} deletes figures but never clears `value_citation`, so it fails on "
+        "`value_citation_value_fkey` for any figure that recorded the page it came from"
+    )
+    assert cleared & magnitude_tables, (
+        f"{rollback.name} deletes figures but clears none of {sorted(magnitude_tables)}, and "
+        "every stored figure has exactly one magnitude row, so this fails on that table's "
+        "foreign key as soon as a figure exists"
     )

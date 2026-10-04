@@ -100,6 +100,27 @@ class TestTheTable:
         (cell,) = row.comparators
         assert cell.weighted_contribution == Decimal(8)
 
+    def test_the_weight_is_the_focuss_and_not_the_comparators(self) -> None:
+        """**Which side's weight it is decides the number** (`comparison.py` `_cell`): the
+        contribution answers "what is this gap worth to the *focus's* total", so it is the
+        focus's effective weight after redistribution for what the focus was missing.
+
+        The two differ in real rankings, because redistribution is per candidate: a comparator
+        missing figures elsewhere carries a larger share on everything it did answer. Every
+        candidate in `THE_RANKING` holds identical weights, so no test there could tell the two
+        apart -- and switching `_cell` to the comparator's weight passed the whole file.
+
+        Portugal scores 70 against Spain's 50 at a focus weight of 40: eight points. Read off
+        Spain's weight of 10 it would be two, and the synthesis would rank the gap fifth of five.
+        """
+        ranking = (
+            a_result(PORTUGAL, 60, a_score(TAX, 70, "40")),
+            a_result(SPAIN, 50, a_score(TAX, 50, "10")),
+        )
+
+        (cell,) = a_comparison(results=ranking).attributes[0].comparators
+        assert cell.weighted_contribution == Decimal(8)
+
     def test_a_missing_figure_leaves_the_gap_unanswered_rather_than_zero(self) -> None:
         """Zero would say "the same", which is a different claim from "we do not know"."""
         ranking = (
@@ -163,14 +184,25 @@ class TestTheSynthesis:
 
         assert synthesis.score_delta == 10
 
-    def test_only_the_top_few_are_listed(self) -> None:
-        rows = tuple(a_score(f"country.a{i}", 90, "10") for i in range(6))
-        theirs = tuple(a_score(f"country.a{i}", 10, "10") for i in range(6))
-        ranking = (a_result(PORTUGAL, 60, *rows), a_result(SPAIN, 50, *theirs))
+    @pytest.mark.parametrize("top", [2, 3])
+    def test_only_the_top_few_are_listed_and_the_caller_says_how_few(self, top: int) -> None:
+        """Both ends of the synthesis are cut to the same number, so four gaps either way come
+        back as `top` and `top`.
 
-        (synthesis,) = a_comparison(results=ranking, magnitudes={}, top=3).synthesis
+        **Two values, because one of them was the default.** This passed `top=3`, which is what
+        `compare` already uses when nobody says otherwise -- so hardcoding the slice at three
+        and never reading `top` passed it.
+        """
+        ahead = tuple(a_score(f"country.a{i}", 90, "10") for i in range(4))
+        behind = tuple(a_score(f"country.b{i}", 10, "10") for i in range(4))
+        theirs = tuple(a_score(f"country.a{i}", 10, "10") for i in range(4)) + tuple(
+            a_score(f"country.b{i}", 90, "10") for i in range(4)
+        )
+        ranking = (a_result(PORTUGAL, 60, *ahead, *behind), a_result(SPAIN, 50, *theirs))
 
-        assert len(synthesis.advantages) == 3
+        (synthesis,) = a_comparison(results=ranking, magnitudes={}, top=top).synthesis
+
+        assert (len(synthesis.advantages), len(synthesis.disadvantages)) == (top, top)
 
     def test_an_unscoreable_candidate_has_no_score_delta(self) -> None:
         ranking = (THE_RANKING[0], a_result(SPAIN, None, a_score(TAX, None, "40")))

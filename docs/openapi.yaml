@@ -353,6 +353,7 @@ paths:
           application/json:
             schema:
               type: object
+              required: [name]
               properties: { name: { type: string } }
       responses:
         "200": { $ref: "#/components/responses/CriteriaSet" }
@@ -960,7 +961,7 @@ paths:
                 type: object
                 required: [pillar_weights, criteria]
                 properties:
-                  pillar_weights: { type: array, items: { $ref: "#/components/schemas/PillarWeight" } }
+                  pillar_weights: { type: array, items: { $ref: "#/components/schemas/EvaluationPillarWeight" } }
                   criteria: { type: array, items: { $ref: "#/components/schemas/Criterion" } }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -1438,10 +1439,23 @@ components:
 
     PillarWeight:
       type: object
+      required: [pillar, level, weight, weight_locked]
+      properties:
+        pillar: { type: string }
+        level: { type: string, description: "A set weighs a pillar once per level, and the two sum to 100 independently (reqs.md Q187)." }
+        weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. Pillar weights sum to 100 within a level." }
+        weight_locked: { type: boolean }
+
+    EvaluationPillarWeight:
+      # A frozen evaluation's pillar weight names no level: the evaluation ran at one level,
+      # recorded on the evaluation itself, and never spans two (reqs.md 3.4a). The same split
+      # the code makes with EvaluationPillarWeightBody, and the same one EvaluationCriterion
+      # makes for a frozen criterion.
+      type: object
       required: [pillar, weight, weight_locked]
       properties:
         pillar: { type: string }
-        weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. Pillar weights sum to 100 within a level." }
+        weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. Pillar weights sum to 100 within the evaluation's level." }
         weight_locked: { type: boolean }
 
     CriteriaSetSummary:

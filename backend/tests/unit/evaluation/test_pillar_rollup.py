@@ -9,8 +9,12 @@ from decimal import Decimal
 import pytest
 
 from starnest.data import AttributeId, PillarId
-from starnest.evaluation.ranking import delta_against, pillars_of
+from starnest.evaluation.ranking import delta_against, pillars_of, rank_candidates
 from starnest.evaluation.results import AttributeScore
+
+from .builders import A_SMALL_SCALE, a_criterion, a_set, values_for
+
+HOME = "country.portugal"
 
 
 def a_row(
@@ -77,11 +81,19 @@ class TestTheRollup:
         assert family.contribution == Decimal(0)
 
     def test_one_scored_criterion_is_enough_for_the_pillar_to_have_a_score(self) -> None:
+        """And the score is read against the pillar's **whole** weight, not just the part that
+        scored: 5.4 points of a possible 10 is 54, because the rollup divides the contribution by
+        the weight it was given (`pillars_of`: "a rollup, never a second calculation").
+
+        **`is not None` was the whole assertion, and 54 is the thing that can be wrong.** A
+        rollup that divided by the scored weight alone reported 90 -- a pillar at near-full marks
+        on four tenths of no evidence -- and the suite had nothing to say about it.
+        """
         rolled = pillars_of(
             [a_row("nature", score=None, weight="4"), a_row("nature", score=90, weight="6")]
         )
 
-        assert rolled[0].score is not None
+        assert rolled[0].score == 54
 
     def test_a_pillar_whose_weight_redistributed_away_has_no_score(self) -> None:
         """Dividing by a zero weight is undefined, and there is nothing to report."""
@@ -116,3 +128,64 @@ class TestTheDifferenceAgainstHome:
         self, score: int | None, home: int | None
     ) -> None:
         assert delta_against(score, home, is_home=False) is None
+
+
+class TestWhereTheDifferenceAgainstHomeIsApplied:
+    """`rank_candidates`' second pass, which is the part that has to find home (`reqs.md` 1.2).
+
+    **The helper above was tested and its call site was not**, which left the two decisions that
+    only the ranking can make unexercised: which candidate is home, and what happens when there
+    is none in this ranking. A pass that attached every difference to the wrong candidate would
+    have satisfied the whole suite.
+    """
+
+    @staticmethod
+    def three_countries(**overrides: object):
+        """Portugal, Spain and Italy on one percentile criterion: 10, 5 and 0 of a scale of 10."""
+        return {
+            str(result.candidate): result
+            for result in rank_candidates(
+                criteria=a_set([a_criterion()]),
+                level="country",
+                values=values_for(portugal=90, spain=50, italy=10),
+                score_scale_max=A_SMALL_SCALE,
+                **overrides,  # type: ignore[arg-type]
+            )
+        }
+
+    def test_home_anchors_the_column_and_carries_no_difference_itself(self) -> None:
+        """A zero there would sit in a column of real differences looking like one."""
+        found = self.three_countries(home_candidate=HOME)
+
+        assert found[HOME].score == A_SMALL_SCALE
+        assert found[HOME].delta_vs_home is None
+
+    def test_every_other_candidate_carries_its_difference_from_home(self) -> None:
+        """Spain scores 5 against Portugal's 10, Italy 0: five behind and ten behind."""
+        found = self.three_countries(home_candidate=HOME)
+
+        assert found["country.spain"].delta_vs_home == Decimal(-5)
+        assert found["country.italy"].delta_vs_home == Decimal(-10)
+
+    def test_the_difference_is_measured_against_home_and_not_against_the_leader(self) -> None:
+        """Home in the middle of the ranking, which is the case that tells the two apart: Spain
+        is home, so Portugal is five ahead and Italy five behind -- and the leader's own
+        difference is a real number rather than the null that belongs to home.
+        """
+        found = self.three_countries(home_candidate="country.spain")
+
+        assert found["country.spain"].delta_vs_home is None
+        assert found[HOME].delta_vs_home == Decimal(5)
+        assert found["country.italy"].delta_vs_home == Decimal(-5)
+
+    def test_no_household_means_no_difference_for_anybody(self) -> None:
+        """There is nothing to be different from, and 0 would say "the same as home"."""
+        found = self.three_countries()
+
+        assert [result.delta_vs_home for result in found.values()] == [None, None, None]
+
+    def test_a_home_absent_from_this_ranking_leaves_every_difference_null(self) -> None:
+        """A household that named a country nobody fetched, or a ranking at the other level."""
+        found = self.three_countries(home_candidate="country.germany")
+
+        assert [result.delta_vs_home for result in found.values()] == [None, None, None]

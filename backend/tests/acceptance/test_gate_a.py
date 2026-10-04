@@ -171,6 +171,15 @@ class TestGateA:
         # Honest coverage: something answered, something did not, and both are visible.
         assert any(float(c["coverage"]) == 0 for c in body["candidates"])
 
+        # **The ranking is actually ordered.** Everything above survives a total inversion of
+        # the sort -- a reversed ranking has the same scores in the same range and the same
+        # count -- so "ranks them" would mean nothing without this. The top rank is 1, and by
+        # rank ascending the scores never climb.
+        by_rank = sorted(ranked, key=lambda c: c["rank"])
+        assert by_rank[0]["rank"] == 1
+        scores = [c["score"] for c in by_rank]
+        assert scores == sorted(scores, reverse=True), "ranked by score, highest first"
+
 
 async def _set_the_score_scale(database_url: str, scale: int) -> None:
     async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:

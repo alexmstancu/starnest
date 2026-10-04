@@ -49,9 +49,17 @@ def _operations(document: dict, *, prefix: str = "") -> dict[str, tuple[str, str
 def _query_parameters(document: dict, *, prefix: str = "") -> dict[str, set[str]]:
     """Every operation's query parameters, by operation id.
 
-    Path parameters are left out: they are part of the path shape, which
-    `TestWhatIsImplementedKeptItsDesignedIdentity` already compares. A query parameter is the
-    one that can appear in code without appearing in the design and change nothing visible.
+    **Path parameters are left out, and that is a decision rather than an oversight.** They are
+    part of the path shape, which `TestWhatIsImplementedKeptItsDesignedIdentity` compares with
+    the names blanked for the reason given there -- and the names differ on *every one* of the
+    19 parameterised operations, always as `{criteriaSetId}` against `{criteria_set_id}`. A check
+    over those names would therefore fail on all 19 and report a spelling convention as drift.
+    What it would catch beyond the shape check is a path parameter renamed or two of them
+    transposed, and a path parameter's name reaches a client only as the label on a generated
+    method's argument, because the URL is built positionally.
+
+    A query parameter is the one that can appear in code without appearing in the design and
+    change what a caller gets back while looking like nothing at all.
     """
     found: dict[str, set[str]] = {}
     for item in document["paths"].values():
@@ -69,6 +77,99 @@ def _query_parameters(document: dict, *, prefix: str = "") -> dict[str, set[str]
                 if resolved.get("in") == "query"
             }
     return found
+
+
+def _request_body_properties(document: dict) -> dict[str, set[str]]:
+    """Every property an operation's JSON request body accepts, by operation id.
+
+    Keyed by operation id rather than by path, so the two documents' different spellings of a
+    path parameter never enter into it.
+
+    Operations with no body, and bodies that are not `application/json`, are absent rather than
+    empty: "sends nothing" and "sends an object with no fields" are different claims, and only
+    the second is worth comparing.
+    """
+    found: dict[str, set[str]] = {}
+    for item in document["paths"].values():
+        for method, operation in item.items():
+            if method == "parameters" or not isinstance(operation, dict):
+                continue
+            name = operation.get("operationId")
+            body = operation.get("requestBody") if name else None
+            if not body:
+                continue
+            schema = body.get("content", {}).get("application/json", {}).get("schema")
+            if schema is not None:
+                found[name] = _body_fields(schema, document)
+    return found
+
+
+def _required_body_fields(document: dict) -> dict[str, set[str]]:
+    """Every body field an operation *demands*, by operation id.
+
+    The companion to `_request_body_properties`, and the direction that catches the opposite
+    fault. A field the design declares and the code ignores is the design being ahead, which is
+    allowed. A field the code **requires** and the design does not mark required is a server
+    demanding something no generated client knows it must send -- the client types it optional,
+    omits it, and is answered 422 by an endpoint its own contract said it had satisfied.
+    """
+    found: dict[str, set[str]] = {}
+    for item in document["paths"].values():
+        for method, operation in item.items():
+            if method == "parameters" or not isinstance(operation, dict):
+                continue
+            name = operation.get("operationId")
+            body = operation.get("requestBody") if name else None
+            if not body:
+                continue
+            schema = body.get("content", {}).get("application/json", {}).get("schema")
+            if schema is not None:
+                found[name] = _demanded(schema, document)
+    return found
+
+
+def _demanded(schema: dict, document: dict, *, seen: frozenset[str] = frozenset()) -> set[str]:
+    """The field names one body schema requires, following `$ref` and unioning `allOf`.
+
+    `anyOf` and `oneOf` are deliberately absent where `_body_fields` unions them: a field
+    required in one branch of a choice is not required by the body, and unioning them here
+    would invent demands neither document makes.
+    """
+    reference = schema.get("$ref")
+    if reference:
+        if reference in seen:
+            return set()
+        return _demanded(_resolved(schema, document), document, seen=seen | {reference})
+    names = set(schema.get("required", []))
+    for part in schema.get("allOf", []):
+        names |= _demanded(part, document, seen=seen)
+    return names
+
+
+def _body_fields(schema: dict, document: dict, *, seen: frozenset[str] = frozenset()) -> set[str]:
+    """The property names one body schema allows, following `$ref` and unioning composition.
+
+    The two documents name their body schemas differently and always will -- the design writes
+    `ManualValueInput` and Pydantic generates `ManualValueBody` -- so the comparison is over
+    field names, never over the name of the schema that holds them.
+
+    `allOf`, `anyOf` and `oneOf` are unioned, which is the direction that cannot cry wolf: a
+    wider served set is more likely to flag, a wider designed set is less likely to, and a field
+    the design does not mention in *any* branch is still caught. The cost is a field declared in
+    one branch and served in another, which this will not notice.
+
+    A served body with no properties at all would slip through, and is forbidden a few tests
+    down by `test_every_generated_schema_describes_its_shape` -- P92 was exactly that fault.
+    """
+    reference = schema.get("$ref")
+    if reference:
+        if reference in seen:
+            return set()
+        return _body_fields(_resolved(schema, document), document, seen=seen | {reference})
+    names = set(schema.get("properties", {}))
+    for part in [*schema.get("allOf", []), *schema.get("anyOf", []), *schema.get("oneOf", [])]:
+        names |= _body_fields(part, document, seen=seen)
+    return names
 
 
 def _resolved(parameter: dict, document: dict) -> dict:
@@ -186,6 +287,71 @@ class TestNothingIsServedThatWasNotDesigned:
         assert invented == {}, (
             f"these operations accept query parameters the design does not declare: "
             f"{invented}. Add them to docs/openapi.yaml, or stop accepting them."
+        )
+
+    def test_no_request_body_field_was_invented_in_code(self, served: dict, designed: dict) -> None:
+        """**The third place a surface can grow unnoticed**, after operations and query
+        parameters.
+
+        P84 was `/attributes` serving `include_retired` with the design silent about it. The
+        request body was the half of the same gap that stayed open: this file compared what an
+        operation is *called* and what it is *asked*, and never what it is *sent*. Nor does
+        anything else -- `tests/acceptance/test_contract_conformance.py` validates responses,
+        and its helpers read `operation["responses"]` and never `requestBody`. It posts bodies
+        without ever asking whether the body the code accepts is the body the design declares.
+
+        A body field is the worse of the two to get wrong. An undeclared query parameter is
+        reachable by a client that guesses it; an undeclared body field is one the server will
+        silently ignore when a client *does* send it, having typed it from the design -- or one
+        the server demands and no generated client knows to send.
+
+        The design leads, so a field it declares and nothing accepts is fine. An operation the
+        design gives no body at all reads as every one of its served fields being invented,
+        which is the right answer: growing a body in code is the same fault, one step larger.
+        """
+        served_bodies = _request_body_properties(served)
+        designed_bodies = _request_body_properties(designed)
+
+        invented = {
+            name: sorted(fields - designed_bodies.get(name, set()))
+            for name, fields in served_bodies.items()
+            if fields - designed_bodies.get(name, set())
+        }
+
+        assert invented == {}, (
+            f"these operations accept request body fields the design does not declare: "
+            f"{invented}. Add them to docs/openapi.yaml, or stop accepting them."
+        )
+
+    def test_no_body_field_is_demanded_that_the_design_calls_optional(
+        self, served: dict, designed: dict
+    ) -> None:
+        """**The one divergence of this kind that was live when this test was written.**
+
+        `renameCriteriaSet` required `name` -- `RenameBody` declares it with no default -- and
+        the design declared the property without marking it required, while both its siblings
+        carry `required: [id, name]`. A rename with no name is the one thing that body cannot
+        mean, so it was an omission rather than a decision, and the fix was to the design.
+
+        This is the direction the rest of the file does not watch. Everywhere else the design
+        being ahead of the code is the intended state, so "declared but not served" is never a
+        failure. Required-ness inverts that: the design being *behind* on a demand is what
+        breaks a caller, and it breaks it at runtime with a 422 rather than at generation time
+        with a type error, which is the expensive way to find out.
+        """
+        served_demands = _required_body_fields(served)
+        designed_demands = _required_body_fields(designed)
+
+        undeclared = {
+            name: sorted(fields - designed_demands.get(name, set()))
+            for name, fields in served_demands.items()
+            if fields - designed_demands.get(name, set())
+        }
+
+        assert undeclared == {}, (
+            f"these operations demand request body fields the design does not mark required: "
+            f"{undeclared}. A client generated from docs/openapi.yaml types them optional, "
+            "omits them, and is answered 422."
         )
 
 

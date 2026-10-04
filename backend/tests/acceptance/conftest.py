@@ -220,6 +220,70 @@ async def stored_figures(database_url: str) -> AsyncIterator[None]:
 
 
 @pytest.fixture
+async def values_from_a_run(database_url: str) -> AsyncIterator[int]:
+    """Figures tagged with the acquisition that produced them, and the run id they carry.
+
+    **Without this the two `TestNarrowingValuesToOneRun` tests skipped on every run.** They read
+    `/v1/values`, derive the runs present and `pytest.skip` when there are none -- and the `api`
+    fixture truncates `value` while `stored_figures` tags nothing with a run, so there never
+    were any. A test that skips unconditionally is a no-op wearing a green tick; narrowing
+    values to one run is what an acquisition diff rests on, so it is worth actually exercising.
+    """
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    from starnest.data import (
+        ConfidenceLevel,
+        Ratio,
+        ReferencePeriod,
+        Value,
+        ValueType,
+    )
+    from starnest.data_acquisition import RunScope, RunStatus
+
+    a_year = ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 12, 31))
+
+    async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+        await pool.open(wait=True)
+        run = await PostgresRunStore(pool).start_run(
+            RunScope(
+                level="country",
+                candidates=("country.portugal",),
+                attributes=("country.overcrowding_rate",),
+            ),
+            triggered_by="user",
+        )
+
+        def a_figure(candidate: str, figure: str, from_run: int | None) -> Value:
+            return Value(
+                candidate=candidate,
+                attribute="country.overcrowding_rate",
+                value_type=ValueType.RATIO,
+                data_source="eurostat",
+                data_acquisition_run=from_run,
+                reference_period=a_year,
+                retrieval_date=datetime.now(UTC),
+                confidence_level=ConfidenceLevel.HIGH,
+                payload=Ratio(value=Decimal(figure), basis="households"),
+            )
+
+        # Two figures from the run, and one from none -- so narrowing to the run returns fewer
+        # than the whole corpus, which is the property `test_the_total_counts_the_same_predicate`
+        # checks. A fixture where the run produced everything would make that assertion vacuous.
+        await PostgresValueStore(pool).append(
+            [
+                a_figure("country.portugal", "9", run),
+                a_figure("country.greece", "27", run),
+                a_figure("country.spain", "15", None),
+            ]
+        )
+        await PostgresRunStore(pool).finish_run(
+            run, status=RunStatus.COMPLETED, finished_at=datetime.now(UTC)
+        )
+    yield run
+
+
+@pytest.fixture
 async def an_external_score(database_url: str) -> AsyncIterator[None]:
     """One published composite, stored for the drill-down to show beside the score.
 

@@ -18,7 +18,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from starnest.api.document import served_schema
 
-from .contract import undeclared_fields, validate
+from .contract import response_schema, undeclared_fields, validate
 
 pytestmark = pytest.mark.acceptance
 
@@ -96,6 +96,20 @@ def test_every_served_read_has_a_conformance_case() -> None:
     than dropped, so "covered elsewhere" stays a decision somebody wrote down.
     """
     assert _served_get_operations() == set(A_REQUEST_FOR) | COVERED_BY_A_SEQUENCE
+
+
+def test_every_conformance_case_resolves_to_a_real_schema() -> None:
+    """The guard on the validator.
+
+    `validate` and `undeclared_fields` both treat a `None` schema as "nothing to check" -- the
+    right answer for a 204 with no body, and a silent disaster for a 200 that must carry one.
+    Were a schema dropped from the design for one of these operations, every conformance
+    assertion over it would pass against nothing while looking exactly like a check -- the same
+    way the `$ref`-following bug let eight responses validate against nothing. These are all 200
+    reads with a body, so a `None` here is a gap, named and failed rather than skipped.
+    """
+    missing = [operation for operation in A_REQUEST_FOR if response_schema(operation) is None]
+    assert missing == [], f"these conformance cases validate against no schema: {missing}"
 
 
 @pytest.mark.parametrize("operation", sorted(A_REQUEST_FOR))

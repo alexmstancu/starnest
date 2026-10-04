@@ -19,11 +19,55 @@ class TestWhatItCosts:
     def test_a_free_answer_costs_nothing(self, pricing: LlmPricing) -> None:
         assert pricing.cost_of(input_tokens=0, output_tokens=0, web_searches=0) == Decimal(0)
 
-    def test_it_rounds_up_at_the_half_cent(self, pricing: LlmPricing) -> None:
-        """A cap that under-counts lets one more call through than the household allowed."""
-        cost = pricing.cost_of(input_tokens=1, output_tokens=0, web_searches=0)
+    @pytest.mark.parametrize(
+        ("eur_usd_rate", "input_tokens", "expected"),
+        [
+            (1, 50, "0.0001"),
+            (1, 49, "0.0000"),
+            (2, 100, "0.0001"),
+            (2, 98, "0.0000"),
+        ],
+    )
+    def test_it_rounds_up_at_the_half_cent(
+        self, eur_usd_rate: int, input_tokens: int, expected: str
+    ) -> None:
+        """A cap that under-counts lets one more call through than the household allowed.
 
-        assert cost == Decimal("0.0000")  # a single token is below the fourth decimal
+        **The tie has to be hit exactly or the test says nothing.** The quantum is 0.0001 EUR, a
+        hundredth of a cent, so the boundary sits at 0.00005 -- which at a dollar per million
+        tokens and 1 EUR = 1 USD is 50 input tokens. This asserted 1 token for a long while:
+        0.000001 EUR, fifty times short of the tie, where every rounding mode in the stdlib
+        agrees and the one thing the docstring forbids could not fail.
+
+        **50 rather than 150, because `ROUND_HALF_EVEN` alternates.** It breaks a tie towards the
+        even digit, so it answers 0.0000 at 50 tokens and disagrees -- but 0.0002 at 150, where
+        it agrees with rounding up and would be certified by a test written there. The cases
+        below cover every wrong mode between them and share none: the ones expecting 0.0001
+        catch the four that under-count a tie (`HALF_DOWN`, `HALF_EVEN`, `DOWN`, `FLOOR`), and
+        the ones expecting 0.0000 catch the two that round a non-tie up anyway (`UP`,
+        `CEILING`), which would over-count every call and stop runs that had spent almost
+        nothing.
+
+        **The rate is a parameter here rather than the fixture's, because the figure being
+        rounded is euro and the prices are dollars.** The rounding happens after the conversion,
+        so a boundary case is only a boundary case on the euro side -- and the rate is
+        configuration (`EUR_USD_RATE`), which would make a test resting on the fixture's a test
+        with an input someone can change from `.env`. At 1 EUR = 1 USD the division is the
+        identity and the two sides coincide; the pair at 1 EUR = 2 USD is the one that pins the
+        order, since 100 tokens is 0.0001 USD -- no boundary at all in dollars, a clean
+        representable figure -- and reaches the tie only once converted. Quantising before
+        converting would answer 0.00005 and fail.
+        """
+        pricing = LlmPricing(
+            input_usd_per_million_tokens=Decimal(1),
+            output_usd_per_million_tokens=Decimal(1),
+            usd_per_web_search=Decimal("0.01"),
+            eur_usd_rate=Decimal(eur_usd_rate),
+        )
+
+        cost = pricing.cost_of(input_tokens=input_tokens, output_tokens=0, web_searches=0)
+
+        assert cost == Decimal(expected)
 
     @pytest.mark.parametrize(
         "missing",

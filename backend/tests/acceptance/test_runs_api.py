@@ -462,6 +462,70 @@ class TestRetryingARun:
 
         assert asked_again == 0
 
+    async def test_a_source_the_household_switched_off_is_not_asked_at_all(
+        self, database_url: str
+    ) -> None:
+        """**The same filter, at the other two call sites.**
+
+        `switched_on` guards three endpoints -- `plan`, `start` and `retry` -- and only the
+        retry had a test. Bypassing it at `plan` alone left the whole suite green, and so did
+        bypassing it at `start`. The docstring above this one asserts "start and plan both
+        filter through `switched_on`" as a settled fact, which is exactly the kind of claim
+        that stops being true quietly.
+
+        Switched off before anything runs, because that is the household's own order of
+        operations: the switch is thrown in Configure and then a run is started.
+        """
+        both = (
+            a_stub_source(silent_on=(OVERBURDEN,)),
+            a_stub_source(data_source="world_bank", answers=("country.overcrowding_rate",)),
+        )
+        async with an_api(database_url, both) as api:
+            await api.patch("/v1/data-sources/world_bank", json={"is_enabled": False})
+
+            started = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+            # Counted from failure rows for the reason the retry test gives: a switched-off
+            # source stores nothing whether or not it was asked, so a count of values is zero
+            # either way. A failure row is written only by a source that was consulted.
+            asked = await _count(
+                database_url,
+                "SELECT count(*) FROM data_acquisition_failure"
+                " WHERE data_acquisition_run = %s AND data_source = 'world_bank'",
+                started["id"],
+            )
+            await api.patch("/v1/data-sources/world_bank", json={"is_enabled": True})
+
+        assert asked == 0
+
+    async def test_an_estimate_does_not_price_a_source_the_household_switched_off(
+        self, database_url: str
+    ) -> None:
+        """The third call site, and the one where being wrong costs the most to believe: an
+        estimate naming a source nobody will ask quotes work that is never done, so the figure
+        the household agrees to spend against is for a different run than the one that happens.
+        """
+        both = (
+            a_stub_source(silent_on=(OVERBURDEN,)),
+            a_stub_source(data_source="world_bank", answers=("country.overcrowding_rate",)),
+        )
+        async with an_api(database_url, both) as api:
+            with_both = (
+                await api.post("/v1/data-acquisition-runs/plan", json={"level": COUNTRY})
+            ).json()
+            await api.patch("/v1/data-sources/world_bank", json={"is_enabled": False})
+
+            planned = (
+                await api.post("/v1/data-acquisition-runs/plan", json={"level": COUNTRY})
+            ).json()
+
+            await api.patch("/v1/data-sources/world_bank", json={"is_enabled": True})
+
+        priced = {each["data_source"] for each in planned["by_source"]}
+        assert "world_bank" not in priced
+        # And the switch actually changed the estimate, rather than the source never being in it.
+        assert "world_bank" in {each["data_source"] for each in with_both["by_source"]}
+
     async def test_a_source_is_asked_again_only_about_what_it_failed_on(
         self, database_url: str
     ) -> None:

@@ -956,7 +956,9 @@ class TestNarrowingValuesToOneRun:
     means paging the whole corpus and grouping client-side -- 8,488 values at 1,000 a page.
     """
 
-    async def test_it_returns_only_that_run_s_values(self, api: httpx.AsyncClient) -> None:
+    async def test_it_returns_only_that_run_s_values(
+        self, api: httpx.AsyncClient, values_from_a_run: int
+    ) -> None:
         everything = (
             await api.get("/v1/values", params={"include_superseded": True, "limit": 1000})
         ).json()
@@ -965,8 +967,10 @@ class TestNarrowingValuesToOneRun:
             for value in everything["items"]
             if value.get("data_acquisition_run") is not None
         }
-        if not runs:
-            pytest.skip("no value carries a run in this database")
+        # The fixture produced a run, so this is a fact the test now rests on rather than a
+        # condition it skips under -- it used to skip on every run, the `value` table being
+        # truncated between tests and nothing else tagging a figure with a run.
+        assert values_from_a_run in runs
         one = sorted(runs)[0]
 
         narrowed = (
@@ -983,7 +987,9 @@ class TestNarrowingValuesToOneRun:
         assert narrowed["items"], "a run that produced values must return some"
         assert {value["data_acquisition_run"] for value in narrowed["items"]} == {one}
 
-    async def test_the_total_counts_the_same_predicate(self, api: httpx.AsyncClient) -> None:
+    async def test_the_total_counts_the_same_predicate(
+        self, api: httpx.AsyncClient, values_from_a_run: int
+    ) -> None:
         """The `total` beside the page must answer the same question the page does."""
         everything = (
             await api.get("/v1/values", params={"include_superseded": True, "limit": 1000})
@@ -993,8 +999,7 @@ class TestNarrowingValuesToOneRun:
             for value in everything["items"]
             if value.get("data_acquisition_run") is not None
         }
-        if not runs:
-            pytest.skip("no value carries a run in this database")
+        assert values_from_a_run in runs
         one = sorted(runs)[0]
 
         narrowed = (

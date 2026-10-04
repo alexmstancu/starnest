@@ -146,11 +146,11 @@ def anchored(*points: tuple[str, int]) -> tuple[ScaleAnchor, ...]:
     return tuple(ScaleAnchor(input_value=Decimal(value), score=score) for value, score in points)
 
 
-def fixed(figures: list[str], anchors, *, scale: int = A_SMALL_SCALE):
+def fixed(figures: list[str], anchors, *, goal: Goal = Goal.MINIMISE, scale: int = A_SMALL_SCALE):
     return scores_for(
         [Decimal(f) for f in figures],
         method=NormalisationMethod.FIXED,
-        goal=Goal.MINIMISE,
+        goal=goal,
         score_scale_max=scale,
         anchors=anchors,
     )
@@ -186,6 +186,17 @@ class TestFixedMapsBetweenTheAnchorsTheUserChose:
     def test_the_score_rounds_half_up_like_every_other_method(self) -> None:
         """29% is 5.5 on the way down from 10: half up is 6."""
         assert fixed(["29"], A_TAX_SCALE) == (6,)
+
+    def test_the_anchors_carry_the_direction_so_the_goal_is_not_applied_on_top(self) -> None:
+        """`reqs.md` 5.1, and the line this module's docstring makes the point of the method:
+        "20% scores 10, 40% scores 0" already says lower is better, and reading the goal as well
+        would invert a scale that is already pointing the right way.
+
+        The same anchors under the opposite goal, because the helper above had the goal hardcoded
+        and the claim was therefore unasserted: `_on_the_anchored_scale` takes `goal` and never
+        reads it, and nothing said that was deliberate rather than an omission.
+        """
+        assert fixed(["30"], A_TAX_SCALE, goal=Goal.MAXIMISE) == fixed(["30"], A_TAX_SCALE)
 
 
 class TestFixedIsStable:
@@ -336,6 +347,46 @@ class TestATargetRangeScoresTheBandAndFallsAwayFromIt:
 
         assert on_the_band("11.9", "12", target=cliff) == (0, 100)
 
+    def test_a_band_running_backwards_is_refused(self) -> None:
+        """Nothing can be inside a band from 16 down to 12, so every figure is scored on a slope
+        towards a band no figure can reach -- and 14, which reads as the middle of it, scored 83
+        rather than full marks. The share stays inside 0..1, so nothing downstream could tell.
+        """
+        inverted = TargetRange(
+            minimum=Decimal(16), maximum=Decimal(12), zero_below=Decimal(4), zero_above=Decimal(24)
+        )
+
+        with pytest.raises(NormalisationError, match="nothing inside it"):
+            on_the_band("14", target=inverted)
+
+    def test_a_zero_point_inside_the_band_is_refused(self) -> None:
+        """**The arithmetic fault, not merely a gap.** A band of 12-16 reaching zero at 14 says a
+        figure of 14 scores both 0 and full marks; the slope below the band then runs the wrong
+        way and 11 scored 150 on a scale of 100 -- off the scale this module's own docstring
+        promises.
+
+        Refused rather than clamped at the top of the scale: clamping would cap this and leave
+        the inverted band above scoring plausibly for ever.
+        """
+        zero_inside = TargetRange(
+            minimum=Decimal(12), maximum=Decimal(16), zero_below=Decimal(14), zero_above=Decimal(24)
+        )
+
+        with pytest.raises(NormalisationError, match="inside the band"):
+            on_the_band("11", target=zero_inside)
+
+    def test_the_upper_zero_point_inside_the_band_is_refused_too(self) -> None:
+        """The other side of the same contradiction, and the reason both sides are checked: the
+        slope above the band falls away from `maximum`, so before the refusal this shape scored
+        a figure of 11 perfectly sensibly and only overshot above 16.
+        """
+        zero_inside = TargetRange(
+            minimum=Decimal(12), maximum=Decimal(16), zero_below=Decimal(4), zero_above=Decimal(14)
+        )
+
+        with pytest.raises(NormalisationError, match="inside the band"):
+            on_the_band("17", target=zero_inside)
+
     def test_the_anchors_are_not_consulted(self) -> None:
         """The four numbers are the whole scale; a stray anchor cannot bend it."""
         with_anchors = scores_for(
@@ -437,6 +488,23 @@ class TestPercentileOverFiguresFromDifferentProviders:
             goal=Goal.MINIMISE,
             score_scale_max=A_SMALL_SCALE,
         ) == percentile(["1400", "900", "1100"], goal=Goal.MINIMISE)
+
+    def test_a_figure_published_on_a_scale_of_no_width_is_refused(self) -> None:
+        """A publisher declaring an index that runs from 5 to 5 has contradicted itself, and
+        "where does 7 sit between 5 and 5" has no answer at all.
+
+        `Index` refuses to construct such a value, so the guard exists so that a division by
+        zero is not how it is discovered -- and `scores_for` is public, which is the path that
+        reaches it. Ranked beside a figure on a real scale, because a column of one is refused
+        for a different reason and would never arrive here.
+        """
+        with pytest.raises(NormalisationError, match="no width"):
+            scores_for(
+                [published("7", bounds=("5", "5")), published("50", bounds=("0", "100"))],
+                method=NormalisationMethod.PERCENTILE,
+                goal=Goal.MAXIMISE,
+                score_scale_max=A_SMALL_SCALE,
+            )
 
     def test_a_column_mixing_bounded_and_unbounded_figures_is_refused(self) -> None:
         """A fraction and a magnitude are not the same kind of number, and ranking them

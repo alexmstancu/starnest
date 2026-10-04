@@ -94,6 +94,10 @@ class TestTheSynthesis:
         (pair,) = body["synthesis"]
         assert pair["comparator"] == GREECE
         assert pair["score_delta"] == body["focus"]["score"] - body["comparators"][0]["score"]
+        # Portugal is ahead of Greece on every MINIMAL criterion, so there is something to read:
+        # without this the `all(...)` below is vacuously true the moment the synthesis emits no
+        # advantages, which a sign flip on the `ahead` filter does while every assertion passes.
+        assert pair["advantages"], "Portugal beats Greece on every criterion, so it has advantages"
         assert all("worth " in line for line in pair["advantages"])
 
     async def test_advantages_are_ordered_by_what_they_are_worth(
@@ -108,6 +112,9 @@ class TestTheSynthesis:
             float(line.rsplit("worth ", 1)[1].split(" ")[0])
             for line in body["synthesis"][0]["advantages"]
         ]
+        # At least two, or "ordered by worth" is a claim about a list too short to order --
+        # an emptied or single-element advantages list passes `sorted` trivially.
+        assert len(worth) >= 2, "Portugal is ahead on several criteria, so the order is testable"
         assert worth == sorted(worth, reverse=True)
 
 

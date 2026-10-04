@@ -32,7 +32,14 @@ class TestThePillars:
 
 class TestTheAttributes:
     async def test_every_active_country_attribute_comes_back(self, api: httpx.AsyncClient) -> None:
-        """43 since `0466` added a summer day and a winter day (Q213)."""
+        """42 active country attributes (5 more are retired and excluded).
+
+        **This literal is a canary, not scaffolding** -- adding or retiring an attribute is a
+        migration, and the number is updated here deliberately so a migration that changes the
+        catalog without anyone noticing trips the suite. The count reached 42 after `0466` added
+        a summer day and a winter day (Q213), `0487` retired the two job-posting counts (`0487`),
+        and `0488` swapped the house-price ratio for a cost-of-living figure.
+        """
         body = (await api.get("/v1/attributes", params={"level": COUNTRY})).json()
 
         assert len(body["items"]) == 42

@@ -653,10 +653,21 @@ class TestWhatTheRulesDoToARanking:
             )
         )
 
+        # **The same values ranked without the rule**, because "the warning changed nothing"
+        # can only be said against a ranking that had no warning in it. This line used to read
+        # `portugal.score == found["country.portugal"].score`, which is the same object on both
+        # sides -- a score equal to itself. A warning that zeroed every candidate it flagged
+        # passed that assertion, and passed the whole suite with it.
+        unflagged = by_candidate(
+            rank(applying, values_for(portugal=90, spain=10), compound_rules=[])
+        )
+
         portugal = found["country.portugal"]
         assert [str(w.compound_rule) for w in portugal.warnings] == ["cheap_but_taxed"]
         assert portugal.match_status is MatchStatus.MATCHING
-        assert portugal.score == found["country.portugal"].score
+        assert portugal.score == unflagged["country.portugal"].score
+        assert portugal.match_status is unflagged["country.portugal"].match_status
+        assert portugal.rank == unflagged["country.portugal"].rank
         assert found["country.spain"].warnings == ()
 
     def test_a_rule_the_set_does_not_apply_never_fires(self) -> None:
@@ -790,24 +801,6 @@ class TestWhatTheRulesDoToARanking:
 
         assert portugal.match_status is MatchStatus.MATCHING
         assert portugal.non_match_reasons == ()
-
-    def test_a_rule_the_set_applies_fires_as_it_always_did(self) -> None:
-        """The control: the filter must narrow what a set applies, not stop rules working."""
-        applying = a_set([a_criterion()]).model_copy(
-            update={"applied_compound_rules": frozenset({"cheap_but_taxed"})}
-        )
-
-        found = by_candidate(
-            rank(
-                applying,
-                values_for(portugal=90, spain=10),
-                compound_rules=[self.a_warning_rule()],
-            )
-        )
-
-        assert [str(w.compound_rule) for w in found["country.portugal"].warnings] == [
-            "cheap_but_taxed"
-        ]
 
     def test_a_failed_gate_keeps_the_score_and_loses_the_rank(self) -> None:
         criteria = a_set([a_criterion()])

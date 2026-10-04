@@ -286,6 +286,7 @@ def _conditions_from(
         CompoundRuleCondition(
             ordinal=condition["ordinal"],
             attribute=AttributeId(condition["attribute"]),
+            attribute_name=condition.get("attribute_name"),
             threshold_min=condition["threshold_min"],
             threshold_max=condition["threshold_max"],
         )

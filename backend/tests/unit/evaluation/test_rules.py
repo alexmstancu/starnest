@@ -73,6 +73,38 @@ class TestACompoundRule:
         assert "52.0" in warning.detail
         assert warning.detail.startswith("Cheap but taxed:")
 
+    def test_the_detail_names_the_attribute_rather_than_its_key(self) -> None:
+        """**The sentence is rendered verbatim** in the ranking's "Why this status" column, and
+        `reqs.md` asks the interface to show no programmatic identifier. The id was all this
+        function had until the catalog read started joining the name on."""
+        rule = a_rule()
+        named = rule.model_copy(
+            update={
+                "conditions": tuple(
+                    condition.model_copy(
+                        update={"attribute_name": "Cost of living index"}
+                        if condition.ordinal == 1
+                        else {"attribute_name": "Total effective tax rate"}
+                    )
+                    for condition in rule.conditions
+                )
+            }
+        )
+
+        (warning,), _ = judged(named)
+
+        assert "Cost of living index" in warning.detail
+        assert "Total effective tax rate" in warning.detail
+        assert str(PRICES) not in warning.detail
+        assert str(TAX) not in warning.detail
+
+    def test_the_detail_falls_back_to_the_key_when_no_name_was_read(self) -> None:
+        """An explanation naming the key is still better than no explanation, and a condition
+        built without the catalog in hand -- in a test, or from an older row -- has no name."""
+        (warning,), _ = judged(a_rule())
+
+        assert str(PRICES) in warning.detail
+
     def test_a_derived_figure_is_read_at_a_readable_precision(self) -> None:
         """**Found on screen, 2026-09-20.** The estimated tax rate is a division, so it arrives
         as `43.32847052546540994843612212`, and the detail interpolated it whole: a warning that

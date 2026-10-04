@@ -111,6 +111,7 @@ def _in_the_target_band(
             "on each side -- and this criterion does not name all four; nothing here invents "
             "the missing ones"
         )
+    _refuse_a_band_that_contradicts_itself(target)
     value = figure.magnitude
     if target.minimum <= value <= target.maximum:
         return score_scale_max
@@ -121,6 +122,40 @@ def _in_the_target_band(
     return _on_the_slope(
         value, full_at=target.maximum, zero_at=target.zero_above, top=score_scale_max
     )
+
+
+def _refuse_a_band_that_contradicts_itself(target: TargetRange) -> None:
+    """Four numbers that do not describe a band, refused rather than scored on anyway.
+
+    **This module promises a score on 0..`score_scale_max`, and these two shapes broke it.** A
+    zero point *inside* the band makes the slope's share exceed 1 -- a band of 12 to 16 reaching
+    zero at 14 scored a figure of 11 as 150 on a scale of 100 -- and an inverted band keeps the
+    share inside 0..1 while measuring against a band nothing can be in, so a figure of 14
+    scored 83 where the band it was aiming at would have given full marks.
+
+    **Refused rather than clamped**, which is the choice between the two faults being equally
+    visible and one of them disappearing. Clamping the share at 1 caps the overshoot and leaves
+    the inverted band scoring plausibly for ever -- the "plausible-looking number" `reqs.md` 10
+    forbids. The honest answer to "these four numbers are not a scale" is to say so, exactly as
+    the missing-band refusal above does.
+
+    `Criterion` refuses both shapes where a criterion is declared, and `0009-criteria.sql` has
+    CHECKs for both, so neither is reachable through the application's own path. `scores_for` is
+    public and takes a `TargetRange` directly, and a refusal is cheaper than a docstring whose
+    promise only holds for callers who came the other way.
+    """
+    if target.minimum > target.maximum:
+        raise NormalisationError(
+            f"a target band running from {target.minimum} down to {target.maximum} has nothing "
+            "inside it, so every figure would be scored on a slope towards a band no figure "
+            "can reach"
+        )
+    if target.zero_below > target.minimum or target.zero_above < target.maximum:
+        raise NormalisationError(
+            f"a band of {target.minimum} to {target.maximum} reaching zero at "
+            f"{target.zero_below} and {target.zero_above} puts a zero point inside the band, "
+            "where the score is full marks already; the slope towards it leaves the score scale"
+        )
 
 
 def _on_the_slope(value: Decimal, *, full_at: Decimal, zero_at: Decimal, top: int) -> int:
