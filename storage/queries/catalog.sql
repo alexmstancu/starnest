@@ -212,12 +212,18 @@ SELECT r.id,
            '[]'::jsonb) AS inputs,
        COALESCE(
            (SELECT jsonb_agg(jsonb_build_object(
-                       'ordinal',       c.ordinal,
-                       'attribute',     c.attribute,
-                       'threshold_min', c.threshold_min,
-                       'threshold_max', c.threshold_max)
+                       'ordinal',        c.ordinal,
+                       'attribute',      c.attribute,
+                       -- The catalog's name, joined here so a warning can say "Cost of living
+                       -- index" rather than `country.cost_of_living_index`. reqs.md asks the
+                       -- interface to show no programmatic identifier, and the sentence this
+                       -- feeds is built in the domain, where the id is all there was.
+                       'attribute_name', a.name,
+                       'threshold_min',  c.threshold_min,
+                       'threshold_max',  c.threshold_max)
                     ORDER BY c.ordinal)
             FROM   compound_rule_condition AS c
+            JOIN   attribute AS a ON a.id = c.attribute
             WHERE  c.compound_rule = r.id),
            '[]'::jsonb) AS conditions
 FROM   compound_rule AS r

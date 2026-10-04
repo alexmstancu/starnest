@@ -28,5 +28,20 @@ DELETE FROM attribute_quantity_parameter WHERE attribute = 'country.housing_pric
 
 -- The figures go before the attribute they describe: `value_attribute_fkey` refuses otherwise,
 -- and they are what this migration brought into existence.
+--
+-- **And a figure's own rows go before the figure**, which is the half this missed. Eleven
+-- tables reference `value` and none cascades, so `DELETE FROM value` alone failed on
+-- `value_quantity_value_fkey` for all 211 stored figures. It passed every check we had because
+-- a figure-free database deletes nothing here.
+--
+-- `candidate_attribute_score.used_value` is deliberately not cleared: a saved evaluation is a
+-- frozen record that must still explain its score (`0107`), so if one ever reads these figures
+-- its foreign key should refuse this rollback rather than let it empty the record.
+DELETE FROM value_citation
+WHERE  value IN (SELECT id FROM value WHERE attribute = 'country.housing_price_level');
+
+DELETE FROM value_quantity
+WHERE  value_id IN (SELECT id FROM value WHERE attribute = 'country.housing_price_level');
+
 DELETE FROM value WHERE attribute = 'country.housing_price_level';
 DELETE FROM attribute WHERE id = 'country.housing_price_level';

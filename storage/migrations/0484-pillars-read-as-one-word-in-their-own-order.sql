@@ -13,6 +13,8 @@
 --
 -- **`name` is display only.** Nothing joins on it, nothing stores it; every reference is by
 -- `pillar.id`, which does not change here. `connectivity` stays `connectivity`.
+--
+-- depends: 0483-a-run-can-be-stopped
 ALTER TABLE pillar ADD COLUMN display_order integer;
 
 UPDATE pillar SET name = 'Economy',    display_order = 1  WHERE id = 'economics';
@@ -36,5 +38,4 @@ ALTER TABLE pillar ALTER COLUMN display_order SET NOT NULL;
 
 -- Two pillars cannot claim one slot. Without this the order is only mostly defined, and
 -- "mostly defined" means it changes when the planner feels like it.
--- depends: 0483-a-run-can-be-stopped
 ALTER TABLE pillar ADD CONSTRAINT pillar_display_order_is_unique UNIQUE (display_order);
