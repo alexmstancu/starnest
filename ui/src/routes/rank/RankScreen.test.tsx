@@ -779,7 +779,7 @@ describe("the drill-down", () => {
 describe("what a stored figure looks like, whatever its type", () => {
   /** One value of each payload shape the contract defines (`reqs.md` 3.3a). */
   const everyShape = [
-    ["Quantity", { magnitude: 12.6, unit: "celsius" }, "12.6 celsius"],
+    ["Quantity", { magnitude: 12.6, unit: "celsius" }, "12.6 °C"],
     [
       "Monetary",
       { amount: 1410, currency: "EUR", amount_eur: 1410 },

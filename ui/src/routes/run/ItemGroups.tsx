@@ -105,7 +105,7 @@ export function ItemGroups({
               <div className="group__head">
                 <button
                   type="button"
-                  className="button"
+                  className="group__toggle"
                   aria-expanded={expanded}
                   onClick={() =>
                     setOpen((current) => {
@@ -119,9 +119,15 @@ export function ItemGroups({
                   {/* **"▸ oecd  12 items, 3 picked".** The design puts the count and the
                       selection in one meta string beside the name rather than in a column of
                       its own, so a collapsed list reads as a list and not as a table. */}
-                  <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>{" "}
-                  {groupLabel(names, groupedBy, group.key)}{" "}
-                  {groupMeta(group.items.length, picked)}
+                  <span className="group__caret" aria-hidden="true">
+                    {expanded ? "▾" : "▸"}
+                  </span>
+                  <span className="group__name">
+                    {groupLabel(names, groupedBy, group.key)}
+                  </span>
+                  <span className="group__meta">
+                    {groupMeta(group.items.length, picked)}
+                  </span>
                 </button>
                 <button
                   type="button"

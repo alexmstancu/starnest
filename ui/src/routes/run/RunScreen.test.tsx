@@ -968,7 +968,7 @@ describe("what changed between two acquisitions", () => {
     });
     expect(row).toHaveTextContent("unchanged");
     // And the figure itself in both columns, so the verdict is checkable rather than trusted.
-    expect(within(row).getAllByText("94.5 index_eu27_100")).toHaveLength(2);
+    expect(within(row).getAllByText("94.5 EU27 = 100")).toHaveLength(2);
     expect(panel.queryByText(/newly acquired/i)).toBeInTheDocument();
   });
 

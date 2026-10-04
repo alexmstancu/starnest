@@ -13,9 +13,34 @@ import { describeFigure } from "./figure";
 import { ABSENT } from "./display";
 
 describe("one payload as one line", () => {
-  it("renders a Quantity with its unit", () => {
+  it("renders a Quantity with its unit made readable", () => {
+    // The unit's underscores become spaces; a known token reads better still.
     expect(describeFigure({ payload: { magnitude: 1250, unit: "eur_per_month" } })).toBe(
-      "1250 eur_per_month",
+      "1250 eur per month",
+    );
+    expect(
+      describeFigure({ payload: { magnitude: 0.38, unit: "per_100000_population" } }),
+    ).toBe("0.38 per 100,000");
+  });
+
+  it("rounds a figure to what a person reads, not the wire's precision", () => {
+    // The server sends 30.80604044947752; two decimals, trailing zeros trimmed.
+    expect(
+      describeFigure({ payload: { value: 30.80604044947752, basis: "labour_cost" } }),
+    ).toBe("30.81% of Labour cost");
+    expect(
+      describeFigure({
+        payload: {
+          value: 1.036044,
+          provider: "World Bank WGI",
+          scale_min: -2.5,
+          scale_max: 2.5,
+        },
+      }),
+    ).toBe("1.04 on -2.5–2.5 (World Bank WGI)");
+    // A whole or already-short number is left alone.
+    expect(describeFigure({ payload: { magnitude: 3.8, unit: "percent_per_year" } })).toBe(
+      "3.8 % per year",
     );
   });
 

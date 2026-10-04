@@ -321,8 +321,8 @@ describe("raw figures", () => {
     await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
 
     const row = screen.getByRole("row", { name: /cost of living index/i });
-    expect(row).toHaveTextContent("92.1 index_eu27_100");
-    expect(row).toHaveTextContent("105.5 index_eu27_100");
+    expect(row).toHaveTextContent("92.1 EU27 = 100");
+    expect(row).toHaveTextContent("105.5 EU27 = 100");
   });
 
   /** `delta` is documented as being in the attribute's own unit, so it belongs here. */

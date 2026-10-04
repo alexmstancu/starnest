@@ -3443,3 +3443,176 @@ select.field__control {
 .source-row[data-landing="below"] {
   box-shadow: inset 0 -2px 0 var(--colour-accent);
 }
+
+/* ── Acquire: the progress card's per-source list ────────────────────────────────────────
+   Restored after the card was rebuilt without it, which left `llm` and its reading stacked
+   with a bullet and a wide gap and no bar between them. The design's row is a three-column
+   grid: source name, a 5px bar, the reading. */
+.reach {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reach__heading {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--colour-text-label);
+}
+
+.reach__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reach__row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(80px, 2fr) 74px;
+  gap: 10px;
+  align-items: center;
+}
+
+.reach__source {
+  font-size: 12px;
+  color: var(--colour-text-strong);
+}
+
+/* The track is the full width of its column; the fill's width is the stored share, set as an
+   attribute on the SVG rect. 5px tall with rounded ends, as the design draws it. */
+.reach__track {
+  width: 100%;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--colour-border);
+  overflow: hidden;
+}
+
+.reach__fill {
+  fill: var(--colour-success-bar);
+}
+
+/* Nothing stored: the bar is drawn at zero width anyway, but a barren source reads as grey
+   rather than a sliver of green that was never there. */
+.reach__fill--barren {
+  fill: var(--colour-border-strong);
+}
+
+.reach__reading {
+  font-size: 11.5px;
+  color: var(--colour-text-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Acquire: the grouped failure / unanswered lists ─────────────────────────────────────
+   Rebuilt without their styles, which left each group behind a native <ul> bullet and the
+   toggle inside a bordered button. The design draws a borderless toggle -- caret, name, meta
+   -- with the per-group All/None beside it, and the items indented 24px when open. */
+.group__list,
+.group__items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.group__list {
+  display: flex;
+  flex-direction: column;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  border-bottom: var(--border-width) solid var(--colour-surface-hair);
+}
+
+.group__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+}
+
+.group__toggle {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.group__caret {
+  font-size: 10px;
+  color: var(--colour-text-muted);
+}
+
+.group__name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--colour-text);
+}
+
+.group__meta {
+  font-size: 11.5px;
+  color: var(--colour-text-muted);
+}
+
+.group__items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 0 8px 24px;
+}
+
+/* ── Rank drill-down: the "N attributes have no stored value" note ───────────────────────
+   Rebuilt without its styles, which left the warning disc as a bare floating "!". The design
+   draws an amber box with a filled disc and deep-amber text; the clear case is a quiet line. */
+.drill__gap {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 11px 12px;
+  border: var(--border-width) solid var(--colour-warning-border);
+  background: var(--colour-warning-surface);
+  border-radius: var(--radius-medium);
+}
+
+.drill__gap-mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border-radius: 8px;
+  background: var(--colour-warning);
+  color: var(--colour-surface);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.drill__gap-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--colour-warning-deep);
+}
+
+.drill__complete {
+  margin: 0;
+  font-size: 12px;
+  color: var(--colour-text-muted);
+}
