@@ -36,6 +36,8 @@ export interface MatrixCell {
 }
 
 export interface MatrixRow {
+  /** The pillar's own id, used to group its attributes under it. Null for the total row. */
+  pillar: string | null;
   /** The pillar, or "Total score" for the row the design puts first. */
   label: string;
   /** What this row is worth, as a percentage. The total row is the whole 100. */
@@ -96,6 +98,7 @@ export function pillarMatrix(
 ): MatrixRow[] {
   const focusTotal = scoreOf(focus.score);
   const total: MatrixRow = {
+    pillar: null,
     label: "Total score",
     weight: 100,
     total: true,
@@ -116,6 +119,7 @@ export function pillarMatrix(
   const rows = (focus.pillar_scores ?? []).map((pillar) => {
     const here = readingOf(pillar);
     return {
+      pillar: pillar.pillar,
       label: name(pillar.pillar),
       weight: pillar.weight,
       total: false,
@@ -131,4 +135,26 @@ export function pillarMatrix(
   });
 
   return [total, ...rows];
+}
+
+/** How many pillars the design marks as priorities, by weight. */
+const PRIORITY_COUNT = 3;
+
+/**
+ * The heaviest pillars, ranked, so the matrix can mark the few the household weighted most.
+ *
+ * **Weight is the one number the reader set most deliberately** (`reqs.md` Q82), so the rows
+ * carrying the most of it are the ones to foreground. Returns a map from pillar id to its place
+ * (0 for the heaviest), holding only the top few; everything else is absent rather than ranked.
+ * Ties are broken by the order the pillars arrived, which is the catalog's.
+ */
+export function pillarPriority(
+  focus: Compared,
+  count: number = PRIORITY_COUNT,
+): ReadonlyMap<string, number> {
+  const ranked = (focus.pillar_scores ?? [])
+    .map((pillar) => ({ pillar: pillar.pillar, weight: pillar.weight }))
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, count);
+  return new Map(ranked.map((entry, place) => [entry.pillar, place]));
 }

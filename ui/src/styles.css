@@ -1475,8 +1475,92 @@ select.field__control {
 }
 
 .matrix__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-half);
+  min-width: 0;
   font-size: 13px;
   font-weight: 500;
+}
+
+/* The pillar name as the control that opens it: the whole label reads as clickable, and the
+   caret says which way it will go. A plain span wears the same shape when there is nothing to
+   open, so the column does not jump between the two. */
+.matrix__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-quarter);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.matrix__toggle--static {
+  cursor: default;
+}
+
+.matrix__caret {
+  width: 9px;
+  flex: none;
+  font-size: 11px;
+  color: var(--colour-text-muted);
+}
+
+/* The faintest teal pill, marking a pillar the household weighted among its heaviest few. */
+.matrix__priority {
+  flex: none;
+  padding: 1px 6px;
+  border: var(--border-width) solid var(--colour-accent-border);
+  border-radius: 9px;
+  background: var(--colour-accent-surface);
+  font-size: 10px;
+  font-weight: var(--weight-strong);
+  color: var(--colour-accent);
+  white-space: nowrap;
+}
+
+/* An attribute's label sits indented under its pillar, with a quiet line saying how its figures
+   are being read. */
+.matrix__label--attr {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding-left: 14px;
+  font-weight: var(--weight-normal);
+}
+
+.matrix__attr-name {
+  font-size: 12.5px;
+  color: var(--colour-text-strong);
+}
+
+.matrix__attr-note {
+  font-size: 11px;
+  color: var(--colour-text-muted);
+}
+
+/* **The heaviest pillars are foregrounded, not just listed.** A hair off white plus a teal
+   edge, the design's whisper for "consulted first" -- loud enough to find, quiet enough not to
+   shout over the numbers. */
+.matrix__row--priority {
+  background: var(--colour-accent-priority);
+  box-shadow: inset 3px 0 0 var(--colour-accent);
+}
+
+/* An open pillar takes the accent tint, so the attribute rows below it read as belonging to it
+   rather than as more pillars. Written after `--priority` so an open priority pillar reads as
+   open. */
+.matrix__row--open {
+  background: var(--colour-accent-surface);
+}
+
+.matrix__row--attr {
+  background: var(--colour-surface-raised);
 }
 
 .matrix__weight {
@@ -1497,10 +1581,20 @@ select.field__control {
 }
 
 /* Above the tint layer, which is absolutely positioned under everything in the cell. */
+.matrix__cell-head,
 .matrix__score,
 .matrix__delta,
 .matrix__track {
   position: relative;
+}
+
+/* The figure and its signed gap on one line, right-aligned so a column of them lines up on the
+   decimal rather than drifting with the width of each number. */
+.matrix__cell-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .matrix__score {
@@ -1523,24 +1617,76 @@ select.field__control {
   color: var(--colour-danger);
 }
 
+/* A gap too small to colour, and the baseline column: muted, so the eye passes over it. Written
+   after the direction colours so it wins over them for a cell that is barely apart. */
+.matrix__delta--level,
+.matrix__delta--faint {
+  color: var(--colour-text-muted);
+  font-weight: var(--weight-normal);
+}
+
+/* A gap at the top of the range: heavier, and a shade deeper, so the strongest claims read as
+   the strongest. The compound selector keeps the direction's hue while deepening it. */
+.matrix__delta--strong {
+  font-weight: 700;
+}
+
+.matrix__delta--ahead.matrix__delta--strong {
+  color: var(--colour-success-deep);
+}
+
+.matrix__delta--behind.matrix__delta--strong {
+  color: var(--colour-danger-deep);
+}
+
+/* **The track is the thing the bar is read against**, so it has to be visible in its own right:
+   a pale channel with a centre line, on which a short bar reads as "barely ahead" rather than
+   as "nearly nothing". A relative box holding an absolute tick and an absolute bar. */
 .matrix__track {
-  display: block;
+  position: relative;
   width: 100%;
-  height: 6px;
+  height: 8px;
   margin-top: 2px;
+  border-radius: var(--radius-small);
+  background: var(--colour-track);
+  overflow: visible;
 }
 
-/* The centre line. Without it a short bar reads as "nearly nothing" rather than as "barely
-   ahead", and those are different answers. */
+.matrix__track--compact {
+  height: 7px;
+}
+
+/* The centre line, taller than the track so it reads as a fixed zero the bars grow from. Its
+   position is fixed, not data, so it stays in CSS rather than becoming an SVG attribute. */
 .matrix__tick {
-  fill: var(--colour-border-strong);
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--colour-tick);
 }
 
-.matrix__fill--ahead {
+.matrix__track--compact .matrix__tick {
+  top: -2px;
+  bottom: -2px;
+}
+
+/* The bar fills the track; only its start and width are data, carried as SVG geometry. */
+.matrix__bar {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.matrix__bar-fill--ahead {
   fill: var(--colour-success-bar);
 }
 
-.matrix__fill--behind {
+.matrix__bar-fill--behind {
   fill: var(--colour-danger-bar);
 }
 
@@ -3615,4 +3761,21 @@ select.field__control {
   margin: 0;
   font-size: 12px;
   color: var(--colour-text-muted);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════
+   Comparison-matrix tokens
+
+   Three values the design uses only inside the Compare matrix, declared here rather than up
+   with the palette so a reader meets them beside the rules that use them. **The track and the
+   tick are a separate pair from the border greys**: the design draws the bar channel a shade
+   cooler than a hairline (`#eff1f4`) and the centre tick a step darker than it (`#98a2b3`), so
+   a bar sitting on the channel has something to read against. The deep success green is the
+   partner of the existing `--colour-danger-deep`: the colour a gap's text takes when the gap
+   is at the top of the range and the ordinary status green would be too light to carry weight.
+   ══════════════════════════════════════════════════════════════════════════════════════ */
+:root {
+  --colour-track: #eff1f4;
+  --colour-tick: #98a2b3;
+  --colour-success-deep: #05603a;
 }

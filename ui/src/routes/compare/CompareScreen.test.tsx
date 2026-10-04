@@ -11,6 +11,10 @@ import { renderShell } from "../../testing/renderShell";
  * What these tests hold is that **the screen prints the server's judgement**: the deltas, what
  * each is worth, and the sentences of the synthesis all arrive from the API. A comparison
  * assembled here would be a second opinion nobody asked for (`arch.md` 8.1).
+ *
+ * **The attributes live inside the matrix now**, not in a flat table below it: a pillar row
+ * opens in place to show the figures that made its score, which is why the attribute tests
+ * open a pillar first.
  */
 
 const BASE = "/v1";
@@ -28,6 +32,11 @@ async function compare(focus: string, comparator: string) {
     await screen.findByRole("checkbox", { name: comparator }),
   );
   await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+}
+
+/** Open a pillar row to reveal the attributes beneath it. The pillar name is the button. */
+async function openPillar(name: string) {
+  await userEvent.click(await screen.findByRole("button", { name }));
 }
 
 describe("choosing what to compare", () => {
@@ -87,32 +96,29 @@ describe("when the level changes underneath", () => {
     renderShell("/compare");
     await compare("Portugal", "Netherlands");
     expect(
-      await screen.findByRole("table", { name: /every attribute/i }),
+      await screen.findByRole("table", { name: /every pillar/i }),
     ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "City" }));
 
     expect(await screen.findByLabelText(/focus/i)).toHaveValue("");
     expect(
-      screen.queryByRole("table", { name: /every attribute/i }),
+      screen.queryByRole("table", { name: /every pillar/i }),
     ).toBeNull();
   });
 });
 
 describe("the comparison", () => {
-  it("shows each attribute with both sides and what the gap is worth", async () => {
+  it("heads each pair with the score difference", async () => {
     renderShell("/compare");
 
     await compare("Portugal", "Netherlands");
 
-    const table = await screen.findByRole("table", {
-      name: /every attribute/i,
-    });
-    const row = within(table).getByRole("row", {
-      name: /cost of living index/i,
-    });
-    expect(within(row).getByText("82")).toBeInTheDocument();
-    expect(row).toHaveTextContent("+4.9 points");
+    // The card names the comparator; the difference sits beside the name rather than inside
+    // it, so the heading reads as a place and the number reads as a number.
+    const card = (await screen.findByRole("heading", { name: "Netherlands" }))
+      .closest("section")!;
+    expect(within(card).getByText("+7.0")).toBeInTheDocument();
   });
 
   it("prints the synthesis the server templated, in its order", async () => {
@@ -156,18 +162,6 @@ describe("the comparison", () => {
     expect(behind[0]).toHaveTextContent("#2");
   });
 
-  it("heads each pair with the score difference", async () => {
-    renderShell("/compare");
-
-    await compare("Portugal", "Netherlands");
-
-    // The card names the comparator; the difference sits beside the name rather than inside
-    // it, so the heading reads as a place and the number reads as a number.
-    const card = (await screen.findByRole("heading", { name: "Netherlands" }))
-      .closest("section")!;
-    expect(within(card).getByText("+7.0")).toBeInTheDocument();
-  });
-
   it("reports a refusal from the server rather than showing an empty table", async () => {
     mockServer.use(
       http.get(`${BASE}/comparisons`, () =>
@@ -187,6 +181,179 @@ describe("the comparison", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /more than the limit/i,
     );
+  });
+});
+
+describe("the pillar matrix", () => {
+  it("names the heaviest pillars as priorities, by weight", async () => {
+    renderShell("/compare");
+
+    await compare("Portugal", "Netherlands");
+
+    // Economics carries the most weight in the fixture (25%), so its row is marked first.
+    const economy = (await screen.findByRole("button", { name: "Economy" })).closest("tr")!;
+    expect(economy).toHaveTextContent("#1 priority");
+  });
+
+  it("draws a bar for a real gap between the totals", async () => {
+    renderShell("/compare");
+
+    await compare("Portugal", "Netherlands");
+
+    // Portugal 78 against the Netherlands' 71 is a seven-point gap, so the total row carries a
+    // signed delta beside the score rather than only a bar that jsdom cannot measure.
+    const table = await screen.findByRole("table", { name: /every pillar/i });
+    const total = within(table).getByRole("row", { name: /total score/i });
+    expect(total).toHaveTextContent("71");
+    expect(total).toHaveTextContent("−7");
+  });
+});
+
+describe("opening a pillar to its attributes", () => {
+  it("shows the pillar's attributes only once it is opened", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    await screen.findByRole("button", { name: "Economy" });
+
+    expect(screen.queryByRole("row", { name: /cost of living index/i })).toBeNull();
+
+    await openPillar("Economy");
+
+    expect(
+      await screen.findByRole("row", { name: /cost of living index/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("closes the pillar again when it is clicked once more", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+
+    await openPillar("Economy");
+    await screen.findByRole("row", { name: /cost of living index/i });
+
+    await openPillar("Economy");
+
+    expect(screen.queryByRole("row", { name: /cost of living index/i })).toBeNull();
+  });
+
+  it("shows both sides of an attribute inside the opened pillar", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    await openPillar("Economy");
+
+    const row = await screen.findByRole("row", {
+      name: /cost of living index/i,
+    });
+    // The focus's score and the comparator's, both as normalised points by default.
+    expect(within(row).getByText("82")).toBeInTheDocument();
+    expect(within(row).getByText("41")).toBeInTheDocument();
+  });
+
+  it("leaves a pillar with no attributes as plain text, not a control", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+
+    // Safety is a pillar the focus was scored on, but the fixture gives it no attributes, so
+    // there is nothing to open and no button -- the name is there as a label only.
+    expect(await screen.findByText("Safety")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Safety" })).toBeNull();
+  });
+
+  it("keeps only one pillar open at a time", async () => {
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, () =>
+        HttpResponse.json(twoPillarComparison()),
+      ),
+    );
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+
+    await openPillar("Economy");
+    expect(
+      await screen.findByRole("row", { name: /cost of living index/i }),
+    ).toBeInTheDocument();
+
+    await openPillar("Housing");
+
+    // Opening Housing closes Economy: the drill-down is about one pillar at a time.
+    expect(
+      await screen.findByRole("row", { name: /rent to income/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("row", { name: /cost of living index/i })).toBeNull();
+  });
+});
+
+describe("the attribute figures inside a pillar", () => {
+  it("shows scores until asked for figures", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Spain");
+    await openPillar("Economy");
+
+    const row = await screen.findByRole("row", {
+      name: /cost of living index/i,
+    });
+    expect(row).toHaveTextContent("82");
+    expect(row).not.toHaveTextContent("92.1");
+  });
+
+  it("switches the attribute rows to the figure in its own unit", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Spain");
+    await openPillar("Economy");
+    await screen.findByRole("row", { name: /cost of living index/i });
+
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+
+    const row = screen.getByRole("row", { name: /cost of living index/i });
+    expect(row).toHaveTextContent("92.1 EU27 = 100");
+    expect(row).toHaveTextContent("105.5 EU27 = 100");
+  });
+
+  /** `delta` is documented as being in the attribute's own unit, so it belongs here. */
+  it("shows the gap in the attribute's unit rather than in points", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Spain");
+    await openPillar("Economy");
+    await screen.findByRole("row", { name: /cost of living index/i });
+
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+
+    const row = screen.getByRole("row", { name: /cost of living index/i });
+    expect(row).toHaveTextContent("-13.4");
+    expect(row).not.toHaveTextContent("points");
+  });
+
+  it("goes back to scores when asked", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Spain");
+    await openPillar("Economy");
+    await screen.findByRole("row", { name: /cost of living index/i });
+
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+    await userEvent.click(screen.getByRole("radio", { name: /score 0.*100/i }));
+
+    const row = screen.getByRole("row", { name: /cost of living index/i });
+    expect(row).toHaveTextContent("82");
+    expect(row).not.toHaveTextContent("92.1");
+  });
+
+  it("says nothing rather than zero where a figure is missing", async () => {
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, () =>
+        HttpResponse.json(missingFigureComparison()),
+      ),
+    );
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    await openPillar("Economy");
+    await screen.findByRole("row", { name: /cost of living index/i });
+
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+
+    const row = screen.getByRole("row", { name: /cost of living index/i });
+    // The focus has its figure; the comparator, which the server gave no value, reads absent.
+    expect(row).toHaveTextContent("92.1 EU27 = 100");
+    expect(within(row).getAllByText("—").length).toBeGreaterThan(0);
   });
 });
 
@@ -233,7 +400,7 @@ describe("when a comparison cannot be drawn", () => {
     expect(screen.getByRole("button", { name: /^compare$/i })).toBeDisabled();
   });
 
-  it("shows a dash where a side has no figure", async () => {
+  it("shows a dash where a comparator has no score at all", async () => {
     mockServer.use(
       http.get(`${BASE}/comparisons`, () =>
         HttpResponse.json({
@@ -245,6 +412,9 @@ describe("when a comparison cannot be drawn", () => {
             score: 78,
             coverage: 92,
             match_status: "matching",
+            pillar_scores: [
+              { pillar: "economics", score: 81, weight: 25, contribution: 20.25 },
+            ],
           },
           comparators: [
             {
@@ -255,20 +425,7 @@ describe("when a comparison cannot be drawn", () => {
               match_status: "insufficient_data",
             },
           ],
-          attributes: [
-            {
-              attribute: "country.broadband_coverage",
-              pillar: "connectivity",
-              focus: { normalised_score: null },
-              comparators: [
-                {
-                  candidate: "country.netherlands",
-                  normalised_score: null,
-                  delta: null,
-                },
-              ],
-            },
-          ],
+          attributes: [],
           synthesis: [
             {
               comparator: "country.netherlands",
@@ -284,86 +441,13 @@ describe("when a comparison cannot be drawn", () => {
 
     await compare("Portugal", "Netherlands");
 
-    const table = await screen.findByRole("table", {
-      name: /every attribute/i,
-    });
-    const row = within(table).getByRole("row", { name: /broadband/i });
-    expect(within(row).getAllByText("—").length).toBeGreaterThan(0);
+    const table = await screen.findByRole("table", { name: /every pillar/i });
+    const total = within(table).getByRole("row", { name: /total score/i });
+    expect(within(total).getAllByText("—").length).toBeGreaterThan(0);
     const card = screen
       .getByRole("heading", { name: "Netherlands" })
       .closest("section")!;
     expect(within(card).getAllByText("—").length).toBeGreaterThan(0);
-  });
-});
-
-/**
- * UX review F. `ComparisonAttributeRow` carries the whole `Value` for the focus and for every
- * comparator, alongside the normalised score, and a `delta` documented as being in the
- * attribute's own unit. All of it was served and none of it was shown.
- */
-describe("raw figures", () => {
-  it("shows scores until asked for figures", async () => {
-    renderShell("/compare");
-    await compare("Portugal", "Spain");
-
-    const row = await screen.findByRole("row", {
-      name: /cost of living index/i,
-    });
-    expect(row).toHaveTextContent("82");
-    expect(row).not.toHaveTextContent("92.1");
-  });
-
-  it("switches the attribute rows to the figure in its own unit", async () => {
-    renderShell("/compare");
-    await compare("Portugal", "Spain");
-    await screen.findByRole("row", { name: /cost of living index/i });
-
-    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
-
-    const row = screen.getByRole("row", { name: /cost of living index/i });
-    expect(row).toHaveTextContent("92.1 EU27 = 100");
-    expect(row).toHaveTextContent("105.5 EU27 = 100");
-  });
-
-  /** `delta` is documented as being in the attribute's own unit, so it belongs here. */
-  it("shows the gap in the attribute's unit rather than in points", async () => {
-    renderShell("/compare");
-    await compare("Portugal", "Spain");
-    await screen.findByRole("row", { name: /cost of living index/i });
-
-    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
-
-    const row = screen.getByRole("row", { name: /cost of living index/i });
-    expect(row).toHaveTextContent("-13.4");
-    expect(row).not.toHaveTextContent("points");
-  });
-
-  /** A comparator with no figure must read as absent, never as a zero. */
-  it("says nothing rather than zero where a figure is missing", async () => {
-    renderShell("/compare");
-    await compare("Portugal", "Spain");
-    await screen.findByRole("row", { name: /coastline access/i });
-
-    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
-
-    const row = screen.getByRole("row", { name: /coastline access/i });
-    expect(row).toHaveTextContent("1793 km");
-    expect(row).toHaveTextContent("—");
-  });
-
-  it("goes back to scores when asked", async () => {
-    renderShell("/compare");
-    await compare("Portugal", "Spain");
-    await screen.findByRole("row", { name: /cost of living index/i });
-
-    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
-    await userEvent.click(
-      screen.getByRole("radio", { name: /score 0.*100/i }),
-    );
-
-    const row = screen.getByRole("row", { name: /cost of living index/i });
-    expect(row).toHaveTextContent("82");
-    expect(row).toHaveTextContent("points");
   });
 });
 
@@ -407,3 +491,107 @@ describe("the comparator ceiling", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
+
+/** A focus with two pillars that both carry an attribute, for the one-open-at-a-time rule. */
+function twoPillarComparison() {
+  return {
+    criteria_set: "default",
+    level: "country",
+    focus: {
+      candidate: "country.portugal",
+      name: "Portugal",
+      score: 78,
+      coverage: 92,
+      match_status: "matching",
+      pillar_scores: [
+        { pillar: "economics", score: 81, weight: 25, contribution: 20.25 },
+        { pillar: "housing", score: 60, weight: 20, contribution: 12 },
+      ],
+    },
+    comparators: [
+      {
+        candidate: "country.netherlands",
+        name: "Netherlands",
+        score: 71,
+        coverage: 88,
+        match_status: "matching",
+        pillar_scores: [
+          { pillar: "economics", score: 74, weight: 25, contribution: 18.5 },
+          { pillar: "housing", score: 70, weight: 20, contribution: 14 },
+        ],
+      },
+    ],
+    attributes: [
+      {
+        attribute: "country.cost_of_living_index",
+        pillar: "economics",
+        focus: { normalised_score: 82 },
+        comparators: [
+          { candidate: "country.netherlands", normalised_score: 41, delta: -13.4 },
+        ],
+      },
+      {
+        attribute: "country.rent_to_income",
+        pillar: "housing",
+        focus: { normalised_score: 55 },
+        comparators: [
+          { candidate: "country.netherlands", normalised_score: 62, delta: 3.1 },
+        ],
+      },
+    ],
+    synthesis: [],
+  };
+}
+
+/** A focus whose economics attribute has a figure the comparator does not. */
+function missingFigureComparison() {
+  return {
+    criteria_set: "default",
+    level: "country",
+    focus: {
+      candidate: "country.portugal",
+      name: "Portugal",
+      score: 78,
+      coverage: 92,
+      match_status: "matching",
+      pillar_scores: [
+        { pillar: "economics", score: 81, weight: 25, contribution: 20.25 },
+      ],
+    },
+    comparators: [
+      {
+        candidate: "country.netherlands",
+        name: "Netherlands",
+        score: 71,
+        coverage: 88,
+        match_status: "matching",
+        pillar_scores: [
+          { pillar: "economics", score: 74, weight: 25, contribution: 18.5 },
+        ],
+      },
+    ],
+    attributes: [
+      {
+        attribute: "country.cost_of_living_index",
+        pillar: "economics",
+        focus: {
+          normalised_score: 82,
+          value: {
+            data_source: "numbeo",
+            payload: { magnitude: 92.1, unit: "index_eu27_100" },
+            retrieval_date: "2026-01-01",
+          },
+        },
+        comparators: [
+          {
+            candidate: "country.netherlands",
+            normalised_score: null,
+            delta: null,
+            // No `value`: a comparator with no figure must read as absent, not as a zero.
+          },
+        ],
+      },
+    ],
+    synthesis: [],
+  };
+}

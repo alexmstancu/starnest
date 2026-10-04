@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pillarMatrix, type Compared } from "./pillarMatrix";
+import { pillarMatrix, pillarPriority, type Compared } from "./pillarMatrix";
 
 const focus: Compared = {
   candidate: "country.portugal",
@@ -79,6 +79,45 @@ describe("the comparison matrix", () => {
 
   it("is just the total when the focus was scored on no pillar", () => {
     expect(pillarMatrix({ ...focus, pillar_scores: null }, [ahead])).toHaveLength(1);
+  });
+
+  it("carries each pillar's id, so its attributes can be grouped under it", () => {
+    const [total, economics, housing] = pillarMatrix(focus, [ahead]);
+    // The total is not a pillar, so it has no id to group anything under.
+    expect(total?.pillar).toBeNull();
+    expect(economics?.pillar).toBe("economics");
+    expect(housing?.pillar).toBe("housing");
+  });
+});
+
+describe("which pillars the matrix marks as priorities", () => {
+  const weighted: Compared = {
+    candidate: "country.portugal",
+    name: "Portugal",
+    score: 83,
+    pillar_scores: [
+      { pillar: "economics", score: 78, weight: 25 },
+      { pillar: "housing", score: 80, weight: 10 },
+      { pillar: "safety", score: 64, weight: 18 },
+      { pillar: "career", score: 70, weight: 12 },
+    ],
+  };
+
+  it("ranks the heaviest few, heaviest first", () => {
+    const priority = pillarPriority(weighted, 3);
+    expect(priority.get("economics")).toBe(0);
+    expect(priority.get("safety")).toBe(1);
+    expect(priority.get("career")).toBe(2);
+  });
+
+  it("leaves the lighter pillars unranked rather than placing them last", () => {
+    const priority = pillarPriority(weighted, 3);
+    // Housing, at 10%, is outside the top three, so it is absent rather than ranked fourth.
+    expect(priority.has("housing")).toBe(false);
+  });
+
+  it("ranks nothing when the focus was scored on no pillar", () => {
+    expect(pillarPriority({ ...weighted, pillar_scores: null }).size).toBe(0);
   });
 });
 

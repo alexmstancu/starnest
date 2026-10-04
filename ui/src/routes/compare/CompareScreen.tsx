@@ -14,16 +14,8 @@ import {
 } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
 import type { RouteDefinition } from "../../navigation/routes";
-import {
-  ABSENT,
-  deltaTone,
-  formatScore,
-  formatSigned,
-  attributeName,
-} from "../../format/display";
-import { describeFigure } from "../../format/figure";
+import { deltaTone, formatSigned } from "../../format/display";
 import { UnsetSetting } from "../../shell/UnsetSetting";
-import { useAttributeNames } from "../../api/useAttributeNames";
 import { useSelection } from "../../shell/SelectionContext";
 
 /**
@@ -315,7 +307,6 @@ function ComparisonTable({
   measure: Measure;
 }) {
   const comparators = comparison.comparators ?? [];
-  const attributeNames = useAttributeNames();
   return (
     <>
       <h3 className="panel__heading">
@@ -340,79 +331,16 @@ function ComparisonTable({
       ))}
       </div>
 
-      {/* **Raw figures exist per attribute, never per pillar.** A pillar is a weighted mean
-          of things measured in different units, so it has no unit of its own -- which is why
-          this toggle governs the attribute rows and the synthesis stays in points. */}
-      {/* **The matrix first, the attributes under it.** The pillars are the shape of the
-          answer; the attributes are the evidence for it, and a reader who wants the evidence
-          knows to look down. */}
-      <ComparisonMatrix comparison={comparison} measure={measure} />
-
-
-      <table className="table">
-        <caption>
-          {shownAs === "raw"
-            ? "Every attribute as published, with the gap in its own unit"
-            : "Every attribute, with the gap and what it is worth"}
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Attribute</th>
-            <th scope="col">{comparison.focus.name}</th>
-            {comparators.map((each) => (
-              <th key={each.candidate} scope="col">
-                {each.name}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {comparison.attributes.map((row) => (
-            <tr key={row.attribute}>
-              <th scope="row">{attributeName(attributeNames, row.attribute)}</th>
-              <td>
-                {shownAs === "raw"
-                  ? (row.focus?.value
-                      ? describeFigure(row.focus.value)
-                      : ABSENT)
-                  : formatScore(row.focus?.normalised_score)}
-              </td>
-              {comparators.map((each) => {
-                const cell = (row.comparators ?? []).find(
-                  (candidate) => candidate.candidate === each.candidate,
-                );
-                return (
-                  <td key={each.candidate}>
-                    {shownAs === "raw" ? (
-                      <>
-                        {cell?.value ? describeFigure(cell.value) : ABSENT}
-                        {/* `delta` is documented as being in the attribute's own unit, so it
-                            belongs with the raw figure and not beside a score. */}
-                        {cell?.delta != null && (
-                          <span className="table__note">
-                            {" "}
-                            ({formatSigned(cell.delta)})
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {formatScore(cell?.normalised_score)}
-                        {cell?.weighted_contribution != null && (
-                          <span className="table__note">
-                            {" "}
-                            ({formatSigned(cell.weighted_contribution)} points)
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* **The pillars are the whole table, and each opens to its own attributes.** The
+          matrix is the answer; the evidence for a pillar lives under the pillar, not in a
+          second table below -- so `shownAs` reaches the attribute rows that the toggle
+          governs, while the pillar rows above them stay in points, having no unit of their
+          own (a pillar is a weighted mean of figures measured in different ones). */}
+      <ComparisonMatrix
+        comparison={comparison}
+        measure={measure}
+        shownAs={shownAs}
+      />
     </>
   );
 }
