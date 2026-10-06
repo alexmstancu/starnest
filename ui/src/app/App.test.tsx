@@ -183,6 +183,28 @@ describe("the sidebar counts and last run", () => {
     expect(counts.getByText("Insufficient data").nextSibling).toHaveTextContent("1");
   });
 
+  it("names the home country and citizenships, never their candidate ids", async () => {
+    renderShell("/rank");
+
+    const household = within(
+      await screen.findByRole("region", { name: /household summary/i }),
+    );
+    // The mock household lives in country.romania and holds a Romanian passport. The card used
+    // to print "country.romania" -- the programmatic id the rest of the app was taught not to
+    // show -- rather than "Romania", read from the shared candidate roster.
+    await waitFor(() =>
+      expect(
+        household.getByText("Home country candidate").nextSibling,
+      ).toHaveTextContent("Romania"),
+    );
+    expect(
+      household.getByText("Home country candidate").nextSibling,
+    ).not.toHaveTextContent("country.romania");
+    expect(household.getByText("Citizenships").nextSibling).toHaveTextContent(
+      "Romania",
+    );
+  });
+
   it("summarises the most recent run and links to the history", async () => {
     renderShell("/rank");
 

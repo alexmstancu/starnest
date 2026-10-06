@@ -6,9 +6,11 @@ import {
   fetchHousehold,
 } from "../api/endpoints";
 import { useResource } from "../api/useResource";
+import { useCandidateNames } from "../api/useCandidateNames";
 import { useAppConfig } from "../config/AppConfigContext";
 import {
   ABSENT,
+  candidateName,
   formatCount,
   formatDateTime,
   formatIdentifier,
@@ -179,6 +181,10 @@ function HouseholdCard() {
   const { resource, reload } = useResource(
     useCallback((signal: AbortSignal) => fetchHousehold({ signal }), []),
   );
+  // **The home country and the passports are candidate ids** -- `country.romania` -- and the
+  // card was printing them raw, the same programmatic identifier the rest of the app was
+  // taught not to show. The names come from the shared roster, fetched once.
+  const candidateNames = useCandidateNames();
 
   return (
     <section
@@ -227,14 +233,23 @@ function HouseholdCard() {
           />
           <Stat
             label={HOUSEHOLD_LABELS.home_country_candidate}
-            value={resource.data.home_country_candidate ?? ABSENT}
+            value={
+              resource.data.home_country_candidate === null
+                ? ABSENT
+                : candidateName(
+                    candidateNames,
+                    resource.data.home_country_candidate,
+                  )
+            }
           />
           <Stat
             label={HOUSEHOLD_LABELS.citizenships}
             value={
               resource.data.citizenships.length === 0
                 ? ABSENT
-                : resource.data.citizenships.join(", ")
+                : resource.data.citizenships
+                    .map((id) => candidateName(candidateNames, id))
+                    .join(", ")
             }
           />
         </dl>
