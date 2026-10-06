@@ -47,7 +47,12 @@ ANOTHER_CANDIDATE = "country.romania"
 A_PERIOD = ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 12, 31))
 RETRIEVED = datetime(2026, 7, 1, 9, 30, tzinfo=UTC)
 
-A_MONETARY_ATTRIBUTE = "country.child_benefit_policy"
+# **A test-only Monetary attribute, created by the fixture below.** It used to be
+# `country.child_benefit_policy`, the catalog's one Monetary attribute -- until 0492 retyped
+# it to a Quantity (it is a % of the wage, which no Monetary source publishes), leaving the
+# catalog with none. A payload round-trip proves the storage layer, not the catalog, so it
+# should not rest on which attribute happens to carry a type today.
+A_MONETARY_ATTRIBUTE = "country.test_monetary"
 A_QUANTITY_ATTRIBUTE = "country.average_working_hours"
 A_COUNT_ATTRIBUTE = "country.tech_software_jobs"
 A_RATIO_ATTRIBUTE = "country.tech_employment_share"
@@ -57,6 +62,23 @@ AN_ASSIGNED_SCORE_ATTRIBUTE = "country.pension_portability"
 
 A_BETTER_SOURCE = "eurostat"
 A_WORSE_SOURCE = "numbeo"
+
+
+@pytest.fixture(autouse=True)
+async def a_monetary_attribute(pool: AsyncConnectionPool) -> None:
+    """A Monetary attribute for the payload round-trip, since the catalog no longer ships one.
+
+    Inserted rather than borrowed: `value_matches_attribute_type` requires the attribute to
+    declare Monetary before a Monetary value may reference it, and 0492 left no catalog
+    attribute that does.
+    """
+    async with pool.connection() as connection:
+        await connection.execute(
+            "INSERT INTO attribute (id, level, value_type, name, pillar) "
+            "VALUES (%s, 'country', 'Monetary', 'Test monetary attribute', 'family') "
+            "ON CONFLICT (id) DO NOTHING",
+            (A_MONETARY_ATTRIBUTE,),
+        )
 
 
 @pytest.fixture

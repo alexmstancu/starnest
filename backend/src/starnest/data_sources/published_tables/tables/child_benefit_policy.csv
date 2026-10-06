@@ -1,0 +1,42 @@
+# data_source: oecd
+# attribute: country.child_benefit_policy
+# publication: OECD Family Database, Chart PF1.3.A
+# publisher_url: https://www.oecd.org/en/data/datasets/family-database.html
+# transcribed_on: 2026-10-06
+# confidence: high
+# period: the chart's own subtitle says "as a % of average full-time earnings (AW), 2023", so every figure describes benefits in force in 2023 rather than the year the workbook was downloaded.
+# route: OECD publishes PF1.3 as a workbook, so this was extracted from the publisher's own file rather than read off a page -- hence high confidence. The two-parent two-earner series (both at the median, column 15 of Chart PF1.3.A), read by openpyxl and rounded to two decimals. The household chose this family type on 2026-10-06 over the single-parent and single-earner series the chart also publishes; a figure can carry only one, and the two-earner case is the most representative household.
+# scale: total family cash benefits for a two-child family, as a percentage of average full-time earnings. OECD's own tax-benefit model output, not a computation of ours. It replaces the attribute's original Monetary "EUR/month per child" declaration, which no source publishes per country in a scriptable form (migration 0492) -- the cost_of_living fault of 0443 again: a type its own source does not supply.
+# coverage: 31 of 32. The chart covers the five EU non-members OECD membership data omits (Bulgaria, Croatia, Cyprus, Malta, Romania); Liechtenstein is absent and is left unanswered rather than filled in, matching oecd_parental_leave.
+country_code,figure,period,page,workings
+AT,9.75,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 9.75% of average full-time earnings
+BE,8.14,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 8.14% of average full-time earnings
+BG,5.61,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 5.61% of average full-time earnings
+CH,5.56,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 5.56% of average full-time earnings
+CY,4.3,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 4.3% of average full-time earnings
+CZ,8.73,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 8.73% of average full-time earnings
+DE,9.93,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 9.93% of average full-time earnings
+DK,5.1,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 5.1% of average full-time earnings
+EE,8.51,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 8.51% of average full-time earnings
+ES,4.56,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 4.56% of average full-time earnings
+FI,4.56,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 4.56% of average full-time earnings
+FR,3.87,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 3.87% of average full-time earnings
+GB,4.33,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 4.33% of average full-time earnings
+GR,2.79,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 2.79% of average full-time earnings
+HR,0.0,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 0.0% of average full-time earnings
+HU,4.37,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 4.37% of average full-time earnings
+IE,5.7,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 5.7% of average full-time earnings
+IS,2.64,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 2.64% of average full-time earnings
+IT,16.12,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 16.12% of average full-time earnings
+LT,8.64,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 8.64% of average full-time earnings
+LU,12.25,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 12.25% of average full-time earnings
+LV,6.52,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 6.52% of average full-time earnings
+MT,4.31,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 4.31% of average full-time earnings
+NL,6.56,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 6.56% of average full-time earnings
+NO,3.48,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 3.48% of average full-time earnings
+PL,14.63,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 14.63% of average full-time earnings
+PT,3.44,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 3.44% of average full-time earnings
+RO,7.06,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 7.06% of average full-time earnings
+SE,6.16,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 6.16% of average full-time earnings
+SI,5.18,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 5.18% of average full-time earnings
+SK,8.35,2023,https://webfs.oecd.org/els-com/Family_Database/PF1_3_Family_Cash_Benefits.xlsx,Chart PF1.3.A two-parent two-earner (both at median): 8.35% of average full-time earnings

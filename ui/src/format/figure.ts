@@ -31,6 +31,7 @@ const READABLE_UNIT: Record<string, string> = {
   km_per_1000_km2: "km per 1,000 km²",
   ladder_points: "ladder points",
   metre: "m",
+  pct_of_average_wage: "% of average wage",
   per_100000_population: "per 100,000",
   percent_per_year: "% per year",
   pisa_points: "PISA points",
