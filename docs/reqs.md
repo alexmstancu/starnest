@@ -2085,7 +2085,9 @@ harder"; a gate says "not without being sponsored or winning a draw", which is w
 catalog already holds `eu_free_movement`, `uk_skilled_worker` and `ch_eu_efta_quota` as
 country-level `match_rule` rows -- **declared, enforced by no criteria set, and answered for no
 candidate**, which is the designed state for an undecided rule. Enforcing and answering them is
-the household's decision; a Liechtenstein quota gate is the one row missing.
+the household's decision. The Liechtenstein quota gate was the one row missing; migration 0493
+adds it as `li_eea_quota`, in the same declared-but-unenforced state, so the two country-level
+quota outliers are now both gate-shaped rows rather than one of them.
 
 **An AssignedScore cannot be transcribed, and that is deliberate.** Both attributes carry
 `manual_entry = true`, and the published-table adapter accepts `Index`, `Quantity` and `Ratio`
@@ -2660,6 +2662,7 @@ not matching regardless of score** — and stays visible, with its score, showin
 | `eu_free_movement` | country | The candidate is an EU or EEA state, and the household's `citizenship` (section 3.9) carries free movement there. Automatic while that citizenship is EU | Definitional, from the descriptive attributes (section 3.3) |
 | `uk_skilled_worker` | country | A realistic Skilled Worker route exists: sponsorship available in the local market, or the salary threshold met | Manual, LLM-assisted (section 6.9) |
 | `ch_eu_efta_quota` | country | The annual Swiss EU/EFTA permit quota has capacity for this household | Manual, LLM-assisted (section 6.9) |
+| `li_eea_quota` | country | The annual Liechtenstein EEA residence-permit quota (a minimum of 56 a year under the EEA Agreement's sectoral adaptation) has capacity for this household | Manual, LLM-assisted (section 6.9) |
 | `not_manually_excluded` | both | You have not ruled this candidate out by hand. The seeded country list is broad by design (section 6.1), and pruning it is a **preference**: `alex` may enforce this rule while `partner` does not, and the excluded candidate stays visible with its score and your stated reason | Manual |
 | `two_role_feasibility` | **city** | The local market can plausibly support **two** tech roles — engineering *and* product | **Manual** for now — you judge each city. Becomes derived from `city.tech_software_jobs` and `city.tech_product_jobs` against a configurable floor once those have a source (section 9) |
 
