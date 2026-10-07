@@ -2083,11 +2083,13 @@ Liechtenstein's is a **quota** (the EEA Agreement's sectoral adaptation grants *
 new residence permits"* a year). Scoring them 0 and 30 on a 15%-weighted criterion says "somewhat
 harder"; a gate says "not without being sponsored or winning a draw", which is what is true. The
 catalog already holds `eu_free_movement`, `uk_skilled_worker` and `ch_eu_efta_quota` as
-country-level `match_rule` rows -- **declared, enforced by no criteria set, and answered for no
-candidate**, which is the designed state for an undecided rule. Enforcing and answering them is
-the household's decision. The Liechtenstein quota gate was the one row missing; migration 0493
-adds it as `li_eea_quota`, in the same declared-but-unenforced state, so the two country-level
-quota outliers are now both gate-shaped rows rather than one of them.
+country-level `match_rule` rows, **armed on the `local_employment` set (`0104`) but answered for
+no candidate** -- a gate fires only when it is both enforced and answered, so an armed, unanswered
+gate rules nothing out. Which gates a set arms, and how each is answered, are the household's
+decision. The Liechtenstein quota gate was the one row missing; migration `0493` adds it as
+`li_eea_quota` and `0494` arms it on `local_employment` for parity with `ch_eu_efta_quota`, its
+direct analog, so the two country-level quota outliers are now both gate-shaped rows, armed and
+awaiting an answer, rather than one of them.
 
 **An AssignedScore cannot be transcribed, and that is deliberate.** Both attributes carry
 `manual_entry = true`, and the published-table adapter accepts `Index`, `Quantity` and `Ratio`
