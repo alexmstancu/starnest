@@ -17,9 +17,9 @@ export interface HasPayload {
  *
  * The payload carries the unit as the key it is stored under -- `per_100000_population`,
  * `eu27_average_100` -- and printing that is the "no programmatic identifiers in rendered text"
- * rule broken one field deeper than the attribute name. Thirteen units ship; a token with no
- * entry falls back to its words rather than its underscores, so a new one reads tolerably until
- * it is given a line here.
+ * rule broken one field deeper than the attribute name. The units that ship are listed below; a
+ * token with no entry falls back to its words rather than its underscores, so a new one reads
+ * tolerably until it is given a line here.
  */
 const READABLE_UNIT: Record<string, string> = {
   celsius: "°C",

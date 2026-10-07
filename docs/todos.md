@@ -107,8 +107,14 @@ still worth having; it is not the only ceiling.
       *the same figure came back*.
 - [ ] **"Refetch data older than N days."** The design's stage 6 offers a global knob we do not
       model: staleness is per-attribute `max_age` (`reqs.md` 7.1). Decide before building.
-- [ ] **The hand-entry form behind "Enter a value by hand."** `POST /values/manual` is served
-      and waiting; what it needs is a payload editor per value type. Parked by the design too.
+- [x] **The hand-entry form behind "Enter a value by hand."** Done in the second design sync
+      (2026-09-21) and verified still complete 2026-10-07. `RunScreen` -> `OpenToHandEntry` ->
+      `ManualEntryPanel`, with the pure builder in `manualEntry.ts`. **Not "a payload editor per
+      value type" after all** -- it has editors for the two types any `manual_entry` attribute
+      actually declares, `LabelSet` and `AssignedScore`. The catalog's five manual-entry
+      attributes are two of each plus `naturalisation_pathway`, a `Quantity` that already carries
+      32 sourced figures and so is never hand-typed. An editor for the other eight types would be,
+      in the module's own words, a form nobody can open. 18 + 95 tests cover it.
 - [x] **A saved evaluation cannot be deleted.** Still true, and still on purpose -- a saved
       evaluation is a measurement somebody chose to keep, and the protection is the absent
       operation. Done 2026-09-24: **a test chose nothing**, so the browser suite prefixes its
