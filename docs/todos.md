@@ -105,15 +105,16 @@ still worth having; it is not the only ceiling.
       predicted. Extended 2026-09-23 with the Earlier and Later figures, which is what let
       "refreshed" split from "unchanged" -- one word that meant both *the figure moved* and
       *the same figure came back*.
-- [x] **"Refetch data older than N days."** **Decided 2026-10-08: deferred, and the
-      per-attribute model kept.** The design's stage 6 offers a global "older than N days" knob;
-      our staleness is already per-attribute `max_age` (`reqs.md` 7.1), derived from each source's
-      publication interval -- which is the more honest model, because an annual index and a daily
-      weather figure go stale on different clocks and one global N would either re-fetch fresh
-      annual data or leave daily data stale. A run already re-asks exactly what has aged past its
-      own `max_age`, so the global knob is a worse model of a thing we already do and is not built.
-      Revisit only for a *force a re-fetch of still-fresh data* feature, which is manual refresh --
-      a different thing, and post-MVP.
+- [x] **"Refetch data older than N days."** **Decided 2026-10-08: the mechanism exists; only a UI
+      control is deferred.** (Correcting an earlier wrong rationale here, caught in review.) The
+      global "older than N days" knob **is built** at the storage + planner level:
+      `settings.refetch_older_than_days` (`0481`) and `freshness.still_fresh_everywhere` skip an
+      attribute a run fetched more recently than that age. It ships `NULL`, which means "refetch
+      everything" -- today's behaviour. It governs **re-fetching only**; which figure *scores* is
+      `attribute.max_age` (`reqs.md` 7.1), a separate job, as `0481`'s own comment states. So what is
+      actually deferred is just the **UI control** to set the value -- an admin-ish tuning setting,
+      post-MVP -- not the capability. (The design's stage-6 global knob therefore matches what the
+      backend already models, rather than contradicting the per-attribute `max_age`.)
 - [x] **The hand-entry form behind "Enter a value by hand."** Done in the second design sync
       (2026-09-21) and verified still complete 2026-10-07. `RunScreen` -> `OpenToHandEntry` ->
       `ManualEntryPanel`, with the pure builder in `manualEntry.ts`. **Not "a payload editor per
