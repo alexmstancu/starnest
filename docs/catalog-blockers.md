@@ -1,5 +1,21 @@
 # What is blocked in the catalog rather than at the source
 
+> ## Coverage at MVP close — 2026-10-08
+>
+> Every remaining gap now has a recorded decision, which is what "closed" means for a
+> data-quality product: not that every figure is sourced, but that no gap is pending a judgement.
+> In one place:
+>
+> | Pillar gap | Decision | Where |
+> |---|---|---|
+> | **Housing** | **Resolved.** `house_price_to_income_ratio` retired and its weight moved to `housing_price_level` (Eurostat price level for rent, water and energy, EU27 = 100, 30 of 32 directly + Liechtenstein from Switzerland). | `0488`, item 3 below |
+> | **Nature** (`elevation_range`, `coastline_access`) | **Postponed to the city/DEM work.** No reliable per-country publisher survives -- the CIA World Factbook was discontinued February 2026 and Wikidata is wrong for exactly this -- so the living route is a Copernicus-DEM / EEA computation, which is city-adjacent. | known-issues P39 |
+> | **Family** | **Accepted gap, not dropped.** The data is OECD's and OECD serves scripts an intermittent Cloudflare challenge. The pillar keeps its weight and its attributes; the shortfall shows honestly in `coverage_by_confidence` rather than being hidden by removing the pillar. | item 5 below, known-issues P6 |
+> | **Climate projection** (`projected_summer_heat_days`) | **Buildable now.** The Copernicus adapter ships and is wired into the composition root; the figure lands on the first `make live` once a `CDS_API_KEY` is set, and `0495` already scores it by standing. | `0495`, `data_sources/copernicus/` |
+>
+> Nothing above is pending a decision. Coverage sits at ~80-84% per candidate, and the ~14-16%
+> unsourced is the sum of these four rows, each by choice.
+
 > ## Update 2026-09-11 — the last two blocking attributes, verified against OECD
 >
 > **Neither can be answered as the catalog specifies it, and `reqs.md` 7.5's own rule says

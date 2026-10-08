@@ -496,9 +496,10 @@ red.
   does not cover a scored criterion would raise on a NULL pillar. Both unreachable today.
 - **Re-fetching an external score stores a second row and both are served**, while
   `append_external_score` claims a current edition is derived. Nothing derives it.
-- **Documentation drift**: `CLAUDE.md` says the contract has 40 operations where both files now
-  hold 42, and `pyproject.toml` still explains a 75% coverage bar that was raised to 85 on
-  2026-09-05.
+- ~~**Documentation drift**~~ **Fixed 2026-10-08.** `CLAUDE.md` now says 45 operations (both
+  contract files hold 45, in exact step), and `pyproject.toml`'s coverage comments say 85 rather
+  than 75. The "40 / 42" this note itself carried was stale a second time over -- the count had
+  since grown to 45 -- which is the drift-about-drift worth keeping the account of.
 
 ### Found while reproducing the design — 2026-09-20
 

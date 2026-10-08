@@ -105,8 +105,15 @@ still worth having; it is not the only ceiling.
       predicted. Extended 2026-09-23 with the Earlier and Later figures, which is what let
       "refreshed" split from "unchanged" -- one word that meant both *the figure moved* and
       *the same figure came back*.
-- [ ] **"Refetch data older than N days."** The design's stage 6 offers a global knob we do not
-      model: staleness is per-attribute `max_age` (`reqs.md` 7.1). Decide before building.
+- [x] **"Refetch data older than N days."** **Decided 2026-10-08: deferred, and the
+      per-attribute model kept.** The design's stage 6 offers a global "older than N days" knob;
+      our staleness is already per-attribute `max_age` (`reqs.md` 7.1), derived from each source's
+      publication interval -- which is the more honest model, because an annual index and a daily
+      weather figure go stale on different clocks and one global N would either re-fetch fresh
+      annual data or leave daily data stale. A run already re-asks exactly what has aged past its
+      own `max_age`, so the global knob is a worse model of a thing we already do and is not built.
+      Revisit only for a *force a re-fetch of still-fresh data* feature, which is manual refresh --
+      a different thing, and post-MVP.
 - [x] **The hand-entry form behind "Enter a value by hand."** Done in the second design sync
       (2026-09-21) and verified still complete 2026-10-07. `RunScreen` -> `OpenToHandEntry` ->
       `ManualEntryPanel`, with the pure builder in `manualEntry.ts`. **Not "a payload editor per
@@ -128,5 +135,46 @@ still worth having; it is not the only ceiling.
       `stop_requested_at` column the loop reads **between sources**, and a fifth status
       `halted_by_user`. See `docs/design-brief.md` for why it is a fifth status and not a reuse
       of one of the four.
+
+## MVP close — remaining actions (2026-10-08)
+
+The seven-item close list, with state. Four are done in-repo; three need a hand that only Alex
+can give (a secret key, a live-DB delete the safety classifier guards, and the real heat figures).
+
+- [x] **3. Coverage decisions recorded.** `catalog-blockers.md` opens with the consolidated call;
+      housing was already resolved by `0488`.
+- [x] **4. Clear the stray Greece gate answer.** *Prepared, needs Alex to run* -- the live-DB
+      `DELETE` is guarded by the auto-mode classifier. Run it yourself with the `!` prefix:
+      ```
+      ! docker exec starnest-database-1 sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "BEGIN; DELETE FROM match_rule_result_citation WHERE match_rule='"'"'not_manually_excluded'"'"' AND candidate='"'"'country.greece'"'"'; DELETE FROM match_rule_result WHERE match_rule='"'"'not_manually_excluded'"'"' AND candidate='"'"'country.greece'"'"'; COMMIT;"'
+      ```
+      It is runtime dev-DB data (no migration seeds it), so a migration is the wrong tool. A
+      `make check` run would also clear it as a side effect, since the suite truncates writable tables.
+- [x] **5. "Refetch older than N days" decided** -- deferred, per-attribute `max_age` kept (above).
+- [x] **6. Doc drift fixed** -- 45 operations, 85% coverage comment.
+- [x] **1. Copernicus.** **Done 2026-10-08.** The key + licence proved the shipped CSV adapter
+      was built on a wrong assumption -- the API returns **NetCDF**, nine EURO-CORDEX model runs in
+      one zip. Reworked: `netCDF4` dependency added, `response.py` parses the `.nc` and takes an
+      equal-weight-per-model ensemble mean over the 2041-2070 horizon, a real nine-model fixture
+      pins the values, independently reviewed (four findings fixed), `make check` green. **The
+      figures land in the store on the next `make acquire` / run** (a DB write -- run it yourself
+      with the `!` prefix when ready, since the classifier guards DB writes).
+- [ ] **2. `mild_now_brutal_later`.** The rule already exists (`0103`, `AllConditionsHold`,
+      `warning`) with **both** condition thresholds `NULL`: `country.avg_annual_temperature` (a
+      comfortable band) **and** `country.projected_summer_heat_days` (above a floor). So this is an
+      `UPDATE` of the two `compound_rule_condition` thresholds, not an insert. Needs: (a) the
+      projected figures stored (the acquire run above), and (b) a **household decision on both
+      bands** against the real joint distribution -- the project reserves these (`reqs.md` 7.4,
+      "both bands TBD, meant to meet real figures first"). The projected floor can come from the
+      real spread already in hand (Cyprus 62, Spain 54, Greece 34, Romania 31, Italy 28, France 16,
+      Germany 9, UK 0.4 hot days/yr); the comfortable-temperature band needs the
+      `avg_annual_temperature` distribution, which is a DB read. Best done right after the acquire
+      run, then optionally flip `is_applied` to true on `local_employment` (`0104` has it `false`).
+- [ ] **7. Rebuild + migrate + smoke.** The running stack predates the last four commits. Run:
+      ```
+      make docker-build && make docker-migrate && docker compose restart schema-diagram
+      ```
+      then `make check` (expect green -- only docs/comments changed) and a hands-on walk of all
+      four tabs at http://127.0.0.1:5173.
 
 ## TODOs for Alex
