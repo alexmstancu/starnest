@@ -1,104 +1,160 @@
-"""The regional CSV the CDS returns, turned into one figure per country.
+"""The regional NetCDF the CDS returns, turned into one ensemble-mean figure per country.
 
-**Pure, and loud when surprised.** No network here -- the adapter hands this the decoded CSV
-text. A projection year carries no meaning alone, so the real work is averaging: the years inside
-the horizon window, and the ensemble members if the file breaks them out. One mean per NUTS0
-country comes out.
+**Pure, and loud when surprised.** No network here -- the adapter hands this the `.nc` file
+bytes, already unzipped from the download. Each file is one climate-model run holding the
+indicator as a 2-D grid over (NUTS0 region, year).
 
-**The column names are the one thing an account would be needed to confirm (VERIFY ON FIRST LIVE
-FETCH).** Rather than sniff and hope, this resolves each of the three columns it needs against a
-small set of plausible names and **raises naming the headers it actually saw** when it cannot.
-A wrong assumption therefore stops the first real fetch with the exact remedy -- "add this header
-to REGION_COLUMNS" -- instead of filing a mis-read number as a country's heat projection, which is
-the plausible-looking figure this application exists to prevent (`reqs.md` 10).
+**One mean per country, equal weight per model.** For each model, the country's mean over the
+horizon years is taken; those per-model means are then averaged across the models. Weighting each
+*model* equally -- rather than pooling every (model, year) value into one flat mean -- is the
+ensemble normal, and it keeps a model that happens to carry fewer years for a country from being
+silently down-weighted against the others.
+
+**Confirmed against the live CDS on 2026-10-08.** A request over the whole ensemble returns nine
+`.nc` files. In each, the region dimension is `nuts` (two-letter NUTS0 codes, stored as a char
+array), `time` is numeric `days since ...` decoded with its own calendar, and the single 2-D
+floating variable is the indicator. The indicator is read by its *shape* and oriented by its
+*dimension names*, so a second CDS indicator needs no change here.
+
+**Loud when the shape is not what was confirmed.** A file netCDF cannot open, or one with no
+region/time coordinate or no 2-D indicator, raises `CopernicusError` with a sentence a run's
+failure list can print -- never a mis-read number, which is the failure `reqs.md` 10 prevents.
 """
 
-import csv
-import io
 from collections import defaultdict
-from collections.abc import Iterable
-from decimal import Decimal, InvalidOperation
-from typing import Final
+from collections.abc import Sequence
+from decimal import Decimal
+from typing import Any
 
-REGION_COLUMNS: Final = ("nuts_id", "nuts", "nuts0", "region", "region_id", "code", "geo")
-YEAR_COLUMNS: Final = ("year", "date", "time", "period")
-VALUE_COLUMNS: Final = ("value", "mean", "ensemble_mean", "hot_days", "indicator")
-"""Accepted header names for the three columns this reads, lower-cased. Tolerant of a handful of
-plausible spellings, loud when none match. Correcting a name after the first live fetch is a
-one-line change here."""
+import netCDF4  # type: ignore[import-untyped]
+import numpy as np
+
+TIME_UNIT_MARKER = "since"
+"""A CF time variable's `units` reads like `days since 1951-01-01`; this word identifies it among
+the coordinate variables, so the time axis is found by meaning rather than by a hard-coded name."""
 
 
 class CopernicusError(Exception):
-    """The CDS answered, but not with a CSV this could read -- empty, or missing a column it
-    needs. One exception, carrying a sentence a run's failure list can print."""
+    """The CDS answered, but not with NetCDF this could read -- unopenable, or missing the
+    region, the time, or the 2-D indicator it needs. One exception, carrying a sentence."""
 
 
 def heat_days_by_country(
-    csv_text: str, *, horizon_start: int, horizon_end: int
+    nc_files: Sequence[bytes], *, horizon_start: int, horizon_end: int
 ) -> dict[str, Decimal]:
-    """The mean projected hot-day count per NUTS0 country over the horizon window.
+    """The ensemble-mean projected hot-day count per NUTS0 country over the horizon.
 
-    Rows outside `[horizon_start, horizon_end]` are ignored; rows for every country in the file
-    are kept. A country with no readable value in the window is simply absent from the result --
-    the adapter turns that absence into coverage, never into a zero.
+    Each file contributes one mean per country -- that model's mean over the window years -- and
+    those per-model means are averaged. A country a model has no window value for (masked, or
+    absent) simply does not contribute that model, rather than dragging the mean toward the models
+    that do cover it; a country no model covers is absent from the result, which the adapter turns
+    into coverage, never into a zero.
     """
-    reader = csv.DictReader(io.StringIO(csv_text))
-    if reader.fieldnames is None:
-        raise CopernicusError("the CDS returned an empty CSV with no header row")
+    if not nc_files:
+        raise CopernicusError("the CDS download held no NetCDF files")
 
-    region_key = _column(reader.fieldnames, REGION_COLUMNS, "region")
-    year_key = _column(reader.fieldnames, YEAR_COLUMNS, "year")
-    value_key = _column(reader.fieldnames, VALUE_COLUMNS, "value")
-
-    gathered: dict[str, list[Decimal]] = defaultdict(list)
-    for row in reader:
-        year = _an_int(row.get(year_key))
-        if year is None or not (horizon_start <= year <= horizon_end):
-            continue
-        figure = _a_decimal(row.get(value_key))
-        region = (row.get(region_key) or "").strip().upper()
-        if figure is not None and region != "":
-            gathered[region].append(figure)
-
-    return {region: _mean(figures) for region, figures in gathered.items() if figures}
+    per_model_means: dict[str, list[Decimal]] = defaultdict(list)
+    for blob in nc_files:
+        for region, model_mean in _one_model_means(blob, horizon_start, horizon_end).items():
+            per_model_means[region].append(model_mean)
+    return {region: _mean(means) for region, means in per_model_means.items() if means}
 
 
-def _column(headers: Iterable[str], accepted: tuple[str, ...], role: str) -> str:
-    """The real header matching one of the accepted names, or a refusal naming what was seen.
+def _one_model_means(blob: bytes, horizon_start: int, horizon_end: int) -> dict[str, Decimal]:
+    """One model file's mean over the horizon window, per region."""
+    dataset = _open(blob)
+    try:
+        time = _time_variable(dataset)
+        time_dimension = time.dimensions[0]
+        indicator = _indicator_variable(dataset)
+        region_dimension = _region_dimension(indicator, time_dimension, dataset)
+        regions = _region_codes(dataset, region_dimension)
+        years = _years(time)
+        grid = _oriented(indicator, region_dimension, time_dimension)
+        in_window = (years >= horizon_start) & (years <= horizon_end)
 
-    Case- and whitespace-insensitive, because a CSV header's casing is the publisher's choice and
-    not a fact worth breaking on.
-    """
-    by_normalised = {header.strip().lower(): header for header in headers}
-    for name in accepted:
-        if name in by_normalised:
-            return by_normalised[name]
+        means: dict[str, Decimal] = {}
+        for index, region in enumerate(regions):
+            values = np.ma.compressed(grid[index, :][in_window])
+            if len(values):
+                means[region] = _mean(values)
+        return means
+    finally:
+        dataset.close()
+
+
+def _open(blob: bytes) -> Any:
+    try:
+        return netCDF4.Dataset("inmemory.nc", mode="r", memory=blob)
+    except OSError as unreadable:
+        raise CopernicusError(
+            f"the CDS returned bytes netCDF could not open ({unreadable})"
+        ) from unreadable
+
+
+def _time_variable(dataset: Any) -> Any:
+    for variable in dataset.variables.values():
+        units = getattr(variable, "units", "")
+        if variable.ndim == 1 and isinstance(units, str) and TIME_UNIT_MARKER in units:
+            return variable
     raise CopernicusError(
-        f"the CDS CSV has no {role} column: looked for {list(accepted)}, "
-        f"saw {sorted(by_normalised.values())}"
+        f"the CDS NetCDF has no time coordinate (no 1-D variable with '{TIME_UNIT_MARKER}' units); "
+        f"saw variables {sorted(dataset.variables)}"
     )
 
 
-def _mean(figures: list[Decimal]) -> Decimal:
-    """The arithmetic mean, kept as a Decimal. Averages both the horizon's years and, where the
-    file carries one row per ensemble member, the members -- every row for a country in the window
-    is simply one term."""
-    return sum(figures, Decimal(0)) / Decimal(len(figures))
+def _years(time: Any) -> np.ndarray:
+    moments = netCDF4.num2date(time[:], time.units, getattr(time, "calendar", "standard"))
+    return np.array([moment.year for moment in moments])
 
 
-def _an_int(raw: str | None) -> int | None:
-    if raw is None:
-        return None
-    # A date column may carry '2055' or '2055-01-01'; the year is the leading four digits.
-    head = raw.strip()[:4]
-    return int(head) if head.isdigit() else None
+def _indicator_variable(dataset: Any) -> Any:
+    candidates = [
+        variable
+        for variable in dataset.variables.values()
+        if variable.ndim == 2 and variable.dtype.kind == "f"
+    ]
+    if len(candidates) != 1:
+        raise CopernicusError(
+            "the CDS NetCDF does not hold exactly one 2-D floating indicator "
+            f"(found {len(candidates)}); saw variables {sorted(dataset.variables)}"
+        )
+    return candidates[0]
 
 
-def _a_decimal(raw: str | None) -> Decimal | None:
-    if raw is None or raw.strip() == "":
-        return None
-    try:
-        figure = Decimal(raw.strip())
-    except InvalidOperation:
-        return None
-    return figure if figure.is_finite() else None
+def _region_dimension(indicator: Any, time_dimension: str, dataset: Any) -> str:
+    others = [name for name in indicator.dimensions if name != time_dimension]
+    if len(others) != 1 or others[0] not in dataset.variables:
+        raise CopernicusError(
+            f"the CDS NetCDF has no single region coordinate for {indicator.name}: "
+            f"dims {indicator.dimensions}, variables {sorted(dataset.variables)}"
+        )
+    return others[0]
+
+
+def _region_codes(dataset: Any, region_dimension: str) -> list[str]:
+    raw = dataset.variables[region_dimension][:]
+    if getattr(raw, "ndim", 1) == 2:  # (region, char) char array, if auto-decoding is off
+        raw = netCDF4.chartostring(raw)
+    return [str(code).strip().upper() for code in raw]
+
+
+def _oriented(indicator: Any, region_dimension: str, time_dimension: str) -> np.ndarray:
+    """The indicator as (region, year), oriented by dimension *name* so it is unambiguous even
+    where the region and year counts happen to be equal."""
+    values = indicator[:]
+    if indicator.dimensions == (region_dimension, time_dimension):
+        return values
+    if indicator.dimensions == (time_dimension, region_dimension):
+        return values.T
+    raise CopernicusError(
+        f"the CDS indicator {indicator.name} has dimensions {indicator.dimensions}, "
+        f"neither (region, time) nor (time, region) for '{region_dimension}'/'{time_dimension}'"
+    )
+
+
+def _mean(values: Any) -> Decimal:
+    """The arithmetic mean as a Decimal, of floats (one model's window years) or of Decimals (the
+    per-model means). `Decimal(str(...))` round-trips each term; the sum stays in Decimal space."""
+    total = sum(Decimal(str(value)) for value in values)
+    return total / Decimal(len(values))

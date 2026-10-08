@@ -2,10 +2,11 @@
 
 **Unlike the other structured sources, the CDS is an async job queue, not a GET.** A request is
 submitted, the server prepares it, and the result is downloaded when ready -- so this adapter
-submits, polls the job, reads the result's download link, fetches the (zipped) regional CSV, and
-hands the text to `response.py`. The protocol is the OGC-API-Processes shape the CDS publishes:
-`POST /processes/{dataset}/execute`, `GET /jobs/{id}`, `GET /jobs/{id}/results`, authenticated with
-a free Personal Access Token in a `PRIVATE-TOKEN` header. It is free, so `costs_money` stays False.
+submits, polls the job, reads the result's download link, fetches the (zipped) regional NetCDF,
+and hands the `.nc` file bytes to `response.py`. The protocol is the OGC-API-Processes shape the
+CDS publishes: `POST /processes/{dataset}/execute`, `GET /jobs/{id}`, `GET /jobs/{id}/results`,
+authenticated with a free Personal Access Token in a `PRIVATE-TOKEN` header. It is free, so
+`costs_money` stays False.
 
 **Free, but authenticated.** Without a token the source cannot be asked, so a run records a clear
 failure for the attribute and moves on -- the same shape as any source being unreachable, and the
@@ -13,13 +14,13 @@ day a token is set in `.env` a run fills it. The adapter is still registered wit
 attribute stays *covered* (the LLM fallback must not guess a climate projection it was never meant
 to), and the catalog and the adapters still agree at boot.
 
-**Nothing is filled in.** A country the regional file has no figure for produces no value: no
+**Nothing is filled in.** A country the regional files have no figure for produces no value: no
 zero, no neighbour's. That gap travels to the ranking as coverage (`reqs.md` 5.3).
 
-**VERIFY ON FIRST LIVE FETCH** (see `manifest.py` and `response.py`): the exact `inputs` the
-execute endpoint wants, the field that holds the result's download href, and the CSV's column
-names. Each is pinned in one place and fails loudly, so the first real fetch corrects a named
-constant rather than mis-reading a number.
+**Confirmed against the live CDS on 2026-10-08.** The request (`manifest.py`) returns one NetCDF
+file per EURO-CORDEX model run (nine, on that date) in a single zip; `response.py` reads them with
+`netCDF4` and averages across models and horizon years. Each step raises loudly rather than
+guessing when the API answers in a shape it does not recognise.
 """
 
 import asyncio
@@ -111,9 +112,9 @@ class CopernicusAdapter(SourceAdapter):
             )
 
         try:
-            csv_text = await self._regional_csv(dict(request))
+            nc_files = await self._regional_files(dict(request))
             by_country = heat_days_by_country(
-                csv_text, horizon_start=HORIZON_START_YEAR, horizon_end=HORIZON_END_YEAR
+                nc_files, horizon_start=HORIZON_START_YEAR, horizon_end=HORIZON_END_YEAR
             )
         except (httpx.HTTPError, CopernicusError) as unavailable:
             return Acquired(failures=(a_failure(attribute.id, str(unavailable)),))
@@ -141,8 +142,8 @@ class CopernicusAdapter(SourceAdapter):
             iso = candidate.country_code
             mean = _figure_for(iso, by_country)
             if mean is None:
-                # The regional file simply has nothing for this country (sub-grid-cell micro-states
-                # may drop out): coverage, not an error.
+                # The regional files simply have nothing for this country (sub-grid-cell
+                # micro-states may drop out): coverage, not an error.
                 continue
             values.append(
                 measuring.figure(
@@ -159,8 +160,8 @@ class CopernicusAdapter(SourceAdapter):
             )
         return Acquired(values=tuple(values))
 
-    async def _regional_csv(self, inputs: dict[str, str]) -> str:
-        """Submit the job, wait for it, and return the regional CSV text.
+    async def _regional_files(self, inputs: dict[str, Any]) -> list[bytes]:
+        """Submit the job, wait for it, and return the regional NetCDF files (one per model run).
 
         Each step raises `CopernicusError` with a sentence when the API answers in a shape this
         does not recognise, so an unverified assumption stops here rather than downstream.
@@ -185,7 +186,7 @@ class CopernicusAdapter(SourceAdapter):
             raise CopernicusError(f"the CDS job {job_id} ended '{status}'")
 
         href = _download_href(await self._get_json(f"/jobs/{job_id}/results"))
-        return _csv_text(await self._get_bytes(href))
+        return _nc_files(await self._get_bytes(href))
 
     async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         response = await self._client.post(
@@ -219,12 +220,17 @@ def _figure_for(iso: str | None, by_country: dict[str, Any]) -> Any:
     """The country's mean, matching our ISO alpha-2 to the file's NUTS0 code.
 
     A candidate with no country code (there are none at country level, but the type allows it)
-    cannot be matched and is left absent.
+    cannot be matched and is left absent. Membership is tested with `in`, not truthiness, so a
+    legitimate zero -- a country the projection gives no hot days -- is returned as 0, not dropped
+    as missing (which a bare `or` would do for the EL/UK-remapped countries).
     """
     if iso is None:
         return None
     nuts = {value: key for key, value in NUTS_TO_ISO.items()}.get(iso, iso)
-    return by_country.get(nuts.upper()) or by_country.get(iso.upper())
+    for key in (nuts.upper(), iso.upper()):
+        if key in by_country:
+            return by_country[key]
+    return None
 
 
 def _download_href(results: dict[str, Any]) -> str:
@@ -232,7 +238,7 @@ def _download_href(results: dict[str, Any]) -> str:
 
     The CDS wraps it as an `asset.value.href`; older shapes put a bare `href` on the result or a
     `location`. All three are tried, and a document with none raises -- the one place the result
-    schema is pinned (VERIFY ON FIRST LIVE FETCH).
+    schema is pinned.
     """
     asset = results.get("asset")
     if isinstance(asset, dict):
@@ -245,28 +251,14 @@ def _download_href(results: dict[str, Any]) -> str:
     raise CopernicusError(f"the CDS results carried no download href: {results}")
 
 
-def _csv_text(payload: bytes) -> str:
-    """The CSV text, whether the asset is a bare CSV or (as regional downloads are) a zip of them.
-
-    A zip's CSV members are concatenated; the first member keeps its header and the rest have
-    theirs dropped, so `DictReader` reads one table. A non-zip payload is decoded as-is.
-    """
+def _nc_files(payload: bytes) -> list[bytes]:
+    """The NetCDF member bytes, whether the asset is a zip of them (as regional downloads are) or
+    a bare `.nc`. A zip with no `.nc` inside raises, so an empty or wrong-shaped result stops here
+    rather than downstream."""
     if payload[:2] != b"PK":
-        return payload.decode("utf-8-sig")
+        return [payload]
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-        members = [name for name in archive.namelist() if name.lower().endswith(".csv")]
+        members = [name for name in archive.namelist() if name.lower().endswith(".nc")]
         if not members:
-            raise CopernicusError("the CDS asset was a zip with no CSV inside")
-        texts = [archive.read(name).decode("utf-8-sig") for name in sorted(members)]
-    return _one_table(texts)
-
-
-def _one_table(csv_texts: list[str]) -> str:
-    """Several CSVs with the same header, read as one: the first keeps its header, the rest lose
-    the first line. One region-year file per member is how the ensemble would arrive split."""
-    if len(csv_texts) == 1:
-        return csv_texts[0]
-    first, *rest = csv_texts
-    bodies = [first.rstrip("\n")]
-    bodies += [text.split("\n", 1)[1].rstrip("\n") for text in rest if "\n" in text]
-    return "\n".join(bodies) + "\n"
+            raise CopernicusError("the CDS asset was a zip with no NetCDF (.nc) inside")
+        return [archive.read(name) for name in sorted(members)]

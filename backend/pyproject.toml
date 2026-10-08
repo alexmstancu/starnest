@@ -18,6 +18,7 @@ dependencies = [
     "yoyo-migrations>=9.0",
     "anthropic>=0.45",
     "selectolax>=0.3.27",
+    "netcdf4>=1.7.4",
 ]
 
 [project.scripts]
@@ -64,10 +65,10 @@ markers = [
 
 
 # ---------------------------------------------------------------------------
-# Coverage -- the bar is 75% lines AND branches for the MVP
+# Coverage -- the bar is 85% lines AND branches, held per package (raised from 75 on 2026-09-05)
 # ---------------------------------------------------------------------------
 #
-# 75% is a floor on the code, not a ceiling on the testing. The target is 100% coverage of
+# 85% is a floor on the code, not a ceiling on the testing. The target is 100% coverage of
 # features and functionality; this number only catches whole regions of code that nobody
 # exercised at all. A module can sit at 90% lines and still have an untested requirement.
 

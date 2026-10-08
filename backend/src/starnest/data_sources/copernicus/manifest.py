@@ -18,13 +18,13 @@ data change (`arch.md` 1.2).
 
 **The figure describes a 30-year window, not a single year.** A projection is a climate normal,
 so one year carries no meaning on its own; the adapter averages the years in `HORIZON` and the
-members of the EURO-CORDEX ensemble, and stamps the window as the reference period.
+models of the EURO-CORDEX ensemble, and stamps the window as the reference period.
 
-**VERIFY ON FIRST LIVE FETCH.** The exact `inputs` the execute endpoint requires (above all the
-ensemble member keys) and the CSV column names (`response.py`) are not published in a form that
-could be confirmed without a CDS account. They are pinned here and in `response.py` as named
-constants precisely so the first real fetch corrects one place, loudly, rather than mis-parsing
-quietly -- `response.py` raises when the columns are not what it expects.
+**Confirmed against the live CDS on 2026-10-08.** The request below was validated end to end: the
+execute endpoint accepts it, and asking for every valid `gcm`/`rcm`/`ensemble_member` value makes
+the store compute the valid combinations itself and return one NetCDF file per model run (nine, on
+that date) in a single zip. The data is **NetCDF, not CSV** -- `response.py` reads it with
+`netCDF4` and averages across the nine models and the horizon years.
 """
 
 from types import MappingProxyType
@@ -39,25 +39,29 @@ BASE_URL: Final = "https://cds.climate.copernicus.eu/api/retrieve/v1"
 """The CDS retrieve API root. Authenticated with a Personal Access Token in a `PRIVATE-TOKEN`
 header -- a free CDS account, not a paid key, so `costs_money` stays False."""
 
-# The one attribute this source answers, and the request that answers it. A tuple of (key, value)
-# pairs rather than a bare dict so the request is immutable and reads as configuration.
+# The one attribute this source answers, and the request that answers it. Array-valued fields are
+# tuples so the request is immutable and reads as configuration; the CDS expects JSON arrays and
+# httpx serialises a tuple as one.
 HOT_DAYS_REQUEST: Final = MappingProxyType(
     {
-        "variable": "hot_days",
+        "variable": ("hot_days",),
         "origin": "projections",
-        "experiment": "rcp4_5",
-        "temporal_aggregation": "yearly",
+        "experiment": ("rcp4_5",),
+        # Every valid model value for this indicator. The store intersects them to the model runs
+        # that actually exist (nine on 2026-10-08) rather than us enumerating valid tuples, so a
+        # model added to the dataset later joins the ensemble on its own.
+        "gcm": ("ec_earth", "hadgem2_es", "ipsl_cm5a_mr", "mpi_esm_lr", "noresm1_m"),
+        "rcm": ("cclm4_8_17", "hirham5", "racmo22e", "rca4", "wrf381p"),
+        "ensemble_member": ("r12i1p1", "r1i1p1", "r3i1p1"),
+        "temporal_aggregation": ("yearly",),
         "spatial_aggregation": "regional_layer",
-        "regional_layer": "nuts_level_0",
-        "other_parameters": "30_c",
+        "regional_layer": ("nuts_level_0",),
+        "other_parameters": ("30_c",),
         "version": "v2_0",
     }
 )
-"""The execute `inputs` for the hot-days-above-30 C projection at country (NUTS0) level.
-
-Ensemble-member keys (`gcm`, `rcm`, `ensemble_member`) are deliberately omitted: a request that
-names none is expected to return the whole ensemble, which is what `response.py` then averages.
-If the live API requires them, this is the one place to add them (VERIFY ON FIRST LIVE FETCH)."""
+"""The execute `inputs` for the hot-days-above-30 C projection at country (NUTS0) level, over the
+whole EURO-CORDEX RCP4.5 ensemble. Confirmed valid against the live API 2026-10-08."""
 
 INDICATORS: Final = MappingProxyType(
     {
@@ -75,6 +79,8 @@ as the sensible horizon for an open-ended relocation. The reference period store
 
 SCENARIO_PROVENANCE: Final = "RCP4.5 (EURO-CORDEX), the AR5 counterpart of SSP2-4.5"
 THRESHOLD_PROVENANCE: Final = "days per year with daily maximum temperature above 30 C"
-ENSEMBLE_PROVENANCE: Final = "mean over the nine bias-corrected EURO-CORDEX simulations"
+ENSEMBLE_PROVENANCE: Final = (
+    "mean over the full EURO-CORDEX RCP4.5 ensemble the dataset offers (nine runs on 2026-10-08)"
+)
 """Three sentences stamped into every figure's quote, so a reader sees what was actually asked:
 the scenario standing in for SSP2-4.5, the indicator definition, and the ensemble reduction."""
