@@ -140,6 +140,10 @@ class TestWhatIsActuallyWiredIn:
             # it as one table, so the transcription is stored under `national_law` -- the
             # source the catalog already ranks for it.
             "national_law",
+            # Projected summer heat days, from the Copernicus CDS (EURO-CORDEX under RCP4.5).
+            # Free but token-gated, so it is wired unconditionally and not paid: without a token
+            # it records a failure for its one attribute rather than vanishing from the roster.
+            "copernicus",
         }
         # Nothing but the LLM path charges, and it is the only thing that may appear here
         # because of configuration rather than because of code.

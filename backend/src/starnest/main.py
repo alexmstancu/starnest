@@ -69,6 +69,13 @@ class Environment(BaseSettings):
         description="Only needed for the LLM acquisition path (reqs.md 6.10). Absent is "
         "valid: the MVP is country-level and uses it for one attribute.",
     )
+    cds_api_key: str | None = Field(
+        default=None,
+        description="Personal Access Token for the Copernicus Climate Data Store, which answers "
+        "country.projected_summer_heat_days. Free (a CDS account, not a paid key), but absent is "
+        "valid: without it the adapter records a clear failure for that one attribute and a run "
+        "fills everything else.",
+    )
     llm_model: str = Field(
         default="claude-sonnet-5",
         description="Which model the LLM path asks (reqs.md 6.10). A name rather than a "
@@ -301,6 +308,7 @@ def _the_sources(catalog: object, environment: "Environment") -> tuple:
     """
     import httpx
 
+    from starnest.data_sources.copernicus import CopernicusAdapter
     from starnest.data_sources.eurostat import EurostatAdapter, TaxWedgeEstimateAdapter
     from starnest.data_sources.imf import ImfAdapter
     from starnest.data_sources.oecd import OecdAdapter
@@ -318,6 +326,10 @@ def _the_sources(catalog: object, environment: "Environment") -> tuple:
         TaxWedgeEstimateAdapter(httpx.AsyncClient(timeout=60)),
         # Reads the places it measures at from the catalog (D4), so it holds the store.
         OpenMeteoAdapter(httpx.AsyncClient(timeout=120), catalog),  # type: ignore[arg-type]
+        # Free but token-gated (a CDS account). Registered without a token so the attribute stays
+        # covered and the boot check still agrees with the catalog; a run without one records a
+        # clear failure for the one projection it answers.
+        CopernicusAdapter(httpx.AsyncClient(timeout=120), environment.cds_api_key),
         # One per transcribed table. Read here, at boot, so a slip in a file stops the start-up
         # with the file and row named rather than surfacing mid-run as a publisher's fault.
         *(PublishedTableAdapter(table) for table in every_published_table()),

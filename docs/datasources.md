@@ -233,7 +233,7 @@ Gate B coverage assertion for a real reason rather than a defect.
 | `country.climate_zone` | Köppen classification dataset | — | **High** |
 | `country.avg_annual_temperature` | **Open-Meteo** archive (ERA5), population-weighted over the five largest places (Q210) | National met services | **Medium** -- derived from five points |
 | `country.annual_sunshine_hours` | ~~Open-Meteo (derive from radiation)~~ **Not usable**: checked 2026-09-11, its sunshine runs 30% to 68% above the recorders, unevenly (Q210) | National met services | **None yet** |
-| `country.projected_summer_heat_days` | Copernicus CDS projections (SSP2-4.5) | IPCC regional | Medium — scenario is now named |
+| `country.projected_summer_heat_days` | **Copernicus CDS `sis-ecde-climate-indicators`, adapter built 2026-10-08.** Hot days above 30 C, NUTS0 regional layer (server-side aggregated, no raster work), 2041-2070 mean over the EURO-CORDEX ensemble. **Scenario is RCP4.5**, the AR5 counterpart of SSP2-4.5 (this dataset offers no SSP2-4.5 for temperature), stored honestly as such. Free but token-gated (`CDS_API_KEY`); figures land on the first `make live` with a token | IPCC regional | Medium |
 | `country.naturalisation_pathway` | — | Manual / LLM | **Low** — legal text, no dataset |
 | `country.pension_portability` | EU coordination rules | Manual / LLM | **Low** |
 
