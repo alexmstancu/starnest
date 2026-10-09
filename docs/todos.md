@@ -167,11 +167,18 @@ can give (a secret key, a live-DB delete the safety classifier guards, and the r
       **Hungary, Romania, Bulgaria, Croatia** -- temperate now, 25+ projected hot days by 2041-70;
       the already-warm Mediterranean is excluded by design. A warning, never a rule-out, and it
       shows in the ranking once each candidate's heat figure is stored (the next `make acquire`).
-- [ ] **7. Rebuild + migrate + smoke.** The running stack predates the last four commits. Run:
-      ```
-      make docker-build && make docker-migrate && docker compose restart schema-diagram
-      ```
-      then `make check` (expect green -- only docs/comments changed) and a hands-on walk of all
-      four tabs at http://127.0.0.1:5173.
+- [x] **7. Rebuild + migrate + smoke.** Done 2026-10-09, bar the hands-on visual walk.
+      `make docker-build`, `make docker-migrate`, containers recreated on the new images, schema
+      diagram refreshed, `make acquire` clean (no UniqueViolation -- the 0cd9751 idempotency fix
+      held), Copernicus landed 32/32 countries. **`make docker-migrate` first failed**: 0496 used a
+      bare `UPDATE` to apply `mild_now_brutal_later`, but a set stores only the rules it turns on
+      (off = no row), and the is_applied=false row 0104 seeded had been dropped by the app's own
+      read/write cycle long ago. A fresh-DB `make check` passed because the row was still there; the
+      live DB had nothing to update, so the guard fired. Fixed to upsert (`692aba5`), re-verified on
+      the live DB: the warning fires for Bulgaria, Hungary, Romania, Croatia. Also restored the four
+      default gates on `local_employment` (`eu_free_movement`, `uk_skilled_worker`, `ch_eu_efta_quota`,
+      `not_manually_excluded`), which had been toggled off at some point -- via the API, since gate
+      enforcement is per-set config. **Remaining: a hands-on walk of all four tabs at
+      http://127.0.0.1:5173**, opening a Rank drill-down on one of the four warned countries.
 
 ## TODOs for Alex

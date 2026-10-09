@@ -18,7 +18,7 @@ arriving is a row rather than a change — which is the "nothing hardcoded" inva
 | Module | State |
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
-| `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. `target_range` scores its band and falls linearly to its zero points (built 2026-09-11). The rules are applied: a compound rule warns or rules out, a gate answered `not_matching` makes a candidate not match while keeping its score, and **an undecided rule never fires** -- which both shipped compound rules are. **The two compound-rule shapes that read a household field belong to the city level.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
+| `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. `target_range` scores its band and falls linearly to its zero points (built 2026-09-11). The rules are applied: a compound rule warns or rules out, a gate answered `not_matching` makes a candidate not match while keeping its score, and **an undecided rule never fires**. Both shipped compound rules are now decided and applied on `local_employment` -- `cheap_but_taxed` (`0474`) and `mild_now_brutal_later` (`0496`, the heat warning that fires for Bulgaria, Hungary, Romania and Croatia). **The two compound-rule shapes that read a household field belong to the city level.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
 | `api/`, `data_acquisition/`, `data_sources/` | **Written.** **All 45 of the contract's operations**; seven source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, and an estimate from Eurostat's tax-benefit figures); values served with both dates, manual entry where the attribute permits it, and the gates' answers; runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. `RunDetail.by_source` says what each source stored and what it failed on -- **derived from the value and failure rows, never stored**, for the reason Q217 settled for `items_unanswered`; the two counts are independent and sum to nothing, because a source may fail on an item another source then answers. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | **Written.** Focus against comparators, deltas in the attribute's own unit, weighted contribution, and a synthesis templated from the numbers and ordered by what each gap is worth |
 | `ui/` | The shell and **all four tabs**: Configure with its eight panels (household, settings, criteria sets, pillar weights, criteria, rules, gate proposals, source priority), Acquire, Rank with its drill-down, Compare. **A criterion's rule is editable per row** -- goal, normalisation method, target band, scale anchors, matching threshold -- which is the subjective half of the ontology becoming data rather than migration. 819 unit tests and 32 browser tests, the latter including a functional sanity suite that walks all four tabs. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
@@ -142,6 +142,23 @@ never a sparse overlay** (Q191), so `0469` copies the criteria by SELECT rather 
 them. **An assertion in SQL that weights sum to 100 is stricter than the domain's own** (P33):
 `numeric` keeps a rebalance's last digits and Python's `Decimal` drops them, so a CHECK on
 `SUM(weight) = 100` would refuse the shipped set.
+
+**A set's criteria are a full copy, but its rules are stored sparsely** (2026-10-09). The
+`criteria_set_match_rule` and `criteria_set_compound_rule` tables hold a row only for a rule the
+set turns *on*: `select_criteria_set` reads `WHERE is_enforced` / `WHERE is_applied`,
+`_write_contents` writes back only the on-rules, and `replace_criteria_set` clears every row on
+any edit (a weight, a rename, a toggle). **Off is the absence of a row, never a row with a false
+flag.** So a migration that turns a rule on must **upsert** the association
+(`INSERT ... ON CONFLICT DO UPDATE`), never a bare `UPDATE` -- and must not seed an
+`is_applied=false` / `is_enforced=false` row, which the first edit drops. `0496` learned this the
+hard way: it used `UPDATE` to apply `mild_now_brutal_later`, assuming the `is_applied=false` row
+`0104` had seeded still existed, but the app's own read/write cycle had long since dropped it. A
+fresh-DB `make check` passed because the row was there; the live DB had nothing to update and the
+guard fired (`applied=0`). Nothing was corrupted -- the migration held a dense assumption about a
+sparse model. Fixed to upsert (`692aba5`), matching `0474`'s precedent. **This also means a set's
+live enforced/applied membership can diverge from the `0104` defaults**, because UI toggles and
+e2e tests change it: `local_employment` was found enforcing only `li_eea_quota`, its four default
+gates having been toggled off, and they were restored through the API rather than a migration.
 
 **The shipped set ranks all 32 countries** (2026-09-11). `fixed` is built and the total tax
 rate carries the first anchors the catalog has shipped — 35% → 100, 55% → 0, chosen against real
