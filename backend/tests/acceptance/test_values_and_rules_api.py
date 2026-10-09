@@ -130,6 +130,30 @@ class TestTypingAValue:
         assert stored["citations"] == A_TYPED_VALUE["citations"]
         assert stored["is_active"] is True
 
+    async def test_resubmitting_the_identical_value_is_idempotent_not_a_crash(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """A second POST of the same manual value -- same natural key, retrieval_date included --
+        returns the already-stored value, not a 500 from the now-idempotent no-op append."""
+        first = await api.post("/v1/values/manual", json=A_TYPED_VALUE)
+        second = await api.post("/v1/values/manual", json=A_TYPED_VALUE)
+
+        assert first.status_code == 201
+        assert second.status_code == 201
+        assert second.json()["id"] == first.json()["id"]  # the same row, not a second one
+
+        everything = (
+            await api.get(
+                "/v1/values",
+                params={
+                    "candidate": A_TYPED_VALUE["candidate"],
+                    "attribute": A_TYPED_VALUE["attribute"],
+                    "include_superseded": True,
+                },
+            )
+        ).json()
+        assert everything["total"] == 1  # idempotent: no duplicate row
+
     async def test_an_attribute_that_does_not_declare_manual_entry_refuses_it(
         self, api: httpx.AsyncClient
     ) -> None:

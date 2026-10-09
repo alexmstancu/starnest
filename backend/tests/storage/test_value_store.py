@@ -187,6 +187,65 @@ async def test_a_payload_of_a_type_the_mvp_catalog_has_no_attribute_for_also_sur
     assert stored.payload == payload
 
 
+# --- idempotent re-runs: a static re-read is a no-op, a live re-fetch is a new row ------------
+
+_A_QUANTITY = Quantity(magnitude=Decimal("38.7"), unit="hours_per_week")
+
+
+async def test_re_storing_the_same_value_skips_the_duplicate(values: PostgresValueStore) -> None:
+    """A second run that re-reads a transcribed table re-produces the identical natural key. It
+    must be a no-op, not the UniqueViolation that used to crash the whole acquisition run."""
+    figure = a_value(attribute=A_QUANTITY_ATTRIBUTE, payload=_A_QUANTITY)
+
+    first = await values.append([figure])
+    second = await values.append([figure])
+
+    assert len(first) == 1 and first[0].id is not None
+    assert second == ()  # skipped on its natural key, not stored again
+    assert await values.count_values(candidate=A_CANDIDATE, attribute=A_QUANTITY_ATTRIBUTE) == 1
+
+
+async def test_a_later_retrieval_of_the_same_figure_is_a_new_row(
+    values: PostgresValueStore,
+) -> None:
+    """A live source stamps a fresh instant, so re-fetching the same period is preserved as a
+    second row -- the behaviour reqs.md 3.6 and the value_natural_key comment require, and which
+    the idempotency must not suppress."""
+    earlier = a_value(
+        attribute=A_QUANTITY_ATTRIBUTE,
+        payload=_A_QUANTITY,
+        retrieved=datetime(2026, 7, 1, 9, 30, tzinfo=UTC),
+    )
+    later = a_value(
+        attribute=A_QUANTITY_ATTRIBUTE,
+        payload=_A_QUANTITY,
+        retrieved=datetime(2026, 8, 1, 9, 30, tzinfo=UTC),
+    )
+
+    assert len(await values.append([earlier])) == 1
+    assert len(await values.append([later])) == 1  # a new instant is a new observation
+    assert await values.count_values(candidate=A_CANDIDATE, attribute=A_QUANTITY_ATTRIBUTE) == 2
+
+
+async def test_re_storing_a_rejected_value_also_skips_the_duplicate(
+    values: PostgresValueStore,
+) -> None:
+    """The rejected-value insert is made idempotent too: a re-read of a transcribed figure that
+    failed validation is the same rejected observation, not a new one."""
+    rejected = a_value(
+        attribute=A_QUANTITY_ATTRIBUTE,
+        payload=None,
+        value_type=ValueType.QUANTITY,
+        rejection_reason="out of the attribute's declared range",
+    )
+
+    first = await values.append([rejected])
+    second = await values.append([rejected])
+
+    assert len(first) == 1
+    assert second == ()
+
+
 A_PUBLISHED_RATE = Decimal("0.201033")
 A_RATE_DAY = date(2026, 6, 30)
 A_FOREIGN_CURRENCY = "RON"

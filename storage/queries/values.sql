@@ -235,12 +235,21 @@ ORDER  BY a.id;
 -- Append one accepted measurement and return its id, so the typed payload can be attached in
 -- the same transaction. Two dates, never merged: reference_period_* is the span the figure
 -- describes, retrieval_date is the moment we fetched it (reqs.md 3.6, arch.md 9.6).
+--
+-- Idempotent on the natural key. A live source stamps retrieval_date = now(), so a second fetch
+-- is a distinct instant and a new row -- re-fetches are preserved, exactly as this file's
+-- value_natural_key comment and reqs.md 3.6 intend, and a live source never conflicts. A
+-- transcribed table (published_tables) stamps a fixed transcribed_on, so re-reading it is the
+-- *same* observation, not a re-fetch; ON CONFLICT DO NOTHING skips it rather than crashing a
+-- re-run on a UniqueViolation. A no-op returns no row, which the store reads as "already stored"
+-- (a corrected transcribed figure gets a new row by bumping transcribed_on, never a silent edit).
 INSERT INTO value (candidate, attribute, value_type, data_source, breakdown_option,
                    data_acquisition_run, reference_period_start, reference_period_end,
                    retrieval_date, confidence_level, quote)
 VALUES (:candidate, :attribute, :value_type, :data_source, :breakdown_option,
         :data_acquisition_run, :reference_period_start, :reference_period_end,
         :retrieval_date, :confidence_level, :quote)
+ON CONFLICT ON CONSTRAINT value_natural_key DO NOTHING
 RETURNING id;
 
 -- name: insert_rejected_value(candidate, attribute, value_type, data_source, breakdown_option, data_acquisition_run, reference_period_start, reference_period_end, retrieval_date, confidence_level, quote, rejection_reason)<!
@@ -257,6 +266,9 @@ INSERT INTO value (candidate, attribute, value_type, data_source, breakdown_opti
 VALUES (:candidate, :attribute, :value_type, :data_source, :breakdown_option,
         :data_acquisition_run, :reference_period_start, :reference_period_end,
         :retrieval_date, :confidence_level, :quote, :rejection_reason)
+-- Idempotent for the same reason as insert_value above: re-reading a transcribed table whose
+-- figure failed validation is the same rejected observation, not a new one.
+ON CONFLICT ON CONSTRAINT value_natural_key DO NOTHING
 RETURNING id;
 
 -- name: insert_value_citations(value_id, urls)!

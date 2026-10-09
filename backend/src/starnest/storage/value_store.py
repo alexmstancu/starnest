@@ -165,19 +165,30 @@ class PostgresValueStore(ValueStore):
             )
 
     async def append(self, values: Sequence[Value]) -> tuple[Value, ...]:
-        """Store each value in its own transaction, returning it with the id it was given.
+        """Store each value in its own transaction, returning the ones newly stored with their id.
 
         Per value rather than per batch, which is `arch.md` 7.1 rather than an optimisation:
         an acquisition run commits one work item at a time so that a crash, a halt or a failing
         adapter costs only the item in flight. A batch that rolled back would discard the good
         figures alongside the one that broke, and selective retry would then have nothing to
         tell it what is missing.
-        """
-        return tuple([await self._append_one(value) for value in values])
 
-    async def _append_one(self, value: Value) -> Value:
+        **A value already present on its natural key is skipped, not re-stored.** A live source
+        stamps a fresh retrieval instant so it never matches an existing row; a transcribed table
+        stamps its fixed transcription date, so re-reading one on a second run is the same
+        observation and is a no-op. Skipped values are omitted from the result -- what comes back
+        is what this call actually added, so a re-run reports what it genuinely stored.
+        """
+        stored = [await self._append_one(value) for value in values]
+        return tuple(value for value in stored if value is not None)
+
+    async def _append_one(self, value: Value) -> Value | None:
         async with acquire(self._pool) as connection:
             value_id = await self._insert_row(connection, value)
+            if value_id is None:
+                # Already stored on its natural key (a transcribed table re-read). The existing
+                # row and its payload stand; appending the payload again would orphan it.
+                return None
             if value.payload is not None:
                 await _insert_payload(self._queries, connection, value_id, value.payload)
             if value.citations:
@@ -186,12 +197,16 @@ class PostgresValueStore(ValueStore):
                 )
         return value.model_copy(update={"id": value_id})
 
-    async def _insert_row(self, connection: AsyncConnection, value: Value) -> int:
+    async def _insert_row(self, connection: AsyncConnection, value: Value) -> int | None:
         """The parent row, written as accepted or as rejected -- never accepted then amended.
 
         Two statements rather than one with a nullable argument, because the alternative that
         rules out is the dangerous one: a rejection is recorded by storing the value as
         rejected, never by updating a stored value into rejection.
+
+        Returns `None` when the insert was a no-op because the natural key already exists -- the
+        `ON CONFLICT DO NOTHING` in both statements returns no row, which is how a static source
+        re-read is made idempotent rather than a UniqueViolation.
         """
         common = _row_parameters(value)
         if value.is_rejected:
@@ -200,7 +215,7 @@ class PostgresValueStore(ValueStore):
             )
         else:
             row = await self._queries.insert_value(connection, **common)
-        return row.id
+        return row.id if row is not None else None
 
     async def read_external_scores(
         self, *, candidate: str | None = None, level: str | None = None

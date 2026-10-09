@@ -140,15 +140,32 @@ async def enter_value_manually(
         if body.breakdown_option
         else None,
     )
-    (stored,) = await values.append([value])
+    # append is idempotent: it stores the value, or no-ops if this exact manual entry (same
+    # natural key, including the client's retrieval_date) was already recorded. Either way the row
+    # is now present, so a re-submit returns the stored value rather than crashing on an empty
+    # result -- the same idempotency the acquisition path relies on.
+    await values.append([value])
     listing = next(
         found
         for found in await values.read_values(
             candidate=body.candidate, attribute=body.attribute, include_superseded=True
         )
-        if found.value.id == stored.id
+        if _is_the_same_measurement(found.value, value)
     )
     return _value_body(listing)
+
+
+def _is_the_same_measurement(stored: Value, submitted: Value) -> bool:
+    """Stored row and submitted value share a natural key, so a manual entry finds the row it
+    stored whether this call created it or an identical earlier submit did. Candidate and
+    attribute are already fixed by the query; the rest of the key is the source, the breakdown,
+    the period and the retrieval moment."""
+    return (
+        stored.data_source == submitted.data_source
+        and stored.breakdown_option == submitted.breakdown_option
+        and stored.reference_period == submitted.reference_period
+        and stored.retrieval_date == submitted.retrieval_date
+    )
 
 
 def _value_body(listing: ValueListing) -> ValueBody:
