@@ -281,16 +281,17 @@ class TestTheGates:
 
 
 class TestTheCompoundRules:
-    async def test_the_decided_rule_carries_its_bounds_and_the_other_carries_none(
+    async def test_both_compound_rules_carry_their_decided_bounds(
         self, api: httpx.AsyncClient
     ) -> None:
-        """One of the two has been decided, and the difference is visible over the wire.
+        """Both shipped rules have been decided, and their bounds are visible over the wire.
 
         `cheap_but_taxed` got its numbers on 2026-09-19 (`0474`): cheap is a cost of living at
         or below 80 on an index where EU27 is 100, taxed a total rate at or above 40% of the
-        whole cost of employment. `mild_now_brutal_later` is still TBD in `reqs.md` 7.4 and
-        reads an attribute no source answers, so there is nothing to decide against -- and a
-        number invented for it would be the fabricated judgement this application prevents.
+        whole cost of employment. `mild_now_brutal_later` was the last TBD (`reqs.md` 7.4),
+        decided with the household on 2026-10-09 (`0496`) once projected_summer_heat_days could be
+        fetched: a temperate annual mean (10-16 C) projected many hot days (>= 25). Both were
+        chosen against real figures, never invented.
         """
         body = (await api.get("/v1/compound-rules", params={"level": "country"})).json()
 
@@ -298,18 +299,20 @@ class TestTheCompoundRules:
         assert set(rules) == {"cheap_but_taxed", "mild_now_brutal_later"}
         assert all(rule["outcome"] == "warning" for rule in rules.values())
 
-        decided = {
-            condition["attribute"]: (condition["threshold_min"], condition["threshold_max"])
-            for condition in rules["cheap_but_taxed"]["conditions"]
-        }
-        assert decided == {
+        def bounds(rule_id: str) -> dict[str, tuple[object, object]]:
+            return {
+                condition["attribute"]: (condition["threshold_min"], condition["threshold_max"])
+                for condition in rules[rule_id]["conditions"]
+            }
+
+        assert bounds("cheap_but_taxed") == {
             "country.cost_of_living_index": (None, 80),
             "country.total_tax_rate_effective": (40, None),
         }
-        assert all(
-            condition["threshold_min"] is None and condition["threshold_max"] is None
-            for condition in rules["mild_now_brutal_later"]["conditions"]
-        )
+        assert bounds("mild_now_brutal_later") == {
+            "country.avg_annual_temperature": (10, 16),
+            "country.projected_summer_heat_days": (25, None),
+        }
 
     async def test_each_rule_names_the_attributes_it_reads(self, api: httpx.AsyncClient) -> None:
         body = (await api.get("/v1/compound-rules")).json()

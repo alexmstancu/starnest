@@ -138,7 +138,8 @@ class TestACompoundRule:
         assert judged(a_rule(), expensive) == ((), ())
 
     def test_an_undecided_rule_never_fires(self) -> None:
-        """Both rules the MVP ships are undecided, and that is the intended state."""
+        """A rule with no bound on either condition is one nobody has finished writing, so it
+        fires for no one -- whatever the catalog's shipped rules happen to be decided to."""
         assert judged(a_rule(prices_max=None, tax_min=None)) == ((), ())
 
     def test_a_half_decided_rule_never_fires(self) -> None:

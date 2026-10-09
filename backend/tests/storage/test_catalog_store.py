@@ -378,26 +378,28 @@ async def test_the_rule_the_household_decided_comes_back_with_its_bounds(
     }
 
 
-async def test_a_rule_nobody_has_decided_still_comes_back_undecided(
+async def test_both_compound_rules_now_carry_their_decided_bounds(
     catalog: PostgresCatalogStore,
 ) -> None:
-    """`mild_now_brutal_later` is still TBD in `reqs.md` 7.4, and reads an attribute no source
-    answers yet, so there is nothing to decide against.
-
-    A default invented here would be a rule firing on a number nobody chose, which is the
-    fabricated judgement the application exists to prevent (`devplan.md` 0.3 rule 2). **This
-    test used to assert it of every rule**, and said so in its name -- which was true until a
-    household made one of the two judgements it exists to make.
+    """`mild_now_brutal_later` was the last TBD rule (`reqs.md` 7.4). It was decided with the
+    household on 2026-10-09 (`0496`) once projected_summer_heat_days could be fetched -- a
+    temperate annual mean (10-16 C) projected many hot days (>= 25), chosen against the real joint
+    distribution, never invented (`devplan.md` 0.3 rule 2). **This test used to assert the rule
+    came back undecided**, which was true until that judgement was made.
     """
     rules = await catalog.read_compound_rules(level="country")
 
-    undecided = next(rule for rule in rules if rule.id == "mild_now_brutal_later")
+    decided = next(rule for rule in rules if rule.id == "mild_now_brutal_later")
 
-    assert not undecided.is_decided
-    assert all(
-        condition.threshold_min is None and condition.threshold_max is None
-        for condition in undecided.conditions
-    )
+    assert decided.is_decided
+    bounds = {
+        condition.attribute: (condition.threshold_min, condition.threshold_max)
+        for condition in decided.conditions
+    }
+    assert bounds == {
+        "country.avg_annual_temperature": (Decimal(10), Decimal(16)),
+        "country.projected_summer_heat_days": (Decimal(25), None),
+    }
 
 
 async def test_a_level_with_no_compound_rules_reads_as_empty_not_as_an_error(

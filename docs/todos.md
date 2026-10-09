@@ -160,17 +160,13 @@ can give (a secret key, a live-DB delete the safety classifier guards, and the r
       pins the values, independently reviewed (four findings fixed), `make check` green. **The
       figures land in the store on the next `make acquire` / run** (a DB write -- run it yourself
       with the `!` prefix when ready, since the classifier guards DB writes).
-- [ ] **2. `mild_now_brutal_later`.** The rule already exists (`0103`, `AllConditionsHold`,
-      `warning`) with **both** condition thresholds `NULL`: `country.avg_annual_temperature` (a
-      comfortable band) **and** `country.projected_summer_heat_days` (above a floor). So this is an
-      `UPDATE` of the two `compound_rule_condition` thresholds, not an insert. Needs: (a) the
-      projected figures stored (the acquire run above), and (b) a **household decision on both
-      bands** against the real joint distribution -- the project reserves these (`reqs.md` 7.4,
-      "both bands TBD, meant to meet real figures first"). The projected floor can come from the
-      real spread already in hand (Cyprus 62, Spain 54, Greece 34, Romania 31, Italy 28, France 16,
-      Germany 9, UK 0.4 hot days/yr); the comfortable-temperature band needs the
-      `avg_annual_temperature` distribution, which is a DB read. Best done right after the acquire
-      run, then optionally flip `is_applied` to true on `local_employment` (`0104` has it `false`).
+- [x] **2. `mild_now_brutal_later`.** **Decided + applied 2026-10-09 (`0496`).** Both bands chosen
+      with the household against the real joint distribution (avg_annual_temperature from the live
+      API, projected_summer_heat_days from the committed Copernicus fixture): **mild = 10-16 C,
+      brutal = >= 25 hot days/yr**, applied on `local_employment` (`is_applied` = true). Warns
+      **Hungary, Romania, Bulgaria, Croatia** -- temperate now, 25+ projected hot days by 2041-70;
+      the already-warm Mediterranean is excluded by design. A warning, never a rule-out, and it
+      shows in the ranking once each candidate's heat figure is stored (the next `make acquire`).
 - [ ] **7. Rebuild + migrate + smoke.** The running stack predates the last four commits. Run:
       ```
       make docker-build && make docker-migrate && docker compose restart schema-diagram
