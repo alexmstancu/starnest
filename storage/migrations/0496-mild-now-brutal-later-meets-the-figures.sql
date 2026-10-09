@@ -33,10 +33,14 @@ SET    threshold_min = 25, threshold_max = NULL
 WHERE  compound_rule = 'mild_now_brutal_later'
   AND  attribute = 'country.projected_summer_heat_days';
 
-UPDATE criteria_set_compound_rule
-SET    is_applied = true
-WHERE  criteria_set = 'local_employment'
-  AND  compound_rule = 'mild_now_brutal_later';
+-- Upsert, not UPDATE: an off rule has no row. A set stores only the rules it turns on
+-- (`select_criteria_set` reads WHERE is_applied, `_write_contents` writes only the applied ones),
+-- so `mild_now_brutal_later` -- seeded is_applied=false in 0104 -- holds no row the moment the
+-- set is first edited. A bare UPDATE would match nothing and seed the rule inert. This follows
+-- 0474, which turned on `cheap_but_taxed` the same way, and the app's own upsert.
+INSERT INTO criteria_set_compound_rule (criteria_set, compound_rule, is_applied)
+VALUES ('local_employment', 'mild_now_brutal_later', true)
+ON CONFLICT (criteria_set, compound_rule) DO UPDATE SET is_applied = EXCLUDED.is_applied;
 
 -- Refuse rather than seed a half-configured rule: all three rows must have taken the change, so
 -- a typo in an attribute id or set id fails here instead of leaving the rule quietly inert.

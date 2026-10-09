@@ -1,7 +1,8 @@
--- Back to the undecided, unapplied rule: both condition bands NULL, is_applied false.
+-- Back to the undecided, unapplied rule: both condition bands NULL, and the rule off.
+-- Off is the absence of a row (a set stores only the rules it applies), so the association is
+-- deleted rather than set false -- undoing the forward upsert to the state it found.
 
-UPDATE criteria_set_compound_rule
-SET    is_applied = false
+DELETE FROM criteria_set_compound_rule
 WHERE  criteria_set = 'local_employment'
   AND  compound_rule = 'mild_now_brutal_later';
 
