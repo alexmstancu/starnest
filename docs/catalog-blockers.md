@@ -12,13 +12,13 @@
 > | **Housing** | **Resolved.** `house_price_to_income_ratio` retired, its weight moved to `housing_price_level` (Eurostat price level for rent, water and energy, EU27 = 100; 30 of 32 directly + Liechtenstein from Switzerland). | `0488` |
 > | **Nature geography** (`coastline_access`, `elevation_range`) | **Resolved -- not postponed after all.** Coastline from the World Resources Institute's 1:250,000 shoreline (`0489`), elevation from national mapping/statistics agencies (`0490`); both transcribed and scored `percentile`, covering every applicable country. | `0489`, `0490` |
 > | **`natural_diversity`** | **Deferred (post-MVP).** Held by Q142 -- a derived composite the household chose not to build for v1. | `reqs.md` Q142 |
-> | **Family** | **Accepted gap, not dropped.** The data is OECD's and OECD serves scripts an intermittent Cloudflare challenge. The pillar keeps its weight and attributes; the shortfall shows in `coverage_by_confidence` rather than being hidden by removing the pillar. | known-issues P6 |
-> | **Climate projection** (`projected_summer_heat_days`) | **Buildable, landing now.** The Copernicus adapter (reworked for NetCDF, `c21af66`) fetches a nine-model EURO-CORDEX ensemble mean; `0495` scores it by standing. The figures land on the next `make acquire`. | `0495`, `data_sources/copernicus/` |
+> | **Family** | **Resolved (2026-10-09).** OECD serves scripts an intermittent Cloudflare challenge, so the pillar's three attributes were transcribed from OECD's published tables rather than fetched (`0492`); each now answers 31 of 32. | `0492`, known-issues P6 |
+> | **Climate projection** (`projected_summer_heat_days`) | **Resolved (2026-10-09).** The Copernicus adapter (reworked for NetCDF, `c21af66`) fetches a nine-model EURO-CORDEX ensemble mean; `0495` scores it by standing, the figures have landed (32 of 32), and `mild_now_brutal_later` is applied against them (`0496`). | `0495`, `0496`, `data_sources/copernicus/` |
 >
-> Nothing above is pending a judgement. With housing and the nature geography resolved since this
-> file's earlier entries, the only genuinely unsourced weight at close is **family** (OECD-blocked)
-> and **`natural_diversity`** (Q142-deferred), plus the climate projection until the acquire run
-> lands it -- a materially smaller set than the "14-16% unsourced" this document once quoted.
+> Nothing above is pending a judgement. With housing, the nature geography, family and the climate
+> projection all resolved since this file's earlier entries, the only genuinely unsourced weight
+> left is **`natural_diversity`** (Q142-deferred, post-MVP) -- a materially smaller set than the
+> "14-16% unsourced" this document once quoted, and coverage now runs 91-95% per candidate.
 
 > ## Update 2026-09-11 — the last two blocking attributes, verified against OECD
 >

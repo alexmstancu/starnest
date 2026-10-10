@@ -23,8 +23,8 @@ the account of a defect outlives the defect.
 
 **69 findings: 64 closed, 5 open, and every one of the five is open by decision rather than
 by neglect**: P36's spend record and P28's deferred ledger, P38's mitigated LLM editions, P6's
-Cloudflare block, P10's unstored exchange rates, and P39's postponed geography. P4 is recorded
-as out of scope rather than open. **P69 closed the same day it was found** -- it was the one gap rather than a decision. **P35 closed 2026-09-19**; P64-P68 closed on 2026-09-20, all five found by running the
+Cloudflare block, and P10's unstored exchange rates. (P39's geography was resolved 2026-10-03 by
+`0489`/`0490` -- see its row below.) P4 is recorded as out of scope rather than open. **P69 closed the same day it was found** -- it was the one gap rather than a decision. **P35 closed 2026-09-19**; P64-P68 closed on 2026-09-20, all five found by running the
 application in a browser rather than by reading it. **P63 was found by fixing one of the review's own low
 items** -- wiring up a property that had no caller, which turned out to be wrong as well as
 unused. See "Found while closing the review's low items". **Twenty-two arrived at once**, from the full review of

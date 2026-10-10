@@ -696,7 +696,7 @@ Resources, not remote procedure calls, **all under `/v1`** (section 7.6). The sh
 ontology, which is why it reads as the domain rather than as a list of screens.
 
 > **`openapi.yaml` is the contract.** This table is the map; the specification is the territory —
-> 31 paths, 38 operations, 48 schemas, request and response bodies included. Backend and
+> 38 paths, 45 operations, 54 schemas, request and response bodies included. Backend and
 > interface are both written against it, and the acceptance suite exercises it.
 
 | Resource | Operations | Notes |
@@ -999,7 +999,7 @@ The four tabs of `reqs.md` 8, each a route, plus the persistent sidebar:
 |---|---|---|
 | `/configure` | criteria sets, attributes, pillars, match rules, compound rules, household, settings | criteria sets and their criteria, household, settings, match-rule overrides |
 | `/acquire` | data acquisition runs and their failures | starts runs, retries failures |
-| `/rank` | rankings, candidate detail, values with provenance, external scores | — (saving an evaluation is served but the interface does not yet call it) |
+| `/rank` | rankings, candidate detail, values with provenance, external scores | saving, listing and opening an evaluation, all called by the interface |
 | `/compare` | comparisons | — |
 
 ### 8.3 Adjusting a weight, end to end
@@ -1179,7 +1179,7 @@ rather than the software, which is a legitimate one for a project with no deadli
 maintainer.
 
 **Storage is PostgreSQL.** SQLite was the earlier plan, on a "15–40 cities" premise that no longer
-holds — v1 alone seeds 32 countries with 41 attributes, before the city level exists at all. The
+holds — v1 alone seeds 32 countries with ~40 attributes, before the city level exists at all. The
 choice is made on optionality rather than on present need. Data volume is not the argument —
 32 countries is trivial for any engine. The argument is **operational**: Postgres has native
 streaming replication, so read replicas and failover are available later without changing

@@ -79,8 +79,8 @@ set optimises for, and it has consequences worth seeing plainly:
 > **Closed on 2026-10-02** (migration `0487`): the search ended in a no, both attributes are
 > retired, and their weight sits on `country.tech_employment_share`, which Eurostat answers for
 > 30 of the 32. Career's scored criteria are now all answered and coverage rose from 72-76% to
-> 80-84% per candidate. What remains unsourced is 14.3 points across six other pillars, led by
-> nature (4.8) and housing (3.1).
+> 80-84% per candidate with `0487`. Later migrations (family `0492`, nature `0489`/`0490`,
+> projected heat `0495`) carried it to 91-95% per candidate, leaving roughly 5% unsourced.
 
 A **`remote-only` criteria set is post-MVP** — the same 74 attributes, re-weighted, with
 `connectivity` raised and `career` largely excluded. It needs no new attributes and no new
@@ -2685,8 +2685,8 @@ supplies the comparison.
 
 | Rule | Level | Shape | Reads | Fires when | Outcome |
 |---|---|---|---|---|---|
-| `mild_now_brutal_later` | country | `AllConditionsHold` | `country.avg_annual_temperature` within a comfortable band, **and** `country.projected_summer_heat_days` above a floor | A comfortable annual mean hides a projected summer that is not. **Both bands TBD** | warning |
-| `cheap_but_taxed` | country | `AllConditionsHold` | `country.cost_of_living_index` below a ceiling, **and** `country.total_tax_rate_effective` above a floor | Low prices are offset by an effective tax rate that removes the advantage. **Both bands TBD** | warning |
+| `mild_now_brutal_later` | country | `AllConditionsHold` | `country.avg_annual_temperature` within a comfortable band, **and** `country.projected_summer_heat_days` above a floor | A comfortable annual mean hides a projected summer that is not. **Bands decided (10-16 °C, and >= 25 projected heat days) and applied on `local_employment`** (`0495`/`0496`) | warning |
+| `cheap_but_taxed` | country | `AllConditionsHold` | `country.cost_of_living_index` below a ceiling, **and** `country.total_tax_rate_effective` above a floor | Low prices are offset by an effective tax rate that removes the advantage. **Bands decided and applied on `local_employment`** (`0474`) | warning |
 | `rent_vs_spend` | city | `ShareOfHouseholdField` | `city.rent_centre`, `household.target_monthly_spend` | Rent consumes more than `threshold_max` of total household spend. Provisionally 0.40 | warning |
 | `cost_of_living_vs_income` | city | `ShareOfHouseholdField` | `city.cost_of_living_monthly`, `household.net_income` | Total living costs consume more than `threshold_max` of net income. Provisionally 0.60 | warning |
 | `expat_bubble` | city | `AllConditionsHold` | `city.expat_community_size` above a floor, **and** `country.openness_to_foreigners` below a ceiling — **an input from the parent country** | A large expat community sits inside a country with low openness. **Both bands TBD** | warning |

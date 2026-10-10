@@ -5,13 +5,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repository state
 
 **All four gates are closed and the MVP is functionally complete.** Four containers, a real
-database, 32 European countries ranked from seven publishers in a browser, carrying a finished
+database, 32 European countries ranked from fifteen sources in a browser, carrying a finished
 visual design. **`docs/reqs.md` is authoritative for requirements and the ontology — read it
 first**, and `docs/devplan.md` 0 before doing implementation work.
 
-**What is left is data, not code** (2026-09-20). 25% of the score has no figure for any
-country, concentrated in career (7.6%), nature (4.8%), family (4.0%) and governance (3.6%).
-Every one of those criteria already exists as a row with a weight and a pillar, so a figure
+**What is left is data, not code** (updated 2026-10-09). Coverage now runs 91-95% per candidate
+(Liechtenstein 67%, on stand-ins), so roughly 5% of the score still has no figure -- scattered
+across a handful of criteria rather than whole pillars, since career, family, nature and the
+climate projection have all been sourced (`0487`, `0492`, `0489`/`0490`, `0495`). It was 25% on
+2026-09-20, concentrated in career (7.6%), nature (4.8%), family (4.0%) and governance (3.6%).
+Every remaining criterion already exists as a row with a weight and a pillar, so a figure
 arriving is a row rather than a change — which is the "nothing hardcoded" invariant paying out.
 `docs/todos.md` tracks what is open.
 
@@ -19,9 +22,9 @@ arriving is a row rather than a change — which is the "nothing hardcoded" inva
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
 | `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. `target_range` scores its band and falls linearly to its zero points (built 2026-09-11). The rules are applied: a compound rule warns or rules out, a gate answered `not_matching` makes a candidate not match while keeping its score, and **an undecided rule never fires**. Both shipped compound rules are now decided and applied on `local_employment` -- `cheap_but_taxed` (`0474`) and `mild_now_brutal_later` (`0496`, the heat warning that fires for Bulgaria, Hungary, Romania and Croatia). **The two compound-rule shapes that read a household field belong to the city level.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
-| `api/`, `data_acquisition/`, `data_sources/` | **Written.** **All 45 of the contract's operations**; seven source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, and an estimate from Eurostat's tax-benefit figures); values served with both dates, manual entry where the attribute permits it, and the gates' answers; runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. `RunDetail.by_source` says what each source stored and what it failed on -- **derived from the value and failure rows, never stored**, for the reason Q217 settled for `items_unanswered`; the two counts are independent and sum to nothing, because a source may fail on an item another source then answers. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
+| `api/`, `data_acquisition/`, `data_sources/` | **Written.** **All 45 of the contract's operations**; nine source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, Copernicus, a set of transcribed published tables -- RSF, EF EPI, MIPEX -- and an estimate from Eurostat's tax-benefit figures); values served with both dates, manual entry where the attribute permits it, and the gates' answers; runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. `RunDetail.by_source` says what each source stored and what it failed on -- **derived from the value and failure rows, never stored**, for the reason Q217 settled for `items_unanswered`; the two counts are independent and sum to nothing, because a source may fail on an item another source then answers. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | **Written.** Focus against comparators, deltas in the attribute's own unit, weighted contribution, and a synthesis templated from the numbers and ordered by what each gap is worth |
-| `ui/` | The shell and **all four tabs**: Configure with its eight panels (household, settings, criteria sets, pillar weights, criteria, rules, gate proposals, source priority), Acquire, Rank with its drill-down, Compare. **A criterion's rule is editable per row** -- goal, normalisation method, target band, scale anchors, matching threshold -- which is the subjective half of the ontology becoming data rather than migration. 819 unit tests and 32 browser tests, the latter including a functional sanity suite that walks all four tabs. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
+| `ui/` | The shell and **all four tabs**: Configure with its eight panels (household, settings, criteria sets, pillar weights, criteria, rules, gate proposals, source priority), Acquire, Rank with its drill-down, Compare. **A criterion's rule is editable per row** -- goal, normalisation method, target band, scale anchors, matching threshold -- which is the subjective half of the ontology becoming data rather than migration. 1,115 unit tests and 32 browser tests, the latter including a functional sanity suite that walks all four tabs. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
 
 **GATE D closed 2026-09-12** — the four failure modes, executable
 (`backend/tests/acceptance/test_gate_d.py`): a process that dies mid-run keeps every figure it
@@ -66,10 +69,11 @@ P19.
 **GATE B closed 2026-09-12** — all 32 countries ranked from seven sources, every blocking
 attribute answered for every country (proved live by `make live`), the four spot-checked figures
 matching their publishers by routes the adapters never use, and selective retry built. **The
-family pillar is the one known gap**: OECD blocks scripts, so it waits rather than being
-unfinished. **GATE A closed 2026-09-05** — `backend/tests/acceptance/test_gate_a.py` is the gate written
-down, seven steps in order against a real database plus two standing checks. 2,470 backend
-tests, 819 interface tests and 32 browser tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
+family pillar was the one known gap at closure**: OECD blocks scripts, so it waited -- its three
+attributes were later transcribed from OECD's published tables (`0492`) and now answer 31 of 32.
+**GATE A closed 2026-09-05** — `backend/tests/acceptance/test_gate_a.py` is the gate written
+down, seven steps in order against a real database plus two standing checks. 2,722 backend
+tests, 1,115 interface tests and 32 browser tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
 deliberately does not cover.
 
 **Two tables looked dead in the schema diagram and only one was** (Q229). `settings` is a
@@ -104,10 +108,11 @@ with no criterion attached. It keeps its pillar, its source and its provenance, 
 and displayed as context. **Found by fetching it rather than by reasoning about it**, which is
 the argument for a live check on every new adapter.
 
-**Figures reach 10 of 11 pillars.** P4 was **ordered by pillar coverage, not adapter
-convenience** (`devplan.md` D7): World Bank WGI, then Eurostat extended (career, connectivity,
-nature), then WHO (health), the IMF (economics), OECD (tax) and Open-Meteo (climate). Seven
-adapters, no shared machinery beyond the `SourceAdapter` contract.
+**Figures now reach all 11 pillars** (family joined when its OECD tables were transcribed,
+`0492`). P4 was **ordered by pillar coverage, not adapter convenience** (`devplan.md` D7): World
+Bank WGI, then Eurostat extended (career, connectivity, nature), then WHO (health), the IMF
+(economics), OECD (tax) and Open-Meteo (climate) -- its seven adapters, with no shared machinery
+beyond the `SourceAdapter` contract; Copernicus and the transcribed published tables came after.
 
 **Career is answered, by retiring the question** (2026-10-02, `0487`).
 `tech_software_jobs` and `tech_product_jobs` carried **44% of the career pillar with no figure
@@ -119,8 +124,9 @@ weight moved to `tech_employment_share` -- Eurostat `isoc_sks_itspt`, ICT specia
 of employment, which answers 30 of 32 **and was already being fetched**. It measures a *stock*
 where a posting count measures a *flow*, which also disposes of the volatility objection. The
 software/product split is what is lost, and the attributes are retired rather than deleted so
-it returns the day a source can draw it. **Coverage rose from 72-76% to 80-84%**; what remains
-unsourced is 14.3 points, led by nature (4.8) and housing (3.1).
+it returns the day a source can draw it. **`0487` lifted coverage from 72-76% to 80-84%**; later
+migrations (family `0492`, projected heat `0495`, nature `0489`/`0490`) carried it to 91-95% per
+candidate, leaving roughly 5% unsourced.
 
 **The lesson was where to look.** `datasources.md` said "source unresolved" and the adapter had
 already mapped the dataset that resolved it -- so the gap was never a missing source, it was a
@@ -128,9 +134,10 @@ catalog asking a question nothing could answer beside an attribute already answe
 version of it. **Check what the code already does before researching what it should do**, which
 is the same finding as `/pillars` serving a client nobody had written.
 
-**Family is the one pillar left, and it is blocked on something real rather than on effort.**
-It is OECD's, and OECD's API now serves scripts a Cloudflare browser challenge
-(`docs/catalog-blockers.md` item 5). **Climate is answered** (D4, Q210): temperature is the
+**Family was the last pillar, and it is now answered** (`0492`). OECD's API serves scripts a
+Cloudflare browser challenge (`docs/catalog-blockers.md` item 5), so its three attributes --
+child benefit, parental leave and school-system quality -- were transcribed from OECD's published
+tables rather than fetched, and each now answers 31 of 32. **Climate is answered** (D4, Q210): temperature is the
 population-weighted mean over each country's five largest places, from GeoNames and Open-Meteo,
 for the year and for a summer day and a winter day (Q213: daytime highs, never the night);
 sunshine is deliberately not fetched, because Open-Meteo's runs 30% to 68% high, unevenly.
@@ -169,10 +176,11 @@ a published figure. **Liechtenstein is ranked on Switzerland's figures for three
 (Q208, `0460`): the `stand_in` table declares, per attribute and with a reason, whose figure
 stands in where no source covers a candidate, and the copy is stored under the `stand_in`
 source at `low` confidence, never as the candidate's own measurement. **Every ranked candidate
-now reports `coverage_by_confidence`** (`reqs.md` 5.7) — 51% of Liechtenstein's covered weight
-is low-confidence, 8% for the five on the estimate. **Coverage is 72-76% per candidate** (the 57% this line used to quote was measured 2026-09-11, before several data migrations) since the household
-anchored the seven `fixed` criteria with data (Q209, `0462`); what remains uncovered has no data
-at all, not merely no anchor.
+now reports `coverage_by_confidence`** (`reqs.md` 5.7) — 57% of Liechtenstein's covered weight
+is low-confidence, 16% for the five on the estimated tax rate. **Coverage is 91-95% per candidate**
+(2026-10-09; the 72-76% and 57% this line used to quote were measured earlier, before several
+data migrations) once the household anchored the seven `fixed` criteria with data (Q209, `0462`)
+and the later source migrations landed; what remains uncovered has no data at all, not merely no anchor.
 
 **The total tax rate (Q205) counts every component, employee's and employer's, over the whole
 cost of employment, at 167% of the average wage** — so Romania, which moved contributions onto
