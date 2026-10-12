@@ -144,6 +144,13 @@ class TestWhatIsActuallyWiredIn:
             # Free but token-gated, so it is wired unconditionally and not paid: without a token
             # it records a failure for its one attribute rather than vanishing from the roster.
             "copernicus",
+            # International air connectivity, computed offline from a vendored 2017 OpenFlights
+            # route graph. The rank-2 source the catalog already declared; stale by design, so it
+            # fills the countries the LLM fallback never reached without displacing anything.
+            "openflights",
+            # Terrestrial protected-area share for the four non-EU members Eurostat omits, from
+            # the WDPA profiles (Protected Planet), the rank-1 source the catalog already ranks.
+            "protected_planet",
         }
         # Nothing but the LLM path charges, and it is the only thing that may appear here
         # because of configuration rather than because of code.
@@ -357,14 +364,31 @@ class TestTheFallbackDeclaration:
             **FULLY_CONFIGURED,  # type: ignore[arg-type]
         )
 
-        (fallback,) = await _the_fallback(environment, _ACatalogOfThree(), [_AnsweringOne()])
+        (fallback,) = await _the_fallback(environment, _ACatalogOfFour(), [_AnsweringOne()])
 
         assert set(fallback.attributes) == {"country.uncovered_ratio"}
+
+    async def test_a_manual_entry_attribute_is_left_to_the_household(self) -> None:
+        """A magnitude-carrying attribute nothing else covers is still excluded when it is
+        manual-entry: manual entry is the household's judgement about a published procedure
+        (`reqs.md` 6.9), and asking the model can only be billed to refuse (no citable gradient).
+        This is the guard that stops a run re-paying to learn `residency_admin_ease` and
+        `pension_portability` are uncitable, as one did on 2026-10-09.
+        """
+        environment = Environment(
+            _env_file=None,
+            database_url="postgresql://localhost/starnest",
+            **FULLY_CONFIGURED,  # type: ignore[arg-type]
+        )
+
+        (fallback,) = await _the_fallback(environment, _ACatalogOfFour(), [_AnsweringOne()])
+
+        assert "country.manual_judgement" not in fallback.attributes
 
     async def test_with_no_model_there_is_no_fallback(self) -> None:
         environment = Environment(_env_file=None, database_url="postgresql://localhost/starnest")
 
-        assert await _the_fallback(environment, _ACatalogOfThree(), []) == ()
+        assert await _the_fallback(environment, _ACatalogOfFour(), []) == ()
 
 
 class _AnsweringOne:
@@ -379,8 +403,9 @@ class _AnsweringOne:
         return ("country.covered_ratio",)
 
 
-class _ACatalogOfThree:
-    """Three attributes: one covered, one not, one that carries no magnitude."""
+class _ACatalogOfFour:
+    """Four attributes: one covered, one not, one that carries no magnitude, and one that
+    carries a magnitude but is left to manual entry (the household's judgement, never the model)."""
 
     async def read_attributes(self, level: str | None = None) -> list[Attribute]:
         return [
@@ -406,5 +431,13 @@ class _ACatalogOfThree:
                 level="country",
                 value_type=ValueType.LABEL_SET,
                 pillar="climate",
+            ),
+            Attribute(
+                id="country.manual_judgement",
+                name="A magnitude-carrying score left to manual entry",
+                level="country",
+                value_type=ValueType.ASSIGNED_SCORE,
+                pillar="governance",
+                manual_entry=True,
             ),
         ]

@@ -1,0 +1,15 @@
+# data_source: protected_planet
+# attribute: country.protected_land_share
+# publication: World Database on Protected Areas (WDPA), Protected Planet country profiles
+# publisher_url: https://www.protectedplanet.net/en
+# transcribed_on: 2026-10-11
+# confidence: medium
+# period: the WDPA country profile is a living snapshot, read October 2026; the figures describe the national-designations inventory (EEA NatDA/CDDA + Emerald, updated 2025), so the period stated is 2025.
+# route: these are the non-EU-member countries Eurostat's sdg_15_20 does not cover. Protected Planet is the rank-1 source the catalog already declares for this attribute (0101); Eurostat (rank 2) answers the 27 EU members. Each figure was read from the country's Protected Planet profile (the coverage % is loaded by script, so the page was rendered in a browser) and cross-checked against Our World in Data's WDPA-sourced "share of land that is protected" series, which agreed to the decimal except GB (OWID 28.4 from an older snapshot vs the live 28.63).
+# scale: terrestrial and inland-waters protected area as a percent of land area, overlapping designations dissolved -- the same quantity Eurostat publishes as TPA (areaprot=TPA). Known basis difference: WDPA dissolves in international designations (Ramsar, World Heritage, the Emerald Network) that Eurostat's CDDA+Natura2000 composition omits, so a WDPA figure can read slightly higher than a Eurostat-style one would. Medium confidence for that reason, not high.
+# excluded: Liechtenstein. Its live WDPA coverage (44.83%) is a methodology artifact -- it dissolves in Emerald-Network designations against a 160 km2 denominator, and the country's own 5th National Report puts protected coverage at 12.30%. The two differ so widely that neither is a comparable measurement beside the EU-27 CDDA figures, so LI is left uncovered here rather than given a number that would flatter its nature pillar. Eurostat does not cover it either.
+country_code,figure,period,page,workings
+CH,12.5,2025,https://www.protectedplanet.net/country/CHE,terrestrial + inland waters protected area 12.53% of land area (5173 of 41291 km2), WDPA profile read Oct 2026
+GB,28.6,2025,https://www.protectedplanet.net/country/GBR,terrestrial + inland waters protected area 28.63% of land area (70181 of 245133 km2), WDPA profile read Oct 2026
+IS,20.9,2025,https://www.protectedplanet.net/country/ISL,terrestrial + inland waters protected area 20.89% of land area (21089 of 100974 km2), WDPA profile read Oct 2026
+NO,17.8,2025,https://www.protectedplanet.net/country/NOR,terrestrial + inland waters protected area 17.81% of mainland land area (57781 of 324484 km2; mainland, excludes Svalbard/Jan Mayen), WDPA profile read Oct 2026

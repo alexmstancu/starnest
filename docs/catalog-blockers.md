@@ -14,11 +14,17 @@
 > | **`natural_diversity`** | **Deferred (post-MVP).** Held by Q142 -- a derived composite the household chose not to build for v1. | `reqs.md` Q142 |
 > | **Family** | **Resolved (2026-10-09).** OECD serves scripts an intermittent Cloudflare challenge, so the pillar's three attributes were transcribed from OECD's published tables rather than fetched (`0492`); each now answers 31 of 32. | `0492`, known-issues P6 |
 > | **Climate projection** (`projected_summer_heat_days`) | **Resolved (2026-10-09).** The Copernicus adapter (reworked for NetCDF, `c21af66`) fetches a nine-model EURO-CORDEX ensemble mean; `0495` scores it by standing, the figures have landed (32 of 32), and `mild_now_brutal_later` is applied against them (`0496`). | `0495`, `0496`, `data_sources/copernicus/` |
+> | **Sunshine** (`annual_sunshine_hours`) | **Resolved (2026-10-12).** Measured national met-office normals, population-weighted over each country's largest cities, transcribed under `national_statistics`; 32 of 32. Open-Meteo (the declared source) was the reason it stood empty -- its modelled sunshine runs 30-68% high. Anchored in `0497`. | `0497`, `published_tables/tables/national_met_office_sunshine.csv` |
+> | **Air connectivity** (`international_air_connectivity`) | **Resolved (2026-10-12).** The `openflights` rank-2 adapter computes distinct foreign destinations from a vendored 2017 route graph; 31 of 32 (Liechtenstein has no airport, a gap by nature). Stale-stamped, so the active-value rule ranks it below the fresher LLM values it joins. Anchored in `0497`. | `0497`, `data_sources/openflights/` |
+> | **Protected land, non-EU** (`protected_land_share`) | **Resolved (2026-10-12).** The four non-EU members Eurostat omits (Iceland, Norway, Switzerland, UK) transcribed from WDPA (`protected_planet`, the rank-1 source); 31 of 32. Liechtenstein excluded -- its WDPA figure (44.8%) is a methodology artifact against a 160 km2 denominator. | `published_tables/tables/protected_planet_protected_land.csv` |
+> | **`residency_admin_ease`, `pension_portability`** | **Deliberate gap, not missing.** Researched for all 32 on 2026-10-03: EU law flattens both, leaving no citable per-country gradient, and their only real signal (UK, Switzerland) is captured as gates `0493`/`0494`. Manual-entry AssignedScores, now excluded from LLM runs so a sweep cannot be billed to re-learn this. | `reqs.md` 6.9, `0493`/`0494` |
+> | **`english_proficiency`** (7 countries) | **Deliberate gap.** An `Index` locked to EF EPI's scale. EF does not score native/official-English UK, Ireland and Malta (it measures English as a *foreign* language) nor unranked Luxembourg, Liechtenstein, Iceland and Slovenia; a different source cannot fill an EF-scale Index without comparing unlike things. | `published_tables/tables/ef_epi_english_proficiency.csv` |
 >
-> Nothing above is pending a judgement. With housing, the nature geography, family and the climate
-> projection all resolved since this file's earlier entries, the only genuinely unsourced weight
-> left is **`natural_diversity`** (Q142-deferred, post-MVP) -- a materially smaller set than the
-> "14-16% unsourced" this document once quoted, and coverage now runs 91-95% per candidate.
+> Nothing above is pending a judgement. With housing, the nature geography, family, the climate
+> projection, sunshine, air connectivity and the non-EU protected-land figures all resolved, the
+> genuinely unsourced weight left is **`natural_diversity`** (Q142-deferred, post-MVP) plus the two
+> governance AssignedScores and the seven EF-unscored English countries -- all deliberate, recorded
+> gaps rather than unfinished work. Coverage now runs 95-98% per candidate.
 
 > ## Update 2026-09-11 — the last two blocking attributes, verified against OECD
 >

@@ -313,6 +313,7 @@ def _the_sources(catalog: object, environment: "Environment") -> tuple:
     from starnest.data_sources.imf import ImfAdapter
     from starnest.data_sources.oecd import OecdAdapter
     from starnest.data_sources.open_meteo import OpenMeteoAdapter
+    from starnest.data_sources.openflights import OpenFlightsAdapter
     from starnest.data_sources.published_tables import PublishedTableAdapter, every_published_table
     from starnest.data_sources.who import WhoAdapter
     from starnest.data_sources.world_bank import WorldBankAdapter
@@ -330,6 +331,10 @@ def _the_sources(catalog: object, environment: "Environment") -> tuple:
         # covered and the boot check still agrees with the catalog; a run without one records a
         # clear failure for the one projection it answers.
         CopernicusAdapter(httpx.AsyncClient(timeout=120), environment.cds_api_key),
+        # Free and offline: international air connectivity computed from a vendored 2017 OpenFlights
+        # route graph. Stale by design (it ranks below any fresher source), so it fills the
+        # countries the LLM fallback never reached rather than displacing anything.
+        OpenFlightsAdapter(),
         # One per transcribed table. Read here, at boot, so a slip in a file stops the start-up
         # with the file and row named rather than surfacing mid-run as a publisher's fault.
         *(PublishedTableAdapter(table) for table in every_published_table()),
@@ -356,6 +361,13 @@ async def _the_fallback(
     "No dataset covers this" is literally "no adapter declares it" (`reqs.md` 6.10 use 1), so
     the set is derived from the registry rather than kept by hand -- a hand-kept list would drift
     the first time an adapter gained an attribute.
+
+    **A manual-entry attribute is excluded**, even when no adapter covers it. Manual entry is the
+    household's own judgement about a published procedure (`reqs.md` 6.9), not a measurable figure
+    a model can cite -- and when the model is asked anyway it can only refuse (there is no citable
+    gradient), so the question is billed for nothing. `residency_admin_ease` and
+    `pension_portability` were researched for all 32 on 2026-10-03 and deliberately left to manual
+    entry for exactly this reason; asking the fallback about them spent money to re-learn it.
     """
     llm = _the_model(environment)
     if llm is None:
@@ -371,6 +383,7 @@ async def _the_fallback(
         if attribute.id not in covered
         and attribute.value_type in ANSWERABLE
         and not attribute.is_retired
+        and not attribute.manual_entry
     )
     if not uncovered:
         return ()

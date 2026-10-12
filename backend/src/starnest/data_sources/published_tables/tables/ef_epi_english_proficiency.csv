@@ -6,6 +6,7 @@
 # confidence: high
 # period: EF states the 2025 edition "is based on test data from more than 2,200,000 test takers around the world who took the EF SET in 2024" (https://www.ef.com/wwen/epi/about-epi/), so every figure describes 2024, not the edition year.
 # route: every figure was read from EF's own pages. 18 from the Europe region page; the 7 in lower bands, which that page did not list, from each country's own page.
+# not covered: seven roster countries have no EF EPI figure, by the index's design rather than by a gap in transcription (checked against EF's 2025 ranking, 2026-10-12). The United Kingdom, Ireland and Malta are native/official-English, which EF EPI does not measure -- it scores English as a *foreign* language. Luxembourg, Liechtenstein, Iceland and Slovenia are not in EF's 2025 ranking (too few test-takers that edition). This attribute is an Index locked to EF's scale, so a different source (e.g. Eurobarometer self-reported English) cannot fill it without comparing unlike things; these seven stay uncovered rather than be given a fabricated EF-scale score. Decision recorded 2026-10-12.
 # not ranked: IS, IE, LI, LU, MT, SI, GB are absent from the 2025 edition, so they get no figure rather than an estimate. Wikipedia's copy gave Latvia 599; EF's page gives 598, and the publisher's figure is the one kept.
 country_code,figure,period,page,workings
 AT,616,2024,https://www.ef.com/wwen/epi/regions/europe/,

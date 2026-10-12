@@ -48,6 +48,8 @@ THE_ANCHORS_THE_HOUSEHOLD_CHOSE = {
     "country.winter_daytime_temperature": ((Decimal(0), 0), (Decimal(15), 100)),
     "country.parental_leave_policy": ((Decimal(8), 0), (Decimal(90), 100)),
     "country.naturalisation_pathway": ((Decimal(5), 100), (Decimal(10), 0)),
+    "country.annual_sunshine_hours": ((Decimal(1300), 0), (Decimal(3200), 100)),
+    "country.international_air_connectivity": ((Decimal(20), 0), (Decimal(300), 100)),
 }
 """Every anchor the shipped set carries, each decided against real figures (Q206, Q209, Q212, Q213).
 
@@ -59,6 +61,12 @@ what 0 and 100 mean.
 **Naturalisation joined on 2026-09-21** (`0479`), and there its two numbers are the observed
 legal extremes rather than a rounding of them: every jurisdiction on the roster requires 5, 7,
 8 or 10 years, so there is nothing between the ends to invent.
+
+**Sunshine and air connectivity joined on 2026-10-12** (`0497`), when figures first landed for
+them -- national met-office sunshine normals and OpenFlights' international-destination counts.
+Both were `fixed` and anchorless until then, so the data would have scored nothing; the pairs
+(sunshine 1300 h -> 0, 3200 h -> 100; connectivity 20 -> 0, 300 -> 100) are provisional,
+data-informed starting points, unlike naturalisation's observed legal extremes.
 
 **The roster is the point.** "No anchor ships" held until `0447`, and it was never the real
 rule -- the rule is that no anchor ships that nobody chose. An anchor appearing here without a

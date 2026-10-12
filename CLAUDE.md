@@ -5,14 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repository state
 
 **All four gates are closed and the MVP is functionally complete.** Four containers, a real
-database, 32 European countries ranked from fifteen sources in a browser, carrying a finished
+database, 32 European countries ranked from seventeen sources in a browser, carrying a finished
 visual design. **`docs/reqs.md` is authoritative for requirements and the ontology — read it
 first**, and `docs/devplan.md` 0 before doing implementation work.
 
-**What is left is data, not code** (updated 2026-10-09). Coverage now runs 91-95% per candidate
-(Liechtenstein 67%, on stand-ins), so roughly 5% of the score still has no figure -- scattered
-across a handful of criteria rather than whole pillars, since career, family, nature and the
-climate projection have all been sourced (`0487`, `0492`, `0489`/`0490`, `0495`). It was 25% on
+**What is left is data, not code** (updated 2026-10-12). Coverage now runs 95-98% per candidate
+(Liechtenstein 68%, on stand-ins), so roughly 2-3% of the score still has no figure -- scattered
+across a handful of criteria rather than whole pillars, since career, family, nature, the
+climate projection, sunshine and international air connectivity have all been sourced (`0487`,
+`0492`, `0489`/`0490`, `0495`, `0497`). It was 25% on
 2026-09-20, concentrated in career (7.6%), nature (4.8%), family (4.0%) and governance (3.6%).
 Every remaining criterion already exists as a row with a weight and a pillar, so a figure
 arriving is a row rather than a change — which is the "nothing hardcoded" invariant paying out.
@@ -22,7 +23,7 @@ arriving is a row rather than a change — which is the "nothing hardcoded" inva
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
 | `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. `target_range` scores its band and falls linearly to its zero points (built 2026-09-11). The rules are applied: a compound rule warns or rules out, a gate answered `not_matching` makes a candidate not match while keeping its score, and **an undecided rule never fires**. Both shipped compound rules are now decided and applied on `local_employment` -- `cheap_but_taxed` (`0474`) and `mild_now_brutal_later` (`0496`, the heat warning that fires for Bulgaria, Hungary, Romania and Croatia). **The two compound-rule shapes that read a household field belong to the city level.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
-| `api/`, `data_acquisition/`, `data_sources/` | **Written.** **All 45 of the contract's operations**; nine source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, Copernicus, a set of transcribed published tables -- RSF, EF EPI, MIPEX -- and an estimate from Eurostat's tax-benefit figures); values served with both dates, manual entry where the attribute permits it, and the gates' answers; runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. `RunDetail.by_source` says what each source stored and what it failed on -- **derived from the value and failure rows, never stored**, for the reason Q217 settled for `items_unanswered`; the two counts are independent and sum to nothing, because a source may fail on an item another source then answers. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
+| `api/`, `data_acquisition/`, `data_sources/` | **Written.** **All 45 of the contract's operations**; ten source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, Copernicus, OpenFlights, a set of transcribed published tables -- RSF, EF EPI, MIPEX, WDPA, PISA and national met-office sunshine normals -- and an estimate from Eurostat's tax-benefit figures); values served with both dates, manual entry where the attribute permits it, and the gates' answers; runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. `RunDetail.by_source` says what each source stored and what it failed on -- **derived from the value and failure rows, never stored**, for the reason Q217 settled for `items_unanswered`; the two counts are independent and sum to nothing, because a source may fail on an item another source then answers. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | **Written.** Focus against comparators, deltas in the attribute's own unit, weighted contribution, and a synthesis templated from the numbers and ordered by what each gap is worth |
 | `ui/` | The shell and **all four tabs**: Configure with its eight panels (household, settings, criteria sets, pillar weights, criteria, rules, gate proposals, source priority), Acquire, Rank with its drill-down, Compare. **A criterion's rule is editable per row** -- goal, normalisation method, target band, scale anchors, matching threshold -- which is the subjective half of the ontology becoming data rather than migration. 1,115 unit tests and 32 browser tests, the latter including a functional sanity suite that walks all four tabs. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
 
@@ -125,8 +126,29 @@ of employment, which answers 30 of 32 **and was already being fetched**. It meas
 where a posting count measures a *flow*, which also disposes of the volatility objection. The
 software/product split is what is lost, and the attributes are retired rather than deleted so
 it returns the day a source can draw it. **`0487` lifted coverage from 72-76% to 80-84%**; later
-migrations (family `0492`, projected heat `0495`, nature `0489`/`0490`) carried it to 91-95% per
-candidate, leaving roughly 5% unsourced.
+migrations (family `0492`, projected heat `0495`, nature `0489`/`0490`, then sunshine and air
+connectivity in `0497`) carried it to 95-98% per candidate, leaving roughly 2-3% unsourced.
+
+**The last data gaps were closed by wiring sources the catalog already declared** (2026-10-12).
+Two patterns from before repeated: a *declared-but-unwired* source and a *measured-not-modelled*
+one. `international_air_connectivity` (20/32 on low-confidence LLM) gained the `openflights`
+adapter -- its rank-2 source, computed offline from a vendored 2017 route graph as distinct
+foreign destinations (Germany 314, Netherlands 253, verified) -- which fills the 11 blanks to
+31/32; Liechtenstein has no airport, so it stays a gap by nature, not by omission. The 2017 date
+is honest and stale, so the active-value rule ranks it below the fresher LLM values it sits
+beside rather than displacing them. `annual_sunshine_hours` (0/32) is now transcribed from
+national met-office normals, population-weighted over each country's largest cities under
+`national_statistics` -- Open-Meteo's modelled sunshine was the reason it stood empty.
+`protected_land_share` gained its four non-EU members from WDPA (`protected_planet`, rank 1),
+Liechtenstein excluded as a methodology artifact. **A `fixed` criterion with no anchors scores
+nothing**, which `test_catalog_arithmetic` guards, so `0497` anchored sunshine and air for both
+sets (provisional, data-informed). **Three gaps are deliberate, not missing**: `residency_admin_ease`
+and `pension_portability` have no citable per-country gradient (researched 2026-10-03; EU law
+flattens them, and their only signal is captured as gates `0493`/`0494`), and `english_proficiency`
+is an EF-EPI-scaled `Index` that EF does not compute for native/official-English UK, Ireland and
+Malta or for unranked Luxembourg, Liechtenstein, Iceland and Slovenia. **The LLM fallback now
+excludes manual-entry attributes** (`main.py`), so a run can no longer be billed to re-learn that
+those two AssignedScores are uncitable -- which one did, for about EUR 8.50, on 2026-10-09.
 
 **The lesson was where to look.** `datasources.md` said "source unresolved" and the adapter had
 already mapped the dataset that resolved it -- so the gap was never a missing source, it was a
@@ -140,7 +162,9 @@ child benefit, parental leave and school-system quality -- were transcribed from
 tables rather than fetched, and each now answers 31 of 32. **Climate is answered** (D4, Q210): temperature is the
 population-weighted mean over each country's five largest places, from GeoNames and Open-Meteo,
 for the year and for a summer day and a winter day (Q213: daytime highs, never the night);
-sunshine is deliberately not fetched, because Open-Meteo's runs 30% to 68% high, unevenly.
+sunshine is measured from national met-office normals, population-weighted over each country's
+largest cities (`0497`) -- **not** from Open-Meteo, whose modelled sunshine runs 30% to 68% high,
+unevenly, which is why it stood empty until the normals were transcribed.
 
 **Two criteria sets ship, and they disagree** (Q226, `0469`): `local_employment` and
 `remote_only`, the same 43 attributes weighted for two scenarios. Switching re-ranks instantly
@@ -177,8 +201,8 @@ a published figure. **Liechtenstein is ranked on Switzerland's figures for three
 stands in where no source covers a candidate, and the copy is stored under the `stand_in`
 source at `low` confidence, never as the candidate's own measurement. **Every ranked candidate
 now reports `coverage_by_confidence`** (`reqs.md` 5.7) — 57% of Liechtenstein's covered weight
-is low-confidence, 16% for the five on the estimated tax rate. **Coverage is 91-95% per candidate**
-(2026-10-09; the 72-76% and 57% this line used to quote were measured earlier, before several
+is low-confidence, 16% for the five on the estimated tax rate. **Coverage is 95-98% per candidate**
+(2026-10-12; the 72-76% and 57% this line used to quote were measured earlier, before several
 data migrations) once the household anchored the seven `fixed` criteria with data (Q209, `0462`)
 and the later source migrations landed; what remains uncovered has no data at all, not merely no anchor.
 
