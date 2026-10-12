@@ -298,3 +298,45 @@ hand-typed value is the one kind that cannot be re-fetched at any price (Gate D)
 comma-separated text field and four numeric fields are very different shapes), whether the
 confidence picker belongs in the form or should default silently, and whether the success line
 should link to the value in the Rank drill-down.
+
+## A sixth pass: the return channel for the next sync (2026-10-12)
+
+A review read the running application and the UI code against this file (the live `.dc.html` was
+not re-fetched in that pass). Nothing in the application regressed from the design; what follows
+is the consolidated request for the next design revision, so it is one list rather than scattered
+through the passes above.
+
+**Please draw these -- they are built and shipping, but the mockup does not show them:**
+
+- **The hand-entry form** (the 2026-09-30 pass). The mockup has only the signpost button
+  (`UX-REVIEW.md`: "the button is a signpost"); the implementation has two editors in the
+  design's own `.field` idiom -- a `LabelSet` comma field and an `AssignedScore` numeric set --
+  with a required scale, a required reference period beside the stamped retrieval date, a
+  confidence picker, and a success line that reads back what it stored. The three open rulings
+  are listed at the end of that pass.
+- **The Stop control's states** (the 2026-09-24 pass). The mockup draws the control; the
+  implementation adds the `stopping` micro-state (the pair "running, stop asked" said in one
+  word), the button withdrawing once asked, and the two distinct halt statuses `halted_by_user`
+  and `halted_on_spend_cap`. Each is a state somebody should draw rather than one we invented.
+- **The acquisition diff's fourth count** (the third pass, "Earlier and Later"). The mockup's
+  diff has three verdicts; the implementation splits "refreshed" into *moved* and *unchanged* and
+  prints the two figures in an Earlier and a Later column so the verdict is checkable.
+
+**One divergence to rule on:** the **country-code chip**. The design draws a flag (a 24x17 chip
+carrying an ISO code from `ui/flags/*.svg`). The catalog holds no ISO code and writing a
+country-to-ISO table into the client is the hardcoding `reqs.md` bars, so the earlier passes left
+the column out. It is now filled a different way: `GET /rankings` carries a `country_code`, and
+the Rank table renders it as a bordered two-letter chip in the design's own placeholder slot (BG,
+MT, CY). **Please decide** whether that two-letter chip is the official treatment, or whether the
+flag stays the intent for the day an ISO/flag source is added to the catalog. (This supersedes
+the "No flag beside a candidate" note in the third pass, which recorded the column as omitted.)
+
+**Still owed by the design, unchanged and now the only standing ask:** the **loading, empty and
+error states**. `useResource` distinguishes idle, loading, ready and error on every screen and
+the mockup draws only the last -- still the largest gap between the file and what a reader meets.
+
+**Two notes above are now stale (implementation caught up, nothing to add):** the Acquire history
+list now carries the per-row *Stored* and *Failed* counts the fourth pass flagged as a contract
+gap, and the run-summary progress meter now renders its three segments in colour (completed teal,
+failed red, unanswered grey) -- it had regressed to a single black bar for want of a CSS rule per
+segment kind, fixed 2026-10-12. Both match what the design already specified.

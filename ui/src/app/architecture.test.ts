@@ -236,6 +236,31 @@ describe("the design is a plugin", () => {
     expect(cancelled).toEqual([]);
   });
 
+  it("styles every run-progress meter segment the markup can emit", () => {
+    /**
+     * **A modifier class used in markup with no matching rule is invisible until a browser
+     * renders it.** `RunScreen.tsx` builds `meter__fill--${segment.kind}` from the kinds
+     * `runProgress.ts` declares, and the SVG `<rect>` falls back to a default *black* fill for
+     * any kind the sheet does not style -- which shipped: the Acquire summary bar rendered solid
+     * black while the per-source bars beside it were teal. The confidence meters never exercise
+     * these kinds, and neither the undeclared-token nor the modifier-order guard reads markup.
+     *
+     * Same shape as the guards above: the union in `runProgress.ts` and the rules in
+     * `styles.css` are two artifacts that must agree, so compare them.
+     */
+    const progress = readFileSync(join(SOURCE, "routes/run/runProgress.ts"), "utf8");
+    const union = /kind:\s*("[a-z]+"(?:\s*\|\s*"[a-z]+")*)/.exec(progress)?.[1] ?? "";
+    const kinds = [...union.matchAll(/"([a-z]+)"/g)].map((match) => match[1]);
+    expect(kinds).not.toEqual([]);
+
+    const stylesheet = readFileSync(join(SOURCE, "styles.css"), "utf8");
+    const styled = new Set(
+      [...stylesheet.matchAll(/\.meter__fill--([a-z]+)\s*\{/g)].map((match) => match[1]),
+    );
+
+    expect(kinds.filter((kind) => !styled.has(kind))).toEqual([]);
+  });
+
   it("uses no monospace, which the design forbids outright", () => {
     // "No monospace anywhere" is the design's own rule and was broken three times, most
     // recently by an identifier this application had no business rendering at all.

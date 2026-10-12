@@ -278,12 +278,34 @@ SELECT r.id,
        -- The same columns `select_evaluation_results` returns. Two statements read this table
        -- and both feed `_result_from`, so a column added to one and not the other reads as
        -- absent on exactly one screen -- which is how the drill-down on a saved ranking
-       -- showed an empty confidence split while the list beside it showed a full one.
+       -- showed an empty confidence split while the list beside it showed a full one. The
+       -- warning was written and the coverage split added to both; the reasons and warnings
+       -- below were added only here on 2026-10-12, having been live on the list alone -- so the
+       -- saved drill-down read `non_match_reasons: []` for a candidate the list beside it
+       -- explained. Keep every aggregation on both statements, not just this comment.
        r.coverage_absolute,
        r.coverage_high,
        r.coverage_medium,
        r.coverage_low,
-       r.insufficient_reason
+       r.insufficient_reason,
+       COALESCE(
+           (SELECT jsonb_agg(jsonb_build_object(
+                       'attribute',     reason.attribute,
+                       'match_rule',    reason.match_rule,
+                       'compound_rule', reason.compound_rule,
+                       'detail',        reason.reason_detail)
+                     ORDER BY reason.id)
+            FROM   non_match_reason AS reason
+            WHERE  reason.candidate_result = r.id),
+           '[]'::jsonb) AS non_match_reasons,
+       COALESCE(
+           (SELECT jsonb_agg(jsonb_build_object(
+                       'compound_rule', warning.compound_rule,
+                       'detail',        warning.detail)
+                     ORDER BY warning.compound_rule)
+            FROM   candidate_warning AS warning
+            WHERE  warning.candidate_result = r.id),
+           '[]'::jsonb) AS warnings
 FROM   candidate_result AS r
 JOIN   candidate AS c ON c.id = r.candidate
 WHERE  r.evaluation = :evaluation

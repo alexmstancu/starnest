@@ -203,6 +203,40 @@ class TestTheRulesTravelWithTheResult:
         assert read.non_match_reasons[0].reason_detail == "no sponsor"
         assert read.non_match_reasons[0].compound_rule is None
 
+    async def test_the_saved_drill_down_carries_them_too(self, pool: AsyncConnectionPool) -> None:
+        """The drill-down is the screen whose whole job is to explain the verdict, so it must
+        carry the reasons -- not only the list beside it. `select_candidate_result` once omitted
+        the two aggregations `select_evaluation_results` has, so `read_candidate` returned empty
+        tuples and the saved drill-down showed `non_match_reasons: []` for a candidate the list
+        explained (fixed 2026-10-12). `CandidateScoreDetailBody` requires the two drill-down
+        paths -- live and saved -- to return the same shape, and the list already carried them."""
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        store = PostgresEvaluationStore(pool)
+        flagged = a_result(
+            PORTUGAL,
+            71,
+            None,
+            match_status=MatchStatus.NOT_MATCHING,
+            warnings=(RuleWarning(compound_rule="cheap_but_taxed", detail="cheap and taxed"),),
+            non_match_reasons=(
+                NonMatch(match_rule="uk_skilled_worker", reason_detail="no sponsor"),
+            ),
+        )
+
+        saved = await store.save(
+            criteria=criteria,
+            level=COUNTRY,
+            results=[flagged],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+        )
+
+        read = await store.read_candidate(saved.id, PORTUGAL)
+        assert read.match_status is MatchStatus.NOT_MATCHING
+        assert [str(w.compound_rule) for w in read.warnings] == ["cheap_but_taxed"]
+        assert [str(r.match_rule) for r in read.non_match_reasons] == ["uk_skilled_worker"]
+        assert read.non_match_reasons[0].reason_detail == "no sponsor"
+
 
 class TestSweepingWhatATestSaved:
     """The one kind of saved evaluation nobody chose.

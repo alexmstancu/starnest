@@ -2817,6 +2817,25 @@ select.field__control {
   fill: var(--colour-warning-bar);
 }
 
+/* The run-summary meter's three readings of an acquisition (`routes/run/runProgress.ts`):
+   completed, failed and unanswered, which Q217 makes sum to every item asked about. Without a
+   rule per kind the SVG `<rect>` falls back to its default *black* fill -- which shipped: the
+   Acquire summary bar rendered solid black while the per-source `.reach__fill` bars beside it
+   were teal. No new hues: completed reuses the success bar the per-source bars already use,
+   failed the danger bar, and the unanswered share `--barren`'s grey. The stylesheet-vs-markup
+   guard in `app/architecture.test.ts` now fails if a kind the markup can emit has no rule. */
+.meter__fill--completed {
+  fill: var(--colour-success-bar);
+}
+
+.meter__fill--failed {
+  fill: var(--colour-danger-bar);
+}
+
+.meter__fill--unanswered {
+  fill: var(--colour-border-strong);
+}
+
 .meter__reading {
   font-size: 11.5px;
   color: var(--colour-text-label);
