@@ -15,7 +15,6 @@ import {
   fetchRuns,
   fetchSettings,
   planRun,
-  retryRun,
   startRun,
   stopRun,
   type Run,
@@ -27,13 +26,7 @@ import { newestRun } from "./databaseHolds";
 import { type Commitment, describeCommitment } from "./spendCommitment";
 import { useResource, type Resource } from "../../api/useResource";
 
-export type RunAct =
-  | "planning"
-  | "running"
-  | "retrying"
-  | "asking"
-  | "opening"
-  | "stopping";
+export type RunAct = "planning" | "running" | "opening" | "stopping";
 /**
  * `opening` covers reading a run back: opening one from the history, and refreshing the one on
  * screen. Both used to be something else -- refreshing claimed to be `planning`, which relabelled
@@ -97,8 +90,6 @@ export interface RunScreenState {
   /** Start the armed run. Only reachable once something has been armed. */
   commit: () => void;
   cancel: () => void;
-  /** A new run over the part named: the sources that failed, or the items nobody answered. */
-  again: (items: "failed" | "unanswered") => void;
   open: (run: Run) => void;
 }
 
@@ -228,10 +219,6 @@ export function useRunScreen(): RunScreenState {
         // rather than after the next poll -- which is what lets the card explain why the
         // button has gone before the run has actually ended.
         await watch(await stopRun(current.id));
-      }),
-    again: (items) =>
-      void act(items === "failed" ? "retrying" : "asking", async () => {
-        if (current) await watch(await retryRun(current.id, items));
       }),
     // Through `act` like everything else. A backend that is down or a run that cannot be read
     // now says so, where before the promise rejected into nothing and the click looked ignored.

@@ -140,25 +140,34 @@ describe("running and retrying", () => {
     ).toBeInTheDocument();
   });
 
-  it("retries only what failed, as a new run", async () => {
-    const retried: number[] = [];
-    mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs/:runId/retry`, ({ params }) => {
-        retried.push(Number(params["runId"]));
-        return HttpResponse.json({ id: 12 }, { status: 202 });
-      }),
-    );
+  it("arms a confirmation before retrying what failed, then starts a scoped run (UI-02)", async () => {
+    const started: unknown[] = [];
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
       screen.getByRole("button", { name: /start this acquisition/i }),
+    );
+    await screen.findByRole("region", { name: /acquisition 8/i });
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
+        started.push(await request.json());
+        return HttpResponse.json({ id: 12 }, { status: 202 });
+      }),
     );
 
     await userEvent.click(
       await screen.findByRole("button", { name: /^Retry 1 failed$/i }),
     );
 
-    expect(retried).toEqual([8]);
+    // The whole-bucket retry no longer fires on the click: it estimates and confirms first, the
+    // same step the selected-item retry already had (UI-02, reqs.md 6.3).
+    const strip = await screen.findByRole("alert");
+    expect(started).toEqual([]);
+
+    await userEvent.click(within(strip).getByRole("button", { name: /yes, start it/i }));
+
+    await waitFor(() => expect(started).toHaveLength(1));
+    expect(started[0]).toMatchObject({ level: "country" });
     expect(
       await screen.findByRole("region", { name: /acquisition 12/i }),
     ).toBeInTheDocument();
@@ -259,23 +268,27 @@ describe("what nobody answered", () => {
     expect(went.queryByText(/country\./)).toBeNull();
   });
 
-  it("asks again about only those items, as a new run", async () => {
-    const asked: { run: number; items: unknown }[] = [];
-    mockServer.use(
-      http.post(
-        `${BASE}/data-acquisition-runs/:runId/retry`,
-        async ({ params, request }) => {
-          const body = (await request.json()) as { items?: string };
-          asked.push({ run: Number(params["runId"]), items: body.items });
-          return HttpResponse.json({ id: 14 }, { status: 202 });
-        },
-      ),
-    );
+  it("arms a confirmation before asking again, then starts a scoped run (UI-02)", async () => {
+    const started: unknown[] = [];
     await openTheRun();
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
+        started.push(await request.json());
+        return HttpResponse.json({ id: 14 }, { status: 202 });
+      }),
+    );
 
     await userEvent.click(screen.getByRole("button", { name: /^Retry 2 unanswered$/i }));
 
-    expect(asked).toEqual([{ run: 8, items: "unanswered" }]);
+    // Nothing that can spend fires on the click: the whole-bucket retry now takes the same
+    // estimate-and-confirm step the selected-item retry already had (reqs.md 6.3).
+    const strip = await screen.findByRole("alert");
+    expect(started).toEqual([]);
+
+    await userEvent.click(within(strip).getByRole("button", { name: /yes, start it/i }));
+
+    await waitFor(() => expect(started).toHaveLength(1));
+    expect(started[0]).toMatchObject({ level: "country" });
     expect(
       await screen.findByRole("region", { name: /acquisition 14/i }),
     ).toBeInTheDocument();
@@ -308,24 +321,10 @@ describe("what nobody answered", () => {
     ).toBeNull();
   });
 
-  it("shows the refusal when the server says there is nothing to ask about", async () => {
-    mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs/:runId/retry`, () =>
-        HttpResponse.json(
-          {
-            code: "nothing_to_ask_again",
-            message: "this run has no unanswered items",
-          },
-          { status: 409 },
-        ),
-      ),
-    );
-    await openTheRun();
-
-    await userEvent.click(screen.getByRole("button", { name: /^Retry 2 unanswered$/i }));
-
-    expect(await screen.findByText(/no unanswered items/i)).toBeInTheDocument();
-  });
+  // (The old "nothing to ask about" test exercised POST /{runId}/retry's 409; the whole-bucket
+  // retry now goes through the scoped plan-and-start path (UI-02), which only offers the button
+  // when there are unanswered items, so that refusal is no longer reachable from the UI. The
+  // backend's /retry refusal is covered by the acceptance suite.)
 });
 
 describe("the run history", () => {

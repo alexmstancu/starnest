@@ -56,10 +56,10 @@ type PathValuesOf<Operation> = Operation extends {
 /**
  * The JSON body an operation takes, whether the contract marks it required or optional.
  *
- * **Both forms, because the contract has both.** `retryRun` takes an optional body -- which
- * part of the run to go over again, defaulting to the failures so a client that sends nothing
- * keeps working -- and `openapi-typescript` renders that as `requestBody?`. Matching only the
- * required form typed it `never`, so the one call that needed a body could not be written.
+ * **Both forms, because the contract has both.** Some operations mark their body optional --
+ * `POST /data-acquisition-runs/{runId}/retry` defaults to the failures when sent nothing -- and
+ * `openapi-typescript` renders that as `requestBody?`. Matching only the required form typed it
+ * `never`, so a call that needed an optional body could not be written.
  */
 type RequestBodyOf<Operation> = Operation extends {
   requestBody: { content: { "application/json": infer Body } };

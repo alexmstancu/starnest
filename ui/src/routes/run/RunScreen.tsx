@@ -16,6 +16,7 @@ import { ItemGroups } from "./ItemGroups";
 import { OpenToHandEntry } from "./OpenToHandEntry";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";
 import { type Progress, progressBar } from "./runProgress";
+import { scopeFor } from "./runScope";
 import {
   inFlight,
   outcomeSentence,
@@ -144,12 +145,17 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
               <button
                 type="button"
                 className="button button--primary"
-                disabled={run.busy === "retrying"}
-                onClick={() => run.again("failed")}
+                disabled={run.busy !== null || levelId === null}
+                onClick={() =>
+                  levelId !== null &&
+                  run.propose(
+                    scopeFor(levelId, run.current?.failures ?? []),
+                    "Retry everything that failed",
+                    "failed",
+                  )
+                }
               >
-                {run.busy === "retrying"
-                  ? "Retrying…"
-                  : `Retry ${formatCount(run.current.progress?.items_failed)} failed`}
+                {`Retry ${formatCount(run.current.progress?.items_failed)} failed`}
               </button>
               <GapEstimate kind="failed" run={run} />
             </GapCard>
@@ -184,12 +190,17 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
               <button
                 type="button"
                 className="button"
-                disabled={run.busy === "asking"}
-                onClick={() => run.again("unanswered")}
+                disabled={run.busy !== null || levelId === null}
+                onClick={() =>
+                  levelId !== null &&
+                  run.propose(
+                    scopeFor(levelId, run.current?.unanswered ?? []),
+                    "Ask again about everything unanswered",
+                    "unanswered",
+                  )
+                }
               >
-                {run.busy === "asking"
-                  ? "Retrying…"
-                  : `Retry ${formatCount(run.current.progress?.items_unanswered)} unanswered`}
+                {`Retry ${formatCount(run.current.progress?.items_unanswered)} unanswered`}
               </button>
               <GapEstimate kind="unanswered" run={run} />
             </GapCard>
