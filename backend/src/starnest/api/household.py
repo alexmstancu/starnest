@@ -18,7 +18,7 @@ every affordability figure quietly wrong.
 from decimal import Decimal
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.dependencies import Households
 from starnest.household import Household
@@ -27,15 +27,24 @@ router = APIRouter(tags=["household"])
 
 
 class HouseholdBody(BaseModel):
-    """`HouseholdInput` from the contract, which `Household` is defined as."""
+    """`HouseholdInput` from the contract, which `Household` is defined as.
 
-    net_income: float
+    **The bounds mirror the domain `Household`** (BE-21): the three money fields are `>= 0` and
+    forbid NaN/Infinity, so an out-of-range or non-finite figure is a 422 raised at the boundary
+    rather than a `ValidationError` escaping `Household(...)` into a 500. `extra='forbid'` matches
+    the domain too, so a misspelled field in this whole-replace PUT is refused rather than falling
+    to its default and quietly changing the stored household (BE-23).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    net_income: float = Field(ge=0, allow_inf_nan=False)
     number_adults: int = Field(ge=1)
     number_children: int = Field(ge=0, description="Under 18.")
-    home_country_candidate: str
+    home_country_candidate: str = Field(min_length=1)
     citizenships: tuple[str, ...] = Field(min_length=1)
-    target_monthly_spend: float | None = None
-    max_rent: float | None = None
+    target_monthly_spend: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    max_rent: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     home_city_candidate: str | None = None
 
 

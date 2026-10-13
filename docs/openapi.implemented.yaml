@@ -915,12 +915,15 @@ components:
       title: DataSourcesBody
       type: object
     DuplicateRequest:
+      additionalProperties: false
       description: What the copy will be called, and what to call it.
       properties:
         id:
+          minLength: 1
           title: Id
           type: string
         name:
+          minLength: 1
           title: Name
           type: string
       required:
@@ -1128,8 +1131,24 @@ components:
       title: HTTPValidationError
       type: object
     HouseholdBody:
+      additionalProperties: false
       description: '`HouseholdInput` from the contract, which `Household` is defined
-        as.'
+        as.
+
+
+        **The bounds mirror the domain `Household`** (BE-21): the three money fields
+        are `>= 0` and
+
+        forbid NaN/Infinity, so an out-of-range or non-finite figure is a 422 raised
+        at the boundary
+
+        rather than a `ValidationError` escaping `Household(...)` into a 500. `extra=''forbid''`
+        matches
+
+        the domain too, so a misspelled field in this whole-replace PUT is refused
+        rather than falling
+
+        to its default and quietly changing the stored household (BE-23).'
       properties:
         citizenships:
           items:
@@ -1143,14 +1162,17 @@ components:
           - type: 'null'
           title: Home City Candidate
         home_country_candidate:
+          minLength: 1
           title: Home Country Candidate
           type: string
         max_rent:
           anyOf:
-          - type: number
+          - minimum: 0.0
+            type: number
           - type: 'null'
           title: Max Rent
         net_income:
+          minimum: 0.0
           title: Net Income
           type: number
         number_adults:
@@ -1164,7 +1186,8 @@ components:
           type: integer
         target_monthly_spend:
           anyOf:
-          - type: number
+          - minimum: 0.0
+            type: number
           - type: 'null'
           title: Target Monthly Spend
       required:
@@ -1438,11 +1461,14 @@ components:
       title: MatchRulesBody
       type: object
     NewCriteriaSetBody:
+      additionalProperties: false
       properties:
         id:
+          minLength: 1
           title: Id
           type: string
         name:
+          minLength: 1
           title: Name
           type: string
       required:
@@ -1562,6 +1588,7 @@ components:
       title: PillarWeightBody
       type: object
     PillarWeightInput:
+      additionalProperties: false
       description: 'A pillar''s weight, its lock, or both.
 
 
@@ -1710,8 +1737,10 @@ components:
       title: ReferencePeriodBody
       type: object
     RenameBody:
+      additionalProperties: false
       properties:
         name:
+          minLength: 1
           title: Name
           type: string
       required:
@@ -2106,6 +2135,7 @@ components:
       title: ScaleAnchorBody
       type: object
     SettingsBody:
+      additionalProperties: false
       description: '`SettingsInput` from the contract, which `Settings` is defined
         as.
 
@@ -2117,31 +2147,52 @@ components:
         and not
 
         what the design says. It went unnoticed while every setting was null (`known-issues.md`
-        P16).'
+        P16).
+
+
+        **The bounds mirror the domain `Settings`** (BE-21), so an out-of-range value
+        is a 422 raised
+
+        at the boundary rather than a `ValidationError` escaping `Settings(...)` into
+        a 500; floats
+
+        forbid NaN/Infinity so a non-finite cap can never make the meter fail to trip.
+        `extra=''forbid''`
+
+        matches the domain too, so a misspelled field in this whole-replace PUT is
+        refused rather than
+
+        falling to its null default and silently clearing the real setting (BE-23).'
       properties:
         comparator_limit:
           anyOf:
-          - type: integer
+          - minimum: 1.0
+            type: integer
           - type: 'null'
           title: Comparator Limit
         min_coverage:
           anyOf:
-          - type: number
+          - maximum: 100.0
+            minimum: 0.0
+            type: number
           - type: 'null'
           title: Min Coverage
         refetch_older_than_days:
           anyOf:
-          - type: integer
+          - exclusiveMinimum: 0.0
+            type: integer
           - type: 'null'
           title: Refetch Older Than Days
         run_spend_cap_eur:
           anyOf:
-          - type: number
+          - minimum: 0.0
+            type: number
           - type: 'null'
           title: Run Spend Cap Eur
         score_scale_max:
           anyOf:
-          - type: integer
+          - exclusiveMinimum: 0.0
+            type: integer
           - type: 'null'
           title: Score Scale Max
       title: SettingsBody

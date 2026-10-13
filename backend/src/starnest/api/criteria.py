@@ -387,8 +387,10 @@ def _number_or_none(figure: Decimal | None) -> float | None:
 class DuplicateRequest(BaseModel):
     """What the copy will be called, and what to call it."""
 
-    id: str
-    name: str
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
 
 
 @router.post(
@@ -418,12 +420,16 @@ async def duplicate_criteria_set(
 
 
 class NewCriteriaSetBody(BaseModel):
-    id: str
-    name: str
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
 
 
 class RenameBody(BaseModel):
-    name: str
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
 
 
 class PillarWeightInput(BaseModel):
@@ -436,6 +442,8 @@ class PillarWeightInput(BaseModel):
     lock-only body; this one required a weight and so could express the lock but never the
     unlock.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     weight: float | None = Field(default=None, ge=0, le=100)
     weight_locked: bool | None = None

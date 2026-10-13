@@ -13,7 +13,7 @@ rather than a fault.
 from decimal import Decimal
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.dependencies import Households
 from starnest.household import Settings
@@ -27,13 +27,21 @@ class SettingsBody(BaseModel):
     **The two percentages travel as numbers, not as `Decimal`.** The contract types them
     `number`, and Pydantic renders a `Decimal` as a JSON string -- which is lossless, and not
     what the design says. It went unnoticed while every setting was null (`known-issues.md` P16).
+
+    **The bounds mirror the domain `Settings`** (BE-21), so an out-of-range value is a 422 raised
+    at the boundary rather than a `ValidationError` escaping `Settings(...)` into a 500; floats
+    forbid NaN/Infinity so a non-finite cap can never make the meter fail to trip. `extra='forbid'`
+    matches the domain too, so a misspelled field in this whole-replace PUT is refused rather than
+    falling to its null default and silently clearing the real setting (BE-23).
     """
 
-    min_coverage: float | None = None
-    score_scale_max: int | None = None
-    comparator_limit: int | None = None
-    run_spend_cap_eur: float | None = None
-    refetch_older_than_days: int | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    min_coverage: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    score_scale_max: int | None = Field(default=None, gt=0)
+    comparator_limit: int | None = Field(default=None, ge=1)
+    run_spend_cap_eur: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    refetch_older_than_days: int | None = Field(default=None, gt=0)
 
 
 @router.get("/settings", operation_id="getSettings", response_model=SettingsBody)

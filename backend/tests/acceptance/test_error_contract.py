@@ -19,6 +19,14 @@ COUNTRY = "country"
 MINIMAL = "minimal"
 OVERBURDEN = "country.housing_cost_overburden_rate"
 
+A_VALID_HOUSEHOLD = {
+    "net_income": 5000,
+    "number_adults": 2,
+    "number_children": 0,
+    "home_country_candidate": "country.romania",
+    "citizenships": ["country.romania"],
+}
+
 
 class TestTheOneErrorShape:
     async def test_a_domain_refusal_carries_a_code_and_a_message(
@@ -172,6 +180,104 @@ class TestARefusalTheStopRuleRequires:
         # it was written to distinguish.
         assert response.json()["code"] == "score_scale_not_set"
         assert "score_scale_max" in response.json()["message"]
+
+
+class TestBoundaryValidationAndTheErrorShape:
+    """Bad input is refused at the boundary, in the one error shape -- never 500'd in domain
+    construction and never silently coerced (BE-21, BE-22, BE-23).
+
+    The request body carries the domain's own bounds, so an out-of-range or empty value is a 422
+    FastAPI raises before the endpoint runs -- and that 422 is rendered as `code`/`message` like
+    every other refusal, not FastAPI's own `{detail: [...]}`, a shape no client was told about.
+    """
+
+    async def test_a_malformed_request_uses_the_one_error_shape(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.get("/v1/rankings")  # both required query params missing
+
+        assert response.status_code == 422
+        body = response.json()
+        assert body["code"] == "invalid_request"
+        assert body["message"]
+        assert "detail" not in body
+
+    async def test_renaming_a_set_to_an_empty_name_is_refused_not_500(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """`rename_criteria_set` uses `model_copy`, which skips validation, so an empty name once
+        persisted and then no read could reconstruct the set (`CriteriaSet.name` has min_length 1)
+        -- a 500 on the next GET. The bound belongs on the request body, where it is a 422 and
+        nothing is written."""
+        response = await api.patch(f"/v1/criteria-sets/{a_scratch_criteria_set}", json={"name": ""})
+
+        assert response.status_code == 422
+        reread = await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")
+        assert reread.status_code == 200
+        assert reread.json()["name"] == "Scratch", "nothing was written"
+
+    async def test_duplicating_a_set_to_an_empty_name_is_refused(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.post(
+            "/v1/criteria-sets/minimal/duplicate", json={"id": "dup_blank_name", "name": ""}
+        )
+
+        assert response.status_code == 422
+        assert (await api.get("/v1/criteria-sets/dup_blank_name")).status_code == 404
+
+    async def test_creating_a_set_with_a_blank_id_is_refused(self, api: httpx.AsyncClient) -> None:
+        response = await api.post("/v1/criteria-sets", json={"id": "", "name": "Nameless"})
+
+        assert response.status_code == 422
+
+    async def test_a_zero_score_scale_is_refused_not_500(self, api: httpx.AsyncClient) -> None:
+        """`Settings` requires `score_scale_max > 0`; `SettingsBody` carried no bound, so the
+        domain `ValidationError` escaped to a 500. The bound belongs on the body."""
+        response = await api.put("/v1/settings", json={"score_scale_max": 0})
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_request"
+
+    async def test_a_coverage_over_one_hundred_is_refused(self, api: httpx.AsyncClient) -> None:
+        assert (await api.put("/v1/settings", json={"min_coverage": 150})).status_code == 422
+
+    async def test_a_negative_spend_cap_is_refused(self, api: httpx.AsyncClient) -> None:
+        assert (await api.put("/v1/settings", json={"run_spend_cap_eur": -5})).status_code == 422
+
+    async def test_a_non_finite_spend_cap_is_refused(self, api: httpx.AsyncClient) -> None:
+        """A NaN/Infinity cap would make the meter never trip; the float field forbids it."""
+        import json as _json
+
+        response = await api.put(
+            "/v1/settings",
+            content=_json.dumps({"run_spend_cap_eur": float("inf")}),
+            headers={"content-type": "application/json"},
+        )
+        assert response.status_code == 422
+
+    async def test_an_unknown_setting_field_is_refused_not_silently_dropped(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """A misspelled field in a whole-replace PUT would fall to its null default and clear the
+        real setting (BE-23). `extra='forbid'` refuses it instead of accepting and dropping it."""
+        response = await api.put("/v1/settings", json={"score_scale_max": 100, "coverage_min": 60})
+
+        assert response.status_code == 422
+
+    async def test_a_negative_income_is_refused_not_500(self, api: httpx.AsyncClient) -> None:
+        """`Household` requires `net_income >= 0`; `HouseholdBody` carried no bound, so a negative
+        income escaped into a 500 at domain construction. The bound belongs on the body."""
+        response = await api.put("/v1/household", json={**A_VALID_HOUSEHOLD, "net_income": -100})
+
+        assert response.status_code == 422
+
+    async def test_an_unknown_household_field_is_refused(self, api: httpx.AsyncClient) -> None:
+        """A misspelled field in this whole-replace PUT would fall to its default and quietly
+        change the stored household (BE-23)."""
+        response = await api.put("/v1/household", json={**A_VALID_HOUSEHOLD, "incme": 9000})
+
+        assert response.status_code == 422
 
 
 async def _set_the_score_scale(database_url: str, scale: int | None) -> None:

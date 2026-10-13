@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -160,3 +161,37 @@ async def refusal_handler(request: Request, error: Exception) -> JSONResponse:
     if not isinstance(error.detail, dict) or "code" not in error.detail:
         return await http_exception_handler(request, error)
     return JSONResponse(status_code=error.status_code, content=dict(error.detail))
+
+
+async def request_validation_handler(request: Request, error: Exception) -> JSONResponse:
+    """A request the boundary rejects, in the one error shape.
+
+    FastAPI renders a `RequestValidationError` as `{"detail": [...]}` -- the same shape mismatch
+    `refusal_handler` closes for `HTTPException`. `arch.md` 7.6 gives this API one error shape, so
+    a malformed body or an out-of-range field answers with `code`/`message` like any other
+    refusal. **This is where bad input is meant to land**: the request bodies carry the domain's
+    own bounds, so a value the domain would reject is a 422 raised here, before the endpoint runs
+    -- never a `ValidationError` escaping domain construction into a 500. The offending fields
+    travel in `details` so a form can still point at them.
+    """
+    assert isinstance(error, RequestValidationError)
+    return JSONResponse(
+        status_code=422,
+        content=ErrorBody(
+            code="invalid_request",
+            message="The request does not match what this operation accepts.",
+            details={"errors": _validation_details(error)},
+        ).model_dump(exclude_none=True),
+    )
+
+
+def _validation_details(error: RequestValidationError) -> list[dict[str, Any]]:
+    """The offending locations and messages, kept to JSON-safe fields.
+
+    `error.errors()` entries can carry a `ctx` holding the original exception object, which does
+    not serialise, so only the location path and the human message are taken.
+    """
+    return [
+        {"location": [str(part) for part in item.get("loc", ())], "problem": item.get("msg", "")}
+        for item in error.errors()
+    ]

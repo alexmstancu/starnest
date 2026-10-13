@@ -9,6 +9,7 @@ database and a test's fakes without knowing which they have.
 """
 
 from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 
 from starnest.api import (
     catalog,
@@ -22,7 +23,11 @@ from starnest.api import (
     settings,
 )
 from starnest.api import values as value_endpoints
-from starnest.api.errors import domain_error_handler, refusal_handler
+from starnest.api.errors import (
+    domain_error_handler,
+    refusal_handler,
+    request_validation_handler,
+)
 from starnest.candidates import CandidateStore
 from starnest.criteria import CriteriaStore, MatchRuleResultStore
 from starnest.data import CatalogStore, ValueStore
@@ -97,6 +102,11 @@ def build_app(
     # logs as a 500 rather than be dressed as a tidy error body nobody investigates.
     # A refusal an endpoint raises itself (an unset setting, say) in the same shape as a domain
     # fault: one error shape, whichever half of the application said no (`arch.md` 7.6).
+    # A request the boundary rejects (a bad body, an out-of-range field, an unknown field) in the
+    # one error shape rather than FastAPI's own `{detail: [...]}` -- so the request bodies can
+    # carry the domain's bounds and a rejected value is a uniform 422 here, not a `ValidationError`
+    # escaping domain construction into a 500 (BE-21).
+    app.add_exception_handler(RequestValidationError, request_validation_handler)
     app.add_exception_handler(HTTPException, refusal_handler)
     app.add_exception_handler(ValueError, domain_error_handler)
     app.add_exception_handler(LookupError, domain_error_handler)
