@@ -16,7 +16,12 @@ import pytest
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.data import ConfidenceLevel, Ratio, ReferencePeriod, Value, ValueType
-from starnest.data_acquisition import AcquisitionFailure, RunScope, RunStatus
+from starnest.data_acquisition import (
+    AcquisitionFailure,
+    RunAlreadyInFlightError,
+    RunScope,
+    RunStatus,
+)
 from starnest.storage import PostgresRunStore, PostgresValueStore
 
 pytestmark = pytest.mark.storage
@@ -31,6 +36,38 @@ async def a_run(pool: AsyncConnectionPool) -> int:
         RunScope(level="country", candidates=("country.portugal",), attributes=(OVERBURDEN,)),
         triggered_by="test",
     )
+
+
+class TestOnlyOneRunIsRunningAtOnce:
+    """Enforced by the database, not by a read (reqs.md 10, ST-01). The `0498` partial unique
+    index makes a second concurrent open impossible, so the race's loser gets a clean refusal
+    rather than two running runs or a 500 -- the guarantee the API's check-then-insert could
+    only narrow."""
+
+    async def test_a_second_running_run_cannot_be_opened(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        with pytest.raises(RunAlreadyInFlightError):
+            await PostgresRunStore(pool).start_run(
+                RunScope(
+                    level="country", candidates=("country.spain",), attributes=(OVERCROWDING,)
+                ),
+                triggered_by="the second",
+            )
+
+    async def test_a_new_run_opens_once_the_first_has_finished(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """One at a time is a limit of one, not of none: finishing the first frees the slot."""
+        store = PostgresRunStore(pool)
+        await store.finish_run(a_run, status=RunStatus.COMPLETED, finished_at=datetime.now(UTC))
+
+        second = await store.start_run(
+            RunScope(level="country", candidates=("country.spain",), attributes=(OVERCROWDING,)),
+            triggered_by="the second",
+        )
+
+        assert second != a_run
 
 
 @pytest.mark.parametrize(
@@ -160,8 +197,17 @@ class TestWhatNobodyAnswered:
         self, pool: AsyncConnectionPool, a_wider_run: int
     ) -> None:
         """A stored figure answers the run that fetched it. Without the run in the condition,
-        every gap would be hidden by whatever an earlier run happened to store."""
+        every gap would be hidden by whatever an earlier run happened to store.
+
+        **This run finishes before the next one starts**, because one household runs one pass at
+        a time (ST-01, `0498`): "another run" is necessarily a different, non-overlapping run, and
+        its figure must still not retroactively fill this one's gaps. Finishing changes none of
+        the derived counts, which read the scope against the values and failures, not the status.
+        """
         store = PostgresRunStore(pool)
+        await store.finish_run(
+            a_wider_run, status=RunStatus.COMPLETED, finished_at=datetime.now(UTC)
+        )
         earlier = await store.start_run(
             RunScope(
                 level="country", candidates=("country.liechtenstein",), attributes=(OVERBURDEN,)

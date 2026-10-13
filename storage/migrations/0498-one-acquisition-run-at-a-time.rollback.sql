@@ -1,0 +1,1 @@
+DROP INDEX one_acquisition_run_at_a_time;

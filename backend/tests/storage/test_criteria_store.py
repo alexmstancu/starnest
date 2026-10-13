@@ -617,3 +617,46 @@ class TestTheChildrenOfACriterion:
             await criteria.delete_criteria_set(scratch)
             async with pool.connection() as connection:
                 await connection.execute("DELETE FROM match_rule WHERE id = 'city_curfew'")
+
+
+class TestTheCareerRebalanceRepair:
+    """0487 deleted the retired posting criteria from every set but moved their weight onto
+    tech_employment_share only in the two shipped sets, so a set duplicated before it lost career
+    weight and could no longer be loaded (its pillar did not sum to 100). `0499` restores the
+    shortfall for any set still short (ST-03)."""
+
+    async def test_a_set_left_unbalanced_by_the_posting_delete_is_healed(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        from pathlib import Path
+
+        store = PostgresCriteriaStore(pool)
+        shipped = await store.read_criteria_set(SHIPPED, level=COUNTRY)
+        await store.create_criteria_set(
+            shipped.duplicated_as("st03_damaged", "Damaged by the posting delete")
+        )
+        try:
+            # Simulate 0487's damage: the unscoped delete took the posting criteria but left
+            # tech_employment_share's weight as it was, so the career pillar sums to less than 100.
+            async with pool.connection() as conn:
+                await conn.execute(
+                    "UPDATE criterion SET weight = weight - 20 WHERE criteria_set = 'st03_damaged'"
+                    " AND attribute = 'country.tech_employment_share'"
+                )
+            with pytest.raises(ValueError):
+                await store.read_criteria_set("st03_damaged", level=COUNTRY)
+
+            repair = (
+                Path(__file__).resolve().parents[3]
+                / "storage"
+                / "migrations"
+                / "0499-rebalance-career-where-the-posting-delete-unbalanced-it.sql"
+            ).read_text()
+            async with pool.connection() as conn:
+                await conn.execute(repair)
+
+            healed = await store.read_criteria_set("st03_damaged", level=COUNTRY)
+            career = sum(c.weight for c in healed.criteria if str(c.pillar) == "career")
+            assert career == Decimal(100)
+        finally:
+            await store.delete_criteria_set("st03_damaged")

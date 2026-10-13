@@ -14,12 +14,14 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from psycopg.errors import UniqueViolation
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.data import DataSourceId
 from starnest.data_acquisition import (
     AcquisitionFailure,
     Run,
+    RunAlreadyInFlightError,
     RunScope,
     RunStatus,
     RunStore,
@@ -51,13 +53,23 @@ class PostgresRunStore(RunStore):
                 "already have been resolved from the level"
             )
         async with acquire(self._pool) as connection:
-            row = await self._queries.insert_run(
-                connection,
-                started_at=datetime.now(tz=UTC),
-                triggered_by=triggered_by,
-                run_status=str(RunStatus.RUNNING),
-                level=scope.level,
-            )
+            try:
+                row = await self._queries.insert_run(
+                    connection,
+                    started_at=datetime.now(tz=UTC),
+                    triggered_by=triggered_by,
+                    run_status=str(RunStatus.RUNNING),
+                    level=scope.level,
+                )
+            except UniqueViolation as clash:
+                # Another run won the race to the one `running` slot the `0498` partial unique
+                # index allows (ST-01). The caller's own `run_in_flight` check may have passed --
+                # the point of the index is that it does not have to -- so this is the same
+                # refusal, raised where the database made it certain.
+                raise RunAlreadyInFlightError(
+                    "another run is already in flight, and one household runs one pass at a "
+                    "time (reqs.md 10). Poll the running run rather than starting another."
+                ) from clash
             await self._queries.insert_run_candidates(
                 connection, data_acquisition_run=row.id, candidates=list(scope.candidates)
             )
