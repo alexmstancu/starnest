@@ -32,7 +32,7 @@ this module must not do.
 """
 
 from collections.abc import Sequence
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from itertools import pairwise
 
 from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor, TargetRange
@@ -51,8 +51,10 @@ def scores_for(
     score_scale_max: int,
     anchors: Sequence[ScaleAnchor] = (),
     target: TargetRange | None = None,
-) -> tuple[int, ...]:
-    """One criterion's column of figures, as scores, in the order the figures were given.
+) -> tuple[Decimal, ...]:
+    """One criterion's column of figures, as **unrounded** scores, in the order given (`reqs.md`
+    5.1): rounding a score before it is weighted can shift totals and reverse near-tie rankings,
+    so the score stays exact here and the caller rounds only for display, never for the sum.
 
     A column rather than one figure at a time, because `percentile` is a comparison between
     candidates and has no answer for a single figure in isolation. `as_is` does not need the
@@ -99,7 +101,7 @@ def scores_for(
 
 def _in_the_target_band(
     figure: PublishedFigure, target: TargetRange | None, *, score_scale_max: int
-) -> int:
+) -> Decimal:
     """Full marks inside the band, falling linearly to 0 at each zero point (`reqs.md` 5.1).
 
     The four numbers are the whole scale; anchors are not consulted. A zero point on the band's
@@ -114,7 +116,7 @@ def _in_the_target_band(
     _refuse_a_band_that_contradicts_itself(target)
     value = figure.magnitude
     if target.minimum <= value <= target.maximum:
-        return score_scale_max
+        return Decimal(score_scale_max)
     if value < target.minimum:
         return _on_the_slope(
             value, full_at=target.minimum, zero_at=target.zero_below, top=score_scale_max
@@ -158,23 +160,23 @@ def _refuse_a_band_that_contradicts_itself(target: TargetRange) -> None:
         )
 
 
-def _on_the_slope(value: Decimal, *, full_at: Decimal, zero_at: Decimal, top: int) -> int:
-    """How far along the slope from the zero point to the band's edge, as a score.
+def _on_the_slope(value: Decimal, *, full_at: Decimal, zero_at: Decimal, top: int) -> Decimal:
+    """How far along the slope from the zero point to the band's edge, as an unrounded score.
 
     The same formula serves both sides: below the band the slope rises towards `full_at`, above
     it falls away from it, and the share is positive exactly when the figure lies between the two.
     """
     if full_at == zero_at:
-        return 0
+        return Decimal(0)
     share = (value - zero_at) / (full_at - zero_at)
     if share <= 0:
-        return 0
-    return int((share * top).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+        return Decimal(0)
+    return share * Decimal(top)
 
 
 def _on_the_anchored_scale(
     figure: PublishedFigure, anchors: Sequence[ScaleAnchor], *, goal: Goal
-) -> int:
+) -> Decimal:
     """Where the figure falls between the user's anchors, as a score.
 
     Read off the figure's own magnitude, in the attribute's unit -- the anchors are written in
@@ -188,20 +190,19 @@ def _on_the_anchored_scale(
     points = sorted(anchors, key=lambda anchor: anchor.input_value)
     figure_value = figure.magnitude
     if figure_value <= points[0].input_value:
-        return points[0].score
+        return Decimal(points[0].score)
     if figure_value >= points[-1].input_value:
-        return points[-1].score
+        return Decimal(points[-1].score)
     low, high = next(
         (low, high)
         for low, high in pairwise(points)
         if low.input_value <= figure_value <= high.input_value
     )
     along = (figure_value - low.input_value) / (high.input_value - low.input_value)
-    placed = Decimal(low.score) + along * (high.score - low.score)
-    return int(placed.quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    return Decimal(low.score) + along * (high.score - low.score)
 
 
-def _already_a_score(figure: PublishedFigure, *, goal: Goal, score_scale_max: int) -> int:
+def _already_a_score(figure: PublishedFigure, *, goal: Goal, score_scale_max: int) -> Decimal:
     """The figure as a score, mapped from its published scale where it declares one.
 
     Refusing an out-of-range figure rather than clamping it: clamping turns a source that
@@ -215,12 +216,11 @@ def _already_a_score(figure: PublishedFigure, *, goal: Goal, score_scale_max: in
             "declares no scale of its own; `as_is` is for a figure that is already a score, "
             "and choosing where one sits is what `fixed` is for"
         )
-    scored = (
+    return (
         on_the_score_scale
         if goal is Goal.MAXIMISE
         else Decimal(score_scale_max) - on_the_score_scale
     )
-    return int(scored.quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
 def _mapped(figure: PublishedFigure, score_scale_max: int) -> Decimal:
@@ -298,7 +298,7 @@ def _as_a_fraction_of_its_own_scale(figure: PublishedFigure) -> Decimal:
 
 def _by_standing(
     figures: Sequence[Decimal], *, goal: Goal, score_scale_max: int
-) -> tuple[int, ...]:
+) -> tuple[Decimal, ...]:
     """Each figure scored by the share of the others it is strictly better than.
 
     One sentence, and every consequence follows from it rather than from a convention nobody
@@ -336,12 +336,7 @@ def _by_standing(
     scale = Decimal(score_scale_max)
     worst_beaten = len(figures) - 1
     return tuple(
-        int(
-            (Decimal(_beaten_by(figure, figures, goal)) / worst_beaten * scale).quantize(
-                Decimal(1), rounding=ROUND_HALF_UP
-            )
-        )
-        for figure in figures
+        Decimal(_beaten_by(figure, figures, goal)) / worst_beaten * scale for figure in figures
     )
 
 

@@ -8,16 +8,34 @@ application exists to prevent (`devplan.md` D5).
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from starnest.criteria import (
+    BooleanThreshold,
+    LabelThreshold,
+    RangeThreshold,
+    ShareThreshold,
+)
 from starnest.data import (
+    Boolean,
     CompoundRule,
     CompoundRuleCondition,
     CompoundRuleInput,
     CompoundRuleShape,
+    Count,
+    LabelSet,
     MatchResult,
     MatchRuleResult,
     RuleOutcome,
+    Share,
+    ShareComposition,
+    ValueType,
 )
-from starnest.evaluation import gates_that_rule_out, judgements_of
+from starnest.evaluation import (
+    gates_that_rule_out,
+    judgements_of,
+    thresholds_that_rule_out,
+)
+
+from .builders import a_criterion, a_value
 
 PRICES = "country.cost_of_living_index"
 TAX = "country.total_tax_rate_effective"
@@ -282,3 +300,179 @@ class TestTheGates:
             )
             == ()
         )
+
+
+def _verdict(threshold, value_type, payload):
+    """One criterion with `threshold`, one candidate whose value carries `payload`."""
+    criterion = a_criterion(value_type=value_type, matching_threshold=threshold)
+    value = a_value(value_type=value_type, payload=payload)
+    return thresholds_that_rule_out([criterion], [value])
+
+
+class TestMatchingThresholds:
+    """A criterion's own hard line on its one attribute's figure -- the third way a candidate
+    does not match (`reqs.md` 5.2, BE-01). A value past the line rules it out; a value it cannot
+    judge (missing, rejected) never does."""
+
+    def test_a_figure_above_the_maximum_is_ruled_out(self) -> None:
+        out = _verdict(RangeThreshold(max_value=Decimal(50)), ValueType.COUNT, Count(count=90))
+
+        assert len(out) == 1
+        assert out[0].criterion is not None
+        assert "above your maximum" in out[0].reason_detail
+
+    def test_a_figure_below_the_minimum_is_ruled_out(self) -> None:
+        out = _verdict(RangeThreshold(min_value=Decimal(50)), ValueType.COUNT, Count(count=10))
+
+        assert "below your minimum" in out[0].reason_detail
+
+    def test_a_figure_inside_the_band_is_admitted(self) -> None:
+        inside = _verdict(
+            RangeThreshold(min_value=Decimal(10), max_value=Decimal(90)),
+            ValueType.COUNT,
+            Count(count=50),
+        )
+
+        assert inside == ()
+
+    def test_the_bounds_are_inclusive(self) -> None:
+        """On the line is inside it, like every other bound in the system (`reqs.md` 5.2)."""
+        on_the_max = _verdict(
+            RangeThreshold(max_value=Decimal(50)), ValueType.COUNT, Count(count=50)
+        )
+
+        assert on_the_max == ()
+
+    def test_must_contain_rules_out_when_the_label_is_absent(self) -> None:
+        out = _verdict(
+            LabelThreshold(label="temperate", containment_rule="must_contain"),
+            ValueType.LABEL_SET,
+            LabelSet(labels=("continental",)),
+        )
+
+        assert "does not carry 'temperate'" in out[0].reason_detail
+
+    def test_must_contain_is_admitted_when_the_label_is_present(self) -> None:
+        out = _verdict(
+            LabelThreshold(label="temperate", containment_rule="must_contain"),
+            ValueType.LABEL_SET,
+            LabelSet(labels=("temperate", "oceanic")),
+        )
+
+        assert out == ()
+
+    def test_must_not_contain_rules_out_when_the_label_is_present(self) -> None:
+        out = _verdict(
+            LabelThreshold(label="tropical", containment_rule="must_not_contain"),
+            ValueType.LABEL_SET,
+            LabelSet(labels=("tropical", "humid")),
+        )
+
+        assert "ruled out" in out[0].reason_detail
+
+    def test_must_not_contain_is_admitted_when_the_label_is_absent(self) -> None:
+        out = _verdict(
+            LabelThreshold(label="tropical", containment_rule="must_not_contain"),
+            ValueType.LABEL_SET,
+            LabelSet(labels=("temperate",)),
+        )
+
+        assert out == ()
+
+    def test_a_boolean_that_is_not_the_required_answer_is_ruled_out(self) -> None:
+        out = _verdict(
+            BooleanThreshold(required_value=False), ValueType.BOOLEAN, Boolean(value=True)
+        )
+
+        assert "require False" in out[0].reason_detail
+
+    def test_a_boolean_that_matches_is_admitted(self) -> None:
+        out = _verdict(
+            BooleanThreshold(required_value=True), ValueType.BOOLEAN, Boolean(value=True)
+        )
+
+        assert out == ()
+
+    def test_a_share_over_the_maximum_is_ruled_out(self) -> None:
+        composition = ShareComposition(
+            shares=(
+                Share(label="muslim", share=Decimal(45)),
+                Share(label="other", share=Decimal(55)),
+            )
+        )
+
+        out = _verdict(
+            ShareThreshold(label="muslim", max_share=Decimal(30)),
+            ValueType.SHARE_COMPOSITION,
+            composition,
+        )
+
+        assert "above your maximum" in out[0].reason_detail
+
+    def test_a_share_within_its_bounds_is_admitted(self) -> None:
+        composition = ShareComposition(
+            shares=(
+                Share(label="muslim", share=Decimal(20)),
+                Share(label="other", share=Decimal(80)),
+            )
+        )
+
+        out = _verdict(
+            ShareThreshold(label="muslim", max_share=Decimal(30)),
+            ValueType.SHARE_COMPOSITION,
+            composition,
+        )
+
+        assert out == ()
+
+    def test_a_label_absent_from_the_composition_counts_as_zero_share(self) -> None:
+        composition = ShareComposition(shares=(Share(label="other", share=Decimal(100)),))
+
+        out = _verdict(
+            ShareThreshold(label="muslim", min_share=Decimal(10)),
+            ValueType.SHARE_COMPOSITION,
+            composition,
+        )
+
+        assert "below your minimum" in out[0].reason_detail
+
+    def test_a_criterion_with_no_threshold_rules_nothing_out(self) -> None:
+        assert thresholds_that_rule_out([a_criterion()], [a_value(payload=Count(count=90))]) == ()
+
+    def test_a_threshold_with_no_figure_for_the_attribute_rules_nothing_out(self) -> None:
+        """You cannot cross a line you have no figure for -- that is insufficient coverage, not a
+        non-match (`reqs.md` 5.3)."""
+        criterion = a_criterion(matching_threshold=RangeThreshold(max_value=Decimal(50)))
+
+        assert thresholds_that_rule_out([criterion], []) == ()
+
+    def test_a_rejected_value_rules_nothing_out(self) -> None:
+        """A value that holds no figure (it was rejected) cannot be judged against a line."""
+        criterion = a_criterion(matching_threshold=RangeThreshold(max_value=Decimal(50)))
+        rejected = a_value(payload=None, rejection_reason="figure outside the credible range")
+
+        assert thresholds_that_rule_out([criterion], [rejected]) == ()
+
+    def test_the_reason_names_the_criterion_by_its_attribute(self) -> None:
+        out = _verdict(RangeThreshold(max_value=Decimal(50)), ValueType.COUNT, Count(count=90))
+
+        assert str(out[0].criterion) == str(a_criterion().attribute)
+        assert out[0].match_rule is None and out[0].compound_rule is None
+
+    def test_only_the_criterion_whose_line_is_crossed_is_named(self) -> None:
+        crossed = a_criterion(
+            attribute="country.overcrowding_rate",
+            matching_threshold=RangeThreshold(max_value=Decimal(50)),
+        )
+        within = a_criterion(
+            attribute="country.life_satisfaction",
+            matching_threshold=RangeThreshold(max_value=Decimal(50)),
+        )
+        values = [
+            a_value(attribute="country.overcrowding_rate", payload=Count(count=90)),
+            a_value(attribute="country.life_satisfaction", payload=Count(count=10)),
+        ]
+
+        out = thresholds_that_rule_out([crossed, within], values)
+
+        assert [str(reason.criterion) for reason in out] == ["country.overcrowding_rate"]

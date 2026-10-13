@@ -31,8 +31,13 @@ from starnest.evaluation.results import (
     MatchStatus,
     PillarScore,
 )
-from starnest.evaluation.rules import gates_that_rule_out, judgements_of
+from starnest.evaluation.rules import (
+    gates_that_rule_out,
+    judgements_of,
+    thresholds_that_rule_out,
+)
 from starnest.evaluation.weighting import (
+    WeightingError,
     confidence_split,
     coverage_of,
     redistribute,
@@ -105,6 +110,7 @@ def rank_candidates(
             criteria=criteria,
             compound_rules=applied,
             figures=_magnitudes_of(values.get(candidate, ())),
+            candidate_values=values.get(candidate, ()),
             gate_answers=gate_answers.get(candidate, ()),
             level=level,
         )
@@ -157,8 +163,17 @@ def _refuse_a_pillar_nothing_scores_into(criteria: CriteriaSet, level: str) -> N
     Seeding a level's pillar weights before its criteria is how a level gets built, so this is
     a state a set passes through legitimately. It is not a state anything may be scored in.
     """
+    # **Only a pillar that still carries weight.** The refusal's own remedy is "give it no
+    # weight", so a pillar whose weight the user has set to zero has already taken it -- its share
+    # of the score is zero, nothing is lost, and it must not be refused despite the remedy saying
+    # so (BE-04). A zero-weight empty pillar is the ordinary state of a level mid-build.
+    weight_of = {
+        (str(weight.pillar), str(weight.level)): weight.weight for weight in criteria.pillar_weights
+    }
     empty = [
-        pillar for pillar, its_level in criteria.pillars_with_no_criteria if its_level == level
+        pillar
+        for pillar, its_level in criteria.pillars_with_no_criteria
+        if its_level == level and weight_of.get((str(pillar), str(level)), Decimal(0)) > 0
     ]
     if empty:
         raise RankingError(
@@ -226,21 +241,31 @@ def _level_wide_weights(
     pillar_weights = {
         (weight.pillar, weight.level): weight.weight for weight in criteria.pillar_weights
     }
-    within_pillar = _renormalised_within_each_pillar(scored)
-    scoring_pillars = {criterion.pillar for criterion in scored}
-    across_pillars = renormalise(
-        {
-            str(pillar): weight
-            for (pillar, weight_level), weight in pillar_weights.items()
-            if weight_level == level and pillar in scoring_pillars
+    try:
+        within_pillar = _renormalised_within_each_pillar(scored)
+        scoring_pillars = {criterion.pillar for criterion in scored}
+        across_pillars = renormalise(
+            {
+                str(pillar): weight
+                for (pillar, weight_level), weight in pillar_weights.items()
+                if weight_level == level and pillar in scoring_pillars
+            }
+        )
+        return {
+            str(criterion.attribute): within_pillar[str(criterion.attribute)]
+            * across_pillars[str(criterion.pillar)]
+            / TOTAL
+            for criterion in scored
         }
-    )
-    return {
-        str(criterion.attribute): within_pillar[str(criterion.attribute)]
-        * across_pillars[str(criterion.pillar)]
-        / TOTAL
-        for criterion in scored
-    }
+    except WeightingError as degenerate:
+        # A pillar whose only scored criteria carry no weight between them -- excluding the one
+        # weighted criterion of a `[100, 0]` pillar leaves `{c: 0}` -- cannot be renormalised,
+        # because 0/0 has no proportions. That is a configuration that cannot be ranked, not a
+        # server fault, so it is a RankingError (a 422) rather than a WeightingError escaping to
+        # a 500 (BE-04).
+        raise RankingError(
+            f"{criteria.id} cannot be ranked at level {level}: {degenerate}"
+        ) from degenerate
 
 
 def _renormalised_within_each_pillar(scored: Sequence[Criterion]) -> dict[str, Decimal]:
@@ -328,7 +353,7 @@ def _scores_by_criterion(
     readings: Mapping[str, Mapping[str, Reading]],
     *,
     score_scale_max: int,
-) -> dict[str, dict[str, int]]:
+) -> dict[str, dict[str, Decimal]]:
     """Each criterion's column of figures, normalised together.
 
     A criterion whose column cannot be normalised -- one candidate under `percentile`, a figure
@@ -336,7 +361,7 @@ def _scores_by_criterion(
     ranking. The candidates keep the coverage penalty for it, so the refusal is visible in the
     number beside the score rather than swallowed.
     """
-    columns: dict[str, dict[str, int]] = {}
+    columns: dict[str, dict[str, Decimal]] = {}
     for criterion in scored:
         attribute = str(criterion.attribute)
         answered = readings.get(attribute, {})
@@ -376,6 +401,7 @@ def _result_for(
     criteria: CriteriaSet,
     compound_rules: Sequence[CompoundRule],
     figures: Mapping[str, Decimal],
+    candidate_values: Sequence[Value],
     gate_answers: Sequence[MatchRuleResult],
     level: str,
 ) -> CandidateResult:
@@ -404,40 +430,46 @@ def _result_for(
         )
         for criterion in scored_criteria
     )
-    refusal = _why_it_cannot_be_scored(
-        scored_criteria, answered, found=found, coverage=coverage, min_coverage=min_coverage
-    )
-    if refusal is not None:
-        return CandidateResult(
-            candidate=CandidateId(candidate),
-            score=None,
-            coverage=coverage,
-            coverage_by_confidence=resting_on,
-            match_status=MatchStatus.INSUFFICIENT_DATA,
-            attribute_scores=breakdown,
-            pillar_scores=pillars_of(breakdown),
-            insufficient_reason=refusal,
-        )
-    total = sum((row.contribution for row in breakdown), Decimal(0))
+    # **Eligibility is decided regardless of coverage, and a definite non-match outranks
+    # insufficient_data** (BE-03). A gate the household researched to not_matching, a threshold a
+    # figure crosses, or a decided compound rule is a definite fact about the candidate; returning
+    # insufficient_data in its place -- as this did before, by refusing early -- hid a refusal the
+    # reader needs. Warnings attach whether or not there is a score, for the same reason.
     warnings, ruled_out_by_a_rule = judgements_of(
         rules=compound_rules, figures=figures, level=level
     )
     refusals = (
         gates_that_rule_out(enforced=criteria.enforced_match_rules, answers=gate_answers)
         + ruled_out_by_a_rule
+        + thresholds_that_rule_out(scored_criteria, candidate_values)
     )
+    refusal = _why_it_cannot_be_scored(
+        scored_criteria, answered, found=found, coverage=coverage, min_coverage=min_coverage
+    )
+    if refusals:
+        match_status = MatchStatus.NOT_MATCHING
+    elif refusal is not None:
+        match_status = MatchStatus.INSUFFICIENT_DATA
+    else:
+        match_status = MatchStatus.MATCHING
+    # Insufficient coverage still means no trustworthy total, so the score stays None even when a
+    # refusal makes the candidate not_matching -- the coverage gap and the non-match are shown
+    # side by side (`reqs.md` 5.3, 5.4). A candidate that matches, or that does not match on a
+    # figure it was scored on, keeps its score and stays visible.
+    total = sum((row.contribution for row in breakdown), Decimal(0))
     return CandidateResult(
         candidate=CandidateId(candidate),
-        score=int(total.quantize(Decimal(1), rounding=ROUND_HALF_UP)),
+        score=(
+            None if refusal is not None else int(total.quantize(Decimal(1), rounding=ROUND_HALF_UP))
+        ),
         coverage=coverage,
         coverage_by_confidence=resting_on,
-        # A candidate that does not match keeps its score and stays visible, with the reason
-        # beside it (`reqs.md` 5.4).
-        match_status=MatchStatus.NOT_MATCHING if refusals else MatchStatus.MATCHING,
+        match_status=match_status,
         attribute_scores=breakdown,
         pillar_scores=pillars_of(breakdown),
         warnings=warnings,
         non_match_reasons=refusals,
+        insufficient_reason=refusal,
     )
 
 
@@ -508,7 +540,7 @@ def _attribute_score(
     candidate: str,
     *,
     effective: Mapping[str, Decimal],
-    scores: Mapping[str, Mapping[str, int]],
+    scores: Mapping[str, Mapping[str, Decimal]],
     readings: Mapping[str, Mapping[str, Reading]],
 ) -> AttributeScore:
     attribute = str(criterion.attribute)
@@ -518,9 +550,15 @@ def _attribute_score(
     return AttributeScore(
         attribute=criterion.attribute,
         pillar=criterion.pillar,
-        normalised_score=score,
+        # **The displayed per-attribute score is rounded; the contribution is not** (`reqs.md`
+        # 5.1, BE-02). The exact score is weighted and only the final total is rounded once, so a
+        # drill-down may show a rounded score beside a contribution that still carries the
+        # fraction -- rounding here, before weighting, is what used to shift totals.
+        normalised_score=(
+            None if score is None else int(score.quantize(Decimal(1), rounding=ROUND_HALF_UP))
+        ),
         effective_weight=weight,
-        contribution=Decimal(0) if score is None else Decimal(score) * weight / TOTAL,
+        contribution=Decimal(0) if score is None else score * weight / TOTAL,
         # Only where the figure was actually scored: a reading that no method could place
         # contributed nothing, and naming the row it came from would suggest otherwise.
         used_value=reading.value if reading is not None and score is not None else None,

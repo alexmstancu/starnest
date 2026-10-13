@@ -21,7 +21,13 @@ from starnest.evaluation.magnitudes import (
 from starnest.evaluation.normalisation import NormalisationError, scores_for
 from starnest.evaluation.ranking import RankingError, rank_candidates
 from starnest.evaluation.results import AttributeScore, CandidateResult, MatchStatus
-from starnest.evaluation.rules import NonMatch, RuleWarning, gates_that_rule_out, judgements_of
+from starnest.evaluation.rules import (
+    NonMatch,
+    RuleWarning,
+    gates_that_rule_out,
+    judgements_of,
+    thresholds_that_rule_out,
+)
 from starnest.evaluation.store import EvaluationStore, SavedEvaluation, UnknownEvaluationError
 from starnest.evaluation.weighting import (
     WeightingError,
@@ -56,4 +62,5 @@ __all__ = [
     "redistribute",
     "renormalise",
     "scores_for",
+    "thresholds_that_rule_out",
 ]

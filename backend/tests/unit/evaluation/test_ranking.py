@@ -17,7 +17,7 @@ from decimal import Decimal
 
 import pytest
 
-from starnest.criteria import Goal, NormalisationMethod
+from starnest.criteria import Goal, NormalisationMethod, RangeThreshold, ScaleAnchor
 from starnest.data import (
     CompoundRule,
     CompoundRuleCondition,
@@ -436,11 +436,122 @@ class TestExcludingACriterionIsNotMissingOne:
         assert weights[a_criterion().attribute] == Decimal(60)
 
 
+class TestAMatchingThresholdRulesOut:
+    """A criterion's matching threshold is the third way a candidate does not match, beside a
+    gate and a compound rule (`reqs.md` 5.2). A value past the line makes the candidate
+    `not_matching`, with the reason beside it, keeping its score (BE-01)."""
+
+    def test_a_value_past_the_threshold_makes_the_candidate_not_matching(self) -> None:
+        criteria = a_set([a_criterion(matching_threshold=RangeThreshold(max_value=Decimal(50)))])
+
+        found = by_candidate(rank(criteria, values_for(portugal=90, spain=10)))
+
+        portugal = found["country.portugal"]
+        assert portugal.match_status is MatchStatus.NOT_MATCHING
+        assert portugal.score is not None, "a ruled-out candidate keeps its score"
+        assert any(reason.criterion is not None for reason in portugal.non_match_reasons)
+        assert found["country.spain"].match_status is MatchStatus.MATCHING
+
+
+class TestEligibilityIsDecidedRegardlessOfCoverage:
+    """A definite non-match -- a failed gate, a crossed threshold -- outranks insufficient_data,
+    which used to be returned first and hide it (BE-03). The coverage gap is still explained
+    beside the non-match, because "we could not score it" and "it fails" are both true."""
+
+    def test_an_insufficient_candidate_that_fails_a_gate_is_reported_not_matching(self) -> None:
+        criteria = a_set([a_criterion()]).model_copy(
+            update={"enforced_match_rules": frozenset({"uk_skilled_worker"})}
+        )
+        gate = MatchRuleResult(
+            match_rule="uk_skilled_worker",
+            candidate="country.portugal",
+            match_result=MatchResult.NOT_MATCHING,
+            data_source="manual",
+            retrieval_date=datetime(2026, 9, 12, tzinfo=UTC),
+            reason="no sponsor",
+        )
+
+        found = by_candidate(
+            rank(criteria, {"country.portugal": ()}, gate_answers={"country.portugal": (gate,)})
+        )
+        portugal = found["country.portugal"]
+
+        assert portugal.match_status is MatchStatus.NOT_MATCHING
+        assert portugal.score is None, "insufficient coverage still means no trustworthy total"
+        assert [str(r.match_rule) for r in portugal.non_match_reasons] == ["uk_skilled_worker"]
+        assert portugal.insufficient_reason is not None, "the coverage gap is still explained"
+
+    def test_a_threshold_crossed_on_an_under_covered_candidate_also_rules_out(self) -> None:
+        """The same precedence for a crossed threshold: a candidate below the coverage floor whose
+        one answered figure crosses its line is not_matching, not merely insufficient_data."""
+        criteria = two_pillars(matching_threshold=RangeThreshold(max_value=Decimal(50)))
+
+        found = by_candidate(
+            rank(criteria, values_for(portugal=90, spain=10), min_coverage=Decimal(60))
+        )
+
+        # Portugal answers only one of two pillars (coverage 50% < 60), and that figure crosses.
+        assert found["country.portugal"].match_status is MatchStatus.NOT_MATCHING
+        assert found["country.portugal"].score is None
+        assert any(r.criterion is not None for r in found["country.portugal"].non_match_reasons)
+        # Spain is equally under-covered but its figure is within the line: insufficient, not out.
+        assert found["country.spain"].match_status is MatchStatus.INSUFFICIENT_DATA
+
+
+class TestScoresAreNotRoundedBeforeWeighting:
+    """`reqs.md` 5.1 forbids rounding a normalised score before it is weighted. A fixed criterion
+    that interpolates to 7.5 is displayed as 8 but must contribute 7.5 x its weight, not 8 x it
+    -- rounding first and then weighting can shift totals and reverse near-tie rankings (BE-02)."""
+
+    def test_a_fractional_score_contributes_its_exact_value(self) -> None:
+        anchors = (
+            ScaleAnchor(input_value=Decimal(0), score=0),
+            ScaleAnchor(input_value=Decimal(100), score=10),
+        )
+        criteria = a_set(
+            [a_criterion(normalisation_method=NormalisationMethod.FIXED, scale_anchors=anchors)]
+        )
+
+        found = by_candidate(rank(criteria, values_for(portugal=75, spain=50)))
+        (row,) = found["country.portugal"].attribute_scores
+
+        assert row.normalised_score == 8, "the displayed per-attribute score is rounded"
+        assert row.contribution == Decimal("7.5"), "but the contribution is the exact value"
+
+
 class TestWhenThereIsNoRankingToProduce:
     def test_a_set_that_scores_nothing_at_this_level_is_refused(self) -> None:
         criteria = a_set([a_criterion(is_scored=False)])
 
         with pytest.raises(RankingError, match="scores nothing at level"):
+            rank(criteria, values_for(portugal=90, spain=10))
+
+    def test_a_zero_weight_pillar_with_no_criteria_is_not_refused(self) -> None:
+        """The refusal's own remedy is "give it no weight". A pillar whose weight is zero has
+        taken that remedy -- its share is nothing -- so it scores rather than being refused
+        (BE-04)."""
+        criteria = a_set(
+            [a_criterion()],
+            [a_pillar_weight(weight="100"), a_pillar_weight(pillar=HOUSING, weight="0")],
+        )
+
+        found = by_candidate(rank(criteria, values_for(portugal=90, spain=10)))
+
+        assert found["country.portugal"].score == A_SMALL_SCALE
+
+    def test_a_pillar_whose_only_scored_criterion_carries_no_weight_refuses_cleanly(self) -> None:
+        """Excluding the one weighted criterion of a `[100, 0]` pillar leaves its sibling carrying
+        zero, which renormalise cannot place -- 0/0 has no proportions. That is a configuration
+        that cannot be ranked (a RankingError, a 422), not a WeightingError escaping to a 500
+        (BE-04)."""
+        criteria = a_set(
+            [
+                a_criterion(weight=Decimal("100"), is_scored=False),
+                a_criterion(attribute=A_THIRD_ATTRIBUTE, weight=Decimal("0")),
+            ]
+        )
+
+        with pytest.raises(RankingError):
             rank(criteria, values_for(portugal=90, spain=10))
 
     def test_a_criterion_whose_column_cannot_be_normalised_costs_coverage(self) -> None:

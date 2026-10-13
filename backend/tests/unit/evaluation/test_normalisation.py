@@ -57,11 +57,16 @@ class TestPercentileScoresStandingAmongTheCandidates:
         Counting strictly-worse figures gives this; sorting and taking an index would give the
         first of the pair a better score for no reason a reader could find.
 
-        Each 5 beats only the 1, so each scores 3 of 10 rather than the 5 a midpoint convention
-        would give. That follows from the stated rule -- the share you are strictly better than
-        -- and the rule is what a reader can reconstruct a year from now.
+        Each 5 beats only the 1, so each scores a third of the column rather than the half a
+        midpoint convention would give. That follows from the stated rule -- the share you are
+        strictly better than -- and the rule is what a reader can reconstruct a year from now.
         """
-        assert percentile(["5", "1", "5", "9"]) == (3, 0, 3, 10)
+        scores = percentile(["5", "1", "5", "9"])
+
+        assert scores[0] == scores[2], "the two fives score identically"
+        assert (scores[1], scores[3]) == (0, A_SMALL_SCALE)
+        # A third of the column, kept unrounded (`reqs.md` 5.1); display rounding is the ranking's.
+        assert scores[0] == Decimal(1) / 3 * Decimal(A_SMALL_SCALE)
 
     def test_a_tie_at_the_top_leaves_the_top_of_the_scale_unawarded(self) -> None:
         """Neither of the two best beat the other, so neither takes the whole scale.
@@ -122,9 +127,11 @@ class TestAsIsTakesTheFigureAsTheScore:
         """The bounds belong to the scale: a scale of 10 has both a 0 and a 10."""
         assert as_is(["0", "10"]) == (0, 10)
 
-    def test_a_fractional_figure_becomes_an_integer_score(self) -> None:
-        """Scores are integers (`reqs.md` 5.1); the stored figure keeps its precision."""
-        assert as_is(["7.4", "7.5"]) == (7, 8)
+    def test_a_fractional_figure_is_taken_as_an_unrounded_score(self) -> None:
+        """The figure is the score, kept exact (`reqs.md` 5.1): rounding before weighting would
+        shift totals, so the half-up rounding to a displayed integer happens later, in the
+        ranking, never here (BE-02)."""
+        assert as_is(["7.4", "7.5"]) == (Decimal("7.4"), Decimal("7.5"))
 
     def test_one_candidate_is_fine_because_the_figure_stands_alone(self) -> None:
         """The contrast with percentile, and why both methods exist."""
@@ -183,9 +190,10 @@ class TestFixedMapsBetweenTheAnchorsTheUserChose:
     def test_the_order_the_anchors_were_declared_in_does_not_matter(self) -> None:
         assert fixed(["30"], tuple(reversed(A_TAX_SCALE))) == (5,)
 
-    def test_the_score_rounds_half_up_like_every_other_method(self) -> None:
-        """29% is 5.5 on the way down from 10: half up is 6."""
-        assert fixed(["29"], A_TAX_SCALE) == (6,)
+    def test_a_score_between_anchors_is_kept_unrounded(self) -> None:
+        """29% is 5.5 on the way down from 10, and stays 5.5 here: the half-up rounding to a
+        displayed integer happens in the ranking, not before weighting (`reqs.md` 5.1, BE-02)."""
+        assert fixed(["29"], A_TAX_SCALE) == (Decimal("5.5"),)
 
     def test_the_anchors_carry_the_direction_so_the_goal_is_not_applied_on_top(self) -> None:
         """`reqs.md` 5.1, and the line this module's docstring makes the point of the method:
@@ -255,14 +263,16 @@ class TestAnIndexIsReadOnTheScaleItsPublisherDeclared:
     points somebody chooses, and this reads a mapping that already exists."""
 
     def test_a_figure_on_its_own_scale_maps_onto_the_score_scale(self) -> None:
-        """Numbeo publishes 0-100. On a score scale of 10, 72 is a 7."""
-        assert as_is_published([published("72", bounds=("0", "100"))]) == (7,)
+        """Numbeo publishes 0-100. On a score scale of 10, 72 maps to 7.2 (unrounded)."""
+        assert as_is_published([published("72", bounds=("0", "100"))]) == (Decimal("7.2"),)
 
     def test_a_scale_that_starts_below_zero_maps_too(self) -> None:
         """The World Bank's governance indicators run -2.5 to 2.5, so 0.72 is well above the
         middle -- and unmapped it would have scored 0.72 out of 100, forty-fold adrift of a
         Numbeo index meaning something similar."""
-        assert as_is_published([published("0.72", bounds=("-2.5", "2.5"))], scale=100) == (64,)
+        assert as_is_published([published("0.72", bounds=("-2.5", "2.5"))], scale=100) == (
+            Decimal("64.4"),
+        )
 
     def test_the_ends_of_a_published_scale_are_the_ends_of_ours(self) -> None:
         column = [published("0", bounds=("0", "100")), published("100", bounds=("0", "100"))]
@@ -288,8 +298,10 @@ class TestAnIndexIsReadOnTheScaleItsPublisherDeclared:
             as_is_published([published("140", bounds=("0", "100"))])
 
     def test_minimising_reflects_the_mapped_figure(self) -> None:
-        """A cost index of 72 on 0-100, read as "lower is better", is a 3 out of 10."""
-        assert as_is_published([published("72", bounds=("0", "100"))], goal=Goal.MINIMISE) == (3,)
+        """A cost index of 72 on 0-100, read as "lower is better", is 2.8 out of 10 (unrounded)."""
+        assert as_is_published([published("72", bounds=("0", "100"))], goal=Goal.MINIMISE) == (
+            Decimal("2.8"),
+        )
 
     def test_bounds_the_wrong_way_round_do_not_invert_the_scale(self) -> None:
         """`Index` refuses to declare these, but `scores_for` is public and takes a figure

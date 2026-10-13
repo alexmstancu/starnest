@@ -1,10 +1,11 @@
 """What the rules say about one candidate: warnings, and the gates that rule it out.
 
-`reqs.md` 3.7, 3.7a and 5.4. Two mechanisms produce a non-match and both feed **one** reporting
-surface, so the reader never looks in two places: a **match rule** is a named gate answered by
-research (a visa route, a quota, a manual exclusion), and a **compound rule** reads more than one
-figure at once. A compound rule's outcome says which it is -- a warning flags without ruling
-anything out, and never changes a score.
+`reqs.md` 3.7, 3.7a, 5.2 and 5.4. Three mechanisms produce a non-match and all feed **one**
+reporting surface, so the reader never looks in more than one place: a **match rule** is a named
+gate answered by research (a visa route, a quota, a manual exclusion), a **compound rule** reads
+more than one figure at once, and a **matching threshold** is a single criterion's own hard line
+on its one attribute's figure (`reqs.md` 5.2). A compound rule's outcome says which it is -- a
+warning flags without ruling anything out, and never changes a score.
 
 **An undecided rule does not fire** (`reqs.md` 7.4, `devplan.md` D5). Every threshold the MVP
 ships is TBD, and firing one on an invented number is exactly the fabricated judgement this
@@ -19,16 +20,29 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
+from starnest.criteria import Criterion
+from starnest.criteria.thresholds import (
+    BooleanThreshold,
+    LabelThreshold,
+    MatchingThreshold,
+    RangeThreshold,
+    ShareThreshold,
+)
 from starnest.data import (
     AttributeId,
+    Boolean,
     CompoundRule,
     CompoundRuleId,
     CompoundRuleShape,
+    LabelSet,
     MatchResult,
     MatchRuleId,
     MatchRuleResult,
     RuleOutcome,
+    ShareComposition,
+    Value,
 )
+from starnest.evaluation.magnitudes import UnscoreableValueError, magnitude_of
 
 
 @dataclass(frozen=True)
@@ -178,3 +192,88 @@ def gates_that_rule_out(
         for rule in enforced
         if rule in failed
     )
+
+
+def thresholds_that_rule_out(
+    scored_criteria: Sequence[Criterion],
+    values: Sequence[Value],
+) -> tuple[NonMatch, ...]:
+    """The criteria whose matching threshold this candidate's value crosses (`reqs.md` 5.2).
+
+    The third way a candidate does not match, beside a gate and a compound rule, and the only one
+    tied to a single attribute's own figure. **A threshold the household set is decided by having
+    been set** -- there is no TBD number to leave undecided as a compound rule has -- so it fires
+    as soon as a value crosses it.
+
+    **A missing or unplaceable figure never rules out.** You cannot cross a line you have no
+    figure for; that is insufficient coverage, not a non-match (`reqs.md` 5.3). Only a value that
+    is present and on the wrong side of the line produces a `NonMatch`, named by its criterion.
+    """
+    by_attribute = {str(value.attribute): value for value in values}
+    reasons = []
+    for criterion in scored_criteria:
+        threshold = criterion.matching_threshold
+        if threshold is None:
+            continue
+        value = by_attribute.get(str(criterion.attribute))
+        if value is None:
+            continue
+        reason = _crosses(threshold, value)
+        if reason is not None:
+            reasons.append(NonMatch(criterion=criterion.attribute, reason_detail=reason))
+    return tuple(reasons)
+
+
+def _crosses(threshold: MatchingThreshold, value: Value) -> str | None:
+    """Why the value is on the wrong side of the line, or None when it is admitted or cannot be
+    judged -- no figure, a rejected value, or a payload of a shape this threshold does not read.
+
+    A payload mismatch cannot normally happen -- a criterion refuses a threshold that does not
+    suit its value type, and a value's type matches its criterion -- so the `isinstance` guards
+    are a safe default, never a silent rule-out, for a row written past the domain.
+    """
+    if isinstance(threshold, RangeThreshold):
+        try:
+            figure = magnitude_of(value)
+        except UnscoreableValueError:
+            return None
+        if threshold.min_value is not None and figure < threshold.min_value:
+            return f"{value.attribute} is {figure:g}, below your minimum of {threshold.min_value:g}"
+        if threshold.max_value is not None and figure > threshold.max_value:
+            return f"{value.attribute} is {figure:g}, above your maximum of {threshold.max_value:g}"
+        return None
+    if isinstance(threshold, LabelThreshold):
+        if not isinstance(value.payload, LabelSet):
+            return None
+        present = threshold.label in value.payload.labels
+        if threshold.containment_rule == "must_contain" and not present:
+            return f"{value.attribute} does not carry {threshold.label!r}, which you require"
+        if threshold.containment_rule == "must_not_contain" and present:
+            return f"{value.attribute} carries {threshold.label!r}, which you ruled out"
+        return None
+    if isinstance(threshold, BooleanThreshold):
+        if not isinstance(value.payload, Boolean):
+            return None
+        if value.payload.value != threshold.required_value:
+            return (
+                f"{value.attribute} is {value.payload.value}, "
+                f"and you require {threshold.required_value}"
+            )
+        return None
+    if isinstance(threshold, ShareThreshold):
+        if not isinstance(value.payload, ShareComposition):
+            return None
+        share = next(
+            (slice_.share for slice_ in value.payload.shares if slice_.label == threshold.label),
+            Decimal(0),
+        )
+        if threshold.min_share is not None and share < threshold.min_share:
+            return (
+                f"{threshold.label!r} is {share:g}%, below your minimum of {threshold.min_share:g}%"
+            )
+        if threshold.max_share is not None and share > threshold.max_share:
+            return (
+                f"{threshold.label!r} is {share:g}%, above your maximum of {threshold.max_share:g}%"
+            )
+        return None
+    return None
