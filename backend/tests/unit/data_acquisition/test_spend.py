@@ -6,13 +6,18 @@ bill is not a cap.
 """
 
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
 from starnest.data import DataSource, DataSourceId, ReliabilityTierId, SourceKind
 from starnest.data_acquisition import CostMeter, SpendCapNotSetError, refuse_unless_capped
 from starnest.data_acquisition.adapter import SourceAdapter
-from starnest.data_acquisition.execution import asked_this_run, switched_on
+from starnest.data_acquisition.execution import (
+    _a_paid_source_would_be_asked,
+    asked_this_run,
+    switched_on,
+)
 
 
 class TestTheMeter:
@@ -62,6 +67,30 @@ class TestTheMeter:
     def test_an_uncapped_meter_says_so_rather_than_showing_a_blank(self) -> None:
         assert "no cap set" in CostMeter(cap_eur=None).describe()
 
+    def test_a_zero_cap_is_exhausted_but_has_not_spent_to_its_cap(self) -> None:
+        """A cap of zero means "spend nothing" (BE-16). `is_exhausted` is true -- so a paid
+        source is stopped before its first call -- but `has_spent_to_its_cap` is not, so a free
+        sweep that spends nothing is never halted and answers everything."""
+        meter = CostMeter(cap_eur=Decimal(0))
+
+        assert meter.is_exhausted
+        assert not meter.has_spent_to_its_cap
+
+    def test_a_zero_cap_halts_once_something_has_actually_been_spent(self) -> None:
+        meter = CostMeter(cap_eur=Decimal(0))
+        meter.spent(cost_eur=Decimal("0.01"))
+
+        assert meter.has_spent_to_its_cap
+
+    def test_a_positive_cap_halts_only_once_reached_by_spending(self) -> None:
+        meter = CostMeter(cap_eur=Decimal(2))
+
+        meter.spent(cost_eur=Decimal(1))
+        assert not meter.has_spent_to_its_cap
+
+        meter.spent(cost_eur=Decimal(1))
+        assert meter.has_spent_to_its_cap
+
 
 class TestWhenARunIsRefused:
     def test_a_paid_run_with_no_cap_is_refused(self) -> None:
@@ -90,9 +119,10 @@ class TestWhenARunIsRefused:
 
 
 class _Source(SourceAdapter):
-    def __init__(self, *, source: str, charges: bool) -> None:
+    def __init__(self, *, source: str, charges: bool, attributes: tuple[str, ...] = ()) -> None:
         self._source = source
         self._charges = charges
+        self._attributes = attributes
 
     @property
     def data_source(self):  # type: ignore[no-untyped-def]
@@ -104,10 +134,44 @@ class _Source(SourceAdapter):
 
     @property
     def attributes(self) -> tuple:
-        return ()
+        return self._attributes
 
     async def fetch(self, attribute, candidates):  # type: ignore[no-untyped-def]
         raise AssertionError("not asked in these tests")
+
+
+def _attr(attribute_id: str) -> SimpleNamespace:
+    """Just enough of an Attribute for the in-scope check: it reads `.id`."""
+    return SimpleNamespace(id=attribute_id)
+
+
+class TestWhetherARunWouldActuallySpend:
+    """A run is told it can spend only when a charging source has an attribute the run will ask
+    about (BE-14). A paid source that is registered but answers none of the run's attributes does
+    not force a cap on otherwise-free work -- the plan prices it at zero, and open_run must agree.
+    """
+
+    def test_a_paid_source_with_no_in_scope_attribute_does_not_count(self) -> None:
+        adapters = [
+            _Source(source="eurostat", charges=False, attributes=("country.total_tax_rate",)),
+            _Source(source="llm", charges=True, attributes=("country.international_employers",)),
+        ]
+
+        assert not _a_paid_source_would_be_asked(adapters, [_attr("country.total_tax_rate")])
+
+    def test_a_paid_source_with_an_in_scope_attribute_counts(self) -> None:
+        adapters = [
+            _Source(source="llm", charges=True, attributes=("country.international_employers",))
+        ]
+
+        assert _a_paid_source_would_be_asked(adapters, [_attr("country.international_employers")])
+
+    def test_a_free_source_in_scope_never_counts(self) -> None:
+        adapters = [
+            _Source(source="eurostat", charges=False, attributes=("country.total_tax_rate",))
+        ]
+
+        assert not _a_paid_source_would_be_asked(adapters, [_attr("country.total_tax_rate")])
 
 
 class TestWhichSourcesARunAsks:

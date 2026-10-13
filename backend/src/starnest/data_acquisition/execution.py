@@ -15,7 +15,7 @@ screen say which pass produced it, and what makes "re-run just this" answerable 
 """
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -183,7 +183,7 @@ async def open_run(
             f"{len(answerable)} answerable and {len(borrowable)} borrowable attribute(s)"
         )
     refuse_unless_capped(
-        costs_money=any(adapter.costs_money for adapter in adapters),
+        costs_money=_a_paid_source_would_be_asked(adapters, answerable),
         cap_eur=spend_cap_eur,
         uncapped_is_accepted=uncapped_is_accepted,
     )
@@ -285,7 +285,7 @@ async def continue_run(opened: OpenedRun) -> Run:
                 await runs.add_spend(run, calls=outcome.calls, cost_eur=outcome.cost_eur)
                 # Logged as it accumulates, so a halt is never a surprise (`arch.md` 9.4).
                 _log.info("run %d spend: %s", run, meter.describe())
-            if meter.is_exhausted:
+            if meter.has_spent_to_its_cap:
                 # The cap is a stop, not a failure. What was fetched is stored and the status
                 # says why it stopped -- so a retry over the rest is the obvious next step.
                 #
@@ -427,6 +427,24 @@ def asked_this_run(
     return tuple(adapter for adapter in adapters if not adapter.costs_money)
 
 
+def _a_paid_source_would_be_asked(
+    adapters: Sequence[SourceAdapter], answerable: Sequence[Attribute]
+) -> bool:
+    """Whether this run will actually ask a source that charges (BE-14).
+
+    `any(adapter.costs_money ...)` over the whole asked list counted a paid source that declares
+    none of the run's attributes: a run naming only Eurostat attributes was refused for want of a
+    cap because the LLM adapter was merely registered, though it would answer nothing and the
+    plan priced it at zero. A paid source charges this run only when it declares an attribute the
+    run is going to ask about, and `acquire` asks each source only about what it declares.
+    """
+    in_scope = {str(attribute.id) for attribute in answerable}
+    return any(
+        adapter.costs_money and not in_scope.isdisjoint(str(a) for a in adapter.attributes)
+        for adapter in adapters
+    )
+
+
 class NothingToFetchError(ValueError):
     """A run whose sources, between them, can answer nothing in its scope.
 
@@ -471,8 +489,15 @@ async def retry_run(
     triggered_by: str = MANUAL,
     spend_cap_eur: Decimal | None = None,
     uncapped_is_accepted: bool = False,
+    execute: "Callable[..., Awaitable[Run]]" = execute_run,
 ) -> Run:
     """A new run asking only the sources that failed, only about what they failed on.
+
+    **`execute` opens and runs the narrowed scope** (default: `execute_run`, which waits for the
+    whole pass -- what the tests and scripts want). `api/runs.py` passes one that opens the run,
+    dispatches the fetch to the background and returns at once, so a retry answers 202 without
+    holding a connection open and cannot be mistaken for a failure and retried into a second
+    paid run (BE-12), exactly as `start` does (P35).
 
     `reqs.md` 6.4. `attributes` and `candidates` are the level's whole catalog and roster; the
     retry narrows both to the failures. **The old run is untouched** -- it keeps its record of
@@ -495,7 +520,7 @@ async def retry_run(
     failed_on = _what_each_source_failed_on(failed.failures)
     wanted_candidates = {failure.candidate for failure in failed.failures}
     wanted_attributes = {failure.attribute for failure in failed.failures}
-    return await execute_run(
+    return await execute(
         adapters=[
             _AskedOnlyAbout(adapter, failed_on[adapter.data_source])
             for adapter in adapters
@@ -581,8 +606,12 @@ async def ask_again(
     triggered_by: str = MANUAL,
     spend_cap_eur: Decimal | None = None,
     uncapped_is_accepted: bool = False,
+    execute: "Callable[..., Awaitable[Run]]" = execute_run,
 ) -> Run:
     """A new run asking again about the items nobody answered (`reqs.md` Q217).
+
+    `execute` is the same seam `retry_run` has: the endpoint passes one that dispatches the fetch
+    to the background and returns 202 at once, rather than blocking (BE-12).
 
     **No source is narrowed to, because no source failed.** A retry asks the source that broke;
     this asks every source that can answer the attribute, because the previous run's silence
@@ -600,7 +629,7 @@ async def ask_again(
 
     wanted_candidates = {item.candidate for item in run.unanswered}
     wanted_attributes = {item.attribute for item in run.unanswered}
-    return await execute_run(
+    return await execute(
         adapters=adapters,
         attributes=[a for a in attributes if str(a.id) in wanted_attributes],
         candidates=[c for c in candidates if str(c.id) in wanted_candidates],

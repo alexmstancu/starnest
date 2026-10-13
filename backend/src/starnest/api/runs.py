@@ -320,6 +320,7 @@ async def stop(run_id: int, runs: Runs) -> RunBody:
 )
 async def retry(
     run_id: int,
+    background: BackgroundTasks,
     adapters: Adapters,
     candidates: Candidates,
     catalog: Catalog,
@@ -342,6 +343,24 @@ async def retry(
     would be a no-op recorded as though it were work.
     """
     earlier = await runs.read_run(run_id)
+    # **One run at a time, here as in `start`** (P35, BE-12). A retry is a run and spends like
+    # one, so a second pass while one is already going is refused rather than overlapping it --
+    # which, without this, two tabs or a timeout-and-retry could start, running paid sources
+    # twice.
+    in_flight = await runs.run_in_flight()
+    if in_flight is not None:
+        raise RunAlreadyInFlightError(
+            f"run {in_flight} is still going, and one household runs one pass at a time "
+            f"(reqs.md 10). Poll run {in_flight} rather than starting another."
+        )
+
+    async def open_and_dispatch(**asked: object) -> object:
+        """Open the retry (where every refusal is made), then hand the fetch to the background
+        and answer 202 at once -- the same split `start` uses, so a retry never blocks (BE-12)."""
+        opened = await open_run(**asked)  # type: ignore[arg-type]
+        background.add_task(continue_run, opened)
+        return await runs.read_run(opened.id)
+
     level = earlier.scope.level if earlier.scope else None
     attributes = await catalog.read_attributes(level=level)
     roster = await candidates.read_candidates(level=level)
@@ -370,6 +389,7 @@ async def retry(
             stand_ins=stand_ins,
             spend_cap_eur=cap,
             uncapped_is_accepted=asked_for.accept_uncapped_spend,
+            execute=open_and_dispatch,
         )
         return _run_body(asked)
 
@@ -383,6 +403,7 @@ async def retry(
         stand_ins=stand_ins,
         spend_cap_eur=cap,
         uncapped_is_accepted=asked_for.accept_uncapped_spend,
+        execute=open_and_dispatch,
     )
     return _run_body(retried)
 

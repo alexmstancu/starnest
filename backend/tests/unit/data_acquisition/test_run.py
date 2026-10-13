@@ -272,6 +272,36 @@ class TestWhenTheCapIsReachedInsideOneSource:
         assert len(outcome.stored) == 1
 
 
+class TestAZeroCapDoesNotHaltAFreeSweep:
+    """A cap of zero means "spend nothing", not "fetch nothing" (BE-16). A free sweep spends
+    nothing, so it must answer every attribute -- only `is_exhausted` being true at zero spend
+    (0 >= 0) used to break it after the first."""
+
+    async def test_a_free_source_answers_every_attribute_under_a_zero_cap(self) -> None:
+        adapter = StubAdapter(
+            {
+                OVERBURDEN: Acquired(values=(a_value(),)),
+                PRESS_FREEDOM: Acquired(),
+                ENGLISH: Acquired(),
+            },
+            declares=(OVERBURDEN, PRESS_FREEDOM, ENGLISH),
+        )
+
+        await acquire(
+            adapter=adapter,
+            attributes=[
+                an_attribute(OVERBURDEN),
+                an_attribute(PRESS_FREEDOM),
+                an_attribute(ENGLISH),
+            ],
+            candidates=[PORTUGAL],
+            values=RecordingValueStore(),
+            meter=CostMeter(cap_eur=Decimal(0)),
+        )
+
+        assert adapter.asked == [OVERBURDEN, PRESS_FREEDOM, ENGLISH]
+
+
 class ASourceThatBillsPerCandidate(SourceAdapter):
     """One billed call per candidate, which is the shape of both LLM adapters.
 

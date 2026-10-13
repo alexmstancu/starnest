@@ -141,7 +141,7 @@ async def acquire(
         # what has already been paid for is kept. The run one level up sees the exhausted meter
         # and halts, so the attributes left unasked are reported as unanswered rather than
         # silently dropped.
-        if meter is not None and meter.is_exhausted:
+        if meter is not None and meter.has_spent_to_its_cap:
             break
 
     return RunOutcome(

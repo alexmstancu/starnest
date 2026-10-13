@@ -55,8 +55,24 @@ class CostMeter:
 
     @property
     def is_exhausted(self) -> bool:
-        """Whether the cap has been reached. An uncapped run is never exhausted."""
+        """Whether spending more would exceed the cap. An uncapped run is never exhausted.
+
+        The strict at-or-over-cap test, used by a paid source's own in-fetch hook so it stops
+        before the call that would cross the cap -- including a cap of zero, where it stops a
+        paid source before its first call.
+        """
         return self.cap_eur is not None and self.spent_eur >= self.cap_eur
+
+    @property
+    def has_spent_to_its_cap(self) -> bool:
+        """Whether the run should halt between units of work.
+
+        The cap reached by **actual spending**, which differs from `is_exhausted` only at a cap
+        of zero: a free sweep spends nothing, so it is never halted by any cap and answers every
+        attribute (BE-16), while a paid source under a zero cap is still stopped before its first
+        call by `is_exhausted`.
+        """
+        return self.is_exhausted and self.spent_eur > 0
 
     @property
     def remaining_eur(self) -> Decimal | None:
