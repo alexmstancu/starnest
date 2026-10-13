@@ -11,11 +11,12 @@ from types import SimpleNamespace
 import pytest
 
 from starnest.data import DataSource, DataSourceId, ReliabilityTierId, SourceKind
-from starnest.data_acquisition import CostMeter, SpendCapNotSetError, refuse_unless_capped
+from starnest.data_acquisition import STAND_IN, CostMeter, SpendCapNotSetError, refuse_unless_capped
 from starnest.data_acquisition.adapter import SourceAdapter
 from starnest.data_acquisition.execution import (
     _a_paid_source_would_be_asked,
     asked_this_run,
+    stand_ins_if_enabled,
     switched_on,
 )
 
@@ -273,6 +274,19 @@ class TestASourceThatIsSwitchedOff:
         asked = switched_on(adapters, [_catalogued("eurostat", enabled=True)])
 
         assert [str(each.data_source) for each in asked] == ["undeclared"]
+
+    def test_stand_ins_are_not_borrowed_when_the_stand_in_source_is_off(self) -> None:
+        """A stand-in is consulted like any other source, so the same switch keeps borrowing out
+        too (BE-15). Its stored copies are excluded from scoring anyway, so borrowing them is
+        work nobody asked for."""
+        declared = [
+            "liechtenstein borrows from switzerland"
+        ]  # opaque here; only the toggle matters
+
+        assert (
+            stand_ins_if_enabled(declared, [_catalogued(str(STAND_IN), enabled=True)]) == declared
+        )
+        assert stand_ins_if_enabled(declared, [_catalogued(str(STAND_IN), enabled=False)]) == ()
 
     def test_the_two_filters_compose(self) -> None:
         """Switched off and charges-without-a-scope are separate reasons not to ask."""

@@ -408,6 +408,19 @@ def switched_on(
     return tuple(adapter for adapter in adapters if adapter.data_source not in switched_off)
 
 
+def stand_ins_if_enabled(
+    stand_ins: Sequence[StandIn], sources: Sequence[DataSource]
+) -> Sequence[StandIn]:
+    """No figures are borrowed when the `stand_in` source is switched off (`reqs.md` 2, BE-15).
+
+    A declared stand-in is consulted like any other source, so the same switch that keeps a
+    disabled source out of a run keeps borrowing out too -- otherwise a disabled `stand_in` still
+    stored copies that `active_value` then discards, which is work nobody asked for.
+    """
+    off = {source.id for source in sources if not source.is_enabled}
+    return () if STAND_IN in off else stand_ins
+
+
 def asked_this_run(
     adapters: Sequence[SourceAdapter], *, attributes_named: bool
 ) -> tuple[SourceAdapter, ...]:

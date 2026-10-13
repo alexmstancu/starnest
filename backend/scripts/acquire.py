@@ -15,7 +15,14 @@ from pathlib import Path
 
 from psycopg_pool import AsyncConnectionPool
 
-from starnest.data_acquisition import STAND_IN, SourceAdapter, acquire, stand_in
+from starnest.data_acquisition import (
+    STAND_IN,
+    SourceAdapter,
+    acquire,
+    stand_in,
+    stand_ins_if_enabled,
+    switched_on,
+)
 from starnest.main import Environment, _the_sources
 from starnest.storage import (
     PostgresCandidateStore,
@@ -28,10 +35,10 @@ REPO = Path(__file__).resolve().parents[2]
 COUNTRY = "country"
 
 
-def every_adapter(
+async def every_adapter(
     catalog: PostgresCatalogStore, environment: Environment
 ) -> tuple[SourceAdapter, ...]:
-    """The free sources the application wires in, taken from the composition root itself.
+    """The free, switched-on sources the application wires in, from the composition root itself.
 
     **This used to be a second copy of the list, and the copy drifted.** It was duplicated to
     avoid importing `main` -- while this script already imported `Environment` from it -- and
@@ -42,10 +49,13 @@ def every_adapter(
     **Free sources only, always.** A sweep over a level must never spend: the API refuses a paid
     run without a cap, and this script checks no cap at all, so anything that charges is left
     out here rather than trusted to behave.
+
+    **And switched-on only** (`reqs.md` 2, Q232, BE-15): a source the household disabled in
+    Configure is not asked, exactly as the API's own runs filter it with `switched_on` -- this
+    script used to pass the raw registry and fetch from a source the household had turned off.
     """
-    return tuple(
-        adapter for adapter in _the_sources(catalog, environment) if not adapter.costs_money
-    )
+    switched = switched_on(_the_sources(catalog, environment), await catalog.read_data_sources())
+    return tuple(adapter for adapter in switched if not adapter.costs_money)
 
 
 async def main() -> int:
@@ -62,7 +72,7 @@ async def main() -> int:
         values = PostgresValueStore(pool)
         print(f"{len(candidates)} candidates, {len(attributes)} attributes in the catalog")
 
-        for adapter in every_adapter(catalog, environment):
+        for adapter in await every_adapter(catalog, environment):
             print(
                 f"\n{adapter.data_source} answers {len(adapter.attributes)} of them: "
                 f"{', '.join(adapter.attributes)}"
@@ -73,7 +83,10 @@ async def main() -> int:
             _report(outcome, len(candidates))
 
         # Last, so a substitute's figure fetched above is the one borrowed (reqs.md Q208).
-        stand_ins = await catalog.read_stand_ins(level=COUNTRY)
+        # Not consulted when the stand_in source is switched off (reqs.md 2, Q232, BE-15).
+        stand_ins = stand_ins_if_enabled(
+            await catalog.read_stand_ins(level=COUNTRY), await catalog.read_data_sources()
+        )
         print(f"\n{STAND_IN}: {len(stand_ins)} declared")
         outcome = await stand_in(
             stand_ins=stand_ins, attributes=attributes, candidates=candidates, values=values

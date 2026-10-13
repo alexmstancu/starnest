@@ -37,6 +37,7 @@ from starnest.data_acquisition import (
     continue_run,
     open_run,
     retry_run,
+    stand_ins_if_enabled,
     switched_on,
 )
 
@@ -256,7 +257,8 @@ async def start_run(
     # **A source switched off is not asked** (`reqs.md` 2, Q232). The same switch keeps its
     # stored values out of the active-value comparison, so asking it again would fetch figures
     # that cannot score -- and would pay for them where the source charges.
-    consulted = switched_on(adapters, await catalog.read_data_sources())
+    data_sources = await catalog.read_data_sources()
+    consulted = switched_on(adapters, data_sources)
     asked = asked_this_run(consulted, attributes_named=scope.attributes is not None)
     # The cap is a setting the household edits (`reqs.md` 3.10) and is read per run, so a cap
     # set after a refusal takes effect on the next request rather than at the next restart.
@@ -273,7 +275,9 @@ async def start_run(
         values=values,
         runs=runs,
         level=scope.level,
-        stand_ins=await catalog.read_stand_ins(level=scope.level),
+        stand_ins=stand_ins_if_enabled(
+            await catalog.read_stand_ins(level=scope.level), data_sources
+        ),
         spend_cap_eur=cap,
         uncapped_is_accepted=scope.accept_uncapped_spend,
         # Read per run like the cap, so a threshold set after a refusal takes effect on the
@@ -364,7 +368,8 @@ async def retry(
     level = earlier.scope.level if earlier.scope else None
     attributes = await catalog.read_attributes(level=level)
     roster = await candidates.read_candidates(level=level)
-    stand_ins = await catalog.read_stand_ins(level=level)
+    data_sources = await catalog.read_data_sources()
+    stand_ins = stand_ins_if_enabled(await catalog.read_stand_ins(level=level), data_sources)
     asked_for = body or RetryBody()
     # Read here, as `start` reads it, and for the same reason: the cap is a setting the
     # household edits, so a cap set after a refusal takes effect on the next request. This
@@ -376,7 +381,7 @@ async def retry(
     # `active_value` then discards them by `source_is_enabled`, which is work nobody wanted and,
     # for a source that charges, work paid for. `switched_on` existed and had exactly two
     # callers, both of them the endpoints that already did this.
-    consulted = switched_on(adapters, await catalog.read_data_sources())
+    consulted = switched_on(adapters, data_sources)
 
     if asked_for.items == "unanswered":
         asked = await ask_again(

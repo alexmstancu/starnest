@@ -268,6 +268,23 @@ class TestResearchingTheGates:
         assert response.status_code == 501
         assert response.json()["code"] == "llm_not_configured"
 
+    async def test_it_refuses_when_the_llm_source_is_switched_off(self, database_url: str) -> None:
+        """Gate research is the paid LLM path, so switching the `llm` source off must stop it
+        spending -- it used to check only that a model was configured, never the toggle (BE-15).
+        Restored in `finally`, because the catalog is shared across the suite."""
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+            await api.patch("/v1/data-sources/llm", json={"is_enabled": False})
+            try:
+                refused = await api.post("/v1/match-rule-research", json={"level": COUNTRY})
+            finally:
+                await api.patch("/v1/data-sources/llm", json={"is_enabled": True})
+
+        assert refused.status_code == 501
+        assert refused.json()["code"] == "llm_not_configured"
+        assert "switched off" in refused.json()["message"]
+
     async def test_it_refuses_without_a_cap_because_it_costs_money(self, database_url: str) -> None:
         async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
             await _with_a_household(api)
