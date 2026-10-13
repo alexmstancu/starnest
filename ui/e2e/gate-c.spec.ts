@@ -152,13 +152,27 @@ test.describe("provenance on a displayed number", () => {
 });
 
 test.describe("a candidate a gate ruled out", () => {
+  // A gate answer is global, not part of this suite's own set, so writing one and resetting it to
+  // a hardcoded `matching`/null erased whatever the household had recorded -- a real exclusion and
+  // its provenance (UI-03). Capture the prior answer and restore it exactly.
+  let priorAnswer: { match_result: "matching" | "not_matching"; reason: string | null } | null =
+    null;
+
   test.beforeEach(async ({ request }) => {
+    priorAnswer = await readTheGateAnswer(request);
     await answerTheGate(request, "not_matching", "Gate C: recorded by the browser suite");
     await enforceTheGate(request, true);
   });
 
   test.afterEach(async ({ request }) => {
-    await answerTheGate(request, "matching", null);
+    // Restore exactly what was there. With no delete for a gate answer, an answer that was absent
+    // is restored to the gate's benign default (`matching`, no reason) -- an isolated e2e database
+    // is the complete fix. Enforcement is on this suite's own duplicated set, torn down anyway.
+    if (priorAnswer) {
+      await answerTheGate(request, priorAnswer.match_result, priorAnswer.reason);
+    } else {
+      await answerTheGate(request, "matching", null);
+    }
     await enforceTheGate(request, false);
   });
 
@@ -478,6 +492,22 @@ async function weightsInPillar(page: Page, attribute: string): Promise<number[]>
     weights.push(Number(await input.inputValue()));
   }
   return weights;
+}
+
+async function readTheGateAnswer(
+  request: APIRequestContext,
+): Promise<{ match_result: "matching" | "not_matching"; reason: string | null } | null> {
+  const response = await request.get(
+    `/v1/match-rule-results?candidate=${THE_EXCLUDED_ONE.id}`,
+  );
+  expect(response.ok()).toBe(true);
+  const body = (await response.json()) as {
+    items: { match_rule: string; match_result: string; reason: string | null }[];
+  };
+  const found = body.items.find((item) => item.match_rule === THE_GATE);
+  return found
+    ? { match_result: found.match_result as "matching" | "not_matching", reason: found.reason }
+    : null;
 }
 
 async function answerTheGate(

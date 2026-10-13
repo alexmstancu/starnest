@@ -301,3 +301,23 @@ describe("the design is a plugin", () => {
     expect(byClass).toEqual([]);
   });
 });
+
+describe("the reverse proxy", () => {
+  it("gives synchronous gate research a longer read timeout than a polled run", () => {
+    /**
+     * Gate research returns its result in the response rather than being started and polled, so
+     * the 60s read timeout that suits a POST-then-poll acquisition run would turn a long LLM
+     * pass into a 504 that hides the proposals, their cost and any cap halt (UI-01). The browser
+     * suite runs against Vite and the msw mock, never nginx, so this is the only place the
+     * production proxy path is checked at all -- a text guard, since the timeout itself cannot
+     * be exercised here.
+     */
+    const conf = readFileSync(join(SOURCE, "..", "nginx.conf"), "utf8");
+    const researchBlock = conf.slice(conf.indexOf("location = /v1/match-rule-research"));
+
+    expect(researchBlock).not.toBe("");
+    const research = /proxy_read_timeout\s+(\d+)s/.exec(researchBlock);
+    expect(research).not.toBeNull();
+    expect(Number(research?.[1])).toBeGreaterThan(60);
+  });
+});
