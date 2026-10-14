@@ -147,7 +147,9 @@ class OpenMeteoAdapter(SourceAdapter):
                 "timezone": "GMT",
             },
         )
-        return daily_series(answered, series_of.variable, len(places))
+        # The window names one reading per day, inclusive of both ends, so that is how many the
+        # answer must carry -- a short one is truncated, not a period (BE-26).
+        return daily_series(answered, series_of.variable, len(places), (last - first).days + 1)
 
 
 def _the_national_figure(

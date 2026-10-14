@@ -257,6 +257,58 @@ class TestWhatIsNotAFigure:
         with pytest.raises(ValueError, match="no unit"):
             await an_adapter().fetch(unitless, [PORTUGAL])
 
+    async def test_a_non_numeric_reading_is_a_failure_not_a_crash(self) -> None:
+        """BE-20: `Decimal(str(r))` raised `InvalidOperation` on a reading that was not a number
+        -- an `ArithmeticError`, which the adapter's `OpenMeteoError` catch did not cover, so it
+        escaped and aborted the whole run, losing every source after it. Now it is one
+        candidate's recorded failure and the run goes on."""
+        corrupt = captured()
+        corrupt[0]["daily"]["temperature_2m_mean"][10] = "not a number"
+
+        acquired = await an_adapter(corrupt).fetch(temperature(), [PORTUGAL])
+
+        assert acquired.values == ()
+        assert acquired.failures[0].candidate == "country.portugal"
+        assert "non-numeric" in acquired.failures[0].reason
+
+    async def test_a_series_shorter_than_its_window_is_a_failure_not_a_year(self) -> None:
+        """BE-26: a truncated answer -- one day returned for a whole year -- was averaged and
+        labelled the full window, the plausible-looking partial figure `reqs.md` 10 forbids. The
+        series must cover the days that were asked for."""
+        truncated = captured()
+        for location in truncated:
+            location["daily"]["temperature_2m_mean"] = location["daily"]["temperature_2m_mean"][:1]
+            location["daily"]["time"] = location["daily"]["time"][:1]
+
+        acquired = await an_adapter(truncated).fetch(temperature(), [PORTUGAL])
+
+        assert acquired.values == ()
+        assert "365 day" in acquired.failures[0].reason
+
+    async def test_a_series_that_is_a_string_is_a_failure_not_a_run_of_characters(self) -> None:
+        """A string is technically a sequence, so without the guard it would be read one
+        character at a time; it is no daily series."""
+        a_string_where_a_list_belongs = captured()
+        for location in a_string_where_a_list_belongs:
+            location["daily"]["temperature_2m_mean"] = "16.5"
+
+        acquired = await an_adapter(a_string_where_a_list_belongs).fetch(temperature(), [PORTUGAL])
+
+        assert acquired.values == ()
+        assert "no daily" in acquired.failures[0].reason
+
+    async def test_a_series_that_disagrees_with_its_dates_is_a_failure(self) -> None:
+        """`daily.time` is the dates the readings belong to; a series that is a different length
+        from them is a misaligned answer, not a year to average."""
+        misaligned = captured()
+        for location in misaligned:
+            location["daily"]["time"] = location["daily"]["time"][:-1]
+
+        acquired = await an_adapter(misaligned).fetch(temperature(), [PORTUGAL])
+
+        assert acquired.values == ()
+        assert "disagree" in acquired.failures[0].reason
+
 
 def test_it_declares_three_temperatures_and_not_sunshine() -> None:
     """Open-Meteo's sunshine is derived from modelled radiation and runs 30% to 68% above the
