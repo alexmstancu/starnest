@@ -19,15 +19,22 @@ from psycopg_pool import AsyncConnectionPool
 
 from starnest.candidates import CandidateId
 from starnest.criteria import (
+    BooleanThreshold,
     CriteriaSet,
     Criterion,
     Goal,
+    LabelThreshold,
+    MatchingThreshold,
     NormalisationMethod,
     PillarWeight,
+    RangeThreshold,
+    ReducerMode,
     ScaleAnchor,
+    ShareThreshold,
 )
 from starnest.data import (
     AttributeId,
+    BreakdownOptionId,
     CompoundRuleId,
     ConfidenceLevel,
     MatchRuleId,
@@ -248,8 +255,12 @@ def _frozen(criterion: Criterion, pillar_weights: dict[str, Decimal]) -> dict[st
     return {
         "attribute": str(criterion.attribute),
         "pillar": str(criterion.pillar),
+        # Frozen with the rest (ST-08): the type the criterion was scored under, not whatever the
+        # attribute may be retyped to later.
+        "value_type": str(criterion.value_type),
         "is_scored": criterion.is_scored,
         "weight": str(criterion.weight),
+        "weight_locked": criterion.weight_locked,
         "pillar_weight": str(pillar_weights.get(str(criterion.pillar), Decimal(0))),
         "goal": str(criterion.goal),
         "target_range_min": _number(criterion.target_range_min),
@@ -260,7 +271,35 @@ def _frozen(criterion: Criterion, pillar_weights: dict[str, Decimal]) -> dict[st
         "breakdown_option": str(criterion.breakdown_option) if criterion.breakdown_option else None,
         "reducer_mode": str(criterion.reducer_mode) if criterion.reducer_mode else None,
         "blocks_if_missing": criterion.blocks_if_missing,
+        "matching_threshold": _threshold_to_json(criterion.matching_threshold),
     }
+
+
+# The four threshold shapes, by the name stored beside each frozen threshold. A saved ranking
+# never re-evaluates the threshold -- the match outcome is frozen in `non_match_reason` -- so it
+# is kept as one object for the record rather than mirroring the four live child tables.
+_THRESHOLD_SHAPES: dict[str, type[MatchingThreshold]] = {
+    "RangeThreshold": RangeThreshold,
+    "BooleanThreshold": BooleanThreshold,
+    "LabelThreshold": LabelThreshold,
+    "ShareThreshold": ShareThreshold,
+}
+
+
+def _threshold_to_json(threshold: MatchingThreshold | None) -> dict[str, Any] | None:
+    """The typed threshold as one tagged object, or None. The `kind` names the shape so the
+    read can rebuild the right one; the rest is the threshold's own fields."""
+    if threshold is None:
+        return None
+    return {"kind": type(threshold).__name__, **threshold.model_dump(mode="json")}
+
+
+def _threshold_from_json(frozen: dict[str, Any] | None) -> MatchingThreshold | None:
+    """The tagged object back into its typed threshold, or None when none was frozen."""
+    if frozen is None:
+        return None
+    shape = _THRESHOLD_SHAPES[frozen["kind"]]
+    return shape(**{field: value for field, value in frozen.items() if field != "kind"})
 
 
 def _result(result: CandidateResult) -> dict[str, Any]:
@@ -364,13 +403,19 @@ def _criterion_from(row: Any, saved: SavedEvaluation) -> Criterion:
         value_type=ValueType(row.value_type),
         is_scored=row.is_scored,
         weight=Decimal(row.weight),
+        weight_locked=row.weight_locked,
         goal=Goal(row.goal),
         normalisation_method=NormalisationMethod(row.normalisation_method),
         target_range_min=_decimal(row.target_range_min),
         target_range_max=_decimal(row.target_range_max),
         zero_score_below=_decimal(row.zero_score_below),
         zero_score_above=_decimal(row.zero_score_above),
+        breakdown_option=(
+            BreakdownOptionId(row.breakdown_option) if row.breakdown_option else None
+        ),
+        reducer_mode=ReducerMode(row.reducer_mode) if row.reducer_mode else None,
         blocks_if_missing=row.blocks_if_missing,
+        matching_threshold=_threshold_from_json(row.matching_threshold),
         scale_anchors=tuple(
             ScaleAnchor(
                 input_value=Decimal(str(anchor["input_value"])),

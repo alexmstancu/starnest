@@ -11,8 +11,16 @@ from decimal import Decimal
 import pytest
 from psycopg_pool import AsyncConnectionPool
 
-from starnest.criteria import Goal, NormalisationMethod
-from starnest.data import ConfidenceLevel
+from starnest.criteria import (
+    CriteriaSet,
+    Criterion,
+    Goal,
+    NormalisationMethod,
+    PillarWeight,
+    RangeThreshold,
+    ReducerMode,
+)
+from starnest.data import ConfidenceLevel, ValueType
 from starnest.evaluation import (
     AttributeScore,
     CandidateResult,
@@ -32,6 +40,7 @@ COUNTRY = "country"
 PORTUGAL = "country.portugal"
 GREECE = "country.greece"
 TAX = "country.total_tax_rate_effective"
+SATISFACTION = "country.life_satisfaction"
 COMPUTED_AT = datetime(2026, 9, 12, 9, 0, tzinfo=UTC)
 
 
@@ -151,6 +160,120 @@ class TestWhatIsKept:
             assert len(frozen.criteria) == len(live.criteria)
         finally:
             await criteria.delete_criteria_set("evaluation_scratch")
+
+
+def _an_interpreted_set(identifier: str) -> CriteriaSet:
+    """A one-criterion set whose criterion carries every part of the rule the snapshot must
+    freeze: a pinned weight, a reducer, and a typed matching threshold."""
+    return CriteriaSet(
+        id=identifier,
+        name=identifier,
+        criteria=(
+            Criterion(
+                criteria_set=identifier,
+                attribute=SATISFACTION,
+                pillar="culture",
+                value_type=ValueType.QUANTITY,
+                weight=Decimal(100),
+                weight_locked=True,
+                goal=Goal.MAXIMISE,
+                normalisation_method=NormalisationMethod.PERCENTILE,
+                reducer_mode=ReducerMode.AGGREGATE,
+                matching_threshold=RangeThreshold(min_value=Decimal(5), max_value=Decimal(9)),
+            ),
+        ),
+        pillar_weights=(PillarWeight(pillar="culture", level=COUNTRY, weight=Decimal(100)),),
+    )
+
+
+class TestTheWholeInterpretationIsFrozen:
+    """ST-07, ST-08. A saved criterion keeps every part of the rule it was scored under -- the
+    lock, the reducer, the typed threshold, and the value type -- which the read used to drop
+    (the mapper ignored lock/reducer/threshold) or read live (the type was joined from the
+    attribute, which `0478`/`0492` retype in place)."""
+
+    @pytest.fixture
+    async def frozen_criterion(self, pool: AsyncConnectionPool):
+        criteria = PostgresCriteriaStore(pool)
+        store = PostgresEvaluationStore(pool)
+        scratch = _an_interpreted_set("evaluation_interpretation_scratch")
+        await criteria.create_criteria_set(scratch)
+        saved = await store.save(
+            criteria=scratch,
+            level=COUNTRY,
+            results=[
+                CandidateResult(
+                    candidate=PORTUGAL,
+                    score=70,
+                    coverage=Decimal(100),
+                    match_status=MatchStatus.MATCHING,
+                    rank=1,
+                    attribute_scores=(
+                        AttributeScore(
+                            attribute=SATISFACTION,
+                            pillar="culture",
+                            normalised_score=70,
+                            effective_weight=Decimal(100),
+                            contribution=Decimal(70),
+                        ),
+                    ),
+                )
+            ],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+            note=f"{TEST_EVALUATION_MARKER}ST-07/08 interpretation freeze",
+        )
+        frozen = await store.read_criteria(saved.id)
+        try:
+            yield next(c for c in frozen.criteria if str(c.attribute) == SATISFACTION)
+        finally:
+            await store.sweep_test_evaluations()
+            await criteria.delete_criteria_set("evaluation_interpretation_scratch")
+
+    async def test_the_lock_the_reducer_and_the_type_are_kept(self, frozen_criterion) -> None:
+        assert frozen_criterion.weight_locked is True
+        assert frozen_criterion.reducer_mode is ReducerMode.AGGREGATE
+        assert frozen_criterion.value_type is ValueType.QUANTITY
+
+    async def test_the_typed_matching_threshold_is_kept(self, frozen_criterion) -> None:
+        threshold = frozen_criterion.matching_threshold
+        assert isinstance(threshold, RangeThreshold)
+        assert (threshold.min_value, threshold.max_value) == (Decimal(5), Decimal(9))
+
+    async def test_the_type_is_read_from_the_snapshot_not_the_live_attribute(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """ST-08 proper: when the snapshot and the live attribute disagree -- which an in-place
+        retype (`0478`, `0492`) produces -- the read returns the type the criterion was scored
+        under, not today's. The live `life_satisfaction` stays Quantity while the snapshot is
+        forced to Count (legal with the criterion's percentile method, so the rebuild still
+        validates); the point is which type comes back."""
+        criteria = PostgresCriteriaStore(pool)
+        store = PostgresEvaluationStore(pool)
+        scratch = _an_interpreted_set("evaluation_retype_scratch")
+        await criteria.create_criteria_set(scratch)
+        saved = await store.save(
+            criteria=scratch,
+            level=COUNTRY,
+            results=[a_result(PORTUGAL, 70, 1)],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+            note=f"{TEST_EVALUATION_MARKER}ST-08 retype divergence",
+        )
+        async with pool.connection() as connection:
+            await connection.execute(
+                "UPDATE evaluation_criterion SET value_type = 'Count' "
+                "WHERE evaluation = %s AND attribute = %s",
+                (saved.id, SATISFACTION),
+            )
+
+        try:
+            frozen = await store.read_criteria(saved.id)
+            criterion = next(c for c in frozen.criteria if str(c.attribute) == SATISFACTION)
+            assert criterion.value_type is ValueType.COUNT
+        finally:
+            await store.sweep_test_evaluations()
+            await criteria.delete_criteria_set("evaluation_retype_scratch")
 
 
 class TestWhatIsRefused:

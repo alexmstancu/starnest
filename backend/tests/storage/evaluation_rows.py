@@ -84,10 +84,10 @@ def record_a_frozen_criterion(
 ) -> None:
     connection.execute(
         """
-        INSERT INTO evaluation_criterion (evaluation, attribute, pillar, is_scored, weight,
-                                          pillar_weight, goal, normalisation_method,
-                                          blocks_if_missing)
-        VALUES (%s, %s, %s, true, %s, %s, 'minimise', 'percentile', false)
+        INSERT INTO evaluation_criterion (evaluation, attribute, pillar, value_type, is_scored,
+                                          weight, pillar_weight, goal, normalisation_method,
+                                          blocks_if_missing, weight_locked)
+        VALUES (%s, %s, %s, 'Quantity', true, %s, %s, 'minimise', 'percentile', false, false)
         """,
         (evaluation, attribute, ITS_PILLAR, weight, pillar_weight),
     )

@@ -34,16 +34,19 @@ RETURNING id;
 -- breakdown choice and blocking flag, per attribute. Recording which attributes were in scope
 -- is what keeps the coverage figure meaningful after the catalog grows.
 INSERT INTO evaluation_criterion (
-    evaluation, attribute, pillar, is_scored, weight, pillar_weight, goal,
+    evaluation, attribute, pillar, value_type, is_scored, weight, pillar_weight, goal,
     target_range_min, target_range_max, zero_score_below, zero_score_above,
-    normalisation_method, breakdown_option, reducer_mode, blocks_if_missing)
-SELECT :evaluation, frozen.attribute, frozen.pillar, frozen.is_scored, frozen.weight,
-       frozen.pillar_weight, frozen.goal, frozen.target_range_min, frozen.target_range_max,
-       frozen.zero_score_below, frozen.zero_score_above, frozen.normalisation_method,
-       frozen.breakdown_option, frozen.reducer_mode, frozen.blocks_if_missing
+    normalisation_method, breakdown_option, reducer_mode, blocks_if_missing,
+    weight_locked, matching_threshold)
+SELECT :evaluation, frozen.attribute, frozen.pillar, frozen.value_type, frozen.is_scored,
+       frozen.weight, frozen.pillar_weight, frozen.goal, frozen.target_range_min,
+       frozen.target_range_max, frozen.zero_score_below, frozen.zero_score_above,
+       frozen.normalisation_method, frozen.breakdown_option, frozen.reducer_mode,
+       frozen.blocks_if_missing, frozen.weight_locked, frozen.matching_threshold
 FROM   jsonb_to_recordset(:criteria::jsonb) AS frozen(
            attribute            text,
            pillar               text,
+           value_type           text,
            is_scored            boolean,
            weight               numeric,
            pillar_weight        numeric,
@@ -55,7 +58,9 @@ FROM   jsonb_to_recordset(:criteria::jsonb) AS frozen(
            normalisation_method text,
            breakdown_option     text,
            reducer_mode         text,
-           blocks_if_missing    boolean);
+           blocks_if_missing    boolean,
+           weight_locked        boolean,
+           matching_threshold   jsonb);
 
 -- name: insert_evaluation_scale_anchors(evaluation, anchors)!
 -- The frozen twin of criterion_scale_anchor, keyed on the attribute rather than on a criterion
@@ -234,12 +239,13 @@ ORDER  BY r.rank NULLS LAST, r.score DESC NULLS LAST, c.name;
 -- stays editable, so this is the only record of what the weights and the scale actually were
 -- when the ranking was produced.
 SELECT ec.attribute,
-       -- The attribute's type is not frozen and does not need to be: a value type is immutable
-       -- for an attribute (arch.md 3.3b), and retyping one means retiring it and adding another.
-       a.value_type,
+       -- Frozen, not read live (ST-08): `0478` and `0492` retyped attributes in place, so the
+       -- old assumption that a type never changes could mislabel a ranking saved before either.
+       ec.value_type,
        ec.pillar,
        ec.is_scored,
        ec.weight,
+       ec.weight_locked,
        ec.pillar_weight,
        ec.goal,
        ec.target_range_min,
@@ -250,6 +256,7 @@ SELECT ec.attribute,
        ec.breakdown_option,
        ec.reducer_mode,
        ec.blocks_if_missing,
+       ec.matching_threshold,
        COALESCE(
            (SELECT jsonb_agg(jsonb_build_object(
                        'input_value', anchor.input_value,
@@ -261,7 +268,6 @@ SELECT ec.attribute,
               AND  anchor.attribute = ec.attribute),
            '[]'::jsonb) AS scale_anchors
 FROM   evaluation_criterion AS ec
-JOIN   attribute AS a ON a.id = ec.attribute
 WHERE  ec.evaluation = :evaluation
 ORDER  BY ec.pillar, ec.attribute;
 

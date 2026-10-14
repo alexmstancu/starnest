@@ -113,8 +113,8 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 |---|---|---|---|---|---|
 | BE-01 | High | REAL | `evaluation/ranking.py:422-441`; `criteria/criterion.py:166,330-337` | matching_threshold parsed/served but never read in evaluation (0 call sites) | wave-1 |
 | BE-02 | High | REAL | `evaluation/normalisation.py:46-97`; `ranking.py:326-365,523` | scores quantized to int before weighting; reqs 5.1 forbids intermediate rounding | wave-1 |
-| BE-03 | Medium | REAL | `evaluation/ranking.py:407-428` | insufficient_data returned before gate/compound eval, hiding definite non-matches | wave-2 |
-| BE-04 | Medium | REAL | `evaluation/weighting.py:131-146`; `ranking.py:84` | WeightingError unmapped → HTTP 500; zero-weight empty pillar still refused | wave-2 |
+| BE-03 | Medium | REAL | `evaluation/ranking.py:407-428` | insufficient_data returned before gate/compound eval, hiding definite non-matches | FIXED (prior session: match_status computed as refusals→NOT_MATCHING / insufficient→INSUFFICIENT_DATA / else MATCHING, before the insufficient short-circuit) |
+| BE-04 | Medium | REAL | `evaluation/weighting.py:131-146`; `ranking.py:84` | WeightingError unmapped → HTTP 500; zero-weight empty pillar still refused | FIXED (prior session: `_refuse_a_pillar_nothing_scores_into` filters zero-weight pillars; WeightingError wrapped as RankingError→422) |
 | BE-05 | Medium | REAL | `criteria/criterion.py:168-177`; `0009-criteria.sql:76-77` | reqs 3.3a legal-scales-per-type unenforced | FIXED (`_reject_a_method_illegal_for_the_value_type` + `_LEGAL_METHODS`; non-normalised types unconstrained) |
 | BE-06 | Medium | REAL (latent) | `data/attribute.py:286-317`; `data/payloads.py:189-200` | Quantity payload unit not checked vs declared unit (manual-entry exposed) | FIXED (unit-match check in `rejection_reason_for`; stored-with-reason, non-destructive; unconstrained when no declared unit) |
 | BE-07 | Medium | REAL | `data/confidence.py:69-100`; `data/measurements.py:49,83` | derive_confidence has no production caller; stale HIGH stays HIGH | wave-2 |
@@ -124,9 +124,9 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 | BE-11 | Medium | REAL (scoped) | `execution.py:495-520` | retry candidate union re-bills succeeded candidates on a per-candidate paid adapter | wave-2 |
 | BE-12 | High | REAL | `api/runs.py:321-387` | retry awaits inline (blocks) yet returns 202; no in-flight guard → concurrent paid passes | wave-1 |
 | BE-13 | Medium | **UNREAL** | `execution.py:603-604`; `main.py:379-383` | distinct billing defect unreachable (disjoint registry); symptom is BE-14 | no-fix |
-| BE-14 | Medium | REAL | `execution.py:185-189,411-427` | an unrelated enabled paid adapter forces a cap on free named-scope work | wave-2 |
+| BE-14 | Medium | REAL | `execution.py:185-189,411-427` | an unrelated enabled paid adapter forces a cap on free named-scope work | FIXED (prior commit 218c56a: `_a_paid_source_would_be_asked(adapters, answerable)` -- costs_money reflects the selected scope, not the registry) |
 | BE-15 | High | REAL | `api/rules.py:292-319`; `scripts/acquire.py:46-72`; `execution.py:319-325` | disabled sources not honored: paid gate research, CLI fetch, stand-in consultation | wave-1 |
-| BE-16 | Medium | REAL | `spend.py:57-59`; `run.py:144-145` | a legal cap=0 is exhausted at zero spend and halts a free sweep after one attribute | wave-2 |
+| BE-16 | Medium | REAL | `spend.py:57-59`; `run.py:144-145` | a legal cap=0 is exhausted at zero spend and halts a free sweep after one attribute | FIXED (prior commit 218c56a: `has_spent_to_its_cap` = exhausted AND spent>0; a free sweep under cap=0 is not halted) |
 | BE-17 | High | REAL | `data_sources/llm/gates.py:76-81`; `client.py:164-167` | billed empty gate answers lose cost/calls → research cap ineffective on that path | wave-1 |
 | BE-18 | Medium | REAL | `data_sources/llm/pricing.py:65-90`; `main.py:436` | negative/NaN/Infinity prices/token estimates pass; cap model compromised | FIXED (`configured()` rejects non-finite/negative prices + non-finite rate, zero allowed; `_the_model` treats non-positive call size as unset) |
 | BE-19 | High | REAL (latent) | `llm/employers.py:126-176`; `fallback.py:145-206`; `run.py:87-122` | LLM buffers per-candidate; death mid-candidate loses earlier paid answers | wave-1 |
@@ -160,8 +160,8 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 | ST-04 | Medium | REAL | `0489:59-60`;`0490:54-55`;`0491:22-23`; CHECK `0468:21-22` | populated upgrade: unconditional percentile UPDATE blocks on target_range set | wave-2 |
 | ST-05 | Medium | REAL | `0478:38-44`;`0492:26-32`; FKs `0009:110,131,147,159,173` | populated upgrade: delete+reinsert blocks on RESTRICT child FKs; loses children | wave-2 |
 | ST-06 | Medium | REAL | `0488:64-71` | populated upgrade: replacement hardcodes is_scored/lock/blocks, resetting user choices | wave-2 |
-| ST-07 | Medium | REAL | `0010:34-80`; `evaluation_store.py:359-382`; `evaluation.sql:236-266` | snapshot omits weight_locked + typed thresholds; drops reducer/breakdown on read | wave-2 |
-| ST-08 | Medium | REAL | `evaluation.sql:236-239`; `0478:46-49`;`0492:34-37` | snapshot joins live value_type; in-place retyping drifts historical type label | wave-2 |
+| ST-07 | Medium | REAL | `0010:34-80`; `evaluation_store.py:359-382`; `evaluation.sql:236-266` | snapshot omits weight_locked + typed thresholds; drops reducer/breakdown on read | FIXED (0500 freezes value_type/weight_locked/matching_threshold(jsonb); `_frozen` writes them, `_criterion_from` maps them + reducer/breakdown it had dropped) |
+| ST-08 | Medium | REAL | `evaluation.sql:236-239`; `0478:46-49`;`0492:34-37` | snapshot joins live value_type; in-place retyping drifts historical type label | FIXED (0500: snapshot carries its own value_type; read query selects ec.value_type, drops the live attribute join -- safe against 0478/0492 in-place retypes) |
 | ST-09 | Medium | REAL | `published_tables/adapter.py:76`; `values.sql:252,271`; `0005:55-58` | re-run of a transcribed item → identical natural key → reported unanswered | wave-2 |
 | ST-10 | Low | REAL (known) | `values.sql:339-356`; `known-issues.md:497-498` | external scores: all editions, no current selection; non-deterministic ties | wave-3 |
 | ST-11 | Low | REAL | `run_store.py:132-155`; `connections.py:46-53` | 4 SELECTs under READ COMMITTED → counts inconsistent with their lists | wave-3 |
