@@ -9,6 +9,7 @@ there are exactly two (`reqs.md` 3.1), so the toggle renders whatever `/levels` 
 `depth_order`.
 """
 
+from collections.abc import Sequence
 from datetime import timedelta
 from typing import ClassVar
 
@@ -18,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starnest.api.bodies import ContractBody
 from starnest.api.dependencies import Candidates, Catalog, Criteria
 from starnest.candidates import UnknownCandidateError
-from starnest.data import Attribute, DataSourceId
+from starnest.data import Attribute, DataSource, DataSourceId
 
 router = APIRouter(tags=["catalog"])
 
@@ -184,9 +185,12 @@ async def list_attributes(
     Retired attributes are excluded unless asked for: they keep their stored values and drop out
     of scoring, so a caller that wants them has to say so.
     """
+    # Read once and resolve each attribute against it: the priority order is the same global
+    # order for every attribute, differing only by each one's overrides (`reqs.md` 6.6).
+    sources = await catalog.read_data_sources()
     return AttributesBody(
         items=tuple(
-            _attribute_body(attribute)
+            _attribute_body(attribute, sources)
             for attribute in await catalog.read_attributes(
                 level=level, include_retired=include_retired
             )
@@ -194,7 +198,7 @@ async def list_attributes(
     )
 
 
-def _attribute_body(attribute: Attribute) -> AttributeBody:
+def _attribute_body(attribute: Attribute, sources: Sequence[DataSource]) -> AttributeBody:
     return AttributeBody(
         id=str(attribute.id),
         name=attribute.name,
@@ -223,8 +227,11 @@ def _attribute_body(attribute: Attribute) -> AttributeBody:
             else None
         ),
         allowed_labels=attribute.allowed_labels,
+        # The whole resolved order, every source highest first -- not just the overrides (BE-39).
+        # An override is partial (`reqs.md` 6.6): the sources it names lead, and every other
+        # source keeps its global rank beneath them, which is the order the interface shows.
         effective_source_priority=tuple(
-            str(override.data_source) for override in attribute.source_priority_overrides
+            str(source) for source in attribute.effective_source_priority(sources).ordered
         ),
     )
 
@@ -337,7 +344,8 @@ async def update_data_source(
 @router.get("/attributes/{attribute_id}", operation_id="getAttribute", response_model=AttributeBody)
 async def get_attribute(attribute_id: str, catalog: Catalog) -> AttributeBody:
     """One attribute with its declarations. Raises a 404 for one the catalog does not hold."""
-    return _attribute_body(await catalog.read_attribute(attribute_id))
+    attribute = await catalog.read_attribute(attribute_id)
+    return _attribute_body(attribute, await catalog.read_data_sources())
 
 
 @router.get("/candidates/{candidate_id}", operation_id="getCandidate", response_model=CandidateBody)

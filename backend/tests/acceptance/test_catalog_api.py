@@ -124,8 +124,31 @@ class TestTheAttributes:
         assert len(country_only["items"]) <= len(everything["items"])
         assert all(a["level"] == COUNTRY for a in country_only["items"])
 
+    async def test_the_source_priority_is_the_whole_resolved_order(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """BE-39: it returned only the *overridden* sources -- empty for an attribute that
+        overrides nothing -- when the contract is the whole order the server resolved, every
+        source highest first (`reqs.md` 6.6). The interface draws the priority list from this."""
+        attributes = (await api.get("/v1/attributes", params={"level": COUNTRY})).json()["items"]
+        every_source = {s["id"] for s in (await api.get("/v1/data-sources")).json()["items"]}
 
-class TestSwitchingASourceOff:
+        for attribute in attributes:
+            order = attribute["effective_source_priority"]
+            assert set(order) == every_source, attribute["id"]
+            assert len(order) == len(every_source), attribute["id"]
+
+    async def test_an_overridden_attribute_promotes_its_named_sources_first(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """`cost_of_living_index` overrides the order to eurostat then world_bank; both lead the
+        resolved list, and every other source keeps its global rank beneath them."""
+        attribute = (await api.get("/v1/attributes/country.cost_of_living_index")).json()
+
+        order = attribute["effective_source_priority"]
+        assert order[:2] == ["eurostat", "world_bank"]
+        assert "manual" in order
+
     """Whether a source is consulted is a judgement the household makes (`reqs.md` 2, Q232).
 
     **Every test here puts the source back**, because these run against a real database and a

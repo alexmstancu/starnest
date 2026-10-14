@@ -148,7 +148,7 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 | BE-36 | Medium | REAL | `evaluation/rules.py:150-179`; `research.py:110-115,190-208` | confirmed gate answers ignore period; re-research skips them — see policy above | policy-set (wave-2) |
 | BE-37 | Low | **UNREAL** | `main.py:356-387` | attribute-level fallback is documented reqs 6.10 use-1 intent; only case fabricates a figure | no-fix |
 | BE-38 | Medium | REAL | `tools/audit_coverage.py:86-87`; `pyproject.toml:77,89` | coverage pools line+branch into one floor; branch can sit below the stated floor | wave-2 |
-| BE-39 | Medium | REAL | `api/catalog.py:197,226-228`; `openapi.yaml:1128-1135` | attribute presenter returns only override sources, not the resolved full order (contract) | wave-2 |
+| BE-39 | Medium | REAL | `api/catalog.py:197,226-228`; `openapi.yaml:1128-1135` | attribute presenter returns only override sources, not the resolved full order (contract) | FIXED (`_attribute_body` resolves `effective_source_priority(sources).ordered` -- whole order, overrides promoted; both callers pass the global sources) |
 
 ### Storage (ST-01 … ST-20; BE-35 folded in at ST-18)
 
