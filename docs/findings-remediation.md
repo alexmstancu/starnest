@@ -115,8 +115,8 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 | BE-02 | High | REAL | `evaluation/normalisation.py:46-97`; `ranking.py:326-365,523` | scores quantized to int before weighting; reqs 5.1 forbids intermediate rounding | wave-1 |
 | BE-03 | Medium | REAL | `evaluation/ranking.py:407-428` | insufficient_data returned before gate/compound eval, hiding definite non-matches | wave-2 |
 | BE-04 | Medium | REAL | `evaluation/weighting.py:131-146`; `ranking.py:84` | WeightingError unmapped → HTTP 500; zero-weight empty pillar still refused | wave-2 |
-| BE-05 | Medium | REAL | `criteria/criterion.py:168-177`; `0009-criteria.sql:76-77` | reqs 3.3a legal-scales-per-type unenforced | wave-2 |
-| BE-06 | Medium | REAL (latent) | `data/attribute.py:286-317`; `data/payloads.py:189-200` | Quantity payload unit not checked vs declared unit (manual-entry exposed) | wave-2 |
+| BE-05 | Medium | REAL | `criteria/criterion.py:168-177`; `0009-criteria.sql:76-77` | reqs 3.3a legal-scales-per-type unenforced | FIXED (`_reject_a_method_illegal_for_the_value_type` + `_LEGAL_METHODS`; non-normalised types unconstrained) |
+| BE-06 | Medium | REAL (latent) | `data/attribute.py:286-317`; `data/payloads.py:189-200` | Quantity payload unit not checked vs declared unit (manual-entry exposed) | FIXED (unit-match check in `rejection_reason_for`; stored-with-reason, non-destructive; unconstrained when no declared unit) |
 | BE-07 | Medium | REAL | `data/confidence.py:69-100`; `data/measurements.py:49,83` | derive_confidence has no production caller; stale HIGH stays HIGH | wave-2 |
 | BE-08 | Medium | REAL | `data/measurements.py:90-102`; `data_acquisition/run.py:114-138` | range-rejected figure stored as Value, not a failure; selective retry can't reach it | wave-2 |
 | BE-09 | Low | REAL (latent) | `data_sources/who/adapter.py:164-195` | WHO builds Value without rejection_reason_for; credible-range bypass (latent) | wave-3 |
@@ -128,13 +128,13 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 | BE-15 | High | REAL | `api/rules.py:292-319`; `scripts/acquire.py:46-72`; `execution.py:319-325` | disabled sources not honored: paid gate research, CLI fetch, stand-in consultation | wave-1 |
 | BE-16 | Medium | REAL | `spend.py:57-59`; `run.py:144-145` | a legal cap=0 is exhausted at zero spend and halts a free sweep after one attribute | wave-2 |
 | BE-17 | High | REAL | `data_sources/llm/gates.py:76-81`; `client.py:164-167` | billed empty gate answers lose cost/calls → research cap ineffective on that path | wave-1 |
-| BE-18 | Medium | REAL | `data_sources/llm/pricing.py:65-90`; `main.py:436` | negative/NaN/Infinity prices/token estimates pass; cap model compromised | wave-2 |
+| BE-18 | Medium | REAL | `data_sources/llm/pricing.py:65-90`; `main.py:436` | negative/NaN/Infinity prices/token estimates pass; cap model compromised | FIXED (`configured()` rejects non-finite/negative prices + non-finite rate, zero allowed; `_the_model` treats non-positive call size as unset) |
 | BE-19 | High | REAL (latent) | `llm/employers.py:126-176`; `fallback.py:145-206`; `run.py:87-122` | LLM buffers per-candidate; death mid-candidate loses earlier paid answers | wave-1 |
 | BE-20 | Medium | REAL | `open_meteo/response.py:26`; `execution.py:327-346` | Decimal(str) InvalidOperation escapes source handling → run aborts, item unrecorded | wave-2 |
 | BE-21 | High | REAL | `api/settings.py:24-74`; `household.py:29-68`; `errors.py:110-135` | request DTOs lack domain bounds → ValidationError → 500; 422 body not uniform | wave-1 |
 | BE-22 | High | REAL | `api/criteria.py:387-417`; `criteria/criteria_set.py:94` | rename/duplicate lack min_length; empty name persists then unreadable (500 on read) | wave-1 |
 | BE-23 | Low | REAL | `api/settings.py:24`; `household.py:29`; various bodies | missing `extra="forbid"` → misspelled field clears a setting; null coercions | wave-3 |
-| BE-24 | Medium | REAL | `api/runs.py:451-469`; `rules.py:247-256` | unknown scope IDs silently intersected; paid research spends while concealing the drop | wave-2 |
+| BE-24 | Medium | REAL | `api/runs.py:451-469`; `rules.py:247-256` | unknown scope IDs silently intersected; paid research spends while concealing the drop | FIXED (shared `unknown_scope_refusal`/`absent` in errors.py; `_scope_targets` (runs) + `_research_targets` (rules) refuse all unknowns across both dimensions, 422 `unknown_scope`) |
 | BE-25 | Medium | REAL | `api/runs.py:161-203`; `execution.py:142-155,281-287` | plan omits freshness filter execution applies; overstated items/cost or NothingToFetch | wave-2 |
 | BE-26 | Medium | REAL (latent) | `open_meteo/response.py:11-27`; `adapter.py:150,166-194` | incomplete/misaligned series averaged and labeled with the full window | wave-2 |
 | BE-27 | Low | REAL | `published_tables/table.py:116-147`; `…protected_land.csv:12-15` | unquoted commas in `workings` → DictReader restkey drops provenance text | wave-3 |

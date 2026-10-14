@@ -10,7 +10,7 @@ report the same fault differently.
 REST surface, and this module is the REST surface's opinion.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -106,6 +106,42 @@ whole mapping can be read at once. **Order matters**: `WeightsAllLockedError` is
 `CriteriaSetError`, so the lookup below walks the class's own MRO and takes the first match --
 the most specific rule wins, which is the one that carries the code the contract names.
 """
+
+
+def absent(named: Iterable[str] | None, known: set[str]) -> list[str]:
+    """Named ids that are not in the known set, order preserved; empty when none are named.
+
+    `None` means the scope named nothing in this dimension -- a full sweep, which names no id and
+    so has none to be unknown. That is not the same as `[]`, and conflating them would turn a
+    sweep into a refusal.
+    """
+    if named is None:
+        return []
+    return [identifier for identifier in named if identifier not in known]
+
+
+def unknown_scope_refusal(level: str, **groups: list[str]) -> HTTPException:
+    """The one refusal for a scope naming ids no row answers to at its level (BE-24).
+
+    `groups` maps a dimension -- `candidates`, `attributes`, `match_rules` -- to the unknown ids
+    named in it. Shared by the run and research endpoints so both refuse in one shape and list
+    every unknown at once, rather than each silently narrowing its scope to what happens to
+    exist and then fetching, or paying, for less than was asked.
+    """
+    named = [identifier for ids in groups.values() for identifier in ids]
+    details: dict[str, Any] = {"level": level}
+    details.update({dimension: ids for dimension, ids in groups.items() if ids})
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code": "unknown_scope",
+            "message": (
+                f"the scope names {len(named)} id(s) that exist at no row at level {level}: "
+                f"{', '.join(named)}. Nothing runs until every named id exists."
+            ),
+            "details": details,
+        },
+    )
 
 
 def refusal_for(error: Exception) -> tuple[int, str] | None:

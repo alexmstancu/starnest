@@ -120,6 +120,87 @@ def test_a_target_range_the_method_cannot_draw_is_refused(method: NormalisationM
         )
 
 
+# --- the method a value type can wear (`reqs.md` 3.3a) ------------------------
+
+
+@pytest.mark.parametrize(
+    "value_type,method",
+    [
+        (ValueType.MONETARY, NormalisationMethod.PERCENTILE),
+        (ValueType.MONETARY, NormalisationMethod.AS_IS),
+        (ValueType.QUANTITY, NormalisationMethod.AS_IS),
+        (ValueType.COUNT, NormalisationMethod.AS_IS),
+        (ValueType.INDEX, NormalisationMethod.FIXED),
+        (ValueType.ASSIGNED_SCORE, NormalisationMethod.FIXED),
+        (ValueType.ASSIGNED_SCORE, NormalisationMethod.PERCENTILE),
+    ],
+)
+def test_a_method_illegal_for_the_value_type_is_refused(
+    value_type: ValueType, method: NormalisationMethod
+) -> None:
+    """`reqs.md` 3.3a fixes which normalisation methods each value type may wear.
+
+    A `Monetary` figure has no natural score scale, so only an explicit `fixed` one reads it; an
+    `Index` is already 0-100, so `fixed` would re-anchor a number that needs none; an
+    `AssignedScore` is a score already, so only `as_is` leaves it alone. Enforced here rather
+    than left to the convention `0104` follows, so a set edited through the API cannot save a
+    combination that silently misreads the figure.
+    """
+    with pytest.raises(ValueError, match="does not permit"):
+        criterion(
+            attribute="country.tech_employment_share",
+            value_type=value_type,
+            pillar="career",
+            goal=Goal.MAXIMISE,
+            normalisation_method=method,
+        )
+
+
+@pytest.mark.parametrize(
+    "value_type,method",
+    [
+        (ValueType.MONETARY, NormalisationMethod.FIXED),
+        (ValueType.QUANTITY, NormalisationMethod.FIXED),
+        (ValueType.QUANTITY, NormalisationMethod.PERCENTILE),
+        (ValueType.COUNT, NormalisationMethod.PERCENTILE),
+        (ValueType.RATIO, NormalisationMethod.AS_IS),
+        (ValueType.INDEX, NormalisationMethod.AS_IS),
+        (ValueType.INDEX, NormalisationMethod.PERCENTILE),
+        (ValueType.ASSIGNED_SCORE, NormalisationMethod.AS_IS),
+    ],
+)
+def test_a_method_legal_for_the_value_type_is_accepted(
+    value_type: ValueType, method: NormalisationMethod
+) -> None:
+    """The other side of 3.3a: a combination the table allows is not refused. `Ratio` wears all
+    three, which is why a too-eager validator would catch it first."""
+    accepted = criterion(
+        attribute="country.tech_employment_share",
+        value_type=value_type,
+        pillar="career",
+        goal=Goal.MAXIMISE,
+        normalisation_method=method,
+    )
+
+    assert accepted.normalisation_method is method
+
+
+def test_a_labelset_keeps_its_inert_method() -> None:
+    """A `LabelSet` is matched by membership, never normalised, so its `normalisation_method` is
+    a dead field the table does not constrain -- the six shipped `LabelSet` criteria carry
+    `as_is` while `is_scored` is false, and refusing it here would reject shipped data."""
+    labels = criterion(
+        attribute="country.climate_zone",
+        value_type=ValueType.LABEL_SET,
+        pillar="climate",
+        is_scored=False,
+        goal=Goal.MAXIMISE,
+        normalisation_method=NormalisationMethod.AS_IS,
+    )
+
+    assert labels.value_type is ValueType.LABEL_SET
+
+
 @pytest.mark.parametrize(
     "field,value,complaint",
     [
@@ -297,8 +378,19 @@ def test_a_scale_is_readable_when_the_method_needs_no_anchors(
     method: NormalisationMethod,
 ) -> None:
     """Only `fixed` interpolates between anchors. Percentile ranks within the candidate set
-    and `as_is` is already on the score scale."""
-    assert criterion(normalisation_method=method).declares_a_readable_scale
+    and `as_is` is already on the score scale.
+
+    A `Ratio`, because it is the one value type `reqs.md` 3.3a lets wear all three methods -- the
+    default `Monetary` builder normalises `fixed` only, which this test is not about.
+    """
+    ranked = criterion(
+        attribute="country.tech_employment_share",
+        value_type=ValueType.RATIO,
+        pillar="career",
+        goal=Goal.MAXIMISE,
+        normalisation_method=method,
+    )
+    assert ranked.declares_a_readable_scale
 
 
 # --- band labels --------------------------------------------------------------

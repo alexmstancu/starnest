@@ -78,7 +78,29 @@ class LlmPricing:
                 f"{', '.join(missing)} is unset. A run that cannot measure its own spend "
                 "cannot be capped, and nothing here invents a price or a rate (reqs.md 6.3)."
             )
-        if not eur_usd_rate or Decimal(str(eur_usd_rate)) <= 0:
+        # **A price must be a finite amount of zero or more** (BE-18). Only the rate was checked,
+        # so a negative price slipped through and would make the meter *subtract* from the
+        # running spend -- a loop billing for ever under a cap that never trips -- and a
+        # non-finite one would make the cost undefined. Zero is legitimate: a genuinely free
+        # component costs nothing, which the cap already handles (`reqs.md` 6.10).
+        for name, value in (
+            ("LLM_INPUT_USD_PER_MTOK", input_usd_per_million_tokens),
+            ("LLM_OUTPUT_USD_PER_MTOK", output_usd_per_million_tokens),
+            ("LLM_USD_PER_WEB_SEARCH", usd_per_web_search),
+        ):
+            price = Decimal(str(value))
+            if not price.is_finite() or price < 0:
+                raise PricingNotConfiguredError(
+                    f"{name} is {value}, and a price is a finite amount of zero or more; a "
+                    "negative or non-finite one would make the cap understate or reverse the spend"
+                )
+        rate = Decimal(str(eur_usd_rate))
+        if not rate.is_finite():
+            raise PricingNotConfiguredError(
+                f"EUR_USD_RATE is {eur_usd_rate}, which is not finite; a non-finite rate makes "
+                "every converted euro figure undefined, so a cap read off it bounds nothing"
+            )
+        if rate <= 0:
             raise PricingNotConfiguredError(
                 f"EUR_USD_RATE is {eur_usd_rate}, and a rate of zero or less converts nothing"
             )

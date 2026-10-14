@@ -295,6 +295,19 @@ class TestWiringTheLlmPath:
         assert model is None
         assert "LLM_INPUT_TOKENS_PER_CALL" in caplog.text
 
+    @pytest.mark.parametrize("call_size", [0, -1, -12_000])
+    def test_a_non_positive_call_size_is_refused(
+        self, call_size: int, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """BE-18: a negative call size passed the truthiness guard and would estimate a negative
+        cost -- a spend that lowers the running total, so a cap never trips. Off, with the
+        variable named, as an unset one is."""
+        with caplog.at_level("WARNING", logger="starnest.boot"):
+            model = _the_model(self.a_configured_environment(llm_input_tokens_per_call=call_size))
+
+        assert model is None
+        assert "LLM_INPUT_TOKENS_PER_CALL" in caplog.text
+
     def test_a_key_and_every_price_makes_a_model(self) -> None:
         model = _the_model(self.a_configured_environment())
 

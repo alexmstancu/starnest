@@ -243,6 +243,35 @@ class TestRejectingAFigureThatIsNotCredible:
         with pytest.raises(ValueTypeMismatchError):
             an_attribute().rejection_reason_for(Boolean(value=True))
 
+    def test_a_quantity_in_the_declared_unit_is_accepted(self) -> None:
+        attribute = an_attribute(quantity_parameters=QuantityParameters(unit="celsius"))
+        assert (
+            attribute.rejection_reason_for(Quantity(magnitude=Decimal("12.4"), unit="celsius"))
+            is None
+        )
+
+    def test_a_quantity_in_the_wrong_unit_is_rejected_with_the_reason_in_words(self) -> None:
+        """`reqs.md` 3.3a: two quantities compare only if their units agree. A figure typed in
+        the wrong one -- 5 celsius for an attribute measured in years -- would otherwise score
+        degrees as years, the plausible wrong number `reqs.md` 10 forbids. Rejected, not refused:
+        it is stored with the reason beside it and the active-value rule passes over it."""
+        years = an_attribute(
+            id="country.residency_years",
+            quantity_parameters=QuantityParameters(unit="years"),
+        )
+        reason = years.rejection_reason_for(Quantity(magnitude=Decimal("5"), unit="celsius"))
+        assert reason is not None
+        assert "celsius" in reason and "years" in reason
+
+    def test_a_quantity_attribute_with_no_declared_unit_constrains_none(self) -> None:
+        """An attribute declaring no `quantity_parameters` has no expected unit to compare, so
+        it cannot reject one -- the same restraint the range and label checks already keep."""
+        unconstrained = an_attribute(id="country.loose", quantity_parameters=None)
+        assert (
+            unconstrained.rejection_reason_for(Quantity(magnitude=Decimal("5"), unit="celsius"))
+            is None
+        )
+
 
 class TestStalenessAndPriority:
     def test_asks_the_period_whether_it_has_aged_past_max_age(self) -> None:

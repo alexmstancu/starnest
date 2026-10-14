@@ -120,6 +120,71 @@ class TestStartingARun:
         assert detail["scope"]["candidates"] == ["country.greece"]
 
 
+class TestAScopeThatNamesSomethingUnknown:
+    """BE-24. A misspelled candidate or an id from another level used to fall out of the
+    intersection with what exists, and the run proceeded on the rest -- fetching, and where a
+    source charges, spending, for less than was asked while concealing the drop. Now the request
+    is refused and every unknown id is named, so a client fixes it in one pass."""
+
+    async def test_planning_refuses_an_unknown_candidate_and_names_only_it(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.post(
+            "/v1/data-acquisition-runs/plan",
+            json={"level": COUNTRY, "candidates": ["country.greece", "country.narnia"]},
+        )
+
+        assert response.status_code == 422
+        body = response.json()
+        assert body["code"] == "unknown_scope"
+        assert body["details"]["unknown_candidates"] == ["country.narnia"]
+
+    async def test_starting_refuses_an_unknown_candidate_before_it_fetches(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.post(
+            "/v1/data-acquisition-runs",
+            json={"level": COUNTRY, "candidates": ["country.narnia"]},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "unknown_scope"
+
+    async def test_an_unknown_attribute_is_named(self, api: httpx.AsyncClient) -> None:
+        response = await api.post(
+            "/v1/data-acquisition-runs/plan",
+            json={"level": COUNTRY, "attributes": ["country.unicorn_density"]},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["details"]["unknown_attributes"] == ["country.unicorn_density"]
+
+    async def test_unknowns_from_both_dimensions_are_reported_together(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.post(
+            "/v1/data-acquisition-runs/plan",
+            json={
+                "level": COUNTRY,
+                "candidates": ["country.narnia"],
+                "attributes": ["country.unicorn_density"],
+            },
+        )
+
+        assert response.status_code == 422
+        details = response.json()["details"]
+        assert details["unknown_candidates"] == ["country.narnia"]
+        assert details["unknown_attributes"] == ["country.unicorn_density"]
+
+    async def test_a_scope_of_only_known_ids_still_plans(self, api: httpx.AsyncClient) -> None:
+        response = await api.post(
+            "/v1/data-acquisition-runs/plan",
+            json={"level": COUNTRY, "candidates": ["country.greece"], "attributes": [OVERBURDEN]},
+        )
+
+        assert response.status_code == 200
+
+
 class TestWatchingARun:
     async def test_the_scope_recorded_is_what_was_asked_for(self, api: httpx.AsyncClient) -> None:
         """Planned, not achieved. A candidate that produced nothing must stay distinguishable

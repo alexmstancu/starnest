@@ -121,6 +121,56 @@ class TestWhatItCosts:
                 eur_usd_rate=rate,
             )
 
+    @pytest.mark.parametrize("rate", [Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity")])
+    def test_a_non_finite_rate_is_refused(self, rate: Decimal) -> None:
+        """BE-18: a `NaN` rate slipped past the zero-or-less guard -- `NaN <= 0` is false and a
+        `NaN` is truthy -- and would make every converted euro figure undefined, so a cap read
+        off it could not bound anything."""
+        with pytest.raises(PricingNotConfiguredError, match="finite"):
+            LlmPricing.configured(
+                input_usd_per_million_tokens=Decimal(2),
+                output_usd_per_million_tokens=Decimal(10),
+                usd_per_web_search=Decimal("0.01"),
+                eur_usd_rate=rate,
+            )
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "input_usd_per_million_tokens",
+            "output_usd_per_million_tokens",
+            "usd_per_web_search",
+        ],
+    )
+    @pytest.mark.parametrize(
+        "bad", [Decimal("-1"), Decimal("NaN"), Decimal("Infinity")], ids=["negative", "nan", "inf"]
+    )
+    def test_a_negative_or_non_finite_price_is_refused(self, field: str, bad: Decimal) -> None:
+        """BE-18: only the rate was checked, so a negative or non-finite component price passed.
+        A negative price makes the meter *subtract* from the running spend, so a loop could bill
+        for ever under a cap that never trips; a non-finite one makes the cost undefined."""
+        prices: dict[str, Decimal] = {
+            "input_usd_per_million_tokens": Decimal(2),
+            "output_usd_per_million_tokens": Decimal(10),
+            "usd_per_web_search": Decimal("0.01"),
+            "eur_usd_rate": Decimal("1.1592"),
+        }
+        prices[field] = bad
+        with pytest.raises(PricingNotConfiguredError, match="finite amount of zero or more"):
+            LlmPricing.configured(**prices)  # type: ignore[arg-type]
+
+    def test_a_price_of_exactly_zero_is_accepted(self) -> None:
+        """A genuinely free component is legitimate (`reqs.md` 6.10), and refusing zero would be
+        stricter than the thing it guards -- a zero price costs nothing, which the cap handles."""
+        configured = LlmPricing.configured(
+            input_usd_per_million_tokens=Decimal(0),
+            output_usd_per_million_tokens=Decimal(10),
+            usd_per_web_search=Decimal(0),
+            eur_usd_rate=Decimal("1.1592"),
+        )
+
+        assert configured.input_usd_per_million_tokens == Decimal(0)
+
     def test_the_cost_is_in_euro_at_the_configured_rate(self) -> None:
         """Anthropic bills in dollars and this application works in euro, so the conversion is
         the last thing that happens -- and the rate it used is on the boot log."""

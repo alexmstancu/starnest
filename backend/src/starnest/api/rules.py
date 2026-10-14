@@ -22,6 +22,7 @@ from starnest.api.dependencies import (
     MatchRuleResults,
     Researcher,
 )
+from starnest.api.errors import absent, unknown_scope_refusal
 from starnest.candidates import CandidateId, UnknownCandidateError
 from starnest.data import (
     MANUAL,
@@ -89,6 +90,36 @@ class ResearchRequestBody(BaseModel):
     match_rules: tuple[str, ...] | None = None
     candidates: tuple[str, ...] | None = None
     accept_uncapped_spend: bool = False
+
+
+async def _research_targets(
+    body: ResearchRequestBody, catalog: Catalog, candidates: Candidates
+) -> tuple[list, list]:
+    """The gates and candidates a research scope names, after refusing any it does not (BE-24).
+
+    Shared by the estimate and the pass so the bill and the spend read the scope the same way --
+    and so a misspelled gate or an out-of-level candidate is refused rather than dropped from a
+    paid request, which used to spend on the rest while concealing the drop.
+    """
+    rules = await catalog.read_match_rules()
+    roster = await candidates.read_candidates(level=body.level)
+    unknown_rules = absent(body.match_rules, {str(rule.id) for rule in rules})
+    unknown_candidates = absent(body.candidates, {str(candidate.id) for candidate in roster})
+    if unknown_rules or unknown_candidates:
+        raise unknown_scope_refusal(
+            body.level,
+            unknown_match_rules=unknown_rules,
+            unknown_candidates=unknown_candidates,
+        )
+    wanted_rules = [
+        rule for rule in rules if body.match_rules is None or str(rule.id) in set(body.match_rules)
+    ]
+    chosen = [
+        candidate
+        for candidate in roster
+        if body.candidates is None or str(candidate.id) in set(body.candidates)
+    ]
+    return wanted_rules, chosen
 
 
 class ResearchPlanBody(BaseModel):
@@ -244,16 +275,7 @@ async def plan_match_rule_research(
             "the LLM prices (reqs.md 6.10)"
         )
 
-    wanted_rules = [
-        rule
-        for rule in await catalog.read_match_rules()
-        if body.match_rules is None or str(rule.id) in set(body.match_rules)
-    ]
-    roster = [
-        candidate
-        for candidate in await candidates.read_candidates(level=body.level)
-        if body.candidates is None or str(candidate.id) in set(body.candidates)
-    ]
+    wanted_rules, roster = await _research_targets(body, catalog, candidates)
     estimate = plan_research(
         researcher=researcher,
         rules=wanted_rules,
@@ -307,16 +329,7 @@ async def research_match_rules(
             "Configure to research gates."
         )
 
-    wanted_rules = [
-        rule
-        for rule in await catalog.read_match_rules()
-        if body.match_rules is None or str(rule.id) in set(body.match_rules)
-    ]
-    roster = [
-        candidate
-        for candidate in await candidates.read_candidates(level=body.level)
-        if body.candidates is None or str(candidate.id) in set(body.candidates)
-    ]
+    wanted_rules, roster = await _research_targets(body, catalog, candidates)
     household = await households.get_household()
 
     outcome = await research_gates(

@@ -433,12 +433,17 @@ def _the_model(environment: "Environment") -> object | None:
         boot.warning("the llm path is off: %s", unpriced)
         return None
 
-    if not environment.llm_input_tokens_per_call:
+    call_size = environment.llm_input_tokens_per_call
+    if call_size is None or call_size <= 0:
         # Same rule as the prices (Q219), for the same reason: a path that cannot estimate its
-        # own cost cannot warn before spending. Off, and the boot log says why.
+        # own cost cannot warn before spending. **Non-positive counts here as unset** (BE-18): a
+        # negative call size passed the old truthiness guard and would estimate a negative cost,
+        # a spend that lowers the running total so the cap never trips. Off, and the boot log
+        # says why.
         boot.warning(
-            "the llm path is off: LLM_INPUT_TOKENS_PER_CALL is not set, so a run could not be "
-            "estimated before it spent (reqs.md 6.3)"
+            "the llm path is off: LLM_INPUT_TOKENS_PER_CALL is %s, and a run can only be "
+            "estimated from a positive number of input tokens per call (reqs.md 6.3)",
+            "unset" if call_size is None else call_size,
         )
         return None
 

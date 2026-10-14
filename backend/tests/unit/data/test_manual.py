@@ -78,3 +78,15 @@ def test_a_payload_cannot_claim_another_type_by_labelling_itself() -> None:
     are refused, whatever the request calls them."""
     with pytest.raises(InvalidManualValueError, match="is a Quantity"):
         typed(naturalisation(), {"value": 5, "basis": "households", "value_type": "Ratio"})
+
+
+def test_a_hand_typed_quantity_in_the_wrong_unit_is_stored_with_its_reason() -> None:
+    """The exact BE-06 case: a human types 5 for a years attribute but leaves the unit on
+    celsius. It is a well-formed Quantity, so it is not refused -- it is kept, with the reason
+    beside it, and the active-value rule passes over anything carrying one, so it never scores
+    5 degrees as 5 years."""
+    value = typed(naturalisation(), {"magnitude": 5, "unit": "celsius"})
+
+    assert value.payload == Quantity(magnitude=Decimal(5), unit="celsius")
+    assert value.rejection_reason is not None
+    assert "celsius" in value.rejection_reason and "years" in value.rejection_reason

@@ -120,6 +120,24 @@ class ScaleAnchor(BaseModel):
         return self
 
 
+# Which normalisation methods `reqs.md` 3.3a permits per value type. Only the types that become
+# a score *through normalisation* appear here: `LabelSet`, `ShareComposition`, `Boolean` and
+# `Text` are matched or read by membership and never normalised, so their `normalisation_method`
+# is an inert field -- the six shipped `LabelSet` criteria carry `as_is` while `is_scored` is
+# false, and `0122`'s CHECK already keeps those types out of scoring. A type absent from this
+# table is therefore unconstrained here, not forbidden.
+_LEGAL_METHODS: dict[ValueType, frozenset[NormalisationMethod]] = {
+    ValueType.MONETARY: frozenset({NormalisationMethod.FIXED}),
+    ValueType.QUANTITY: frozenset({NormalisationMethod.FIXED, NormalisationMethod.PERCENTILE}),
+    ValueType.COUNT: frozenset({NormalisationMethod.FIXED, NormalisationMethod.PERCENTILE}),
+    ValueType.RATIO: frozenset(
+        {NormalisationMethod.FIXED, NormalisationMethod.PERCENTILE, NormalisationMethod.AS_IS}
+    ),
+    ValueType.INDEX: frozenset({NormalisationMethod.AS_IS, NormalisationMethod.PERCENTILE}),
+    ValueType.ASSIGNED_SCORE: frozenset({NormalisationMethod.AS_IS}),
+}
+
+
 class Criterion(BaseModel):
     """One attribute, one goal, one weight, and where it stops being acceptable.
 
@@ -169,6 +187,7 @@ class Criterion(BaseModel):
     def _reject_a_criterion_that_is_not_a_rule(self) -> Self:
         self._reject_a_target_range_that_names_no_band()
         self._reject_a_target_range_the_method_cannot_draw()
+        self._reject_a_method_illegal_for_the_value_type()
         self._reject_a_zero_score_inside_the_band()
         self._reject_a_reducer_that_disagrees_with_its_option()
         self._reject_a_scale_that_cannot_be_read()
@@ -232,6 +251,30 @@ class Criterion(BaseModel):
                 "score. A target range is a `fixed` scale -- the band, and where the score "
                 "reaches zero on each side"
             )
+
+    def _reject_a_method_illegal_for_the_value_type(self) -> None:
+        """`reqs.md` 3.3a fixes which normalisation methods each value type may wear.
+
+        A `Monetary` figure has no natural score scale, so only an explicit `fixed` one reads
+        it; an `Index` is already on a 0-100 scale, so `as_is` reads it and `percentile` ranks
+        it, but `fixed` would re-anchor a number that needs no anchoring; an `AssignedScore` is a
+        score already, so only `as_is` leaves it alone. Enforced here rather than left to the
+        convention `0104` follows, so a set edited through the API cannot save a combination that
+        would silently misread the figure -- a `Monetary` rent ranked by `percentile`, say, which
+        is the kind of plausible wrong number `reqs.md` 10 forbids.
+
+        The four non-normalised types are absent from `_LEGAL_METHODS` and so pass untouched;
+        their method is inert and `0122` keeps them out of scoring.
+        """
+        legal = _LEGAL_METHODS.get(self.value_type)
+        if legal is None or self.normalisation_method in legal:
+            return
+        permitted = ", ".join(sorted(method.value for method in legal))
+        raise CriterionDeclarationError(
+            f"{self.attribute} is a {self.value_type} and normalises "
+            f"`{self.normalisation_method}`, which `reqs.md` 3.3a does not permit for that "
+            f"type; the legal methods for a {self.value_type} are: {permitted}"
+        )
 
     def _reject_a_zero_score_inside_the_band(self) -> None:
         """The falloff points sit outside the band, because the band is what scores 100.

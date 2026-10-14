@@ -494,3 +494,43 @@ class TestEstimatingAResearchPassBeforeAgreeingToIt:
 
         assert response.status_code == 501
         assert response.json()["code"] == "llm_not_configured"
+
+
+class TestResearchRefusesAnUnknownScope:
+    """BE-24, on the paid path. A misspelled gate or candidate used to fall out of the
+    intersection with what exists, so a research pass asked a model about -- and billed for -- a
+    smaller scope than was requested, concealing the drop. Now the scope is refused and every
+    unknown id is named, before anything is asked."""
+
+    async def test_the_pass_refuses_an_unknown_candidate_and_spends_nothing(
+        self, database_url: str
+    ) -> None:
+        researcher = StubResearcher()
+        async with an_api(database_url, (a_stub_source(),), researcher=researcher) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+
+            response = await api.post(
+                "/v1/match-rule-research",
+                json={
+                    "level": COUNTRY,
+                    "candidates": ["country.portugal", "country.narnia"],
+                    "match_rules": ["uk_skilled_worker"],
+                },
+            )
+
+        assert response.status_code == 422
+        body = response.json()
+        assert body["code"] == "unknown_scope"
+        assert body["details"]["unknown_candidates"] == ["country.narnia"]
+        assert researcher.asked == 0
+
+    async def test_the_estimate_refuses_an_unknown_gate(self, database_url: str) -> None:
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            response = await api.post(
+                "/v1/match-rule-research/plan",
+                json={"level": COUNTRY, "match_rules": ["uk_skilled_worker", "no_such_gate"]},
+            )
+
+        assert response.status_code == 422
+        assert response.json()["details"]["unknown_match_rules"] == ["no_such_gate"]

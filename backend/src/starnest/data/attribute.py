@@ -299,6 +299,19 @@ class Attribute(BaseModel):
                 f"{self.id!r} is declared {self.value_type} and was offered a "
                 f"{payload.value_type} payload"
             )
+        if (
+            self.quantity_parameters is not None
+            and isinstance(payload, Quantity)
+            and payload.unit != self.quantity_parameters.unit
+        ):
+            # Two quantities compare only if their units agree (`reqs.md` 3.3a). A figure in
+            # another unit is a different fact wearing the same magnitude -- 5 celsius read as 5
+            # years -- so it is stored with this reason and never made active, rather than
+            # silently scored as the unit the attribute expects.
+            return (
+                f"unit {payload.unit} is not {self.id}'s declared unit "
+                f"{self.quantity_parameters.unit}, so the figure measures a different thing"
+            )
         if self.allowed_range is not None:
             number = _number_carried_by(payload)
             if number is not None and self.allowed_range.excludes(number):

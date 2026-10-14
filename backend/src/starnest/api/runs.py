@@ -27,6 +27,7 @@ from starnest.api.dependencies import (
     Runs,
     Values,
 )
+from starnest.api.errors import absent, unknown_scope_refusal
 from starnest.data_acquisition import (
     NOTHING,
     Run,
@@ -174,8 +175,7 @@ async def plan_run(
     so where two answer the same attribute its entries sum to more than `items_total`, which is
     the truth: the tax rate for Germany is one item, asked of OECD and of the estimate.
     """
-    roster = await _candidates_in(scope, candidates)
-    wanted = await _attributes_in(scope, catalog)
+    roster, wanted = await _scope_targets(scope, candidates, catalog)
 
     # The plan counts the same sources the run would ask, so an estimate for an unscoped run
     # does not promise paid work that would not happen -- and a source switched off is not
@@ -240,8 +240,7 @@ async def start_run(
     The run row exists before any figure is fetched, so a process that dies mid-run leaves a
     visibly unfinished run rather than nothing at all.
     """
-    roster = await _candidates_in(scope, candidates)
-    wanted = await _attributes_in(scope, catalog)
+    roster, wanted = await _scope_targets(scope, candidates, catalog)
     # A source that charges is asked only when the run names the attributes it wants: a sweep
     # over a level asks the free sources for whole indicators, and asking a paid one the same
     # way would be hundreds of calls nobody chose (`asked_this_run`).
@@ -474,25 +473,51 @@ async def get_run(run_id: int, runs: Runs) -> RunDetailBody:
     )
 
 
-async def _candidates_in(scope: RunScopeBody, candidates: Candidates) -> list:
-    """The candidates a scope names, or every one at the level.
+async def _scope_targets(
+    scope: RunScopeBody, candidates: Candidates, catalog: Catalog
+) -> tuple[list, list]:
+    """The candidates and attributes a scope names, after refusing any it does not.
 
-    Null means everything, which is not the same as nothing -- a full sweep and a no-op are the
-    two things a client most needs kept apart.
+    Shared by `plan` and `start` so the estimate and the run read the scope the same way. Null
+    means everything, which is not the same as nothing -- a full sweep and a no-op are the two
+    things a client most needs kept apart.
+
+    **A named id that exists at no row is refused, not quietly dropped** (BE-24). The sets were
+    intersected with what exists, so a misspelled country or an attribute from another level fell
+    out and the run proceeded on the rest -- fetching, and where a source charges, spending, for
+    less than was asked while concealing the drop.
     """
     roster = await candidates.read_candidates(level=scope.level)
-    if scope.candidates is None:
-        return list(roster)
-    wanted = set(scope.candidates)
-    return [candidate for candidate in roster if str(candidate.id) in wanted]
-
-
-async def _attributes_in(scope: RunScopeBody, catalog: Catalog) -> list:
     catalogued = await catalog.read_attributes(level=scope.level)
-    if scope.attributes is None:
-        return list(catalogued)
-    wanted = set(scope.attributes)
-    return [attribute for attribute in catalogued if str(attribute.id) in wanted]
+    _reject_unknown_scope(scope, roster, catalogued)
+    return (
+        _named(roster, scope.candidates),
+        _named(catalogued, scope.attributes),
+    )
+
+
+def _named(rows: list, wanted: list[str] | None) -> list:
+    """The rows a scope names, or all of them when it names none."""
+    if wanted is None:
+        return list(rows)
+    chosen = set(wanted)
+    return [row for row in rows if str(row.id) in chosen]
+
+
+def _reject_unknown_scope(scope: RunScopeBody, roster: list, catalogued: list) -> None:
+    """Refuse a scope naming a candidate or attribute no row answers to at its level.
+
+    Every named id is checked and the refusal lists all of them at once, across both dimensions,
+    so a client sees every mistake in one pass rather than fixing them one 422 at a time.
+    """
+    unknown_candidates = absent(scope.candidates, {str(row.id) for row in roster})
+    unknown_attributes = absent(scope.attributes, {str(row.id) for row in catalogued})
+    if unknown_candidates or unknown_attributes:
+        raise unknown_scope_refusal(
+            scope.level,
+            unknown_candidates=unknown_candidates,
+            unknown_attributes=unknown_attributes,
+        )
 
 
 def _run_body(run: Run) -> RunBody:
