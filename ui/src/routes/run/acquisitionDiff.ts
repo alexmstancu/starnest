@@ -9,7 +9,7 @@
  * screen claiming a deletion this application never performs (`reqs.md` 3.6).
  */
 
-import { describeFigure } from "../../format/figure";
+import { describeFigure, type FigureOptions } from "../../format/figure";
 
 export interface ProducedValue {
   candidate: string;
@@ -87,20 +87,13 @@ export function diffAcquisitions(
   const rows: DiffRow[] = [];
   for (const [key, value] of after) {
     const earlier = before.get(key);
-    const laterFigure = figureOf(value);
-    const earlierFigure = earlier === undefined ? null : figureOf(earlier);
     rows.push({
       candidate: value.candidate,
       attribute: value.attribute,
-      change:
-        earlier === undefined
-          ? "newly acquired"
-          : isUnchanged(earlierFigure, laterFigure)
-            ? "unchanged"
-            : "refreshed",
       data_source: value.data_source,
-      earlier: earlierFigure,
-      later: laterFigure,
+      ...(earlier === undefined
+        ? { change: "newly acquired", earlier: null, later: figureOf(value) }
+        : compared(earlier, value)),
     });
   }
   for (const [key, value] of before) {
@@ -132,29 +125,91 @@ export function diffAcquisitions(
 }
 
 /**
+ * A pair both runs produced: whether its figure moved, and the two figures that show it.
+ *
+ * **Decided on the stored payloads, never on their display** (UI-22). The figures are printed
+ * to two decimals, so a move smaller than that read the same on both sides and was called
+ * unchanged. Where that happens the two are shown exactly, so "refreshed" beside two figures
+ * stays checkable rather than trusted.
+ */
+function compared(
+  earlier: ProducedValue,
+  later: ProducedValue,
+): Pick<DiffRow, "change" | "earlier" | "later"> {
+  const shown = { earlier: figureOf(earlier), later: figureOf(later) };
+  if (samePayload(earlier.payload, later.payload)) {
+    return { change: "unchanged", ...shown };
+  }
+  return shown.earlier === shown.later
+    ? {
+        change: "refreshed",
+        earlier: figureOf(earlier, { exact: true }),
+        later: figureOf(later, { exact: true }),
+      }
+    : { change: "refreshed", ...shown };
+}
+
+/**
  * **Unchanged is a claim, and it is only made when both figures were readable.**
  *
  * Where either side produced no payload the answer is "refreshed" -- the weaker statement that
  * a pair which already had a figure got one again. Calling two unreadable figures identical
  * would be the screen inventing agreement out of ignorance, which is the one thing this
  * application exists not to do.
+ *
+ * **One test for all ten value types**: the same keys holding the same values, whatever order
+ * the keys arrive in. A list keeps its order, because that is the order the source served.
  */
-function isUnchanged(earlier: string | null, later: string | null): boolean {
-  return earlier !== null && later !== null && earlier === later;
+function samePayload(earlier: unknown, later: unknown): boolean {
+  return (
+    earlier !== undefined &&
+    earlier !== null &&
+    later !== undefined &&
+    later !== null &&
+    sameShape(earlier, later)
+  );
+}
+
+function sameShape(one: unknown, other: unknown): boolean {
+  if (one === other) return true;
+  if (Array.isArray(one) || Array.isArray(other)) {
+    return (
+      Array.isArray(one) &&
+      Array.isArray(other) &&
+      one.length === other.length &&
+      one.every((each, at) => sameShape(each, other[at]))
+    );
+  }
+  if (
+    typeof one !== "object" ||
+    typeof other !== "object" ||
+    one === null ||
+    other === null
+  ) {
+    return false;
+  }
+  const ones = one as Record<string, unknown>;
+  const others = other as Record<string, unknown>;
+  const keys = Object.keys(ones);
+  return (
+    keys.length === Object.keys(others).length &&
+    keys.every((key) => Object.hasOwn(others, key) && sameShape(ones[key], others[key]))
+  );
 }
 
 /**
  * The figure a run produced, as one line, or nothing where it produced no payload.
  *
- * **Compared as the string a reader sees**, not as a number: a payload may be a label set, a
- * share composition or free text, and "did this move" has to mean the same thing for all ten
- * value types. Comparing what is displayed is also what makes the answer checkable -- two rows
- * marked unchanged show the same two figures.
+ * **What a reader sees, not what decides.** Whether a pair moved is the payloads' question
+ * (`samePayload`); this only fills the Earlier and Later cells.
  */
-function figureOf(value: ProducedValue): string | null {
+function figureOf(
+  value: ProducedValue,
+  options?: FigureOptions,
+): string | null {
   return value.payload === undefined || value.payload === null
     ? null
-    : describeFigure({ payload: value.payload });
+    : describeFigure({ payload: value.payload }, options);
 }
 
 /**

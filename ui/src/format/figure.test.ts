@@ -148,3 +148,59 @@ describe("what it does with nothing to render", () => {
     expect(describeFigure({ payload: { labels: [] } })).toBe("");
   });
 });
+
+/**
+ * UI-22. **Exactly as stored, where rounding would hide a difference.** The acquisition diff
+ * calls a pair refreshed on the stored figures, and a move smaller than two decimals reads the
+ * same rounded on both sides -- so it shows these instead.
+ */
+describe("a figure exactly as stored", () => {
+  it("keeps every digit the wire carries", () => {
+    expect(
+      describeFigure(
+        { payload: { magnitude: 30.80604044947752, unit: "ladder_points" } },
+        { exact: true },
+      ),
+    ).toBe("30.80604044947752 ladder points");
+    expect(
+      describeFigure(
+        {
+          payload: {
+            value: 1.036044,
+            provider: "World Bank WGI",
+            scale_min: -2.5,
+            scale_max: 2.5,
+          },
+        },
+        { exact: true },
+      ),
+    ).toBe("1.036044 on -2.5–2.5 (World Bank WGI)");
+  });
+
+  it("still rounds when exactness is not asked for", () => {
+    expect(
+      describeFigure(
+        { payload: { magnitude: 30.80604044947752, unit: "ladder_points" } },
+        { exact: false },
+      ),
+    ).toBe("30.81 ladder points");
+    expect(
+      describeFigure({ payload: { value: 30.80604044947752, basis: "labour_cost" } }),
+    ).toBe("30.81% of Labour cost");
+  });
+
+  it("keeps every digit of a bare value, and rounds it otherwise", () => {
+    expect(describeFigure({ payload: { value: 3.14159 } }, { exact: true })).toBe(
+      "3.14159",
+    );
+    expect(describeFigure({ payload: { value: 3.14159 } })).toBe("3.14");
+  });
+
+  it("prints a whole number the same either way", () => {
+    expect(describeFigure({ payload: { count: 412 } }, { exact: true })).toBe("412");
+  });
+
+  it("marks a missing payload absent either way", () => {
+    expect(describeFigure({ payload: null }, { exact: true })).toBe(ABSENT);
+  });
+});

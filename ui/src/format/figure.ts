@@ -60,35 +60,53 @@ export function readableNumber(raw: unknown): string {
   return String(rounded);
 }
 
+/** A figure exactly as the wire carries it: every digit, nothing rounded. */
+function exactNumber(raw: unknown): string {
+  return String(raw);
+}
+
+export interface FigureOptions {
+  /**
+   * Every digit the wire carries, instead of the two decimals a person reads. **Only where
+   * rounding would hide a difference**: two figures that moved by less than the displayed
+   * precision read the same rounded, and a screen calling them different has to show why.
+   */
+  exact?: boolean;
+}
+
 /**
  * A payload as one line. **The shape follows the value type**, which is the server's word for
  * what the figure is; nothing here converts, rounds or rescales it.
  */
-export function describeFigure(value: HasPayload): string {
+export function describeFigure(
+  value: HasPayload,
+  options: FigureOptions = {},
+): string {
+  const digits = options.exact === true ? exactNumber : readableNumber;
   // **A missing payload is absent, not a thrown error.** `"magnitude" in null` raises, and a
   // provenance panel is the wrong place to discover that the server sent something the
   // contract says it never sends. The screen says it has nothing and stays up.
   if (typeof value.payload !== "object" || value.payload === null) return ABSENT;
   const payload = value.payload as Record<string, unknown>;
   if ("magnitude" in payload)
-    return `${readableNumber(payload["magnitude"])} ${readableUnit(payload["unit"])}`;
+    return `${digits(payload["magnitude"])} ${readableUnit(payload["unit"])}`;
   if ("amount_eur" in payload)
-    return `${readableNumber(payload["amount"])} ${String(payload["currency"])}`;
+    return `${digits(payload["amount"])} ${String(payload["currency"])}`;
   // **An index carries its bounds, because the bounds are what make it mean anything** (P57).
   // `reqs.md` reserves `Index` for figures whose scale does the work -- a World Bank governance
   // figure of 1.07 sits on -2.5 to 2.5, and printed bare it reads like a percentage. This
   // branch and the next were duplicates, so both types lost everything but the number.
   if ("value" in payload && "provider" in payload)
     return (
-      `${readableNumber(payload["value"])} on ${readableNumber(payload["scale_min"])}` +
-      `–${readableNumber(payload["scale_max"])} (${String(payload["provider"])})`
+      `${digits(payload["value"])} on ${digits(payload["scale_min"])}` +
+      `–${digits(payload["scale_max"])} (${String(payload["provider"])})`
     );
   // An assigned score carries its range and who assigned it: a 7 out of 10 from a model is a
   // different claim from a 7 out of 10 somebody wrote down (`reqs.md` 3.3a).
   if ("value" in payload && "assigned_by" in payload)
     return (
-      `${readableNumber(payload["value"])} on ${readableNumber(payload["range_min"])}` +
-      `–${readableNumber(payload["range_max"])} (assigned by ${String(payload["assigned_by"])})`
+      `${digits(payload["value"])} on ${digits(payload["range_min"])}` +
+      `–${digits(payload["range_max"])} (assigned by ${String(payload["assigned_by"])})`
     );
   // **A ratio is a share *of* something, and the something is required** (P78). The contract
   // makes `basis` mandatory on `RatioPayload` -- `land_area`, `workforce`, `households` -- and
@@ -96,19 +114,19 @@ export function describeFigure(value: HasPayload): string {
   // of the country's land area. Same argument as the index above: the number alone is not the
   // measurement. P57 made it for `Index` and `AssignedScore` and stopped there.
   if ("value" in payload && typeof payload["basis"] === "string")
-    return `${readableNumber(payload["value"])}% of ${formatIdentifier(payload["basis"])}`;
+    return `${digits(payload["value"])}% of ${formatIdentifier(payload["basis"])}`;
   // **A boolean reads as an answer, not as a wire word.** `true` is what JSON carries; it is
   // not what anybody calls the state of a visa agreement.
   if ("value" in payload && typeof payload["value"] === "boolean")
     return payload["value"] ? "Yes" : "No";
-  if ("value" in payload) return readableNumber(payload["value"]);
+  if ("value" in payload) return digits(payload["value"]);
   // A count's basis is optional and means the same thing when it is there: 412 protected areas
   // is a different figure from 412 per capita.
   if ("count" in payload) {
     const basis = payload["basis"];
     return typeof basis === "string" && basis !== ""
-      ? `${readableNumber(payload["count"])} per ${formatIdentifier(basis)}`
-      : readableNumber(payload["count"]);
+      ? `${digits(payload["count"])} per ${formatIdentifier(basis)}`
+      : digits(payload["count"]);
   }
   if ("labels" in payload) return (payload["labels"] as string[]).join(", ");
   if ("body" in payload) return String(payload["body"]);

@@ -211,3 +211,141 @@ describe("a figure that moved, and one that did not", () => {
     ]);
   });
 });
+
+/**
+ * UI-22. **"Unchanged" was decided on rounded text.** The figures are printed to two decimals,
+ * so a figure that moved by less than that read the same on both sides and was called unchanged
+ * -- a claim about the stored values made from their display.
+ */
+describe("what decides that a figure did not move", () => {
+  const pair = { candidate: "country.portugal", attribute: "country.life_satisfaction" };
+
+  it("calls a pair refreshed when the figure moved by less than the displayed precision", () => {
+    const diff = diffAcquisitions(
+      [{ ...pair, payload: { magnitude: 1.071, unit: "ladder_points" } }],
+      [{ ...pair, payload: { magnitude: 1.074, unit: "ladder_points" } }],
+    );
+
+    expect(diff.refreshed).toBe(1);
+    expect(diff.unchanged).toBe(0);
+  });
+
+  it("shows the exact figures when the rounded ones would read the same", () => {
+    const [row] = diffAcquisitions(
+      [{ ...pair, payload: { magnitude: 1.071, unit: "ladder_points" } }],
+      [{ ...pair, payload: { magnitude: 1.074, unit: "ladder_points" } }],
+    ).rows;
+
+    expect(row?.earlier).toBe("1.071 ladder points");
+    expect(row?.later).toBe("1.074 ladder points");
+  });
+
+  it("keeps the rounded figures where they already tell the two apart", () => {
+    const [row] = diffAcquisitions(
+      [{ ...pair, payload: { magnitude: 30.80604044947752, unit: "ladder_points" } }],
+      [{ ...pair, payload: { magnitude: 31.2, unit: "ladder_points" } }],
+    ).rows;
+
+    expect(row?.earlier).toBe("30.81 ladder points");
+    expect(row?.later).toBe("31.2 ladder points");
+  });
+
+  it("calls the same payload unchanged whatever the order of its keys", () => {
+    const diff = diffAcquisitions(
+      [{ ...pair, payload: { magnitude: 7.1, unit: "ladder_points" } }],
+      [{ ...pair, payload: { unit: "ladder_points", magnitude: 7.1 } }],
+    );
+
+    expect(diff.unchanged).toBe(1);
+  });
+
+  it("calls a changed unit with the same magnitude a move", () => {
+    const diff = diffAcquisitions(
+      [{ ...pair, payload: { magnitude: 7.1, unit: "ladder_points" } }],
+      [{ ...pair, payload: { magnitude: 7.1, unit: "pisa_points" } }],
+    );
+
+    expect(diff.refreshed).toBe(1);
+  });
+
+  it("calls a field the later payload gained a move", () => {
+    const diff = diffAcquisitions(
+      [{ ...pair, payload: { count: 412 } }],
+      [{ ...pair, payload: { count: 412, basis: "per_capita" } }],
+    );
+
+    expect(diff.refreshed).toBe(1);
+  });
+
+  it("never calls a payload missing on one side unchanged", () => {
+    const diff = diffAcquisitions(
+      [{ ...pair, payload: null }, { ...pair, candidate: "country.spain" }],
+      [
+        { ...pair, payload: { count: 412 } },
+        { ...pair, candidate: "country.spain", payload: { count: 412 } },
+      ],
+    );
+
+    expect(diff.refreshed).toBe(2);
+    expect(diff.unchanged).toBe(0);
+  });
+
+  /** A label set's order is what the source served, so a reordering is a move -- on purpose. */
+  it("counts a label set served in a different order as moved", () => {
+    const diff = diffAcquisitions(
+      [{ ...pair, payload: { labels: ["Siemens", "OutSystems"] } }],
+      [{ ...pair, payload: { labels: ["OutSystems", "Siemens"] } }],
+    );
+
+    expect(diff.refreshed).toBe(1);
+  });
+
+  it("calls the same label set unchanged", () => {
+    const diff = diffAcquisitions(
+      [{ ...pair, payload: { labels: ["Siemens", "OutSystems"] } }],
+      [{ ...pair, payload: { labels: ["Siemens", "OutSystems"] } }],
+    );
+
+    expect(diff.unchanged).toBe(1);
+  });
+
+  it("calls a label set that lost a label a move", () => {
+    const diff = diffAcquisitions(
+      [{ ...pair, payload: { labels: ["Siemens", "OutSystems"] } }],
+      [{ ...pair, payload: { labels: ["Siemens"] } }],
+    );
+
+    expect(diff.refreshed).toBe(1);
+  });
+
+  it("does not mistake a list for a record with the same entries", () => {
+    const diff = diffAcquisitions(
+      [{ ...pair, payload: { count: 412, basis: ["per_capita"] } }],
+      [{ ...pair, payload: { count: 412, basis: { 0: "per_capita" } } }],
+    );
+
+    expect(diff.refreshed).toBe(1);
+  });
+
+  it("compares the shares of a composition one by one", () => {
+    const shares = (renewable: number) => ({
+      shares: [
+        { label: "renewable", share: renewable },
+        { label: "fossil", share: 100 - renewable },
+      ],
+    });
+    const diff = diffAcquisitions(
+      [
+        { ...pair, payload: shares(61) },
+        { ...pair, candidate: "country.spain", payload: shares(61) },
+      ],
+      [
+        { ...pair, payload: shares(61) },
+        { ...pair, candidate: "country.spain", payload: shares(62) },
+      ],
+    );
+
+    expect(diff.unchanged).toBe(1);
+    expect(diff.refreshed).toBe(1);
+  });
+});
