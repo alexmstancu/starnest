@@ -103,6 +103,18 @@ function rowOf(pillar: string): HTMLElement {
   return screen.getByRole("group", { name: pillar });
 }
 
+/**
+ * Locks a pillar and waits for the answer.
+ *
+ * **One write at a time** (UI-04): every pillar control is disabled until an answer is in, so a
+ * second click made before it would land on a disabled button and do nothing.
+ */
+async function lockPillar(pillar: string): Promise<void> {
+  const disc = () => screen.getByRole("button", { name: `Lock ${pillar}` });
+  await userEvent.click(disc());
+  await waitFor(() => expect(disc()).toHaveAttribute("aria-pressed", "true"));
+}
+
 describe("the pillar weights panel", () => {
   it("shows each pillar's weight and what they sum to", async () => {
     renderShell("/configure");
@@ -247,12 +259,11 @@ describe("the pillar weights panel", () => {
   });
 
   it("refuses the change when every other pillar is locked, and says which", async () => {
-    const user = userEvent.setup();
     renderShell("/configure");
     await screen.findByRole("slider", { name: "Economy weight" });
 
-    await user.click(screen.getByRole("button", { name: "Lock Housing" }));
-    await user.click(screen.getByRole("button", { name: "Lock Safety" }));
+    await lockPillar("Housing");
+    await lockPillar("Safety");
     await setWeight("Economy", "10");
 
     const pillars = await panel();
@@ -401,18 +412,11 @@ describe("the pillar weights panel while a pointer is down", () => {
   });
 
   it("moves nothing when the locks leave no room, and says so on release", async () => {
-    const user = userEvent.setup();
     renderShell("/configure");
     await screen.findByRole("slider", { name: "Economy weight" });
 
-    await user.click(screen.getByRole("button", { name: "Lock Housing" }));
-    await user.click(screen.getByRole("button", { name: "Lock Safety" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Lock Safety" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      ),
-    );
+    await lockPillar("Housing");
+    await lockPillar("Safety");
 
     drag("Economy", "10");
 
@@ -543,5 +547,165 @@ describe("the pillar weights panel while a pointer is down", () => {
     await waitFor(() => expect(readingOf("Economy")).toBe("50.0%"));
     expect(readingOf("Housing")).toBe("35.0%");
     expect(await runningTotal()).toContain("110.0%");
+  });
+});
+
+/**
+ * UI-04 and UI-05. **One pillar write at a time, and one per gesture.** Every pillar answer is
+ * the whole level rebalanced, so two in flight can land in either order; and a range input ends
+ * one gesture with up to four events -- pointer, mouse, key and blur -- each of which used to
+ * send the weight again while the first answer was on its way.
+ */
+describe("the pillar weights panel while a change is being saved", () => {
+  /**
+   * Holds every pillar write until the test lets go, then lets the mock answer it as usual:
+   * returning nothing hands the request on to the stateful handler behind this one.
+   */
+  function holdPillarWrites(): { sent: unknown[]; release: () => void } {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.put(
+        `${BASE}/criteria-sets/:criteriaSetId/pillar-weights/:pillarId`,
+        async ({ request }) => {
+          sent.push(await request.clone().json());
+          await held;
+        },
+      ),
+    );
+    return { sent, release: () => release() };
+  }
+
+  /** Every pillar write, recorded and then answered by the stateful mock behind this one. */
+  function recordAnsweredWrites(): unknown[] {
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.put(
+        `${BASE}/criteria-sets/:criteriaSetId/pillar-weights/:pillarId`,
+        async ({ request }) => {
+          sent.push(await request.clone().json());
+        },
+      ),
+    );
+    return sent;
+  }
+
+  it("holds every pillar still while one pillar's weight is being saved", async () => {
+    renderShell("/configure");
+    await screen.findByRole("slider", { name: "Economy weight" });
+    // Locked first, so the drag below previews nothing for it and a stray release on it would
+    // send the weight its slider holds.
+    await lockPillar("Safety");
+    const writes = holdPillarWrites();
+
+    await setWeight("Economy", "50");
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+    expect(weightBox("Housing")).toBeDisabled();
+    expect(weightBox("Economy")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Lock Housing" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Lock Economy" })).toBeDisabled();
+    // A pointer lifting on a disabled slider still arrives, so the panel refuses it too.
+    fireEvent.change(weightBox("Safety"), { target: { value: "30" } });
+    fireEvent.pointerUp(weightBox("Safety"));
+
+    writes.release();
+
+    await waitFor(() => expect(weightBox("Housing")).toBeEnabled());
+    expect(screen.getByRole("button", { name: "Lock Housing" })).toBeEnabled();
+    expect(writes.sent).toEqual([{ weight: 50 }]);
+    // And the thumb it moved goes back to the weight the server holds.
+    await waitFor(() => expect(weightBox("Safety")).toHaveValue("25"));
+  });
+
+  it("holds every pillar still while a lock is being saved", async () => {
+    const writes = holdPillarWrites();
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await screen.findByRole("slider", { name: "Economy weight" });
+
+    await user.click(screen.getByRole("button", { name: "Lock Housing" }));
+    await waitFor(() => expect(writes.sent).toEqual([{ weight_locked: true }]));
+
+    expect(weightBox("Economy")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Lock Safety" })).toBeDisabled();
+
+    writes.release();
+
+    await waitFor(() => expect(weightBox("Economy")).toBeEnabled());
+  });
+
+  it("sends one weight for one release, even when the mouse and focus let go too", async () => {
+    const sent = recordAnsweredWrites();
+    renderShell("/configure");
+    const slider = await screen.findByRole("slider", { name: "Economy weight" });
+
+    fireEvent.change(slider, { target: { value: "50" } });
+    fireEvent.pointerUp(slider);
+    fireEvent.mouseUp(slider);
+    fireEvent.blur(slider);
+    await waitFor(() => expect(readingOf("Housing")).toBe("29.2%"), {
+      timeout: 15_000,
+    });
+    await waitFor(() => expect(weightBox("Economy")).toBeEnabled());
+    // A later gesture, so every request the first one could have made is in before this is read.
+    fireEvent.change(weightBox("Economy"), { target: { value: "45" } });
+    fireEvent.pointerUp(weightBox("Economy"));
+
+    await waitFor(() => expect(sent.at(-1)).toEqual({ weight: 45 }));
+    expect(sent).toEqual([{ weight: 50 }, { weight: 45 }]);
+  });
+
+  it("puts the thumb back after a refused weight, and the next blur sends nothing", async () => {
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.put(
+        `${BASE}/criteria-sets/:criteriaSetId/pillar-weights/:pillarId`,
+        async ({ request }) => {
+          sent.push(await request.json());
+          return HttpResponse.json(
+            { code: "weights_all_locked", message: "Every other pillar is locked." },
+            { status: 409 },
+          );
+        },
+      ),
+    );
+    renderShell("/configure");
+    const slider = await screen.findByRole("slider", { name: "Economy weight" });
+
+    fireEvent.change(slider, { target: { value: "50" } });
+    fireEvent.pointerUp(slider);
+    expect(await (await panel()).findByText(/weights_all_locked/)).toBeInTheDocument();
+
+    await waitFor(() => expect(weightBox("Economy")).toHaveValue("40"));
+    fireEvent.blur(weightBox("Economy"));
+    // A gesture that does send, so the blur before it has had every chance to send too.
+    fireEvent.change(weightBox("Economy"), { target: { value: "45" } });
+    fireEvent.pointerUp(weightBox("Economy"));
+
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent).toEqual([{ weight: 50 }, { weight: 45 }]);
+  });
+
+  it("sends once for a gesture made with the keys, however focus then leaves", async () => {
+    const sent = recordAnsweredWrites();
+    renderShell("/configure");
+    const slider = await screen.findByRole("slider", { name: "Economy weight" });
+
+    fireEvent.change(slider, { target: { value: "45" } });
+    fireEvent.keyUp(slider, { key: "ArrowRight" });
+    fireEvent.blur(slider);
+    await waitFor(() => expect(readingOf("Economy")).toBe("45.0%"), {
+      timeout: 15_000,
+    });
+    await waitFor(() => expect(weightBox("Economy")).toBeEnabled());
+    fireEvent.change(weightBox("Economy"), { target: { value: "50" } });
+    fireEvent.pointerUp(weightBox("Economy"));
+
+    await waitFor(() => expect(sent.at(-1)).toEqual({ weight: 50 }));
+    expect(sent).toEqual([{ weight: 45 }, { weight: 50 }]);
   });
 });

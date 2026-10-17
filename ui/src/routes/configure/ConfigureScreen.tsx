@@ -30,11 +30,11 @@ import { countByPillar } from "./weights";
 export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   const { criteriaSetId, levelId } = useSelection();
   const history = useChangeHistory();
-  const editor = useCriteriaEditor(criteriaSetId, history);
   // Once for the screen rather than once per opened pillar: every criterion row wants the
   // same copy of what the attributes are, and the panel inside a pillar is mounted and
-  // unmounted each time one is opened.
+  // unmounted each time one is opened. The history names its changes from it too.
   const catalog = useAttributeCatalog(levelId);
+  const editor = useCriteriaEditor(criteriaSetId, history, catalog);
 
   return (
     <section className="screen screen--configure" aria-labelledby="screen-heading">
@@ -115,7 +115,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
             is "what have I just done?", and an answer that has to be scrolled back to is an
             answer nobody reads. */}
         <aside className="configure__rail">
-          <RecentChanges history={history} />
+          <RecentChanges history={history} busy={editor.busy} />
         </aside>
       </div>
     </section>

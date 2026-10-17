@@ -5,6 +5,7 @@ import {
   describeWhen,
   reachOf,
   record,
+  undoCanRestore,
   without,
 } from "./changeHistory";
 
@@ -80,6 +81,111 @@ describe("recording a change", () => {
     const before = [change(1, "housing", 10, 20)];
     record(before, change(2, "career", 5, 8));
     expect(before).toHaveLength(1);
+  });
+
+  /**
+   * A gesture that once emptied the rest of its pillar cannot be undone exactly however it
+   * ends, because the proportions it destroyed are not in any later state either.
+   */
+  it("keeps a step's caveat when a later step of the same gesture collapses into it", () => {
+    const history = record(
+      record([], { ...change(1, "housing", 10, 100), caveat: "inexact" }),
+      change(2, "housing", 100, 60),
+    );
+
+    expect(history[0]?.caveat).toBe("inexact");
+  });
+
+  it("does not carry a caveat across to another target", () => {
+    const history = record(
+      record([], { ...change(1, "housing", 10, 100), caveat: "inexact" }),
+      change(2, "career", 5, 8),
+    );
+
+    expect(history[0]?.caveat).toBeUndefined();
+  });
+});
+
+/**
+ * Whether re-sending a weight's old value puts the rest of its pillar back as well.
+ *
+ * **The server shares a change among the unlocked siblings in proportion to their weights**,
+ * so moving a weight back reverses any move that left them something to be in proportion to.
+ * The exception is a move that emptied them all: proportions of nothing are undefined, the
+ * server shares the way back evenly, and an undo of [50, 20, 30] -> [100, 0, 0] lands on
+ * [50, 25, 25].
+ */
+describe("whether an undo can put the whole pillar back", () => {
+  const share = (attribute: string, weight: number, weight_locked = false) => ({
+    attribute,
+    weight,
+    weight_locked,
+  });
+
+  it("says when an undo cannot put the others back", () => {
+    expect(
+      undoCanRestore(
+        [share("a", 50), share("b", 20), share("c", 30)],
+        [share("a", 100), share("b", 0), share("c", 0)],
+        "a",
+      ),
+    ).toBe(false);
+  });
+
+  it("can put the others back after an ordinary move, which kept their proportions", () => {
+    expect(
+      undoCanRestore(
+        [share("a", 50), share("b", 20), share("c", 30)],
+        [share("a", 70), share("b", 12), share("c", 18)],
+        "a",
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves a locked sibling out, because a rebalance never moves it", () => {
+    expect(
+      undoCanRestore(
+        [share("a", 40), share("b", 30), share("c", 20, true), share("d", 10)],
+        [share("a", 80), share("b", 0), share("c", 20, true), share("d", 0)],
+        "a",
+      ),
+    ).toBe(false);
+  });
+
+  /** One sibling takes whatever is left, so the way back gives it exactly what it had. */
+  it("can put a single absorbing sibling back, however empty it was left", () => {
+    expect(
+      undoCanRestore(
+        [share("a", 50), share("b", 30), share("c", 20, true)],
+        [share("a", 80), share("b", 0), share("c", 20, true)],
+        "a",
+      ),
+    ).toBe(true);
+  });
+
+  /** An even share is exactly right when the siblings were even to begin with. */
+  it("can put siblings back that held equal weights before they were emptied", () => {
+    expect(
+      undoCanRestore(
+        [share("a", 40), share("b", 30), share("c", 30)],
+        [share("a", 100), share("b", 0), share("c", 0)],
+        "a",
+      ),
+    ).toBe(true);
+  });
+
+  it("can put siblings back that were already at zero", () => {
+    expect(
+      undoCanRestore(
+        [share("a", 100), share("b", 0), share("c", 0)],
+        [share("a", 60), share("b", 20), share("c", 20)],
+        "a",
+      ),
+    ).toBe(true);
+  });
+
+  it("finds nothing it cannot restore in an answer that names no criteria", () => {
+    expect(undoCanRestore([share("a", 50), share("b", 50)], [], "a")).toBe(true);
   });
 });
 

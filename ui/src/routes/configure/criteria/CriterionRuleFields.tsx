@@ -18,6 +18,7 @@ export function CriterionRuleFields({
   attribute,
   title,
   saving,
+  held,
 }: {
   form: RuleForm;
   /**
@@ -32,6 +33,11 @@ export function CriterionRuleFields({
   /** What to call the attribute, as the row above calls it. */
   title: string;
   saving: boolean;
+  /**
+   * Another write to the set is in flight, so this rule waits for it rather than racing it
+   * (UI-04). The draft stays: only sending it is held.
+   */
+  held: boolean;
 }) {
   const problemsId = `rule-problems-${attribute}`;
 
@@ -259,14 +265,14 @@ export function CriterionRuleFields({
         <button
           type="submit"
           className="button"
-          disabled={saving || !form.changed}
+          disabled={saving || held || !form.changed}
         >
           {saving ? "Saving…" : "Save rule"}
         </button>
         <button
           type="button"
           className="button"
-          disabled={saving || !form.changed}
+          disabled={saving || held || !form.changed}
           onClick={form.revert}
         >
           Discard changes

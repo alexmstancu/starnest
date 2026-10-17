@@ -140,6 +140,89 @@ async function saveWeight(attribute: string, weight: string): Promise<void> {
   fireEvent.pointerUp(slider);
 }
 
+/** The rail that lists what this session changed. */
+async function historyPanel() {
+  return within(await screen.findByRole("region", { name: /^recent changes/i }));
+}
+
+/** The sidebar's set picker: how a reader moves from one criteria set to another. */
+function activeSet(): HTMLSelectElement {
+  return screen.getByRole<HTMLSelectElement>("combobox", {
+    name: /active criteria set/i,
+  });
+}
+
+/**
+ * Moves to another set through the sidebar and waits for it to arrive.
+ *
+ * **Through the picker, which is an event**, so the screen has started loading the new set by
+ * the time this returns and `settled` has something real to wait for.
+ */
+async function chooseSet(id: string): Promise<void> {
+  await userEvent.selectOptions(activeSet(), id);
+  await settled();
+}
+
+/**
+ * Duplicates Default and leaves its copy shown -- a second set holding the same attributes,
+ * which is the case where a change meant for one could land in the other.
+ *
+ * The duplicate selects its copy from its own answer rather than from an event, so the screen
+ * is then moved away and back through the sidebar: what that leaves on screen is known.
+ */
+async function duplicateDefault(): Promise<void> {
+  await userEvent.click(
+    within(await screen.findByRole("listitem", { name: "Default" })).getByRole(
+      "button",
+      { name: "Duplicate" },
+    ),
+  );
+  await waitFor(() => expect(activeSet()).toHaveValue("default_copy"));
+  await chooseSet("default");
+  await chooseSet("default_copy");
+}
+
+/**
+ * What one row reads beside its slider.
+ *
+ * **Read off the reading, not the slider**, because the reading is drawn in the same render as
+ * whatever changed it, while the slider follows a render later -- an assertion on the slider
+ * can pass in the gap before a wrong answer reaches it.
+ */
+function readingOf(attribute: string): string {
+  return (
+    within(screen.getByRole("group", { name: attribute })).getByText(/%$/)
+      .textContent ?? ""
+  );
+}
+
+/**
+ * Holds every criterion write until the test lets go, then lets the mock answer it as usual.
+ *
+ * **Returning nothing hands the request on** to the next handler, which is the mock's own
+ * stateful one -- so what arrives after the release is what the server would have said, and
+ * what the screen does in between is what it does while a save is in flight.
+ */
+function holdCriterionWrites(): { sent: string[]; release: () => void } {
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const sent: string[] = [];
+  mockServer.use(
+    http.patch(
+      "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+      async ({ params }) => {
+        sent.push(
+          `${String(params["criteriaSetId"])}/${String(params["attributeId"])}`,
+        );
+        await held;
+      },
+    ),
+  );
+  return { sent, release: () => release() };
+}
+
 describe("the criteria list", () => {
   /**
    * **Inside its pillar, not beside it.** A criterion's weight is a share of its pillar's, so
@@ -593,10 +676,6 @@ describe("what each pillar's criteria come to", () => {
  * in the client would be a second account of the truth the server cannot confirm.
  */
 describe("what this session changed", () => {
-  async function historyPanel() {
-    return within(await screen.findByRole("region", { name: /^recent changes/i }));
-  }
-
   it("says nothing has changed", async () => {
     // Four words, as the design has it. The paragraph that stood here explained that the list
     // is session-scoped -- true, and not what an empty panel is for: a reader meets it before
@@ -623,7 +702,7 @@ describe("what this session changed", () => {
     await saveWeight(COST_OF_LIVING, "40");
 
     const panel = await historyPanel();
-    await panel.findByText(/Weight for country\.cost_of_living_index: 50 to 40/);
+    await panel.findByText(/Weight for Cost of living index: 50 to 40/);
     expect(panel.getByText("Pillar weights")).toBeInTheDocument();
     expect(panel.getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument();
   });
@@ -635,12 +714,12 @@ describe("what this session changed", () => {
     await settled();
     await saveWeight(COST_OF_LIVING, "40");
     const panel = await historyPanel();
-    await panel.findByText(/Weight for country\.cost_of_living_index: 50 to 40/);
+    await panel.findByText(/Weight for Cost of living index: 50 to 40/);
 
     await user.click(panel.getByRole("button", { name: /recent changes/i }));
 
     expect(
-      panel.queryByText(/Weight for country\.cost_of_living_index: 50 to 40/),
+      panel.queryByText(/Weight for Cost of living index: 50 to 40/),
     ).toBeNull();
     // The count stays, so a folded card still says how much it is holding.
     expect(panel.getByText("1 in this session")).toBeInTheDocument();
@@ -648,7 +727,7 @@ describe("what this session changed", () => {
     await user.click(panel.getByRole("button", { name: /recent changes/i }));
 
     expect(
-      panel.getByText(/Weight for country\.cost_of_living_index: 50 to 40/),
+      panel.getByText(/Weight for Cost of living index: 50 to 40/),
     ).toBeInTheDocument();
   });
 
@@ -660,7 +739,7 @@ describe("what this session changed", () => {
 
     const panel = await historyPanel();
     expect(
-      await panel.findByText(/Weight for country\.cost_of_living_index: 50 to 40/),
+      await panel.findByText(/Weight for Cost of living index: 50 to 40/),
     ).toBeInTheDocument();
   });
 
@@ -670,6 +749,10 @@ describe("what this session changed", () => {
     await settled();
 
     await saveWeight(COST_OF_LIVING, "40");
+    // Listed before the next change, because one write runs at a time and the lock below is
+    // disabled until this answer is in.
+    const panel = await historyPanel();
+    await panel.findByText(/Weight for Cost of living index: 50 to 40/);
     // A different pillar, so it is opened first -- which is also two changes, which is the
     // reach this test is about.
     await openThePillarOf(HOMICIDE);
@@ -679,8 +762,7 @@ describe("what this session changed", () => {
       }),
     );
 
-    const panel = await historyPanel();
-    await panel.findByText(/Locked country\.homicide_rate/);
+    await panel.findByText(/Locked Homicide rate/);
     expect(
       panel.getByRole("button", { name: "Undo this and the 1 after it" }),
     ).toBeInTheDocument();
@@ -696,7 +778,7 @@ describe("what this session changed", () => {
     renderShell("/configure");
     await settled();
     await saveWeight(COST_OF_LIVING, "40");
-    await screen.findByText(/Weight for country\.cost_of_living_index: 50 to 40/);
+    await screen.findByText(/Weight for Cost of living index: 50 to 40/);
 
     mockServer.use(
       http.patch(
@@ -725,12 +807,12 @@ describe("what this session changed", () => {
     await saveWeight(COST_OF_LIVING, "40");
 
     const panel = await historyPanel();
-    await panel.findByText(/Weight for country\.cost_of_living_index: 50 to 40/);
+    await panel.findByText(/Weight for Cost of living index: 50 to 40/);
     await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
 
     await waitFor(() =>
       expect(
-        screen.queryByText(/Weight for country\.cost_of_living_index: 50 to 40/),
+        screen.queryByText(/Weight for Cost of living index: 50 to 40/),
       ).toBeNull(),
     );
   });
@@ -741,7 +823,7 @@ describe("what this session changed", () => {
     await saveWeight(COST_OF_LIVING, "40");
 
     const panel = await historyPanel();
-    await panel.findByText(/Weight for country\.cost_of_living_index: 50 to 40/);
+    await panel.findByText(/Weight for Cost of living index: 50 to 40/);
     await userEvent.click(
       panel.getByRole("button", { name: "Back to where I started" }),
     );
@@ -758,7 +840,7 @@ describe("what this session changed", () => {
     await settled();
     await saveWeight(COST_OF_LIVING, "40");
     const panel = await historyPanel();
-    await panel.findByText(/Weight for country\.cost_of_living_index: 50 to 40/);
+    await panel.findByText(/Weight for Cost of living index: 50 to 40/);
 
     mockServer.use(
       http.patch("/v1/criteria-sets/:criteriaSetId/criteria/:attributeId", () =>
@@ -775,8 +857,367 @@ describe("what this session changed", () => {
     );
     // A half-finished undo is a real state, so what was not undone stays listed.
     expect(
-      screen.getByText(/Weight for country\.cost_of_living_index: 50 to 40/),
+      screen.getByText(/Weight for Cost of living index: 50 to 40/),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * UI-04. **One write at a time, and its answer belongs to the set it was sent for.** A weight
+ * change rebalances its pillar, so two in flight can answer in either order; and a set switched
+ * to meanwhile holds the same attributes when it is a copy, so an answer matched on attribute
+ * alone lands in a set it was never sent to.
+ */
+describe("while a change is being saved", () => {
+  it("never lands a weight saved in one set in another set chosen meanwhile", async () => {
+    renderShell("/configure");
+    await settled();
+    await duplicateDefault();
+    const writes = holdCriterionWrites();
+
+    await saveWeight(COST_OF_LIVING, "40");
+    await waitFor(() =>
+      expect(writes.sent).toEqual([
+        "default_copy/country.cost_of_living_index",
+      ]),
+    );
+    await chooseSet("default");
+    await weightSlider(COST_OF_LIVING);
+    expect(readingOf(COST_OF_LIVING)).toBe("50.0%");
+
+    writes.release();
+
+    // The answer has landed once the change is listed: it is the copy's, and recorded as such.
+    await (await historyPanel()).findByText("1 in this session");
+    expect(readingOf(COST_OF_LIVING)).toBe("50.0%");
+    expect(readingOf(TAX)).toBe("30.0%");
+  });
+
+  it("does not report a refusal against a set it was not sent for", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    renderShell("/configure");
+    await settled();
+    await duplicateDefault();
+    mockServer.use(
+      http.patch(
+        "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+        async () => {
+          await held;
+          return HttpResponse.json(
+            { code: "weights_all_locked", message: "no" },
+            { status: 409 },
+          );
+        },
+      ),
+    );
+
+    await saveWeight(COST_OF_LIVING, "40");
+    await chooseSet("default");
+    await weightSlider(COST_OF_LIVING);
+    release();
+
+    // The attempt is over once the row it was saving can be moved again.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("slider", { name: `Weight for ${COST_OF_LIVING}` }),
+      ).toBeEnabled(),
+    );
+    expect(screen.queryByText(/nothing to rebalance into/i)).toBeNull();
+  });
+
+  it("holds every other criterion still while one is being saved", async () => {
+    renderShell("/configure");
+    await settled();
+    const writes = holdCriterionWrites();
+
+    await saveWeight(COST_OF_LIVING, "40");
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+    expect(
+      screen.getByRole("slider", { name: `Weight for ${TAX}` }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: `Lock the weight for ${TAX}` }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: `Lock the weight for ${OUTLOOK}` }),
+    ).toBeDisabled();
+    // A pointer lifting on a disabled slider still arrives, so the editor refuses it too. The
+    // locked row, because it is the one the drag above previews nothing for.
+    const outlook = screen.getByRole("slider", { name: `Weight for ${OUTLOOK}` });
+    fireEvent.change(outlook, { target: { value: "25" } });
+    fireEvent.pointerUp(outlook);
+
+    writes.release();
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("slider", { name: `Weight for ${TAX}` }),
+      ).toBeEnabled(),
+    );
+    expect(
+      screen.getByRole("button", { name: `Lock the weight for ${TAX}` }),
+    ).toBeEnabled();
+    expect(writes.sent).toEqual(["default/country.cost_of_living_index"]);
+  });
+
+  it("holds a rule's Save while a weight is being saved, and keeps the unsent edit", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    await openThePillarOf(TAX);
+    await user.click(
+      screen.getByRole("button", { name: `Edit the rule for ${TAX}` }),
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Goal" }),
+      "maximise",
+    );
+    const writes = holdCriterionWrites();
+
+    await saveWeight(COST_OF_LIVING, "40");
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+    expect(screen.getByRole("button", { name: "Save rule" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Discard changes" }),
+    ).toBeDisabled();
+
+    writes.release();
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save rule" })).toBeEnabled(),
+    );
+    expect(
+      screen.getByRole<HTMLSelectElement>("combobox", { name: "Goal" }).value,
+    ).toBe("maximise");
+  });
+
+  it("lets nothing be undone while a change is being saved", async () => {
+    renderShell("/configure");
+    await settled();
+    await saveWeight(COST_OF_LIVING, "40");
+    const panel = await historyPanel();
+    await panel.findByText("1 in this session");
+    const writes = holdCriterionWrites();
+
+    await saveWeight(TAX, "35");
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+    expect(panel.getByRole("button", { name: "Undo this" })).toBeDisabled();
+    expect(
+      panel.getByRole("button", { name: "Back to where I started" }),
+    ).toBeDisabled();
+
+    writes.release();
+
+    await waitFor(() =>
+      expect(
+        panel.getByRole("button", { name: "Back to where I started" }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it("holds the weights still while an undo is being sent", async () => {
+    renderShell("/configure");
+    await settled();
+    await saveWeight(COST_OF_LIVING, "40");
+    const panel = await historyPanel();
+    await panel.findByText("1 in this session");
+    const writes = holdCriterionWrites();
+
+    await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+    expect(
+      screen.getByRole("slider", { name: `Weight for ${COST_OF_LIVING}` }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("slider", { name: `Weight for ${TAX}` }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: `Lock the weight for ${TAX}` }),
+    ).toBeDisabled();
+    // A pointer lifting on a disabled slider still arrives, so the editor refuses it too.
+    const tax = screen.getByRole("slider", { name: `Weight for ${TAX}` });
+    fireEvent.change(tax, { target: { value: "45" } });
+    fireEvent.pointerUp(tax);
+
+    writes.release();
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("slider", { name: `Weight for ${TAX}` }),
+      ).toBeEnabled(),
+    );
+    expect(writes.sent).toHaveLength(1);
+  });
+});
+
+/**
+ * UI-08 and NEW-07. **A history entry names the set and the attribute it was made to.** The
+ * same attribute in two sets is two decisions, and an entry keyed on the attribute alone
+ * folded them into one whose undo wrote one set's weight into the other.
+ */
+describe("changes made in more than one set", () => {
+  it("names the attribute a change was made to, never its id", async () => {
+    renderShell("/configure");
+    await settled();
+
+    await saveWeight(COST_OF_LIVING, "40");
+
+    const panel = await historyPanel();
+    expect(
+      await panel.findByText(/^Weight for Cost of living index: 50 to 40/),
+    ).toBeInTheDocument();
+    expect(panel.queryByText(/country\./)).toBeNull();
+  });
+
+  it("undoes a lock with the opposite lock, in the set it was made in", async () => {
+    renderShell("/configure");
+    await settled();
+    await userEvent.click(await findLockAnywhere(COST_OF_LIVING));
+    const panel = await historyPanel();
+    await panel.findByText("Locked Cost of living index, in Default");
+
+    await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: `Lock the weight for ${COST_OF_LIVING}`,
+        }),
+      ).toHaveAttribute("aria-pressed", "false"),
+    );
+    expect(panel.getByText("No changes yet.")).toBeInTheDocument();
+  });
+
+  it("says which set each change was made in", async () => {
+    renderShell("/configure");
+    await settled();
+
+    await saveWeight(COST_OF_LIVING, "40");
+
+    expect(
+      await (await historyPanel()).findByText(
+        "Weight for Cost of living index: 50 to 40, in Default",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the same change to two sets as two entries, each undone in its own set", async () => {
+    renderShell("/configure");
+    await settled();
+    await duplicateDefault();
+    await saveWeight(COST_OF_LIVING, "40");
+    const panel = await historyPanel();
+    await panel.findByText("1 in this session");
+    await chooseSet("default");
+    await saveWeight(COST_OF_LIVING, "40");
+
+    await panel.findByText("2 in this session");
+    expect(
+      panel.getByText("Weight for Cost of living index: 50 to 40, in Default copy"),
+    ).toBeInTheDocument();
+    expect(
+      panel.getByText("Weight for Cost of living index: 50 to 40, in Default"),
+    ).toBeInTheDocument();
+
+    const undone: unknown[] = [];
+    mockServer.use(
+      http.patch(
+        "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+        async ({ params, request }) => {
+          undone.push({
+            set: params["criteriaSetId"],
+            body: await request.clone().json(),
+          });
+        },
+      ),
+    );
+    await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
+    await panel.findByText("1 in this session");
+    await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() =>
+      expect(undone).toEqual([
+        { set: "default", body: { weight: 50 } },
+        { set: "default_copy", body: { weight: 50 } },
+      ]),
+    );
+  });
+});
+
+/**
+ * UI-09. **An undo re-sends the weight it changed, and that is not always the whole pillar.**
+ * The server shares a change among the unlocked siblings in proportion to their weights; a
+ * change that emptied them all leaves nothing to be in proportion to, so the way back shares
+ * evenly. Undo still makes the real request -- what changes is that it says so first.
+ */
+describe("an undo that cannot put a whole pillar back", () => {
+  /** Economy's third criterion is locked in the shipped set; unlocked, two siblings can empty. */
+  async function unlockOutlook(): Promise<void> {
+    await userEvent.click(await findLockAnywhere(OUTLOOK));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: `Lock the weight for ${OUTLOOK}` }),
+      ).toHaveAttribute("aria-pressed", "false"),
+    );
+  }
+
+  it("warns before undoing a change that left the rest of its pillar at zero", async () => {
+    renderShell("/configure");
+    await settled();
+    await unlockOutlook();
+
+    await saveWeight(COST_OF_LIVING, "100");
+
+    const panel = await historyPanel();
+    const entry = (
+      await panel.findByText(/: 50 to 100/)
+    ).closest("li")!;
+    expect(entry).toHaveTextContent(/cannot restore the rest of this pillar/i);
+    expect(
+      within(entry).getByRole("button", { name: "Undo this" }),
+    ).toHaveAccessibleDescription(/cannot restore the rest of this pillar/i);
+    expect(
+      panel.getByRole("button", { name: "Back to where I started" }),
+    ).toHaveAccessibleDescription(/cannot restore every weight/i);
+  });
+
+  it("undoes it with the real request, and shows what the server shared out", async () => {
+    renderShell("/configure");
+    await settled();
+    await unlockOutlook();
+    await saveWeight(COST_OF_LIVING, "100");
+    const panel = await historyPanel();
+    const entry = (
+      await panel.findByText(/: 50 to 100/)
+    ).closest("li")!;
+
+    await userEvent.click(within(entry).getByRole("button", { name: "Undo this" }));
+
+    // An even share of the fifty left, never the 30 and 20 the pillar held before.
+    await waitFor(() => expect(readingOf(TAX)).toBe("25.0%"));
+    expect(readingOf(OUTLOOK)).toBe("25.0%");
+    expect(readingOf(COST_OF_LIVING)).toBe("50.0%");
+  });
+
+  it("says nothing more of a change the undo can reverse exactly", async () => {
+    renderShell("/configure");
+    await settled();
+
+    await saveWeight(COST_OF_LIVING, "40");
+
+    const panel = await historyPanel();
+    await panel.findByText(/: 50 to 40/);
+    expect(panel.queryByRole("note")).toBeNull();
+    expect(
+      panel.getByRole("button", { name: "Undo this" }),
+    ).not.toHaveAccessibleDescription();
   });
 });
 

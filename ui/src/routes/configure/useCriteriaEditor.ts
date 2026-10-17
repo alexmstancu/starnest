@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchCriteriaSet,
   updateCriterionLock,
@@ -9,6 +9,11 @@ import {
   type CriterionRule,
 } from "../../api/endpoints";
 import { useResource, type Resource } from "../../api/useResource";
+import {
+  UNDO_CANNOT_RESTORE_THE_PILLAR,
+  undoCanRestore,
+} from "./changeHistory";
+import { titleOf, type AttributeCatalog } from "./criteria/criterionReading";
 import type { ChangeHistory } from "./useChangeHistory";
 
 /**
@@ -41,6 +46,13 @@ export interface CriteriaEditor {
    * threw away an unsent rule edit on the same row, with nothing said (P82).
    */
   savingRuleFor: string | null;
+  /**
+   * Whether a write to this set is in flight: a change, or the undo of one.
+   *
+   * **One at a time** (UI-04). Every answer is a whole pillar rebalanced, so two writes in
+   * flight can answer in either order, and the later answer would be shown over newer weights.
+   */
+  busy: boolean;
   /** The failure of the last weight change. Shown; never swallowed. */
   saveError: unknown;
   setWeight: (attribute: string, weight: number) => void;
@@ -63,6 +75,8 @@ export interface CriteriaEditor {
 export function useCriteriaEditor(
   criteriaSetId: string | null,
   history?: ChangeHistory,
+  /** For what a change is called in the history: the catalog's name, never the id. */
+  catalog?: AttributeCatalog,
 ): CriteriaEditor {
   const fetcher = useCallback(
     async (signal: AbortSignal): Promise<CriteriaSet> => {
@@ -86,105 +100,160 @@ export function useCriteriaEditor(
     setSaveError(null);
   }, [resource.data]);
 
+  // **Which set is on screen when an answer lands**, not when it was asked for (UI-04). A set
+  // chosen meanwhile holds the same attributes when it is a copy, so an answer matched on
+  // attribute alone would land in a set it was never sent to. Written in an effect because
+  // lint forbids writing a ref during render.
+  const shownSet = useRef(criteriaSetId);
+  useEffect(() => {
+    shownSet.current = criteriaSetId;
+  }, [criteriaSetId]);
+  // A ref as well as `savingAttribute`, because two releases in one tick would both pass a
+  // check on state that has not re-rendered yet.
+  const inFlight = useRef(false);
+  const undoing = history?.undoing === true;
+  const setName = resource.data?.name;
+
+  /** An answer for one set, applied only while that set is the one on screen. */
+  const mergeInto = useCallback((sentFor: string, answer: Criterion[]) => {
+    if (shownSet.current === sentFor) {
+      setCriteria((current) => applyRebalance(current, answer));
+    }
+  }, []);
+
+  /** A refusal for one set, reported only while that set is the one on screen. */
+  const reportFor = useCallback((sentFor: string, error: unknown) => {
+    if (shownSet.current === sentFor) setSaveError(error);
+  }, []);
+
   const setWeight = useCallback(
     (attribute: string, weight: number) => {
-      if (criteriaSetId === null) return;
+      if (criteriaSetId === null || inFlight.current || undoing) return;
+      inFlight.current = true;
+      const sentFor = criteriaSetId;
 
       setSavingAttribute(attribute);
       setSaveError(null);
 
       // Read before the request, because the answer replaces it and an undo needs the value
-      // that was there rather than the one that came back.
+      // that was there rather than the one that came back. The names too: the history says
+      // what the change was when it was made, whichever set is on screen when it lands.
       const was = criteria.find((each) => each.attribute === attribute)?.weight;
+      const named = titleOf(attribute, catalog?.get(attribute));
+      const inSet = setName ?? sentFor;
 
-      void updateCriterionWeight(criteriaSetId, attribute, weight)
+      void updateCriterionWeight(sentFor, attribute, weight)
         .then((rebalanced) => {
-          setCriteria((current) =>
-            applyRebalance(current, rebalanced.criteria),
-          );
+          mergeInto(sentFor, rebalanced.criteria);
+          // Noted whichever set is on screen now: the change was made, in the set it names.
           history?.note({
-            target: `criterion:${attribute}`,
+            // The set is part of the identity: the same attribute in two sets is two
+            // decisions, and folding them together undid one set's weight into the other.
+            target: `criterion:${sentFor}:${attribute}`,
             // The stage it was made in, named: a criterion's weight is a share of its
             // pillar's, so it is changed inside the pillar weights rather than anywhere of
             // its own.
             stage: "Pillar weights",
-            label: `Weight for ${attribute}: ${String(was)} to ${String(weight)}`,
+            label: `Weight for ${named}: ${String(was)} to ${String(weight)}, in ${inSet}`,
             before: was,
             after: weight,
+            caveat: undoCanRestore(criteria, rebalanced.criteria, attribute)
+              ? undefined
+              : UNDO_CANNOT_RESTORE_THE_PILLAR,
             // The opposite request, not a local restore: an undo that only moved a number on
             // screen would disagree with the server the moment anything else read it.
             reverse: async (before) => {
               if (typeof before !== "number") return;
               const back = await updateCriterionWeight(
-                criteriaSetId,
+                sentFor,
                 attribute,
                 before,
               );
-              setCriteria((current) => applyRebalance(current, back.criteria));
+              mergeInto(sentFor, back.criteria);
             },
           });
         })
-        .catch((error: unknown) => setSaveError(error))
-        .finally(() => setSavingAttribute(null));
+        .catch((error: unknown) => reportFor(sentFor, error))
+        .finally(() => {
+          inFlight.current = false;
+          setSavingAttribute(null);
+        });
     },
-    [criteriaSetId, criteria, history],
+    [
+      criteriaSetId,
+      criteria,
+      history,
+      undoing,
+      catalog,
+      setName,
+      mergeInto,
+      reportFor,
+    ],
   );
 
   const setLock = useCallback(
     (attribute: string, weightLocked: boolean) => {
-      if (criteriaSetId === null) return;
+      if (criteriaSetId === null || inFlight.current || undoing) return;
+      inFlight.current = true;
+      const sentFor = criteriaSetId;
 
       setSavingAttribute(attribute);
       setSaveError(null);
+      const named = titleOf(attribute, catalog?.get(attribute));
+      const inSet = setName ?? sentFor;
 
-      void updateCriterionLock(criteriaSetId, attribute, weightLocked)
+      void updateCriterionLock(sentFor, attribute, weightLocked)
         .then((rebalanced) => {
-          setCriteria((current) =>
-            applyRebalance(current, rebalanced.criteria),
-          );
+          mergeInto(sentFor, rebalanced.criteria);
           history?.note({
-            target: `lock:${attribute}`,
+            target: `lock:${sentFor}:${attribute}`,
             stage: "Pillar weights",
-            label: `${weightLocked ? "Locked" : "Unlocked"} ${attribute}`,
+            label: `${weightLocked ? "Locked" : "Unlocked"} ${named}, in ${inSet}`,
             before: !weightLocked,
             after: weightLocked,
             reverse: async (before) => {
               const back = await updateCriterionLock(
-                criteriaSetId,
+                sentFor,
                 attribute,
                 before === true,
               );
-              setCriteria((current) => applyRebalance(current, back.criteria));
+              mergeInto(sentFor, back.criteria);
             },
           });
         })
-        .catch((error: unknown) => setSaveError(error))
-        .finally(() => setSavingAttribute(null));
+        .catch((error: unknown) => reportFor(sentFor, error))
+        .finally(() => {
+          inFlight.current = false;
+          setSavingAttribute(null);
+        });
     },
-    [criteriaSetId, history],
+    [criteriaSetId, history, undoing, catalog, setName, mergeInto, reportFor],
   );
 
   const setRule = useCallback(
     (attribute: string, rule: CriterionRule) => {
-      if (criteriaSetId === null) return;
+      if (criteriaSetId === null || inFlight.current || undoing) return;
+      inFlight.current = true;
+      const sentFor = criteriaSetId;
 
       setSavingAttribute(attribute);
       setSavingRuleFor(attribute);
       setSaveError(null);
 
-      void updateCriterionRule(criteriaSetId, attribute, rule)
+      void updateCriterionRule(sentFor, attribute, rule)
         .then((changed) => {
           // The same response shape as a weight change, and applied the same way: the screen
           // shows what the server decided rather than what was typed at it.
-          setCriteria((current) => applyRebalance(current, changed.criteria));
+          mergeInto(sentFor, changed.criteria);
         })
-        .catch((error: unknown) => setSaveError(error))
+        .catch((error: unknown) => reportFor(sentFor, error))
         .finally(() => {
+          inFlight.current = false;
           setSavingAttribute(null);
           setSavingRuleFor(null);
         });
     },
-    [criteriaSetId],
+    [criteriaSetId, undoing, mergeInto, reportFor],
   );
 
   return {
@@ -194,6 +263,7 @@ export function useCriteriaEditor(
     criteria,
     savingAttribute,
     savingRuleFor,
+    busy: savingAttribute !== null || undoing,
     saveError,
     setWeight,
     setLock,

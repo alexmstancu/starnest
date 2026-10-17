@@ -35,6 +35,13 @@ export interface Change<Value = unknown> {
   at: Date;
   before: Value;
   after: Value;
+  /**
+   * What undoing this cannot do, said before it is done. Absent when the undo is exact.
+   *
+   * **Undo still makes the real request** -- this is the honest half of it, for the one case
+   * where re-sending a value does not put everything back (`undoCanRestore`).
+   */
+  caveat?: string;
 }
 
 /**
@@ -57,10 +64,55 @@ export function record<Value>(
   if (latest?.target === change.target) {
     // The latest `at`, because the collapsed entry is the gesture as it now stands -- the
     // reading a user checks it against is "when did I last touch this", not when they
-    // started.
-    return [{ ...change, before: latest.before }, ...history.slice(1)];
+    // started. **The earlier caveat survives**: proportions one step destroyed are in no
+    // later state either, so the whole gesture cannot be undone exactly.
+    return [
+      { ...change, before: latest.before, caveat: change.caveat ?? latest.caveat },
+      ...history.slice(1),
+    ];
   }
   return [change, ...history];
+}
+
+/** One weight in a pillar, as a rebalance answers with it. */
+export interface PillarShare {
+  attribute: string;
+  weight?: number;
+  weight_locked?: boolean;
+}
+
+/** Said on an entry whose undo cannot put the rest of its pillar back. */
+export const UNDO_CANNOT_RESTORE_THE_PILLAR =
+  "Undo cannot restore the rest of this pillar: this change left them all at 0, " +
+  "so undoing it shares their weight out evenly.";
+
+/**
+ * Whether re-sending a weight's old value would also put the rest of its pillar back.
+ *
+ * **The server shares a change among the unlocked siblings in proportion to their weights**
+ * (`arch.md` 8.3), so moving a weight back reverses any move that left them something to be in
+ * proportion to. A move that emptied them all left nothing: the way back is shared evenly, and
+ * [50, 20, 30] -> [100, 0, 0] undoes to [50, 25, 25]. Even is still exact when there is one
+ * sibling to share it, or when they were even before.
+ *
+ * **Comparisons only.** Which weights a rebalance produces is the server's arithmetic; this
+ * reads its answer and asks whether the siblings were all left empty and had differed.
+ */
+export function undoCanRestore(
+  before: readonly PillarShare[],
+  after: readonly PillarShare[],
+  moved: string,
+): boolean {
+  const absorbers = after.filter(
+    (share) => share.attribute !== moved && share.weight_locked !== true,
+  );
+  const leftEmpty = absorbers.every((share) => (share.weight ?? 0) === 0);
+  const held = absorbers.map(
+    (share) =>
+      before.find((was) => was.attribute === share.attribute)?.weight ?? 0,
+  );
+  const heldEvenly = held.every((weight) => weight === held[0]);
+  return heldEvenly || !leftEmpty;
 }
 
 /**

@@ -14,8 +14,25 @@ import type { ChangeHistory } from "./useChangeHistory";
  * **Session-scoped, and the panel says so.** The backend records no change log; inventing one
  * here would be a second account of the truth the server cannot confirm.
  */
-export function RecentChanges({ history }: { history: ChangeHistory }) {
+export function RecentChanges({
+  history,
+  busy,
+}: {
+  history: ChangeHistory;
+  /**
+   * A change is being saved, so nothing may be undone until it has answered: an undo sent
+   * meanwhile would race it, and the two answers could land in either order.
+   */
+  busy: boolean;
+}) {
   const headingId = useId();
+  const resetCaveatId = `${headingId}-reset-caveat`;
+  const caveatIdOf = (id: number) => `${headingId}-caveat-${String(id)}`;
+  // Going back undoes everything, so it inherits every change's caveat.
+  const resetIsInexact = history.changes.some(
+    (change) => change.caveat !== undefined,
+  );
+  const held = history.undoing || busy;
   // **Open, and collapsible rather than dismissible.** The rail's whole job is answering
   // "what have I just done", so it starts answering it; the collapse is for the reader who
   // has finished with it and wants the screen back. Local state, because nothing outside this
@@ -50,13 +67,23 @@ export function RecentChanges({ history }: { history: ChangeHistory }) {
           <button
             type="button"
             className="action"
-            disabled={history.undoing}
+            disabled={held}
+            aria-describedby={resetIsInexact ? resetCaveatId : undefined}
             onClick={history.reset}
           >
             Back to where I started
           </button>
         )}
       </div>
+
+      {/* Beside the way back rather than only on the entry, because this button reaches the
+          entry without the reader ever looking at it. */}
+      {resetIsInexact && (
+        <p id={resetCaveatId} className="panel__hint" role="note">
+          Going back cannot restore every weight exactly: a change below left
+          the rest of its pillar at 0.
+        </p>
+      )}
 
       {/* Outside the collapse: a refusal to undo is about what the server holds now, and
           hiding it behind a caret would let the screen and the database disagree unnoticed. */}
@@ -71,7 +98,13 @@ export function RecentChanges({ history }: { history: ChangeHistory }) {
         ) : (
           <ul className="history">
             {history.changes.map((change) => {
-              const reach = reachOf(history.changes, change.id).length;
+              const reaching = reachOf(history.changes, change.id);
+              // An undo takes every change after it too, so it is described by each of their
+              // caveats as well as its own.
+              const caveats = reaching
+                .filter((each) => each.caveat !== undefined)
+                .map((each) => caveatIdOf(each.id))
+                .join(" ");
               return (
                 <li key={change.id} className="history__entry">
                   {/* Where it was made and when, above what it was. Six weight changes read
@@ -84,13 +117,24 @@ export function RecentChanges({ history }: { history: ChangeHistory }) {
                     </span>
                   </div>
                   <span className="history__label">{change.label}</span>
+                  {/* Before the button, so it is read before the undo is taken. */}
+                  {change.caveat !== undefined && (
+                    <span
+                      id={caveatIdOf(change.id)}
+                      className="panel__hint"
+                      role="note"
+                    >
+                      {change.caveat}
+                    </span>
+                  )}
                   <button
                     type="button"
                     className="action"
-                    disabled={history.undoing}
+                    disabled={held}
+                    aria-describedby={caveats === "" ? undefined : caveats}
                     onClick={() => history.undoThrough(change.id)}
                   >
-                    {describeReach(reach)}
+                    {describeReach(reaching.length)}
                   </button>
                 </li>
               );

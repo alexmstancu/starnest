@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { usePillarNames, type PillarNames } from "../../../api/usePillarNames";
 import {
   updatePillarLock,
@@ -57,12 +57,20 @@ export function PillarWeightsPanel({
     criteriaSet.pillar_weights ?? [],
   );
   const [failure, setFailure] = useState<unknown>(null);
+  // **One write at a time** (UI-04): every answer is the whole level rebalanced, so two in
+  // flight can land in either order and the older answer would be shown over the newer one.
+  // The state disables the rows; the ref refuses what arrives before they have re-rendered.
+  const [saving, setSaving] = useState(false);
+  const inFlight = useRef(false);
   // Destructured, because `ended` is listed as a dependency below and `react-hooks` reads a
   // name rather than a member expression. `useWeightDrag` keeps it stable for exactly that.
   const { preview, previewFor, moveTo, ended } = useWeightDrag();
 
   const move = useCallback(
     async (pillar: string, weight: number) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      setSaving(true);
       setFailure(null);
       try {
         const rebalanced = await updatePillarWeight(criteriaSet.id, pillar, weight);
@@ -70,6 +78,8 @@ export function PillarWeightsPanel({
       } catch (error) {
         setFailure(error);
       } finally {
+        inFlight.current = false;
+        setSaving(false);
         // **Here rather than on release**, so the preview stands until the answer that replaces
         // it. A refusal ends the gesture too: the weights it previewed are not the stored ones
         // and never will be, so the rows go back to what is stored and the notice says why.
@@ -83,12 +93,18 @@ export function PillarWeightsPanel({
   // weight can be set and never released, because the move is refused before the flag is read.
   const lock = useCallback(
     async (pillar: string, locked: boolean) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      setSaving(true);
       setFailure(null);
       try {
         const rebalanced = await updatePillarLock(criteriaSet.id, pillar, locked);
         setWeights(rebalanced.items);
       } catch (error) {
         setFailure(error);
+      } finally {
+        inFlight.current = false;
+        setSaving(false);
       }
     },
     [criteriaSet.id],
@@ -152,6 +168,7 @@ export function PillarWeightsPanel({
               weight={weight}
               previewed={previewFor(weight.pillar)}
               ceiling={ceiling}
+              saving={saving}
               count={criteriaCounts?.get(weight.pillar)}
               open={open === weight.pillar}
               onOpen={
@@ -178,6 +195,7 @@ function PillarRow({
   weight,
   previewed,
   ceiling,
+  saving,
   count,
   open,
   onOpen,
@@ -196,6 +214,8 @@ function PillarRow({
    */
   previewed?: number;
   ceiling: number;
+  /** A pillar write is in flight, so this row may start none of its own. */
+  saving: boolean;
   count?: number;
   open: boolean;
   onOpen?: () => void;
@@ -220,11 +240,25 @@ function PillarRow({
   // screen contradicting the figure it was given.
   const [moving, setMoving] = useState(false);
 
+  // **This gesture's weight has gone** (UI-05). A gesture ends with up to four events, and each
+  // used to send the weight again while the first answer was on its way. Cleared by the next
+  // movement, which is the next gesture. A ref, because the four can arrive in one tick.
+  const sent = useRef(false);
+
   // A rebalance moves this row's weight without this row having been dragged -- the server's
   // on the way back, and the preview's while another row's pointer is down -- so the slider
   // follows it. Without this, the pillars absorbing a change would keep showing the weights
   // they had before it: the screen contradicting the total printed above it.
   useEffect(() => setTyped(shown), [shown]);
+
+  // A refused weight leaves the stored one where it was, so `shown` never changes and the
+  // effect above never fires: the thumb would sit where the server refused it, and the next
+  // blur would send it again. It goes back once the write is over, as a criterion's does.
+  const wasSaving = useRef(false);
+  useEffect(() => {
+    if (wasSaving.current && !saving) setTyped(shown);
+    wasSaving.current = saving;
+  }, [saving, shown]);
 
   /**
    * **Dragging shows the whole rebalance; letting go sends one weight.** A range input has no
@@ -243,6 +277,8 @@ function PillarRow({
    * previous render saw and deciding nothing moved.
    */
   function commit(asked: string) {
+    // The same release arriving again. Its answer ends the gesture, so this does not.
+    if (sent.current) return;
     setMoving(false);
     // A range input always holds a number, so this never fires -- it is here because
     // `weightFrom` is honest about text that might not be one, and silently sending `NaN`
@@ -254,6 +290,7 @@ function PillarRow({
       onDragEnd();
       return;
     }
+    sent.current = true;
     void onMove(weight.pillar, moved);
   }
 
@@ -314,8 +351,10 @@ function PillarRow({
           max={ceiling}
           step={PILLAR_SLIDER.step}
           value={typed}
+          disabled={saving}
           aria-label={`${pillarName(names, weight.pillar)} weight`}
           onChange={(event) => {
+            sent.current = false;
             setMoving(true);
             setTyped(event.target.value);
             // The panel is told as well as this row, because it is the only thing that knows
@@ -345,6 +384,7 @@ function PillarRow({
           }
           aria-label={`Lock ${pillarName(names, weight.pillar)}`}
           aria-pressed={weight.weight_locked}
+          disabled={saving}
           title={
             weight.weight_locked
               ? "Held where it is, and takes no share of a rebalance"

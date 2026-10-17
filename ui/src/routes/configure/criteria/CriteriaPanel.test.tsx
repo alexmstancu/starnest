@@ -258,3 +258,65 @@ describe("the criteria panel while a pointer is down", () => {
     expect(sent).toEqual([]);
   });
 });
+
+/**
+ * UI-05. **One gesture sends one weight.** A range input ends a gesture with up to four events
+ * -- pointer, mouse, key and blur -- and the row is disabled while its save runs, which stops
+ * the mouse but not the blur: focus leaving a disabled slider sent the weight a second time.
+ */
+describe("the criteria panel when a gesture ends more than once", () => {
+  /** Every criterion write, recorded and then answered by the stateful mock behind this one. */
+  function recordAnsweredWrites(): unknown[] {
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.patch(
+        `${BASE}/criteria-sets/:criteriaSetId/criteria/:attributeId`,
+        async ({ request }) => {
+          sent.push(await request.clone().json());
+        },
+      ),
+    );
+    return sent;
+  }
+
+  function slider(criterion: string): HTMLElement {
+    return screen.getByRole("slider", { name: `Weight for ${criterion}` });
+  }
+
+  it("sends one weight for one release, even when focus leaves while it is saved", async () => {
+    renderShell("/configure");
+    await openPillar("Economy");
+    await settled();
+    const sent = recordAnsweredWrites();
+
+    drag(COST_OF_LIVING, "35");
+    release(COST_OF_LIVING);
+    fireEvent.blur(slider(COST_OF_LIVING));
+    await waitFor(() => expect(readingOf(COST_OF_LIVING)).toBe("35.0%"));
+    await waitFor(() => expect(slider(COST_OF_LIVING)).toBeEnabled());
+    // A later gesture, so every request the first one could have made is in before this is read.
+    drag(COST_OF_LIVING, "40");
+    release(COST_OF_LIVING);
+
+    await waitFor(() => expect(sent.at(-1)).toEqual({ weight: 40 }));
+    expect(sent).toEqual([{ weight: 35 }, { weight: 40 }]);
+  });
+
+  it("sends once for a gesture made with the keys, however focus then leaves", async () => {
+    renderShell("/configure");
+    await openPillar("Economy");
+    await settled();
+    const sent = recordAnsweredWrites();
+
+    drag(COST_OF_LIVING, "45");
+    fireEvent.keyUp(slider(COST_OF_LIVING), { key: "ArrowLeft" });
+    fireEvent.blur(slider(COST_OF_LIVING));
+    await waitFor(() => expect(readingOf(COST_OF_LIVING)).toBe("45.0%"));
+    await waitFor(() => expect(slider(COST_OF_LIVING)).toBeEnabled());
+    drag(COST_OF_LIVING, "40");
+    release(COST_OF_LIVING);
+
+    await waitFor(() => expect(sent.at(-1)).toEqual({ weight: 40 }));
+    expect(sent).toEqual([{ weight: 45 }, { weight: 40 }]);
+  });
+});

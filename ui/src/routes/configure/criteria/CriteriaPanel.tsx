@@ -142,6 +142,7 @@ export function CriteriaPanel({
               previewed={previewFor(criterion.attribute)}
               attribute={catalog?.get(criterion.attribute)}
               ceiling={ceiling}
+              held={editor.busy}
               savingWeight={editor.savingAttribute === criterion.attribute}
               savingRule={editor.savingRuleFor === criterion.attribute}
               onDrag={(asked) =>
@@ -208,6 +209,7 @@ function CriterionRow({
   previewed,
   attribute,
   ceiling,
+  held,
   savingWeight,
   savingRule,
   onDrag,
@@ -226,6 +228,11 @@ function CriterionRow({
   /** The catalog's entry, or undefined while the catalog is still in flight. */
   attribute?: CatalogAttribute;
   ceiling: number;
+  /**
+   * A write to the set is in flight, this row's or another's, so nothing on the row may start
+   * one (UI-04): two rebalances in flight can answer in either order.
+   */
+  held: boolean;
   /**
    * **Two flags, because two things revert** (P82). The slider goes back to the stored weight
    * when a weight save ends, and the rule fields go back to the stored rule when a *rule*
@@ -258,6 +265,10 @@ function CriterionRow({
   // so a readout taken from the slider would print 29.0 for a weight that is 29.17 -- the
   // screen contradicting the figure it was given.
   const [moving, setMoving] = useState(false);
+  // **This gesture's weight has gone** (UI-05). A gesture ends with up to four events, and a
+  // disabled slider still hears the blur: each one used to send the weight again. Cleared by
+  // the next movement, which is the next gesture. A ref, because the four can arrive in one tick.
+  const sent = useRef(false);
   // Closed by default: forty-one criteria with their scales open at once is a screen nobody
   // can read. Local state, because which row is open is this component's own business and
   // nothing outside it needs to know.
@@ -295,6 +306,8 @@ function CriterionRow({
    * previous render saw.
    */
   function commit(asked: string) {
+    // The same release arriving again. Its answer ends the gesture, so this does not.
+    if (sent.current) return;
     setMoving(false);
     // A range input always holds a number, so this never fires -- it is here because
     // `weightFrom` is honest about text that might not be one, and silently sending `NaN`
@@ -306,6 +319,7 @@ function CriterionRow({
       onDragEnd();
       return;
     }
+    sent.current = true;
     onSave(criterion.attribute, moved);
   }
 
@@ -349,9 +363,10 @@ function CriterionRow({
             max={ceiling}
             step={CRITERION_SLIDER.step}
             value={typed}
-            disabled={savingWeight || savingRule}
+            disabled={held}
             aria-label={`Weight for ${title}`}
             onChange={(event) => {
+              sent.current = false;
               setMoving(true);
               setTyped(event.target.value);
               // The panel is told as well as this row, because it is the only thing that knows
@@ -382,7 +397,7 @@ function CriterionRow({
             }
             aria-label={`Lock the weight for ${title}`}
             aria-pressed={locked}
-            disabled={savingWeight || savingRule}
+            disabled={held}
             title={
               locked
                 ? "Held where it is, and takes no share of a rebalance"
@@ -450,6 +465,7 @@ function CriterionRow({
           attribute={criterion.attribute}
           title={title}
           saving={savingRule}
+          held={held}
         />
       )}
     </div>
