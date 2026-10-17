@@ -76,6 +76,24 @@ export function fetchRuns(
   return getJson("/data-acquisition-runs", { limit }, options);
 }
 
+/** How many runs one request asks for. The server's own ceiling is higher than this. */
+const A_PAGE_OF_RUNS = 100;
+
+/**
+ * Every run there has been, newest first, following the pages until there are none left.
+ *
+ * **All of them, not the newest ten.** Acquire's history, the diff's two choices and "Spent this
+ * month" each read this list as every run, so a month with an eleventh run spent more than the
+ * screen said (UI-17).
+ */
+export function fetchEveryRun(
+  options?: RequestOptions,
+): Promise<{ items: Run[]; total: number }> {
+  return everyPage(A_PAGE_OF_RUNS, (page) =>
+    getJson("/data-acquisition-runs", page, options),
+  );
+}
+
 export function fetchCriteriaSet(
   criteriaSetId: string,
   options?: RequestOptions,
@@ -264,15 +282,20 @@ export type ExternalScore = components["schemas"]["ExternalScore"];
  * **Not only the active one.** The drill-down's job is to show that nothing was discarded: the
  * figure being scored, the ones it beat, and any that were rejected, each with its source and
  * both its dates.
+ *
+ * **Every page of them.** It asked for one page of 500 under a heading that says "Every stored
+ * value", so a candidate past five hundred figures silently lost the rest (UI-16).
  */
 export function fetchValues(
   candidate: string,
   options?: RequestOptions,
 ): Promise<{ items: StoredValue[]; total: number }> {
-  return getJson(
-    "/values",
-    { candidate, include_superseded: true, limit: 500 },
-    options,
+  return everyPage(A_PAGE_OF_VALUES, (page) =>
+    getJson(
+      "/values",
+      { candidate, include_superseded: true, ...page },
+      options,
+    ),
   );
 }
 
@@ -303,30 +326,47 @@ const A_PAGE_OF_VALUES = 500;
  * acquisition diff compared a truncated page against a full one and reported the difference as
  * though it were the run's (P89). `total` exists to say when there is more; it has to be read.
  */
-export async function fetchValuesFromRun(
+export function fetchValuesFromRun(
   run: number,
   options?: RequestOptions,
 ): Promise<{ items: StoredValue[]; total: number }> {
-  const collected: StoredValue[] = [];
+  return everyPage(A_PAGE_OF_VALUES, (page) =>
+    getJson(
+      "/values",
+      { data_acquisition_run: run, include_superseded: true, ...page },
+      options,
+    ),
+  );
+}
+
+/**
+ * Every row of a paged list, following the pages until there are none left.
+ *
+ * - **Stops on a short page as well as on the count.** A server that reported a `total` larger
+ *   than it will serve would otherwise spin here for ever.
+ * - **Keeps one copy of each row.** A row written while the pages are read moves every later
+ *   row down by one, so the next page starts with the row the last one ended on.
+ * - **All or nothing.** A page that fails rejects the whole read: a list that says "every"
+ *   while holding part of it is worse than an error, which at least says so.
+ */
+async function everyPage<Row extends { id: number }>(
+  pageSize: number,
+  readPage: (page: {
+    limit: number;
+    offset: number;
+  }) => Promise<{ items: Row[]; total: number }>,
+): Promise<{ items: Row[]; total: number }> {
+  const rows = new Map<number, Row>();
+  let offset = 0;
   let total = 0;
   for (;;) {
-    const page: { items: StoredValue[]; total: number } = await getJson(
-      "/values",
-      {
-        data_acquisition_run: run,
-        include_superseded: true,
-        limit: A_PAGE_OF_VALUES,
-        offset: collected.length,
-      },
-      options,
-    );
-    collected.push(...page.items);
+    const page = await readPage({ limit: pageSize, offset });
+    for (const row of page.items) if (!rows.has(row.id)) rows.set(row.id, row);
+    offset += page.items.length;
     total = page.total;
-    // **Stops on a short page as well as on the count.** A server that reported a `total`
-    // larger than it will serve would otherwise spin here for ever.
-    if (page.items.length < A_PAGE_OF_VALUES || collected.length >= total) break;
+    if (page.items.length < pageSize || offset >= total) break;
   }
-  return { items: collected, total };
+  return { items: [...rows.values()], total };
 }
 
 export function fetchValuesForAttribute(

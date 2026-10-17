@@ -546,11 +546,14 @@ export const handlers = [
   ),
 
   http.get(`${BASE}/data-acquisition-runs`, ({ request }) => {
-    const limit = Number(
-      new URL(request.url).searchParams.get("limit") ?? RUNS.length,
-    );
+    // **Paged as the server pages, offset and all.** A reader that follows the pages was
+    // served the first page again at every offset, so the mock disagreed with the server
+    // about exactly the caller that pages.
+    const query = new URL(request.url).searchParams;
+    const offset = Number(query.get("offset") ?? 0);
+    const limit = Number(query.get("limit") ?? RUNS.length);
     return HttpResponse.json({
-      items: RUNS.slice(0, limit),
+      items: RUNS.slice(offset, offset + limit),
       total: RUNS.length,
     });
   }),

@@ -774,6 +774,61 @@ describe("the drill-down", () => {
       screen.getByText(/no outside index has been stored/i),
     ).toBeInTheDocument();
   });
+
+  /**
+   * UI-16. The panel asked for one page of 500 and kept it. Five hundred copies of one figure
+   * fold into a single row, so the figure stored 501st was simply not there.
+   */
+  it("shows a figure stored after the first five hundred", async () => {
+    const copies = Array.from({ length: 500 }, (_, at) => ({
+      id: 5000 + at,
+      candidate: "country.portugal",
+      attribute: "country.cost_of_living_index",
+      value_type: "Quantity",
+      payload: { magnitude: 92.1, unit: "index_eu27_100" },
+      data_source: "eurostat",
+      reference_period: { start: "2025-01-01", end: "2025-12-31" },
+      retrieval_date: "2026-09-11T08:00:00Z",
+      confidence_level: "high",
+      is_active: at === 499,
+      citations: [],
+    }));
+    const theFiveHundredAndFirst = {
+      ...copies[0]!,
+      id: 6000,
+      attribute: "country.total_tax_rate_effective",
+      value_type: "Ratio",
+      payload: { value: 41.5, basis: "labour_cost" },
+      is_active: true,
+    };
+    const stored = [...copies, theFiveHundredAndFirst];
+    mockServer.use(
+      http.get("/v1/values", ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        const offset = Number(query.get("offset") ?? 0);
+        const limit = Number(query.get("limit") ?? stored.length);
+        return HttpResponse.json({
+          items: stored.slice(offset, offset + limit),
+          total: stored.length,
+        });
+      }),
+    );
+    renderShell("/rank");
+
+    await userEvent.click(
+      within(await rankingRow("Portugal")).getByRole("button", { name: "Portugal" }),
+    );
+
+    const table = await screen.findByRole("table", {
+      name: /every stored value/i,
+    });
+    expect(
+      within(table).getByRole("row", { name: /total effective tax rate/i }),
+    ).toHaveTextContent("41.5% of Labour cost");
+    expect(
+      within(table).getByRole("row", { name: /cost of living index/i }),
+    ).toHaveTextContent("unchanged across 500 acquisitions");
+  });
 });
 
 describe("what a stored figure looks like, whatever its type", () => {

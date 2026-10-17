@@ -15,6 +15,8 @@ import {
   STARTED_RUN_DETAIL,
   STORED_VALUES,
 } from "../../mocks/fixtures";
+import type { Run } from "../../api/endpoints";
+import { formatMoney } from "../../format/display";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 import { useRunScreen } from "./useRunScreen";
@@ -385,6 +387,74 @@ describe("the run history", () => {
     await userEvent.click(within(row).getByRole("button", { name: "7" }));
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();
+  });
+
+  /**
+   * UI-17. Twelve runs of one euro each, all this month: the history asked for the newest ten,
+   * so the eleventh and twelfth were missing from the list, the diff and the month's spend.
+   */
+  function twelveRunsThisMonth(): void {
+    const now = new Date();
+    const runs: Run[] = Array.from({ length: 12 }, (_, index) => {
+      const id = 12 - index;
+      // The first of this month plus `id` minutes, so every run is this month whatever the
+      // clock says, and the newest is listed first, as the server lists them.
+      const started = new Date(now.getFullYear(), now.getMonth(), 1, 0, id);
+      return {
+        id,
+        run_status: "completed",
+        triggered_by: "user",
+        started_at: started.toISOString(),
+        finished_at: started.toISOString(),
+        llm_call_count: 1,
+        cost_eur: 1,
+      };
+    });
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        const offset = Number(query.get("offset") ?? 0);
+        const limit = Number(query.get("limit") ?? runs.length);
+        return HttpResponse.json({
+          items: runs.slice(offset, offset + limit),
+          total: runs.length,
+        });
+      }),
+    );
+  }
+
+  it("lists every acquisition, not only the newest ten", async () => {
+    twelveRunsThisMonth();
+    renderShell("/acquire");
+
+    expect(
+      await screen.findByRole("rowheader", { name: "12" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "1" })).toBeInTheDocument();
+  });
+
+  it("adds every run this month into Spent this month", async () => {
+    twelveRunsThisMonth();
+    renderShell("/acquire");
+
+    const spent = await screen.findByText("Spent this month");
+    expect(spent.parentElement).toHaveTextContent(formatMoney(12, "EUR"));
+  });
+
+  it("offers an older run in the diff dropdowns", async () => {
+    twelveRunsThisMonth();
+    renderShell("/acquire");
+
+    const panel = within(
+      await screen.findByRole("region", {
+        name: /what changed between two acquisitions/i,
+      }),
+    );
+    expect(
+      within(
+        panel.getByRole("combobox", { name: /earlier acquisition/i }),
+      ).getByRole("option", { name: /^acquisition 1 —/i }),
+    ).toBeInTheDocument();
   });
 });
 

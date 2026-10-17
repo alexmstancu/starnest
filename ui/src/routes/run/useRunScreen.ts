@@ -16,8 +16,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  fetchEveryRun,
   fetchRun,
-  fetchRuns,
   fetchSettings,
   planRun,
   startRun,
@@ -110,8 +110,10 @@ export function useRunScreen(): RunScreenState {
   // end no longer clears the label of one still going (NEW-10).
   const going = useRef<{ what: RunAct }[]>([]);
 
+  // Every run, not the newest ten: the history, the diff's choices and the month's spend all
+  // read this list as every run there has been (UI-17).
   const history = useResource(
-    useCallback((signal: AbortSignal) => fetchRuns(10, { signal }), []),
+    useCallback((signal: AbortSignal) => fetchEveryRun({ signal }), []),
   );
 
   const act = useCallback(
