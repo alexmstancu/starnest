@@ -17,10 +17,12 @@ from starnest.data import (
     ConfidenceLevel,
     MatchResult,
     MatchRule,
+    MatchRuleResult,
     QuantityParameters,
     RatioParameters,
     ValueType,
 )
+from starnest.data_acquisition import research_gates
 from starnest.data_sources.llm import (
     LlmEmployersAdapter,
     LlmFallbackAdapter,
@@ -384,3 +386,69 @@ class TestResearchingAGate:
 
         assert found.match_result is MatchResult.UNKNOWN
         assert found.cost_eur > Decimal(0)
+
+    async def test_an_answer_with_no_text_still_reports_what_it_billed(self) -> None:
+        """BE-17. The client prices an empty answer and raises with the bill attached (P71);
+        the researcher dropped it, so the pass metered a billed call as free."""
+        found = await LlmGateResearcher(
+            a_model(an_answer("", input_tokens=1_000_000, output_tokens=0))
+        ).research(rule=self.a_gate(), candidate=PORTUGAL, citizenships=[])
+
+        assert found.match_result is MatchResult.UNKNOWN
+        assert (found.cost_eur, found.calls) == (Decimal("1.01"), 1)
+
+    async def test_a_model_that_cannot_be_reached_bills_nothing(self) -> None:
+        """The control: a call that never reached the provider cost nothing, and the bill
+        carried through must not invent one."""
+        found = await LlmGateResearcher(a_model(RuntimeError("connection refused"))).research(
+            rule=self.a_gate(), candidate=PORTUGAL, citizenships=[]
+        )
+
+        assert (found.cost_eur, found.calls) == (Decimal(0), 0)
+
+    async def test_a_pass_of_billed_empty_answers_halts_at_the_cap(self) -> None:
+        """BE-17, where it costs money: metered as free, four empty answers ran past a 1.50 cap
+        and the pass reported 0.00 spent. Metered as billed, it stops after the call that
+        crossed the cap."""
+        outcome = await research_gates(
+            researcher=LlmGateResearcher(
+                a_model(*[an_answer("", input_tokens=1_000_000, output_tokens=0)] * 4)
+            ),
+            rules=[self.a_gate(), self.another_gate()],
+            candidates=[PORTUGAL, SPAIN],
+            citizenships=[],
+            results=Proposals(),
+            spend_cap_eur=Decimal("1.50"),
+        )
+
+        assert outcome.halted_on_spend_cap is True
+        assert (outcome.calls, outcome.cost_eur) == (2, Decimal("2.02"))
+        assert outcome.proposals == ()
+
+    async def test_a_billed_empty_answer_is_refused_with_the_reason_it_was_empty(self) -> None:
+        """NEW-16. The refusal said only that nothing was cited, which is true of every failed
+        call and explains none of them."""
+        outcome = await research_gates(
+            researcher=LlmGateResearcher(a_model(an_answer(""))),
+            rules=[self.a_gate()],
+            candidates=[PORTUGAL],
+            citizenships=[],
+            results=Proposals(),
+            spend_cap_eur=Decimal(5),
+        )
+
+        (refusal,) = outcome.refusals
+        assert "the model answered with no text at all" in refusal
+
+    def another_gate(self) -> MatchRule:
+        return MatchRule(id="ch_work_permit_quota", name="Swiss work permit quota", level="country")
+
+
+class Proposals:
+    """Somewhere for a research pass to put what it proposes. Nothing here proposes anything."""
+
+    def __init__(self) -> None:
+        self.recorded: list[MatchRuleResult] = []
+
+    async def record(self, result: MatchRuleResult) -> None:
+        self.recorded.append(result)

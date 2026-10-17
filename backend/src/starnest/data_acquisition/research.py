@@ -145,9 +145,13 @@ async def research_gates(
         if not found.citations:
             # The whole point of asking is the pages. An answer with none is an opinion, and an
             # opinion about a visa route is worth less than an open question.
+            #
+            # **The researcher's own reason goes with it** (NEW-16). A model that could not be
+            # reached, or billed for an empty answer, cited nothing as well, and a refusal saying
+            # only that hid the one thing a person could act on.
             refusals.append(
                 f"{rule.id} for {candidate.id}: the model cited nothing, so there is "
-                "nothing to confirm"
+                f"nothing to confirm ({found.reason or 'no reason given'})"
             )
             continue
 

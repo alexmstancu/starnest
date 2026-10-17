@@ -74,10 +74,16 @@ class LlmGateResearcher(GateResearcher):
                 )
             )
         except LlmUnavailableError as unavailable:
+            # **What the attempt billed is kept** (P71, BE-17), as the other two uses keep it. A
+            # provider that answered with nothing usable still charged for the answer, and a pass
+            # metering that as free runs past its cap exactly when a model is misbehaving. Zero
+            # when the call never reached the provider, which the exception states.
             return Researched(
                 match_result=MatchResult.UNKNOWN,
                 reason=f"the model could not be reached: {unavailable}",
                 citations=(),
+                cost_eur=unavailable.cost_eur,
+                calls=unavailable.calls,
             )
 
         try:

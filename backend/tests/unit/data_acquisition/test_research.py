@@ -125,6 +125,33 @@ class TestWhatItStores:
         assert store.recorded == []
         assert "cited nothing" in outcome.refusals[0]
 
+    async def test_a_refusal_carries_the_researchers_own_reason(self) -> None:
+        """NEW-16. A model that could not be reached cited nothing too, and a refusal saying
+        only that hid the reason a person would act on -- here, to try again later."""
+        outcome, _ = await researching(
+            StubResearcher(
+                Researched(
+                    match_result=MatchResult.UNKNOWN,
+                    reason="the model could not be reached: 429 rate limited",
+                    citations=(),
+                )
+            )
+        )
+
+        (refusal,) = outcome.refusals
+        assert refusal.startswith("uk_skilled_worker for country.portugal: ")
+        assert "the model could not be reached: 429 rate limited" in refusal
+
+    async def test_a_refusal_with_no_reason_from_the_researcher_says_so(self) -> None:
+        """A model may cite nothing and explain nothing; the refusal then says that no reason
+        was given, rather than trailing off where the reason would be."""
+        outcome, _ = await researching(
+            StubResearcher(Researched(match_result=MatchResult.UNKNOWN, reason="", citations=()))
+        )
+
+        (refusal,) = outcome.refusals
+        assert "no reason given" in refusal
+
     async def test_every_gate_and_candidate_in_scope_is_asked(self) -> None:
         researcher = StubResearcher(a_finding(), a_finding())
 
