@@ -439,6 +439,16 @@ class TestMatchingThresholds:
     def test_a_criterion_with_no_threshold_rules_nothing_out(self) -> None:
         assert thresholds_that_rule_out([a_criterion()], [a_value(payload=Count(count=90))]) == ()
 
+    def test_an_unscored_criterion_is_judged_like_any_other(self) -> None:
+        """Whether a criterion is scored decides its weight, never its line (BE-01)."""
+        excluded = a_criterion(
+            is_scored=False, matching_threshold=RangeThreshold(max_value=Decimal(50))
+        )
+
+        out = thresholds_that_rule_out([excluded], [a_value(payload=Count(count=90))])
+
+        assert [str(reason.criterion) for reason in out] == [str(excluded.attribute)]
+
     def test_a_threshold_with_no_figure_for_the_attribute_rules_nothing_out(self) -> None:
         """You cannot cross a line you have no figure for -- that is insufficient coverage, not a
         non-match (`reqs.md` 5.3)."""

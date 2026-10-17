@@ -17,16 +17,24 @@ from decimal import Decimal
 
 import pytest
 
-from starnest.criteria import Goal, NormalisationMethod, RangeThreshold, ScaleAnchor
+from starnest.criteria import (
+    Goal,
+    LabelThreshold,
+    NormalisationMethod,
+    RangeThreshold,
+    ScaleAnchor,
+)
 from starnest.data import (
     CompoundRule,
     CompoundRuleCondition,
     CompoundRuleShape,
     ConfidenceLevel,
     Count,
+    LabelSet,
     MatchResult,
     MatchRuleResult,
     RuleOutcome,
+    ValueType,
 )
 from starnest.evaluation import MatchStatus, RankingError, rank_candidates
 
@@ -46,6 +54,9 @@ from .builders import (
 
 HOUSING = "housing"
 A_THIRD_ATTRIBUTE = "country.life_satisfaction"
+CLIMATE = "climate"
+CLIMATE_ZONE = "country.climate_zone"
+CITY_RENT = "city.house_price_to_income_ratio"
 
 
 def rank(criteria, values, *, scale: int = A_SMALL_SCALE, min_coverage=None, **rules):
@@ -451,6 +462,130 @@ class TestAMatchingThresholdRulesOut:
         assert portugal.score is not None, "a ruled-out candidate keeps its score"
         assert any(reason.criterion is not None for reason in portugal.non_match_reasons)
         assert found["country.spain"].match_status is MatchStatus.MATCHING
+
+    def test_an_excluded_criterions_threshold_still_rules_the_candidate_out(self) -> None:
+        """**Excluding a criterion takes it out of the weights, never out of matching** (BE-01).
+
+        Rent scores nothing here, and its line still decides who is in: Portugal's 90 is past
+        the maximum of 50, Spain's 10 is not. What it may not do is move a number -- Portugal
+        keeps its score, its coverage stays whole and rent stays out of the breakdown."""
+        criteria = an_excluded_rent_judged_by(RangeThreshold(max_value=Decimal(50)))
+
+        found = by_candidate(
+            rank(criteria, every_attribute_answered(AN_ATTRIBUTE, RENT, portugal=90, spain=10))
+        )
+
+        portugal = found["country.portugal"]
+        assert portugal.match_status is MatchStatus.NOT_MATCHING
+        assert [str(reason.criterion) for reason in portugal.non_match_reasons] == [RENT]
+        assert portugal.score is not None, "a ruled-out candidate keeps its score"
+        assert portugal.coverage == Decimal(100)
+        assert RENT not in {str(row.attribute) for row in portugal.attribute_scores}
+        assert found["country.spain"].match_status is MatchStatus.MATCHING
+
+    def test_a_label_threshold_on_a_label_set_criterion_rules_out(self) -> None:
+        """A `LabelSet` criterion can never be scored (`0122`), so its threshold is the one
+        thing it does -- and while only scored criteria were judged, it did nothing at all."""
+        climate = a_criterion(
+            attribute=CLIMATE_ZONE,
+            value_type=ValueType.LABEL_SET,
+            pillar=CLIMATE,
+            is_scored=False,
+            normalisation_method=NormalisationMethod.AS_IS,
+            matching_threshold=LabelThreshold(label="BWh", containment_rule="must_not_contain"),
+        )
+        criteria = a_set(
+            [a_criterion(), climate],
+            [a_pillar_weight(weight="50"), a_pillar_weight(pillar=CLIMATE, weight="50")],
+        )
+        values = values_for(portugal=90, spain=10)
+        for candidate, zones in (("country.portugal", ("Csa", "Csb")), ("country.spain", ("BWh",))):
+            values[candidate] = (*values[candidate], a_climate(candidate, zones))
+
+        found = by_candidate(rank(criteria, values))
+
+        spain = found["country.spain"]
+        assert spain.match_status is MatchStatus.NOT_MATCHING
+        assert [str(reason.criterion) for reason in spain.non_match_reasons] == [CLIMATE_ZONE]
+        assert found["country.portugal"].match_status is MatchStatus.MATCHING
+
+    def test_an_excluded_criterion_with_no_figure_rules_nothing_out(self) -> None:
+        """You cannot cross a line you have no figure for, scored or not (`reqs.md` 5.3)."""
+        criteria = an_excluded_rent_judged_by(RangeThreshold(max_value=Decimal(50)))
+
+        found = by_candidate(rank(criteria, values_for(portugal=90, spain=10)))
+
+        assert {candidate: result.match_status for candidate, result in found.items()} == {
+            "country.portugal": MatchStatus.MATCHING,
+            "country.spain": MatchStatus.MATCHING,
+        }
+
+    def test_an_excluded_threshold_moves_no_weight_and_no_coverage(self) -> None:
+        """Judging the line is all an excluded criterion does: every number is the one the same
+        set produces with no line at all."""
+        values = every_attribute_answered(AN_ATTRIBUTE, RENT, portugal=90, spain=10)
+
+        judged = by_candidate(
+            rank(an_excluded_rent_judged_by(RangeThreshold(max_value=Decimal(50))), values)
+        )
+        unjudged = by_candidate(rank(an_excluded_rent_judged_by(None), values))
+
+        for candidate, result in judged.items():
+            plain = unjudged[candidate]
+            assert result.score == plain.score
+            assert result.coverage == plain.coverage
+            assert result.coverage_by_confidence == plain.coverage_by_confidence
+            assert result.attribute_scores == plain.attribute_scores
+            assert result.pillar_scores == plain.pillar_scores
+
+    def test_a_criterion_at_another_level_is_not_judged(self) -> None:
+        """A country ranking judges the country's criteria, even with a city figure to hand."""
+        city_rent = a_criterion(
+            attribute=CITY_RENT,
+            pillar=HOUSING,
+            is_scored=False,
+            matching_threshold=RangeThreshold(max_value=Decimal(50)),
+        )
+        criteria = a_set(
+            [a_criterion(), city_rent],
+            [a_pillar_weight(), a_pillar_weight(pillar=HOUSING, level="city")],
+        )
+        values = values_for(portugal=90, spain=10)
+        values["country.portugal"] = (
+            *values["country.portugal"],
+            a_value(candidate="city.portugal.lisbon", attribute=CITY_RENT, payload=Count(count=90)),
+        )
+
+        found = by_candidate(rank(criteria, values))
+
+        assert found["country.portugal"].match_status is MatchStatus.MATCHING
+        assert found["country.portugal"].non_match_reasons == ()
+
+
+def an_excluded_rent_judged_by(threshold: RangeThreshold | None):
+    """Two pillars, the second holding only rent -- excluded from scoring, with `threshold`."""
+    return a_set(
+        [
+            a_criterion(weight=Decimal("100")),
+            a_criterion(
+                attribute=RENT,
+                pillar=HOUSING,
+                weight=Decimal("100"),
+                is_scored=False,
+                matching_threshold=threshold,
+            ),
+        ],
+        [a_pillar_weight(weight="50"), a_pillar_weight(pillar=HOUSING, weight="50")],
+    )
+
+
+def a_climate(candidate: str, zones: tuple[str, ...]):
+    return a_value(
+        candidate=candidate,
+        attribute=CLIMATE_ZONE,
+        value_type=ValueType.LABEL_SET,
+        payload=LabelSet(labels=zones),
+    )
 
 
 class TestEligibilityIsDecidedRegardlessOfCoverage:

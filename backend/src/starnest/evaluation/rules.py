@@ -195,7 +195,7 @@ def gates_that_rule_out(
 
 
 def thresholds_that_rule_out(
-    scored_criteria: Sequence[Criterion],
+    criteria: Sequence[Criterion],
     values: Sequence[Value],
 ) -> tuple[NonMatch, ...]:
     """The criteria whose matching threshold this candidate's value crosses (`reqs.md` 5.2).
@@ -205,13 +205,17 @@ def thresholds_that_rule_out(
     been set** -- there is no TBD number to leave undecided as a compound rule has -- so it fires
     as soon as a value crosses it.
 
+    **Every criterion is judged, scored or not.** Excluding a criterion takes it out of the
+    weights and the coverage, never out of matching (BE-01), so `criteria` is the whole level
+    rather than what scores.
+
     **A missing or unplaceable figure never rules out.** You cannot cross a line you have no
     figure for; that is insufficient coverage, not a non-match (`reqs.md` 5.3). Only a value that
     is present and on the wrong side of the line produces a `NonMatch`, named by its criterion.
     """
     by_attribute = {str(value.attribute): value for value in values}
     reasons = []
-    for criterion in scored_criteria:
+    for criterion in criteria:
         threshold = criterion.matching_threshold
         if threshold is None:
             continue

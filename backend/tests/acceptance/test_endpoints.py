@@ -521,6 +521,65 @@ class TestTheThresholdThatDecidesAMatch:
 
         assert refused.status_code == 422
 
+    async def test_a_threshold_on_an_excluded_criterion_rules_a_candidate_out(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str, database_url: str
+    ) -> None:
+        """Excluding a criterion takes it out of the score, never out of matching (BE-01).
+        Greece's overburden is past the line and rules it out; Portugal's is not."""
+        await _judge_overburden_without_scoring_it(api, a_scratch_criteria_set, database_url)
+
+        body = (
+            await api.get(
+                "/v1/rankings", params={"criteria_set": a_scratch_criteria_set, "level": COUNTRY}
+            )
+        ).json()
+
+        by_candidate = {c["candidate"]: c for c in body["candidates"]}
+        greece, portugal = by_candidate["country.greece"], by_candidate["country.portugal"]
+        assert greece["match_status"] == "not_matching"
+        assert [reason["criterion"] for reason in greece["non_match_reasons"]] == [OVERBURDEN]
+        assert greece["score"] is not None, "a candidate that does not match keeps its score"
+        assert portugal["match_status"] == "matching"
+
+    async def test_a_saved_ranking_keeps_that_reason(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str, database_url: str
+    ) -> None:
+        """The snapshot freezes the excluded criterion too, so the reason naming it is kept."""
+        await _judge_overburden_without_scoring_it(api, a_scratch_criteria_set, database_url)
+
+        kept = await api.post(
+            "/v1/evaluations", json={"criteria_set": a_scratch_criteria_set, "level": COUNTRY}
+        )
+
+        assert kept.status_code == 201
+        stored = (await api.get(f"/v1/evaluations/{kept.json()['id']}")).json()
+        greece = next(c for c in stored["candidates"] if c["candidate"] == "country.greece")
+        assert greece["match_status"] == "not_matching"
+        assert [reason["criterion"] for reason in greece["non_match_reasons"]] == [OVERBURDEN]
+
+
+async def _judge_overburden_without_scoring_it(
+    api: httpx.AsyncClient, criteria_set: str, database_url: str
+) -> None:
+    """Exclude overburden from scoring with a line at 50%, and store a figure for every criterion:
+    Portugal's overburden well inside the line, Greece's well past it."""
+    response = await api.patch(
+        f"/v1/criteria-sets/{criteria_set}/criteria/{OVERBURDEN}",
+        json={"is_scored": False, "matching_threshold": {"max_value": 50}},
+    )
+    assert response.status_code == 200
+    criteria = await _learn_the_catalog(api, criteria_set)
+    async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+        await pool.open(wait=True)
+        await _set_the_score_scale(pool, 100)
+        await PostgresValueStore(pool).append(
+            [
+                _a_figure(candidate, criterion["attribute"], figure)
+                for candidate, figure in (("country.portugal", GOOD), ("country.greece", POOR))
+                for criterion in criteria
+            ]
+        )
+
 
 class TestTheFlagsOnACriterion:
     """`is_scored` and `weight_locked`, which the endpoint declared and dropped on the floor.

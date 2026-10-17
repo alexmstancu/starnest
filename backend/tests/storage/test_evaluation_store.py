@@ -41,6 +41,7 @@ PORTUGAL = "country.portugal"
 GREECE = "country.greece"
 TAX = "country.total_tax_rate_effective"
 SATISFACTION = "country.life_satisfaction"
+CLIMATE_ZONE = "country.climate_zone"
 COMPUTED_AT = datetime(2026, 9, 12, 9, 0, tzinfo=UTC)
 
 
@@ -359,6 +360,36 @@ class TestTheRulesTravelWithTheResult:
         assert [str(w.compound_rule) for w in read.warnings] == ["cheap_but_taxed"]
         assert [str(r.match_rule) for r in read.non_match_reasons] == ["uk_skilled_worker"]
         assert read.non_match_reasons[0].reason_detail == "no sponsor"
+
+    async def test_a_reason_naming_an_excluded_criterion_is_kept(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """An excluded criterion's threshold still rules out (BE-01), so a saved reason may name
+        a criterion that scored nothing. The snapshot freezes every criterion at the level, scored
+        or not, which is what lets `non_match_reason_names_a_frozen_criterion` accept it."""
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        excluded = next(c for c in criteria.criteria if str(c.attribute) == CLIMATE_ZONE)
+        assert excluded.is_scored is False, "the shipped climate zone is the excluded criterion"
+        reason = "country.climate_zone carries 'BWh', which you ruled out"
+        ruled_out = a_result(
+            PORTUGAL,
+            71,
+            None,
+            match_status=MatchStatus.NOT_MATCHING,
+            non_match_reasons=(NonMatch(criterion=CLIMATE_ZONE, reason_detail=reason),),
+        )
+
+        saved = await PostgresEvaluationStore(pool).save(
+            criteria=criteria,
+            level=COUNTRY,
+            results=[ruled_out],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+        )
+
+        (read,) = await PostgresEvaluationStore(pool).read_results(saved.id)
+        assert [str(r.criterion) for r in read.non_match_reasons] == [CLIMATE_ZONE]
+        assert read.non_match_reasons[0].reason_detail == reason
 
 
 class TestSweepingWhatATestSaved:

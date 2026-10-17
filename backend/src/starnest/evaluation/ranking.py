@@ -9,11 +9,13 @@ candidate has a score. That is why this takes every candidate at once rather tha
 in a loop -- a per-candidate signature would make the relative method impossible to implement
 and the mistake would only surface as scores that looked plausible.
 
-**What is deliberately not here** (`docs/mine2e.md` M1): matching thresholds and the match rules
-that produce `not_matching`; the three compound-rule shapes; `parent_not_matching`; and writing
-any of it down. Every candidate that can be scored is therefore `matching`, and the first
-ranking shows `matching` beside `insufficient_data` and nothing else. `not_matching` arrives
-with the thresholds, which `reqs.md` 7.4 leaves TBD on purpose.
+**Who matches is decided here as well, over more than what is scored.** A candidate does not
+match when an enforced gate is answered `not_matching`, when an applied compound rule rules it
+out, or when a figure crosses a criterion's matching threshold (`reqs.md` 5.2). Thresholds are
+judged on every criterion at the level, scored or not: excluding a criterion takes it out of
+the weights and the coverage, never out of matching (BE-01). **What is not here**:
+`parent_not_matching`, which belongs to the city level, and writing any of it down, which is the
+evaluation store's.
 """
 
 from collections.abc import Mapping, Sequence
@@ -183,6 +185,18 @@ def _refuse_a_pillar_nothing_scores_into(criteria: CriteriaSet, level: str) -> N
         )
 
 
+def _criteria_at(criteria: CriteriaSet, level: str) -> tuple[Criterion, ...]:
+    """Every criterion at this level, scored or not -- what is judged for a match.
+
+    Excluding a criterion takes it out of the weights and the coverage, never out of matching:
+    its threshold still rules a candidate out (BE-01). A `LabelSet` criterion can never be
+    scored (`0122`), so judging only the scored ones left its threshold doing nothing at all.
+    """
+    return tuple(
+        criterion for criterion in criteria.criteria if criterion.attribute.level_id == level
+    )
+
+
 def _criteria_to_score(criteria: CriteriaSet, level: str) -> tuple[Criterion, ...]:
     """The criteria that count, at this level.
 
@@ -196,9 +210,7 @@ def _criteria_to_score(criteria: CriteriaSet, level: str) -> tuple[Criterion, ..
     # company the moment either question grew a second condition. Identical today -- the
     # property is a one-line alias -- which is exactly when a drift like this is free to fix.
     return tuple(
-        criterion
-        for criterion in criteria.criteria
-        if criterion.attribute.level_id == level and criterion.counts_toward_coverage
+        criterion for criterion in _criteria_at(criteria, level) if criterion.counts_toward_coverage
     )
 
 
@@ -441,7 +453,7 @@ def _result_for(
     refusals = (
         gates_that_rule_out(enforced=criteria.enforced_match_rules, answers=gate_answers)
         + ruled_out_by_a_rule
-        + thresholds_that_rule_out(scored_criteria, candidate_values)
+        + thresholds_that_rule_out(_criteria_at(criteria, level), candidate_values)
     )
     refusal = _why_it_cannot_be_scored(
         scored_criteria, answered, found=found, coverage=coverage, min_coverage=min_coverage
