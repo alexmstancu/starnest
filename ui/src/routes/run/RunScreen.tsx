@@ -11,7 +11,7 @@ import { useSelection } from "../../shell/SelectionContext";
 import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
 import { describeGaps, describeScope } from "./databaseHolds";
-import { describeFailures } from "./failureGroups";
+import { describeFailures, failedItemCount } from "./failureGroups";
 import { ItemGroups } from "./ItemGroups";
 import { OpenToHandEntry } from "./OpenToHandEntry";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";
@@ -108,10 +108,14 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
         </header>
 
         <div className="gap-cards">
+          {/* **Counted from the failures it lists, not from `items_failed`**, which leaves out
+              every item some other source answered -- so the card read "0 failed" over its own
+              list whenever OECD failed beside the estimate, or a figure failed its credible
+              range (BE-08). The run's own counts stay in the panel above. */}
           {run.current && (run.current.failures ?? []).length > 0 && (
             <GapCard
               tone="danger"
-              count={formatCount(run.current.progress?.items_failed)}
+              count={formatCount(failedItemCount(run.current.failures))}
               what="failed"
               lead="A source broke. Worth retrying."
             >
@@ -155,7 +159,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                   )
                 }
               >
-                {`Retry ${formatCount(run.current.progress?.items_failed)} failed`}
+                {`Retry ${formatCount(failedItemCount(run.current.failures))} failed`}
               </button>
               <GapEstimate kind="failed" run={run} />
             </GapCard>

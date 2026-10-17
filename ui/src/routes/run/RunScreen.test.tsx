@@ -212,6 +212,116 @@ describe("running and retrying", () => {
   });
 });
 
+/**
+ * BE-08 follow-up. **The failed card counts the list it shows.** The run's `items_failed` counts
+ * only the pairs no source answered, so a failure on an item another source did answer -- OECD's,
+ * where the estimate stepped in -- or a figure stored and then rejected by its credible range,
+ * which still counts as completed, read "0 failed" over a "Retry 0 failed" button, beside a list
+ * of failures that was not empty.
+ */
+describe("how many the failed card counts", () => {
+  function aRunThatReports(failures: unknown, itemsFailed: number): void {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          unanswered: [],
+          progress: {
+            items_total: 96,
+            items_completed: 96 - itemsFailed,
+            items_failed: itemsFailed,
+            items_unanswered: 0,
+          },
+          failures,
+        }),
+      ),
+    );
+    renderShell("/acquire");
+  }
+
+  const TAX_RATE = "country.total_tax_rate_effective";
+
+  it("counts a figure rejected by its credible range, though the run counts the item complete", async () => {
+    aRunThatReports(
+      [
+        {
+          data_source: "eurostat",
+          candidate: "country.malta",
+          attribute: "country.homicide_rate",
+          error_message: "41.2 is outside the credible range 0 to 30",
+        },
+      ],
+      0,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: /^1\s*failed$/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Retry 1 failed" }),
+    ).toBeInTheDocument();
+  });
+
+  it("counts an item two sources failed on once", async () => {
+    // OECD was challenged, and the estimate's figure was stored and then rejected: two
+    // failures, one item, and the run counts that item complete.
+    aRunThatReports(
+      [
+        {
+          data_source: "oecd",
+          candidate: "country.liechtenstein",
+          attribute: TAX_RATE,
+          error_message: "the oecd's cloudflare front answered with a browser challenge",
+        },
+        {
+          data_source: "eurostat_estimate",
+          candidate: "country.liechtenstein",
+          attribute: TAX_RATE,
+          error_message: "71.0 is outside the credible range 10 to 60",
+        },
+      ],
+      0,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: /^1\s*failed$/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Retry 1 failed" }),
+    ).toBeInTheDocument();
+  });
+
+  it("counts an OECD failure on an item the estimate answered", async () => {
+    aRunThatReports(
+      [
+        {
+          data_source: "oecd",
+          candidate: "country.romania",
+          attribute: TAX_RATE,
+          error_message: "the oecd's cloudflare front answered with a browser challenge",
+        },
+      ],
+      0,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: /^1\s*failed$/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Retry 1 failed" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no failed card for a run that reports no failures", async () => {
+    aRunThatReports(undefined, 0);
+
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    expect(screen.queryByRole("heading", { name: /failed$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /failed$/ })).toBeNull();
+  });
+});
+
 describe("what nobody answered", () => {
   /**
    * `reqs.md` Q217. An item every source answered without having a figure for that candidate.

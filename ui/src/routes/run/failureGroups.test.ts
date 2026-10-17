@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { describeFailures, failureGroups } from "./failureGroups";
+import {
+  describeFailures,
+  failedItemCount,
+  failureGroups,
+} from "./failureGroups";
 
 /**
  * The shape the Acquire screen's failure list is built from.
@@ -366,5 +370,79 @@ describe("the line above the failure list", () => {
     ]);
 
     expect(summary).toContain("3 failures from 2 sources, 2 distinct messages.");
+  });
+});
+
+/**
+ * BE-08 follow-up. **How many items failed, counted from the list itself.** A run's
+ * `items_failed` leaves out every item some other source answered, so it cannot head a card
+ * whose list -- and whose retry -- includes them.
+ */
+describe("how many items failed", () => {
+  const OECD = {
+    data_source: "oecd",
+    candidate: "country.liechtenstein",
+    attribute: "country.total_tax_rate_effective",
+    error_message: "the oecd's cloudflare front answered with a browser challenge",
+  };
+
+  it("counts nothing when nothing failed", () => {
+    expect(failedItemCount([])).toBe(0);
+  });
+
+  /** `failures` is optional in the contract, so an absent array is not an empty one. */
+  it("counts nothing when the run reports no failures at all", () => {
+    expect(failedItemCount(null)).toBe(0);
+    expect(failedItemCount(undefined)).toBe(0);
+  });
+
+  it("counts an item two sources failed on once", () => {
+    expect(
+      failedItemCount([
+        OECD,
+        { ...OECD, data_source: "eurostat_estimate", error_message: "out of range" },
+      ]),
+    ).toBe(1);
+  });
+
+  it("counts two attributes of one candidate as two items", () => {
+    expect(
+      failedItemCount([OECD, { ...OECD, attribute: "country.child_benefit" }]),
+    ).toBe(2);
+  });
+
+  it("counts one attribute of two candidates as two items", () => {
+    expect(
+      failedItemCount([OECD, { ...OECD, candidate: "country.switzerland" }]),
+    ).toBe(2);
+  });
+
+  /** "a" with "bc" and "ab" with "c" read the same run together, and are two different items. */
+  it("never mistakes two items whose names run together for one", () => {
+    expect(
+      failedItemCount([
+        { ...OECD, candidate: "a", attribute: "bc" },
+        { ...OECD, candidate: "ab", attribute: "c" },
+      ]),
+    ).toBe(2);
+  });
+
+  /** Shown as an unnamed item rather than dropped, so it is counted rather than dropped. */
+  it("counts a failure the run described incompletely", () => {
+    expect(failedItemCount([{ data_source: "oecd" }])).toBe(1);
+    expect(
+      failedItemCount([
+        { data_source: "oecd", candidate: "country.malta" },
+        { data_source: "oecd", attribute: "country.homicide_rate" },
+      ]),
+    ).toBe(2);
+  });
+
+  it("counts every item behind one repeated message, not the message once", () => {
+    expect(
+      failedItemCount(
+        creditFailures(["country.austria", "country.belgium", "country.croatia"]),
+      ),
+    ).toBe(3);
   });
 });

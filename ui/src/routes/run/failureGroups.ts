@@ -113,6 +113,27 @@ export function describeFailures(
   );
 }
 
+/**
+ * How many items failed: the distinct candidate and attribute pairs in the failures, whichever
+ * sources failed on them.
+ *
+ * **Counted from the list, never from the run's `items_failed`.** That count is the pairs no
+ * source answered, so it leaves out a failure on an item another source did answer -- OECD's,
+ * where the estimate stepped in -- and a figure stored and then rejected by its credible range,
+ * whose pair still counts as completed. A card listing those failures and offering to retry
+ * them read "0 failed" over "Retry 0 failed".
+ */
+export function failedItemCount(
+  failures: readonly RunFailure[] | null | undefined,
+): number {
+  // A separator neither id can contain, so "a" with "bc" never meets "ab" with "c".
+  return new Set(
+    (failures ?? []).map(
+      (failure) => `${failure.candidate ?? ""}\u0000${failure.attribute ?? ""}`,
+    ),
+  ).size;
+}
+
 function plural(count: number, noun: string): string {
   return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
 }
