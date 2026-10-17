@@ -44,6 +44,9 @@ export function useManualEntry(
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<StoredValue | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
+  // A ref, not `saving`: state takes effect at the next render, so two calls before it would
+  // both read "not saving" and store the figure twice (NEW-29).
+  const inFlight = useRef(false);
   // **Bumped by every keystroke** (UI-06). A figure that is stored clears the form only if
   // nothing was typed while it was in flight: what is on screen is the next figure then.
   const revision = useRef(0);
@@ -58,12 +61,14 @@ export function useManualEntry(
   }, []);
 
   const submit = useCallback(() => {
+    if (inFlight.current) return;
     // The retrieval date is *now* for a hand-typed figure: it is when this application learned
     // the value. What period the figure describes is a different question, and the form asks it.
     const built = buildManualValue(attribute, kind, draft, new Date().toISOString());
     setProblems(built.problems);
     if (built.body === null) return;
 
+    inFlight.current = true;
     setSaving(true);
     setFailure(null);
     const sentAt = revision.current;
@@ -78,7 +83,11 @@ export function useManualEntry(
         onStored?.();
       })
       .catch((error: unknown) => setFailure(error))
-      .finally(() => setSaving(false));
+      .finally(() => {
+        // Released however it ended, so a figure that failed can be sent again.
+        inFlight.current = false;
+        setSaving(false);
+      });
   }, [attribute, kind, draft, onStored]);
 
   return { draft, change, problems, saving, saved, failure, submit };
