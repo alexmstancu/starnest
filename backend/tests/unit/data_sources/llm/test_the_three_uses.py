@@ -493,7 +493,8 @@ class TestResearchingAGate:
 
     async def test_a_billed_empty_answer_is_refused_with_the_reason_it_was_empty(self) -> None:
         """NEW-16. The refusal said only that nothing was cited, which is true of every failed
-        call and explains none of them."""
+        call and explains none of them. NEW-28: the reason it then showed said the model could
+        not be reached, beside the model's own answer."""
         outcome = await research_gates(
             researcher=LlmGateResearcher(a_model(an_answer(""))),
             rules=[self.a_gate()],
@@ -505,6 +506,38 @@ class TestResearchingAGate:
 
         (refusal,) = outcome.refusals
         assert "the model answered with no text at all" in refusal
+        assert "could not be reached" not in refusal
+
+    async def test_a_billed_empty_answer_is_not_called_unreachable(self) -> None:
+        """NEW-28. The client raises one error for a model it never reached and for one that
+        answered with no text and billed for it (P71), and the researcher called both
+        unreachable."""
+        found = await LlmGateResearcher(
+            a_model(an_answer("", input_tokens=1_000_000, output_tokens=0))
+        ).research(rule=self.a_gate(), candidate=PORTUGAL, citizenships=[])
+
+        assert "could not be reached" not in found.reason
+        assert "the model answered with no text at all" in found.reason
+
+    async def test_an_empty_answer_that_priced_at_nothing_still_reached_the_model(self) -> None:
+        """The edge: a reply reporting no usage prices at zero and is still a reply. The call
+        it counted is what says the provider was reached, whatever it cost."""
+        found = await LlmGateResearcher(
+            a_model(an_answer("", pages=(), input_tokens=0, output_tokens=0))
+        ).research(rule=self.a_gate(), candidate=PORTUGAL, citizenships=[])
+
+        assert (found.cost_eur, found.calls) == (Decimal(0), 1)
+        assert "could not be reached" not in found.reason
+
+    async def test_a_model_that_was_never_reached_is_still_called_unreachable(self) -> None:
+        """The control: a call that failed before the provider answered is exactly what "could
+        not be reached" means, and it keeps the words."""
+        found = await LlmGateResearcher(a_model(RuntimeError("connection refused"))).research(
+            rule=self.a_gate(), candidate=PORTUGAL, citizenships=[]
+        )
+
+        assert "the model could not be reached" in found.reason
+        assert "connection refused" in found.reason
 
     def another_gate(self) -> MatchRule:
         return MatchRule(id="ch_work_permit_quota", name="Swiss work permit quota", level="country")

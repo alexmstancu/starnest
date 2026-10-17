@@ -61,9 +61,10 @@ class LlmGateResearcher(GateResearcher):
     ) -> Researched:
         """What the official pages say, or an honest `unknown`.
 
-        A failure to reach the model, an unreadable reply and an answer that cited nothing all
-        come back as `unknown` with the reason: the caller stores nothing it cannot show sources
-        for, and a gate nobody could research is exactly what `unknown` means (`reqs.md` 3.7).
+        A failure to reach the model, an answer with nothing usable in it, an unreadable reply
+        and an answer that cited nothing all come back as `unknown` with the reason: the caller
+        stores nothing it cannot show sources for, and a gate nobody could research is exactly
+        what `unknown` means (`reqs.md` 3.7).
         """
         try:
             answered = await self._llm.ask(
@@ -80,7 +81,7 @@ class LlmGateResearcher(GateResearcher):
             # when the call never reached the provider, which the exception states.
             return Researched(
                 match_result=MatchResult.UNKNOWN,
-                reason=f"the model could not be reached: {unavailable}",
+                reason=_why_nothing_came_back(unavailable),
                 citations=(),
                 cost_eur=unavailable.cost_eur,
                 calls=unavailable.calls,
@@ -104,6 +105,19 @@ class LlmGateResearcher(GateResearcher):
             cost_eur=answered.cost_eur,
             calls=answered.calls,
         )
+
+
+def _why_nothing_came_back(unavailable: LlmUnavailableError) -> str:
+    """The reason, worded for what happened: never reached, or reached and of no use.
+
+    **A call the provider billed reached the model** (NEW-28). The client raises one error for
+    a connection that failed and for an answer with no text in it, and only the second carries
+    a call and its price -- calling both unreachable put "could not be reached" beside the
+    model's own answer in the refusal a person reads (NEW-16).
+    """
+    if unavailable.calls > 0 or unavailable.cost_eur > 0:
+        return f"the model's answer could not be used: {unavailable}"
+    return f"the model could not be reached: {unavailable}"
 
 
 def _the_answer_in(reply: dict[str, object]) -> MatchResult:
