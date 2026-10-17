@@ -505,3 +505,140 @@ describe("the period a proposal holds for", () => {
     expect(row).toHaveTextContent("No period recorded");
   });
 });
+
+/**
+ * UI-14. **A pass's spend belongs to that pass.** The last outcome was set only on success and
+ * never cleared, so a pass that then failed sat under the previous pass's spend -- on the one
+ * screen that spends money.
+ */
+describe("a research pass after an earlier one", () => {
+  const EARLIER = "The last pass made 2 calls and spent €0.04.";
+  const NOT_KNOWN = /failed before it said what it spent/i;
+
+  async function researchOnceThenAgain(failure: () => Response): Promise<void> {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
+    await screen.findByText(/64 gate answers to research/i);
+    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+    await screen.findByText(EARLIER);
+
+    mockServer.use(http.post(`${BASE}/match-rule-research`, failure));
+    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+  }
+
+  it("shows no earlier pass's spend once a later pass fails on the server", async () => {
+    await researchOnceThenAgain(() =>
+      HttpResponse.json(
+        { code: "internal_error", message: "the model provider failed" },
+        { status: 500 },
+      ),
+    );
+
+    expect(
+      await screen.findByText("the model provider failed"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(EARLIER)).toBeNull();
+    // A server failure may come after calls that were billed.
+    expect(screen.getByRole("status")).toHaveTextContent(NOT_KNOWN);
+  });
+
+  it("shows no earlier pass's spend once a later pass is refused", async () => {
+    await researchOnceThenAgain(() =>
+      HttpResponse.json(
+        {
+          code: "spend_cap_not_set",
+          message: "this would spend money and no spend cap is set",
+        },
+        { status: 409 },
+      ),
+    );
+
+    expect(
+      await screen.findByText(/no spend cap is set/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(EARLIER)).toBeNull();
+    // Refused before the model was asked anything, so nothing about its spend is in doubt.
+    expect(screen.queryByText(NOT_KNOWN)).toBeNull();
+  });
+
+  it("says the spend is not known when the backend could not be reached", async () => {
+    await researchOnceThenAgain(() => HttpResponse.error());
+
+    expect(
+      await screen.findByText(/backend did not answer/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(EARLIER)).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent(NOT_KNOWN);
+  });
+
+  it("says the spend is not known when the proxy timed the pass out", async () => {
+    await researchOnceThenAgain(
+      () =>
+        new HttpResponse("<html>504 Gateway Time-out</html>", {
+          status: 504,
+          headers: { "Content-Type": "text/html" },
+        }),
+    );
+
+    expect(
+      await screen.findByText(/in a shape this interface does not recognise/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(EARLIER)).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent(NOT_KNOWN);
+  });
+
+  it("drops an earlier pass's refusals when a later pass fails", async () => {
+    const user = userEvent.setup();
+    mockServer.use(
+      http.post(`${BASE}/match-rule-research`, () =>
+        HttpResponse.json({
+          proposals: [],
+          refusals: ["country.eu_free_movement for country.malta: the model cited nothing"],
+          cost_eur: 0.02,
+          calls: 1,
+          halted_on_spend_cap: false,
+        }),
+      ),
+    );
+    renderShell("/configure");
+    await settled();
+    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
+    await screen.findByText(/64 gate answers to research/i);
+    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+    await screen.findByText(/the model cited nothing/i);
+
+    mockServer.use(
+      http.post(`${BASE}/match-rule-research`, () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "the model provider failed" },
+          { status: 500 },
+        ),
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+
+    expect(
+      await screen.findByText("the model provider failed"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/the model cited nothing/i)).toBeNull();
+  });
+
+  it("replaces the first pass's spend with the second's", async () => {
+    await researchOnceThenAgain(() =>
+      HttpResponse.json({
+        proposals: [],
+        refusals: [],
+        cost_eur: 0.02,
+        calls: 1,
+        halted_on_spend_cap: false,
+      }),
+    );
+
+    expect(
+      await screen.findByText("The last pass made 1 call and spent €0.02."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(EARLIER)).toBeNull();
+  });
+});

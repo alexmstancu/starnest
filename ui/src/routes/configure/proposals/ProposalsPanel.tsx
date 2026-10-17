@@ -2,7 +2,11 @@ import { useState } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
 import { formatMoney } from "../../../format/display";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
-import { describePass, describePeriod } from "./proposalReading";
+import {
+  SPEND_NOT_KNOWN,
+  describePass,
+  describePeriod,
+} from "./proposalReading";
 import { useProposals } from "./useProposals";
 
 /**
@@ -109,6 +113,12 @@ export function ProposalsPanel({ levelId }: { levelId: string }) {
             {describePass(proposals.lastPass)}
           </p>
         ))}
+      {/* A warning, not a note: money may have been spent that nothing on screen accounts for. */}
+      {proposals.spendNotKnown && (
+        <div className="notice notice--warning" role="status">
+          <p className="notice__message">{SPEND_NOT_KNOWN}</p>
+        </div>
+      )}
 
       {proposals.refusals.length > 0 && (
         <>

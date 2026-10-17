@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { describePass, describePeriod } from "./proposalReading";
+import { ApiError, CLIENT_ERROR_CODES } from "../../../api/ApiError";
+import { describePass, describePeriod, spendIsKnown } from "./proposalReading";
 
 /**
  * UI-13. **A proposal can hold for a period**, and confirming one used to drop it: the row never
@@ -47,5 +48,69 @@ describe("what the last research pass did", () => {
     expect(
       describePass({ cost_eur: 0, calls: 0, halted_on_spend_cap: false }),
     ).toBe("The last pass made no calls and spent nothing.");
+  });
+});
+
+/**
+ * UI-14. **A failed pass may still have been billed.** A refusal in the contract's shape is the
+ * server saying no before asking the model anything; any other failure can come after calls
+ * that were paid for, and the response that would have said how many never arrived.
+ */
+describe("whether a failed research pass is known to have spent nothing", () => {
+  it("knows a refusal in the contract's shape spent nothing", () => {
+    expect(
+      spendIsKnown(
+        new ApiError({ code: "spend_cap_not_set", message: "no cap", status: 409 }),
+      ),
+    ).toBe(true);
+    expect(
+      spendIsKnown(
+        new ApiError({ code: "invalid_request", message: "bad", status: 422 }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not know what a server failure spent", () => {
+    expect(
+      spendIsKnown(
+        new ApiError({ code: "internal_error", message: "boom", status: 500 }),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not know what a pass the proxy timed out spent", () => {
+    expect(
+      spendIsKnown(
+        new ApiError({
+          code: CLIENT_ERROR_CODES.malformedError,
+          message: "HTML",
+          status: 504,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not know what a pass spent when the backend could not be reached", () => {
+    expect(
+      spendIsKnown(
+        new ApiError({ code: CLIENT_ERROR_CODES.unreachable, message: "gone" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not trust a 4xx whose body is not the contract's shape", () => {
+    expect(
+      spendIsKnown(
+        new ApiError({
+          code: CLIENT_ERROR_CODES.malformedError,
+          message: "HTML",
+          status: 413,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not know what anything else spent", () => {
+    expect(spendIsKnown(new Error("unexpected"))).toBe(false);
   });
 });

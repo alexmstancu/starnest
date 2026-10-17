@@ -8,7 +8,7 @@ import {
   type ResearchPlan,
 } from "../../../api/endpoints";
 import { useResource, type Resource } from "../../../api/useResource";
-import type { ResearchPass } from "./proposalReading";
+import { spendIsKnown, type ResearchPass } from "./proposalReading";
 
 /**
  * The gate answers a model proposed, and what confirming one does.
@@ -40,9 +40,11 @@ export interface Proposals {
   refusals: string[];
   /**
    * What the last pass actually spent and whether the spend cap stopped it (UI-14). Null until
-   * a pass has answered.
+   * a pass has answered, and again from the moment another starts: a spend belongs to its pass.
    */
   lastPass: ResearchPass | null;
+  /** The last pass failed in a way that may have come after billed calls, and said nothing. */
+  spendNotKnown: boolean;
   estimate: (level: string) => void;
   research: (level: string, acceptUncapped: boolean) => void;
   confirm: (proposal: MatchRuleResult) => void;
@@ -61,6 +63,7 @@ export function useProposals(): Proposals {
   const [failure, setFailure] = useState<unknown>(null);
   const [refusals, setRefusals] = useState<string[]>([]);
   const [lastPass, setLastPass] = useState<ResearchPass | null>(null);
+  const [spendNotKnown, setSpendNotKnown] = useState(false);
 
   const answers = resource.data?.items ?? [];
 
@@ -83,15 +86,24 @@ export function useProposals(): Proposals {
     failure,
     refusals,
     lastPass,
+    spendNotKnown,
     estimate: (level) =>
       attempt("estimating", async () => {
         setPlan(await planMatchRuleResearch({ level }));
       }),
-    research: (level, acceptUncapped) =>
+    research: (level, acceptUncapped) => {
+      // **The last pass's outcome goes as this one starts** (UI-14): left standing, it read as
+      // this pass's spend beside this pass's failure, on the one screen that spends money.
+      setLastPass(null);
+      setRefusals([]);
+      setSpendNotKnown(false);
       attempt("researching", async () => {
         const outcome = await researchMatchRules({
           level,
           accept_uncapped_spend: acceptUncapped,
+        }).catch((failure: unknown) => {
+          setSpendNotKnown(!spendIsKnown(failure));
+          throw failure;
         });
         setRefusals(outcome.refusals ?? []);
         // The spend is a fact and the estimate a ceiling; a pass the cap stopped half way
@@ -104,7 +116,8 @@ export function useProposals(): Proposals {
         // Re-read rather than appending the response: a pass can replace an earlier proposal
         // for the same gate, and the stored answers are the only account of what now stands.
         reload();
-      }),
+      });
+    },
     confirm: (proposal) =>
       attempt("confirming", async () => {
         await putMatchRuleResult(proposal.match_rule, proposal.candidate, {
