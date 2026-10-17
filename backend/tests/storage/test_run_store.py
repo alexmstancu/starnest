@@ -9,6 +9,7 @@ scope, the value rows and the failure rows. A fake store could only return whate
 told to; what is under test is the derivation itself.
 """
 
+from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -402,6 +403,91 @@ class TestWhichSourceGotItThere:
         }
 
         assert reach == {"oecd": (0, 1)}
+
+
+EARLIER = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)
+LATER = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
+
+
+def retrieved_at(figure: Value, moment: datetime) -> Value:
+    """The same figure, fetched at a moment the test chooses rather than whenever it ran."""
+    return figure.model_copy(update={"retrieval_date": moment})
+
+
+async def portugal_last_answered(pool: AsyncConnectionPool) -> Mapping[tuple[str, str], datetime]:
+    return await PostgresRunStore(pool).last_retrieved(
+        level="country", candidates=["country.portugal"], attributes=[OVERBURDEN]
+    )
+
+
+class TestWhenAPairWasLastAnswered:
+    """What the planner reads to judge what is still fresh (`reqs.md` 3.10, BE-25).
+
+    **Only an accepted figure is an answer** (NEW-27). A rejected one is recorded as a failure
+    so that a retry reaches it (BE-08); counted here as well, it made its own pair look fresh,
+    and with a refetch age set neither a plan nor a scoped run would ask about it again.
+    """
+
+    async def test_a_pair_whose_only_figure_was_rejected_has_no_last_retrieval(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """Absent, as a pair never asked about is: nothing usable came back, so the planner has
+        a gap to fill rather than a figure to keep."""
+        rejected, _ = a_rejected_figure(a_run, "country.portugal")
+        await PostgresValueStore(pool).append([retrieved_at(rejected, LATER)])
+
+        assert await portugal_last_answered(pool) == {}
+
+    async def test_a_newer_rejected_figure_leaves_the_accepted_figure_s_date(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """The refused figure is the one worth asking for again, so the pair is as fresh as
+        its last usable answer and no fresher."""
+        rejected, _ = a_rejected_figure(a_run, "country.portugal")
+        await PostgresValueStore(pool).append(
+            [
+                retrieved_at(a_figure(a_run, "country.portugal", OVERBURDEN), EARLIER),
+                retrieved_at(rejected, LATER),
+            ]
+        )
+
+        assert await portugal_last_answered(pool) == {("country.portugal", OVERBURDEN): EARLIER}
+
+    async def test_an_accepted_figure_fetched_after_a_rejection_is_the_last_answer(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """The control: the rejected figure is set aside, not the pair it belongs to."""
+        rejected, _ = a_rejected_figure(a_run, "country.portugal")
+        await PostgresValueStore(pool).append(
+            [
+                retrieved_at(rejected, EARLIER),
+                retrieved_at(a_figure(a_run, "country.portugal", OVERBURDEN), LATER),
+            ]
+        )
+
+        assert await portugal_last_answered(pool) == {("country.portugal", OVERBURDEN): LATER}
+
+    async def test_an_accepted_figure_that_lost_the_active_value_comparison_still_counts(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """The control on the other side. Losing to a higher-ranked source is not being
+        refused: OECD answered, and reading `active_value` instead would ask it again for a
+        figure it gave a moment ago."""
+        values = PostgresValueStore(pool)
+        await values.append(
+            [
+                retrieved_at(
+                    a_figure(a_run, "country.portugal", OVERBURDEN, source="eurostat"), EARLIER
+                ),
+                retrieved_at(a_figure(a_run, "country.portugal", OVERBURDEN, source="oecd"), LATER),
+            ]
+        )
+
+        (active,) = await values.read_active_values(
+            candidates=["country.portugal"], attributes=[OVERBURDEN]
+        )
+        assert active.data_source == "eurostat", "the premise: OECD's newer figure lost"
+        assert await portugal_last_answered(pool) == {("country.portugal", OVERBURDEN): LATER}
 
 
 class TestSweepingRunsAProcessAbandoned:

@@ -185,11 +185,11 @@ class RunStore(ABC):
         candidates: Sequence[str] = (),
         attributes: Sequence[str] = (),
     ) -> Mapping[tuple[str, str], datetime]:
-        """When each candidate and attribute was last **asked about**, whatever came of it.
+        """When each candidate and attribute last got an **accepted** answer.
 
-        Read from every stored value rather than the active ones: the question is when we last
-        asked, and a figure that lost the active-value comparison or failed validation was
-        still an answer somebody paid for.
+        A figure that failed validation is not counted: a run records it as a failure so that
+        it is asked about again, and counting it here would make its own pair look fresh
+        (BE-08, NEW-27). A figure that lost the active-value comparison was accepted, so it is.
         """
 
     @abstractmethod

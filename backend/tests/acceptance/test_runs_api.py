@@ -7,6 +7,7 @@ where Eurostat lives, against captured responses.
 """
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import httpx
 import pytest
@@ -694,6 +695,83 @@ def _a_source_misreading(candidate_id: str) -> SourceAdapter:
             )
 
     return MisreadingSource()
+
+
+@asynccontextmanager
+async def _a_refetch_age(api: httpx.AsyncClient, *, days: int) -> AsyncIterator[None]:
+    """The refetch age set for as long as a test needs it, and the settings put back after."""
+    before = (await api.get("/v1/settings")).json()
+    changed = await api.put("/v1/settings", json={**before, "refetch_older_than_days": days})
+    assert changed.status_code == 200, changed.text
+    try:
+        yield
+    finally:
+        await api.put("/v1/settings", json=before)
+
+
+@asynccontextmanager
+async def _an_api_after_a_rejection(database_url: str) -> AsyncIterator[httpx.AsyncClient]:
+    """A 30-day refetch age, and a run that rejected Portugal's figure and accepted every other
+    country's -- so the one thing setting Portugal's pair apart from Spain's is the rejection."""
+    async with (
+        an_api(database_url, (_a_source_misreading(THE_STUB_DECLINES_FOR),)) as api,
+        _a_refetch_age(api, days=30),
+    ):
+        first = await api.post(
+            "/v1/data-acquisition-runs", json={"level": COUNTRY, "attributes": [TEMPERATURE]}
+        )
+        assert first.status_code == 202, first.text
+        yield api
+
+
+class TestARejectedFigureIsNotFresh:
+    """NEW-27. BE-08 records a rejected figure as a failure precisely so it can be asked about
+    again, and its retrieval date still made the pair look fresh: with a refetch age set, a plan
+    scoped to it counted nothing and the run was refused as `nothing_to_fetch`."""
+
+    async def test_a_plan_and_a_run_scoped_to_the_rejected_pair_ask_about_it_again(
+        self, database_url: str
+    ) -> None:
+        the_pair = {
+            "level": COUNTRY,
+            "candidates": [THE_STUB_DECLINES_FOR],
+            "attributes": [TEMPERATURE],
+        }
+        async with _an_api_after_a_rejection(database_url) as api:
+            planned = (await api.post("/v1/data-acquisition-runs/plan", json=the_pair)).json()
+            started = await api.post("/v1/data-acquisition-runs", json=the_pair)
+
+        assert (planned["items_total"], started.status_code) == (1, 202), started.text
+        assert planned["by_source"] == [{"data_source": "open_meteo", "items": 1}]
+        validate("planRun", planned)
+        validate("startRun", started.json(), status=202)
+
+    async def test_a_sweep_asks_about_the_attribute_again_for_every_candidate(
+        self, database_url: str
+    ) -> None:
+        """A run's scope is a rectangle (`freshness.py`): one pair that is not fresh keeps its
+        attribute in scope everywhere, which is what the household's next sweep meets."""
+        async with _an_api_after_a_rejection(database_url) as api:
+            planned = (
+                await api.post(
+                    "/v1/data-acquisition-runs/plan",
+                    json={"level": COUNTRY, "attributes": [TEMPERATURE]},
+                )
+            ).json()
+
+        assert planned["items_total"] == 32
+
+    async def test_a_pair_answered_in_the_same_run_is_still_fresh(self, database_url: str) -> None:
+        """The control: the refetch age still skips an accepted figure, so what makes
+        Portugal's pair worth asking about again is its rejection and nothing else."""
+        the_pair = {"level": COUNTRY, "candidates": ["country.spain"], "attributes": [TEMPERATURE]}
+        async with _an_api_after_a_rejection(database_url) as api:
+            planned = (await api.post("/v1/data-acquisition-runs/plan", json=the_pair)).json()
+            refused = await api.post("/v1/data-acquisition-runs", json=the_pair)
+
+        assert planned["items_total"] == 0
+        assert refused.status_code == 409
+        assert refused.json()["code"] == "nothing_to_fetch"
 
 
 class TestRetryingARun:

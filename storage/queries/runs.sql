@@ -252,20 +252,26 @@ WHERE  v.data_acquisition_run = :data_acquisition_run
 ORDER  BY v.candidate, v.attribute, v.breakdown_option NULLS FIRST, v.id;
 
 -- name: select_last_retrieval_dates(level, candidates, attributes)
--- When each candidate/attribute pair was last fetched, whatever came of it. The run planner
--- compares this against the attribute's max_age to decide what is worth fetching, which is what
--- keeps a re-run from paying for data that is still fresh.
+-- When each candidate/attribute pair last got an accepted answer. The run planner compares
+-- this against the refetch age to decide what is worth fetching, which is what keeps a re-run
+-- from paying for data that is still fresh.
 --
--- Read from `value` rather than from `active_value`: the question is when we last ASKED, and a
--- value that lost the active-value comparison or failed validation was still an answer we paid
--- for.
+-- **A rejected figure is not an answer, so it is not fresh** (BE-08, NEW-27). A run records a
+-- figure that fails validation as a failure precisely so that it is asked about again; counted
+-- here as well, it made its own pair look fresh, and a plan or a scoped run then skipped the
+-- one item the failure exists to bring back.
+--
+-- Read from `value` rather than from `active_value` all the same: a figure that lost the
+-- active-value comparison was accepted, and asking its source again for it would pay twice
+-- for one answer.
 SELECT v.candidate,
        v.attribute,
        max(v.retrieval_date)      AS last_retrieval_date,
        max(v.reference_period_end) AS last_reference_period_end
 FROM   value AS v
 JOIN   candidate AS c ON c.id = v.candidate
-WHERE  (:level::text IS NULL OR c.level = :level)
+WHERE  v.rejection_reason IS NULL
+  AND  (:level::text IS NULL OR c.level = :level)
   AND  (:candidates::text[] IS NULL OR v.candidate = ANY(:candidates))
   AND  (:attributes::text[] IS NULL OR v.attribute = ANY(:attributes))
 GROUP  BY v.candidate, v.attribute
