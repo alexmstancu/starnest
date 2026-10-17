@@ -17,87 +17,89 @@ The table preserves the original IDs, order, severity labels, and both independe
 
 **Fix status:** Checked at `c943761` (2026-10-14), after the builder's 12 remediation commits: **18 FIXED, 7 PARTIAL, 65 NOT_FIXED, 1 N/A** (BE-13, decided UNREAL). Commits claim 25 findings; 18 are fixed and 7 partly fixed. Of the 14 High findings, 8 are fixed, 3 partly fixed (UI-01, UI-03, BE-01), and 3 are untouched (BE-10, BE-17, BE-19). The method, the remaining gaps, and two risks introduced by the fixes are in [Fix status validation](#fix-status-validation).
 
+**Round 2 (2026-10-17):** the small-fix round of [copilot-remediation-plan.md](copilot-remediation-plan.md) fixed 37 more findings, each test-first, ending at `074d71b`. Five are closed without code and ST-08's remainder is closed, so the column now reads **56 FIXED, 4 PARTIAL, 25 NOT_FIXED, 5 CLOSED, 1 N/A**. BE-36's decision is now REAL: the household set its policy on 2026-10-12, and its stage 1 is planned for later. Commits per finding, and what is still open, are in [Round 2](#round-2-small-fixes-2026-10-17).
+
 | nr | finding_id | finding_summary | severity | gpt-6-astra | claude-opus-5 | action | decision | fix_status |
 |---:|---|---|---|---|---|---|---|---|
 | 1 | UI-01 | nginx's 60-second read timeout can interrupt synchronous paid gate research before its result and actual cost reach the browser. Continued work after disconnection was not runtime-verified. | High | REAL | REAL | no-op | REAL | PARTIAL |
 | 2 | UI-02 | Whole-bucket failed/unanswered retry buttons start a request without the estimate and confirmation used by selected-item retries. They also cannot convey explicit uncapped acceptance. | High | REAL | REAL | no-op | REAL | FIXED |
 | 3 | UI-03 | Browser tests replace global Greece gate answers without restoring the previous answer and provenance. A sanity test can also leave a changed spend cap after an intervening failure. | High | REAL | REAL | no-op | REAL | PARTIAL |
-| 4 | UI-04 | Unguarded asynchronous completions can merge old-set responses into a newly selected set or overwrite newer weights and run selections. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 5 | UI-05 | Multiple release/blur handlers can commit the same pillar-slider gesture before the server prop updates, creating duplicate rebalance requests. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 6 | UI-06 | Save completion replaces or clears the current draft even when the user entered newer edits while the request was pending. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 7 | UI-07 | Other source controls remain usable during a reorder, allowing interleaved priority writes. A mid-sequence failure leaves persisted partial changes without refreshing the displayed order. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 8 | UI-08 | Undo-history keys omit criteria-set identity, so consecutive edits to one attribute in different sets can collapse and undo into the wrong set. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 9 | UI-09 | Reversing only the edited weight cannot recover sibling proportions after they were reduced to zero, despite the UI presenting the operation as undo. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 10 | UI-10 | Nonblank invalid numeric settings can become NaN or infinity and serialize as null, clearing configuration rather than reporting invalid input. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 4 | UI-04 | Unguarded asynchronous completions can merge old-set responses into a newly selected set or overwrite newer weights and run selections. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 5 | UI-05 | Multiple release/blur handlers can commit the same pillar-slider gesture before the server prop updates, creating duplicate rebalance requests. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 6 | UI-06 | Save completion replaces or clears the current draft even when the user entered newer edits while the request was pending. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 7 | UI-07 | Other source controls remain usable during a reorder, allowing interleaved priority writes. A mid-sequence failure leaves persisted partial changes without refreshing the displayed order. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 8 | UI-08 | Undo-history keys omit criteria-set identity, so consecutive edits to one attribute in different sets can collapse and undo into the wrong set. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 9 | UI-09 | Reversing only the edited weight cannot recover sibling proportions after they were reduced to zero, despite the UI presenting the operation as undo. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 10 | UI-10 | Nonblank invalid numeric settings can become NaN or infinity and serialize as null, clearing configuration rather than reporting invalid input. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 11 | UI-11 | Relevant writes do not invalidate persistent sidebar resources, leaving household context, match counts, or the last-run summary stale. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 12 | UI-12 | Rule-effect explanations count unconfirmed proposals as exclusions and describe compound rules as affecting nobody even when warnings apply. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 13 | UI-13 | Confirmation omits a proposal's reference period and does not display it. The loss is latent while the current researcher supplies no periods. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 14 | UI-14 | The proposal screen discards actual research cost, call count, and cap-halt status, leaving partial completion and spending undisclosed. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 12 | UI-12 | Rule-effect explanations count unconfirmed proposals as exclusions and describe compound rules as affecting nobody even when warnings apply. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 13 | UI-13 | Confirmation omits a proposal's reference period and does not display it. The loss is latent while the current researcher supplies no periods. | Low | REAL | REAL | no-op | REAL | FIXED |
+| 14 | UI-14 | The proposal screen discards actual research cost, call count, and cap-halt status, leaving partial completion and spending undisclosed. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 15 | UI-15 | Alternative/rejected values display the selected value's score and contribution, while active descriptive or excluded values can be labeled Scored. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 16 | UI-16 | Candidate provenance fetches only one 500-value page while claiming to show every stored observation. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 17 | UI-17 | Only ten runs feed the claimed complete history and monthly-spend total, omitting older runs and their recorded costs. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 16 | UI-16 | Candidate provenance fetches only one 500-value page while claiming to show every stored observation. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 17 | UI-17 | Only ten runs feed the claimed complete history and monthly-spend total, omitting older runs and their recorded costs. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 18 | UI-18 | Score presentation assumes a 100-point maximum and can clamp valid larger pillar scores to 100 or mislabel live/frozen scales. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 19 | UI-19 | Raw focus-minus-comparator deltas are presented with comparator-minus-focus desirability semantics, reversing ahead/behind meaning for some goals. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 20 | UI-20 | External-score rows omit reference and retrieval dates, so users cannot distinguish edition age despite the provenance requirement. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 21 | UI-21 | Repeat folding ignores quotes and citations, hiding distinct evidence behind observations with equal numeric payloads. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 22 | UI-22 | Acquisition diff decides whether measurements changed by comparing rounded display strings rather than underlying payloads. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 19 | UI-19 | Raw focus-minus-comparator deltas are presented with comparator-minus-focus desirability semantics, reversing ahead/behind meaning for some goals. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 20 | UI-20 | External-score rows omit reference and retrieval dates, so users cannot distinguish edition age despite the provenance requirement. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 21 | UI-21 | Repeat folding ignores quotes and citations, hiding distinct evidence behind observations with equal numeric payloads. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 22 | UI-22 | Acquisition diff decides whether measurements changed by comparing rounded display strings rather than underlying payloads. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 23 | UI-23 | Browser-gate selectors expect obsolete attribute-ID labels and comparison markup that disagree with the current product. This is a test-suite defect, not proof of broken product behavior. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 24 | UI-24 | Acquire does not poll its displayed running/stopping report; it stays stale until manual Refresh despite the live-progress requirement. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 25 | UI-25 | Clearing comparison focus produces an empty string that leaves Compare enabled, but submission silently does nothing. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 25 | UI-25 | Clearing comparison focus produces an empty string that leaves Compare enabled, but submission silently does nothing. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 26 | UI-26 | Tabbing into a household-picker option starts a blur timer that closes the list and removes the focused option. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 27 | UI-27 | Candidate-roster read failures become empty required pickers without an actionable error or retry, blocking household/manual-entry workflows. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 28 | UI-28 | A successful empty criteria-set refresh is treated like loading and retains a deleted selection, reachable through overlapping or independent deletions. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 27 | UI-27 | Candidate-roster read failures become empty required pickers without an actionable error or retry, blocking household/manual-entry workflows. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 28 | UI-28 | A successful empty criteria-set refresh is treated like loading and retains a deleted selection, reachable through overlapping or independent deletions. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 29 | UI-29 | No UI workflow independently enters or overrides a gate answer; the exposed write only confirms a proposal unchanged. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 30 | UI-30 | External-score React keys omit reference-period end, allowing distinct same-start editions to collide. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 31 | UI-31 | Settings help says an unset comparator limit means unlimited comparison, although the backend refuses comparisons until it is set. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 30 | UI-30 | External-score React keys omit reference-period end, allowing distinct same-start editions to collide. | Low | REAL | REAL | no-op | REAL | FIXED |
+| 31 | UI-31 | Settings help says an unset comparator limit means unlimited comparison, although the backend refuses comparisons until it is set. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 32 | UI-32 | The UI treats source-priority membership as adapter capability and makes unsupported claims about whether acquisition can answer an attribute. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 33 | UI-33 | Multiple adapters sharing a publisher produce duplicate plan-row keys and indistinguishable counts in the Per source table. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 34 | BE-01 | Criterion matching thresholds are stored and served but never evaluated when deciding a candidate's match status. | High | REAL | REAL | no-op | REAL | PARTIAL |
+| 33 | UI-33 | Multiple adapters sharing a publisher produce duplicate plan-row keys and indistinguishable counts in the Per source table. | Low | REAL | REAL | no-op | REAL | FIXED |
+| 34 | BE-01 | Criterion matching thresholds are stored and served but never evaluated when deciding a candidate's match status. | High | REAL | REAL | no-op | REAL | FIXED |
 | 35 | BE-02 | Normalised criterion scores are rounded before weighting, which can change displayed totals and reverse rankings. | High | REAL | REAL | no-op | REAL | FIXED |
 | 36 | BE-03 | An insufficient-scoreability return precedes gate and compound-rule evaluation, suppressing definite non-matches and warnings. | High | REAL | REAL | no-op | REAL | FIXED |
 | 37 | BE-04 | Legal exclusions can leave zero scoring mass and cause an unmapped ranking error. An empty zero-weight pillar is also refused despite zero weight being a suggested remedy. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 38 | BE-05 | Criterion validation permits normalisation methods prohibited for the attribute's semantic value type, leading to arbitrary scores or unscoreable columns. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 39 | BE-06 | Quantity validation does not check the declared unit/dimension, allowing a magnitude in one unit to be interpreted in another. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 40 | BE-07 | Confidence derivation is disconnected from production reads, so stale observations can retain their original HIGH grade in confidence summaries. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 41 | BE-08 | Rejected returned measurements are stored without corresponding acquisition failures, preventing selective failed-item retry from reaching them. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 42 | BE-09 | WHO constructs observations without common attribute-explicit validation. The credible-range bypass is latent under the current catalog. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 43 | BE-10 | Retry wrappers do not forward the active cost meter, allowing absent or stale underlying meters to undermine cap enforcement or reject valid retries. | High | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 41 | BE-08 | Rejected returned measurements are stored without corresponding acquisition failures, preventing selective failed-item retry from reaching them. | Medium | REAL | REAL | no-op | REAL | FIXED |
+| 42 | BE-09 | WHO constructs observations without common attribute-explicit validation. The credible-range bypass is latent under the current catalog. | Low | REAL | REAL | no-op | REAL | FIXED |
+| 43 | BE-10 | Retry wrappers do not forward the active cost meter, allowing absent or stale underlying meters to undermine cap enforcement or reject valid retries. | High | REAL | REAL | no-op | REAL | FIXED |
 | 44 | BE-11 | Selective retry expands exact failed/unanswered pairs into broader candidate-attribute rectangles, allegedly re-fetching unrelated work. The models differ on whether the explicit retry contract permits this. | Medium | UNREAL | REAL | third-review | REAL | NOT_FIXED |
 | 45 | BE-12 | Retry awaits completion despite returning 202 and omits the in-flight guard used by ordinary start, enabling blocking or overlapping passes. | High | REAL | REAL | no-op | REAL | FIXED |
 | 46 | BE-13 | Unanswered retry reintroduces paid-source eligibility rather than preserving an initial free-sweep decision. Current cap refusal overlaps BE-14; unexpected billing requires a different registry. | Medium | UNREAL | REAL | third-review | UNREAL | N/A |
 | 47 | BE-14 | A free explicit scope can require a spend cap solely because an unrelated enabled paid adapter is registered. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 48 | BE-15 | Research, CLI acquisition, and stand-in consultation do not consistently honor disabled-source decisions, including paid gate research. | High | REAL | REAL | no-op | REAL | FIXED |
 | 49 | BE-16 | A legally configured zero cap is already exhausted at zero spend and halts an entirely free sweep after its first work. | Medium | REAL | REAL | no-op | REAL | FIXED |
-| 50 | BE-17 | Billed empty gate-research answers lose their cost and call count when converted to failed results, making the research cap ineffective on that path. | High | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 50 | BE-17 | Billed empty gate-research answers lose their cost and call count when converted to failed results, making the research cap ineffective on that path. | High | REAL | REAL | no-op | REAL | FIXED |
 | 51 | BE-18 | Negative configured prices or token estimates can understate spending and compromise the cap model. Astra separately narrows the original non-finite configuration claim. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 52 | BE-19 | Completed paid candidate outcomes remain buffered until an attribute fetch returns, so hard death can lose earlier completed answers and failures. | High | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 53 | BE-20 | Some parser/conversion exceptions escape contextual source handling, abort remaining acquisition without recording the current failed item. | Medium | REAL | REAL | no-op | REAL | FIXED |
-| 54 | BE-21 | Loose request/domain validation boundaries can produce 500s, and ordinary framework validation errors do not use the promised uniform error body. | Medium | REAL | REAL | no-op | REAL | PARTIAL |
+| 54 | BE-21 | Loose request/domain validation boundaries can produce 500s, and ordinary framework validation errors do not use the promised uniform error body. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 55 | BE-22 | Unvalidated rename/duplicate copies can persist an empty-name criteria set that subsequent validated reads cannot load. | High | REAL | REAL | no-op | REAL | FIXED |
 | 56 | BE-23 | Unknown body/query fields and unsupported nulls can be ignored or coerced, resulting in silent no-ops, cleared settings/anchors, or unintended threshold values. | Low | REAL | REAL | no-op | REAL | PARTIAL |
 | 57 | BE-24 | Bulk acquisition/research silently intersects mixed valid and unknown scope IDs instead of reporting the omitted inputs. | Medium | REAL | REAL | no-op | REAL | FIXED |
-| 58 | BE-25 | Plans omit freshness filtering that execution applies, advertising work and cost that may be skipped or refused as nothing-to-fetch. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 58 | BE-25 | Plans omit freshness filtering that execution applies, advertising work and cost that may be skipped or refused as nothing-to-fetch. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 59 | BE-26 | Weather aggregation accepts incomplete or misaligned nonempty series and labels their averages with the entire requested year/season. | Medium | REAL | REAL | no-op | REAL | FIXED |
-| 60 | BE-27 | Unquoted commas in current WDPA workings fields are accepted by the CSV parser and silently truncate methodology provenance. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 61 | BE-28 | AssignedScore fallback uses an invalid constructor and cannot store an otherwise eligible paid answer. Current manual AssignedScores are excluded, making the branch latent. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 62 | BE-29 | Source JSON is decoded through binary floats before Decimal conversion, losing publisher precision for long numeric tokens. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 63 | BE-30 | Employer-response elements are stringified instead of validated as firm-name strings, allowing nulls, numbers, or objects to become labels. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 64 | BE-31 | Comparison directly imports criteria despite the exhaustive dependency table, and the configured layer guard permits this forbidden edge. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 65 | BE-32 | Bare pytest excludes paid live tests but still selects ordinary live-publisher tests, making the default invocation network-dependent. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 60 | BE-27 | Unquoted commas in current WDPA workings fields are accepted by the CSV parser and silently truncate methodology provenance. | Low | REAL | REAL | no-op | REAL | FIXED |
+| 61 | BE-28 | AssignedScore fallback uses an invalid constructor and cannot store an otherwise eligible paid answer. Current manual AssignedScores are excluded, making the branch latent. | Low | REAL | REAL | no-op | REAL | FIXED |
+| 62 | BE-29 | Source JSON is decoded through binary floats before Decimal conversion, losing publisher precision for long numeric tokens. | Low | REAL | REAL | no-op | REAL | FIXED |
+| 63 | BE-30 | Employer-response elements are stringified instead of validated as firm-name strings, allowing nulls, numbers, or objects to become labels. | Low | REAL | REAL | no-op | REAL | FIXED |
+| 64 | BE-31 | Comparison directly imports criteria despite the exhaustive dependency table, and the configured layer guard permits this forbidden edge. | Low | REAL | REAL | no-op | REAL | FIXED |
+| 65 | BE-32 | Bare pytest excludes paid live tests but still selects ordinary live-publisher tests, making the default invocation network-dependent. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 66 | BE-33 | Known/deferred spending durability remains per source, so death before the current source returns loses its billed totals. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 67 | BE-34 | Known/deferred gate research returns/logs spending but creates no durable billing record, leaving lost responses or process death unledgered. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 68 | BE-36 | Finite-period confirmed gates keep applying and are skipped by research. Whether expiry should invalidate manual decisions remains a policy question. | Medium | UNCERTAIN | REAL | verify | | NOT_FIXED |
-| 69 | BE-37 | Fallback eligibility excludes an entire attribute whenever any structured adapter declares it, rather than considering candidate-specific gaps or failed sources. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 70 | BE-38 | Backend coverage combines line and branch percentages into one floor, allowing one metric below the separately promised threshold. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 68 | BE-36 | Finite-period confirmed gates keep applying and are skipped by research. Whether expiry should invalidate manual decisions remains a policy question. | Medium | UNCERTAIN | REAL | verify | REAL | NOT_FIXED |
+| 69 | BE-37 | Fallback eligibility excludes an entire attribute whenever any structured adapter declares it, rather than considering candidate-specific gaps or failed sources. | Low | REAL | REAL | no-op | REAL | CLOSED |
+| 70 | BE-38 | Backend coverage combines line and branch percentages into one floor, allowing one metric below the separately promised threshold. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 71 | BE-39 | Attribute responses serve only source-priority overrides rather than the contractually resolved order including remaining global sources. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 72 | ST-01 | The running-run check and insertion are not atomic, so concurrent starts can create multiple active acquisitions and duplicate financial work. | High | REAL | REAL | no-op | REAL | FIXED |
 | 73 | ST-02 | Whole-set read/modify/replace has no stale-version protection, allowing one successful edit to erase an unrelated concurrent decision. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 74 | ST-03 | Career retirement removes posting weights from every profile but compensates only named defaults, potentially invalidating customized or duplicated sets during upgrade. | High | REAL | REAL | no-op | REAL | FIXED |
-| 75 | ST-04 | Normalisation migrations overwrite custom fixed interpretations or violate valid target-range constraints, silently changing choices or blocking upgrade. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 76 | ST-05 | Type-correction migrations delete criteria without handling restrictive anchor/threshold children, blocking upgrades with configured interpretations. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 77 | ST-06 | Housing replacement transfers weight but hardcodes inclusion and unlocks, discarding prior user exclusion and lock decisions. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 75 | ST-04 | Normalisation migrations overwrite custom fixed interpretations or violate valid target-range constraints, silently changing choices or blocking upgrade. | Medium | REAL | REAL | no-op | REAL | CLOSED |
+| 76 | ST-05 | Type-correction migrations delete criteria without handling restrictive anchor/threshold children, blocking upgrades with configured interpretations. | Medium | REAL | REAL | no-op | REAL | CLOSED |
+| 77 | ST-06 | Housing replacement transfers weight but hardcodes inclusion and unlocks, discarding prior user exclusion and lock decisions. | Medium | REAL | REAL | no-op | REAL | CLOSED |
 | 78 | ST-07 | Saved evaluations omit supported interpretation fields and exact unscored rule-input evidence, preventing complete historical explanation after later changes. | Medium | REAL | REAL | no-op | REAL | PARTIAL |
-| 79 | ST-08 | Historical criteria read current attribute types even though migrations retype the same IDs, allowing saved interpretation to drift during upgrade. | Medium | REAL | REAL | no-op | REAL | PARTIAL |
+| 79 | ST-08 | Historical criteria read current attribute types even though migrations retype the same IDs, allowing saved interpretation to drift during upgrade. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 80 | ST-09 | Successful rereads of unchanged transcribed observations insert no new row or reuse association and are consequently reported as unanswered. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 81 | ST-10 | External-score queries return all editions without selecting or labeling the current edition, with incomplete deterministic ordering. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 82 | ST-11 | Separate run-detail queries under READ COMMITTED can observe different snapshots and return counts inconsistent with their lists or source totals. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
@@ -108,8 +110,8 @@ The table preserves the original IDs, order, severity labels, and both independe
 | 87 | ST-16 | SQL constraints named finite reject NaN only and permit numeric infinities that normal payload reads cannot accept. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 88 | ST-17 | SQL permits multiple share bounds but the mapper keeps only the first, allowing an unrelated whole-set rewrite to delete remaining bounds. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 89 | ST-18 | Known/deferred storage and API presentation omit the conversion rate's complete provenance despite an internal published-rate FK. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 90 | ST-19 | Attribute-removing rollbacks ignore persistent run-scope references and fail on otherwise ordinary populated historical databases. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 91 | ST-20 | The container migration path runs yoyo without enforcing the backup prerequisite present on the local migration path. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 90 | ST-19 | Attribute-removing rollbacks ignore persistent run-scope references and fail on otherwise ordinary populated historical databases. | Low | REAL | REAL | no-op | REAL | CLOSED |
+| 91 | ST-20 | The container migration path runs yoyo without enforcing the backup prerequisite present on the local migration path. | Medium | REAL | REAL | no-op | REAL | FIXED |
 
 ## Differences in interpretation
 
@@ -187,3 +189,78 @@ These are outside the 91 findings:
 
 - **R-1 (BE-05 with ST-08):** Snapshots saved before `0478` froze `country.school_system_quality` with `as_is`. `0500` backfills its type as `Quantity`, and BE-05's validator rejects `Quantity` with `as_is` when `_criterion_from` rebuilds it (`evaluation_store.py:399`). `GET /evaluations/{id}/criteria` would therefore return 500 for such a snapshot. A live set with a method that is now illegal would fail to load in the same way. Whether such rows exist was not checked, because no database access was used.
 - **R-2 (UI-03):** The restore rewrites the prior answer as a manual answer, so an LLM proposal that was not ruling anything out becomes a confirmed, enforceable answer after the suite runs.
+
+## Round 2: small fixes (2026-10-17)
+
+The round was scoped by the household to real bugs whose fix is a few lines in a few files: no migration, no contract change, no new flow. Every finding below started with tests that failed for the right reason, then the fix, then the same tests passing, with at least 80% coverage of the changed lines (100% in practice). Each lane passed its half of `make check`, a code-review agent read each lane's diff, and the full `make check` passed on `master` before the push: 2,998 backend tests at 97.24% coverage, 1,320 UI tests.
+
+| Finding | Commit(s) on `master` |
+|---|---|
+| BE-01 | 86ac25f |
+| BE-08 | cef4abb, 85d545d, 24f217a |
+| BE-09 | 268292f |
+| BE-10 | 3056c15 |
+| BE-17 | 0e60b7b |
+| BE-21 | 1423046 |
+| BE-25 | 612e5d9 |
+| BE-27 | 77a2abc |
+| BE-28 | 268292f |
+| BE-29 | 268292f |
+| BE-30 | 268292f |
+| BE-31 | 986cdd8 |
+| BE-32 | c222046 |
+| BE-38 | c222046 |
+| ST-20 | fb53d42 |
+| UI-04 | fdcbc6e, b2a41e7 |
+| UI-05 | b2a41e7 |
+| UI-06 | 49e4cae |
+| UI-07 | a04f86d |
+| UI-08 | b2a41e7 |
+| UI-09 | b2a41e7 |
+| UI-10 | 49e4cae |
+| UI-12 | 694e24c, 50713a2 |
+| UI-13 | 694e24c |
+| UI-14 | 694e24c, b5de286, 074d71b |
+| UI-16 | da6a3ae |
+| UI-17 | da6a3ae |
+| UI-19 | f3ba2db |
+| UI-20 | fc1b406 |
+| UI-21 | fc1b406 |
+| UI-22 | e0fddab |
+| UI-25 | f3ba2db |
+| UI-27 | b93632c |
+| UI-28 | 040d25b |
+| UI-30 | fc1b406 |
+| UI-31 | 040d25b |
+| UI-33 | 612e5d9 |
+
+**Partly fixed in this round:** UI-03, where only the sanity test's spend-cap restore (`040d25b`) landed. The browser suite still runs against the live stack until UI-03's own database is built, so the three `sanity.spec.ts` edits were checked by lint and typecheck only.
+
+**Closed without code:**
+
+- BE-37: by design (reqs.md 6.10 use 1).
+- ST-04, ST-05 and ST-06: your backups show no choice was overwritten.
+- ST-19: a failed old rollback leaves data intact.
+- ST-08's remainder: there are no saved rankings.
+
+Details: [copilot-remediation-plan.md](copilot-remediation-plan.md) section 6.
+
+**A side effect, found by review and fixed before the push:** BE-08 records a failure beside every rejected figure, so the Acquire screen's red card read "0 failed" over its own list, and a source's bar summed one pair twice. `85d545d` counts a rejected figure as its source's failure only. `24f217a` counts the card from its own failures, which also fixes the older OECD-and-estimate case.
+
+**Two more side effects, found by the review of the Configure changes and also fixed before the push:**
+
+- After a failed research pass, the panel still showed the previous pass's spend as the last pass. `b5de286` clears it, says when a failed pass's cost is unknown, and `074d71b` re-reads what such a pass stored, so it isn't paid for twice.
+- After confirming a proposal, the gate's new sentence kept saying it ruled nobody out. `50713a2` re-reads the gate answers after a confirm or a research pass.
+
+**Still open:** the 25 NOT_FIXED and 4 PARTIAL findings are planned in [copilot-remediation-plan.md](copilot-remediation-plan.md):
+
+- section 3 lists five that have a smaller fix awaiting the household's OK;
+- section 4 lists the rest, held for later.
+
+New defects found during the round are listed in that plan's section 7, together with these:
+
+- the Compare refusal for an unset comparator limit has no "Change it in Configure" link (`shell/refusalRemedy.ts`);
+- with a refetch age set, a rejected pair counts as fresh and cannot be retried through the plan (`runs.sql:254`);
+- a billed empty research answer is described as "could not be reached";
+- the manual-entry submit has no in-flight guard.
+
