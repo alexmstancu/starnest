@@ -22,6 +22,7 @@ pytestmark = pytest.mark.acceptance
 
 COUNTRY = "country"
 OVERBURDEN = "country.housing_cost_overburden_rate"
+OVERCROWDING = "country.overcrowding_rate"
 THE_STUB_DECLINES_FOR = "country.portugal"
 
 
@@ -69,6 +70,115 @@ class TestPlanningARun:
 
         assert body["llm_call_count"] == 0
         assert body["estimated_cost_eur"] == 0
+
+    async def test_an_attribute_fresh_for_every_candidate_is_not_planned(
+        self, database_url: str
+    ) -> None:
+        """BE-25. With a refetch age set, a run skips an attribute every candidate already holds
+        a fresh figure for (`reqs.md` 3.10) -- and the plan did not, so the estimate the
+        household confirmed counted work the run then skipped."""
+        both = {"level": COUNTRY, "attributes": [OVERBURDEN, OVERCROWDING]}
+        async with an_api(database_url, (a_stub_source(silent_about=()),)) as api:
+            await api.put("/v1/settings", json={"refetch_older_than_days": 30})
+            await api.post(
+                "/v1/data-acquisition-runs", json={"level": COUNTRY, "attributes": [OVERBURDEN]}
+            )
+
+            planned = (await api.post("/v1/data-acquisition-runs/plan", json=both)).json()
+            started = (await api.post("/v1/data-acquisition-runs", json=both)).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{started['id']}")).json()
+
+        validate("planRun", planned)
+        assert planned["items_total"] == detail["progress"]["items_total"] == 32
+        assert planned["by_source"] == [{"data_source": "eurostat", "items": 32}]
+
+    async def test_a_plan_of_nothing_but_fresh_attributes_plans_nothing_and_the_run_refuses(
+        self, database_url: str
+    ) -> None:
+        """The two must agree at the edge too: a plan promising work the run then refuses as
+        `nothing_to_fetch` is the same disagreement, at its largest."""
+        only_overburden = {"level": COUNTRY, "attributes": [OVERBURDEN]}
+        async with an_api(database_url, (a_stub_source(silent_about=()),)) as api:
+            await api.put("/v1/settings", json={"refetch_older_than_days": 30})
+            await api.post("/v1/data-acquisition-runs", json=only_overburden)
+
+            planned = (
+                await api.post("/v1/data-acquisition-runs/plan", json=only_overburden)
+            ).json()
+            refused = await api.post("/v1/data-acquisition-runs", json=only_overburden)
+
+        assert (planned["items_total"], planned["estimated_cost_eur"]) == (0, 0)
+        assert planned["by_source"] == []
+        assert refused.status_code == 409
+        assert refused.json()["code"] == "nothing_to_fetch"
+
+    async def test_a_fresh_paid_attribute_is_not_priced(self, database_url: str) -> None:
+        """Where being wrong costs the most to believe: a fresh attribute the run will not ask
+        a paid source about must not be in the money the household agrees to."""
+        only_overburden = {"level": COUNTRY, "attributes": [OVERBURDEN]}
+        async with an_api(database_url, (a_stub_source(silent_about=(), charges=True),)) as api:
+            await api.put(
+                "/v1/settings", json={"refetch_older_than_days": 30, "run_spend_cap_eur": 100}
+            )
+            before = (await api.post("/v1/data-acquisition-runs/plan", json=only_overburden)).json()
+            await api.post("/v1/data-acquisition-runs", json=only_overburden)
+
+            after = (await api.post("/v1/data-acquisition-runs/plan", json=only_overburden)).json()
+
+        assert before["estimated_cost_eur"] > 0, "the source does charge, so the first plan prices"
+        assert (after["llm_call_count"], after["estimated_cost_eur"]) == (0, 0)
+
+    async def test_with_no_refetch_age_the_plan_counts_everything(self, database_url: str) -> None:
+        """The control, and the shipped state: with no age set nothing is fresh, so a run just
+        made changes nothing about the next plan."""
+        async with an_api(database_url, (a_stub_source(silent_about=()),)) as api:
+            await api.post(
+                "/v1/data-acquisition-runs", json={"level": COUNTRY, "attributes": [OVERBURDEN]}
+            )
+
+            planned = (
+                await api.post(
+                    "/v1/data-acquisition-runs/plan",
+                    json={"level": COUNTRY, "attributes": [OVERBURDEN, OVERCROWDING]},
+                )
+            ).json()
+
+        assert planned["items_total"] == 32 * 2
+
+    async def test_a_source_with_two_adapters_is_one_row(self, database_url: str) -> None:
+        """UI-33. OECD has an API and three transcribed tables, and the plan listed it once per
+        adapter -- while a finished run's `by_source` is per source, and the Acquire screen keys
+        its rows by source, so the keys repeated."""
+        two_tables = (a_stub_source(), a_stub_source(answers=(A_SECOND_SOURCE_ANSWERS,)))
+        async with an_api(database_url, two_tables) as api:
+            planned = (
+                await api.post("/v1/data-acquisition-runs/plan", json={"level": COUNTRY})
+            ).json()
+
+        assert planned["by_source"] == [{"data_source": "eurostat", "items": 96}]
+        assert planned["items_total"] == 96
+
+    async def test_each_adapter_still_prices_its_own_share(self, database_url: str) -> None:
+        """The rows are summed per source and the money is not: each adapter is the only thing
+        that knows what it charges, so two adapters of one source at two prices cost the sum of
+        their own estimates."""
+        two_prices = (
+            a_stub_source(silent_about=(), charges=True, eur_per_call="0.05"),
+            a_stub_source(answers=(A_SECOND_SOURCE_ANSWERS,), charges=True, eur_per_call="0.10"),
+        )
+        async with an_api(database_url, two_prices) as api:
+            planned = (
+                await api.post(
+                    "/v1/data-acquisition-runs/plan",
+                    json={
+                        "level": COUNTRY,
+                        "attributes": [OVERBURDEN, OVERCROWDING, A_SECOND_SOURCE_ANSWERS],
+                    },
+                )
+            ).json()
+
+        assert planned["llm_call_count"] == 96
+        assert planned["estimated_cost_eur"] == pytest.approx(64 * 0.05 + 32 * 0.10)
 
 
 class TestStartingARun:
@@ -247,6 +357,38 @@ class TestListingRuns:
 
         assert len(page["items"]) == 2
         assert page["total"] == 3
+
+    async def test_a_page_asked_for_no_size_holds_the_hundred_the_contract_declares(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """NEW-13. `openapi.yaml` gives `limit` a default of 100 and the server used 20, so a
+        client trusting the contract saw a fifth of a long history with nothing saying so."""
+        await _finished_runs(database_url, 101)
+
+        page = (await api.get("/v1/data-acquisition-runs")).json()
+
+        validate("listRuns", page)
+        assert (len(page["items"]), page["total"]) == (100, 101)
+
+
+async def _finished_runs(database_url: str, count: int) -> None:
+    """Run rows written straight to the store: a history this long through the API would fetch
+    6,464 figures to test a page size."""
+    from datetime import UTC, datetime
+
+    from starnest.data_acquisition import RunScope, RunStatus
+
+    async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+        await pool.open(wait=True)
+        store = PostgresRunStore(pool)
+        for _ in range(count):
+            run = await store.start_run(
+                RunScope(
+                    level=COUNTRY, candidates=(THE_STUB_DECLINES_FOR,), attributes=(OVERBURDEN,)
+                ),
+                triggered_by="user",
+            )
+            await store.finish_run(run, status=RunStatus.COMPLETED, finished_at=datetime.now(UTC))
 
 
 class TestARunOverSeveralSources:

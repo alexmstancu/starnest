@@ -144,18 +144,13 @@ async def open_run(
     # **What is still fresh everywhere is not asked about again** (`reqs.md` 3.10, Q233).
     # Null skips nothing, which is the shipped state and exactly what the planner did before
     # this existed -- so a run's scope only ever narrows because somebody set a number.
-    fresh = still_fresh_everywhere(
-        attributes=[str(attribute.id) for attribute in answerable],
-        candidates=[str(candidate.id) for candidate in candidates],
-        last_retrieved=await runs.last_retrieved(
-            level=level,
-            candidates=[str(candidate.id) for candidate in candidates],
-            attributes=[str(attribute.id) for attribute in answerable],
-        )
-        if refetch_older_than is not None
-        else {},
+    fresh = await attributes_still_fresh(
+        runs=runs,
+        level=level,
+        attributes=answerable,
+        candidates=candidates,
         refetch_older_than=refetch_older_than,
-        now=now or datetime.now(UTC),
+        now=now,
     )
     answerable = [attribute for attribute in answerable if str(attribute.id) not in fresh]
 
@@ -212,6 +207,38 @@ async def open_run(
         runs=runs,
         stand_ins=stand_ins,
         meter=CostMeter(cap_eur=spend_cap_eur),
+    )
+
+
+async def attributes_still_fresh(
+    *,
+    runs: RunStore,
+    level: str,
+    attributes: Sequence[Attribute],
+    candidates: Sequence[Candidate],
+    refetch_older_than: timedelta | None,
+    now: datetime | None = None,
+) -> frozenset[str]:
+    """The attributes every candidate already holds a fresh figure for (`reqs.md` 3.10, Q233).
+
+    **One answer for a run and for its plan** (BE-25). `open_run` drops these from what it asks,
+    and the plan has to drop the same ones, or the estimate the household confirms counts work
+    the run then skips.
+
+    A null age reads nothing: nothing can be fresh before somebody says what fresh means.
+    """
+    if refetch_older_than is None:
+        return frozenset()
+    attribute_ids = [str(attribute.id) for attribute in attributes]
+    candidate_ids = [str(candidate.id) for candidate in candidates]
+    return still_fresh_everywhere(
+        attributes=attribute_ids,
+        candidates=candidate_ids,
+        last_retrieved=await runs.last_retrieved(
+            level=level, candidates=candidate_ids, attributes=attribute_ids
+        ),
+        refetch_older_than=refetch_older_than,
+        now=now or datetime.now(UTC),
     )
 
 

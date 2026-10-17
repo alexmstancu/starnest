@@ -3120,7 +3120,7 @@ paths:
         name: limit
         required: false
         schema:
-          default: 20
+          default: 100
           maximum: 1000
           minimum: 1
           title: Limit
@@ -3180,22 +3180,19 @@ paths:
         possible.
 
 
-        **It runs inline today, and the response carries a finished run.** 202 is
-        still right --
+        **It answers before the work is done** (P35). Every refusal is made inside
+        `open_run`, so a
 
-        the work was accepted and the client polls the id either way -- but claiming
-        the run is in
+        409 still comes back as one; then the fetching is handed to a background task,
+        and the
 
-        flight when it is not would be a lie a screen could act on. A full sweep of
-        every source
+        response carries the run still `running` for the client to poll by its id
+        (`arch.md` 8.4).
 
-        fits in one request, and a background task would add a lifecycle to manage.
-        Making it
+        A sweep that takes minutes no longer holds a connection open, so a client
+        timeout cannot be
 
-        genuinely asynchronous is a change here and nowhere else, because the run
-        record already
-
-        holds everything the polling endpoint reads (`arch.md` 8.4).
+        mistaken for a failure and retried into a second run.
 
 
         The run row exists before any figure is fetched, so a process that dies mid-run
@@ -3236,7 +3233,16 @@ paths:
         adapter can supply is not counted: promising to fetch something nothing can
         fetch would make
 
-        the estimate a wish.
+        the estimate a wish. **Nor is one the run would skip as still fresh** (BE-25):
+        with a refetch
+
+        age set, `start` drops every attribute each candidate already holds a fresh
+        figure for, and
+
+        this reads the same age and asks the same question, so the estimate counts
+        the run that
+
+        happens.
 
 
         **An item is one candidate and one attribute**, however many sources answer
@@ -3245,7 +3251,10 @@ paths:
         run''s progress counts and a retry addresses. `by_source` says what each source
         will be asked,
 
-        so where two answer the same attribute its entries sum to more than `items_total`,
+        **one entry per source** however many adapters it has (UI-33), as a finished
+        run''s is. Where
+
+        two sources answer the same attribute their entries sum to more than `items_total`,
         which is
 
         the truth: the tax rate for Germany is one item, asked of OECD and of the

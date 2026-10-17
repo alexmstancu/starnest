@@ -35,6 +35,7 @@ from starnest.data_acquisition import (
     RunStatus,
     ask_again,
     asked_this_run,
+    attributes_still_fresh,
     continue_run,
     open_run,
     retry_run,
@@ -162,17 +163,26 @@ class RunsBody(BaseModel):
 
 @router.post("/data-acquisition-runs/plan", operation_id="planRun", response_model=RunPlanBody)
 async def plan_run(
-    scope: RunScopeBody, adapters: Adapters, candidates: Candidates, catalog: Catalog
+    scope: RunScopeBody,
+    adapters: Adapters,
+    candidates: Candidates,
+    catalog: Catalog,
+    runs: Runs,
+    households: Households,
 ) -> RunPlanBody:
     """What a run would do, without doing any of it.
 
     Counts the work as the cross product of candidates and answerable attributes. An attribute no
     adapter can supply is not counted: promising to fetch something nothing can fetch would make
-    the estimate a wish.
+    the estimate a wish. **Nor is one the run would skip as still fresh** (BE-25): with a refetch
+    age set, `start` drops every attribute each candidate already holds a fresh figure for, and
+    this reads the same age and asks the same question, so the estimate counts the run that
+    happens.
 
     **An item is one candidate and one attribute**, however many sources answer it -- the unit a
     run's progress counts and a retry addresses. `by_source` says what each source will be asked,
-    so where two answer the same attribute its entries sum to more than `items_total`, which is
+    **one entry per source** however many adapters it has (UI-33), as a finished run's is. Where
+    two sources answer the same attribute their entries sum to more than `items_total`, which is
     the truth: the tax rate for Germany is one item, asked of OECD and of the estimate.
     """
     roster, wanted = await _scope_targets(scope, candidates, catalog)
@@ -184,22 +194,35 @@ async def plan_run(
         switched_on(adapters, await catalog.read_data_sources()),
         attributes_named=scope.attributes is not None,
     )
-    by_source = []
-    # Each source prices its own share, because each is the only thing that knows what it
+    answerable = [a for a in wanted if any(a.id in adapter.attributes for adapter in planned)]
+    fresh = await attributes_still_fresh(
+        runs=runs,
+        level=scope.level,
+        attributes=answerable,
+        candidates=roster,
+        refetch_older_than=_refetch_age((await households.get_settings()).refetch_older_than_days),
+    )
+    answerable = [a for a in answerable if str(a.id) not in fresh]
+
+    items_by_source: dict[str, int] = {}
+    # Each adapter prices its own share, because each is the only thing that knows what it
     # charges -- and a free one prices nothing, which is every structured source.
     estimate = NOTHING
     for adapter in planned:
-        items = len([a for a in wanted if a.id in adapter.attributes]) * len(roster)
+        items = len([a for a in answerable if a.id in adapter.attributes]) * len(roster)
         if items:
-            by_source.append(BySourceBody(data_source=str(adapter.data_source), items=items))
+            source = str(adapter.data_source)
+            items_by_source[source] = items_by_source.get(source, 0) + items
             estimate = estimate + adapter.estimate_for(items)
-    answerable = [a for a in wanted if any(a.id in adapter.attributes for adapter in planned)]
 
     return RunPlanBody(
         items_total=len(answerable) * len(roster),
         llm_call_count=estimate.calls,
         estimated_cost_eur=float(estimate.cost_eur),
-        by_source=tuple(by_source),
+        by_source=tuple(
+            BySourceBody(data_source=source, items=items)
+            for source, items in items_by_source.items()
+        ),
         estimate_basis=estimate.basis or None,
     )
 
@@ -230,12 +253,11 @@ async def start_run(
     died -- but nothing enforced it at this end, and that is what made a second *paid* run
     possible.
 
-    **It runs inline today, and the response carries a finished run.** 202 is still right --
-    the work was accepted and the client polls the id either way -- but claiming the run is in
-    flight when it is not would be a lie a screen could act on. A full sweep of every source
-    fits in one request, and a background task would add a lifecycle to manage. Making it
-    genuinely asynchronous is a change here and nowhere else, because the run record already
-    holds everything the polling endpoint reads (`arch.md` 8.4).
+    **It answers before the work is done** (P35). Every refusal is made inside `open_run`, so a
+    409 still comes back as one; then the fetching is handed to a background task, and the
+    response carries the run still `running` for the client to poll by its id (`arch.md` 8.4).
+    A sweep that takes minutes no longer holds a connection open, so a client timeout cannot be
+    mistaken for a failure and retried into a second run.
 
     The run row exists before any figure is fetched, so a process that dies mid-run leaves a
     visibly unfinished run rather than nothing at all.
@@ -418,7 +440,8 @@ async def list_runs(
     # **The bounds the contract declares** (`openapi.yaml`'s `Limit` and `Offset`). A bare `int`
     # served a page of 100,000 that the contract says cannot be asked for, and a negative one
     # reached `LIMIT`, where PostgreSQL refuses it -- a 500 for a request that was merely wrong.
-    limit: int = Query(20, ge=1, le=1000),
+    # The default is the contract's too (NEW-13): it served 20 where the contract says 100.
+    limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
 ) -> RunsBody:
     """Recent runs, newest first. Headers only -- a scope and its failures are the detail read."""

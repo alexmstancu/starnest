@@ -4,8 +4,12 @@ The planner re-fetched everything in scope until this existed, so the behaviour 
 new and the default -- a null threshold -- must reproduce exactly what it did before.
 """
 
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
+from starnest.candidates import Candidate
+from starnest.data import Attribute, RatioParameters, ValueType
+from starnest.data_acquisition import attributes_still_fresh
 from starnest.data_acquisition.freshness import still_fresh_everywhere
 
 NOW = datetime(2026, 9, 21, 12, 0, tzinfo=UTC)
@@ -119,3 +123,70 @@ class TestWhatIsSkipped:
             )
             == frozenset()
         )
+
+
+COUNTRY = {"id": "country", "depth_order": 1}
+IN_PORTUGAL = Candidate(id=PORTUGAL, name="Portugal", level=COUNTRY, country_code="PT")
+IN_SPAIN = Candidate(id=SPAIN, name="Spain", level=COUNTRY, country_code="ES")
+
+
+def an_attribute(identifier: str) -> Attribute:
+    return Attribute(
+        id=identifier,
+        name=identifier,
+        level="country",
+        value_type=ValueType.RATIO,
+        pillar="housing",
+        ratio_parameters=RatioParameters(basis="households"),
+    )
+
+
+class LastRetrieved:
+    """The one read `attributes_still_fresh` makes of a run store, answered from a table and
+    recorded, so a test can say whether the store was asked at all."""
+
+    def __init__(self, answers: Mapping[tuple[str, str], datetime]) -> None:
+        self._answers = answers
+        self.asked: list[tuple[str | None, list[str], list[str]]] = []
+
+    async def last_retrieved(self, *, level=None, candidates=(), attributes=()):  # type: ignore[no-untyped-def]
+        self.asked.append((level, list(candidates), list(attributes)))
+        return self._answers
+
+
+class TestAskingTheStoreWhatIsStillFresh:
+    """One answer for a run and for its plan (BE-25). The run dropped fresh attributes and the
+    plan did not ask, so the estimate a household confirmed counted work the run then skipped."""
+
+    async def test_a_null_age_reads_nothing_from_the_store(self) -> None:
+        """The shipped state costs no query: with no age set, nothing can be fresh."""
+        store = LastRetrieved({(PORTUGAL, RENT): _asked(1)})
+
+        fresh = await attributes_still_fresh(
+            runs=store,  # type: ignore[arg-type]
+            level="country",
+            attributes=[an_attribute(RENT)],
+            candidates=[IN_PORTUGAL],
+            refetch_older_than=None,
+            now=NOW,
+        )
+
+        assert fresh == frozenset()
+        assert store.asked == []
+
+    async def test_it_judges_what_the_store_says_was_last_retrieved(self) -> None:
+        store = LastRetrieved(
+            {(PORTUGAL, RENT): _asked(1), (SPAIN, RENT): _asked(2), (PORTUGAL, TAX): _asked(400)}
+        )
+
+        fresh = await attributes_still_fresh(
+            runs=store,  # type: ignore[arg-type]
+            level="country",
+            attributes=[an_attribute(RENT), an_attribute(TAX)],
+            candidates=[IN_PORTUGAL, IN_SPAIN],
+            refetch_older_than=A_YEAR,
+            now=NOW,
+        )
+
+        assert fresh == frozenset({RENT})
+        assert store.asked == [("country", [PORTUGAL, SPAIN], [RENT, TAX])]
