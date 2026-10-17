@@ -102,6 +102,16 @@ def redistribute(weights: AttributeWeights, answered: Set[str]) -> dict[str, Dec
     }
 
 
+def contribution_of(score: Decimal, effective_weight: Decimal) -> Decimal:
+    """What a score is worth to a total: the score times its effective weight, out of `TOTAL`.
+
+    **Never rounded on the way** (`reqs.md` 5.1): a score is weighted exactly and only the final
+    total is rounded, once. One definition read by the ranking and by the comparison (BE-31) --
+    which weighs the gap between two scores, so the score here may be negative.
+    """
+    return score * effective_weight / TOTAL
+
+
 def renormalise(weights: AttributeWeights) -> dict[str, Decimal]:
     """The same weights in the same proportions, summing to `TOTAL`.
 

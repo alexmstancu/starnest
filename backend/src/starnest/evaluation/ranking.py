@@ -41,6 +41,7 @@ from starnest.evaluation.rules import (
 from starnest.evaluation.weighting import (
     WeightingError,
     confidence_split,
+    contribution_of,
     coverage_of,
     redistribute,
     renormalise,
@@ -565,12 +566,14 @@ def _attribute_score(
         # **The displayed per-attribute score is rounded; the contribution is not** (`reqs.md`
         # 5.1, BE-02). The exact score is weighted and only the final total is rounded once, so a
         # drill-down may show a rounded score beside a contribution that still carries the
-        # fraction -- rounding here, before weighting, is what used to shift totals.
+        # fraction -- rounding here, before weighting, is what used to shift totals. The exact
+        # score travels too, so a comparison weighs a gap the same way (NEW-17).
         normalised_score=(
             None if score is None else int(score.quantize(Decimal(1), rounding=ROUND_HALF_UP))
         ),
+        exact_score=score,
         effective_weight=weight,
-        contribution=Decimal(0) if score is None else score * weight / TOTAL,
+        contribution=Decimal(0) if score is None else contribution_of(score, weight),
         # Only where the figure was actually scored: a reading that no method could place
         # contributed nothing, and naming the row it came from would suggest otherwise.
         used_value=reading.value if reading is not None and score is not None else None,

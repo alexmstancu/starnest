@@ -14,6 +14,7 @@ from starnest.data import ConfidenceLevel
 from starnest.evaluation import (
     WeightingError,
     confidence_split,
+    contribution_of,
     coverage_of,
     redistribute,
     renormalise,
@@ -218,3 +219,22 @@ class TestRenormalisingWhatIsLeftOfASet:
         """Scaling zero to a hundred would have to invent the split between them."""
         with pytest.raises(WeightingError):
             renormalise(weights(rent="0", jobs="0"))
+
+
+class TestWhatAScoreContributes:
+    """One place says what a score is worth to a total, so the ranking and the comparison cannot
+    weigh a score two different ways (BE-31)."""
+
+    def test_a_contribution_is_the_score_times_its_weight_out_of_one_hundred(self) -> None:
+        assert contribution_of(Decimal("7.5"), Decimal(40)) == Decimal(3)
+
+    def test_a_score_gap_contributes_with_its_sign(self) -> None:
+        """A comparison weighs the difference between two scores, which may be negative."""
+        assert contribution_of(Decimal("-2.8"), Decimal(50)) == Decimal("-1.4")
+
+    def test_a_zero_weight_contributes_nothing(self) -> None:
+        assert contribution_of(Decimal(9), Decimal(0)) == Decimal(0)
+
+    def test_nothing_is_rounded_on_the_way(self) -> None:
+        """`reqs.md` 5.1: rounding before weighting shifts totals and reverses near ties."""
+        assert contribution_of(Decimal("7.4"), Decimal("33.3")) == Decimal("2.4642")

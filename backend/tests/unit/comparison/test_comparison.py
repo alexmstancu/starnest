@@ -7,10 +7,15 @@ produce sentences that read plausibly and mislead (`devplan.md` C5).
 
 from decimal import Decimal
 
+import grimp
 import pytest
 
 from starnest.comparison import ComparisonError, compare
-from starnest.evaluation import AttributeScore, CandidateResult, MatchStatus
+from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor
+from starnest.data import Count
+from starnest.evaluation import AttributeScore, CandidateResult, MatchStatus, rank_candidates
+
+from ..evaluation.builders import a_criterion, a_pillar_weight, a_set, a_value
 
 TAX = "country.total_tax_rate_effective"
 COASTLINE = "country.coastline_access"
@@ -25,6 +30,7 @@ def a_score(attribute: str, score: int | None, weight: str) -> AttributeScore:
         attribute=attribute,
         pillar="economics",
         normalised_score=score,
+        exact_score=None if score is None else Decimal(score),
         effective_weight=Decimal(weight),
         contribution=Decimal(0) if score is None else Decimal(score) * Decimal(weight) / 100,
     )
@@ -240,3 +246,74 @@ class TestWhatCannotBeCompared:
     def test_no_comparators_at_all(self) -> None:
         with pytest.raises(ComparisonError, match="at least one"):
             a_comparison(comparators=[])
+
+
+SATISFACTION = "country.life_satisfaction"
+BROADBAND = "country.broadband_coverage"
+
+
+class TestTheGapIsWeighedBeforeItIsRounded:
+    """`reqs.md` 5.1 forbids rounding a score before it is weighted. BE-02 stopped the ranking
+    doing it, and the comparison went on weighing the rounded score it displays (NEW-17).
+
+    Scored for real rather than written by hand, on a scale of 10 anchored 0 to 100, so the exact
+    scores are fractions: satisfaction is 7.4 against 4.6, a gap of 2.8 that rounds to 7 against
+    5; broadband is 7.6 against 5.4, a gap of 2.2 that rounds to 8 against 5.
+    """
+
+    def test_two_near_equal_gaps_are_ordered_by_what_they_are_worth(self) -> None:
+        (pair,) = a_scored_comparison().synthesis
+
+        assert [sentence.split(":")[0] for sentence in pair.advantages] == [SATISFACTION, BROADBAND]
+
+    def test_a_gap_is_worth_the_exact_difference_times_the_weight(self) -> None:
+        """2.8 at an effective weight of 50 is 1.4 points; the rounded 7 against 5 said 1.0."""
+        row = next(r for r in a_scored_comparison().attributes if str(r.attribute) == SATISFACTION)
+
+        (cell,) = row.comparators
+        assert cell.weighted_contribution == Decimal("1.4")
+
+
+def a_scored_comparison():
+    anchors = (
+        ScaleAnchor(input_value=Decimal(0), score=0),
+        ScaleAnchor(input_value=Decimal(100), score=10),
+    )
+    criteria = a_set(
+        [
+            a_criterion(
+                attribute=attribute,
+                pillar=pillar,
+                goal=Goal.MAXIMISE,
+                normalisation_method=NormalisationMethod.FIXED,
+                scale_anchors=anchors,
+            )
+            for attribute, pillar in ((SATISFACTION, "culture"), (BROADBAND, "connectivity"))
+        ],
+        [a_pillar_weight("culture", "50"), a_pillar_weight("connectivity", "50")],
+    )
+    figures = {
+        PORTUGAL: {SATISFACTION: 74, BROADBAND: 76},
+        SPAIN: {SATISFACTION: 46, BROADBAND: 54},
+    }
+    values = {
+        candidate: tuple(
+            a_value(candidate=candidate, attribute=attribute, payload=Count(count=figure))
+            for attribute, figure in by_attribute.items()
+        )
+        for candidate, by_attribute in figures.items()
+    }
+    ranking = rank_candidates(criteria=criteria, level="country", values=values, score_scale_max=10)
+    return compare(
+        results=ranking, focus=PORTUGAL, comparators=[SPAIN], magnitudes={}, comparator_limit=5
+    )
+
+
+def test_comparison_imports_nothing_from_criteria() -> None:
+    """`arch.md` 6.1 lets `comparison` import `candidates`, `data` and `evaluation`, and no more.
+    The layers contract is coarser than that row, so this one edge is held here (BE-31)."""
+    graph = grimp.build_graph("starnest")
+
+    assert not graph.direct_import_exists(
+        importer="starnest.comparison", imported="starnest.criteria", as_packages=True
+    )

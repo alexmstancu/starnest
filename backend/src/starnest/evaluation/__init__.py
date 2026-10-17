@@ -34,6 +34,7 @@ from starnest.evaluation.store import EvaluationStore, SavedEvaluation, UnknownE
 from starnest.evaluation.weighting import (
     WeightingError,
     confidence_split,
+    contribution_of,
     coverage_of,
     redistribute,
     renormalise,
@@ -54,6 +55,7 @@ __all__ = [
     "UnscoreableValueError",
     "WeightingError",
     "confidence_split",
+    "contribution_of",
     "coverage_of",
     "figure_of",
     "gates_that_rule_out",

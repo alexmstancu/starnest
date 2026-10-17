@@ -51,6 +51,14 @@ class AttributeScore(BaseModel):
         default=None,
         description="The score this figure earned, or None when there was no figure to score.",
     )
+    exact_score: Decimal | None = Field(
+        default=None,
+        description=(
+            "The same score before it was rounded for display: the one the contribution weighs, "
+            "and the one a comparison weighs a gap between (`reqs.md` 5.1, NEW-17). Set by the "
+            "live ranking; a saved evaluation keeps the contribution instead, and reads back None."
+        ),
+    )
     effective_weight: Decimal = Field(
         ge=0, description="What it counted for after redistribution, as a percentage."
     )

@@ -23,9 +23,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from starnest.candidates import CandidateId
-from starnest.criteria import TOTAL
 from starnest.data import AttributeId, PillarId
-from starnest.evaluation import AttributeScore, CandidateResult
+from starnest.evaluation import AttributeScore, CandidateResult, contribution_of
 
 Magnitudes = Mapping[str, Mapping[str, Decimal]]
 """The figure each candidate holds for each attribute, in the attribute's own unit."""
@@ -159,7 +158,7 @@ def _rows(
                 _cell(
                     comparator=comparator,
                     attribute=str(row.attribute),
-                    focus_score=row.normalised_score,
+                    focus_exact_score=row.exact_score,
                     focus_magnitude=_magnitude(
                         magnitudes, str(focus.candidate), str(row.attribute)
                     ),
@@ -178,7 +177,7 @@ def _cell(
     *,
     comparator: CandidateResult,
     attribute: str,
-    focus_score: int | None,
+    focus_exact_score: Decimal | None,
     focus_magnitude: Decimal | None,
     effective_weight: Decimal,
     scored: AttributeScore | None,
@@ -188,8 +187,11 @@ def _cell(
 
     **The weight is the focus's effective weight**, after redistribution for what the focus was
     missing, because the contribution answers "what is this gap worth to the focus's total?".
+    **The scores are the exact ones** (`reqs.md` 5.1, NEW-17): the displayed scores are rounded,
+    and weighing their difference could order two near-equal gaps the wrong way round.
     """
     their_score = scored.normalised_score if scored is not None else None
+    their_exact_score = scored.exact_score if scored is not None else None
     their_magnitude = _magnitude(magnitudes, str(comparator.candidate), attribute)
     delta = (
         focus_magnitude - their_magnitude
@@ -197,8 +199,8 @@ def _cell(
         else None
     )
     contribution = (
-        (Decimal(focus_score) - Decimal(their_score)) * effective_weight / TOTAL
-        if focus_score is not None and their_score is not None
+        contribution_of(focus_exact_score - their_exact_score, effective_weight)
+        if focus_exact_score is not None and their_exact_score is not None
         else None
     )
     return ComparatorCell(
