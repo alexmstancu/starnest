@@ -43,21 +43,25 @@ export function describePass(pass: ResearchPass): string {
     : `The last pass ${did}.`;
 }
 
+/** What the research endpoints refuse with when no model may be asked: `llm_not_configured`. */
+const NO_MODEL_MAY_BE_ASKED = 501;
+
 /**
- * Whether a research request that failed is known to have spent nothing (UI-14).
+ * Whether a research request that failed is known to have spent nothing (UI-14, NEW-31).
  *
- * **A refusal in the contract's shape -- a 4xx carrying a code -- is the server saying no before
- * the model was asked anything**: no spend cap, a scope it will not research. Anything else -- a
- * 5xx, a timeout the proxy turned into a 504, the network gone -- can come after calls that were
- * billed, and the response that would have said how many never arrived.
+ * **A refusal in the contract's shape is the server saying no before the model was asked
+ * anything**: a 4xx carrying a code -- no spend cap, a scope it will not research -- or the 501
+ * that says no model may be asked, because none is configured or the `llm` source is switched
+ * off. Anything else -- a 500, a timeout the proxy turned into a 504, the network gone, a body
+ * that is not the contract's -- can come after calls that were billed, and the response that
+ * would have said how many never arrived.
  */
 export function spendIsKnown(failure: unknown): boolean {
+  if (!isApiError(failure) || failure.code.startsWith("client.")) return false;
+  const status = failure.status;
   return (
-    isApiError(failure) &&
-    failure.status !== null &&
-    failure.status >= 400 &&
-    failure.status < 500 &&
-    !failure.code.startsWith("client.")
+    status !== null &&
+    ((status >= 400 && status < 500) || status === NO_MODEL_MAY_BE_ASKED)
   );
 }
 

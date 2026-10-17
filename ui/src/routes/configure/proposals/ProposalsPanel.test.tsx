@@ -563,6 +563,31 @@ describe("a research pass after an earlier one", () => {
     expect(screen.queryByText(NOT_KNOWN)).toBeNull();
   });
 
+  /**
+   * NEW-31. **The `llm` source can be switched off in Data sources on this same screen**, after
+   * the estimate and before the pass. The server then refuses with a 501 before it asks
+   * anything, which read as a pass whose spend is not known.
+   */
+  it("knows a pass refused because no model may be asked spent nothing", async () => {
+    await researchOnceThenAgain(() =>
+      HttpResponse.json(
+        {
+          code: "llm_not_configured",
+          message:
+            "the llm source is switched off, so no gate can be researched",
+        },
+        { status: 501 },
+      ),
+    );
+
+    expect(
+      await screen.findByText(/the llm source is switched off/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText("llm_not_configured")).toBeInTheDocument();
+    expect(screen.queryByText(EARLIER)).toBeNull();
+    expect(screen.queryByText(NOT_KNOWN)).toBeNull();
+  });
+
   it("says the spend is not known when the backend could not be reached", async () => {
     await researchOnceThenAgain(() => HttpResponse.error());
 

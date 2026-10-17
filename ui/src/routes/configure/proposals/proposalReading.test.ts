@@ -70,6 +70,35 @@ describe("whether a failed research pass is known to have spent nothing", () => 
     ).toBe(true);
   });
 
+  /**
+   * NEW-31. **A 501 is a refusal too**: no model is configured, or the `llm` source is switched
+   * off -- which can happen on this same screen between the estimate and the pass. The server
+   * says so before it asks anything, so the pass spent nothing.
+   */
+  it("knows a pass refused because no model may be asked spent nothing", () => {
+    expect(
+      spendIsKnown(
+        new ApiError({
+          code: "llm_not_configured",
+          message: "the llm source is switched off, so no gate can be researched",
+          status: 501,
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not trust a 501 whose body is not the contract's shape", () => {
+    expect(
+      spendIsKnown(
+        new ApiError({
+          code: CLIENT_ERROR_CODES.malformedError,
+          message: "HTML",
+          status: 501,
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it("does not know what a server failure spent", () => {
     expect(
       spendIsKnown(
@@ -77,6 +106,19 @@ describe("whether a failed research pass is known to have spent nothing", () => 
       ),
     ).toBe(false);
   });
+
+  it.each([
+    [502, "bad_gateway"],
+    [503, "service_unavailable"],
+    [504, "gateway_timeout"],
+  ])(
+    "does not know what a pass answered with a %i spent, even in the contract's shape",
+    (status, code) => {
+      expect(
+        spendIsKnown(new ApiError({ code, message: "failed", status })),
+      ).toBe(false);
+    },
+  );
 
   it("does not know what a pass the proxy timed out spent", () => {
     expect(

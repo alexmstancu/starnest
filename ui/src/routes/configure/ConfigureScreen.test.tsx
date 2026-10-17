@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -1357,28 +1357,31 @@ describe("a gate's sentence once its answers change", () => {
     ).toBeInTheDocument();
   });
 
-  it("reads nothing again after a refusal, which stored nothing", async () => {
+  /**
+   * How many times the stored answers were read because of a refused pass.
+   *
+   * **A later write that does re-read** follows the refusal, so any read the refusal asked for
+   * is counted first: a confirm re-reads the proposals and the rules, two reads and no more.
+   */
+  async function readsCausedByARefusedPass(
+    refusal: () => Response,
+    shown: RegExp,
+  ): Promise<number> {
     const user = userEvent.setup();
     const reads = { count: 0 };
-    mockServer.events.on("request:start", ({ request }) => {
+    const countReads = ({ request }: { request: Request }) => {
       if (
         request.method === "GET" &&
         new URL(request.url).pathname === "/v1/match-rule-results"
       ) {
         reads.count += 1;
       }
-    });
-    mockServer.use(
-      http.post("/v1/match-rule-research", () =>
-        HttpResponse.json(
-          {
-            code: "spend_cap_not_set",
-            message: "this would spend money and no spend cap is set",
-          },
-          { status: 409 },
-        ),
-      ),
+    };
+    mockServer.events.on("request:start", countReads);
+    onTestFinished(() =>
+      mockServer.events.removeListener("request:start", countReads),
     );
+    mockServer.use(http.post("/v1/match-rule-research", refusal));
     renderShell("/configure");
     await settled();
     const gate = await visaGate();
@@ -1387,9 +1390,7 @@ describe("a gate's sentence once its answers change", () => {
     const before = reads.count;
 
     await user.click(screen.getByRole("button", { name: "Research the gates" }));
-    await screen.findByText(/no spend cap is set/i);
-    // **A later write that does re-read**, so any read the refusal asked for is counted first:
-    // a confirm re-reads the proposals and the rules, two reads and no more.
+    await screen.findByText(shown);
     await user.click(
       await screen.findByRole("button", {
         name: "Confirm country.visa_route_exists for country.portugal",
@@ -1397,7 +1398,45 @@ describe("a gate's sentence once its answers change", () => {
     );
     await waitFor(() => expect(gate).toHaveTextContent("Removes Portugal."));
 
-    expect(reads.count).toBe(before + 2);
+    return reads.count - before - 2;
+  }
+
+  it("reads nothing again after a refusal, which stored nothing", async () => {
+    const reads = await readsCausedByARefusedPass(
+      () =>
+        HttpResponse.json(
+          {
+            code: "spend_cap_not_set",
+            message: "this would spend money and no spend cap is set",
+          },
+          { status: 409 },
+        ),
+      /no spend cap is set/i,
+    );
+
+    expect(reads).toBe(0);
+  });
+
+  /**
+   * NEW-31. **Switching the `llm` source off in Data sources, on this screen, after the
+   * estimate** makes the pass a 501: refused before anything was asked, so nothing was stored
+   * and there is nothing to read again.
+   */
+  it("reads nothing again after a pass refused because no model may be asked", async () => {
+    const reads = await readsCausedByARefusedPass(
+      () =>
+        HttpResponse.json(
+          {
+            code: "llm_not_configured",
+            message:
+              "the llm source is switched off, so no gate can be researched",
+          },
+          { status: 501 },
+        ),
+      /the llm source is switched off/i,
+    );
+
+    expect(reads).toBe(0);
   });
 });
 
