@@ -108,8 +108,14 @@ describe("the sidebar selectors", () => {
     // Segmented buttons, as the design draws them: a choice between two named things, not
     // the first of a longer list. `aria-pressed` is what says which one is current.
     const group = await screen.findByRole("group", { name: "Level" });
-    const levels = within(group).getAllByRole("button");
-    expect(levels.map((button) => button.textContent)).toEqual(["Country", "City"]);
+    // The group can render a beat before its levels arrive, so wait for the buttons rather than
+    // reading them the moment the group appears -- under load that read found none.
+    await waitFor(() =>
+      expect(within(group).getAllByRole("button").map((button) => button.textContent)).toEqual([
+        "Country",
+        "City",
+      ]),
+    );
     // The default is adopted a render after the levels arrive, so wait for it rather than
     // assuming the two happen together.
     await waitFor(() =>
