@@ -623,6 +623,25 @@ class TestWhatAFailureRecords:
             progress = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()["progress"]
 
         assert (progress["items_completed"], progress["items_failed"]) == (32, 0)
+        assert (
+            progress["items_completed"] + progress["items_failed"] + progress["items_unanswered"]
+            == progress["items_total"]
+        )
+
+    async def test_a_rejected_figure_counts_for_its_source_as_a_failure_not_as_stored(
+        self, database_url: str
+    ) -> None:
+        """A rejected figure contributed nothing, so source by source it is the failure and
+        not a figure stored. Counted as both, the Acquire screen's bar -- stored plus failed --
+        read 32 of 33 for a source that was asked 32 items."""
+        async with an_api(database_url, (_a_source_misreading(THE_STUB_DECLINES_FOR),)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        validate("getRun", detail)
+        assert detail["by_source"] == [
+            {"data_source": "open_meteo", "items_stored": 32 - 1, "items_failed": 1}
+        ]
 
 
 TEMPERATURE = "country.avg_annual_temperature"

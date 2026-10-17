@@ -249,6 +249,27 @@ def a_figure(run: int, candidate: str, attribute: str, source: str = "eurostat")
     )
 
 
+NOT_CREDIBLE = f"96.3 is outside the credible range 0 to 60 declared for {OVERBURDEN}"
+
+
+def a_rejected_figure(
+    run: int, candidate: str, source: str = "eurostat"
+) -> tuple[Value, AcquisitionFailure]:
+    """A figure stored with its attribute's verdict against it, and the failure the run records
+    beside it (BE-08) -- the two rows a rejection leaves, always together."""
+    return (
+        a_figure(run, candidate, OVERBURDEN, source=source).model_copy(
+            update={"rejection_reason": NOT_CREDIBLE}
+        ),
+        AcquisitionFailure(
+            OVERBURDEN,
+            f"the figure was stored and rejected: {NOT_CREDIBLE}",
+            candidate=candidate,
+            data_source=source,
+        ),
+    )
+
+
 class TestWhichSourceGotItThere:
     """Source by source: what each stored, and what each failed on.
 
@@ -338,6 +359,49 @@ class TestWhichSourceGotItThere:
         self, pool: AsyncConnectionPool, a_two_source_run: int
     ) -> None:
         assert (await PostgresRunStore(pool).read_run(a_two_source_run)).by_source == ()
+
+    async def test_a_rejected_figure_counts_for_its_source_as_a_failure_not_as_stored(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        """BE-08 made a rejected figure a failure a retry can reach, and its value row still
+        counted as stored -- one pair both stored and failed, so a bar summing the two read 32
+        of 33 for a source asked 32 items. A rejected figure contributed nothing."""
+        store = PostgresRunStore(pool)
+        rejected, its_failure = a_rejected_figure(a_two_source_run, "country.liechtenstein")
+        await PostgresValueStore(pool).append(
+            [
+                a_figure(a_two_source_run, "country.portugal", OVERBURDEN),
+                a_figure(a_two_source_run, "country.portugal", OVERCROWDING),
+                rejected,
+            ]
+        )
+        await store.record_failures(a_two_source_run, [its_failure])
+
+        reach = {
+            r.data_source: (r.items_stored, r.items_failed)
+            for r in (await store.read_run(a_two_source_run)).by_source
+        }
+
+        assert reach == {"eurostat": (2, 1)}
+
+    async def test_a_source_whose_only_figure_was_rejected_is_listed_as_having_failed(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        """Drawn as barren, as it is: it was asked, it answered, and nothing it said can be
+        used. Still listed, because the source a reader came looking for is that one."""
+        store = PostgresRunStore(pool)
+        rejected, its_failure = a_rejected_figure(
+            a_two_source_run, "country.portugal", source="oecd"
+        )
+        await PostgresValueStore(pool).append([rejected])
+        await store.record_failures(a_two_source_run, [its_failure])
+
+        reach = {
+            r.data_source: (r.items_stored, r.items_failed)
+            for r in (await store.read_run(a_two_source_run)).by_source
+        }
+
+        assert reach == {"oecd": (0, 1)}
 
 
 class TestSweepingRunsAProcessAbandoned:

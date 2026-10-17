@@ -315,11 +315,18 @@ RETURNING id;
 --
 -- A source's two counts are independent and deliberately not made to sum to anything: OECD may
 -- fail on an item the estimate then answers, and both facts are true of that run.
+--
+-- **A rejected figure is stored but counts here as a failure, not as stored** (BE-08). The run
+-- records a failure beside every rejected figure, so a retry can reach it, and the figure
+-- itself contributed nothing. Counted on both sides, one pair read as stored and failed at
+-- once, and a source whose every figure was rejected looked half-full rather than barren. The
+-- run's own items_completed still counts the pair: it was answered.
 SELECT reached.data_source,
        (SELECT count(DISTINCT (v.candidate, v.attribute))
         FROM   value AS v
         WHERE  v.data_acquisition_run = :data_acquisition_run
-          AND  v.data_source = reached.data_source) AS items_stored,
+          AND  v.data_source = reached.data_source
+          AND  v.rejection_reason IS NULL) AS items_stored,
        (SELECT count(DISTINCT (f.candidate, f.attribute))
         FROM   data_acquisition_failure AS f
         WHERE  f.data_acquisition_run = :data_acquisition_run
