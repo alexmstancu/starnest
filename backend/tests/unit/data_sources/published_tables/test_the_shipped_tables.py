@@ -61,6 +61,33 @@ def test_the_publisher_is_named_and_is_not_a_placeholder(attribute: str) -> None
     assert source not in ("manual", "llm", "")
 
 
+@pytest.mark.parametrize(
+    "attribute,country,ending",
+    [
+        ("country.protected_land_share", "CH", "(5173 of 41291 km2), WDPA profile read Oct 2026"),
+        ("country.protected_land_share", "GB", "(70181 of 245133 km2), WDPA profile read Oct 2026"),
+        ("country.protected_land_share", "IS", "(21089 of 100974 km2), WDPA profile read Oct 2026"),
+        (
+            "country.protected_land_share",
+            "NO",
+            "mainland, excludes Svalbard/Jan Mayen), WDPA profile read Oct 2026",
+        ),
+        ("country.statutory_paid_leave", "GB", "capped at 28, which may absorb bank holidays"),
+        *(
+            ("country.coastline_access", landlocked, "landlocked, so no coast")
+            for landlocked in ("AT", "CH", "CZ", "HU", "LI", "LU", "SK")
+        ),
+    ],
+)
+def test_no_workings_is_cut_short_at_a_comma(attribute: str, country: str, ending: str) -> None:
+    """BE-27. Twelve rows wrote a comma into their workings unquoted, and the reader kept only
+    the text before it -- so Norway's figure lost the note saying it excludes Svalbard, and every
+    landlocked country lost "so no coast"."""
+    by_code = {row.country_code: row for row in SHIPPED[attribute].rows}
+
+    assert by_code[country].workings.endswith(ending)
+
+
 class TestTheComputedTables:
     """The two tables whose figure is arithmetic over the quantities in its own `workings`.
 

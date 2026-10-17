@@ -26,7 +26,9 @@ The format, one file per publisher and attribute::
     AT,79.43,2026,https://en.wikipedia.org/wiki/World_Press_Freedom_Index,
 
 `period` is a year (`2026`) or a span (`2020-2023`). `workings` is optional prose for a figure
-that was computed or needs a caveat, and when present it is the value's quote.
+that was computed or needs a caveat, and when present it is the value's quote. **A field holding
+a comma is quoted** (`"landlocked, so no coast"`): every row has exactly the five columns, and
+one that does not is refused rather than read as far as the columns go.
 """
 
 import csv
@@ -114,16 +116,25 @@ def read_table(path: Path) -> PublishedTable:
 
 
 def _rows_of(body: list[str], name: str) -> tuple[Row, ...]:
-    reader = csv.DictReader(io.StringIO("\n".join(body)))
-    if tuple(reader.fieldnames or ()) != COLUMNS:
+    reader = csv.reader(io.StringIO("\n".join(body)))
+    if tuple(next(reader, ())) != COLUMNS:
         raise TranscriptionError(f"{name}: the columns must be exactly {', '.join(COLUMNS)}")
 
     rows: list[Row] = []
     seen: set[str] = set()
-    for record in reader:
+    for fields in reader:
         # +2: the column row, and counting from one. Header comment lines are not in `body`,
         # so this is the row's position within the table rather than within the file.
         where = f"{name}: table row {reader.line_num - 1}"
+        if len(fields) != len(COLUMNS):
+            # **Refused, not read as far as the columns go** (BE-27). An unquoted comma in a
+            # note made a sixth field that the reader dropped without a word, cutting twelve
+            # shipped workings short; a field left out was filled in as empty.
+            raise TranscriptionError(
+                f"{where} has {len(fields)} fields where the table has {len(COLUMNS)} columns; "
+                "quote a field that contains a comma"
+            )
+        record = dict(zip(COLUMNS, fields, strict=True))
         code = (record["country_code"] or "").strip().upper()
         if not re.fullmatch(r"[A-Z]{2}", code):
             raise TranscriptionError(f"{where}: {code!r} is not a two-letter country code")

@@ -2,7 +2,7 @@
 # attribute: country.statutory_paid_leave
 # publication: Statutory minimum paid annual leave, by national law
 # publisher_url: https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country
-# transcribed_on: 2026-09-20
+# transcribed_on: 2026-10-17
 # confidence: medium
 # period: the entitlement in force in 2025. A statutory minimum is a legal constant, not a measurement, so it describes the year of the law rather than a survey period.
 # route: no publisher prints this as one comparative table. It is national law in 31 jurisdictions, and the choices were 31 statute lookups or one table that has already done them with a citation per row. The table's own "paid vacation days (five-day workweek)" column was read, and its four ranges resolved to the statutory minimum by reading the note beside each: Denmark 25/30 -> 25, Luxembourg 26-36 -> 26 (the private-sector legal duration), Poland 26/20 -> 20, Slovakia 20-25 -> 20 ("at least four weeks"). Medium confidence for the route, not for the figures.
@@ -21,7 +21,7 @@ EE,28,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country
 ES,22,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
 FI,25,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
 FR,25,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
-GB,28,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,5.6 weeks capped at 28, which may absorb bank holidays
+GB,28,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,"5.6 weeks capped at 28, which may absorb bank holidays"
 GR,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
 HR,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,
 HU,20,2025,https://en.wikipedia.org/wiki/List_of_minimum_annual_leave_by_country,

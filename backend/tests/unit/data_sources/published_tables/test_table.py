@@ -71,6 +71,14 @@ class TestWhatATableSays:
 
         assert len(table.rows) == 1
 
+    def test_a_quoted_workings_keeps_its_commas(self, tmp_path: Path) -> None:
+        """The way to write a comma into a note: quote the field, as CSV always has."""
+        body = f'AT,79.43,2025,{A_PAGE},"read in October, from the profile"\n'
+
+        (row,) = read_table(a_table(tmp_path, body)).rows
+
+        assert row.workings == "read in October, from the profile"
+
 
 class TestWhatATableRefuses:
     def test_a_missing_header_field_names_itself(self, tmp_path: Path) -> None:
@@ -127,6 +135,21 @@ class TestWhatATableRefuses:
     def test_a_table_with_no_rows_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(TranscriptionError, match="no rows"):
             read_table(a_table(tmp_path, ""))
+
+    def test_a_row_with_more_fields_than_columns_is_refused(self, tmp_path: Path) -> None:
+        """BE-27. An unquoted comma in a note split it in two, the reader kept the first half
+        under `workings` and dropped the rest without a word -- twelve shipped rows lost the
+        end of their workings that way. The refusal names the file, the row and the count."""
+        body = f"AT,79.43,2025,{A_PAGE},read in October, from the profile\n"
+
+        with pytest.raises(TranscriptionError, match=r"a_table\.csv: table row 1 has 6 fields"):
+            read_table(a_table(tmp_path, body))
+
+    def test_a_row_with_fewer_fields_than_columns_is_refused(self, tmp_path: Path) -> None:
+        """The other way a row can disagree with its columns: one left out entirely, which the
+        reader filled in as empty rather than reporting."""
+        with pytest.raises(TranscriptionError, match=r"a_table\.csv: table row 2 has 4 fields"):
+            read_table(a_table(tmp_path, f"AT,79.43,2025,{A_PAGE},\nBE,74.0,2025,{A_PAGE}\n"))
 
 
 class TestTheShippedTranscriptions:
