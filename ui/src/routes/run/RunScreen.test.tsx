@@ -1921,6 +1921,39 @@ describe("a figure typed by hand", () => {
     return within(await screen.findByRole("region", { name: /enter a value for/i }));
   }
 
+  /**
+   * NEW-09. **A pillar is named as the catalog names it.** The card beside this one has always
+   * done so; this one printed the id, so the same attribute's pillar read two ways on one screen.
+   */
+  it("names each attribute's pillar as the catalog does", async () => {
+    mockServer.use(
+      http.get(`${BASE}/pillars`, () =>
+        HttpResponse.json({
+          items: [
+            { id: "career", name: "Work", display_order: 3 },
+            { id: "governance", name: "Government", display_order: 10 },
+          ],
+        }),
+      ),
+    );
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", {
+        name: /figures you can enter by hand/i,
+      }),
+    );
+
+    const employers = await card.findByRole("row", {
+      name: /international employers/i,
+    });
+    expect(
+      await within(employers).findByRole("cell", { name: "Work" }),
+    ).toBeInTheDocument();
+    expect(
+      card.getByRole("row", { name: /residency admin ease/i }),
+    ).toHaveTextContent("Government");
+  });
+
   it("stores a label set and reads back what it wrote", async () => {
     // **What it stored, not "done".** A typo is invisible in a success message.
     const form = await theForm(/international employers/i);

@@ -16,8 +16,9 @@ import { formatDate } from "../../format/display";
  * that actually differ.
  *
  * **Only an exact repeat folds.** Two figures that differ in any way a reader could act on --
- * a different source, a different period, a different magnitude, a rejection -- are different
- * evidence and stay separate rows. That is the whole point of storing them.
+ * a different source, a different period, a different magnitude, a rejection, a different
+ * quote or different pages cited -- are different evidence and stay separate rows. That is
+ * the whole point of storing them.
  */
 export interface RepeatedValue {
   /** The most recently retrieved of the identical copies, which is the one to show. */
@@ -33,7 +34,9 @@ export interface RepeatedValue {
  *
  * Deliberately everything a reader is shown about a figure except *when we fetched it* and
  * *which run fetched it*. Two rows agreeing on all of this differ only in the occasion, and an
- * occasion is not a second opinion.
+ * occasion is not a second opinion. **The quote and the pages cited are shown, so they count**
+ * (UI-21): the folded row shows one copy's, and a copy citing other pages would vanish with it.
+ * The server sorts the citations, so their order is never a difference.
  */
 function fingerprintOf(value: StoredValue): string {
   return JSON.stringify([
@@ -45,7 +48,14 @@ function fingerprintOf(value: StoredValue): string {
     value.payload,
     value.rejection_reason ?? null,
     value.confidence_level ?? null,
+    quoteOf(value),
+    value.citations ?? [],
   ]);
+}
+
+/** No quote is no quote, whether the row spells it null, missing or "". */
+function quoteOf(value: StoredValue): string | null {
+  return value.quote === undefined || value.quote === "" ? null : value.quote;
 }
 
 function retrievedAt(value: StoredValue): string {

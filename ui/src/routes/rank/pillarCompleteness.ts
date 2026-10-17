@@ -11,6 +11,8 @@
  * disagreeing with itself.
  */
 
+import { pillarName } from "../../format/display";
+
 /** A criterion as this count needs one: its attribute, its pillar, and whether it counts. */
 export interface ScoredCriterion {
   attribute: string;
@@ -44,6 +46,8 @@ export function pillarCompleteness(
   criteria: readonly ScoredCriterion[] | null | undefined,
   values: readonly Stored[] | null | undefined,
   pillar: string | null,
+  /** The catalog's pillar names: a sentence names a pillar as the charts beside it do. */
+  names: ReadonlyMap<string, string>,
 ): Completeness | null {
   const counted = (criteria ?? []).filter(
     (each) =>
@@ -54,15 +58,24 @@ export function pillarCompleteness(
   const stored = new Set((values ?? []).map((value) => value.attribute));
   const missing = counted.filter((each) => !stored.has(each.attribute)).length;
 
-  return { missing, counted: counted.length, sentence: say(missing, counted.length, pillar) };
+  return {
+    missing,
+    counted: counted.length,
+    sentence: say(missing, counted.length, pillar, names),
+  };
 }
 
-function say(missing: number, counted: number, pillar: string | null): string {
-  // One phrase serves both scopes: "attributes in safety" and "attributes this set scores".
-  // Ids are lowercase and underscored, and this is the middle of a sentence, so it stays that
-  // way rather than being capitalised the way a heading would be.
+function say(
+  missing: number,
+  counted: number,
+  pillar: string | null,
+  names: ReadonlyMap<string, string>,
+): string {
+  // One phrase serves both scopes: "attributes in Safety" and "attributes this set scores".
+  // The pillar is the catalog's name, as the cards and charts beside this sentence call it --
+  // never the id, which read "in economics" under a card saying "Economy" (NEW-08).
   const scope =
-    pillar === null ? "this set scores" : `in ${pillar.replace(/_/g, " ")}`;
+    pillar === null ? "this set scores" : `in ${pillarName(names, pillar)}`;
 
   if (missing === 0) {
     return `Every attribute ${scope} has a stored value.`;

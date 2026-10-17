@@ -1,6 +1,8 @@
 import { useCallback, useId, useState } from "react";
 import { fetchAttributes } from "../../api/endpoints";
+import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
 import { useResource } from "../../api/useResource";
+import { pillarName } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 import { handEnterable } from "./unsourced";
@@ -23,6 +25,7 @@ export function OpenToHandEntry({ level }: { level: string }) {
   // One form at a time: two would put two candidate pickers and two date pairs on screen with
   // nothing saying which belonged to which attribute.
   const [open, setOpen] = useState<string | null>(null);
+  const pillars = usePillarNames();
 
   const attributes = useResource(
     useCallback(
@@ -68,6 +71,7 @@ export function OpenToHandEntry({ level }: { level: string }) {
               <Row
                 key={attribute.id}
                 attribute={attribute}
+                pillars={pillars}
                 level={level}
                 open={open === attribute.id}
                 onToggle={() =>
@@ -86,11 +90,13 @@ export function OpenToHandEntry({ level }: { level: string }) {
 
 function Row({
   attribute,
+  pillars,
   level,
   open,
   onToggle,
 }: {
   attribute: ReturnType<typeof handEnterable>[number];
+  pillars: PillarNames;
   level: string;
   open: boolean;
   onToggle: () => void;
@@ -99,7 +105,8 @@ function Row({
     <>
       <tr>
         <th scope="row">{attribute.name}</th>
-        <td>{attribute.pillar}</td>
+        {/* The catalog's name, as the card beside this one prints it -- never the id (NEW-09). */}
+        <td>{pillarName(pillars, attribute.pillar)}</td>
         <td>{attribute.otherwise}</td>
         <td>
           <button

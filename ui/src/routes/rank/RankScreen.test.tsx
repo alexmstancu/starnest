@@ -684,8 +684,9 @@ describe("the drill-down", () => {
     const outside = await screen.findByRole("table", {
       name: /outside opinions/i,
     });
+    // The header names the publisher first; its two dates stack under the name (UI-20).
     expect(
-      within(outside).getByRole("rowheader", { name: "numbeo" }),
+      within(outside).getByRole("rowheader", { name: /^numbeo/ }),
     ).toBeInTheDocument();
     const figures = screen.getByRole("table", { name: /every stored value/i });
     expect(within(figures).queryByText("numbeo")).toBeNull();
@@ -828,6 +829,196 @@ describe("the drill-down", () => {
     expect(
       within(table).getByRole("row", { name: /cost of living index/i }),
     ).toHaveTextContent("unchanged across 500 acquisitions");
+  });
+});
+
+/** Opens Portugal's evidence and returns its outside-opinions table. */
+async function portugalsOutsideOpinions(): Promise<HTMLElement> {
+  renderShell("/rank");
+  await userEvent.click(
+    within(await rankingRow("Portugal")).getByRole("button", { name: "Portugal" }),
+  );
+  return screen.findByRole("table", { name: /outside opinions/i });
+}
+
+/** Portugal's outside opinions, as the test chooses them. */
+function outsideOpinions(...scores: Record<string, unknown>[]): void {
+  mockServer.use(
+    http.get("/v1/external-scores", () => HttpResponse.json({ items: scores })),
+  );
+}
+
+const NUMBEO = {
+  candidate: "country.portugal",
+  data_source: "numbeo",
+  published_value: 72.4,
+  published_scale: "0-100, higher is safer",
+  reference_period: { start: "2026-01-01", end: "2026-06-30" },
+  retrieval_date: "2026-09-01T08:00:00Z",
+};
+
+/**
+ * UI-20. **Full provenance on every displayed number**, and an outside opinion is a number. Its
+ * two dates were served and went only into the row's key, so a reader could not tell a 2019
+ * index from this year's.
+ */
+describe("an outside opinion's provenance", () => {
+  it("dates each outside opinion: the period it describes and when it was fetched", async () => {
+    const outside = await portugalsOutsideOpinions();
+
+    const numbeo = within(outside).getByRole("row", { name: /numbeo/i });
+    expect(numbeo).toHaveTextContent("Describes1 Jan 2026 to 30 Jun 2026");
+    expect(numbeo).toHaveTextContent("Fetched1 Sept 2026, 08:00");
+  });
+
+  it("gives a publisher's rank out of how many it ranked", async () => {
+    outsideOpinions({ ...NUMBEO, published_rank: 12, published_rank_of: 140 });
+
+    const outside = await portugalsOutsideOpinions();
+
+    expect(
+      within(outside).getByRole("row", { name: /numbeo/i }),
+    ).toHaveTextContent("72.4 (rank 12 of 140)");
+  });
+
+  it("gives a rank alone where the publisher did not say out of how many", async () => {
+    outsideOpinions({ ...NUMBEO, published_rank: 12 });
+
+    const outside = await portugalsOutsideOpinions();
+
+    expect(
+      within(outside).getByRole("row", { name: /numbeo/i }),
+    ).toHaveTextContent("72.4 (rank 12)");
+  });
+
+  it("prints a dash for a date the publisher did not give", async () => {
+    const undated: Record<string, unknown> = { ...NUMBEO };
+    delete undated["reference_period"];
+    delete undated["retrieval_date"];
+    outsideOpinions(undated);
+
+    const outside = await portugalsOutsideOpinions();
+
+    const numbeo = within(outside).getByRole("row", { name: /numbeo/i });
+    expect(numbeo).toHaveTextContent("Describes—");
+    expect(numbeo).toHaveTextContent("Fetched—");
+  });
+
+  /**
+   * UI-30. The natural key of an outside score includes the end of its period (`0113`), and the
+   * row key did not: two editions differing only there collided, which React reports -- and
+   * the suite fails on -- as a duplicate key.
+   */
+  it("keeps two editions apart when only the end of their period differs", async () => {
+    outsideOpinions(NUMBEO, {
+      ...NUMBEO,
+      published_value: 70.1,
+      reference_period: { start: "2026-01-01", end: "2026-12-31" },
+    });
+
+    const outside = await portugalsOutsideOpinions();
+
+    expect(within(outside).getAllByRole("row", { name: /numbeo/i })).toHaveLength(2);
+    expect(outside).toHaveTextContent("72.4");
+    expect(outside).toHaveTextContent("70.1");
+  });
+});
+
+/**
+ * UI-21. **Two re-reads that cite different pages are different evidence.** They folded into
+ * one row, which showed only the newest copy's pages.
+ */
+describe("a figure re-read from different pages", () => {
+  it("shows each re-read's own pages when they differ", async () => {
+    const read = (id: number, page: string) => ({
+      id,
+      candidate: "country.portugal",
+      attribute: "country.cost_of_living_index",
+      value_type: "Quantity",
+      payload: { magnitude: 92.1, unit: "index_eu27_100" },
+      data_source: "eurostat",
+      reference_period: { start: "2025-01-01", end: "2025-12-31" },
+      retrieval_date: `2026-09-1${String(id)}T08:00:00Z`,
+      confidence_level: "high",
+      is_active: id === 2,
+      quote: null,
+      citations: [page],
+    });
+    mockServer.use(
+      http.get("/v1/values", () =>
+        HttpResponse.json({
+          items: [
+            read(1, "https://ec.europa.eu/eurostat/first"),
+            read(2, "https://ec.europa.eu/eurostat/second"),
+          ],
+          total: 2,
+        }),
+      ),
+    );
+    renderShell("/rank");
+    await userEvent.click(
+      within(await rankingRow("Portugal")).getByRole("button", { name: "Portugal" }),
+    );
+
+    const table = await screen.findByRole("table", { name: /every stored value/i });
+    const links = within(table)
+      .getAllByRole("link", { name: /source 1/i })
+      .map((link) => link.getAttribute("href"));
+    expect(links).toEqual([
+      "https://ec.europa.eu/eurostat/first",
+      "https://ec.europa.eu/eurostat/second",
+    ]);
+  });
+});
+
+/**
+ * NEW-08. **A pillar is named as the catalog names it**, in the sentences as on the charts and
+ * cards beside them. Both sentences printed the id -- "in economics" under a card saying
+ * "Economy".
+ */
+describe("the chosen pillar, named in a sentence", () => {
+  it("names it as the catalog does when counting what is missing", async () => {
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
+
+    await userEvent.click(
+      await within(row).findByRole("button", { name: /^Economy:/ }),
+    );
+
+    expect(
+      await screen.findByText("1 of the 3 attributes in Economy has no stored value."),
+    ).toBeInTheDocument();
+  });
+
+  it("names it as the catalog does when nothing in it is stored", async () => {
+    mockServer.use(
+      http.get("/v1/pillars", () =>
+        HttpResponse.json({
+          items: [
+            { id: "economics", name: "Economy", display_order: 1 },
+            { id: "safety", name: "Personal safety", display_order: 4 },
+            { id: "family", name: "Family", display_order: 11 },
+          ],
+        }),
+      ),
+    );
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
+
+    await userEvent.click(
+      await within(row).findByRole("button", { name: /^Personal safety:/ }),
+    );
+
+    expect(
+      await screen.findByText(
+        "No figure has been stored for anything in Personal safety.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Nothing in Personal safety has a stored value."),
+    ).toBeInTheDocument();
   });
 });
 

@@ -146,6 +146,42 @@ describe("folding a figure that was stored more than once", () => {
     expect(folded).toHaveLength(2);
   });
 
+  /**
+   * UI-21. **The pages a figure was read from, and the words quoted from them, are evidence
+   * too.** Two re-reads that cite different pages folded into one row showing only the newest
+   * copy's pages, so the other pages were not on screen at all.
+   */
+  it("keeps figures that cite different pages apart", () => {
+    const folded = foldRepeats([
+      aValue({ id: 1, citations: ["https://ec.europa.eu/eurostat/a"] }),
+      aValue({ id: 2, citations: ["https://ec.europa.eu/eurostat/b"] }),
+    ]);
+
+    expect(folded).toHaveLength(2);
+  });
+
+  it("keeps figures whose quotes differ apart", () => {
+    const folded = foldRepeats([
+      aValue({ id: 1, quote: "Eurostat 2025: 40.7" }),
+      aValue({ id: 2, quote: "Eurostat 2025, revised: 40.7" }),
+    ]);
+
+    expect(folded).toHaveLength(2);
+  });
+
+  /** No quote is no quote, and no pages are no pages, however the row happens to spell it. */
+  it("still folds copies whose missing quote and pages are written differently", () => {
+    const folded = foldRepeats([
+      aValue({ id: 1, quote: null, citations: [] }),
+      aValue({ id: 2, quote: "" }),
+      aValue({ id: 3, quote: undefined, citations: undefined }),
+      aValue({ id: 4, citations: null } as unknown as Partial<StoredValue>),
+    ]);
+
+    expect(folded).toHaveLength(1);
+    expect(folded[0]?.copies).toBe(4);
+  });
+
   it("keeps the order the server sent", () => {
     const folded = foldRepeats([
       aValue({ id: 1, data_source: "oecd" }),

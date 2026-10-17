@@ -177,12 +177,14 @@ export function CandidateDetail({
             setCriteria,
             values.resource.data.items,
             chosen,
+            names,
           )}
         />
       )}
       {values.resource.status === "ready" && (
         <ValueTable
           names={attributeNames}
+          pillarNames={names}
           judgements={judgements}
           contributions={contributions}
           values={valuesInPillar(
@@ -255,6 +257,7 @@ function ValueTable({
   values,
   pillar,
   names,
+  pillarNames,
   judgements,
   contributions,
 }: {
@@ -262,6 +265,8 @@ function ValueTable({
   pillar: string | null;
   /** The catalog's attribute names, so no row prints a database key (`reqs.md` design rule). */
   names: AttributeNames;
+  /** The catalog's pillar names, for the same rule in the sentence about an empty pillar. */
+  pillarNames: PillarNames;
   /** What the active set decided about each attribute: its weight, and whether it blocks. */
   judgements: Map<string, Judgement>;
   /** What the pass made of each figure, from the ranking on screen. Empty until it arrives. */
@@ -272,7 +277,7 @@ function ValueTable({
       <p className="screen__note">
         {pillar === null
           ? "No figure has been stored for this candidate yet."
-          : `No figure has been stored for anything in ${pillar}.`}
+          : `No figure has been stored for anything in ${pillarName(pillarNames, pillar)}.`}
       </p>
     );
   }
@@ -570,13 +575,15 @@ function ExternalScoreTable({ scores }: { scores: ExternalScore[] }) {
         <tbody>
           {scores.map((score) => (
             // A publisher may have more than one opinion of a candidate: the natural key in
-            // `external_score` is the publisher, the period and the moment it was read, so the
-            // key here is the same one. Keyed on publisher alone, two Numbeo indices for one
-            // country collided and React rendered one of them twice.
+            // `external_score` is the publisher, the whole period and the moment it was read
+            // (`0113`), so the key here is the same one. Keyed on publisher alone, two Numbeo
+            // indices for one country collided and React rendered one of them twice; keyed
+            // without the period's end, two editions differing only there did (UI-30).
             <tr
               key={[
                 score.data_source,
                 score.reference_period?.start ?? "",
+                score.reference_period?.end ?? "",
                 score.retrieval_date ?? "",
               ].join("-")}
             >
@@ -585,11 +592,28 @@ function ExternalScoreTable({ scores }: { scores: ExternalScore[] }) {
                   publisher={score.data_source}
                   methodology={score.methodology_url}
                 />
+                {/* **Both dates, as every stored figure has them** (UI-20): what period the
+                    opinion describes and when it was read. A 2019 index and this year's are
+                    different claims, and the row could not tell them apart. */}
+                <span className="value-cell__meta">
+                  <span className="value-cell__label">Describes</span>
+                  <span className="value-cell__fact">
+                    {score.reference_period
+                      ? `${formatDate(score.reference_period.start)} to ${formatDate(score.reference_period.end)}`
+                      : ABSENT}
+                  </span>
+                  <span className="value-cell__label">Fetched</span>
+                  <span className="value-cell__fact">
+                    {formatDateTime(score.retrieval_date)}
+                  </span>
+                </span>
               </th>
               <td>
                 {score.published_value ?? "—"}
                 {score.published_rank != null &&
-                  ` (rank ${score.published_rank})`}
+                  (score.published_rank_of != null
+                    ? ` (rank ${score.published_rank} of ${score.published_rank_of})`
+                    : ` (rank ${score.published_rank})`)}
               </td>
               <td>{score.published_scale}</td>
               <td>{score.caveats ?? ""}</td>

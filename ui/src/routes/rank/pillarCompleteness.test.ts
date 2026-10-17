@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { pillarCompleteness } from "./pillarCompleteness";
 
+/** The catalog's names, which are not the ids title-cased: `economics` is called "Economy". */
+const names = new Map([
+  ["economics", "Economy"],
+  ["safety", "Safety"],
+]);
+
 const criteria = [
   { attribute: "country.cost_of_living_index", pillar: "economics" },
   { attribute: "country.total_tax_rate_effective", pillar: "economics" },
@@ -14,12 +20,13 @@ describe("how complete a chosen pillar is", () => {
       criteria,
       [{ attribute: "country.cost_of_living_index" }],
       "economics",
+      names,
     );
 
     expect(complete).toEqual({
       missing: 2,
       counted: 3,
-      sentence: "2 of the 3 attributes in economics have no stored value.",
+      sentence: "2 of the 3 attributes in Economy have no stored value.",
     });
   });
 
@@ -28,18 +35,19 @@ describe("how complete a chosen pillar is", () => {
       criteria,
       [{ attribute: "country.homicide_rate" }],
       "safety",
+      names,
     );
 
     expect(complete?.missing).toBe(0);
     expect(complete?.sentence).toBe(
-      "Every attribute in safety has a stored value.",
+      "Every attribute in Safety has a stored value.",
     );
   });
 
   /** "1 of the 1 attributes" reads as though part of the pillar survived. None of it did. */
   it("says nothing is stored rather than counting all of it as a fraction", () => {
-    expect(pillarCompleteness(criteria, [], "safety")?.sentence).toBe(
-      "Nothing in safety has a stored value.",
+    expect(pillarCompleteness(criteria, [], "safety", names)?.sentence).toBe(
+      "Nothing in Safety has a stored value.",
     );
   });
 
@@ -51,23 +59,40 @@ describe("how complete a chosen pillar is", () => {
         { attribute: "country.total_tax_rate_effective" },
       ],
       "economics",
+      names,
     );
 
     expect(complete?.sentence).toBe(
-      "1 of the 3 attributes in economics has no stored value.",
+      "1 of the 3 attributes in Economy has no stored value.",
     );
   });
 
-  /** Ids are the catalog's; a reader is shown words. The pillar stays lowercase mid-sentence. */
-  it("prints a multi-word pillar id as words", () => {
+  /**
+   * NEW-08. **Ids are the catalog's; a reader is shown names.** The sentence printed the id --
+   * "in economics" -- where the catalog, and every chart and card beside it, says "Economy".
+   */
+  it("names the pillar as the catalog does, not by its id", () => {
+    const complete = pillarCompleteness(
+      criteria,
+      [],
+      "economics",
+      new Map([["economics", "Economy"]]),
+    );
+
+    expect(complete?.sentence).toBe("Nothing in Economy has a stored value.");
+  });
+
+  /** Before the names arrive, the id made readable, as every pillar label on the page reads. */
+  it("reads a pillar the catalog has not named as its id made readable", () => {
     const complete = pillarCompleteness(
       [{ attribute: "country.x", pillar: "quality_of_life" }],
       [],
       "quality_of_life",
+      new Map(),
     );
 
     expect(complete?.sentence).toBe(
-      "Nothing in quality of life has a stored value.",
+      "Nothing in Quality of life has a stored value.",
     );
   });
 });
@@ -78,6 +103,7 @@ describe("how complete the whole set is", () => {
       criteria,
       [{ attribute: "country.cost_of_living_index" }],
       null,
+      names,
     );
 
     expect(complete).toEqual({
@@ -93,6 +119,7 @@ describe("how complete the whole set is", () => {
       criteria,
       criteria.map((each) => ({ attribute: each.attribute })),
       null,
+      names,
     );
 
     expect(complete?.sentence).toBe(
@@ -119,6 +146,7 @@ describe("what it refuses to count", () => {
       ],
       [{ attribute: "country.homicide_rate" }],
       "safety",
+      names,
     );
 
     expect(complete?.counted).toBe(1);
@@ -127,12 +155,14 @@ describe("what it refuses to count", () => {
 
   /** Before the criteria set arrives there is nothing to be complete against. */
   it("says nothing at all when the set is not loaded", () => {
-    expect(pillarCompleteness(null, [{ attribute: "a" }], null)).toBeNull();
-    expect(pillarCompleteness(undefined, undefined, "economics")).toBeNull();
+    expect(pillarCompleteness(null, [{ attribute: "a" }], null, names)).toBeNull();
+    expect(
+      pillarCompleteness(undefined, undefined, "economics", names),
+    ).toBeNull();
   });
 
   it("says nothing about a pillar this set does not score", () => {
-    expect(pillarCompleteness(criteria, [], "climate")).toBeNull();
+    expect(pillarCompleteness(criteria, [], "climate", names)).toBeNull();
   });
 
   /**
@@ -145,6 +175,7 @@ describe("what it refuses to count", () => {
       [{ attribute: "country.homicide_rate", pillar: "safety" }],
       [{ attribute: "country.homicide_rate" }],
       "safety",
+      names,
     );
 
     expect(complete?.missing).toBe(0);
