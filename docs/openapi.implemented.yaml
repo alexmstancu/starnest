@@ -1416,7 +1416,8 @@ components:
           $ref: '#/components/schemas/MatchResult'
         override_reason:
           anyOf:
-          - type: string
+          - minLength: 1
+            type: string
           - type: 'null'
           title: Override Reason
         reason:
@@ -2127,6 +2128,7 @@ components:
           - type: 'null'
           title: Label
         score:
+          minimum: 0.0
           title: Score
           type: integer
       required:

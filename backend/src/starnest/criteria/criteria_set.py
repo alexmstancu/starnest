@@ -357,9 +357,9 @@ class CriteriaSet(BaseModel):
         saved.
 
         **The refusal is re-raised as the domain's own.** Pydantic wraps a validator's
-        `ValueError` in a `ValidationError`, which is neither a `ValueError` nor anything the
-        API's error table knows -- so a criterion refusing to be a rule reached the client as a
-        500 rather than as the sentence it wrote. What comes out is the sentence.
+        `ValueError` in a `ValidationError` -- itself a `ValueError`, but one the API's error
+        table has no row for -- so a criterion refusing to be a rule reached the client as a 500
+        rather than as the sentence it wrote. What comes out is the sentence.
         """
         try:
             revalidated = Criterion.model_validate(dict(fields))

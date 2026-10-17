@@ -16,6 +16,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from starnest.api.dependencies import Candidates, Catalog, Values
+from starnest.api.errors import built_from_the_request
 from starnest.candidates import CandidateId, UnknownCandidateError
 from starnest.data import (
     MANUAL_ENTRY_DEFAULT_CONFIDENCE,
@@ -125,13 +126,13 @@ async def enter_value_manually(
         raise UnknownCandidateError(
             f"there is no candidate {body.candidate!r} at {attribute.level}"
         )
+    with built_from_the_request():
+        period = ReferencePeriod(start=body.reference_period.start, end=body.reference_period.end)
     value = a_manual_value(
         attribute,
         candidate=CandidateId(body.candidate),
         payload=body.payload,
-        reference_period=ReferencePeriod(
-            start=body.reference_period.start, end=body.reference_period.end
-        ),
+        reference_period=period,
         retrieval_date=body.retrieval_date,
         confidence_level=body.confidence_level,
         quote=body.quote,

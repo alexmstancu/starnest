@@ -13,7 +13,7 @@ endpoints record and read the answers.
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from starnest.api.dependencies import (
     Candidates,
@@ -22,7 +22,7 @@ from starnest.api.dependencies import (
     MatchRuleResults,
     Researcher,
 )
-from starnest.api.errors import absent, unknown_scope_refusal
+from starnest.api.errors import absent, built_from_the_request, unknown_scope_refusal
 from starnest.candidates import CandidateId, UnknownCandidateError
 from starnest.data import (
     MANUAL,
@@ -65,7 +65,8 @@ class MatchRuleResultInputBody(BaseModel):
     data_source: str = str(MANUAL)
     reference_period: ReferencePeriodBody | None = None
     retrieval_date: datetime | None = None
-    override_reason: str | None = None
+    # An override is a reason and a date together, and an empty reason is neither (BE-21).
+    override_reason: str | None = Field(default=None, min_length=1)
     citations: tuple[str, ...] = ()
 
 
@@ -382,24 +383,25 @@ async def put_match_rule_result(
         raise UnknownDataSourceError(f"there is no data source {body.data_source!r}")
 
     now = datetime.now(UTC)
-    answer = MatchRuleResult(
-        match_rule=MatchRuleId(match_rule_id),
-        candidate=CandidateId(candidate_id),
-        match_result=body.match_result,
-        data_source=DataSourceId(body.data_source),
-        retrieval_date=body.retrieval_date or now,
-        reason=body.reason,
-        reference_period=(
-            ReferencePeriod(start=body.reference_period.start, end=body.reference_period.end)
-            if body.reference_period
-            else None
-        ),
-        citations=body.citations,
-        # The moment is the server's, never the client's: an audit trail whose dates the
-        # audited party supplies is not one.
-        override_reason=body.override_reason,
-        override_date=now if body.override_reason else None,
-    )
+    with built_from_the_request():
+        answer = MatchRuleResult(
+            match_rule=MatchRuleId(match_rule_id),
+            candidate=CandidateId(candidate_id),
+            match_result=body.match_result,
+            data_source=DataSourceId(body.data_source),
+            retrieval_date=body.retrieval_date or now,
+            reason=body.reason,
+            reference_period=(
+                ReferencePeriod(start=body.reference_period.start, end=body.reference_period.end)
+                if body.reference_period
+                else None
+            ),
+            citations=body.citations,
+            # The moment is the server's, never the client's: an audit trail whose dates the
+            # audited party supplies is not one.
+            override_reason=body.override_reason,
+            override_date=now if body.override_reason else None,
+        )
     await results.record(answer)
     (stored,) = await results.read_results(candidate=candidate_id, match_rule=match_rule_id)
     return _result_body(stored)

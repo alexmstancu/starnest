@@ -21,6 +21,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.dependencies import Households
+from starnest.api.errors import built_from_the_request
 from starnest.household import Household
 
 router = APIRouter(tags=["household"])
@@ -62,8 +63,8 @@ async def replace_household(household: HouseholdBody, households: Households) ->
     are a set, so duplicates collapse -- and a client that assumed its request body was the
     stored state would be wrong in a way nothing told it about.
     """
-    await households.replace_household(
-        Household(
+    with built_from_the_request():
+        replacement = Household(
             net_income=Decimal(str(household.net_income)),
             number_adults=household.number_adults,
             number_children=household.number_children,
@@ -73,7 +74,7 @@ async def replace_household(household: HouseholdBody, households: Households) ->
             max_rent=_decimal_or_none(household.max_rent),
             home_city_candidate=household.home_city_candidate,
         )
-    )
+    await households.replace_household(replacement)
     return _body(await households.get_household())
 
 

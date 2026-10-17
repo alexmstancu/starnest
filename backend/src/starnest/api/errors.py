@@ -10,28 +10,31 @@ report the same fault differently.
 REST surface, and this module is the REST surface's opinion.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from typing import Any
 
 from fastapi import HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
-from starnest.candidates import UnknownCandidateError
+from starnest.candidates import MalformedIdentifierError, UnknownCandidateError
 from starnest.comparison import ComparisonError
 from starnest.criteria import (
     CriteriaSetError,
     CriteriaSetExistsError,
     CriteriaSetInUseError,
     CriterionDeclarationError,
+    ThresholdShapeError,
     UnknownCriteriaSetError,
     UnknownCriterionError,
     WeightsAllLockedError,
 )
 from starnest.data import (
     InvalidManualValueError,
+    InvalidReferencePeriodError,
     MalformedMatchRuleResultError,
     ManualEntryNotPermittedError,
     NoSuchDataSourceError,
@@ -92,7 +95,11 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     # 422 -- the request describes something the domain will not accept.
     CriteriaSetError: _refusal(422, "invalid_criteria_set"),
     CriterionDeclarationError: _refusal(422, "invalid_criterion"),
+    ThresholdShapeError: _refusal(422, "invalid_criterion"),
     HouseholdPlaceError: _refusal(422, "unknown_place"),
+    InvalidReferencePeriodError: _refusal(422, "invalid_reference_period"),
+    # An identifier that cannot be one is a malformed request (`arch.md` 7.3).
+    MalformedIdentifierError: _refusal(422, "invalid_request"),
     NormalisationError: _refusal(422, "cannot_be_scored"),
     RankingError: _refusal(422, "cannot_be_ranked"),
     ComparisonError: _refusal(409, "invalid_comparison"),
@@ -142,6 +149,38 @@ def unknown_scope_refusal(level: str, **groups: list[str]) -> HTTPException:
             "details": details,
         },
     )
+
+
+@contextmanager
+def built_from_the_request() -> Iterator[None]:
+    """Build a domain object from request input, letting a refusal it raises answer as itself.
+
+    Pydantic wraps the error a validator raises in a `ValidationError` -- itself a `ValueError`,
+    and one this table has no row for -- so a domain refusal raised while the object was being
+    built reached the client as a 500 rather than as the sentence the domain wrote (BE-21). When
+    every problem in the wrapper is a refusal the table maps, the first of them is raised instead.
+
+    **Anything else is left exactly as it was.** A native constraint failing means a request
+    body forgot to mirror a domain bound, and an unmapped error is a bug: both stay a loud 500
+    rather than a tidy 422 nobody investigates. Only construction from what the client sent
+    belongs inside this -- a stored row that no longer builds is our fault, not a bad request.
+    """
+    try:
+        yield
+    except ValidationError as wrapped:
+        refusal = _the_refusal_inside(wrapped)
+        if refusal is None:
+            raise
+        raise refusal from wrapped
+
+
+def _the_refusal_inside(wrapped: ValidationError) -> Exception | None:
+    """The first domain error pydantic wrapped, when every problem it reports is one we map."""
+    refusals = [problem.get("ctx", {}).get("error") for problem in wrapped.errors()]
+    every_one_mapped = all(
+        isinstance(refusal, Exception) and refusal_for(refusal) is not None for refusal in refusals
+    )
+    return refusals[0] if refusals and every_one_mapped else None
 
 
 def refusal_for(error: Exception) -> tuple[int, str] | None:

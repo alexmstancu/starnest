@@ -9,6 +9,8 @@ cannot tell "no such criteria set" from "the database is down" will do the wrong
 and the difference is invisible until it happens to somebody.
 """
 
+import json
+
 import httpx
 import pytest
 from psycopg_pool import AsyncConnectionPool
@@ -278,6 +280,212 @@ class TestBoundaryValidationAndTheErrorShape:
         response = await api.put("/v1/household", json={**A_VALID_HOUSEHOLD, "incme": 9000})
 
         assert response.status_code == 422
+
+
+class TestADomainRefusalIsNot500:
+    """A refusal raised while the domain object is built from the request is a 422 (BE-21).
+
+    Pydantic wraps a validator's error in a `ValidationError`, which the error table has no row
+    for, so the domain's own sentence -- a malformed id, a home city in the wrong country, a
+    period that ends before it begins -- reached the client as a 500. Each case answers in the one
+    error shape with the code its domain error maps to, and writes nothing.
+    """
+
+    async def test_a_malformed_home_country_is_refused_not_500(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await _the_household(api)
+
+        response = await api.put(
+            "/v1/household", json={**A_VALID_HOUSEHOLD, "home_country_candidate": "Romania"}
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+        assert await _the_household(api) == before, "nothing was written"
+
+    async def test_a_home_city_outside_the_home_country_is_refused_not_500(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await _the_household(api)
+
+        response = await api.put(
+            "/v1/household", json={**A_VALID_HOUSEHOLD, "home_city_candidate": "city.spain.madrid"}
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "unknown_place")
+        assert "madrid" in response.json()["message"], "the domain's own sentence comes through"
+        assert await _the_household(api) == before, "nothing was written"
+
+    async def test_a_citizenship_at_city_level_is_refused_not_500(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.put(
+            "/v1/household", json={**A_VALID_HOUSEHOLD, "citizenships": ["city.romania.cluj"]}
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "unknown_place")
+
+    @pytest.mark.parametrize(
+        "threshold",
+        [
+            {"min_value": 50, "max_value": 10},
+            {"min_value": None},
+            {"label": "muslim", "max_share": 150},
+            {"labels": [{"label": "BWh", "containment_rule": "maybe"}]},
+        ],
+        ids=["an inverted range", "a range with no bound", "a share of 150", "an unknown rule"],
+    )
+    async def test_a_threshold_the_domain_refuses_is_refused_not_500(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str, threshold: dict
+    ) -> None:
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"matching_threshold": threshold},
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_criterion")
+        assert await _the_threshold_on_overburden(api, a_scratch_criteria_set) is None
+
+    async def test_a_blank_anchor_label_is_refused_not_500(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"scale_anchors": [_AN_ANCHOR | {"label": " "}, _ANOTHER_ANCHOR]},
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_criterion")
+
+    async def test_a_negative_anchor_score_is_refused_not_500(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"scale_anchors": [_AN_ANCHOR | {"score": -1}, _ANOTHER_ANCHOR]},
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+
+    async def test_a_non_finite_anchor_input_is_refused_not_500(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """JSON has no infinity, but Python's encoder writes one and the parser reads it back."""
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            content=json.dumps(
+                {"scale_anchors": [_AN_ANCHOR | {"input_value": float("inf")}, _ANOTHER_ANCHOR]}
+            ),
+            headers={"content-type": "application/json"},
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+
+    async def test_an_inverted_period_on_a_manual_value_is_refused_not_500(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await _values_stored(api)
+
+        response = await api.post(
+            "/v1/values/manual",
+            json=A_TYPED_VALUE | {"reference_period": {"start": "2026-12-31", "end": "2026-01-01"}},
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_reference_period")
+        assert await _values_stored(api) == before, "nothing was written"
+
+    async def test_a_malformed_breakdown_option_is_refused_not_500(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await _values_stored(api)
+
+        response = await api.post(
+            "/v1/values/manual", json=A_TYPED_VALUE | {"breakdown_option": "Two Bedrooms"}
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+        assert await _values_stored(api) == before, "nothing was written"
+
+    async def test_an_inverted_period_on_a_gate_answer_is_refused_not_500(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await _gate_answers_recorded(api)
+
+        response = await api.put(
+            A_GATE_ANSWER_PATH,
+            json={
+                "match_result": "matching",
+                "reference_period": {"start": "2026-12-31", "end": "2026-01-01"},
+            },
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_reference_period")
+        assert await _gate_answers_recorded(api) == before, "nothing was recorded"
+
+    async def test_a_gate_answer_dated_without_a_timezone_is_refused_not_500(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await _gate_answers_recorded(api)
+
+        response = await api.put(
+            A_GATE_ANSWER_PATH,
+            json={"match_result": "matching", "retrieval_date": "2026-09-12T10:00:00"},
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_match_rule_result")
+        assert await _gate_answers_recorded(api) == before, "nothing was recorded"
+
+    async def test_an_empty_override_reason_is_refused_not_500(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """An override is a reason and a date together; an empty reason is neither."""
+        before = await _gate_answers_recorded(api)
+
+        response = await api.put(
+            A_GATE_ANSWER_PATH, json={"match_result": "not_matching", "override_reason": ""}
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+        assert await _gate_answers_recorded(api) == before, "nothing was recorded"
+
+    async def test_a_malformed_source_id_is_refused_not_500(self, api: httpx.AsyncClient) -> None:
+        """An id that cannot be one is a malformed request (`arch.md` 7.3), not a server fault."""
+        response = await api.patch("/v1/data-sources/Eurostat", json={"is_enabled": False})
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+
+
+A_TYPED_VALUE = {
+    "candidate": "country.portugal",
+    "attribute": "country.naturalisation_pathway",
+    "payload": {"magnitude": 5, "unit": "years"},
+    "reference_period": {"start": "2026-01-01", "end": "2026-12-31"},
+    "retrieval_date": "2026-09-11T10:00:00Z",
+}
+"""A value of an attribute that declares manual entry, so only what a test changes is wrong."""
+
+A_GATE_ANSWER_PATH = "/v1/match-rule-results/eu_free_movement/country.portugal"
+
+_AN_ANCHOR = {"input_value": 0, "score": 100}
+_ANOTHER_ANCHOR = {"input_value": 50, "score": 0}
+"""Two anchors that fall as overburden rises, which is what minimising it means."""
+
+
+async def _the_threshold_on_overburden(api: httpx.AsyncClient, criteria_set: str) -> object:
+    body = (await api.get(f"/v1/criteria-sets/{criteria_set}")).json()
+    return next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)["matching_threshold"]
+
+
+async def _the_household(api: httpx.AsyncClient) -> tuple[int, dict]:
+    response = await api.get("/v1/household")
+    return response.status_code, response.json()
+
+
+async def _values_stored(api: httpx.AsyncClient) -> int:
+    return (await api.get("/v1/values", params={"include_superseded": True})).json()["total"]
+
+
+async def _gate_answers_recorded(api: httpx.AsyncClient) -> int:
+    return len((await api.get("/v1/match-rule-results")).json()["items"])
 
 
 async def _set_the_score_scale(database_url: str, scale: int | None) -> None:

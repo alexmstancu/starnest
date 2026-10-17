@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.bodies import ContractBody
 from starnest.api.dependencies import Catalog, Criteria
+from starnest.api.errors import built_from_the_request
 from starnest.criteria import (
     BooleanThreshold,
     CriteriaSet,
@@ -50,8 +51,10 @@ router = APIRouter(tags=["criteria"])
 
 
 class ScaleAnchorBody(BaseModel):
-    input_value: float
-    score: int
+    # The domain's own bounds, mirrored: a native constraint failing inside `ScaleAnchor` is
+    # left a 500 by `built_from_the_request`, so the request has to be refused here (BE-21).
+    input_value: float = Field(allow_inf_nan=False)
+    score: int = Field(ge=0)
     label: str | None = None
 
 
@@ -301,7 +304,8 @@ def _applied(current: CriteriaSet, attribute: str, change: CriterionInput) -> Cr
         changed = changed.with_criterion_flags(
             attribute, is_scored=change.is_scored, weight_locked=change.weight_locked
         )
-    rule = change.the_scoring_rule()
+    with built_from_the_request():
+        rule = change.the_scoring_rule()
     if rule:
         changed = changed.with_criterion_scoring(attribute, rule)
     return changed
