@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   attributeGroups,
   payloadMagnitude,
+  type AttributeCell,
   type AttributeSource,
 } from "./attributeRows";
+import { divergingBar } from "./divergingBar";
 
 describe("a figure's bare magnitude", () => {
   it("reads whichever key the value type buried the number under", () => {
@@ -113,5 +115,94 @@ describe("grouping the attributes under their pillar", () => {
     expect(row?.focusFigure).toBe("92.1 EU27 = 100");
     expect(row?.focusRaw).toBe(92.1);
     expect(row?.focusScore).toBe(82);
+  });
+});
+
+/**
+ * UI-19. **A raw gap's sign says which figure is higher, not which is better** -- and the
+ * server's raw delta is focus minus comparator, while the score delta is comparator minus focus.
+ * One bar was fed from both sides, so a coastline Portugal wins on drew Spain as ahead of it.
+ * The bar takes its direction from the scores, which know every goal, and its size from the gap.
+ */
+describe("which way a raw gap is drawn", () => {
+  /** The one comparator cell of a row with Spain as its only comparator. */
+  function spainIn(
+    focusScore: number | null,
+    spainScore: number | null,
+    rawDelta: number | null,
+  ): AttributeCell {
+    const [row] = attributeGroups(
+      [
+        {
+          attribute: "country.anything",
+          pillar: "nature",
+          focusScore,
+          focusRaw: 100,
+          focusFigure: "100",
+          comparators: [
+            { candidate: "country.spain", score: spainScore, rawDelta, figure: "" },
+          ],
+        },
+      ],
+      ["country.spain"],
+    ).get("nature")!;
+    return row!.cells[0]!;
+  }
+
+  it("draws a comparator that scored lower as behind, whichever way its figure moved", () => {
+    // Coastline is maximised: Portugal's 1,793 km against Spain's 452 is a raw gap of +1,341
+    // (focus minus comparator), and Spain, scoring 64 to Portugal's 70, is behind.
+    const [row] = attributeGroups([nature], order).get("nature")!;
+    const spain = row!.cells[0]!;
+
+    expect(spain.rawBar).toBe(-1341);
+    expect(divergingBar(spain.rawBar, row!.rawScale, row!.focusRaw).direction).toBe(
+      "behind",
+    );
+  });
+
+  it("draws a comparator that scored higher as ahead, whichever way its figure moved", () => {
+    // The same coastline the other way round: the focus has less of it and scores lower.
+    const spain = spainIn(64, 70, -1341);
+
+    expect(spain.rawBar).toBe(1341);
+    expect(divergingBar(spain.rawBar, 1341, 452).direction).toBe("ahead");
+  });
+
+  it("reads a minimised figure by its scores, so a dearer comparator is behind", () => {
+    // Cost of living is minimised: Spain's 105.5 against Portugal's 92.1 is a raw gap of -13.4,
+    // and Spain, scoring 41 to Portugal's 82, is behind.
+    const [row] = attributeGroups([economicsA], order).get("economics")!;
+
+    expect(row!.cells[0]!.rawBar).toBe(-13.4);
+  });
+
+  it("reads a target band by its scores, from either side of the band", () => {
+    // Above the band and below it: the figure's sign flips, and only the scores say who is
+    // nearer the band.
+    expect(spainIn(60, 40, 10).rawBar).toBe(-10);
+    expect(spainIn(60, 40, -10).rawBar).toBe(-10);
+    expect(spainIn(40, 60, 10).rawBar).toBe(10);
+    expect(spainIn(40, 60, -10).rawBar).toBe(10);
+  });
+
+  it("draws no direction where either side has no score", () => {
+    expect(spainIn(70, null, 1341).rawBar).toBeNull();
+    expect(spainIn(null, 64, 1341).rawBar).toBeNull();
+  });
+
+  it("draws no direction where the scores tie, however far apart the figures", () => {
+    // Two places inside a target band both score full marks: neither is ahead.
+    expect(spainIn(100, 100, 2).rawBar).toBeNull();
+  });
+
+  it("draws nothing where a side has no figure", () => {
+    expect(spainIn(70, 64, null).rawBar).toBeNull();
+  });
+
+  it("keeps the server's raw number as the server sent it", () => {
+    const [row] = attributeGroups([nature], order).get("nature")!;
+
+    expect(row!.cells[0]!.rawDelta).toBe(1341);
   });
 });

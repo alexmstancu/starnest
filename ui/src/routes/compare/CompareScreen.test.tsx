@@ -85,6 +85,37 @@ describe("choosing what to compare", () => {
       await screen.findByRole("button", { name: /^compare$/i }),
     ).toBeDisabled();
   });
+
+  /**
+   * UI-25. The placeholder's value is the empty string, which was kept as the focus: the button
+   * was disabled only for `null` and the click submitted only for a truthy focus, so Compare
+   * stood enabled and clicking it did nothing.
+   */
+  it("disables Compare again when the focus is cleared", async () => {
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Spain" }));
+    expect(screen.getByRole("button", { name: /^compare$/i })).toBeEnabled();
+
+    await userEvent.selectOptions(screen.getByLabelText(/focus/i), "");
+
+    expect(screen.getByRole("button", { name: /^compare$/i })).toBeDisabled();
+  });
+
+  it("compares again once a focus is chosen again, keeping the ticked comparators", async () => {
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Spain" }));
+    await userEvent.selectOptions(screen.getByLabelText(/focus/i), "");
+
+    await chooseFocus("Netherlands");
+
+    expect(screen.getByRole("checkbox", { name: "Spain" })).toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+    expect(
+      await screen.findByRole("heading", { name: /netherlands against spain/i }),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("when the level changes underneath", () => {
@@ -355,7 +386,107 @@ describe("the attribute figures inside a pillar", () => {
     expect(row).toHaveTextContent("92.1 EU27 = 100");
     expect(within(row).getAllByText("—").length).toBeGreaterThan(0);
   });
+
+  /**
+   * UI-19. The server's raw delta is focus minus comparator, and it is printed as the server
+   * sent it -- so the row has to say which way round it reads.
+   */
+  it("says which way a raw gap is measured", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Spain");
+    await openPillar("Economy");
+    await screen.findByRole("row", { name: /cost of living index/i });
+
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+
+    expect(
+      screen.getByRole("row", { name: /cost of living index/i }),
+    ).toHaveTextContent("its own unit; gaps read focus minus comparator");
+  });
+
+  /**
+   * UI-19. **A higher figure is not a better one.** Portugal has 1,341 km more coastline than the
+   * Netherlands and scores higher for it, so the Netherlands is behind -- while the server's raw
+   * gap, focus minus comparator, is positive and used to be drawn as the Netherlands ahead.
+   */
+  it("colours a raw gap by which side scored better, not by which figure is higher", async () => {
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, () =>
+        HttpResponse.json(aCoastlineComparison()),
+      ),
+    );
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    await openPillar("Economy");
+    await screen.findByRole("row", { name: /coastline access/i });
+
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+
+    const row = screen.getByRole("row", { name: /coastline access/i });
+    // The server's number, unchanged, and coloured as the comparator trailing the focus.
+    expect(within(row).getByText("+1,341.0")).toHaveClass("matrix__delta--behind");
+  });
 });
+
+/**
+ * Portugal against the Netherlands on one maximised attribute, filed under economics so the
+ * fixture's one pillar can open it: Portugal has more of it and scores higher for it.
+ */
+function aCoastlineComparison() {
+  return {
+    criteria_set: "default",
+    level: "country",
+    focus: {
+      candidate: "country.portugal",
+      name: "Portugal",
+      score: 78,
+      coverage: 92,
+      match_status: "matching",
+      pillar_scores: [
+        { pillar: "economics", score: 81, weight: 25, contribution: 20.25 },
+      ],
+    },
+    comparators: [
+      {
+        candidate: "country.netherlands",
+        name: "Netherlands",
+        score: 71,
+        coverage: 88,
+        match_status: "matching",
+        pillar_scores: [
+          { pillar: "economics", score: 74, weight: 25, contribution: 18.5 },
+        ],
+      },
+    ],
+    attributes: [
+      {
+        attribute: "country.coastline_access",
+        pillar: "economics",
+        focus: {
+          normalised_score: 70,
+          value: {
+            data_source: "eurostat",
+            payload: { magnitude: 1793, unit: "km" },
+            retrieval_date: "2026-01-01",
+          },
+        },
+        comparators: [
+          {
+            candidate: "country.netherlands",
+            normalised_score: 64,
+            delta: 1341,
+            value: {
+              data_source: "eurostat",
+              payload: { magnitude: 452, unit: "km" },
+              retrieval_date: "2026-01-01",
+            },
+          },
+        ],
+      },
+    ],
+    synthesis: [],
+  };
+}
 
 describe("when a comparison cannot be drawn", () => {
   it("says what to choose before anything is selected in the sidebar", async () => {

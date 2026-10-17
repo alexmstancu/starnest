@@ -249,10 +249,12 @@ function AttributeRowView({
   name: string;
 }) {
   const raw = shownAs === "raw";
+  // The raw gap is the server's focus minus comparator, printed as sent, so the row says which
+  // way round it reads; the bar beneath it is coloured by the scores (UI-19).
   const note = raw
     ? row.focusRaw === null && row.focusScore === null
       ? "no figure"
-      : "its own unit, as published"
+      : "its own unit; gaps read focus minus comparator"
     : "normalised 0–100";
 
   return (
@@ -268,7 +270,7 @@ function AttributeRowView({
       />
       {row.cells.map((cell) => {
         const bar = raw
-          ? divergingBar(cell.rawDelta, row.rawScale, row.focusRaw)
+          ? divergingBar(cell.rawBar, row.rawScale, row.focusRaw)
           : divergingBar(cell.scoreDelta, row.scoreScale, row.focusScore);
         return (
           <Cell

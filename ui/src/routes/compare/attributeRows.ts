@@ -9,8 +9,9 @@
  *
  * **No arithmetic the server already did is redone.** The raw-unit delta arrives on the wire
  * (`ComparisonAttributeRow.comparators[].delta`); only the score delta -- a subtraction the
- * comparison does not pre-compute at attribute level -- is taken here. A `.tsx` under `routes/`
- * may not call `Number`, which is why even that subtraction lives in a module.
+ * comparison does not pre-compute at attribute level -- is taken here, and the raw view's bar
+ * borrows its sign, since the scores are what say which side is better. A `.tsx` under
+ * `routes/` may not call `Number`, which is why even that subtraction lives in a module.
  */
 
 import { maxAbsDelta } from "./divergingBar";
@@ -47,7 +48,18 @@ export interface AttributeCell {
   score: number | null;
   /** The comparator's score minus the focus's, in normalised points. Null where either absent. */
   scoreDelta: number | null;
+  /** Focus minus comparator, in the attribute's own unit: the server's figure, printed as is. */
   rawDelta: number | null;
+  /**
+   * What the raw view's bar is drawn from: the raw gap's size, signed by `scoreDelta`.
+   *
+   * **A raw gap's sign says which figure is higher, not which is better** -- a higher cost of
+   * living is worse, a longer coastline better, and a target band is better from neither side --
+   * and the server's raw delta runs the other way from the score delta besides (UI-19). The
+   * scores already know every goal, so they decide the direction. Null where either score is
+   * missing, the scores tie, or there is no raw gap.
+   */
+  rawBar: number | null;
   figure: string;
 }
 
@@ -94,6 +106,14 @@ function scoreDeltaOf(
   return score === null || focusScore === null ? null : score - focusScore;
 }
 
+function rawBarOf(
+  rawDelta: number | null,
+  scoreDelta: number | null,
+): number | null {
+  if (rawDelta === null || scoreDelta === null || scoreDelta === 0) return null;
+  return Math.sign(scoreDelta) * Math.abs(rawDelta);
+}
+
 /**
  * The attributes grouped under their pillar, in the column order the matrix header sets.
  *
@@ -113,11 +133,14 @@ export function attributeGroups(
         (each) => each.candidate === candidate,
       );
       const score = found?.score ?? null;
+      const scoreDelta = scoreDeltaOf(score, source.focusScore);
+      const rawDelta = found?.rawDelta ?? null;
       return {
         candidate,
         score,
-        scoreDelta: scoreDeltaOf(score, source.focusScore),
-        rawDelta: found?.rawDelta ?? null,
+        scoreDelta,
+        rawDelta,
+        rawBar: rawBarOf(rawDelta, scoreDelta),
         figure: found?.figure ?? "",
       };
     });

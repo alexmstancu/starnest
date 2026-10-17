@@ -4,6 +4,7 @@ import { ComparisonMatrix } from "./ComparisonMatrix";
 import { ViewChoices } from "./ViewChoices";
 import type { Measure } from "./pillarMatrix";
 import { droppedByLimit, withinLimit } from "./comparatorLimit";
+import { requestFor, type ComparisonRequest } from "./comparisonRequest";
 import { tagByImpact, type TaggedLine } from "./synthesisImpact";
 import {
   fetchCandidates,
@@ -69,10 +70,7 @@ function TheComparison({
   // How the attribute rows read: the normalised score, or the figure in its own unit.
   const [shownAs, setShownAs] = useState<"score" | "raw">("score");
   const [measure, setMeasure] = useState<Measure>("points");
-  const [asked, setAsked] = useState<{
-    focus: string;
-    comparators: string[];
-  } | null>(null);
+  const [asked, setAsked] = useState<ComparisonRequest | null>(null);
 
   const candidates = useResource(
     useCallback(
@@ -117,6 +115,7 @@ function TheComparison({
   // 409 above the limit, so that was a request this application could never make (R4).
   const kept = withinLimit(comparators, limit);
   const dropped = droppedByLimit(comparators, limit);
+  const request = requestFor(focus, kept);
 
   return (
     <>
@@ -129,6 +128,7 @@ function TheComparison({
           roster={roster}
           focus={focus}
           comparators={kept}
+          request={request}
           limit={limit ?? null}
           dropped={dropped}
           choices={
@@ -155,7 +155,7 @@ function TheComparison({
                 : [...chosen, candidate],
             )
           }
-          onCompare={() => focus && setAsked({ focus, comparators: kept })}
+          onCompare={setAsked}
         />
       )}
 
@@ -187,6 +187,7 @@ function ComparisonPicker({
   roster,
   focus,
   comparators,
+  request,
   limit,
   onFocus,
   onToggleComparator,
@@ -197,10 +198,12 @@ function ComparisonPicker({
   roster: Candidate[];
   focus: string | null;
   comparators: string[];
+  /** What Compare would send, or null while there is nothing to compare. */
+  request: ComparisonRequest | null;
   limit: number | null;
-  onFocus: (candidate: string) => void;
+  onFocus: (candidate: string | null) => void;
   onToggleComparator: (candidate: string) => void;
-  onCompare: () => void;
+  onCompare: (request: ComparisonRequest) => void;
   /** How many the limit is holding back, so the screen says so rather than losing them. */
   dropped: number;
   /** The two questions about how to read the comparison, answered before it is drawn. */
@@ -252,7 +255,8 @@ function ComparisonPicker({
         <select
           className="field__control"
           value={focus ?? ""}
-          onChange={(event) => onFocus(event.target.value)}
+          // The placeholder's value is "", which is no candidate: a cleared focus is none.
+          onChange={(event) => onFocus(event.target.value || null)}
         >
           <option value="">Choose a candidate…</option>
           {roster.map((candidate) => (
@@ -285,11 +289,12 @@ function ComparisonPicker({
       </fieldset>
       </div>
 
+      {/* Disabled, and sending, from one answer -- the two used to disagree (UI-25). */}
       <button
         type="button"
         className="button button--primary"
-        disabled={focus === null || comparators.length === 0}
-        onClick={onCompare}
+        disabled={request === null}
+        onClick={request === null ? undefined : () => onCompare(request)}
       >
         Compare
       </button>
