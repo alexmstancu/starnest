@@ -266,9 +266,10 @@ async def start_run(
     # A source that charges is asked only when the run names the attributes it wants: a sweep
     # over a level asks the free sources for whole indicators, and asking a paid one the same
     # way would be hundreds of calls nobody chose (`asked_this_run`).
-    # **One run at a time** (P35). Asked before anything is read or fetched, because the harm
-    # this prevents is a *second* paid run: starting one answers 202 and then blocks, so a
-    # client timeout looks like a failure, and trying again is what a failure invites.
+    # **One run at a time** (P35). Asked before any source is consulted or anything fetched,
+    # because the harm this prevents is a *second* paid run: this answers 202 once the run is
+    # opened and fetches afterwards, in a background task, so a run is still going when a
+    # second tab, a double click or a retried request asks for another.
     in_flight = await runs.run_in_flight()
     if in_flight is not None:
         raise RunAlreadyInFlightError(
