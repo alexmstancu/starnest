@@ -65,11 +65,16 @@ function exactNumber(raw: unknown): string {
   return String(raw);
 }
 
+/** The currency every amount is converted into, and so the one that needs no conversion. */
+const EURO = "EUR";
+
 export interface FigureOptions {
   /**
-   * Every digit the wire carries, instead of the two decimals a person reads. **Only where
-   * rounding would hide a difference**: two figures that moved by less than the displayed
-   * precision read the same rounded, and a screen calling them different has to show why.
+   * The figure exactly as stored: every digit the wire carries, instead of the two decimals a
+   * person reads, and a converted amount's euro equivalent beside it. **Only where the usual
+   * line would hide a difference**: two figures that moved by less than the displayed
+   * precision, or in euros alone, read the same, and a screen calling them different has to
+   * show why.
    */
   exact?: boolean;
 }
@@ -90,8 +95,16 @@ export function describeFigure(
   const payload = value.payload as Record<string, unknown>;
   if ("magnitude" in payload)
     return `${digits(payload["magnitude"])} ${readableUnit(payload["unit"])}`;
-  if ("amount_eur" in payload)
-    return `${digits(payload["amount"])} ${String(payload["currency"])}`;
+  // **Shown exactly, a converted amount carries its euro equivalent** (UI-22): converted again
+  // at a fresher ECB rate, the same 1000 CHF has a new euro figure and reads the same without
+  // it. A euro amount is its own equivalent -- the server refuses one that is not.
+  if ("amount_eur" in payload) {
+    const currency = String(payload["currency"]);
+    const amount = `${digits(payload["amount"])} ${currency}`;
+    return options.exact === true && currency !== EURO
+      ? `${amount} (${digits(payload["amount_eur"])} ${EURO})`
+      : amount;
+  }
   // **An index carries its bounds, because the bounds are what make it mean anything** (P57).
   // `reqs.md` reserves `Index` for figures whose scale does the work -- a World Bank governance
   // figure of 1.07 sits on -2.5 to 2.5, and printed bare it reads like a percentage. This

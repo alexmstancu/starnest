@@ -250,6 +250,45 @@ describe("what decides that a figure did not move", () => {
     expect(row?.later).toBe("31.2 ladder points");
   });
 
+  /**
+   * **A converted amount can move in euros alone**, at a fresher exchange rate, and its amount
+   * and currency then read the same on both sides of a row that says it moved.
+   */
+  it("shows the euro equivalents when a converted amount moved only in euros", () => {
+    const rent = { ...pair, attribute: "country.rent_one_bedroom_centre" };
+    const diff = diffAcquisitions(
+      [{ ...rent, payload: { amount: 1000, currency: "CHF", amount_eur: 1061.2 } }],
+      [{ ...rent, payload: { amount: 1000, currency: "CHF", amount_eur: 1063.5 } }],
+    );
+    const [row] = diff.rows;
+
+    expect(diff.refreshed).toBe(1);
+    expect(row?.earlier).toBe("1000 CHF (1061.2 EUR)");
+    expect(row?.later).toBe("1000 CHF (1063.5 EUR)");
+  });
+
+  it("calls the same converted amount unchanged, and shows it as it always has", () => {
+    const rent = { ...pair, attribute: "country.rent_one_bedroom_centre" };
+    const payload = { amount: 1000, currency: "CHF", amount_eur: 1061.2 };
+    const diff = diffAcquisitions([{ ...rent, payload }], [{ ...rent, payload }]);
+    const [row] = diff.rows;
+
+    expect(diff.unchanged).toBe(1);
+    expect(row?.earlier).toBe("1000 CHF");
+    expect(row?.later).toBe("1000 CHF");
+  });
+
+  it("keeps the amounts alone where they already tell the two apart", () => {
+    const rent = { ...pair, attribute: "country.rent_one_bedroom_centre" };
+    const [row] = diffAcquisitions(
+      [{ ...rent, payload: { amount: 1000, currency: "CHF", amount_eur: 1061.2 } }],
+      [{ ...rent, payload: { amount: 1100, currency: "CHF", amount_eur: 1167.32 } }],
+    ).rows;
+
+    expect(row?.earlier).toBe("1000 CHF");
+    expect(row?.later).toBe("1100 CHF");
+  });
+
   it("calls the same payload unchanged whatever the order of its keys", () => {
     const diff = diffAcquisitions(
       [{ ...pair, payload: { magnitude: 7.1, unit: "ladder_points" } }],

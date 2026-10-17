@@ -203,4 +203,35 @@ describe("a figure exactly as stored", () => {
   it("marks a missing payload absent either way", () => {
     expect(describeFigure({ payload: null }, { exact: true })).toBe(ABSENT);
   });
+
+  /**
+   * UI-22. **A converted amount can move in euros alone**: the same 1000 CHF, re-fetched and
+   * converted at a fresher ECB rate, has a new euro equivalent and the same amount. Shown as
+   * amount and currency only, the two read the same beside a diff calling them different.
+   */
+  it("prints a converted amount with its euro equivalent, every digit of both", () => {
+    expect(
+      describeFigure(
+        { payload: { amount: 1000.125, currency: "CHF", amount_eur: 1061.234567 } },
+        { exact: true },
+      ),
+    ).toBe("1000.125 CHF (1061.234567 EUR)");
+  });
+
+  it("prints a euro amount once, because its euro equivalent is the same figure", () => {
+    expect(
+      describeFigure(
+        { payload: { amount: 1250.125, currency: "EUR", amount_eur: 1250.125 } },
+        { exact: true },
+      ),
+    ).toBe("1250.125 EUR");
+  });
+
+  it("leaves the euro equivalent out when exactness is not asked for", () => {
+    expect(
+      describeFigure({
+        payload: { amount: 1000.125, currency: "CHF", amount_eur: 1061.234567 },
+      }),
+    ).toBe("1000.13 CHF");
+  });
 });
