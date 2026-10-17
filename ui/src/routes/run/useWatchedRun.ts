@@ -6,7 +6,8 @@
  * returns those reads in whatever order it likes -- so a slow answer for a run the reader had
  * already left used to replace the one they had just chosen. Each act takes a ticket when it is
  * clicked, and its read is shown only while that ticket is still the newest. A late answer is
- * ignored rather than cancelled: it costs one GET, never the card.
+ * ignored rather than cancelled: it costs one GET, never the card. **A late failure is ignored
+ * the same way**: it is about a run the reader has left, so it reports nothing either.
  */
 
 import { useCallback, useRef, useState } from "react";
@@ -19,6 +20,8 @@ export interface WatchedRun {
   current: RunDetail | null;
   /** A ticket for an act that will read a run back. Taken on the click, before any await. */
   claim: () => number;
+  /** Whether `ticket` is still the newest: whether the reader is still waiting on that act. */
+  isCurrent: (ticket: number) => boolean;
   /** Shows `detail` if `ticket` is still the newest; otherwise the reader has moved on. */
   show: (ticket: number, detail: RunDetail) => void;
   /** Puts the card away, and with it every read still on its way. */
@@ -38,9 +41,17 @@ export function useWatchedRun(): WatchedRun {
     return newest.current;
   }, []);
 
-  const show = useCallback((ticket: number, detail: RunDetail) => {
-    if (ticket === newest.current) setCurrent(detail);
-  }, []);
+  const isCurrent = useCallback(
+    (ticket: number) => ticket === newest.current,
+    [],
+  );
+
+  const show = useCallback(
+    (ticket: number, detail: RunDetail) => {
+      if (isCurrent(ticket)) setCurrent(detail);
+    },
+    [isCurrent],
+  );
 
   const clear = useCallback(() => {
     newest.current += 1;
@@ -49,5 +60,5 @@ export function useWatchedRun(): WatchedRun {
 
   const unclaimed = useCallback(() => newest.current === UNCLAIMED, []);
 
-  return { current, claim, show, clear, unclaimed };
+  return { current, claim, isCurrent, show, clear, unclaimed };
 }

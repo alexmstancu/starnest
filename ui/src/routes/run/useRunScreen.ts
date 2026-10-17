@@ -11,7 +11,8 @@
  * newest act still going, and lasts as long as that act does.
  *
  * **The card shows the run the reader chose last** (`useWatchedRun.ts`): every act that reads a
- * run back takes a ticket on the click, and the opening view gives way to all of them.
+ * run back takes a ticket on the click, and the opening view gives way to all of them. A read
+ * the reader has left neither changes the card nor reports its failure.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -102,7 +103,7 @@ export interface RunScreenState {
 export function useRunScreen(): RunScreenState {
   const [plan, setPlan] = useState<RunPlan | null>(null);
   const [planOrigin, setPlanOrigin] = useState<GapKind | null>(null);
-  const { current, claim, show, clear, unclaimed } = useWatchedRun();
+  const { current, claim, isCurrent, show, clear, unclaimed } = useWatchedRun();
   const [busy, setBusy] = useState<RunAct | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
   const [armed, setArmed] = useState<ArmedRun | null>(null);
@@ -135,11 +136,23 @@ export function useRunScreen(): RunScreenState {
     [history],
   );
 
+  /**
+   * Reads a run back, and shows it if the reader is still waiting on the act that asked.
+   *
+   * **A read the reader has left fails as quietly as it answers** (UI-04): its answer is not
+   * shown, so its failure is not reported either -- it is about a run nobody is waiting on, and
+   * it would stand over the one they chose. Only the read is forgiven: a start or a stop the
+   * server refused is the act's own request, and reports whatever was opened meanwhile.
+   */
   const watch = useCallback(
     async (ticket: number, runId: number) => {
-      show(ticket, await fetchRun(runId));
+      try {
+        show(ticket, await fetchRun(runId));
+      } catch (error) {
+        if (isCurrent(ticket)) throw error;
+      }
     },
-    [show],
+    [show, isCurrent],
   );
 
   /**

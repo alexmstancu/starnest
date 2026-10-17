@@ -1766,6 +1766,46 @@ function holdTheNextReadOf(runId: number): {
 }
 
 /**
+ * Holds the next read of one run until the test lets it go, and then fails it; every later read
+ * goes through. **Slow and then failing** is the read a reader can leave before it answers.
+ */
+function failTheNextReadOf(runId: number): {
+  release: () => void;
+  arrived: () => boolean;
+} {
+  const answer = heldAnswer();
+  let arrived = false;
+  mockServer.use(
+    http.get(`${BASE}/data-acquisition-runs/${String(runId)}`, async () => {
+      if (arrived) return;
+      arrived = true;
+      await answer.held;
+      return HttpResponse.json(
+        {
+          code: "internal_error",
+          message: `run ${String(runId)} could not be read`,
+        },
+        { status: 500 },
+      );
+    }),
+  );
+  return { release: answer.release, arrived: () => arrived };
+}
+
+/**
+ * Waits for every act on the screen to end, however it ended. **The estimate is held while any
+ * act is going**, so it coming back says the act under test has finished whatever it was going
+ * to do -- including reporting a failure, which leaves nothing else on screen to wait for.
+ */
+async function everyActHasEnded(): Promise<void> {
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: /estimate an acquisition/i }),
+    ).toBeEnabled(),
+  );
+}
+
+/**
  * Run 7 is still going, and its stop is answered only when the test says so. **The mock
  * remembers the stop** once it is answered, as the server does.
  */
@@ -1936,6 +1976,157 @@ describe("which run the card shows", () => {
       screen.getByRole("region", { name: /acquisition 8/i }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: /acquisition 6/i })).toBeNull();
+  });
+});
+
+/**
+ * UI-04. **A read the reader has left reports nothing, failure included.** The tickets kept a
+ * late answer off the card but not a late failure: opening run 6, whose read was slow and then
+ * failed, and then run 5 put run 5's card under run 6's error. **An act's own request is not a
+ * read**, so a start or a stop the server refused still reports, whatever was opened meanwhile.
+ */
+describe("whose failure the screen reports", () => {
+  it("does not report a failed read of a run the reader has since left", async () => {
+    const read = failTheNextReadOf(6);
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+
+    await openFromHistory("6");
+    await waitFor(() => expect(read.arrived()).toBe(true));
+    await openFromHistory("5");
+    await screen.findByRole("region", { name: /acquisition 5/i });
+    read.release();
+    await everyActHasEnded();
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      screen.getByRole("region", { name: /acquisition 5/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not report a failed read of a card the reader has dismissed", async () => {
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+
+    const read = failTheNextReadOf(7);
+    await userEvent.click(card.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(read.arrived()).toBe(true));
+    await userEvent.click(card.getByRole("button", { name: "Dismiss" }));
+    read.release();
+    await everyActHasEnded();
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("region", { name: /acquisition 7/i })).toBeNull();
+  });
+
+  it("keeps reporting the failure of the run the reader opened last", async () => {
+    const older = failTheNextReadOf(6);
+    const newer = failTheNextReadOf(5);
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+
+    await openFromHistory("6");
+    await waitFor(() => expect(older.arrived()).toBe(true));
+    await openFromHistory("5");
+    await waitFor(() => expect(newer.arrived()).toBe(true));
+    newer.release();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "run 5 could not be read",
+    );
+    older.release();
+    await everyActHasEnded();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "run 5 could not be read",
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent(
+      "run 6 could not be read",
+    );
+  });
+
+  it("reports a failed read of the run the reader is waiting on", async () => {
+    const read = failTheNextReadOf(6);
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+
+    await openFromHistory("6");
+    await waitFor(() => expect(read.arrived()).toBe(true));
+    read.release();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "run 6 could not be read",
+    );
+  });
+
+  it("still reports a start the server refused, though the reader opened another run meanwhile", async () => {
+    const refusal = heldAnswer();
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs`, async () => {
+        await refusal.held;
+        return HttpResponse.json(
+          {
+            code: "run_already_in_flight",
+            message: "run 7 is still going, and one household runs one pass at a time",
+          },
+          { status: 409 },
+        );
+      }),
+    );
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+
+    await estimate();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /start this acquisition/i }),
+    );
+    await openFromHistory("6");
+    await screen.findByRole("region", { name: /acquisition 6/i });
+    refusal.release();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "run_already_in_flight",
+    );
+    expect(
+      screen.getByRole("region", { name: /acquisition 6/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("still reports a stop the server refused, though the reader opened another run meanwhile", async () => {
+    const refusal = heldAnswer();
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          run_status: "running",
+          finished_at: null,
+        }),
+      ),
+      http.post(`${BASE}/data-acquisition-runs/:runId/stop`, async () => {
+        await refusal.held;
+        return HttpResponse.json(
+          { code: "not_found", message: "there is no run numbered 7" },
+          { status: 404 },
+        );
+      }),
+    );
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+
+    await userEvent.click(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+    await openFromHistory("6");
+    await screen.findByRole("region", { name: /acquisition 6/i });
+    refusal.release();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "there is no run numbered 7",
+    );
   });
 });
 
