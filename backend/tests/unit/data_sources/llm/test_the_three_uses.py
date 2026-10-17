@@ -67,6 +67,17 @@ def a_quantity_attribute() -> Attribute:
     )
 
 
+def an_assigned_score() -> Attribute:
+    """A judgement the catalog leaves to a person, as `residency_admin_ease` is."""
+    return Attribute(
+        id="country.residency_admin_ease",
+        name="Residency admin ease",
+        level="country",
+        value_type=ValueType.ASSIGNED_SCORE,
+        pillar="governance",
+    )
+
+
 class TestNamingTheEmployers:
     async def test_the_names_are_stored_as_a_label_set_with_its_sources(self) -> None:
         acquired = await LlmEmployersAdapter(
@@ -159,6 +170,33 @@ class TestNamingTheEmployers:
         acquired = await LlmEmployersAdapter(a_model()).fetch(a_quantity_attribute(), [PORTUGAL])
 
         assert "answers only" in acquired.failures[0].reason
+
+    @pytest.mark.parametrize(
+        "listed",
+        ["[null]", "[123]", '[{"name": "Acme"}]', "[true]", '["Acme", null]'],
+    )
+    async def test_a_list_holding_something_other_than_names_is_refused(self, listed: str) -> None:
+        """BE-30. P72 checked that the answer is a list and not what it holds, so `str()` turned
+        `null` into a firm called "None", `true` into "True" and an object into its repr --
+        stored as named employers with the model's real citations attached."""
+        acquired = await LlmEmployersAdapter(
+            a_model(an_answer(f'{{"employers": {listed}}}', pages=(A_PAGE,)))
+        ).fetch(employers_attribute(), [PORTUGAL])
+
+        assert acquired.values == ()
+        (failure,) = acquired.failures
+        assert "other than names" in failure.reason
+        assert (acquired.calls, acquired.cost_eur > 0) == (1, True), "it was billed either way"
+
+    async def test_blank_names_are_still_dropped_rather_than_refusing_the_answer(self) -> None:
+        """The control: an empty string is a name the model failed to give, not a sign the
+        answer is malformed, so it costs only itself."""
+        acquired = await LlmEmployersAdapter(
+            a_model(an_answer('{"employers": ["Siemens", "  ", ""]}', pages=(A_PAGE,)))
+        ).fetch(employers_attribute(), [PORTUGAL])
+
+        (value,) = acquired.values
+        assert value.payload.labels == ("Siemens",)  # type: ignore[union-attr]
 
 
 class TestTheFallbackFigure:
@@ -322,6 +360,34 @@ class TestTheFallbackFigure:
         ).fetch(a_count_attribute(), [PORTUGAL])
 
         assert acquired.values[0].payload.count == 12  # type: ignore[union-attr]
+
+    async def test_an_assigned_score_is_never_asked_about(self) -> None:
+        """BE-28. An assigned score is a judgement, not a figure a publisher printed -- `reqs.md`
+        6.10 use 1 allows a cited number for a measurable attribute -- and the catalog gives it
+        no range to be assigned on, so the payload could never be built: every such call was
+        billed and then refused."""
+        model = a_model(an_answer('{"value": 7, "period": "2025"}'))
+
+        acquired = await LlmFallbackAdapter(model, answers=(str(an_assigned_score().id),)).fetch(
+            an_assigned_score(), [PORTUGAL]
+        )
+
+        assert model._messages.asked == []
+        (failure,) = acquired.failures
+        assert failure.candidate is None
+        assert "judgement" in failure.reason
+        assert (acquired.calls, acquired.cost_eur) == (0, Decimal(0))
+
+    async def test_a_figure_keeps_every_digit_the_model_gave(self) -> None:
+        """BE-29. The reply's JSON was decoded into a float and rebuilt as a `Decimal` from its
+        17 significant digits, so a figure given with more lost the rest before it was stored."""
+        acquired = await LlmFallbackAdapter(
+            a_model(an_answer('{"value": 1180.123456789012345678, "period": "2025"}')),
+            answers=("country.average_rent",),
+        ).fetch(a_quantity_attribute(), [PORTUGAL])
+
+        (value,) = acquired.values
+        assert value.payload.magnitude == Decimal("1180.123456789012345678")  # type: ignore[union-attr]
 
 
 class TestResearchingAGate:

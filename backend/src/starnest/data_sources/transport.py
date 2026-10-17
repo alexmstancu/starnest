@@ -20,6 +20,7 @@ more than a status code to whoever reads the run's failures, and none of them be
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -84,7 +85,10 @@ class JsonOverHttp:
         try:
             response = await self._client.get(url, params=dict(params) if params else None)
             response.raise_for_status()
-            return response.json()
+            # **Numbers arrive as `Decimal`, never as floats** (BE-29). A float keeps 17
+            # significant digits, so a figure published with more lost the rest here, before any
+            # parser's `Decimal(str(...))` could save it. Whole numbers stay `int`.
+            return response.json(parse_float=Decimal)
         except httpx.HTTPStatusError as refused:
             raise SourceUnavailableError(self._explain(refused)) from refused
         except httpx.HTTPError as unreachable:

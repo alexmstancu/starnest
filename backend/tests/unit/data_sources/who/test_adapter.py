@@ -17,7 +17,7 @@ import httpx
 import pytest
 
 from starnest.candidates import Candidate
-from starnest.data import Attribute, ConfidenceLevel, IndexParameters, ValueType
+from starnest.data import AllowedRange, Attribute, ConfidenceLevel, IndexParameters, ValueType
 from starnest.data_sources.who import WhoAdapter
 from starnest.data_sources.who import adapter as who_adapter
 from starnest.data_sources.who.manifest import INDICATORS
@@ -121,6 +121,33 @@ class TestWhatComesBack:
         assert quote is not None
         assert "PM25_MEAN" in quote
         assert "UHC" not in quote, "the first indicator's name must not travel"
+
+    async def test_a_figure_outside_the_attributes_credible_range_is_stored_rejected(
+        self,
+    ) -> None:
+        """BE-09. WHO was the one adapter building its values by hand, so the catalog's credible
+        range never reached them: a figure the attribute declares unbelievable was stored and
+        scored like any other. Through `Measurements` it is kept, with the verdict beside it."""
+        credible = AllowedRange(min_value=Decimal(20), max_value=Decimal(100))
+
+        acquired = await adapter_returning({"value": [_row("ROU", 2023, 8.0)]}).fetch(
+            an_attribute(allowed_range=credible), [ROMANIA]
+        )
+
+        (value,) = acquired.values
+        assert value.rejection_reason is not None
+        assert "outside the credible range 20 to 100" in value.rejection_reason
+
+    async def test_a_figure_inside_the_credible_range_is_accepted(self) -> None:
+        """The control: the range rejects what lies outside it, and nothing else."""
+        credible = AllowedRange(min_value=Decimal(20), max_value=Decimal(100))
+
+        acquired = await the_captured_adapter().fetch(
+            an_attribute(allowed_range=credible), [ROMANIA]
+        )
+
+        (value,) = acquired.values
+        assert value.rejection_reason is None
 
 
 class TestTheAggregatesThatLookLikeCountries:

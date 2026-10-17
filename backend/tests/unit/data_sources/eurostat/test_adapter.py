@@ -214,6 +214,28 @@ class TestThePayloadTakesTheShapeTheCatalogDeclares:
         assert value.payload.unit == "ladder_points"
         assert value.payload.magnitude > 0
 
+    async def test_a_long_figure_keeps_every_digit(self) -> None:
+        """BE-29, through the transport every source shares: the bytes Eurostat sends are
+        decoded once, and a figure with more than a float's 17 significant digits used to lose
+        the rest there, before the cube was ever read."""
+        cube = (
+            b'{"id": ["unit", "geo", "time"], "size": [1, 1, 1], "dimension": {'
+            b'"unit": {"category": {"index": {"PC": 0}}},'
+            b'"geo": {"category": {"index": {"PT": 0}}},'
+            b'"time": {"category": {"index": {"2025": 0}}}},'
+            b'"value": {"0": 12.345678901234567891}}'
+        )
+        adapter = EurostatAdapter(
+            httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda request: httpx.Response(200, content=cube))
+            )
+        )
+
+        acquired = await adapter.fetch(an_attribute(), [a_country("portugal", "PT")])
+
+        (value,) = acquired.values
+        assert value.payload.value == Decimal("12.345678901234567891")
+
 
 class TestConfidenceFollowsEurostatsOwnFlag:
     async def test_an_unflagged_figure_from_an_official_agency_is_high(self) -> None:

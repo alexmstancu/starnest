@@ -215,8 +215,17 @@ def _the_employers_named(
             "the model replied with a single value where a list of employers was asked for: "
             f"{type(listed).__name__}"
         )
+    # **And a list of names, checked for being one** (BE-30). `str()` made a firm called
+    # "None" out of a null, "True" out of a boolean and a repr out of an object, each stored with
+    # the model's real citations beside it. A reply holding anything but text has not answered.
+    not_names = [type(name).__name__ for name in listed if not isinstance(name, str)]
+    if not_names:
+        return refused(
+            "the model listed something other than names where employers were asked for: "
+            f"{', '.join(dict.fromkeys(not_names))}"
+        )
 
-    named = [str(name).strip() for name in listed if str(name).strip()]
+    named = [name.strip() for name in listed if name.strip()]
     # **The ceiling the prompt states, enforced** (`reqs.md` 6.10 asks for a bounded list).
     # A prompt is a request; a model that names forty is not refused outright, because the
     # first twelve are still a usable answer and the rest are the part nobody asked for.

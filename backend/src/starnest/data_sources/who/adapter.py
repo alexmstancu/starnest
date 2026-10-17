@@ -29,6 +29,7 @@ from starnest.data import (
     DataSourceId,
     Index,
     IndexParameters,
+    Measurements,
     ReferencePeriod,
     Value,
 )
@@ -82,9 +83,16 @@ class WhoAdapter(SourceAdapter):
         *,
         indicator: str,
     ) -> Acquired:
-        retrieved = datetime.now(UTC)
         bounds = _the_scale_of(attribute)
         newest = _the_newest_year_per_country(reported)
+        # **Built through `Measurements`, as every other adapter's figures are** (BE-09), so the
+        # attribute's credible range reaches them: a figure outside it is kept and marked.
+        measuring = Measurements(
+            attribute=attribute,
+            data_source=WHO,
+            retrieved=datetime.now(UTC),
+            confidence_level=ConfidenceLevel.HIGH,
+        )
 
         values: list[Value] = []
         failures: list[AcquisitionFailure] = []
@@ -109,9 +117,8 @@ class WhoAdapter(SourceAdapter):
                     _a_value(
                         reading,
                         bounds=bounds,
-                        attribute=attribute,
+                        measuring=measuring,
                         candidate=candidate,
-                        retrieved=retrieved,
                         indicator=indicator,
                     )
                 )
@@ -165,27 +172,19 @@ def _a_value(
     reading: Reading,
     *,
     bounds: IndexParameters,
-    attribute: Attribute,
+    measuring: Measurements,
     candidate: Candidate,
-    retrieved: datetime,
     indicator: str,
 ) -> Value:
-    return Value(
-        candidate=candidate.id,
-        attribute=attribute.id,
-        value_type=attribute.value_type,
-        data_source=WHO,
-        reference_period=ReferencePeriod(
-            start=date(reading.year, 1, 1), end=date(reading.year, 12, 31)
-        ),
-        retrieval_date=retrieved,
-        confidence_level=ConfidenceLevel.HIGH,
+    return measuring.figure(
+        candidate=candidate,
         payload=Index(
             value=reading.figure,
             provider=bounds.provider,
             scale_min=bounds.scale_min,
             scale_max=bounds.scale_max,
         ),
+        period=ReferencePeriod(start=date(reading.year, 1, 1), end=date(reading.year, 12, 31)),
         # **The indicator actually fetched, not a publication name typed once.** This read
         # "WHO UHC Service Coverage Index" whatever was asked for, which is true only while the
         # manifest holds one entry -- and a second WHO indicator is a manifest-and-catalog

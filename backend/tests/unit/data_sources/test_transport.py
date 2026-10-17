@@ -10,6 +10,7 @@ somebody looking for a fault in a request that had none.
 """
 
 import asyncio
+from decimal import Decimal
 
 import httpx
 import pytest
@@ -62,6 +63,27 @@ class TestWhatItReturns:
         await answering(record).get("/x", params={"format": "JSON", "lang": "EN"})
 
         assert dict(asked[0]) == {"format": "JSON", "lang": "EN"}
+
+    async def test_a_long_decimal_survives_decoding_digit_for_digit(self) -> None:
+        """BE-29. Decoded as a float, a published figure keeps 17 significant digits and every
+        parser then rebuilt it with `Decimal(str(...))` -- the loss had already happened. Money
+        and shares never pass through a float in this application (`arch.md` 9.6)."""
+        endpoint = answering(
+            lambda request: httpx.Response(200, content=b'{"v": 0.1234567890123456789}')
+        )
+
+        decoded = await endpoint.get("/indicator")
+
+        assert decoded == {"v": Decimal("0.1234567890123456789")}
+        assert isinstance(decoded["v"], Decimal)
+
+    async def test_integers_stay_integers(self) -> None:
+        """The control: a count, a year and a page number are whole, and stay `int`."""
+        endpoint = answering(lambda request: httpx.Response(200, content=b'{"year": 2025}'))
+
+        decoded = await endpoint.get("/indicator")
+
+        assert type(decoded["year"]) is int
 
 
 class TestWhatItRefuses:

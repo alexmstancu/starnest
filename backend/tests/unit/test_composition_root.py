@@ -403,6 +403,20 @@ class TestTheFallbackDeclaration:
 
         assert await _the_fallback(environment, _ACatalogOfFour(), []) == ()
 
+    async def test_a_judgement_score_is_never_declared_even_when_not_manual(self) -> None:
+        """BE-28. Only the manual-entry flag kept the shipped assigned scores out; one that was
+        not manual-entry was declared, and every question about it billed and then refused.
+        An assigned score is a judgement, which `reqs.md` 6.10 use 1 does not ask a model for."""
+        environment = Environment(
+            _env_file=None,
+            database_url="postgresql://localhost/starnest",
+            **FULLY_CONFIGURED,  # type: ignore[arg-type]
+        )
+
+        (fallback,) = await _the_fallback(environment, _ACatalogWithAJudgement(), [])
+
+        assert set(fallback.attributes) == {"country.uncovered_ratio"}
+
 
 class _AnsweringOne:
     """A source that covers one of the catalog's three attributes."""
@@ -452,5 +466,28 @@ class _ACatalogOfFour:
                 value_type=ValueType.ASSIGNED_SCORE,
                 pillar="governance",
                 manual_entry=True,
+            ),
+        ]
+
+
+class _ACatalogWithAJudgement:
+    """An uncovered ratio, and an assigned score nobody marked for manual entry."""
+
+    async def read_attributes(self, level: str | None = None) -> list[Attribute]:
+        return [
+            Attribute(
+                id="country.uncovered_ratio",
+                name="Uncovered",
+                level="country",
+                value_type=ValueType.RATIO,
+                pillar="housing",
+                ratio_parameters=RatioParameters(basis="households"),
+            ),
+            Attribute(
+                id="country.unmarked_judgement",
+                name="A score somebody would have to assign",
+                level="country",
+                value_type=ValueType.ASSIGNED_SCORE,
+                pillar="governance",
             ),
         ]

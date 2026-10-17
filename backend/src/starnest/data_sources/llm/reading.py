@@ -10,6 +10,7 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 
 from starnest.data import ReferencePeriod
@@ -88,7 +89,9 @@ def a_json_object(text: str) -> dict[str, Any]:
     closed = stripped.rfind("}")
     if opened == -1 or closed <= opened:
         raise ValueError("the reply contains no JSON object")
-    parsed = json.loads(stripped[opened : closed + 1])
+    # Numbers as `Decimal`, as the transport reads a publisher's (BE-29): a figure the model gave
+    # with more digits than a float holds would otherwise lose them before it was shaped.
+    parsed = json.loads(stripped[opened : closed + 1], parse_float=Decimal)
     if not isinstance(parsed, dict):
         raise ValueError(f"the reply's JSON is a {type(parsed).__name__}, not an object")
     return parsed

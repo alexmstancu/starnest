@@ -21,8 +21,6 @@ from decimal import Decimal, InvalidOperation
 
 from starnest.candidates import Candidate
 from starnest.data import (
-    AssignedScore,
-    Assigner,
     Attribute,
     AttributeId,
     ConfidenceLevel,
@@ -58,11 +56,15 @@ ANSWERABLE = frozenset(
         ValueType.COUNT,
         ValueType.RATIO,
         ValueType.INDEX,
-        ValueType.ASSIGNED_SCORE,
     }
 )
-"""The six types that carry a comparable figure (`evaluation/magnitudes.py`). The other four
-are not things to ask a model for a number about."""
+"""The five types that carry a figure a publisher prints. The other five are not things to ask
+a model for a number about.
+
+**`AssignedScore` carries a magnitude and is still left out** (BE-28). It is a judgement, not a
+measurement -- `reqs.md` 6.10 use 1 allows a cited figure for a measurable attribute, and a score
+the model assigned would be a new use -- and the catalog gives it no range to be assigned on, so
+its payload could never be built: every such question was billed and then refused."""
 
 PROMPT = """What is {attribute} for {country}?
 
@@ -130,8 +132,13 @@ class LlmFallbackAdapter(SourceAdapter):
                 failures=(
                     AcquisitionFailure(
                         attribute=attribute.id,
-                        reason=f"{attribute.value_type} carries no magnitude, so a model is not "
-                        "asked for one (reqs.md 3.3a)",
+                        reason=(
+                            f"{attribute.value_type} is a judgement rather than a published "
+                            "figure, so a model is not asked to assign one (reqs.md 6.10)"
+                            if attribute.value_type is ValueType.ASSIGNED_SCORE
+                            else f"{attribute.value_type} carries no magnitude, so a model is "
+                            "not asked for one (reqs.md 3.3a)"
+                        ),
                     ),
                 )
             )
@@ -319,8 +326,4 @@ def _payload_for(attribute: Attribute, figure: Decimal) -> ValuePayload | None:
             scale_min=bounds.scale_min,
             scale_max=bounds.scale_max,
         )
-    if attribute.value_type is ValueType.ASSIGNED_SCORE:
-        # Assigned by the model, which is exactly what the assigner field is for: a score
-        # somebody decided rather than measured, with who decided it recorded.
-        return AssignedScore(value=figure, assigner=Assigner.LLM)
     return None
