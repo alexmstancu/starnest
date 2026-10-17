@@ -27,6 +27,8 @@ export interface Remedy {
 const REMEDIES: Record<string, Remedy> = {
   [SCORE_SCALE_NOT_SET]: { label: "Set it in Configure", path: "/configure" },
   invalid_comparison: { label: "Change it in Configure", path: "/configure" },
+  // Unseeded like the score scale, so a fresh installation compares nothing until it is set.
+  comparator_limit_not_set: { label: "Set it in Configure", path: "/configure" },
 };
 
 export function remedyFor(code: string): Remedy | null {

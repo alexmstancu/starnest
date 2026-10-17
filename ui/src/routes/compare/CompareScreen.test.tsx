@@ -36,6 +36,14 @@ async function compare(focus: string, comparator: string) {
   await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
 }
 
+/** Compare with no comparator limit set, as a fresh installation has, and return the refusal. */
+async function compareWithNoLimit(): Promise<HTMLElement> {
+  await replaceSettings({ ...SETTINGS, comparator_limit: null });
+  renderShell("/compare");
+  await compare("Portugal", "Netherlands");
+  return screen.findByRole("alert");
+}
+
 /** Open a pillar row to reveal the attributes beneath it. The pillar name is the button. */
 async function openPillar(name: string) {
   await userEvent.click(await screen.findByRole("button", { name }));
@@ -222,12 +230,7 @@ describe("the comparison", () => {
    * answered `invalid_comparison`, a code the server keeps for a request built wrong.
    */
   it("names an unset comparator limit as the reason a comparison is refused", async () => {
-    await replaceSettings({ ...SETTINGS, comparator_limit: null });
-    renderShell("/compare");
-
-    await compare("Portugal", "Netherlands");
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(await compareWithNoLimit()).toHaveTextContent(
       "comparator_limit_not_set",
     );
   });
@@ -532,6 +535,51 @@ describe("when a comparison cannot be drawn", () => {
 
     expect(
       await screen.findByText(/no comparator limit is configured/i),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * NEW-26. **The refusal names the way out.** The server refuses an unset limit with
+   * `comparator_limit_not_set`, and only `invalid_comparison` -- the code the mock used to
+   * answer in its place -- led to the setting that lifts it.
+   */
+  it("offers to set an unset comparator limit in Configure", async () => {
+    const refusal = await compareWithNoLimit();
+
+    expect(
+      within(refusal).getByRole("link", { name: "Set it in Configure" }),
+    ).toHaveAttribute("href", "/configure");
+  });
+
+  it("opens Configure when that way out is followed", async () => {
+    const refusal = await compareWithNoLimit();
+
+    await userEvent.click(
+      within(refusal).getByRole("link", { name: "Set it in Configure" }),
+    );
+
+    expect(
+      await screen.findByRole("region", { name: "Configure" }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no way to Configure for a failure no setting lifts", async () => {
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "the comparison broke" },
+          { status: 500 },
+        ),
+      ),
+    );
+    renderShell("/compare");
+
+    await compare("Portugal", "Netherlands");
+
+    const failure = await screen.findByRole("alert");
+    expect(within(failure).queryByRole("link")).toBeNull();
+    expect(
+      within(failure).getByRole("button", { name: "Try again" }),
     ).toBeInTheDocument();
   });
 
