@@ -72,7 +72,9 @@ logs:  ## Follow the database statement log (arch.md 10.7 — this IS the audit)
 migrate: backup  ## Back up, then apply pending migrations
 	cd $(BACKEND) && uv run yoyo apply --batch --database "$(MIGRATION_URL)" ../$(STORAGE)/migrations
 
-rollback:  ## Roll back the most recent migration
+# A rollback changes the schema as surely as a migration does, and several rollback scripts
+# delete stored figures, so it backs up first for the same reason.
+rollback: backup  ## Back up, then roll back the most recent migration
 	cd $(BACKEND) && uv run yoyo rollback --batch --database "$(MIGRATION_URL)" ../$(STORAGE)/migrations
 
 backup:  ## pg_dump to ./backups
@@ -177,7 +179,10 @@ docker-build:  ## Build the backend and ui images
 docker-up: ## Start the app (127.0.0.1:5173) and the schema diagram (127.0.0.1:4174). Migrate first
 	docker compose up -d
 
-docker-migrate:  ## Apply migrations inside the compose network
+# The backup is compose's: `migrate` depends on the `backup` service, so listing `backup` here as
+# well would dump twice. The directory is made first for the reason `backup` makes it.
+docker-migrate:  ## Back up, then apply migrations inside the compose network
+	@mkdir -p backups
 	docker compose --profile tools run --rm migrate
 
 docker-down:  ## Stop all containers

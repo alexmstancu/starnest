@@ -19,9 +19,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM python:3.12-slim-bookworm AS runtime
 
-# postgresql-client is here for pg_dump: arch.md 9.5 requires a backup before every
-# migration, and manually entered values -- visa verdicts, quota research, exclusion
-# reasons -- cannot be re-fetched at any price. It is the one thing worth the image size.
+# postgresql-client provides psql, pg_dump and pg_restore inside this container. It does not
+# take the backup arch.md 9.5 requires before every migration -- no command in this image runs
+# pg_dump. That backup is the `backup` service in compose.yaml, on the postgres image, and
+# compose starts `migrate` only after it has succeeded.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends postgresql-client \
  && rm -rf /var/lib/apt/lists/*

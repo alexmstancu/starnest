@@ -122,9 +122,14 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+    # **A backup first, every time** (arch.md 9.5). `make migrate` backs up on the host; this
+    # makes every container migration wait for `backup` below to finish -- a bare
+    # `docker compose run migrate` included -- and a dump that failed stops the migration.
     depends_on:
       database:
         condition: service_healthy
+      backup:
+        condition: service_completed_successfully
     # Migrations run by an explicit command, never automatically at startup (arch.md 7.4).
     # A process that migrates when it boots will one day migrate when you did not intend it
     # to. The backend instead refuses to start against a schema it does not recognise,
