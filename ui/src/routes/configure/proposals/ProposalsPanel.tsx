@@ -24,8 +24,15 @@ import { useProposals } from "./useProposals";
  *
  * **Markup only.** Reading, estimating, researching and confirming are `useProposals.ts`.
  */
-export function ProposalsPanel({ levelId }: { levelId: string }) {
-  const proposals = useProposals();
+export function ProposalsPanel({
+  levelId,
+  onAnswered,
+}: {
+  levelId: string;
+  /** A gate answer has been written here, so anything else describing the answers re-reads. */
+  onAnswered: () => void;
+}) {
+  const proposals = useProposals(onAnswered);
   const [acceptUncapped, setAcceptUncapped] = useState(false);
 
   return (

@@ -51,7 +51,10 @@ export interface Proposals {
   reload: () => void;
 }
 
-export function useProposals(): Proposals {
+export function useProposals(
+  /** Told after a confirm or a research pass has written answers, so others can re-read them. */
+  onAnswered: () => void,
+): Proposals {
   const fetcher = useCallback(
     async (signal: AbortSignal) => fetchMatchRuleResults({ signal }),
     [],
@@ -116,6 +119,7 @@ export function useProposals(): Proposals {
         // Re-read rather than appending the response: a pass can replace an earlier proposal
         // for the same gate, and the stored answers are the only account of what now stands.
         reload();
+        onAnswered();
       });
     },
     confirm: (proposal) =>
@@ -135,6 +139,7 @@ export function useProposals(): Proposals {
           // person checked the pages -- the household's choice (2026-10-15).
         });
         reload();
+        onAnswered();
       }),
     reload,
   };

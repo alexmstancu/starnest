@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import type { RouteDefinition } from "../../navigation/routes";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
@@ -35,6 +36,14 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   // unmounted each time one is opened. The history names its changes from it too.
   const catalog = useAttributeCatalog(levelId);
   const editor = useCriteriaEditor(criteriaSetId, history, catalog);
+  // **One signal that the gate answers have moved** (UI-12). The rules and the proposals read
+  // the answers separately, so a confirm or a research pass re-read only the proposals, and a
+  // gate went on describing answers that had since changed until the screen was remounted.
+  const [answersVersion, setAnswersVersion] = useState(0);
+  const noteAnswered = useCallback(
+    () => setAnswersVersion((version) => version + 1),
+    [],
+  );
 
   return (
     <section className="screen screen--configure" aria-labelledby="screen-heading">
@@ -96,12 +105,17 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                   key={`${editor.criteriaSet.id}-${levelId}`}
                   criteriaSet={editor.criteriaSet}
                   levelId={levelId}
+                  answersFreshness={answersVersion}
                 >
                   {/* Beside the gates, because that is where a gate is enforced and
                       released: a proposal is an answer to one of the rules listed above
                       it. Its own stage would give a feature that produces a handful of
                       rows the same weight as the household. */}
-                  <ProposalsPanel key={`proposals-${levelId}`} levelId={levelId} />
+                  <ProposalsPanel
+                    key={`proposals-${levelId}`}
+                    levelId={levelId}
+                    onAnswered={noteAnswered}
+                  />
                 </RulesPanel>
               )}
             </>

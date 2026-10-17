@@ -1221,6 +1221,93 @@ describe("an undo that cannot put a whole pillar back", () => {
   });
 });
 
+/**
+ * UI-12. **A gate's sentence follows its answers while the screen stays open.** The rules and
+ * the proposals read the answers separately, so confirming a proposal re-read only the
+ * proposals: the gate went on saying "awaits confirmation" -- false once confirmed -- until the
+ * screen was remounted.
+ */
+describe("a gate's sentence once its answers change", () => {
+  const PORTUGAL_PROPOSED = {
+    match_rule: "country.visa_route_exists",
+    candidate: "country.portugal",
+    match_result: "not_matching",
+    data_source: "llm",
+    retrieval_date: "2026-09-12T09:00:00Z",
+    reason: "The official page lists no route for these citizenships.",
+    citations: ["https://example.gov/skilled-worker"],
+    is_proposal: true,
+  };
+
+  /** The enforced gate's row, kept: the same element must change, which is what "without remounting" means. */
+  async function visaGate(): Promise<HTMLElement> {
+    return within(
+      await screen.findByRole("region", { name: "Match rules & gates" }),
+    ).findByRole("listitem", { name: "A visa route exists" });
+  }
+
+  it("names who a proposal removes once it is confirmed, without remounting", async () => {
+    renderShell("/configure");
+    await settled();
+    const gate = await visaGate();
+    await waitFor(() =>
+      expect(gate).toHaveTextContent(
+        "1 proposed answer awaits confirmation, so this rules nobody out yet.",
+      ),
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Confirm country.visa_route_exists for country.portugal",
+      }),
+    );
+
+    await waitFor(() => expect(gate).toHaveTextContent("Removes Portugal."));
+    expect(gate).not.toHaveTextContent(/awaits confirmation/);
+  });
+
+  it("mentions a proposal a research pass stored, without remounting", async () => {
+    const user = userEvent.setup();
+    const spainProposed = { ...PORTUGAL_PROPOSED, candidate: "country.spain" };
+    let researched = false;
+    mockServer.use(
+      http.get("/v1/match-rule-results", () =>
+        HttpResponse.json({
+          items: researched
+            ? [PORTUGAL_PROPOSED, spainProposed]
+            : [PORTUGAL_PROPOSED],
+        }),
+      ),
+      http.post("/v1/match-rule-research", () => {
+        researched = true;
+        return HttpResponse.json({
+          proposals: [spainProposed],
+          refusals: [],
+          cost_eur: 0.04,
+          calls: 2,
+          halted_on_spend_cap: false,
+        });
+      }),
+    );
+    renderShell("/configure");
+    await settled();
+    const gate = await visaGate();
+    await waitFor(() =>
+      expect(gate).toHaveTextContent("1 proposed answer awaits confirmation"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
+    await screen.findByText(/64 gate answers to research/i);
+    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+
+    await waitFor(() =>
+      expect(gate).toHaveTextContent(
+        "2 proposed answers await confirmation, so this rules nobody out yet.",
+      ),
+    );
+  });
+});
+
 describe("what the screen never says out loud", () => {
   /**
    * The design's deviation 8: **no programmatic identifiers in rendered text** — no attribute

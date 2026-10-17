@@ -28,14 +28,17 @@ import { useRuleToggles } from "./useRuleToggles";
 export function RulesPanel({
   criteriaSet,
   levelId,
+  answersFreshness,
   children,
 }: {
   criteriaSet: CriteriaSet;
   levelId: string;
+  /** Changes when a gate answer has been written elsewhere, so the answers are read again. */
+  answersFreshness: number;
   /** The gate proposals, rendered inside the stage: a proposal answers one of these rules. */
   children?: ReactNode;
 }) {
-  const rules = useRuleToggles(criteriaSet, levelId);
+  const rules = useRuleToggles(criteriaSet, levelId, answersFreshness);
   // Candidates by name in the sentences, never by id (NEW-06).
   const names = useCandidateNames();
   const answers = rules.matchRuleResultsStatus;

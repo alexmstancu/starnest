@@ -44,6 +44,11 @@ export interface RuleToggles {
 export function useRuleToggles(
   criteriaSet: CriteriaSet,
   levelId: string,
+  /**
+   * Changes when a gate answer has been written elsewhere -- a confirm, a research pass -- so
+   * the answers are read again rather than described as they were when the panel mounted.
+   */
+  answersFreshness: number,
 ): RuleToggles {
   const matchRules = useResource(
     useCallback(
@@ -58,6 +63,8 @@ export function useRuleToggles(
       (signal: AbortSignal) => fetchMatchRuleResults({ signal }),
       [],
     ),
+    true,
+    answersFreshness,
   );
 
   const compoundRules = useResource(
