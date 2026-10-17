@@ -66,6 +66,14 @@ def a_value(attribute: str = OVERBURDEN) -> Value:
     )
 
 
+NOT_CREDIBLE = f"96.3 is outside the credible range 0..60 declared for {OVERBURDEN}"
+
+
+def a_rejected_value() -> Value:
+    """A figure stored with the attribute's verdict beside it, as `Measurements` builds one."""
+    return a_value().model_copy(update={"rejection_reason": NOT_CREDIBLE})
+
+
 class StubAdapter(SourceAdapter):
     """A source that answers whatever the test told it to, and records what it was asked."""
 
@@ -192,6 +200,60 @@ class TestWhatARunKeeps:
 
         assert store.appended == []
         assert outcome.failures == ()
+
+    async def test_a_rejected_figure_is_kept_and_recorded_as_a_failure(self) -> None:
+        """BE-08, `reqs.md` 3.3a. A figure outside its credible range is stored with the reason
+        beside it and never becomes active -- and nothing made it a failure, so a retry of the
+        run answered "failed on nothing" about the one item it should have gone back to."""
+        rejected = a_rejected_value()
+        adapter = StubAdapter({OVERBURDEN: Acquired(values=(rejected,))}, declares=(OVERBURDEN,))
+        store = RecordingValueStore()
+
+        outcome = await acquire(
+            adapter=adapter, attributes=[an_attribute()], candidates=[PORTUGAL], values=store
+        )
+
+        assert store.appended == [rejected]
+        (failure,) = outcome.failures
+        assert (failure.attribute, failure.candidate, failure.data_source) == (
+            OVERBURDEN,
+            "country.portugal",
+            "eurostat",
+        )
+        assert NOT_CREDIBLE in failure.reason
+
+    async def test_an_accepted_figure_records_no_failure(self) -> None:
+        """The control: only a figure carrying a verdict against it is a failure."""
+        adapter = StubAdapter({OVERBURDEN: Acquired(values=(a_value(),))}, declares=(OVERBURDEN,))
+
+        outcome = await acquire(
+            adapter=adapter,
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=RecordingValueStore(),
+        )
+
+        assert outcome.failures == ()
+
+    async def test_a_rejected_figure_reaches_the_runs_own_list_as_it_happens(self) -> None:
+        """P66: what is known survives an exception from the next fetch, so a rejection is
+        handed over with the source's own failures rather than only on the way out."""
+        adapter = StubAdapter(
+            {OVERBURDEN: Acquired(values=(a_rejected_value(),))}, declares=(OVERBURDEN,)
+        )
+        collecting: list[AcquisitionFailure] = []
+
+        await acquire(
+            adapter=adapter,
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=RecordingValueStore(),
+            collecting=collecting,
+        )
+
+        assert [failure.reason for failure in collecting] == [
+            f"the figure was stored and rejected: {NOT_CREDIBLE}"
+        ]
 
 
 class TestWhenTheCapIsReachedInsideOneSource:

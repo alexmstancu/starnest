@@ -133,6 +133,20 @@ async def acquire(
         stamped = [
             replace(failure, data_source=adapter.data_source) for failure in acquired.failures
         ]
+        # **A figure stored and rejected is a failure as well** (BE-08, `reqs.md` 3.3a). It is
+        # kept with its reason and never becomes active, and a failure is the only thing a retry
+        # reads -- so without one, a run whose sole answer was 62 °C for an annual mean reported
+        # failing on nothing. The pair still counts as completed: the source did answer it.
+        stamped.extend(
+            AcquisitionFailure(
+                attribute=value.attribute,
+                candidate=str(value.candidate),
+                reason=f"the figure was stored and rejected: {value.rejection_reason}",
+                data_source=adapter.data_source,
+            )
+            for value in acquired.values
+            if value.is_rejected
+        )
         failures.extend(stamped)
         if collecting is not None:
             collecting.extend(stamped)

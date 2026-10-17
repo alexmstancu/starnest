@@ -283,6 +283,19 @@ async def continue_run(opened: OpenedRun) -> Run:
                 len(outcome.stored),
                 len(outcome.failures),
             )
+            # **Logged before the cap is read** (NEW-14). The halt below returns, and a source
+            # that reached the cap used to leave none of its failures in the log.
+            for failure in outcome.failures:
+                # The only way a parse failure is diagnosable (`arch.md` 9.4, 5.3): the source,
+                # the item, and the source's own words about it.
+                _log.warning(
+                    "run %d: %s could not answer %s for %s: %s",
+                    run,
+                    adapter.data_source,
+                    failure.attribute,
+                    failure.candidate or "any candidate",
+                    failure.reason,
+                )
             if outcome.calls or outcome.cost_eur:
                 # `acquire` has already metered this, per answer. Only the durable record is
                 # written here, and it is written per source rather than per call because that
@@ -299,18 +312,6 @@ async def continue_run(opened: OpenedRun) -> Run:
                 # the money is the fact a reader needs.
                 _log.warning("run %d halted on its spend cap: %s", run, meter.describe())
                 return await _halt(run, runs, candidates, failures, RunStatus.HALTED_ON_SPEND_CAP)
-
-            for failure in outcome.failures:
-                # The only way a parse failure is diagnosable (`arch.md` 9.4, 5.3): the source,
-                # the item, and the source's own words about it.
-                _log.warning(
-                    "run %d: %s could not answer %s for %s: %s",
-                    run,
-                    adapter.data_source,
-                    failure.attribute,
-                    failure.candidate or "any candidate",
-                    failure.reason,
-                )
         # **Asked once more after the last source** (P88). The check above runs *before* each
         # adapter, so a run with one source -- or a stop arriving while the last one was
         # working -- finished `completed` with `stop_requested_at` set, and went on to borrow

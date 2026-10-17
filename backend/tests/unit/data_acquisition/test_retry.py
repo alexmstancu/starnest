@@ -43,6 +43,7 @@ from starnest.data_acquisition import (
     SpendCapNotSetError,
     UnansweredItem,
     ask_again,
+    execute_run,
     retry_run,
 )
 from starnest.data_acquisition.execution import _AskedOnlyAbout
@@ -457,6 +458,34 @@ class TestWhatARetryMaySpend:
         await retrying_the_paid_source(paid, PORTUGAL, cap=Decimal(5))
 
         assert paid.asked_about == [str(PORTUGAL.id)]
+
+
+class TestWhatARunHaltedOnItsCapLogs:
+    """NEW-14, `arch.md` 9.4. A failure's log line is the only way a source's refusal is
+    diagnosed afterwards, and the source that reached the cap returned before the loop writing
+    those lines -- so the run most in need of explaining logged nothing it failed on.
+
+    Here rather than beside `acquire` because a halt is the run's, and this file holds the run
+    store and the paid source a halted run needs.
+    """
+
+    async def test_the_failures_of_the_source_that_reached_the_cap_are_logged(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level("WARNING", logger="starnest.acquisition"):
+            await execute_run(
+                adapters=[PaidPerCandidate((OVERBURDEN,), eur_per_call="1.00")],
+                attributes=[an_attribute(OVERBURDEN)],
+                candidates=[PORTUGAL, SPAIN, GREECE],
+                values=RecordingValueStore(),
+                runs=RecordingRunStore(answers_with=a_failed_run()),
+                level="country",
+                spend_cap_eur=Decimal("1.00"),
+            )
+
+        assert "halted on its spend cap" in caplog.text
+        for skipped in (SPAIN, GREECE):
+            assert f"llm could not answer {OVERBURDEN} for {skipped.id}" in caplog.text
 
 
 class TestWhatAskingAgainMaySpend:

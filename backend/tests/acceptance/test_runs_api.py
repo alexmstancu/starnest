@@ -16,6 +16,7 @@ from starnest.data_acquisition import SourceAdapter
 from starnest.storage import PostgresRunStore
 
 from .conftest import A_SECOND_SOURCE_ANSWERS, a_stub_source, an_api
+from .contract import validate
 
 pytestmark = pytest.mark.acceptance
 
@@ -446,6 +447,92 @@ class TestWhatAFailureRecords:
         assert detail["progress"]["items_failed"] == 1
         assert detail["progress"]["items_completed"] == 32 * 2 - 1
         assert len(detail["failures"]) == 2
+
+    async def test_a_figure_outside_its_credible_range_can_be_retried(
+        self, database_url: str
+    ) -> None:
+        """BE-08, `reqs.md` 3.3a. 62 °C for Portugal's annual mean is stored and never scored,
+        and nothing made it a failure -- so the run listed no failure and a retry answered 409
+        `nothing_to_retry` about the one figure it should go back to."""
+        async with an_api(database_url, (_a_source_misreading(THE_STUB_DECLINES_FOR),)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+            retried = await api.post(f"/v1/data-acquisition-runs/{run['id']}/retry")
+
+        validate("getRun", detail)
+        (failure,) = detail["failures"]
+        assert (failure["data_source"], failure["candidate"], failure["attribute"]) == (
+            "open_meteo",
+            THE_STUB_DECLINES_FOR,
+            TEMPERATURE,
+        )
+        assert "outside the credible range" in failure["error_message"]
+        assert retried.status_code == 202
+        validate("retryRun", retried.json(), status=202)
+
+    async def test_a_rejected_figure_still_counts_as_completed_not_failed(
+        self, database_url: str
+    ) -> None:
+        """The household's choice for BE-08: a pair whose figure arrived and was rejected was
+        answered, and `items_completed` counts answered pairs, as the contract defines it. The
+        failure beside it is what a retry reaches."""
+        async with an_api(database_url, (_a_source_misreading(THE_STUB_DECLINES_FOR),)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            progress = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()["progress"]
+
+        assert (progress["items_completed"], progress["items_failed"]) == (32, 0)
+
+
+TEMPERATURE = "country.avg_annual_temperature"
+
+
+def _a_source_misreading(candidate_id: str) -> SourceAdapter:
+    """A source reading 62 °C as one country's annual mean -- a scraper on the wrong column --
+    and a credible 15 °C everywhere else. The catalog declares -20..40 for the attribute, and
+    `Measurements` applies it, as every adapter's figures go through it."""
+    from collections.abc import Sequence
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    from starnest.candidates import Candidate
+    from starnest.data import (
+        Attribute,
+        DataSourceId,
+        Measurements,
+        Quantity,
+        ReferencePeriod,
+    )
+    from starnest.data_acquisition import Acquired
+
+    class MisreadingSource(SourceAdapter):
+        @property
+        def data_source(self) -> DataSourceId:
+            return DataSourceId("open_meteo")
+
+        @property
+        def attributes(self) -> tuple:
+            return (TEMPERATURE,)
+
+        async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+            assert attribute.quantity_parameters is not None
+            measuring = Measurements(
+                attribute=attribute, data_source="open_meteo", retrieved=datetime.now(UTC)
+            )
+            return Acquired(
+                values=tuple(
+                    measuring.figure(
+                        candidate=candidate,
+                        payload=Quantity(
+                            magnitude=Decimal("62" if str(candidate.id) == candidate_id else "15"),
+                            unit=attribute.quantity_parameters.unit,
+                        ),
+                        period=ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 12, 31)),
+                    )
+                    for candidate in candidates
+                )
+            )
+
+    return MisreadingSource()
 
 
 class TestRetryingARun:
