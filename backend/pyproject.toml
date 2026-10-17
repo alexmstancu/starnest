@@ -54,8 +54,11 @@ pythonpath = ["src"]
 asyncio_mode = "auto"
 # Coverage is deliberately NOT in addopts. A bare `pytest` stays fast during development;
 # `just coverage` and `just check` are what enforce the bar.
-# `live_llm` is excluded even from `make live`: every other live test costs nothing but time.
-addopts = "-q --strict-markers -m 'not live_llm'"
+# A bare `pytest` leaves out both live tiers (BE-32): `live` calls real publishers, so a slow
+# Eurostat would fail a run that says nothing about this code, and `live_llm` spends money. An
+# explicit `-m` replaces this one -- pytest lets the last `-m` win -- which is how `make live`
+# selects `live`, and why `tests/conftest.py` guards the paid tier a second time.
+addopts = "-q --strict-markers -m 'not live and not live_llm'"
 markers = [
     "storage: needs a real PostgreSQL. The schema constraints are the behaviour under test (arch.md 6.7)",
     "acceptance: speaks HTTP to a live backend",
@@ -86,6 +89,9 @@ omit = [
 source = ["src/starnest", "*/src/starnest"]
 
 [tool.coverage.report]
+# coverage.py holds one number, and it blends lines and branches into it, so full line coverage
+# could carry branches below the bar. The two floors are held apart -- per package and in total
+# -- by `tools/audit_coverage.py`, which `make check` runs after `make coverage` (BE-38).
 fail_under = 85
 show_missing = true
 skip_covered = false

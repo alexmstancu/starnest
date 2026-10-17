@@ -110,12 +110,12 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     """Skip everything that spends money unless the run asked for it by name.
 
     **A default exclusion that any explicit `-m` silently overrides is not an exclusion.**
-    `pyproject.toml` sets `-m 'not live_llm'` in `addopts`, and pytest lets the last `-m` win --
-    so `make test` (`-m "not storage and not acceptance and not live"`) and `make coverage`
-    (`-m "not live"`) both put the paid tests back in, and `make check` runs `coverage`. That
-    was true from the day the marker was added and nobody noticed, because the tests skipped for
-    want of an API key until they were fixed to read the configuration properly
-    (`known-issues.md` P34, P35).
+    `pyproject.toml` sets `-m 'not live and not live_llm'` in `addopts`, and pytest lets the last
+    `-m` win -- so `make test` (`-m "not storage and not acceptance and not live"`) and
+    `make coverage` (`-m "not live"`) both put the paid tests back in, and `make check` runs
+    `coverage`. That was true from the day the marker was added and nobody noticed, because the
+    tests skipped for want of an API key until they were fixed to read the configuration
+    properly (`known-issues.md` P34, P35).
 
     This is the same fault as P8, where the gate called Eurostat: a marker nobody selected still
     ran. The difference is what it costs. `make check` must never spend money (`arch.md` 6.7),

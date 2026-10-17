@@ -7,13 +7,21 @@ leaves everything else exactly as it was: a native constraint the request body f
 or a bug, must stay a loud 500 rather than become a tidy 422 nobody investigates.
 """
 
+import json
 from datetime import date
 from decimal import Decimal
 
 import pytest
+from fastapi import HTTPException
 from pydantic import BaseModel, ValidationError, model_validator
+from starlette.requests import Request
 
-from starnest.api.errors import built_from_the_request, refusal_for
+from starnest.api.errors import (
+    built_from_the_request,
+    domain_error_handler,
+    refusal_for,
+    refusal_handler,
+)
 from starnest.candidates import MalformedIdentifierError
 from starnest.criteria import ScaleAnchor, ThresholdShapeError
 from starnest.data import InvalidReferencePeriodError, ReferencePeriod
@@ -101,3 +109,20 @@ class TestTheRefusalsTheTableGained:
         self, error: Exception, refusal: tuple[int, str]
     ) -> None:
         assert refusal_for(error) == refusal
+
+
+A_REQUEST = Request({"type": "http", "method": "GET", "path": "/v1/anything", "headers": []})
+
+
+class TestWhatTheHandlersLeaveAlone:
+    async def test_an_error_the_table_does_not_map_is_left_to_propagate(self) -> None:
+        """An unexpected error is a bug, and a bug reaches the logs as a 500 rather than being
+        dressed as a tidy error body nobody investigates."""
+        with pytest.raises(ValueError, match="a bug"):
+            await domain_error_handler(A_REQUEST, ValueError("a bug, not a refusal"))
+
+    async def test_a_refusal_with_no_code_keeps_the_frameworks_rendering(self) -> None:
+        response = await refusal_handler(A_REQUEST, HTTPException(404, detail="Not Found"))
+
+        assert response.status_code == 404
+        assert json.loads(bytes(response.body)) == {"detail": "Not Found"}

@@ -498,6 +498,37 @@ class TestTheThresholdThatDecidesAMatch:
 
         assert refused.status_code == 422
 
+    async def test_a_boolean_threshold_on_a_ratio_is_refused(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """A yes-or-no answer cannot judge a share of households."""
+        refused = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"matching_threshold": {"required_value": True}},
+        )
+
+        assert (refused.status_code, refused.json()["code"]) == (422, "invalid_criterion")
+
+    async def test_a_label_threshold_naming_two_labels_is_refused(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """The schema holds one row per label and a criterion models one, so a second label
+        would be written and never read back -- refused before it is written."""
+        refused = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={
+                "matching_threshold": {
+                    "labels": [
+                        {"label": "Csa", "containment_rule": "must_contain"},
+                        {"label": "BWh", "containment_rule": "must_not_contain"},
+                    ]
+                }
+            },
+        )
+
+        assert (refused.status_code, refused.json()["code"]) == (422, "invalid_criteria_set")
+        assert "one label threshold" in refused.json()["message"]
+
     async def test_a_threshold_naming_two_shapes_at_once_is_refused(
         self, api: httpx.AsyncClient, a_scratch_criteria_set: str
     ) -> None:
