@@ -29,7 +29,12 @@ from starnest.data import (
     StandIn,
     ValueStore,
 )
-from starnest.data_acquisition.adapter import Acquired, AcquisitionFailure, SourceAdapter
+from starnest.data_acquisition.adapter import (
+    Acquired,
+    AcquisitionFailure,
+    RunningSpend,
+    SourceAdapter,
+)
 from starnest.data_acquisition.estimate import Estimate
 from starnest.data_acquisition.freshness import still_fresh_everywhere
 from starnest.data_acquisition.run import acquire
@@ -577,6 +582,11 @@ class _AskedOnlyAbout(SourceAdapter):
     source says, and they say it in the direction of spending money: a retry of a failed LLM run
     reported itself free, so nothing asked for a spend cap and the meter it was given had none.
     A delegating subclass forwards all of its subject or none of it.
+
+    **That includes the run's meter** (BE-10). Inherited, `meter_with` was the base's no-op, so
+    a paid source asked again kept the meter of whichever run it last served: an exhausted one
+    refused every candidate of the retry, and a live one recorded the retry's calls against
+    another run's cap.
     """
 
     def __init__(self, adapter: SourceAdapter, attributes: frozenset[AttributeId]) -> None:
@@ -593,6 +603,9 @@ class _AskedOnlyAbout(SourceAdapter):
 
     def estimate_for(self, items: int) -> Estimate:
         return self._adapter.estimate_for(items)
+
+    def meter_with(self, meter: RunningSpend) -> None:
+        self._adapter.meter_with(meter)
 
     @property
     def attributes(self) -> tuple[AttributeId, ...]:

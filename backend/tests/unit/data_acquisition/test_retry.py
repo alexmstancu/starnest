@@ -32,8 +32,10 @@ from starnest.data import (
 from starnest.data_acquisition import (
     Acquired,
     AcquisitionFailure,
+    CostMeter,
     Estimate,
     Run,
+    RunningSpend,
     RunScope,
     RunStatus,
     RunStore,
@@ -49,6 +51,8 @@ COUNTRY = {"id": "country", "depth_order": 1}
 OVERBURDEN = "country.housing_cost_overburden_rate"
 OVERCROWDING = "country.overcrowding_rate"
 PORTUGAL = Candidate(id="country.portugal", name="Portugal", level=COUNTRY, country_code="PT")
+SPAIN = Candidate(id="country.spain", name="Spain", level=COUNTRY, country_code="ES")
+GREECE = Candidate(id="country.greece", name="Greece", level=COUNTRY, country_code="GR")
 
 A_PRICED_CALL = Estimate(calls=4, cost_eur=Decimal("0.40"), basis="4 calls at 0.10 EUR")
 
@@ -91,6 +95,59 @@ class StubSource(SourceAdapter):
     async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
         self.asked.append(str(attribute.id))
         return Acquired(values=(), cost_eur=Decimal("0.10") if self._charges else Decimal(0))
+
+
+class PaidPerCandidate(SourceAdapter):
+    """A source billing one call per candidate and keeping its own account on the run's meter.
+
+    The shape of the two LLM adapters (P91): handed the meter through `meter_with`, it records
+    each call as it makes it and asks nothing once the meter is exhausted. And like them it is
+    one instance for the life of the application, so the meter it holds is whichever it was
+    handed last.
+    """
+
+    def __init__(self, declares: tuple[str, ...], *, eur_per_call: str = "1.00") -> None:
+        self._declares = declares
+        self._eur_per_call = Decimal(eur_per_call)
+        self.meter: RunningSpend | None = None
+        self.asked_about: list[str] = []
+
+    @property
+    def data_source(self) -> DataSourceId:
+        return DataSourceId("llm")
+
+    @property
+    def costs_money(self) -> bool:
+        return True
+
+    def estimate_for(self, items: int) -> Estimate:
+        return Estimate(calls=items, cost_eur=items * self._eur_per_call, basis="a flat rate")
+
+    @property
+    def attributes(self) -> tuple:
+        return self._declares
+
+    def meter_with(self, meter: RunningSpend) -> None:
+        self.meter = meter
+
+    async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+        failures: list[AcquisitionFailure] = []
+        cost, calls = Decimal(0), 0
+        for candidate in candidates:
+            if self.meter is not None and self.meter.is_exhausted:
+                failures.append(
+                    AcquisitionFailure(
+                        attribute=attribute.id,
+                        candidate=str(candidate.id),
+                        reason="the run reached its spend cap before this candidate was asked",
+                    )
+                )
+                continue
+            self.asked_about.append(str(candidate.id))
+            cost, calls = cost + self._eur_per_call, calls + 1
+            if self.meter is not None:
+                self.meter.spent(cost_eur=self._eur_per_call, calls=1)
+        return Acquired(failures=tuple(failures), cost_eur=cost, calls=calls)
 
 
 class RecordingValueStore:
@@ -198,6 +255,45 @@ async def retrying(source: StubSource, **spend: object) -> Run:
     )
 
 
+def a_run_the_paid_source_failed_for(*candidates: Candidate) -> Run:
+    """One failure per candidate, every one of them the paid source's."""
+    return Run(
+        id=20,
+        status=RunStatus.COMPLETED,
+        started_at=datetime.now(UTC),
+        triggered_by="user",
+        scope=RunScope(
+            level="country",
+            candidates=tuple(str(candidate.id) for candidate in candidates),
+            attributes=(OVERBURDEN,),
+        ),
+        failures=tuple(
+            AcquisitionFailure(
+                attribute=OVERBURDEN,
+                reason="the model could not be reached",
+                candidate=str(candidate.id),
+                data_source=DataSourceId("llm"),
+            )
+            for candidate in candidates
+        ),
+    )
+
+
+async def retrying_the_paid_source(
+    source: PaidPerCandidate, *candidates: Candidate, cap: Decimal
+) -> Run:
+    failed = a_run_the_paid_source_failed_for(*candidates)
+    return await retry_run(
+        failed=failed,
+        adapters=[source],
+        attributes=[an_attribute(OVERBURDEN)],
+        candidates=list(candidates),
+        values=RecordingValueStore(),
+        runs=RecordingRunStore(answers_with=failed),
+        spend_cap_eur=cap,
+    )
+
+
 LIECHTENSTEIN = Candidate(
     id="country.liechtenstein", name="Liechtenstein", level=COUNTRY, country_code="LI"
 )
@@ -286,6 +382,27 @@ class TestTheNarrowedSource:
 
         assert wrapped.attributes == (OVERCROWDING,)
 
+    def test_it_hands_the_running_meter_to_the_source_it_wraps(self) -> None:
+        """BE-10. Inherited, `meter_with` was the base class's no-op, so a source asked again
+        never learned of the retry's meter -- the one hook P91 added for the cap to bite between
+        candidates rather than between attributes."""
+        paid = PaidPerCandidate((OVERBURDEN,))
+        meter = CostMeter(cap_eur=Decimal(1))
+
+        _AskedOnlyAbout(paid, frozenset({OVERBURDEN})).meter_with(meter)
+
+        assert paid.meter is meter
+
+    def test_it_overrides_every_member_the_base_class_defines(self) -> None:
+        """**The guard BE-10 needed.** P41 made the wrapper forward members one at a time, then
+        P91 gave the base a new hook with a working default and nothing noticed the wrapper
+        inheriting it. A member added to `SourceAdapter` fails here until the wrapper forwards
+        it as well."""
+        defined = {name for name in vars(SourceAdapter) if not name.startswith("_")}
+        overridden = {name for name in vars(_AskedOnlyAbout) if not name.startswith("_")}
+
+        assert defined - overridden == set()
+
 
 class TestWhatARetryMaySpend:
     async def test_a_retry_of_a_paid_source_with_no_cap_is_refused(self) -> None:
@@ -320,6 +437,26 @@ class TestWhatARetryMaySpend:
         await retrying(free, spend_cap_eur=None, uncapped_is_accepted=False)
 
         assert free.asked == [OVERBURDEN]
+
+    async def test_a_retry_stops_a_per_candidate_sweep_at_the_cap(self) -> None:
+        """BE-10. Handed the retry's meter, a source billing per candidate stops after the
+        candidate that reached the cap, rather than after the whole attribute is paid for."""
+        paid = PaidPerCandidate((OVERBURDEN,), eur_per_call="1.00")
+
+        await retrying_the_paid_source(paid, PORTUGAL, SPAIN, GREECE, cap=Decimal("1.00"))
+
+        assert paid.asked_about == [str(PORTUGAL.id)]
+
+    async def test_a_meter_exhausted_by_an_earlier_run_does_not_refuse_a_retry(self) -> None:
+        """The adapter lives as long as the application, so without the hand-over it kept the
+        last run's meter -- and a run that had halted on its cap left one that refused every
+        candidate of the next retry, however much that retry was allowed to spend."""
+        paid = PaidPerCandidate((OVERBURDEN,))
+        paid.meter_with(CostMeter(cap_eur=Decimal(1), spent_eur=Decimal(1)))
+
+        await retrying_the_paid_source(paid, PORTUGAL, cap=Decimal(5))
+
+        assert paid.asked_about == [str(PORTUGAL.id)]
 
 
 class TestWhatAskingAgainMaySpend:
