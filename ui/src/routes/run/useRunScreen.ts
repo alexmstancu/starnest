@@ -7,6 +7,11 @@
  *
  * **One thing at a time.** `busy` names which act is in flight, because two runs started at
  * once would both write values and neither screen would be telling the truth about the other.
+ * Acts can still overlap -- Refresh stays live while a stop is written -- so the label is the
+ * newest act still going, and lasts as long as that act does.
+ *
+ * **The card shows the run the reader chose last** (`useWatchedRun.ts`): every act that reads a
+ * run back takes a ticket on the click, and the opening view gives way to all of them.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -24,6 +29,7 @@ import {
 } from "../../api/endpoints";
 import { newestRun } from "./databaseHolds";
 import { type Commitment, describeCommitment } from "./spendCommitment";
+import { UNCLAIMED, useWatchedRun } from "./useWatchedRun";
 import { useResource, type Resource } from "../../api/useResource";
 
 export type RunAct = "planning" | "running" | "opening" | "stopping";
@@ -96,10 +102,13 @@ export interface RunScreenState {
 export function useRunScreen(): RunScreenState {
   const [plan, setPlan] = useState<RunPlan | null>(null);
   const [planOrigin, setPlanOrigin] = useState<GapKind | null>(null);
-  const [current, setCurrent] = useState<RunDetail | null>(null);
+  const { current, claim, show, clear, unclaimed } = useWatchedRun();
   const [busy, setBusy] = useState<RunAct | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
   const [armed, setArmed] = useState<ArmedRun | null>(null);
+  // Every act still going, oldest first. The label is the newest of them, so the first act to
+  // end no longer clears the label of one still going (NEW-10).
+  const going = useRef<{ what: RunAct }[]>([]);
 
   const history = useResource(
     useCallback((signal: AbortSignal) => fetchRuns(10, { signal }), []),
@@ -107,6 +116,8 @@ export function useRunScreen(): RunScreenState {
 
   const act = useCallback(
     async (what: RunAct, action: () => Promise<void>) => {
+      const mine = { what };
+      going.current = [...going.current, mine];
       setBusy(what);
       setFailure(null);
       try {
@@ -115,15 +126,19 @@ export function useRunScreen(): RunScreenState {
       } catch (error) {
         setFailure(error);
       } finally {
-        setBusy(null);
+        going.current = going.current.filter((each) => each !== mine);
+        setBusy(going.current.at(-1)?.what ?? null);
       }
     },
     [history],
   );
 
-  const watch = useCallback(async (run: Run) => {
-    setCurrent(await fetchRun(run.id));
-  }, []);
+  const watch = useCallback(
+    async (ticket: number, runId: number) => {
+      show(ticket, await fetchRun(runId));
+    },
+    [show],
+  );
 
   /**
    * **The last acquisition opens by itself, once.**
@@ -133,6 +148,10 @@ export function useRunScreen(): RunScreenState {
    * and open it before the screen will say there was one. `opened` is a ref rather than
    * state so that closing a run, or opening an older one, is not undone on the next render:
    * this is the opening view, not a rule about what must stay open.
+   *
+   * **It gives way to the reader, and never claims.** An act taken before the history arrived
+   * -- a run started while the list was slow -- is what the reader chose, so the opening view
+   * is skipped; and anything clicked while it is still reading outranks its answer.
    */
   const opened = useRef(false);
   const runs = history.resource.status === "ready" ? history.resource.data.items : null;
@@ -140,12 +159,12 @@ export function useRunScreen(): RunScreenState {
     if (opened.current || runs === null) return;
     opened.current = true;
     const newest = newestRun(runs);
-    if (newest === undefined) return;
+    if (newest === undefined || !unclaimed()) return;
     // **Silent if it fails.** Nobody asked for this read -- it is the opening view -- so a
     // banner about it would report a failure the reader did not cause. Opening a run from
     // the history is an act, and that one reports.
-    void watch(newest).catch(() => undefined);
-  }, [runs, watch]);
+    void watch(UNCLAIMED, newest.id).catch(() => undefined);
+  }, [runs, watch, unclaimed]);
 
   return {
     plan,
@@ -163,13 +182,17 @@ export function useRunScreen(): RunScreenState {
         setPlanOrigin("everything");
         setPlan(await planRun({ level: levelId }));
       }),
-    start: (levelId) =>
+    // **Every act that reads a run back claims on the click**, before its first await, so a
+    // read already on its way when the reader acts again can never land over the newer choice.
+    start: (levelId) => {
+      const ticket = claim();
       void act("running", async () => {
         const started = await startRun({ level: levelId });
         setPlan(null);
         setPlanOrigin(null);
-        await watch(started);
-      }),
+        await watch(ticket, started.id);
+      });
+    },
     propose: (scope, what, origin) =>
       void act("planning", async () => {
         setPlan(null);
@@ -191,37 +214,46 @@ export function useRunScreen(): RunScreenState {
           }),
         });
       }),
-    commit: () =>
+    commit: () => {
+      if (!armed) return;
+      const ticket = claim();
       void act("running", async () => {
-        if (!armed) return;
         // Going uncapped is only ever accepted because the strip said so in as many words.
         const started = await startRun({
           ...armed.scope,
           accept_uncapped_spend: armed.commitment.uncapped,
         });
         setArmed(null);
-        await watch(started);
-      }),
+        await watch(ticket, started.id);
+      });
+    },
     cancel: () => {
       setArmed(null);
       setPlan(null);
       setPlanOrigin(null);
     },
-    refresh: () =>
-      void act("opening", async () => {
-        if (current) setCurrent(await fetchRun(current.id));
-      }),
-    close: () => setCurrent(null),
-    stop: () =>
+    refresh: () => {
+      if (!current) return;
+      const ticket = claim();
+      void act("opening", () => watch(ticket, current.id));
+    },
+    close: clear,
+    stop: () => {
+      if (!current) return;
+      const ticket = claim();
       void act("stopping", async () => {
-        if (!current) return;
         // The 202 carries the run back, so `stop_requested_at` is on screen immediately
         // rather than after the next poll -- which is what lets the card explain why the
         // button has gone before the run has actually ended.
-        await watch(await stopRun(current.id));
-      }),
+        const stopped = await stopRun(current.id);
+        await watch(ticket, stopped.id);
+      });
+    },
     // Through `act` like everything else. A backend that is down or a run that cannot be read
     // now says so, where before the promise rejected into nothing and the click looked ignored.
-    open: (run) => void act("opening", () => watch(run)),
+    open: (run) => {
+      const ticket = claim();
+      void act("opening", () => watch(ticket, run.id));
+    },
   };
 }

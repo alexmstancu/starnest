@@ -1,4 +1,11 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -10,6 +17,7 @@ import {
 } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
+import { useRunScreen } from "./useRunScreen";
 
 /**
  * The Run tab: estimate, confirm, watch, and retry only what failed (`reqs.md` 6.3, 6.4).
@@ -1528,6 +1536,299 @@ describe("stopping a run", () => {
     );
 
     expect(await screen.findByText(/run_not_found/)).toBeInTheDocument();
+  });
+});
+
+/** An answer the test lets go of when it chooses, so two acts overlap as a slow network makes them. */
+function heldAnswer(): { held: Promise<void>; release: () => void } {
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { held, release };
+}
+
+/**
+ * How many times the history has been read. **Every act that ends reads it again**, so a count
+ * that moves is the sign a late act has finished whatever it was going to do to the card. The
+ * sidebar and the progress strip ask for one run each, and are not counted.
+ */
+function countHistoryReads(): { count: number } {
+  const reads = { count: 0 };
+  mockServer.use(
+    http.get(`${BASE}/data-acquisition-runs`, ({ request }) => {
+      if (new URL(request.url).searchParams.get("limit") !== "1") reads.count += 1;
+      // Nothing returned, so the request falls through to the mock's own answer.
+    }),
+  );
+  return reads;
+}
+
+/**
+ * Holds the next read of one run until the test lets it go; every later read goes through.
+ * **The next one, not all of them**: each overlapping act reads a run back, and only the act
+ * under test is meant to be slow.
+ */
+function holdTheNextReadOf(runId: number): {
+  release: () => void;
+  arrived: () => boolean;
+} {
+  const answer = heldAnswer();
+  let arrived = false;
+  mockServer.use(
+    http.get(`${BASE}/data-acquisition-runs/${String(runId)}`, async () => {
+      if (arrived) return;
+      arrived = true;
+      await answer.held;
+    }),
+  );
+  return { release: answer.release, arrived: () => arrived };
+}
+
+/**
+ * Run 7 is still going, and its stop is answered only when the test says so. **The mock
+ * remembers the stop** once it is answered, as the server does.
+ */
+function aRunWhoseStopIsHeld(): { release: () => void } {
+  const answer = heldAnswer();
+  let asked = false;
+  mockServer.use(
+    http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+      HttpResponse.json({
+        ...STARTED_RUN_DETAIL,
+        id: Number(params["runId"]),
+        run_status: "running",
+        finished_at: null,
+        stop_requested_at: asked ? "2026-09-12T09:00:06Z" : null,
+      }),
+    ),
+    http.post(`${BASE}/data-acquisition-runs/:runId/stop`, async ({ params }) => {
+      await answer.held;
+      asked = true;
+      return HttpResponse.json(
+        { ...STARTED_RUN_DETAIL, id: Number(params["runId"]) },
+        { status: 202 },
+      );
+    }),
+  );
+  return { release: answer.release };
+}
+
+async function openFromHistory(id: string): Promise<void> {
+  const number = await screen.findByRole("rowheader", { name: id });
+  await userEvent.click(within(number).getByRole("button", { name: id }));
+}
+
+/**
+ * Lets every answer the test has released reach the screen.
+ *
+ * **A round trip rather than a clock.** An answer that must *not* change the card leaves nothing
+ * on screen to wait for, so this waits for something that certainly lands after it: one more
+ * request, answered and drawn. An estimate is the harmless one -- it touches no card.
+ */
+async function aRoundTripLater(): Promise<void> {
+  await estimate();
+  await within(
+    screen.getByRole("region", { name: /an acquisition over every country/i }),
+  ).findByText("Items");
+}
+
+/**
+ * UI-04. **The card shows the run the reader chose last, not the read that arrived last.**
+ * Every read used to end in an unconditional `setCurrent`, so a slow answer for a run the
+ * reader had already left replaced the one they had just picked.
+ */
+describe("which run the card shows", () => {
+  it("keeps the run you opened when the opening view arrives late", async () => {
+    const opening = heldAnswer();
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/7`, async () => {
+        await opening.held;
+      }),
+    );
+    renderShell("/acquire");
+
+    await openFromHistory("6");
+    await screen.findByRole("region", { name: /acquisition 6/i });
+    opening.release();
+    await aRoundTripLater();
+
+    expect(
+      screen.getByRole("region", { name: /acquisition 6/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /acquisition 7/i })).toBeNull();
+  });
+
+  it("keeps a run just started when the history is slow to arrive", async () => {
+    const history = heldAnswer();
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, async () => {
+        await history.held;
+      }),
+    );
+    renderShell("/acquire");
+
+    await estimate();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /start this acquisition/i }),
+    );
+    await screen.findByRole("region", { name: /acquisition 8/i });
+    history.release();
+    await screen.findByRole("rowheader", { name: "7" });
+    await aRoundTripLater();
+
+    // The opening view would have opened run 7, the newest the history holds; the reader had
+    // already started run 8, and that is the one they are watching.
+    expect(
+      screen.getByRole("region", { name: /acquisition 8/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /acquisition 7/i })).toBeNull();
+  });
+
+  it("keeps a dismissed card dismissed when a refresh lands after it", async () => {
+    const history = countHistoryReads();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    const before = history.count;
+
+    const read = holdTheNextReadOf(7);
+    await userEvent.click(card.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(read.arrived()).toBe(true));
+    await userEvent.click(card.getByRole("button", { name: "Dismiss" }));
+    read.release();
+    await waitFor(() => expect(history.count).toBe(before + 1));
+
+    expect(screen.queryByRole("region", { name: /acquisition 7/i })).toBeNull();
+  });
+
+  it("does not let a stop's answer replace a run opened meanwhile", async () => {
+    const stop = aRunWhoseStopIsHeld();
+    const history = countHistoryReads();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    const before = history.count;
+
+    await userEvent.click(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+    await openFromHistory("6");
+    await screen.findByRole("region", { name: /acquisition 6/i });
+    await waitFor(() => expect(history.count).toBe(before + 1));
+    stop.release();
+    await waitFor(() => expect(history.count).toBe(before + 2));
+
+    expect(
+      screen.getByRole("region", { name: /acquisition 6/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /acquisition 7/i })).toBeNull();
+  });
+
+  it("shows the run a confirmation started, not a read already on its way", async () => {
+    const history = countHistoryReads();
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    const before = history.count;
+    await openFromHistory("6");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 6/i }),
+    );
+    await waitFor(() => expect(history.count).toBe(before + 1));
+    await userEvent.click(
+      screen.getByRole("button", { name: /^retry 1 failed$/i }),
+    );
+    const yes = await screen.findByRole("button", { name: /yes, start it/i });
+    await waitFor(() => expect(history.count).toBe(before + 2));
+
+    const read = holdTheNextReadOf(6);
+    await userEvent.click(card.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(read.arrived()).toBe(true));
+    await userEvent.click(yes);
+    await screen.findByRole("region", { name: /acquisition 8/i });
+    await waitFor(() => expect(history.count).toBe(before + 3));
+    read.release();
+    await waitFor(() => expect(history.count).toBe(before + 4));
+
+    expect(
+      screen.getByRole("region", { name: /acquisition 8/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /acquisition 6/i })).toBeNull();
+  });
+});
+
+/**
+ * NEW-10. **The busy label lasts as long as the work.** Acts overlap -- Refresh is live while a
+ * stop is being written -- and the first to end used to clear the label of the one still going.
+ */
+describe("what the busy label says while two acts overlap", () => {
+  it("keeps saying Reading… until its read is back, though an earlier act ended first", async () => {
+    const stop = aRunWhoseStopIsHeld();
+    const history = countHistoryReads();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    const before = history.count;
+
+    await userEvent.click(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+    const read = holdTheNextReadOf(7);
+    await userEvent.click(card.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(read.arrived()).toBe(true));
+    stop.release();
+    await waitFor(() => expect(history.count).toBe(before + 1));
+
+    expect(card.getByRole("button", { name: "Reading…" })).toBeDisabled();
+
+    read.release();
+    expect(
+      await card.findByRole("button", { name: "Refresh" }),
+    ).toBeEnabled();
+  });
+
+  it("keeps saying Stopping… until the stop has answered, though a later read ended first", async () => {
+    const stop = aRunWhoseStopIsHeld();
+    const history = countHistoryReads();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    const before = history.count;
+
+    await userEvent.click(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+    await userEvent.click(card.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(history.count).toBe(before + 1));
+
+    expect(card.getByRole("button", { name: "Stopping…" })).toBeDisabled();
+
+    stop.release();
+    await waitFor(() => expect(history.count).toBe(before + 2));
+  });
+});
+
+/**
+ * The hook's acts on the card, called with no card. The screen never offers them then, so this is
+ * the hook's own contract: **an act with nothing to act on asks for nothing and claims nothing**
+ * -- and so the opening view, which gives way to any claim, still opens.
+ */
+describe("an act on the card with no card to act on", () => {
+  it("asks for nothing, and leaves the opening view to open", async () => {
+    const { result } = renderHook(() => useRunScreen());
+
+    act(() => {
+      result.current.refresh();
+      result.current.stop();
+      result.current.commit();
+    });
+
+    expect(result.current.busy).toBeNull();
+    await waitFor(() => expect(result.current.current?.id).toBe(7));
   });
 });
 
