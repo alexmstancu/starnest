@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
+import { formatMoney } from "../../../format/display";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { describePass, describePeriod } from "./proposalReading";
 import { useProposals } from "./useProposals";
 
 /**
@@ -75,7 +77,7 @@ export function ProposalsPanel({ levelId }: { levelId: string }) {
           <p className="screen__note">
             {proposals.plan.gates_total} gate answers to research,{" "}
             {proposals.plan.llm_call_count} calls, about{" "}
-            {proposals.plan.estimated_cost_eur} EUR.
+            {formatMoney(proposals.plan.estimated_cost_eur, "EUR")}.
           </p>
           {proposals.plan.estimate_basis != null && (
             <p className="screen__note">
@@ -94,6 +96,19 @@ export function ProposalsPanel({ levelId }: { levelId: string }) {
           </label>
         </>
       )}
+
+      {/* Beside the estimate, so a ceiling and what was actually spent read together. A stop
+          at the spend cap is a warning, because the gates after it were never asked. */}
+      {proposals.lastPass !== null &&
+        (proposals.lastPass.halted_on_spend_cap ? (
+          <div className="notice notice--warning" role="status">
+            <p className="notice__message">{describePass(proposals.lastPass)}</p>
+          </div>
+        ) : (
+          <p className="screen__note" role="status">
+            {describePass(proposals.lastPass)}
+          </p>
+        ))}
 
       {proposals.refusals.length > 0 && (
         <>
@@ -132,6 +147,7 @@ export function ProposalsPanel({ levelId }: { levelId: string }) {
                   <th scope="col">Gate</th>
                   <th scope="col">Candidate</th>
                   <th scope="col">Proposed</th>
+                  <th scope="col">Holds for</th>
                   <th scope="col">Reason and pages</th>
                   <th scope="col">
                     <span className="visually-hidden">Confirm</span>
@@ -172,6 +188,7 @@ function ProposalRow({
       <th scope="row">{proposal.match_rule}</th>
       <td>{proposal.candidate}</td>
       <td>{proposal.match_result}</td>
+      <td>{describePeriod(proposal.reference_period)}</td>
       <td>
         <p>{proposal.reason}</p>
         {/* The pages are the point of asking at all: a gate answered with no source is an

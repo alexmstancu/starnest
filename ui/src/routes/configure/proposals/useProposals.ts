@@ -8,6 +8,7 @@ import {
   type ResearchPlan,
 } from "../../../api/endpoints";
 import { useResource, type Resource } from "../../../api/useResource";
+import type { ResearchPass } from "./proposalReading";
 
 /**
  * The gate answers a model proposed, and what confirming one does.
@@ -37,6 +38,11 @@ export interface Proposals {
   failure: unknown;
   /** Gates the model answered without citing anything, so nothing was stored. */
   refusals: string[];
+  /**
+   * What the last pass actually spent and whether the spend cap stopped it (UI-14). Null until
+   * a pass has answered.
+   */
+  lastPass: ResearchPass | null;
   estimate: (level: string) => void;
   research: (level: string, acceptUncapped: boolean) => void;
   confirm: (proposal: MatchRuleResult) => void;
@@ -54,6 +60,7 @@ export function useProposals(): Proposals {
   const [busy, setBusy] = useState<Proposals["busy"]>(null);
   const [failure, setFailure] = useState<unknown>(null);
   const [refusals, setRefusals] = useState<string[]>([]);
+  const [lastPass, setLastPass] = useState<ResearchPass | null>(null);
 
   const answers = resource.data?.items ?? [];
 
@@ -75,6 +82,7 @@ export function useProposals(): Proposals {
     busy,
     failure,
     refusals,
+    lastPass,
     estimate: (level) =>
       attempt("estimating", async () => {
         setPlan(await planMatchRuleResearch({ level }));
@@ -86,6 +94,13 @@ export function useProposals(): Proposals {
           accept_uncapped_spend: acceptUncapped,
         });
         setRefusals(outcome.refusals ?? []);
+        // The spend is a fact and the estimate a ceiling; a pass the cap stopped half way
+        // must not look finished.
+        setLastPass({
+          cost_eur: outcome.cost_eur,
+          calls: outcome.calls,
+          halted_on_spend_cap: outcome.halted_on_spend_cap,
+        });
         // Re-read rather than appending the response: a pass can replace an earlier proposal
         // for the same gate, and the stored answers are the only account of what now stands.
         reload();
@@ -99,7 +114,12 @@ export function useProposals(): Proposals {
           // travel, and a reader of the confirmed answer can still check them.
           reason: proposal.reason ?? null,
           citations: proposal.citations ?? [],
+          // **The period it holds for travels too** (UI-13), and null is sent rather than
+          // omitted: the answer replaces the proposal, so leaving it out would drop it unseen.
+          reference_period: proposal.reference_period ?? null,
           data_source: "manual",
+          // No retrieval date: the server stamps the moment of confirmation, which is when a
+          // person checked the pages -- the household's choice (2026-10-15).
         });
         reload();
       }),

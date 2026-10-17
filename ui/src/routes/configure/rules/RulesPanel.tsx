@@ -4,9 +4,15 @@ import {
   type CriteriaSet,
   type MatchRule,
 } from "../../../api/endpoints";
+import { useCandidateNames } from "../../../api/useCandidateNames";
 import { type Resource } from "../../../api/useResource";
+import { candidateName } from "../../../format/display";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
-import { describeEffect } from "./ruleEffect";
+import {
+  describeCompoundEffect,
+  describeEffect,
+  describeUnreadAnswers,
+} from "./ruleEffect";
 import { useRuleToggles } from "./useRuleToggles";
 
 /**
@@ -30,6 +36,9 @@ export function RulesPanel({
   children?: ReactNode;
 }) {
   const rules = useRuleToggles(criteriaSet, levelId);
+  // Candidates by name in the sentences, never by id (NEW-06).
+  const names = useCandidateNames();
+  const answers = rules.matchRuleResultsStatus;
 
   return (
     <section className="stage" aria-labelledby="rules-heading">
@@ -84,9 +93,14 @@ export function RulesPanel({
             // The level *and* the effect, because a switch saying only "enforced" makes a
             // reader guess whether it matters -- and dropping the level to make room would
             // lose which candidates it is even asked about.
-            effect: describeEffect(rule.id, rules.matchRuleResults, {
-              enforced: rules.isEnforced(rule.id),
-            }),
+            effect:
+              answers === "ready"
+                ? describeEffect(rule.id, rules.matchRuleResults, {
+                    enforced: rules.isEnforced(rule.id),
+                    nameOf: (candidate) => candidateName(names, candidate),
+                  })
+                : describeUnreadAnswers(answers),
+            idle: answers !== "ready",
             on: rules.isEnforced(rule.id),
             toggleLabel: `Enforce ${rule.name}`,
             onToggle: (wanted: boolean) => rules.enforce(rule.id, wanted),
@@ -108,7 +122,8 @@ export function RulesPanel({
             // A phrase, not two facts joined by a separator: the middle dot is barred
             // outright, and the fix that matters is saying the thing in words.
             detail: `${rule.shape}, and ${rule.outcome}s when it fires.`,
-            effect: null,
+            effect: describeCompoundEffect(rules.isApplied(rule.id)),
+            idle: true,
             on: rules.isApplied(rule.id),
             toggleLabel: `Apply ${rule.name}`,
             onToggle: (wanted: boolean) => rules.apply(rule.id, wanted),
@@ -124,8 +139,10 @@ interface RuleRow {
   id: string;
   name: string;
   detail: string;
-  /** What it is doing right now, or null when it is firing on nobody. */
-  effect: string | null;
+  /** What it is doing right now, or where to find out. */
+  effect: string;
+  /** Said quietly: a pointer, or a state still unknown, rather than a cost. */
+  idle: boolean;
   on: boolean;
   toggleLabel: string;
   onToggle: (wanted: boolean) => void;
@@ -181,12 +198,12 @@ function RuleList<Rule>({
                 description cannot answer. */}
             <span
               className={
-                row.effect === null
+                row.idle
                   ? "rule-row__effect rule-row__effect--idle"
                   : "rule-row__effect"
               }
             >
-              {row.effect ?? "Applies to no candidate right now."}
+              {row.effect}
             </span>
           </span>
           <span className="rule-row__kind">{columnLabel}</span>

@@ -180,3 +180,120 @@ describe("the rules panel", () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * UI-12 and NEW-06. **The sentence beside a rule must not claim what the ranking does not do.**
+ * A proposal was counted as a removal, every compound rule read "applies to no candidate", a
+ * gate said "never fires" while its answers were still loading, and candidates were named by id.
+ */
+describe("what each rule says it is doing", () => {
+  function rowOf(name: string): Promise<HTMLElement> {
+    return screen.findByRole("listitem", { name });
+  }
+
+  it("does not say a proposed answer removes a candidate", async () => {
+    renderShell("/configure");
+    await panel();
+
+    const gate = await rowOf("A visa route exists");
+    await waitFor(() =>
+      expect(gate).toHaveTextContent(
+        "1 proposed answer awaits confirmation, so this rules nobody out yet.",
+      ),
+    );
+    expect(gate).not.toHaveTextContent(/Removes/);
+  });
+
+  it("names the candidate a confirmed answer removes, never its id", async () => {
+    mockServer.use(
+      http.get("/v1/match-rule-results", () =>
+        HttpResponse.json({
+          items: [
+            {
+              match_rule: "country.visa_route_exists",
+              candidate: "country.united_kingdom",
+              match_result: "not_matching",
+              data_source: "manual",
+              retrieval_date: "2026-09-12T09:00:00Z",
+              is_proposal: false,
+            },
+          ],
+        }),
+      ),
+    );
+    renderShell("/configure");
+    await panel();
+
+    const gate = await rowOf("A visa route exists");
+    await waitFor(() =>
+      expect(gate).toHaveTextContent("Removes United Kingdom."),
+    );
+    expect(gate).not.toHaveTextContent("country.");
+  });
+
+  it("never says a compound rule applies to nobody", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const rules = await panel();
+
+    const rent = await rowOf("Rent fits the target spend");
+    expect(rent).toHaveTextContent("Not applied, so it flags nobody.");
+
+    await user.click(
+      screen.getByRole("switch", { name: "Apply Rent fits the target spend" }),
+    );
+
+    await waitFor(() =>
+      expect(rent).toHaveTextContent(
+        "Applied. Who it flags right now is shown on Rank.",
+      ),
+    );
+    expect(rules.queryByText(/applies to no candidate/i)).toBeNull();
+  });
+
+  it("says it is still reading the answers, rather than that a gate never fires", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.get("/v1/match-rule-results", async () => {
+        await held;
+      }),
+    );
+    renderShell("/configure");
+    await panel();
+
+    const freeMovement = await rowOf("Free movement applies");
+    expect(freeMovement).toHaveTextContent("Reading the answers…");
+    expect(freeMovement).not.toHaveTextContent(/never fires/);
+
+    release();
+
+    await waitFor(() =>
+      expect(freeMovement).toHaveTextContent(
+        "Answered for one candidate, and rules nobody out.",
+      ),
+    );
+  });
+
+  it("says it cannot tell what a gate does when the answers could not be read", async () => {
+    mockServer.use(
+      http.get("/v1/match-rule-results", () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "no answers" },
+          { status: 500 },
+        ),
+      ),
+    );
+    renderShell("/configure");
+    await panel();
+
+    const gate = await rowOf("A visa route exists");
+    await waitFor(() =>
+      expect(gate).toHaveTextContent(
+        "The answers could not be read, so what this rule does is not known.",
+      ),
+    );
+  });
+});

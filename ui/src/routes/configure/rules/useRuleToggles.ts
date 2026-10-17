@@ -26,6 +26,11 @@ export interface RuleToggles {
   matchRules: Resource<{ items: MatchRule[] }>;
   /** Every recorded gate answer, so a rule can say what it is actually costing. */
   matchRuleResults: MatchRuleResult[];
+  /**
+   * Whether the answers have been read. Until they have, what a gate costs is unknown -- and an
+   * empty list read as "never fires" while they were still on their way (UI-12).
+   */
+  matchRuleResultsStatus: Resource<{ items: MatchRuleResult[] }>["status"];
   compoundRules: Resource<{ items: CompoundRule[] }>;
   reloadMatchRules: () => void;
   reloadCompoundRules: () => void;
@@ -100,6 +105,7 @@ export function useRuleToggles(
     matchRules: matchRules.resource,
     matchRuleResults:
       results.resource.status === "ready" ? results.resource.data.items : [],
+    matchRuleResultsStatus: results.resource.status,
     compoundRules: compoundRules.resource,
     reloadMatchRules: matchRules.reload,
     reloadCompoundRules: compoundRules.reload,

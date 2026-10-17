@@ -104,7 +104,7 @@ describe("spending money on research", () => {
     await user.click(screen.getByRole("button", { name: "Estimate the research" }));
 
     expect(await screen.findByText(/64 gate answers to research/i)).toBeInTheDocument();
-    expect(screen.getByText(/4\.2 EUR/)).toBeInTheDocument();
+    expect(screen.getByText(/about €4\.20/)).toBeInTheDocument();
     expect(screen.getByText(/a ceiling, not a forecast/i)).toHaveTextContent(
       /12,000 input tokens per call/,
     );
@@ -341,5 +341,167 @@ describe("confirming a proposal", () => {
     expect(
       await screen.findByText(/there is no candidate country\.portugal/i),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * UI-14. **What a pass actually spent, and whether it was cut short.** The response carries the
+ * cost, the calls and whether the cap stopped it; the panel kept only the refusals, so a pass
+ * halted half way looked finished and the estimate was the only figure on screen.
+ */
+describe("what a research pass did", () => {
+  async function researchOnce(): Promise<void> {
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
+    await screen.findByText(/64 gate answers to research/i);
+    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+  }
+
+  function answeringResearch(outcome: {
+    cost_eur: number;
+    calls: number;
+    halted_on_spend_cap: boolean;
+  }) {
+    mockServer.use(
+      http.post(`${BASE}/match-rule-research`, () =>
+        HttpResponse.json({ proposals: [], refusals: [], ...outcome }),
+      ),
+    );
+  }
+
+  it("says what the pass actually spent, beside what it was estimated to", async () => {
+    renderShell("/configure");
+    await settled();
+
+    await researchOnce();
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "The last pass made 2 calls and spent €0.04.",
+    );
+    expect(screen.getByText(/about €4\.20/)).toBeInTheDocument();
+  });
+
+  it("says the pass stopped at the spend cap, rather than looking finished", async () => {
+    answeringResearch({ cost_eur: 9.98, calls: 240, halted_on_spend_cap: true });
+    renderShell("/configure");
+    await settled();
+
+    await researchOnce();
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /stopped at the spend cap.*were not asked/,
+    );
+  });
+
+  it("says a pass that asked nothing charged nothing", async () => {
+    answeringResearch({ cost_eur: 0, calls: 0, halted_on_spend_cap: false });
+    renderShell("/configure");
+    await settled();
+
+    await researchOnce();
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "The last pass made no calls and spent nothing.",
+    );
+  });
+});
+
+/**
+ * UI-13. **Confirming a proposal used to drop the period it holds for**, and the row never showed
+ * one. The confirmed answer is dated from the confirmation: that is when a person checked it.
+ */
+describe("the period a proposal holds for", () => {
+  function servingProposal(reference_period?: { start: string; end: string }) {
+    mockServer.use(
+      http.get(`${BASE}/match-rule-results`, () =>
+        HttpResponse.json({
+          items: [
+            {
+              match_rule: PROPOSED_GATE,
+              candidate: PROPOSED_FOR,
+              match_result: "not_matching",
+              data_source: "llm",
+              retrieval_date: "2026-09-12T09:00:00Z",
+              reason: "The official page lists no route for these citizenships.",
+              citations: ["https://example.gov/skilled-worker"],
+              is_proposal: true,
+              ...(reference_period === undefined ? {} : { reference_period }),
+            },
+          ],
+        }),
+      ),
+    );
+  }
+
+  function recordConfirmations(): Record<string, unknown>[] {
+    const sent: Record<string, unknown>[] = [];
+    mockServer.use(
+      http.put(
+        `${BASE}/match-rule-results/:matchRuleId/:candidateId`,
+        async ({ request }) => {
+          sent.push((await request.json()) as Record<string, unknown>);
+          return HttpResponse.json({});
+        },
+      ),
+    );
+    return sent;
+  }
+
+  async function confirm(): Promise<void> {
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: `Confirm ${PROPOSED_GATE} for ${PROPOSED_FOR}`,
+      }),
+    );
+  }
+
+  it("keeps the period a proposal holds for when it is confirmed", async () => {
+    servingProposal({ start: "2026-01-01", end: "2026-12-31" });
+    const sent = recordConfirmations();
+    renderShell("/configure");
+    await settled();
+
+    await confirm();
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({
+      reference_period: { start: "2026-01-01", end: "2026-12-31" },
+    });
+    // Dated by the server at the moment of confirmation, never by the model's reading.
+    expect(sent[0]).not.toHaveProperty("retrieval_date");
+  });
+
+  it("sends no period, and says so, for a proposal that has none", async () => {
+    servingProposal();
+    const sent = recordConfirmations();
+    renderShell("/configure");
+    await settled();
+
+    await confirm();
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toHaveProperty("reference_period", null);
+  });
+
+  it("shows the period beside the proposal", async () => {
+    servingProposal({ start: "2026-01-01", end: "2026-12-31" });
+    renderShell("/configure");
+    await settled();
+
+    const row = await within(
+      await screen.findByRole("region", { name: "Gate proposals" }),
+    ).findByRole("row", { name: new RegExp(PROPOSED_FOR) });
+    expect(row).toHaveTextContent("1 Jan 2026 to 31 Dec 2026");
+  });
+
+  it("says when a proposal records no period", async () => {
+    servingProposal();
+    renderShell("/configure");
+    await settled();
+
+    const row = await within(
+      await screen.findByRole("region", { name: "Gate proposals" }),
+    ).findByRole("row", { name: new RegExp(PROPOSED_FOR) });
+    expect(row).toHaveTextContent("No period recorded");
   });
 });
