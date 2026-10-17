@@ -482,7 +482,9 @@ async def create_criteria_set(body: NewCriteriaSetBody, criteria: Criteria) -> C
     Refused with 409 when the identifier is taken: silently replacing a set somebody built is
     the worst kind of success (`criteria/store.py`).
     """
-    await criteria.create_criteria_set(CriteriaSet(id=body.id, name=body.name))
+    with built_from_the_request():
+        created = CriteriaSet(id=body.id, name=body.name)
+    await criteria.create_criteria_set(created)
     return _set_body(await criteria.read_criteria_set(body.id))
 
 

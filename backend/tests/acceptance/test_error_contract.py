@@ -10,10 +10,13 @@ and the difference is invisible until it happens to somebody.
 """
 
 import json
+from collections.abc import AsyncIterator
 
 import httpx
 import pytest
 from psycopg_pool import AsyncConnectionPool
+
+from .contract import response_schema, undeclared_fields, validate
 
 pytestmark = pytest.mark.acceptance
 
@@ -282,6 +285,23 @@ class TestBoundaryValidationAndTheErrorShape:
         assert response.status_code == 422
 
 
+A_MALFORMED_SET_ID = pytest.mark.parametrize(
+    "malformed",
+    ["My Set", "a.b", "remote-only", "2026_plan"],
+    ids=["a capital and a space", "two segments", "a hyphen", "a leading digit"],
+)
+"""Shapes `CriteriaSetId` refuses: one segment of lowercase letters, digits and underscores,
+starting with a letter (`candidates/identifiers.py`, reached through `CatalogId`)."""
+
+
+@pytest.fixture
+async def a_set_to_discard(api: httpx.AsyncClient) -> AsyncIterator[str]:
+    """A well-formed id for a set the test creates, discarded afterwards: the criteria tables
+    are not among those the `api` fixture empties."""
+    yield "my_set"
+    await api.delete("/v1/criteria-sets/my_set")
+
+
 class TestADomainRefusalIsNot500:
     """A refusal raised while the domain object is built from the request is a 422 (BE-21).
 
@@ -453,6 +473,49 @@ class TestADomainRefusalIsNot500:
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
 
+    @A_MALFORMED_SET_ID
+    async def test_a_new_set_under_a_malformed_id_is_refused_not_500(
+        self, api: httpx.AsyncClient, malformed: str
+    ) -> None:
+        """`CriteriaSet(id=...)` was built outside `built_from_the_request`, so the identifier's
+        own refusal reached the client wrapped in a `ValidationError`: a 500."""
+        before = await _criteria_sets_held(api)
+
+        response = await api.post("/v1/criteria-sets", json={"id": malformed, "name": "Mine"})
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+        _assert_in_the_one_error_shape(response.json())
+        assert malformed in response.json()["message"], "the identifier rule's own sentence"
+        assert await _criteria_sets_held(api) == before, "nothing was written"
+
+    async def test_a_new_set_under_a_well_formed_id_is_still_created(
+        self, api: httpx.AsyncClient, a_set_to_discard: str
+    ) -> None:
+        """The control: only the identifier is held to the rule. The name is display text."""
+        response = await api.post(
+            "/v1/criteria-sets", json={"id": a_set_to_discard, "name": "My Set"}
+        )
+
+        assert response.status_code == 201
+        validate("createCriteriaSet", response.json(), status=201)
+        assert (response.json()["id"], response.json()["name"]) == (a_set_to_discard, "My Set")
+
+    @A_MALFORMED_SET_ID
+    async def test_a_copy_under_a_malformed_id_is_refused(
+        self, api: httpx.AsyncClient, malformed: str
+    ) -> None:
+        """The control: `duplicated_as` constructs the identifier itself, so this refusal was
+        never wrapped."""
+        before = await _criteria_sets_held(api)
+
+        response = await api.post(
+            f"/v1/criteria-sets/{MINIMAL}/duplicate", json={"id": malformed, "name": "Mine"}
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+        _assert_in_the_one_error_shape(response.json())
+        assert await _criteria_sets_held(api) == before, "nothing was written"
+
 
 A_TYPED_VALUE = {
     "candidate": "country.portugal",
@@ -486,6 +549,23 @@ async def _values_stored(api: httpx.AsyncClient) -> int:
 
 async def _gate_answers_recorded(api: httpx.AsyncClient) -> int:
     return len((await api.get("/v1/match-rule-results")).json()["items"])
+
+
+async def _criteria_sets_held(api: httpx.AsyncClient) -> set[str]:
+    return {summary["id"] for summary in (await api.get("/v1/criteria-sets")).json()["items"]}
+
+
+def _assert_in_the_one_error_shape(body: dict) -> None:
+    """Hold a refusal to the contract's one `Error` schema (`arch.md` 7.6).
+
+    Through the 409 `createCriteriaSet` declares, because the design declares no 422 for it and
+    `validate` reads an undeclared status as nothing to check -- asking for the 422 would pass
+    any body at all. Every refusal the design declares refs the same `Error`, which the first
+    line pins; JSON Schema allows a key nobody declared, which the last line refuses.
+    """
+    assert response_schema("createCriteriaSet", 409) == {"$ref": "#/components/schemas/Error"}
+    validate("createCriteriaSet", body, status=409)
+    assert undeclared_fields("createCriteriaSet", body, status=409) == []
 
 
 async def _set_the_score_scale(database_url: str, scale: int | None) -> None:
