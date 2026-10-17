@@ -1306,6 +1306,99 @@ describe("a gate's sentence once its answers change", () => {
       ),
     );
   });
+
+  /**
+   * **A pass that failed part way may already have stored proposals**, one per question it got
+   * through. Left unread, they were invisible, and the next pass would pay to ask them again.
+   */
+  it("shows what a failed pass stored before it failed, in the list and the gate's sentence", async () => {
+    const user = userEvent.setup();
+    const spainProposed = { ...PORTUGAL_PROPOSED, candidate: "country.spain" };
+    let stored = false;
+    mockServer.use(
+      http.get("/v1/match-rule-results", () =>
+        HttpResponse.json({
+          items: stored ? [PORTUGAL_PROPOSED, spainProposed] : [PORTUGAL_PROPOSED],
+        }),
+      ),
+      http.post("/v1/match-rule-research", () => {
+        // One question was answered and stored, and then the pass failed.
+        stored = true;
+        return HttpResponse.json(
+          { code: "internal_error", message: "the model provider failed" },
+          { status: 500 },
+        );
+      }),
+    );
+    renderShell("/configure");
+    await settled();
+    const gate = await visaGate();
+    await waitFor(() =>
+      expect(gate).toHaveTextContent("1 proposed answer awaits confirmation"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
+    await screen.findByText(/64 gate answers to research/i);
+    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+
+    expect(
+      await screen.findByText("the model provider failed"),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(gate).toHaveTextContent(
+        "2 proposed answers await confirmation, so this rules nobody out yet.",
+      ),
+    );
+    // In the list too, where it can be confirmed rather than paid for a second time.
+    expect(
+      await screen.findByRole("button", {
+        name: "Confirm country.visa_route_exists for country.spain",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("reads nothing again after a refusal, which stored nothing", async () => {
+    const user = userEvent.setup();
+    const reads = { count: 0 };
+    mockServer.events.on("request:start", ({ request }) => {
+      if (
+        request.method === "GET" &&
+        new URL(request.url).pathname === "/v1/match-rule-results"
+      ) {
+        reads.count += 1;
+      }
+    });
+    mockServer.use(
+      http.post("/v1/match-rule-research", () =>
+        HttpResponse.json(
+          {
+            code: "spend_cap_not_set",
+            message: "this would spend money and no spend cap is set",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderShell("/configure");
+    await settled();
+    const gate = await visaGate();
+    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
+    await screen.findByText(/64 gate answers to research/i);
+    const before = reads.count;
+
+    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+    await screen.findByText(/no spend cap is set/i);
+    // **A later write that does re-read**, so any read the refusal asked for is counted first:
+    // a confirm re-reads the proposals and the rules, two reads and no more.
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Confirm country.visa_route_exists for country.portugal",
+      }),
+    );
+    await waitFor(() => expect(gate).toHaveTextContent("Removes Portugal."));
+
+    expect(reads.count).toBe(before + 2);
+  });
 });
 
 describe("what the screen never says out loud", () => {

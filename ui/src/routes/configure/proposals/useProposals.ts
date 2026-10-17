@@ -105,7 +105,15 @@ export function useProposals(
           level,
           accept_uncapped_spend: acceptUncapped,
         }).catch((failure: unknown) => {
-          setSpendNotKnown(!spendIsKnown(failure));
+          const mayHaveStored = !spendIsKnown(failure);
+          setSpendNotKnown(mayHaveStored);
+          // **A pass that failed part way may already have stored proposals**, one per
+          // question it got through: read again, as after a success, so they are seen rather
+          // than paid for a second time. A refusal stored nothing, so it reads nothing.
+          if (mayHaveStored) {
+            reload();
+            onAnswered();
+          }
           throw failure;
         });
         setRefusals(outcome.refusals ?? []);
