@@ -3790,7 +3790,11 @@ paths:
         Nothing is stored and nothing is charged. With no model configured this is
         a 501, as the
 
-        pass itself is: an estimate of zero would read as "this would cost nothing".'
+        pass itself is: an estimate of zero would read as "this would cost nothing".
+        So is a
+
+        switched-off `llm` source, or the estimate would price a pass that is then
+        refused (NEW-03).'
       operationId: planMatchRuleResearch
       requestBody:
         content:

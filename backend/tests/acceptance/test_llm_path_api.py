@@ -495,6 +495,25 @@ class TestEstimatingAResearchPassBeforeAgreeingToIt:
         assert response.status_code == 501
         assert response.json()["code"] == "llm_not_configured"
 
+    async def test_with_the_llm_source_switched_off_there_is_nothing_to_estimate(
+        self, database_url: str
+    ) -> None:
+        """The pass refuses when the `llm` source is off (BE-15), so the estimate must too: it
+        used to price a pass the household could not then run (NEW-03). Restored in `finally`,
+        because the catalog is shared across the suite."""
+        researcher = StubResearcher()
+        async with an_api(database_url, (a_stub_source(),), researcher=researcher) as api:
+            await api.patch("/v1/data-sources/llm", json={"is_enabled": False})
+            try:
+                refused = await api.post("/v1/match-rule-research/plan", json={"level": COUNTRY})
+            finally:
+                await api.patch("/v1/data-sources/llm", json={"is_enabled": True})
+
+        assert refused.status_code == 501
+        assert refused.json()["code"] == "llm_not_configured"
+        assert "switched off" in refused.json()["message"]
+        assert researcher.asked == 0
+
 
 class TestResearchRefusesAnUnknownScope:
     """BE-24, on the paid path. A misspelled gate or candidate used to fall out of the

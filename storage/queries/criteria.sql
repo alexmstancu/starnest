@@ -635,6 +635,13 @@ ORDER  BY r.candidate, r.match_rule;
 --
 -- The override pair is all-or-nothing in the schema, so passing a reason without a date is
 -- rejected rather than silently stored as an unattributed exclusion.
+--
+-- **A model's proposal never replaces an answer a person recorded** (reqs.md 6.10 use 3,
+-- NEW-02). A research pass reads the answers once when it starts, so a person may confirm or
+-- override a gate while it runs; the proposal written afterwards used to overwrite that answer
+-- silently. A person's answer still replaces anything, and a proposal still replaces a
+-- proposal. A row left alone counts as none written, which is how the store knows to leave its
+-- citations alone too.
 INSERT INTO match_rule_result (
     match_rule, candidate, match_result, reason, data_source,
     reference_period_start, reference_period_end, retrieval_date,
@@ -650,7 +657,11 @@ SET match_result           = EXCLUDED.match_result,
     reference_period_end   = EXCLUDED.reference_period_end,
     retrieval_date         = EXCLUDED.retrieval_date,
     override_reason        = EXCLUDED.override_reason,
-    override_date          = EXCLUDED.override_date;
+    override_date          = EXCLUDED.override_date
+WHERE NOT (
+          (SELECT s.source_kind = 'llm' FROM data_source AS s WHERE s.id = EXCLUDED.data_source)
+      AND (SELECT s.source_kind <> 'llm' FROM data_source AS s
+           WHERE s.id = match_rule_result.data_source));
 
 -- name: replace_match_rule_result_citations(match_rule, candidate, urls)!
 -- The pages behind the answer, replaced with it. Old citations belong to the old answer.

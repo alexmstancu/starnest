@@ -62,9 +62,15 @@ class PostgresMatchRuleResultStore(MatchRuleResultStore):
         )
 
     async def record(self, result: MatchRuleResult) -> None:
+        """Store one answer with its pages -- unless it is a proposal and a person answered.
+
+        The query declines to write a model's proposal over an answer a person recorded
+        (NEW-02), and then the citations stay too: they are that answer's evidence, and
+        replacing them would put the proposal's pages beside the person's reason.
+        """
         period = result.reference_period
         async with acquire(self._pool) as connection:
-            await self._queries.upsert_match_rule_result(
+            written = await self._queries.upsert_match_rule_result(
                 connection,
                 match_rule=str(result.match_rule),
                 candidate=str(result.candidate),
@@ -77,6 +83,8 @@ class PostgresMatchRuleResultStore(MatchRuleResultStore):
                 override_reason=result.override_reason,
                 override_date=result.override_date,
             )
+            if not written:
+                return
             await self._queries.replace_match_rule_result_citations(
                 connection,
                 match_rule=str(result.match_rule),

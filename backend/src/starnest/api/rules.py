@@ -123,6 +123,24 @@ async def _research_targets(
     return wanted_rules, chosen
 
 
+async def _refuse_while_the_llm_source_is_off(catalog: Catalog) -> None:
+    """**A source the household switched off is not asked** (`reqs.md` 2, Q232, BE-15).
+
+    Gate research is the paid LLM path, so disabling the `llm` source must stop it spending --
+    the pass used to check only that a model was configured, never the toggle. Shared with the
+    estimate, which otherwise priced a pass that the pass then refused (NEW-03).
+    """
+    if any(
+        str(source.id) == "llm" and not source.is_enabled
+        for source in await catalog.read_data_sources()
+    ):
+        raise NoResearcherConfiguredError(
+            "the llm source is switched off, so no gate can be researched -- it is the paid LLM "
+            "path, and a switched-off source is not asked (reqs.md 2, Q232). Switch it on in "
+            "Configure to research gates."
+        )
+
+
 class ResearchPlanBody(BaseModel):
     """What a research pass would ask and what it would cost (`reqs.md` 6.3)."""
 
@@ -268,13 +286,15 @@ async def plan_match_rule_research(
     only at another level, or one somebody has already confirmed, is in neither.
 
     Nothing is stored and nothing is charged. With no model configured this is a 501, as the
-    pass itself is: an estimate of zero would read as "this would cost nothing".
+    pass itself is: an estimate of zero would read as "this would cost nothing". So is a
+    switched-off `llm` source, or the estimate would price a pass that is then refused (NEW-03).
     """
     if researcher is None:
         raise NoResearcherConfiguredError(
             "no model is configured, so there is nothing to estimate: set ANTHROPIC_API_KEY and "
             "the LLM prices (reqs.md 6.10)"
         )
+    await _refuse_while_the_llm_source_is_off(catalog)
 
     wanted_rules, roster = await _research_targets(body, catalog, candidates)
     estimate = plan_research(
@@ -317,18 +337,7 @@ async def research_match_rules(
             "no model is configured, so no gate can be researched: set ANTHROPIC_API_KEY and "
             "the three LLM prices (reqs.md 6.10)"
         )
-    # **A source the household switched off is not asked** (`reqs.md` 2, Q232, BE-15). Gate
-    # research is the paid LLM path, so disabling the `llm` source must stop it spending -- the
-    # endpoint used to check only that a model was configured, never the toggle.
-    if any(
-        str(source.id) == "llm" and not source.is_enabled
-        for source in await catalog.read_data_sources()
-    ):
-        raise NoResearcherConfiguredError(
-            "the llm source is switched off, so no gate can be researched -- it is the paid LLM "
-            "path, and a switched-off source is not asked (reqs.md 2, Q232). Switch it on in "
-            "Configure to research gates."
-        )
+    await _refuse_while_the_llm_source_is_off(catalog)
 
     wanted_rules, roster = await _research_targets(body, catalog, candidates)
     household = await households.get_household()
