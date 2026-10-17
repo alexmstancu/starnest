@@ -77,7 +77,9 @@ export const SETTING_FIELDS = [
     label: "Candidates you can compare at once",
     unit: "candidates",
     description: "How many comparators one comparison may hold.",
-    consequence: "A comparison accepts as many comparators as you pick.",
+    // **What Compare does, not what it might be expected to** (UI-31): an unset limit is
+    // refused with `comparator_limit_not_set`, never read as "no limit".
+    consequence: "Compare refuses every comparison until this is set.",
     severity: "advisory",
   },
   {

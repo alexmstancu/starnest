@@ -182,3 +182,21 @@ describe("a setting that holds no number", () => {
     expect(invalidSettings({ ...SET, score_scale_max: "" })).toEqual([]);
   });
 });
+
+/**
+ * UI-31. **The guidance said the opposite of what happens.** Compare refuses a comparison while
+ * the limit is unset (`comparator_limit_not_set`); it never accepted "as many as you pick".
+ */
+describe("what an unset comparator limit costs", () => {
+  it("says an unset comparator limit stops every comparison", () => {
+    const limit = SETTING_FIELDS.find(
+      (field) => field.name === "comparator_limit",
+    );
+
+    expect(limit?.consequence).toBe(
+      "Compare refuses every comparison until this is set.",
+    );
+    // Advisory still: ranking works without it, and the one blocking banner is the scale's.
+    expect(limit?.severity).toBe("advisory");
+  });
+});

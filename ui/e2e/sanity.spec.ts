@@ -1,4 +1,10 @@
-import { type Locator, type Page, expect, test } from "@playwright/test";
+import {
+  type APIRequestContext,
+  type Locator,
+  type Page,
+  expect,
+  test,
+} from "@playwright/test";
 
 /**
  * The functional sanity suite: do the main flows still work?
@@ -121,6 +127,19 @@ test.describe("the ranking", () => {
 const TEST_EVALUATION_MARKER = "[e2e] ";
 
 test.describe("configuring", () => {
+  // **Left as it was found, in `afterEach`**, which runs even when the test fails: a sanity
+  // test that edits the household's own settings and walks away has changed the thing it was
+  // checking. The restore sat at the end of the body, where any earlier failure skipped it.
+  let capBefore: number | null = null;
+
+  test.beforeEach(async ({ request }) => {
+    capBefore = await spendCap(request);
+  });
+
+  test.afterEach(async ({ request }) => {
+    await setSpendCap(request, capBefore);
+  });
+
   test("saves a settings change and reads it back", async ({ page }) => {
     await page.goto("/configure");
     // A textbox rather than a spinbutton: the field takes a decimal by `inputMode`, not a
@@ -132,15 +151,16 @@ test.describe("configuring", () => {
 
     await cap.fill(after);
     await page.getByRole("button", { name: "Save settings" }).click();
+    // Landed before the reload: reloading first can read the old value back, and the test then
+    // fails about the wrong thing.
+    await expect(
+      page
+        .getByRole("region", { name: "Acquisition limits" })
+        .getByText("Saved."),
+    ).toBeVisible();
 
     await page.reload();
     await expect(cap).toHaveValue(after);
-
-    // Left as it was found: a sanity test that edits the household's own settings and walks
-    // away has changed the thing it was checking.
-    await cap.fill(before);
-    await page.getByRole("button", { name: "Save settings" }).click();
-    await expect(cap).toHaveValue(before);
   });
 });
 
@@ -289,7 +309,7 @@ test.describe("a setting nobody has decided", () => {
 
     await limit.fill("");
     await expect(
-      page.getByText(/A comparison accepts as many comparators as you pick/),
+      page.getByText(/Compare refuses every comparison until this is set/),
     ).toBeVisible();
     await expect(limit).toHaveAttribute("placeholder", "Not set");
 
@@ -356,7 +376,8 @@ test.describe("what this session changed", () => {
     await weight.dispatchEvent("pointerup");
     await expect(weight).toHaveValue(after);
 
-    const entry = history.getByRole("listitem").filter({ hasText: "country.rule_of_law" });
+    // Named as the catalog names it, never by its id (NEW-07).
+    const entry = history.getByRole("listitem").filter({ hasText: "Rule of law" });
     await expect(entry).toHaveCount(1);
 
     // The way back, and it must reach the server: the value is re-read after a reload.
@@ -488,4 +509,23 @@ async function attributesInside(page: Page, pillar: string) {
   });
   await inside.waitFor({ state: "visible" });
   return inside;
+}
+
+async function spendCap(request: APIRequestContext): Promise<number | null> {
+  const settings = (await (await request.get("/v1/settings")).json()) as {
+    run_spend_cap_eur: number | null;
+  };
+  return settings.run_spend_cap_eur;
+}
+
+/** The cap is the household's decision, so the suite leaves it exactly as it found it. */
+async function setSpendCap(
+  request: APIRequestContext,
+  cap: number | null,
+): Promise<void> {
+  const current = (await (await request.get("/v1/settings")).json()) as object;
+  const response = await request.put("/v1/settings", {
+    data: { ...current, run_spend_cap_eur: cap },
+  });
+  expect(response.ok()).toBe(true);
 }

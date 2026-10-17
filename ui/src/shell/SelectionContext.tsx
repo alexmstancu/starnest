@@ -82,19 +82,24 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
   // the first existing set. A set that was in the list and has left it is the real event, and it
   // covers a set deleted from anywhere, not only from the panel below.
   const lastSeenCriteriaSets = useRef<string[]>([]);
+  const criteriaSetsReady = criteriaSets.resource.status === "ready";
   useEffect(() => {
+    // **A list that has not arrived is a reload in flight**, so it is not recorded: recording
+    // it forgot that the discarded set had ever been there, and the correction below then had
+    // nothing to recognise when the real list landed a moment later. **An empty list that has
+    // arrived is a real answer** (UI-28): reading it as "in flight" too left the last set
+    // discarded still selected, so every screen went on asking for it.
+    if (!criteriaSetsReady) return;
     const available = availableCriteriaSets.map((set) => set.id);
     const wasThere =
       criteriaSetId !== null && lastSeenCriteriaSets.current.includes(criteriaSetId);
     const isGone = criteriaSetId !== null && !available.includes(criteriaSetId);
 
-    // **An empty list is a reload in flight, not a list with nothing in it**, so it is not
-    // recorded: recording it forgot that the discarded set had ever been there, and the
-    // correction below then had nothing to recognise when the real list landed a moment later.
-    if (available.length === 0) return;
     lastSeenCriteriaSets.current = available;
-    if (criteriaSetId === null || (wasThere && isGone)) setCriteriaSetId(available[0]!);
-  }, [criteriaSetId, availableCriteriaSets]);
+    if ((criteriaSetId === null && available.length > 0) || (wasThere && isGone)) {
+      setCriteriaSetId(available[0] ?? null);
+    }
+  }, [criteriaSetsReady, criteriaSetId, availableCriteriaSets]);
 
   // **Depends on the two `reload` functions, not on the resources that carry them.**
   // `useResource` returns a fresh object every render, so `[levels, criteriaSets]` changed on

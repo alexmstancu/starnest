@@ -351,3 +351,20 @@ describe("the settings panel while a save is in flight", () => {
     expect(sent).toEqual([]);
   });
 });
+
+describe("an unset comparator limit", () => {
+  it("says that clearing it stops every comparison", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const settings = await panel();
+
+    await user.clear(field("Candidates you can compare at once"));
+
+    expect(
+      field("Candidates you can compare at once"),
+    ).toHaveAccessibleDescription(
+      /Compare refuses every comparison until this is set\./,
+    );
+    expect(settings.queryByText(/as many comparators as you pick/)).toBeNull();
+  });
+});

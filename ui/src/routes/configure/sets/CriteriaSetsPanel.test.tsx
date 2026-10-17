@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { deleteCriteriaSet } from "../../../api/endpoints";
 import { renderShell } from "../../../testing/renderShell";
 
 /**
@@ -207,5 +208,51 @@ describe("the criteria sets panel", () => {
     // Punctuation alone derives no identifier, so it is still not a name.
     await user.type(sets.getByRole("textbox", { name: /name a new set/i }), "!!");
     expect(sets.getByRole("button", { name: "Create set" })).toBeDisabled();
+  });
+});
+
+/**
+ * UI-28. **An empty list that has arrived is not a list still on its way.** The selection treated
+ * the two alike, so discarding the last set left it selected: every screen went on showing and
+ * asking for a set the server no longer had.
+ */
+describe("when every set has been discarded", () => {
+  /**
+   * The last set goes from this screen, the other having gone elsewhere -- another tab, say. The
+   * panel will not delete the only set it lists, so the list it holds must still show two.
+   */
+  async function discardTheLastSet(): Promise<void> {
+    const user = userEvent.setup();
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    await row("Remote only");
+    await deleteCriteriaSet("remote-only");
+
+    await user.click((await row("Default")).getByRole("button", { name: "Delete" }));
+  }
+
+  it("leaves nothing selected when the last sets are gone", async () => {
+    renderShell("/configure");
+
+    await discardTheLastSet();
+
+    expect(
+      await screen.findByText("Choose a criteria set to see its criteria."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Pillar weights" }),
+    ).toBeNull();
+  });
+
+  it("selects a set created once the last one has gone", async () => {
+    renderShell("/configure");
+    await discardTheLastSet();
+    await screen.findByText("Choose a criteria set to see its criteria.");
+
+    await create("Partner");
+
+    await waitFor(() => expect(sidebarSets()).toHaveValue("partner"));
+    expect(
+      await screen.findByText("This set weighs no pillar yet."),
+    ).toBeInTheDocument();
   });
 });
