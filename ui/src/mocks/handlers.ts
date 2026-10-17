@@ -322,13 +322,22 @@ export const handlers = [
       // **Only the fields the contract lets a caller send.** Spreading the whole body echoed
       // anything at all back, so the mock could never be seen refusing a field the server
       // refuses -- and a test sending one would pass on a response the API would not give.
+      // **And every one of those the server keeps** (NEW-05): the period, the pages and the
+      // override were dropped here, so a screen sending them could never be seen keeping them.
+      const now = new Date().toISOString();
       const answer: MatchRuleResult = {
         match_result: body.match_result ?? "unknown",
         reason: body.reason ?? null,
         data_source: body.data_source ?? "manual",
         match_rule: String(params["matchRuleId"]),
         candidate: String(params["candidateId"]),
-        retrieval_date: new Date().toISOString(),
+        reference_period: body.reference_period ?? null,
+        retrieval_date: body.retrieval_date ?? now,
+        override_reason: body.override_reason ?? null,
+        // The moment is the server's, never the caller's: an audit trail whose dates the
+        // audited party supplies is not one (`api/rules.py`).
+        override_date: body.override_reason ? now : null,
+        citations: body.citations ?? [],
         is_proposal: false,
       };
       matchRuleResults = [
@@ -562,6 +571,20 @@ export const handlers = [
     const query = new URL(request.url).searchParams;
     const focus = query.get("focus");
     const comparators = query.getAll("comparators");
+    // **First, and in its own words, as the server refuses it** (NEW-05): `comparisons.py`
+    // checks the limit is set before it looks at the focus or counts the comparators.
+    if (settings.comparator_limit === null || settings.comparator_limit === undefined) {
+      return HttpResponse.json(
+        {
+          code: "comparator_limit_not_set",
+          message:
+            "comparator_limit is not set, so there is no bound on how many comparators a " +
+            "comparison may hold. Set it in Settings; it is provisional by design and has " +
+            "no default.",
+        },
+        { status: 409 },
+      );
+    }
     if (!focus || comparators.length === 0) {
       return HttpResponse.json(
         {
@@ -583,7 +606,7 @@ export const handlers = [
         { status: 409 },
       );
     }
-    if (comparators.length > (settings.comparator_limit ?? 0)) {
+    if (comparators.length > settings.comparator_limit) {
       return HttpResponse.json(
         {
           code: "invalid_comparison",

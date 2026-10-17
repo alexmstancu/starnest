@@ -12,8 +12,10 @@ import { describe, expect, it } from "vitest";
 import { mockServer } from "../mocks/server";
 import {
   fetchEveryRun,
+  fetchMatchRuleResults,
   fetchValues,
   fetchValuesFromRun,
+  putMatchRuleResult,
   updateCriterionLock,
   updateCriterionWeight,
   updatePillarLock,
@@ -357,5 +359,72 @@ describe("reading every run", () => {
     await expect(fetchEveryRun()).rejects.toMatchObject({
       code: "internal_error",
     });
+  });
+});
+
+/**
+ * NEW-05. **The mock keeps what the server keeps.** It answered a gate's PUT with only the
+ * verdict and its source, dropping the period, the pages and the override -- so a screen that
+ * sent them could never be seen keeping them, and a test of one passed against an answer the
+ * API would not give.
+ */
+describe("recording a gate's answer", () => {
+  const GATE = "country.visa_route_exists";
+  const FOR = "country.portugal";
+
+  it("keeps the period, the pages and the override reason it was sent", async () => {
+    const answer = {
+      match_result: "not_matching" as const,
+      data_source: "manual",
+      reason: "No route for these citizenships.",
+      reference_period: { start: "2026-01-01", end: "2026-12-31" },
+      citations: ["https://example.gov/skilled-worker"],
+      override_reason: "Checked the official page by hand.",
+    };
+
+    const stored = await putMatchRuleResult(GATE, FOR, answer);
+
+    expect(stored).toMatchObject(answer);
+    const { items } = await fetchMatchRuleResults();
+    expect(
+      items.find((each) => each.match_rule === GATE && each.candidate === FOR),
+    ).toMatchObject(answer);
+  });
+
+  /** The moment of an override is the server's, never the caller's: it is an audit trail. */
+  it("stamps an override with the moment it was recorded", async () => {
+    const before = Date.now();
+
+    const stored = await putMatchRuleResult(GATE, FOR, {
+      match_result: "matching",
+      data_source: "manual",
+      override_reason: "The rule does not apply to this household.",
+    });
+
+    const stamped = Date.parse(stored.override_date ?? "");
+    expect(stamped).toBeGreaterThanOrEqual(before);
+    expect(stamped).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("records no override moment for an answer that overrides nothing", async () => {
+    const stored = await putMatchRuleResult(GATE, FOR, {
+      match_result: "matching",
+      data_source: "manual",
+    });
+
+    expect(stored.override_date ?? null).toBeNull();
+    expect(stored.override_reason ?? null).toBeNull();
+    expect(stored.reference_period ?? null).toBeNull();
+    expect(stored.citations).toEqual([]);
+  });
+
+  it("keeps when the gate was checked, where the caller says", async () => {
+    const stored = await putMatchRuleResult(GATE, FOR, {
+      match_result: "matching",
+      data_source: "manual",
+      retrieval_date: "2026-09-01T10:00:00Z",
+    });
+
+    expect(stored.retrieval_date).toBe("2026-09-01T10:00:00Z");
   });
 });

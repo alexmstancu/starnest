@@ -2,6 +2,8 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
+import { replaceSettings } from "../../api/endpoints";
+import { SETTINGS } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -211,6 +213,22 @@ describe("the comparison", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /more than the limit/i,
+    );
+  });
+
+  /**
+   * NEW-05. **The mock refuses as the server refuses.** An unset limit is a refusal of its own,
+   * `comparator_limit_not_set`, raised before the comparators are counted at all; the mock
+   * answered `invalid_comparison`, a code the server keeps for a request built wrong.
+   */
+  it("names an unset comparator limit as the reason a comparison is refused", async () => {
+    await replaceSettings({ ...SETTINGS, comparator_limit: null });
+    renderShell("/compare");
+
+    await compare("Portugal", "Netherlands");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "comparator_limit_not_set",
     );
   });
 });
