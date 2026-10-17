@@ -149,6 +149,8 @@ class TestTheAttributes:
         assert order[:2] == ["eurostat", "world_bank"]
         assert "manual" in order
 
+
+class TestSwitchingASourceOff:
     """Whether a source is consulted is a judgement the household makes (`reqs.md` 2, Q232).
 
     **Every test here puts the source back**, because these run against a real database and a
