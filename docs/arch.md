@@ -837,7 +837,9 @@ comparing anything.
 
 **Validation happens on the way in** (`reqs.md` 3.3a). A value that fails is still written, with
 its `rejection_reason` set; it never becomes active and never counts toward coverage. This is not
-an error — it is a recorded observation about a source.
+an error — it is a recorded observation about a source. The run also records a failure for that
+candidate and attribute, naming the reason, so a retry can reach it; the pair still counts as
+completed.
 
 **Halting on the spend cap.** The `CostMeter` accumulates as items complete. When it crosses the
 cap, the scheduler stops issuing new work, lets in-flight items finish and commit, and marks the
@@ -1093,6 +1095,9 @@ that matter (section 5.4).
 ### 9.5 Backup
 
 `pg_dump` in custom format to a local directory, **before every migration** and on a schedule.
+Every schema change goes through it: `make migrate` and `make rollback` run `make backup` first,
+and compose starts the `migrate` service only after `backup` completes successfully, so
+`make docker-migrate` backs up too.
 
 The reasoning is specific rather than generic: structured values could be re-fetched slowly,
 LLM-sourced values would cost money again, and **manually entered values — visa verdicts, quota

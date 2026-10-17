@@ -1166,6 +1166,9 @@ every query and moved validation back into application code.
 > decided this does not apply*, so its weight is redistributed and **coverage is unaffected**.
 > `blocks_if_missing: true` means *if this is scored but absent, do not produce a total at all*.
 > One is an opinion about relevance, the other is a floor on evidence (section 5.3).
+> **Excluding a criterion takes it out of the weights and coverage, never out of matching**: its
+> `matching_threshold` still applies, so a figure past the line makes the candidate
+> `not_matching` while it keeps its score.
 
 **A `CriteriaSet` is a named collection of criteria**, plus the pillar weights for each level
 (`pillar_weight`, one row per pillar).
@@ -2957,7 +2960,7 @@ wondering whether a second concept is hiding behind the second word.
 | **Weight** | How much a pillar or criterion contributes. Sums to 100 within a level and within a pillar. Moving one rebalances the others proportionally |
 | **Lock** | Pins a weight so rebalancing skips it. Makes "I have decided this one" explicit |
 | **Goal** | What you want from an attribute: `minimise`, `maximise`, or `target_range`. A **preference, not a fact** — a large expat community is a soft landing to one person and a bubble to another. Named `goal` rather than `direction` because a target range is not a direction |
-| **`is_scored` / `blocks_if_missing`** | Two different questions on a criterion. `is_scored: false` means you decided it does not apply — weight is redistributed, coverage unaffected. `blocks_if_missing: true` means that if it *is* scored and absent, no total is produced at all |
+| **`is_scored` / `blocks_if_missing`** | Two different questions on a criterion. `is_scored: false` means you decided it does not apply — weight is redistributed, coverage unaffected, and its matching threshold still applies. `blocks_if_missing: true` means that if it *is* scored and absent, no total is produced at all |
 | **Reducer** | How a broken-down attribute becomes one number: `select` one option, or `aggregate` across them. A setting — change it and the ranking recalculates with no re-fetch, which is what makes simulation possible |
 
 ### Matching, and what comes out

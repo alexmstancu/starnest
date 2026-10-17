@@ -822,6 +822,10 @@ invariants live.
 `ui/vite.config.ts` (`test.coverage.thresholds`). Below the bar the command fails; it
 does not print a warning nobody reads.
 
+**The two floors are separate, not a blend.** `fail_under` can only hold a blended total, so
+`tools/audit_coverage.py`, which `make check` runs after `make coverage`, holds each `arch.md`
+6.1 package, and the total, to 85% of its lines and 85% of its branches.
+
 **Raised from 75 on 2026-09-05.** The backend was at 97.8% and the interface at 98.5%, so a
 three-quarters floor had stopped being a check: roughly a fifth of the suite could have been
 deleted without the gate noticing. A floor only measures anything when it sits close enough to
