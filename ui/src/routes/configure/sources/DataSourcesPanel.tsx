@@ -28,8 +28,8 @@ import { advertiseMove, useSourceDrag } from "./useSourceDrag";
 export function DataSourcesPanel() {
   const sources = useDataSources();
   const positions = positionsOf(sources.sources);
-  // A reorder writes several rows one at a time, so any save in flight blocks a new gesture --
-  // not just a save on the row being dragged, which is what disables that row's own arrows.
+  // A reorder writes several rows one at a time, so any save in flight blocks every control
+  // (UI-07): a gesture started meanwhile would be computed from a list that is partly the old one.
   const anySaving = sources.saving !== null;
   const drag = useSourceDrag(sources.sources, sources.reorder, anySaving);
 
@@ -63,7 +63,6 @@ export function DataSourcesPanel() {
         <ul className="source-list" aria-label="Every configured source, in priority order">
           {inPriorityOrder(sources.sources).map((source) => {
             const position = positions.get(source.id) ?? null;
-            const busy = sources.saving === source.id;
             return (
               <li
                 key={source.id}
@@ -123,7 +122,7 @@ export function DataSourcesPanel() {
                   aria-checked={source.is_enabled}
                   aria-label={`Consult ${source.name}`}
                   className="switch"
-                  disabled={busy}
+                  disabled={anySaving}
                   title="Consult this source at all"
                   onClick={() =>
                     sources.setEnabled(source.id, !source.is_enabled)
@@ -146,7 +145,9 @@ export function DataSourcesPanel() {
                   <button
                     type="button"
                     className="arrow"
-                    disabled={busy || sources.moveTo(source.id, "up") === null}
+                    disabled={
+                      anySaving || sources.moveTo(source.id, "up") === null
+                    }
                     title="Higher priority"
                     onClick={() => sources.move(source.id, "up")}
                   >
@@ -158,7 +159,9 @@ export function DataSourcesPanel() {
                   <button
                     type="button"
                     className="arrow"
-                    disabled={busy || sources.moveTo(source.id, "down") === null}
+                    disabled={
+                      anySaving || sources.moveTo(source.id, "down") === null
+                    }
                     title="Lower priority"
                     onClick={() => sources.move(source.id, "down")}
                   >

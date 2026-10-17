@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { fetchDataSources, updateDataSource } from "../../../api/endpoints";
 import { useResource } from "../../../api/useResource";
 import { priorityForMove, reorderForDrop } from "./sourceOrder";
@@ -16,6 +16,10 @@ export function useDataSources() {
   );
   const [saving, setSaving] = useState<string | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
+  // **One change at a time** (UI-07). A reorder is several writes in a row, so a second one
+  // started meanwhile would be computed from a list that is partly the old one. A ref, because
+  // two gestures in one tick would both pass a check on state that has not re-rendered yet.
+  const inFlight = useRef(false);
 
   const sources = resource.status === "ready" ? resource.data.items : [];
 
@@ -28,6 +32,8 @@ export function useDataSources() {
         default_priority: number;
       }[] = [],
     ) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
       setSaving(id);
       setFailure(null);
       try {
@@ -37,11 +43,14 @@ export function useDataSources() {
             default_priority: other.default_priority,
           });
         }
-        reload();
       } catch (error) {
         setFailure(error);
       } finally {
+        inFlight.current = false;
         setSaving(null);
+        // **Re-read even after a failure.** The writes before it are stored, so the order on
+        // screen would otherwise be one the database no longer holds; the refusal stays shown.
+        reload();
       }
     },
     [reload],

@@ -586,3 +586,130 @@ describe("reordering sources by dragging", () => {
     );
   });
 });
+
+/**
+ * UI-07. **A reorder is several writes, one after another**, so a second gesture started while
+ * one is being written computes its order from a list that is partly the old one; and a failure
+ * half way leaves the first writes stored while the screen kept the order from before them.
+ */
+describe("the source priority panel while a change is being written", () => {
+  /** How many times the list has been read, so a test can say it was read again. */
+  function countReads(): { count: number } {
+    const reads = { count: 0 };
+    mockServer.events.on("request:start", ({ request }) => {
+      if (
+        request.method === "GET" &&
+        new URL(request.url).pathname === "/v1/data-sources"
+      ) {
+        reads.count += 1;
+      }
+    });
+    return reads;
+  }
+
+  it("keeps every other row still while a move is being written", async () => {
+    const user = userEvent.setup();
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.patch("/v1/data-sources/:dataSourceId", async ({ request }) => {
+        sent.push(await request.clone().json());
+        await held;
+      }),
+    );
+    renderShell("/configure");
+    const sources = await panel();
+
+    await user.click(
+      await sources.findByRole("button", { name: "Move Manual entry up" }),
+    );
+    await waitFor(() => expect(sent).toHaveLength(1));
+
+    for (const name of ["Eurostat", "Manual entry", "LLM with web search"]) {
+      expect(
+        sources.getByRole("switch", { name: `Consult ${name}` }),
+      ).toBeDisabled();
+    }
+    expect(
+      sources.getByRole("button", { name: "Move Eurostat down" }),
+    ).toBeDisabled();
+    expect(
+      sources.getByRole("button", { name: "Move LLM with web search up" }),
+    ).toBeDisabled();
+
+    release();
+
+    await waitFor(() =>
+      expect(
+        sources.getByRole("switch", { name: "Consult Eurostat" }),
+      ).toBeEnabled(),
+    );
+    expect(
+      sources.getByRole("button", { name: "Move LLM with web search up" }),
+    ).toBeEnabled();
+  });
+
+  it("re-reads the order after a move that failed half way", async () => {
+    // The drop below writes Manual entry, then the LLM, then Eurostat. The first is stored and
+    // the second refused, so what the database holds is neither the old order nor the new one.
+    mockServer.use(
+      http.patch("/v1/data-sources/:dataSourceId", ({ params }) => {
+        if (String(params["dataSourceId"]) !== "llm") return;
+        return HttpResponse.json(
+          { code: "internal_error", message: "the second write failed" },
+          { status: 500 },
+        );
+      }),
+    );
+    renderShell("/configure");
+    const sources = await panel();
+    await row("Eurostat");
+
+    dragOnto(await row("Eurostat"), await row("LLM with web search"));
+
+    expect(await sources.findByRole("alert")).toHaveTextContent(
+      "the second write failed",
+    );
+    await waitFor(() =>
+      expect(namesInOrder(sources)).toEqual([
+        "Manual entry",
+        "Eurostat",
+        "LLM with web search",
+      ]),
+    );
+    // The refusal stays on screen beside the order that is actually stored.
+    expect(sources.getByRole("alert")).toHaveTextContent(
+      "the second write failed",
+    );
+  });
+
+  it("re-reads the order after a change refused outright, too", async () => {
+    const user = userEvent.setup();
+    const reads = countReads();
+    mockServer.use(
+      http.patch("/v1/data-sources/:dataSourceId", () =>
+        HttpResponse.json(
+          { code: "unknown_data_source", message: "no such source" },
+          { status: 422 },
+        ),
+      ),
+    );
+    renderShell("/configure");
+    const sources = await panel();
+    await sources.findByRole("switch", { name: "Consult Eurostat" });
+    expect(reads.count).toBe(1);
+
+    await user.click(sources.getByRole("switch", { name: "Consult Eurostat" }));
+
+    expect(await sources.findByRole("alert")).toHaveTextContent(
+      "unknown_data_source",
+    );
+    await waitFor(() => expect(reads.count).toBe(2));
+    expect(
+      await sources.findByRole("switch", { name: "Consult Eurostat" }),
+    ).toHaveAttribute("aria-checked", "true");
+  });
+});
