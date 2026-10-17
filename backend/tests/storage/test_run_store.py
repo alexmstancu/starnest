@@ -257,7 +257,8 @@ def a_rejected_figure(
     run: int, candidate: str, source: str = "eurostat"
 ) -> tuple[Value, AcquisitionFailure]:
     """A figure stored with its attribute's verdict against it, and the failure the run records
-    beside it (BE-08) -- the two rows a rejection leaves, always together."""
+    beside it (BE-08) -- the two rows a rejection at acquisition leaves. A run older than BE-08
+    left only the first (NEW-30)."""
     return (
         a_figure(run, candidate, OVERBURDEN, source=source).model_copy(
             update={"rejection_reason": NOT_CREDIBLE}
@@ -269,6 +270,30 @@ def a_rejected_figure(
             data_source=source,
         ),
     )
+
+
+DATED_TODAY = "Dated as the day it was fetched rather than the period it describes (P37)"
+
+
+async def reject_after_its_run(
+    pool: AsyncConnectionPool, run: int, candidate: str, attribute: str
+) -> None:
+    """Reject a stored figure after its run, as `0473` rejected 156 LLM figures: an UPDATE on
+    the value row and nothing else, so no failure row ever stands beside it."""
+    async with pool.connection() as connection:
+        await connection.execute(
+            "UPDATE value SET rejection_reason = %s"
+            " WHERE data_acquisition_run = %s AND candidate = %s AND attribute = %s",
+            (DATED_TODAY, run, candidate, attribute),
+        )
+
+
+async def reach_of(pool: AsyncConnectionPool, run: int) -> dict[str, tuple[int, int]]:
+    """Each source's `(items_stored, items_failed)` for one run."""
+    return {
+        r.data_source: (r.items_stored, r.items_failed)
+        for r in (await PostgresRunStore(pool).read_run(run)).by_source
+    }
 
 
 class TestWhichSourceGotItThere:
@@ -403,6 +428,76 @@ class TestWhichSourceGotItThere:
         }
 
         assert reach == {"oecd": (0, 1)}
+
+    async def test_a_figure_rejected_after_its_run_counts_for_its_source_as_failed(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        """NEW-30. `0473` rejected 156 LLM figures long after their runs, and no failure row
+        stands beside any of them. Counted from failure rows alone each pair belonged to neither
+        count, so `llm` read 0 and 0 -- and a screen dropping a source that touched nothing
+        dropped it from the very runs it answered. Eurostat keeps only its own figure."""
+        await PostgresValueStore(pool).append(
+            [
+                a_figure(a_two_source_run, "country.portugal", OVERBURDEN, source="eurostat"),
+                a_figure(a_two_source_run, "country.liechtenstein", OVERBURDEN, source="llm"),
+            ]
+        )
+        await reject_after_its_run(pool, a_two_source_run, "country.liechtenstein", OVERBURDEN)
+
+        assert await reach_of(pool, a_two_source_run) == {"eurostat": (1, 0), "llm": (0, 1)}
+
+    async def test_a_source_with_one_accepted_and_one_rejected_figure_reads_one_of_each(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        """A run older than BE-08 stored its rejected figure and wrote no failure beside it. It
+        reads as a run made today does: the rejection is on the value row either way."""
+        rejected, _never_recorded = a_rejected_figure(a_two_source_run, "country.liechtenstein")
+        await PostgresValueStore(pool).append(
+            [a_figure(a_two_source_run, "country.portugal", OVERBURDEN), rejected]
+        )
+
+        assert await reach_of(pool, a_two_source_run) == {"eurostat": (1, 1)}
+
+    async def test_a_rejected_figure_and_its_failure_row_are_one_failed_item(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        """Counted once, not twice: since BE-08 a rejection leaves a value row and a failure row
+        for one pair. Beside it, a plain fetch failure has only the failure row, and counts."""
+        store = PostgresRunStore(pool)
+        rejected, its_failure = a_rejected_figure(a_two_source_run, "country.liechtenstein")
+        await PostgresValueStore(pool).append([rejected])
+        await store.record_failures(
+            a_two_source_run,
+            [
+                its_failure,
+                AcquisitionFailure(
+                    OVERCROWDING, "503", candidate="country.portugal", data_source="eurostat"
+                ),
+            ],
+        )
+
+        assert await reach_of(pool, a_two_source_run) == {"eurostat": (0, 2)}
+
+    async def test_a_figure_rejected_in_another_run_is_not_this_runs_failure(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        """The rejection is read from this run's value rows only. A later run answering the
+        same pair from the same source owes nothing to the earlier one's rejected figure."""
+        store = PostgresRunStore(pool)
+        values = PostgresValueStore(pool)
+        await values.append([a_figure(a_two_source_run, "country.portugal", OVERBURDEN)])
+        await reject_after_its_run(pool, a_two_source_run, "country.portugal", OVERBURDEN)
+        await store.finish_run(
+            a_two_source_run, status=RunStatus.COMPLETED, finished_at=datetime.now(UTC)
+        )
+        later = await store.start_run(
+            RunScope(level="country", candidates=("country.portugal",), attributes=(OVERBURDEN,)),
+            triggered_by="test",
+        )
+        await values.append([a_figure(later, "country.portugal", OVERBURDEN)])
+
+        assert await reach_of(pool, later) == {"eurostat": (1, 0)}
+        assert await reach_of(pool, a_two_source_run) == {"eurostat": (0, 1)}
 
 
 EARLIER = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)

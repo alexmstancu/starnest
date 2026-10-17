@@ -322,21 +322,39 @@ RETURNING id;
 -- A source's two counts are independent and deliberately not made to sum to anything: OECD may
 -- fail on an item the estimate then answers, and both facts are true of that run.
 --
--- **A rejected figure is stored but counts here as a failure, not as stored** (BE-08). The run
--- records a failure beside every rejected figure, so a retry can reach it, and the figure
--- itself contributed nothing. Counted on both sides, one pair read as stored and failed at
+-- **A rejected figure is stored but counts here as a failure, not as stored** (BE-08). The
+-- figure contributed nothing: counted on both sides, one pair read as stored and failed at
 -- once, and a source whose every figure was rejected looked half-full rather than barren. The
 -- run's own items_completed still counts the pair: it was answered.
+--
+-- **The failure side reads the value row's own rejection, not only the failure rows** (NEW-30).
+-- A run has written a failure beside each figure it rejects only since BE-08, so an older run
+-- has none, and neither has a figure rejected after its run -- as `0473` rejected 156 LLM
+-- figures. Counted from failure rows alone such a pair belonged to neither count, so a source
+-- whose every figure was rejected that way read 0 and 0 -- which a screen drops as a source that
+-- touched nothing. Derived from the rejection itself, an older run and an after-the-fact
+-- rejection read exactly as a new run does: Q217's "derived, never stored" again, since a
+-- failure row standing in for a fact the value row already holds is a second record that can be
+-- missing. UNION de-duplicates the pairs a run did write a failure for, so each counts once.
+-- Only this count reads it: the failure list, and so a retry, stay the failure rows, and must not
+-- re-ask a paid source about a figure rejected long after it answered.
 SELECT reached.data_source,
        (SELECT count(DISTINCT (v.candidate, v.attribute))
         FROM   value AS v
         WHERE  v.data_acquisition_run = :data_acquisition_run
           AND  v.data_source = reached.data_source
           AND  v.rejection_reason IS NULL) AS items_stored,
-       (SELECT count(DISTINCT (f.candidate, f.attribute))
-        FROM   data_acquisition_failure AS f
-        WHERE  f.data_acquisition_run = :data_acquisition_run
-          AND  f.data_source = reached.data_source) AS items_failed
+       (SELECT count(*)
+        FROM   (SELECT f.candidate, f.attribute
+                FROM   data_acquisition_failure AS f
+                WHERE  f.data_acquisition_run = :data_acquisition_run
+                  AND  f.data_source = reached.data_source
+                UNION
+                SELECT v.candidate, v.attribute
+                FROM   value AS v
+                WHERE  v.data_acquisition_run = :data_acquisition_run
+                  AND  v.data_source = reached.data_source
+                  AND  v.rejection_reason IS NOT NULL) AS failed_on) AS items_failed
 FROM   (SELECT DISTINCT data_source
         FROM   value
         WHERE  data_acquisition_run = :data_acquisition_run
