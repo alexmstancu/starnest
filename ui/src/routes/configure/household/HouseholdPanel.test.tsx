@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -236,5 +236,99 @@ describe("a household nobody has recorded yet", () => {
     expect(
       screen.queryByRole("button", { name: "Save household" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * UI-06 and UI-10. **A save answers with the record it stored**, and the form took that answer
+ * whatever had been typed since; nothing stopped a second save overlapping the first. And a lone
+ * point in the rent went out as NaN, which JSON sends as null: a rent cap cleared by a typo.
+ */
+describe("the household panel while a save is in flight", () => {
+  /** Holds every household write until the test lets go, then lets the mock store it. */
+  function holdHouseholdWrites(): { sent: unknown[]; release: () => void } {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.put("/v1/household", async ({ request }) => {
+        sent.push(await request.clone().json());
+        await held;
+      }),
+    );
+    return { sent, release: () => release() };
+  }
+
+  it("sends one save at a time, and says it is saving", async () => {
+    const user = userEvent.setup();
+    const writes = holdHouseholdWrites();
+    renderShell("/configure");
+    const household = await panel();
+
+    await user.click(household.getByRole("button", { name: "Save household" }));
+    const saving = household.getByRole("button", { name: "Saving…" });
+    expect(saving).toBeDisabled();
+    // Enter in a field submits too, and the button being disabled does not stop that.
+    fireEvent.submit(saving.closest("form")!);
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+    writes.release();
+
+    await waitFor(() =>
+      expect(
+        household.getByRole("button", { name: "Save household" }),
+      ).toBeEnabled(),
+    );
+    expect(writes.sent).toHaveLength(1);
+  });
+
+  it("keeps what was typed while the save was in flight", async () => {
+    const user = userEvent.setup();
+    const writes = holdHouseholdWrites();
+    renderShell("/configure");
+    const household = await panel();
+
+    await user.clear(field("Target monthly spend"));
+    await user.type(field("Target monthly spend"), "3100");
+    await user.click(household.getByRole("button", { name: "Save household" }));
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+    await user.clear(field("Maximum rent"));
+    await user.type(field("Maximum rent"), "1600");
+
+    writes.release();
+
+    // What was stored is older than what is on screen, so it is neither adopted nor called saved.
+    await expect(
+      household.findByText("Saved.", {}, { timeout: 1_000 }),
+    ).rejects.toThrow();
+    expect(field("Maximum rent")).toHaveValue("1600");
+    expect(field("Target monthly spend")).toHaveValue("3100");
+  });
+
+  it("refuses a maximum rent of '.', and says which field", async () => {
+    const user = userEvent.setup();
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.put("/v1/household", async ({ request }) => {
+        sent.push(await request.json());
+        return HttpResponse.json({});
+      }),
+    );
+    renderShell("/configure");
+    const household = await panel();
+
+    await user.clear(field("Maximum rent"));
+    await user.type(field("Maximum rent"), ".");
+    await user.click(household.getByRole("button", { name: "Save household" }));
+    fireEvent.submit(field("Maximum rent").closest("form")!);
+
+    expect(field("Maximum rent")).toHaveAttribute("aria-invalid", "true");
+    expect(field("Maximum rent")).toHaveAccessibleDescription(
+      /not a number that can be saved/i,
+    );
+    expect(field("Net annual income")).toHaveAttribute("aria-invalid", "false");
+    expect(sent).toEqual([]);
   });
 });

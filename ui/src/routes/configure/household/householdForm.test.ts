@@ -5,6 +5,7 @@ import {
   citizenshipsIn,
   draftOf,
   householdFrom,
+  invalidHouseholdFields,
   isIncomplete,
   type HouseholdDraft,
   onlyMoneyCharacters,
@@ -178,5 +179,26 @@ describe("what a reader may type into a money field", () => {
 
   it("leaves an empty field empty, which is unanswered rather than zero", () => {
     expect(onlyMoneyCharacters("")).toBe("");
+  });
+});
+
+/** UI-10. A lone point in a money field sent NaN, which JSON writes as null: a cleared rent. */
+describe("a household field that holds no number", () => {
+  it("calls a maximum rent of a lone point invalid rather than unset", () => {
+    expect(invalidHouseholdFields(draft({ max_rent: "." }))).toEqual([
+      "max_rent",
+    ]);
+  });
+
+  it("names a required figure too long to be finite", () => {
+    expect(
+      invalidHouseholdFields(draft({ net_income: "9".repeat(400) })),
+    ).toEqual(["net_income"]);
+  });
+
+  it("finds nothing invalid in a household of numbers and blanks", () => {
+    expect(
+      invalidHouseholdFields(draft({ target_monthly_spend: "" })),
+    ).toEqual([]);
   });
 });

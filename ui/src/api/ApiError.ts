@@ -21,6 +21,11 @@ export const CLIENT_ERROR_CODES = {
   malformedError: "client.malformed_error_body",
   /** A 2xx response whose body was not JSON. */
   malformedBody: "client.malformed_response_body",
+  /**
+   * A request body holding NaN or an infinity, refused before it was sent: JSON would carry it
+   * as null, which this contract reads as "unset".
+   */
+  unsendableNumber: "client.unsendable_number",
 } as const;
 
 export class ApiError extends Error {

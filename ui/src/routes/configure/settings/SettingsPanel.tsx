@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { fetchSettings, type Settings } from "../../../api/endpoints";
 import { useResource } from "../../../api/useResource";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
-import { onlyNumberCharacters } from "../numericInput";
+import { NOT_A_NUMBER, onlyNumberCharacters } from "../numericInput";
 import { SETTING_FIELDS, isBlocked, unsetFields } from "./settingsForm";
 import { useSettingsForm } from "./useSettingsForm";
 
@@ -88,6 +88,7 @@ function SettingsFields({ settings }: { settings: Settings }) {
         {SETTING_FIELDS.map(
           ({ name, label, unit, description, consequence, severity, whole }) => {
           const blank = form.draft[name].trim() === "";
+          const invalid = form.invalid.includes(name);
           return (
           <div
             key={name}
@@ -111,6 +112,7 @@ function SettingsFields({ settings }: { settings: Settings }) {
                 className="field__control"
                 value={form.draft[name]}
                 placeholder="Not set"
+                aria-invalid={invalid}
                 inputMode={whole === true ? "numeric" : "decimal"}
                 aria-describedby={`setting-${name}-unit setting-${name}-hint`}
                 // **Filtered, not merely hinted at.** `inputMode` picks a keyboard on a
@@ -137,13 +139,24 @@ function SettingsFields({ settings }: { settings: Settings }) {
               {blank && (
                 <span className="field__consequence"> {consequence}</span>
               )}
+              {/* In the description, so it is read with the field it is about. */}
+              {invalid && (
+                <span className="field__note field__note--warning">
+                  {" "}
+                  {NOT_A_NUMBER}
+                </span>
+              )}
             </span>
           </div>
           );
         })}
         </div>
-        <button type="submit" className="button button--primary">
-          Save settings
+        <button
+          type="submit"
+          className="button button--primary"
+          disabled={form.saving || form.invalid.length > 0}
+        >
+          {form.saving ? "Saving…" : "Save settings"}
         </button>
       </form>
     </section>

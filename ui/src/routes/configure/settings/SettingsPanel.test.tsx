@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -229,5 +229,125 @@ describe("a setting that is not set", () => {
     expect(await settings.findByRole("alert")).toHaveTextContent(
       /nothing can be ranked or compared/i,
     );
+  });
+});
+
+/**
+ * UI-06 and UI-10. **A save answers with the record it stored**, and the form took that answer
+ * whatever had been typed since; nothing stopped a second save overlapping the first. And a lone
+ * point went out as null, which is "unset" -- a cleared coverage floor nobody chose.
+ */
+describe("the settings panel while a save is in flight", () => {
+  /** Holds every settings write until the test lets go, then lets the mock store it. */
+  function holdSettingsWrites(): { sent: unknown[]; release: () => void } {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.put("/v1/settings", async ({ request }) => {
+        sent.push(await request.clone().json());
+        await held;
+      }),
+    );
+    return { sent, release: () => release() };
+  }
+
+  it("sends one save at a time, and says it is saving", async () => {
+    const user = userEvent.setup();
+    const writes = holdSettingsWrites();
+    renderShell("/configure");
+    const settings = await panel();
+
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+    const saving = settings.getByRole("button", { name: "Saving…" });
+    expect(saving).toBeDisabled();
+    // Enter in a field submits too, and the button being disabled does not stop that.
+    fireEvent.submit(saving.closest("form")!);
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+    writes.release();
+
+    await waitFor(() =>
+      expect(
+        settings.getByRole("button", { name: "Save settings" }),
+      ).toBeEnabled(),
+    );
+    expect(writes.sent).toHaveLength(1);
+  });
+
+  it("keeps what was typed while the save was in flight", async () => {
+    const user = userEvent.setup();
+    const writes = holdSettingsWrites();
+    renderShell("/configure");
+    const settings = await panel();
+
+    await user.clear(field("Candidates you can compare at once"));
+    await user.type(field("Candidates you can compare at once"), "3");
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+    await user.clear(field("Spend cap per acquisition"));
+    await user.type(field("Spend cap per acquisition"), "25");
+
+    writes.release();
+
+    // What was stored is older than what is on screen, so it is neither adopted nor called saved.
+    await expect(
+      settings.findByText("Saved.", {}, { timeout: 1_000 }),
+    ).rejects.toThrow();
+    expect(field("Spend cap per acquisition")).toHaveValue("25");
+    expect(field("Candidates you can compare at once")).toHaveValue("3");
+    expect(
+      settings.getByRole("button", { name: "Save settings" }),
+    ).toBeEnabled();
+  });
+
+  it("still takes what came back when nothing was typed since", async () => {
+    const user = userEvent.setup();
+    const writes = holdSettingsWrites();
+    renderShell("/configure");
+    const settings = await panel();
+
+    await user.clear(field("Candidates you can compare at once"));
+    await user.type(field("Candidates you can compare at once"), "3");
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+    writes.release();
+
+    expect(await settings.findByText("Saved.")).toBeInTheDocument();
+    expect(field("Candidates you can compare at once")).toHaveValue("3");
+  });
+
+  it("refuses to save a coverage floor of '.', and says which field", async () => {
+    const user = userEvent.setup();
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.put("/v1/settings", async ({ request }) => {
+        sent.push(await request.json());
+        return HttpResponse.json({});
+      }),
+    );
+    renderShell("/configure");
+    const settings = await panel();
+
+    await user.clear(field("Minimum coverage to score"));
+    await user.type(field("Minimum coverage to score"), ".");
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+    fireEvent.submit(field("Minimum coverage to score").closest("form")!);
+
+    expect(field("Minimum coverage to score")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(field("Minimum coverage to score")).toHaveAccessibleDescription(
+      /not a number that can be saved/i,
+    );
+    expect(field("Top of the score range")).toHaveAttribute(
+      "aria-invalid",
+      "false",
+    );
+    expect(sent).toEqual([]);
   });
 });

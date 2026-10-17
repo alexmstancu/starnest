@@ -330,3 +330,53 @@ describe("changing the rule", () => {
     expect(goalSelect().value).toBe("maximise");
   });
 });
+
+/**
+ * UI-06. **A rule's fields follow the stored rule once its save ends**, so anything typed while
+ * it is in flight would be thrown away when the answer lands. They are held still instead.
+ */
+describe("a rule while it is being saved", () => {
+  it("holds the rule's fields still while it is being saved", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const user = userEvent.setup();
+    await openTheRuleFor(ANCHORED);
+    await user.selectOptions(goalSelect(), "maximise");
+    mockServer.use(
+      http.patch("/v1/criteria-sets/:id/criteria/:attribute", async () => {
+        await held;
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+
+    await waitFor(() => expect(goalSelect()).toBeDisabled());
+    expect(
+      screen.getByRole("combobox", { name: "Normalisation" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Missing figure blocks scoring" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("spinbutton", { name: "Band minimum" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("spinbutton", { name: `Anchor 1 value for ${ANCHORED}` }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Add an anchor" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("spinbutton", { name: "Threshold maximum" }),
+    ).toBeDisabled();
+
+    release();
+
+    await waitFor(() => expect(goalSelect()).toBeEnabled());
+    expect(
+      screen.getByRole("spinbutton", { name: "Threshold maximum" }),
+    ).toBeEnabled();
+  });
+});

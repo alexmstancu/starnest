@@ -48,6 +48,13 @@ const KNOWN_CODES: Record<string, { message: string; retryable: boolean }> = {
     message: "The backend answered with something that is not JSON.",
     retryable: false,
   },
+  // Never retryable: the same body would be refused again, and it never left the browser.
+  [CLIENT_ERROR_CODES.unsendableNumber]: {
+    message:
+      "A value in this change is not a number that can be saved, so nothing was sent. " +
+      "Check the figures typed, then save again.",
+    retryable: false,
+  },
   [WEIGHTS_ALL_LOCKED]: {
     message: "Every other weight in this pillar is locked, so there is nothing to rebalance into.",
     retryable: false,

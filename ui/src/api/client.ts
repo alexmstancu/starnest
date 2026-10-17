@@ -241,7 +241,7 @@ export async function postJson<Path extends PostPath>(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: serialise(body),
       signal: options.signal,
     },
   );
@@ -266,10 +266,31 @@ export async function patchJson<Path extends PatchPath>(
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: serialise(body),
       signal: options.signal,
     },
   );
+}
+
+/**
+ * A request body as JSON, refusing any number JSON cannot carry.
+ *
+ * **`JSON.stringify` writes NaN and the infinities as `null`**, and null means "unset" to this
+ * contract: a lone "." typed into a nullable setting went out as null and cleared it (UI-10).
+ * A body holding one was already wrong, so it is refused here -- before anything is sent --
+ * rather than sent as a different request that the server would accept.
+ */
+function serialise(body: unknown): string {
+  return JSON.stringify(body, (field: string, value: unknown) => {
+    if (typeof value === "number" && !Number.isFinite(value)) {
+      throw new ApiError({
+        code: CLIENT_ERROR_CODES.unsendableNumber,
+        message: `${field} is ${String(value)}, which a request cannot carry.`,
+        details: { field },
+      });
+    }
+    return value;
+  });
 }
 
 /**
@@ -347,7 +368,7 @@ export async function putJson<Path extends PutPath>(
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: serialise(body),
       signal: options.signal,
     },
   );

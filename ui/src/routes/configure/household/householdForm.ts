@@ -1,4 +1,4 @@
-import { onlyNumberCharacters } from "../numericInput";
+import { onlyNumberCharacters, readTypedNumber } from "../numericInput";
 
 /**
  * The household form's arithmetic, with no React and no markup in it.
@@ -94,6 +94,29 @@ export function isIncomplete(draft: HouseholdDraft): boolean {
     draft.number_children.trim() === "" ||
     draft.home_country_candidate.trim() === "" ||
     citizenshipsIn(draft).length === 0
+  );
+}
+
+/** The fields that hold a number, in the order the form shows them. */
+const NUMBER_FIELDS = [
+  "net_income",
+  "number_adults",
+  "number_children",
+  "target_monthly_spend",
+  "max_rent",
+] as const satisfies readonly (keyof HouseholdDraft)[];
+
+/**
+ * The number fields holding text no number can be read from, in the order they are shown.
+ *
+ * **Neither filled nor empty** (UI-10): a lone point in the rent went out as NaN, which JSON
+ * sends as null -- a rent cap cleared by a typo. The form refuses to send while any is here.
+ */
+export function invalidHouseholdFields(
+  draft: HouseholdDraft,
+): readonly (keyof HouseholdDraft)[] {
+  return NUMBER_FIELDS.filter(
+    (field) => readTypedNumber(draft[field]) === "invalid",
   );
 }
 

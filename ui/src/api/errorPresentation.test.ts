@@ -69,3 +69,18 @@ describe("presentError", () => {
     });
   });
 });
+
+describe("a number the client would not send", () => {
+  it("says so in words, and offers no retry, because the same request would fail again", () => {
+    const refused = new ApiError({
+      code: CLIENT_ERROR_CODES.unsendableNumber,
+      message: "min_coverage is NaN.",
+    });
+
+    expect(presentError(refused)).toEqual({
+      code: "client.unsendable_number",
+      message: expect.stringMatching(/not a number/i) as unknown,
+      retryable: false,
+    });
+  });
+});

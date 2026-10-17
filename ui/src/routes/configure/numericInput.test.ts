@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { onlyNumberCharacters } from "./numericInput";
+import { onlyNumberCharacters, readTypedNumber } from "./numericInput";
 
 describe("what a reader may type into a number field", () => {
   it("keeps digits", () => {
@@ -65,5 +65,39 @@ describe("what a reader may type into a number field", () => {
     it("still keeps plain digits", () => {
       expect(onlyNumberCharacters("20", { whole: true })).toBe("20");
     });
+  });
+});
+
+/**
+ * UI-10. **Three answers, not two.** The filter keeps a lone point -- it is the start of "0.5" --
+ * and reading only blank against not-blank sent it as `Number(".")`, which is NaN, which JSON
+ * writes as null: the "unset" of every nullable setting.
+ */
+describe("reading what was typed into a number field", () => {
+  it("calls a lone decimal point invalid rather than blank", () => {
+    expect(readTypedNumber(".")).toBe("invalid");
+  });
+
+  it("calls a digit string too long to be finite invalid", () => {
+    expect(readTypedNumber("9".repeat(400))).toBe("invalid");
+  });
+
+  it("reads an empty field, or one of spaces, as blank", () => {
+    expect(readTypedNumber("")).toBe("blank");
+    expect(readTypedNumber("   ")).toBe("blank");
+  });
+
+  it("reads digits as the number they spell", () => {
+    expect(readTypedNumber("2000")).toBe(2000);
+    expect(readTypedNumber("57.5")).toBe(57.5);
+  });
+
+  it("reads a number with its point at either end", () => {
+    expect(readTypedNumber("12.")).toBe(12);
+    expect(readTypedNumber(".5")).toBe(0.5);
+  });
+
+  it("keeps a zero, because zero can be a decision", () => {
+    expect(readTypedNumber("0")).toBe(0);
   });
 });

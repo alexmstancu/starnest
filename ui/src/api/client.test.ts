@@ -279,3 +279,82 @@ describe("the writes", () => {
     });
   });
 });
+
+/**
+ * UI-10. **`JSON.stringify` writes NaN and the infinities as null**, and null means "unset" in
+ * this contract: a lone "." typed into a nullable setting went out as null and cleared it. A
+ * body holding one was already wrong, so the client refuses it rather than send another request.
+ */
+describe("a body holding a number JSON cannot carry", () => {
+  /** Every request that reaches the mock, so a test can say none did. */
+  function recordWrites(): string[] {
+    const reached: string[] = [];
+    mockServer.events.on("request:start", ({ request }) => {
+      reached.push(`${request.method} ${new URL(request.url).pathname}`);
+    });
+    return reached;
+  }
+
+  it("refuses to send NaN rather than sending null", async () => {
+    const reached = recordWrites();
+
+    await expect(
+      putJson("/settings", { min_coverage: Number.NaN }),
+    ).rejects.toMatchObject({
+      code: CLIENT_ERROR_CODES.unsendableNumber,
+      details: { field: "min_coverage" },
+    });
+    expect(reached).toEqual([]);
+  });
+
+  it("refuses an infinity, which JSON would also send as null", async () => {
+    const reached = recordWrites();
+
+    await expect(
+      patchJson(
+        "/criteria-sets/{criteriaSetId}/criteria/{attributeId}",
+        { weight: Number.POSITIVE_INFINITY },
+        { pathParams: { criteriaSetId: "default", attributeId: "country.x" } },
+      ),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(reached).toEqual([]);
+  });
+
+  it("finds one however deep in the body it sits", async () => {
+    const reached = recordWrites();
+
+    await expect(
+      postJson("/values/manual", {
+        candidate: "country.portugal",
+        attribute: "country.residency_admin_ease",
+        payload: {
+          value: Number.NaN,
+          range_min: 0,
+          range_max: 10,
+          assigned_by: "human",
+        },
+        reference_period: { start: "2025-01-01", end: "2025-12-31" },
+        retrieval_date: "2026-01-01T00:00:00Z",
+        confidence_level: "medium",
+      }),
+    ).rejects.toMatchObject({ code: CLIENT_ERROR_CODES.unsendableNumber });
+    expect(reached).toEqual([]);
+  });
+
+  it("still sends a null, which is a decision, and a zero", async () => {
+    mockServer.use(
+      http.put("/v1/settings", async ({ request }) =>
+        HttpResponse.json({ echoed: await request.json() }),
+      ),
+    );
+
+    const answer = await putJson("/settings", {
+      min_coverage: null,
+      comparator_limit: 0,
+    });
+
+    expect(answer).toEqual({
+      echoed: { min_coverage: null, comparator_limit: 0 },
+    });
+  });
+});

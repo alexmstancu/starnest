@@ -8,10 +8,11 @@
  * **One figure at a time, and the form clears on success.** A form that kept what it had just
  * stored would invite a second identical entry, which the store would accept -- values are never
  * overwritten, so a duplicate is a second row the active-value rule then has to choose between
- * on nothing but its retrieval date.
+ * on nothing but its retrieval date. What was typed while it was being stored is the next
+ * figure, not this one, so that stays.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { enterValueManually, type StoredValue } from "../../api/endpoints";
 import {
   buildManualValue,
@@ -43,8 +44,12 @@ export function useManualEntry(
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<StoredValue | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
+  // **Bumped by every keystroke** (UI-06). A figure that is stored clears the form only if
+  // nothing was typed while it was in flight: what is on screen is the next figure then.
+  const revision = useRef(0);
 
   const change = useCallback((field: keyof ManualDraft, value: string) => {
+    revision.current += 1;
     // **Anything typed clears the last outcome.** Leaving a success banner above a form being
     // filled again would have it describe a figure that is no longer what is on screen.
     setSaved(null);
@@ -61,11 +66,15 @@ export function useManualEntry(
 
     setSaving(true);
     setFailure(null);
+    const sentAt = revision.current;
     void enterValueManually(built.body)
       .then((stored) => {
+        // Said even over newer typing: it names the figure stored, not what is on screen.
         setSaved(stored);
-        setDraft(NOTHING_TYPED);
-        setProblems([]);
+        if (revision.current === sentAt) {
+          setDraft(NOTHING_TYPED);
+          setProblems([]);
+        }
         onStored?.();
       })
       .catch((error: unknown) => setFailure(error))

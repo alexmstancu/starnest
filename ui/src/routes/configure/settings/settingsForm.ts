@@ -9,6 +9,7 @@
  */
 
 import type { Settings } from "../../../api/endpoints";
+import { readTypedNumber } from "../numericInput";
 
 /**
  * How much is lost while a setting is undecided.
@@ -115,6 +116,18 @@ export function unsetFields(
   draft: SettingsDraft,
 ): readonly SettingField[] {
   return SETTING_FIELDS.filter((field) => draft[field.name].trim() === "");
+}
+
+/**
+ * The fields holding text no number can be read from, in the order they are shown.
+ *
+ * **Neither set nor unset** (UI-10): a lone point is not a decision to leave a rule off, and
+ * sending it as null would make it one. The form refuses to send while any field is here.
+ */
+export function invalidSettings(draft: SettingsDraft): readonly SettingName[] {
+  return SETTING_FIELDS.filter(
+    (field) => readTypedNumber(draft[field.name]) === "invalid",
+  ).map((field) => field.name);
 }
 
 /**

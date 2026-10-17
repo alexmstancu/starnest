@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   SETTING_FIELDS,
   draftOf,
+  invalidSettings,
   isBlocked,
   settingsFrom,
   type SettingsDraft,
@@ -156,5 +157,28 @@ describe("what a blank setting costs", () => {
       // description of what the setting is for.
       expect(field.consequence).not.toBe(field.description);
     }
+  });
+});
+
+/** UI-10. A field that holds text no number can be read from is neither set nor unset. */
+describe("a setting that holds no number", () => {
+  it("calls a lone decimal point invalid rather than unset", () => {
+    expect(invalidSettings({ ...SET, min_coverage: "." })).toEqual([
+      "min_coverage",
+    ]);
+  });
+
+  it("names every invalid field, in the order they are shown", () => {
+    expect(
+      invalidSettings({
+        ...SET,
+        run_spend_cap_eur: ".",
+        min_coverage: "9".repeat(400),
+      }),
+    ).toEqual(["min_coverage", "run_spend_cap_eur"]);
+  });
+
+  it("finds nothing invalid in blank fields or numbers", () => {
+    expect(invalidSettings({ ...SET, score_scale_max: "" })).toEqual([]);
   });
 });

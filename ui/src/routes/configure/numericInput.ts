@@ -46,3 +46,23 @@ export function onlyNumberCharacters(
   }
   return kept;
 }
+
+/**
+ * What a number field holds: nothing, a finite number, or text no number can be read from.
+ *
+ * **Three answers, because two sent a lone point as null** (UI-10). The filter above keeps a
+ * point on its own -- it is how "0.5" starts -- and reading only blank against not-blank turned
+ * it into `Number(".")`, which is NaN, which JSON writes as null: "unset", for every nullable
+ * setting. A digit string too long to be finite is the same case by another route.
+ */
+export type TypedNumber = "blank" | "invalid" | number;
+
+export function readTypedNumber(typed: string): TypedNumber {
+  if (typed.trim() === "") return "blank";
+  const read = Number(typed);
+  return Number.isFinite(read) ? read : "invalid";
+}
+
+/** Said beside a field that holds text no number can be read from. */
+export const NOT_A_NUMBER =
+  "Not a number that can be saved: type digits, with at most one point.";

@@ -49,12 +49,15 @@ export function CriterionRuleFields({
         form.submit();
       }}
     >
+      {/* **Held still while the rule is being saved** (UI-06). The draft follows the stored
+          rule once the save ends, so anything typed meanwhile would be thrown away unsaid. */}
       <div className="rule-form__row">
         <label className="field" htmlFor={`goal-${attribute}`}>
           Goal
           <select
             id={`goal-${attribute}`}
             className="field__control"
+            disabled={saving}
             value={form.draft.goal}
             onChange={(event) => form.set("goal", event.target.value)}
           >
@@ -71,6 +74,7 @@ export function CriterionRuleFields({
           <select
             id={`method-${attribute}`}
             className="field__control"
+            disabled={saving}
             value={form.draft.normalisation_method}
             onChange={(event) =>
               form.set("normalisation_method", event.target.value)
@@ -88,6 +92,7 @@ export function CriterionRuleFields({
           <input
             id={`blocks-${attribute}`}
             type="checkbox"
+            disabled={saving}
             checked={form.draft.blocks_if_missing}
             onChange={(event) =>
               form.set("blocks_if_missing", event.target.checked)
@@ -97,7 +102,7 @@ export function CriterionRuleFields({
         </label>
       </div>
 
-      <fieldset className="rule-form__group">
+      <fieldset className="rule-form__group" disabled={saving}>
         <legend>Target band</legend>
         {/* Outside the legend, because a hint inside one is read out as part of every field's
             name. The same reason the household panel moved its hints out. */}
@@ -136,7 +141,7 @@ export function CriterionRuleFields({
         </div>
       </fieldset>
 
-      <fieldset className="rule-form__group">
+      <fieldset className="rule-form__group" disabled={saving}>
         <legend>Scale anchors</legend>
         <p className="panel__hint" id={`anchor-hint-${attribute}`}>
           Used by the fixed method: a figure, the score it maps to, and an
@@ -215,7 +220,7 @@ export function CriterionRuleFields({
         </button>
       </fieldset>
 
-      <fieldset className="rule-form__group">
+      <fieldset className="rule-form__group" disabled={saving}>
         <legend>Matching threshold</legend>
         {form.draft.threshold_this_form_cannot_edit !== null ? (
           // **Says that a threshold is there rather than showing two empty fields** (P52).

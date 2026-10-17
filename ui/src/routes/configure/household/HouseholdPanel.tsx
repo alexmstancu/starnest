@@ -13,6 +13,7 @@ import {
   onlyMoneyCharacters,
   type HouseholdDraft,
 } from "./householdForm";
+import { NOT_A_NUMBER } from "../numericInput";
 import { HOUSEHOLD_LABELS } from "../../../format/vocabulary";
 import { useHouseholdForm } from "./useHouseholdForm";
 
@@ -167,8 +168,12 @@ function HouseholdFields({
           />
         </div>
 
-        <button type="submit" className="button button--primary" disabled={form.incomplete}>
-          Save household
+        <button
+          type="submit"
+          className="button button--primary"
+          disabled={form.incomplete || form.saving || form.invalid.length > 0}
+        >
+          {form.saving ? "Saving…" : "Save household"}
         </button>
         {form.incomplete && (
           <p className="panel__hint">
@@ -211,6 +216,7 @@ function Field({
   // read out as part of the name, so "Citizenships" would become "Citizenships Country
   // candidate ids, separated by commas".
   const id = `household-${name}`;
+  const invalid = form.invalid.includes(name);
   return (
     <div className="field">
       <label className="field__label" htmlFor={id}>
@@ -231,6 +237,7 @@ function Field({
               ? undefined
               : `${id}-hint`
           }
+          aria-invalid={invalid}
           inputMode={numeric === true ? "decimal" : undefined}
           onChange={(event) =>
             form.change(
@@ -245,6 +252,13 @@ function Field({
       {(hint ?? suffix) !== undefined && (
         <span className="field__note" id={`${id}-hint`}>
           {hint ?? suffix}
+          {/* In the description, so it is read with the field it is about. */}
+          {invalid && (
+            <span className="field__note field__note--warning">
+              {" "}
+              {NOT_A_NUMBER}
+            </span>
+          )}
         </span>
       )}
     </div>
