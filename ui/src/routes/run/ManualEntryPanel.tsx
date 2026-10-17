@@ -65,6 +65,24 @@ export function ManualEntryPanel({
         stays visible underneath.
       </p>
 
+      {/* **Why the candidate list below is empty** (UI-27). Only a failed store was ever
+          reported, so a list that could not be read offered nothing with nothing said. */}
+      {candidates.resource.status === "loading" && (
+        <p className="screen__note">Loading the candidates…</p>
+      )}
+      {candidates.resource.status === "error" && (
+        <>
+          <p className="screen__note">
+            The candidates could not be read, so there is nobody to give a
+            figure to until they are.
+          </p>
+          <ErrorNotice
+            error={candidates.resource.error}
+            onRetry={candidates.reload}
+          />
+        </>
+      )}
+
       <div className="field-grid">
         <div className="field">
           <label className="field__label" htmlFor={`${headingId}-candidate`}>

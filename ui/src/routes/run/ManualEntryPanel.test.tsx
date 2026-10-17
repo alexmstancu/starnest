@@ -123,3 +123,62 @@ describe("storing a figure typed by hand", () => {
     expect(field("Values")).toHaveValue("Siemens");
   });
 });
+
+/**
+ * UI-27. **The candidate a figure is about is chosen from a list**, and a list that could not be
+ * read left that choice empty with nothing said: only a failed store was ever reported.
+ */
+describe("the hand-entry form when the candidates are not there", () => {
+  it("says the candidates could not be read, and reads them again when asked", async () => {
+    const user = userEvent.setup();
+    let failing = true;
+    mockServer.use(
+      http.get("/v1/candidates", () =>
+        failing
+          ? HttpResponse.json(
+              { code: "internal_error", message: "the roster is down" },
+              { status: 500 },
+            )
+          : undefined,
+      ),
+    );
+    renderEntry();
+
+    expect(
+      await screen.findByText(/candidates could not be read/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("the roster is down");
+
+    failing = false;
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(
+      await screen.findByRole("option", { name: "Portugal" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/candidates could not be read/i)).toBeNull();
+  });
+
+  it("says the candidates are loading while they load", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.get("/v1/candidates", async () => {
+        await held;
+      }),
+    );
+    renderEntry();
+
+    expect(
+      await screen.findByText("Loading the candidates…"),
+    ).toBeInTheDocument();
+
+    release();
+
+    expect(
+      await screen.findByRole("option", { name: "Portugal" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Loading the candidates…")).toBeNull();
+  });
+});

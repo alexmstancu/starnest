@@ -17,7 +17,7 @@
 
 import { useCallback, useMemo } from "react";
 import { type Candidate, fetchCandidates } from "./endpoints";
-import { useResource } from "./useResource";
+import { useResource, type Resource } from "./useResource";
 
 export type CandidateNames = ReadonlyMap<string, string>;
 
@@ -74,9 +74,35 @@ export function useCandidateNames(): CandidateNames {
  * both were in flight.
  */
 export function useCandidateRoster(): readonly Candidate[] {
-  const { resource } = useResource(
+  return useCandidateRosterState().roster;
+}
+
+export interface CandidateRosterState {
+  /** Empty until the list has arrived, and empty if it failed. */
+  roster: readonly Candidate[];
+  status: Resource<readonly Candidate[]>["status"];
+  error: unknown;
+  /** Asks again. A failure is never remembered, so this is a real second request. */
+  reload: () => void;
+}
+
+/**
+ * The roster with what a picker needs to say about it: whether it is still coming, and why it
+ * never came (UI-27).
+ *
+ * **A label can be silent about a failure; a picker cannot.** A name falls back to the id made
+ * readable, but a required field offering nothing reads as a database with no places in it, so
+ * a screen choosing from the roster reads this and says which it is.
+ */
+export function useCandidateRosterState(): CandidateRosterState {
+  const { resource, reload } = useResource(
     useCallback((signal: AbortSignal) => readThem(signal), []),
   );
-  // One empty array, not a new one each render, or every consumer re-renders while it loads.
-  return resource.status === "ready" ? resource.data : NOBODY;
+  return {
+    // One empty array, not a new one each render, or every consumer re-renders while it loads.
+    roster: resource.status === "ready" ? resource.data : NOBODY,
+    status: resource.status,
+    error: resource.error,
+    reload,
+  };
 }

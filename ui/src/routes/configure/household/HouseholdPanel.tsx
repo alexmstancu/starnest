@@ -6,7 +6,7 @@ import { CandidateField } from "./CandidateField";
 import { CitizenshipField } from "./CitizenshipField";
 import { candidateOptions } from "./candidateOptions";
 import { CountField } from "./CountField";
-import { useCandidateRoster } from "../../../api/useCandidateRoster";
+import { useCandidateRosterState } from "../../../api/useCandidateRoster";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
 import {
   NOTHING_RECORDED,
@@ -69,9 +69,9 @@ function HouseholdFields({
   const form = useHouseholdForm(household);
   // **One fetch for all three pickers.** Home country, home city and every citizenship come
   // from the same roster; three reads of 32 rows would be three chances to disagree.
-  const roster = useCandidateRoster();
-  const countries = candidateOptions(roster, "country");
-  const cities = candidateOptions(roster, "city");
+  const roster = useCandidateRosterState();
+  const countries = candidateOptions(roster.roster, "country");
+  const cities = candidateOptions(roster.roster, "city");
 
   return (
     <section className="stage" aria-labelledby="household-heading">
@@ -90,6 +90,21 @@ function HouseholdFields({
         </div>
       </header>
       {note !== undefined && <p className="screen__note">{note}</p>}
+
+      {/* **Why the pickers below are empty** (UI-27). Two of them are required, and a list
+          offering nothing reads as a database with no places in it. */}
+      {roster.status === "loading" && (
+        <p className="screen__note">Loading the list of places…</p>
+      )}
+      {roster.status === "error" && (
+        <>
+          <p className="screen__note">
+            The list of places could not be read, so the home country and
+            citizenships cannot be chosen until it is.
+          </p>
+          <ErrorNotice error={roster.error} onRetry={roster.reload} />
+        </>
+      )}
 
       {/* No "try again" button: the way to retry a save is the save button, which is still
           there. A second control that only cleared the message would offer a retry it does

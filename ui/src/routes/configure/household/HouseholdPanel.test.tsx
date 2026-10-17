@@ -332,3 +332,74 @@ describe("the household panel while a save is in flight", () => {
     expect(sent).toEqual([]);
   });
 });
+
+/**
+ * UI-27. **The home country and the citizenships are chosen from the roster**, so a roster that
+ * could not be read left two required pickers offering nothing, with no word as to why.
+ */
+describe("the household panel when the list of places is not there", () => {
+  it("says the list of places could not be read, and reads it again when asked", async () => {
+    const user = userEvent.setup();
+    let failing = true;
+    mockServer.use(
+      http.get("/v1/candidates", () =>
+        failing
+          ? HttpResponse.json(
+              { code: "internal_error", message: "the roster is down" },
+              { status: 500 },
+            )
+          : undefined,
+      ),
+    );
+    renderShell("/configure");
+    const household = await panel();
+
+    expect(
+      await household.findByText(/list of places could not be read/i),
+    ).toBeInTheDocument();
+    expect(household.getByRole("alert")).toHaveTextContent("the roster is down");
+
+    failing = false;
+    await user.click(household.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() =>
+      expect(
+        household.queryByText(/list of places could not be read/i),
+      ).toBeNull(),
+    );
+    const home = screen.getByRole("combobox", { name: "Home country candidate" });
+    await user.clear(home);
+    await user.type(home, "Port");
+    expect(
+      within(
+        screen.getByRole("listbox", { name: "Home country candidate" }),
+      ).getByRole("option", { name: "Portugal" }),
+    ).toBeInTheDocument();
+  });
+
+  it("says the list of places is still loading while it loads", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.get("/v1/candidates", async ({ request }) => {
+        // Only the roster every picker shares, which is the request that asks for every level.
+        if (new URL(request.url).searchParams.has("level")) return;
+        await held;
+      }),
+    );
+    renderShell("/configure");
+    const household = await panel();
+
+    expect(
+      await household.findByText("Loading the list of places…"),
+    ).toBeInTheDocument();
+
+    release();
+
+    await waitFor(() =>
+      expect(household.queryByText("Loading the list of places…")).toBeNull(),
+    );
+  });
+});

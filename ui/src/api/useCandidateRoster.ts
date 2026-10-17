@@ -6,4 +6,4 @@
  * mistake at every call site, and a reader should not have to know which of the two was
  * written first.
  */
-export { useCandidateRoster } from "./useCandidateNames";
+export { useCandidateRoster, useCandidateRosterState } from "./useCandidateNames";

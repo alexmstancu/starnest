@@ -6,11 +6,15 @@
  * three screens were printing it.
  */
 
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { mockServer } from "../mocks/server";
-import { forgetCandidateNames, useCandidateNames } from "./useCandidateNames";
+import {
+  forgetCandidateNames,
+  useCandidateNames,
+  useCandidateRosterState,
+} from "./useCandidateNames";
 
 /** Counts the requests that actually reach the network, whatever the handler then answers. */
 function countingCandidateRequests(answer?: () => Response): { asked: number } {
@@ -96,5 +100,52 @@ describe("the candidate names", () => {
     renderHook(() => useCandidateNames());
 
     await waitFor(() => expect(seen.asked).toBe(2));
+  });
+});
+
+/**
+ * UI-27. **A picker needs to know why it is empty.** A label can fall back to the id without a
+ * word, but a required field offering nothing reads as a database with no places in it.
+ */
+describe("the candidate roster as a picker reads it", () => {
+  it("says it is loading until the list arrives", async () => {
+    countingCandidateRequests();
+
+    const { result } = renderHook(() => useCandidateRosterState());
+
+    expect(result.current.status).toBe("loading");
+    expect(result.current.roster).toEqual([]);
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.roster.map((candidate) => candidate.name)).toEqual([
+      "Malta",
+      "Portugal",
+    ]);
+  });
+
+  it("exposes the failure, and reads the list again when asked", async () => {
+    let failing = true;
+    const seen = countingCandidateRequests(() =>
+      failing
+        ? HttpResponse.json(
+            { code: "internal_error", message: "the roster is down" },
+            { status: 500 },
+          )
+        : HttpResponse.json({
+            items: [{ id: "country.malta", name: "Malta", level: "country" }],
+          }),
+    );
+    const { result } = renderHook(() => useCandidateRosterState());
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.error).toMatchObject({ code: "internal_error" });
+    expect(result.current.roster).toEqual([]);
+
+    failing = false;
+    act(() => result.current.reload());
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.roster.map((candidate) => candidate.id)).toEqual([
+      "country.malta",
+    ]);
+    expect(seen.asked).toBe(2);
   });
 });
