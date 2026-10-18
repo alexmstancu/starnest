@@ -103,7 +103,8 @@ export interface RunScreenState {
 export function useRunScreen(): RunScreenState {
   const [plan, setPlan] = useState<RunPlan | null>(null);
   const [planOrigin, setPlanOrigin] = useState<GapKind | null>(null);
-  const { current, claim, isCurrent, show, clear, unclaimed } = useWatchedRun();
+  const { current, claim, reclaim, isCurrent, show, clear, unclaimed } =
+    useWatchedRun();
   const [busy, setBusy] = useState<RunAct | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
   const [armed, setArmed] = useState<ArmedRun | null>(null);
@@ -249,25 +250,27 @@ export function useRunScreen(): RunScreenState {
     },
     refresh: () => {
       if (!current) return;
-      const ticket = claim();
+      const ticket = claim(current.id);
       void act("opening", () => watch(ticket, current.id));
     },
     close: clear,
     stop: () => {
       if (!current) return;
-      const ticket = claim();
+      const ticket = claim(current.id);
       void act("stopping", async () => {
         // The 202 carries the run back, so `stop_requested_at` is on screen immediately
         // rather than after the next poll -- which is what lets the card explain why the
         // button has gone before the run has actually ended.
         const stopped = await stopRun(current.id);
-        await watch(ticket, stopped.id);
+        // **Claimed again now the stop is written** (NEW-49): a refresh sent meanwhile may have
+        // read the run before it was, and standing over this read it would offer Stop again.
+        await watch(reclaim(ticket, current.id), stopped.id);
       });
     },
     // Through `act` like everything else. A backend that is down or a run that cannot be read
     // now says so, where before the promise rejected into nothing and the click looked ignored.
     open: (run) => {
-      const ticket = claim();
+      const ticket = claim(run.id);
       void act("opening", () => watch(ticket, run.id));
     },
   };

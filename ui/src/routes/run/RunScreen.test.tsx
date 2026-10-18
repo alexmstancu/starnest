@@ -2184,6 +2184,134 @@ describe("what the busy label says while two acts overlap", () => {
 });
 
 /**
+ * NEW-49. **A refresh that overtakes a stop does not take the stop off the card.** Refresh is
+ * live while a stop is sent (NEW-10), and its read can be answered before the stop is written --
+ * the backend shares one connection with the running acquisition. It held the newer ticket, so
+ * the stop's own read, the one carrying `stop_requested_at`, was dropped: the card said
+ * "Acquiring now" and offered Stop again until the reader refreshed. **Only a read of the same
+ * run gives way**; anything else the reader did meanwhile still outranks the stop (UI-04).
+ */
+describe("a stop a refresh overtook", () => {
+  /**
+   * Run 7 on the card, still going, its stop clicked and held. `actsEnded` counts the acts that
+   * have ended since -- each reads the history again as it ends.
+   */
+  async function aStopHeldOnTheCard() {
+    const stop = aRunWhoseStopIsHeld();
+    const history = countHistoryReads();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    const before = history.count;
+    await userEvent.click(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+    return { stop, card, actsEnded: () => history.count - before };
+  }
+
+  it("shows the stop once it is answered, though a refresh read the run before it was written", async () => {
+    const { stop, card, actsEnded } = await aStopHeldOnTheCard();
+
+    await userEvent.click(card.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(actsEnded()).toBe(1));
+    stop.release();
+    await waitFor(() => expect(actsEnded()).toBe(2));
+
+    expect(
+      card.queryByRole("button", { name: /stop — keep what completed/i }),
+    ).toBeNull();
+    expect(card.getByText("stopping")).toBeInTheDocument();
+  });
+
+  it("shows the stop once it is answered, though the run was opened again from the history", async () => {
+    const { stop, card, actsEnded } = await aStopHeldOnTheCard();
+
+    await openFromHistory("7");
+    await waitFor(() => expect(actsEnded()).toBe(1));
+    stop.release();
+    await waitFor(() => expect(actsEnded()).toBe(2));
+
+    expect(
+      card.queryByRole("button", { name: /stop — keep what completed/i }),
+    ).toBeNull();
+    expect(card.getByText("stopping")).toBeInTheDocument();
+  });
+
+  it("shows the stop's own read when nothing overtook it", async () => {
+    const { stop, card, actsEnded } = await aStopHeldOnTheCard();
+
+    stop.release();
+    await waitFor(() => expect(actsEnded()).toBe(1));
+
+    expect(
+      card.queryByRole("button", { name: /stop — keep what completed/i }),
+    ).toBeNull();
+    expect(card.getByText("stopping")).toBeInTheDocument();
+  });
+
+  it("still gives way to another run opened after the refresh", async () => {
+    const { stop, card, actsEnded } = await aStopHeldOnTheCard();
+
+    await userEvent.click(card.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(actsEnded()).toBe(1));
+    await openFromHistory("6");
+    await screen.findByRole("region", { name: /acquisition 6/i });
+    await waitFor(() => expect(actsEnded()).toBe(2));
+    stop.release();
+    await waitFor(() => expect(actsEnded()).toBe(3));
+
+    expect(
+      screen.getByRole("region", { name: /acquisition 6/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /acquisition 7/i })).toBeNull();
+  });
+
+  it("still reports a stop the server refused, and offers it again", async () => {
+    // **The refusal the contract declares**: `stopRun` answers 202 or 404, so that is the one
+    // a refused stop can be. The run on the card was read by the refresh, and nothing stopped it.
+    const refusal = heldAnswer();
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          run_status: "running",
+          finished_at: null,
+        }),
+      ),
+      http.post(`${BASE}/data-acquisition-runs/:runId/stop`, async () => {
+        await refusal.held;
+        return HttpResponse.json(
+          { code: "not_found", message: "there is no run numbered 7" },
+          { status: 404 },
+        );
+      }),
+    );
+    const history = countHistoryReads();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    const before = history.count;
+
+    await userEvent.click(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+    await userEvent.click(card.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(history.count).toBe(before + 1));
+    refusal.release();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "there is no run numbered 7",
+    );
+    expect(
+      await card.findByRole("button", { name: /stop — keep what completed/i }),
+    ).toBeEnabled();
+  });
+});
+
+/**
  * The hook's acts on the card, called with no card. The screen never offers them then, so this is
  * the hook's own contract: **an act with nothing to act on asks for nothing and claims nothing**
  * -- and so the opening view, which gives way to any claim, still opens.
