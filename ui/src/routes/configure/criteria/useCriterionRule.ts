@@ -28,20 +28,44 @@ export interface RuleForm {
   problems: string[];
   /** Whether anything has been typed that is not already stored. */
   changed: boolean;
+  /**
+   * This rule is being saved, so the draft takes no edit until the answer is in (UI-06): it
+   * follows the stored rule then, and anything typed meanwhile would be thrown away unsaid.
+   */
+  saving: boolean;
+  /**
+   * A write to the set is in flight -- this rule's or another's -- so the draft can be neither
+   * sent nor thrown away until it has answered (UI-04). It can still be edited, unless saving.
+   */
+  held: boolean;
+  // The four edits refuse while the rule is being saved.
   set: (field: keyof RuleDraft, value: string | boolean) => void;
   setAnchor: (index: number, field: keyof AnchorDraft, value: string) => void;
   addAnchor: () => void;
   removeAnchor: (index: number) => void;
-  /** Parse and send, or report every problem and send nothing. */
+  /** Parse and send, or report every problem and send nothing. Refuses while held. */
   submit: () => void;
-  /** Throw the draft away and go back to what is stored. */
+  /** Throw the draft away and go back to what is stored. Refuses while held. */
   revert: () => void;
 }
 
+/** What is in flight that a rule has to wait for. */
+export interface RuleWrites {
+  /** This rule's own save. */
+  saving: boolean;
+  /** Any write to the set, which a rule's own save is one of (`CriteriaEditor.busy`). */
+  busy: boolean;
+}
+
+/**
+ * **Every edit refuses itself rather than relying on a disabled control** (NEW-34). A control
+ * disabled under the keyboard throws its focus to the page in Chromium, so the fields stay
+ * focusable while a write is in flight -- marked as held -- and it is these that ignore them.
+ */
 export function useCriterionRule(
   criterion: Criterion,
-  saving: boolean,
   onSave: (attribute: string, rule: CriterionRule) => void,
+  { saving, busy }: RuleWrites,
 ): RuleForm {
   const stored = draftFrom(criterion);
   const asJson = JSON.stringify(stored);
@@ -68,35 +92,44 @@ export function useCriterionRule(
     wasSaving.current = saving;
   }, [saving, asJson]);
 
+  const held = saving || busy;
+  /** An edit to the draft, unless the rule is being saved. */
+  const edit = (change: (current: RuleDraft) => RuleDraft) => {
+    if (!saving) setDraft(change);
+  };
+
   return {
     draft,
     problems,
     changed: JSON.stringify(draft) !== asJson,
-    set: (field, value) =>
-      setDraft((current) => ({ ...current, [field]: value })),
+    saving,
+    held,
+    set: (field, value) => edit((current) => ({ ...current, [field]: value })),
     setAnchor: (index, field, value) =>
-      setDraft((current) => ({
+      edit((current) => ({
         ...current,
         anchors: current.anchors.map((anchor, at) =>
           at === index ? { ...anchor, [field]: value } : anchor,
         ),
       })),
     addAnchor: () =>
-      setDraft((current) => ({
+      edit((current) => ({
         ...current,
         anchors: [...current.anchors, anEmptyAnchor()],
       })),
     removeAnchor: (index) =>
-      setDraft((current) => ({
+      edit((current) => ({
         ...current,
         anchors: current.anchors.filter((_, at) => at !== index),
       })),
     submit: () => {
+      if (held) return;
       const parsed = ruleFrom(draft);
       setProblems(parsed.problems);
       if (parsed.rule !== null) onSave(criterion.attribute, parsed.rule);
     },
     revert: () => {
+      if (held) return;
       setDraft(JSON.parse(asJson) as RuleDraft);
       setProblems([]);
     },

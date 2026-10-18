@@ -988,19 +988,26 @@ describe("while a change is being saved", () => {
     await saveWeight(COST_OF_LIVING, "40");
     await waitFor(() => expect(writes.sent).toHaveLength(1));
 
-    expect(screen.getByRole("button", { name: "Save rule" })).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "Discard changes" }),
-    ).toBeDisabled();
+    expectHeld(screen.getByRole("button", { name: "Save rule" }));
+    expectHeld(screen.getByRole("button", { name: "Discard changes" }));
+    // Held, they still take a click -- and do nothing with it: the edit is neither thrown away
+    // nor sent into the rebalance in flight.
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+    expect(screen.getByRole("combobox", { name: "Goal" })).toHaveValue(
+      "maximise",
+    );
 
     writes.release();
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Save rule" })).toBeEnabled(),
+      expectNotHeld(screen.getByRole("button", { name: "Save rule" })),
     );
+    expect(screen.getByRole("button", { name: "Save rule" })).toBeEnabled();
     expect(
       screen.getByRole<HTMLSelectElement>("combobox", { name: "Goal" }).value,
     ).toBe("maximise");
+    expect(writes.sent).toEqual(["default/country.cost_of_living_index"]);
   });
 
   it("lets nothing be undone while a change is being saved", async () => {

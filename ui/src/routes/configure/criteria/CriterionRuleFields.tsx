@@ -12,13 +12,16 @@ import type { RuleForm } from "./useCriterionRule";
  * refused by the server, and reproducing that rule here would put a second, quietly different
  * answer in front of the reader -- the same argument as the weight rebalancing. So every
  * control is always available and the refusal is shown when it comes.
+ *
+ * **Held, never disabled, while a write is in flight** (NEW-34). Chromium throws focus off a
+ * control the moment it is disabled -- a field inside a disabled fieldset with it -- and does
+ * not give it back, so saving with Enter put a keyboard user back on the page. A held control
+ * keeps its focus and says it is held; the form refuses whatever is done to it meanwhile.
  */
 export function CriterionRuleFields({
   form,
   attribute,
   title,
-  saving,
-  held,
 }: {
   form: RuleForm;
   /**
@@ -32,14 +35,10 @@ export function CriterionRuleFields({
   attribute: string;
   /** What to call the attribute, as the row above calls it. */
   title: string;
-  saving: boolean;
-  /**
-   * Another write to the set is in flight, so this rule waits for it rather than racing it
-   * (UI-04). The draft stays: only sending it is held.
-   */
-  held: boolean;
 }) {
   const problemsId = `rule-problems-${attribute}`;
+  // `aria-disabled` while the rule is being saved, and absent otherwise.
+  const whileSaving = form.saving || undefined;
 
   return (
     <form
@@ -57,7 +56,7 @@ export function CriterionRuleFields({
           <select
             id={`goal-${attribute}`}
             className="field__control"
-            disabled={saving}
+            aria-disabled={whileSaving}
             value={form.draft.goal}
             onChange={(event) => form.set("goal", event.target.value)}
           >
@@ -74,7 +73,7 @@ export function CriterionRuleFields({
           <select
             id={`method-${attribute}`}
             className="field__control"
-            disabled={saving}
+            aria-disabled={whileSaving}
             value={form.draft.normalisation_method}
             onChange={(event) =>
               form.set("normalisation_method", event.target.value)
@@ -92,7 +91,7 @@ export function CriterionRuleFields({
           <input
             id={`blocks-${attribute}`}
             type="checkbox"
-            disabled={saving}
+            aria-disabled={whileSaving}
             checked={form.draft.blocks_if_missing}
             onChange={(event) =>
               form.set("blocks_if_missing", event.target.checked)
@@ -102,7 +101,7 @@ export function CriterionRuleFields({
         </label>
       </div>
 
-      <fieldset className="rule-form__group" disabled={saving}>
+      <fieldset className="rule-form__group" aria-disabled={whileSaving}>
         <legend>Target band</legend>
         {/* Outside the legend, because a hint inside one is read out as part of every field's
             name. The same reason the household panel moved its hints out. */}
@@ -141,7 +140,7 @@ export function CriterionRuleFields({
         </div>
       </fieldset>
 
-      <fieldset className="rule-form__group" disabled={saving}>
+      <fieldset className="rule-form__group" aria-disabled={whileSaving}>
         <legend>Scale anchors</legend>
         <p className="panel__hint" id={`anchor-hint-${attribute}`}>
           Used by the fixed method: a figure, the score it maps to, and an
@@ -171,6 +170,8 @@ export function CriterionRuleFields({
                       className="field__control"
                       type="number"
                       step="any"
+                      readOnly={form.saving}
+                      aria-disabled={whileSaving}
                       value={anchor.input_value}
                       aria-label={`Anchor ${index + 1} value for ${title}`}
                       onChange={(event) =>
@@ -183,6 +184,8 @@ export function CriterionRuleFields({
                       className="field__control"
                       type="number"
                       step="1"
+                      readOnly={form.saving}
+                      aria-disabled={whileSaving}
                       value={anchor.score}
                       aria-label={`Anchor ${index + 1} score for ${title}`}
                       onChange={(event) =>
@@ -194,6 +197,8 @@ export function CriterionRuleFields({
                     <input
                       className="field__control"
                       type="text"
+                      readOnly={form.saving}
+                      aria-disabled={whileSaving}
                       value={anchor.label}
                       aria-label={`Anchor ${index + 1} label for ${title}`}
                       onChange={(event) =>
@@ -205,6 +210,7 @@ export function CriterionRuleFields({
                     <button
                       type="button"
                       className="button"
+                      aria-disabled={whileSaving}
                       onClick={() => form.removeAnchor(index)}
                     >
                       Remove anchor {index + 1}
@@ -215,12 +221,17 @@ export function CriterionRuleFields({
             </tbody>
           </table>
         )}
-        <button type="button" className="button" onClick={form.addAnchor}>
+        <button
+          type="button"
+          className="button"
+          aria-disabled={whileSaving}
+          onClick={form.addAnchor}
+        >
           Add an anchor
         </button>
       </fieldset>
 
-      <fieldset className="rule-form__group" disabled={saving}>
+      <fieldset className="rule-form__group" aria-disabled={whileSaving}>
         <legend>Matching threshold</legend>
         {form.draft.threshold_this_form_cannot_edit !== null ? (
           // **Says that a threshold is there rather than showing two empty fields** (P52).
@@ -266,18 +277,23 @@ export function CriterionRuleFields({
         </ul>
       )}
 
+      {/* **Disabled only when there is nothing to save.** While a write is in flight -- this
+          rule's, or another that would race it (UI-04) -- they are held instead: the draft
+          stays, and only sending or dropping it waits. */}
       <div className="rule-form__actions">
         <button
           type="submit"
           className="button"
-          disabled={saving || held || !form.changed}
+          disabled={!form.changed}
+          aria-disabled={form.held || undefined}
         >
-          {saving ? "Saving…" : "Save rule"}
+          {form.saving ? "Saving…" : "Save rule"}
         </button>
         <button
           type="button"
           className="button"
-          disabled={saving || held || !form.changed}
+          disabled={!form.changed}
+          aria-disabled={form.held || undefined}
           onClick={form.revert}
         >
           Discard changes
@@ -315,6 +331,8 @@ function NumberField({
         className="field__control"
         type="number"
         step="any"
+        readOnly={form.saving}
+        aria-disabled={form.saving || undefined}
         value={form.draft[name]}
         onChange={(event) => form.set(name, event.target.value)}
       />

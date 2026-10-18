@@ -523,7 +523,7 @@ a:hover {
 }
 
 /* Pressed: one step past the base for a filled control, a tint of it for an outlined one. */
-.button:active:not(:disabled) {
+.button:active:not(:disabled, [aria-disabled="true"]) {
   background: color-mix(in srgb, var(--colour-accent) 14%, var(--colour-surface));
   border-color: var(--colour-accent);
 }
@@ -543,7 +543,7 @@ a:hover {
   outline-offset: -2px;
 }
 
-.field__control:hover:not(:disabled) {
+.field__control:hover:not(:disabled, [aria-disabled="true"]) {
   border-color: var(--colour-text-muted);
 }
 
@@ -678,7 +678,10 @@ select.field__control {
   padding-right: 26px;
 }
 
-.field__control:disabled {
+/* Held while a write is in flight looks the same as disabled: `aria-disabled` rather than
+   `disabled`, because a disabled control throws a keyboard's focus to the page (NEW-34). */
+.field__control:disabled,
+.field__control[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -811,11 +814,13 @@ select.field__control {
   align-self: flex-start;
 }
 
-.button:hover:not(:disabled) {
+.button:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--colour-surface-raised);
 }
 
-.button:disabled {
+/* Held while a write is in flight looks the same as disabled (NEW-34, as `.field__control`). */
+.button:disabled,
+.button[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
   box-shadow: none;

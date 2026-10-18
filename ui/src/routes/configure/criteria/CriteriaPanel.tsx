@@ -274,7 +274,10 @@ function CriterionRow({
   // can read. Local state, because which row is open is this component's own business and
   // nothing outside it needs to know.
   const [editingRule, setEditingRule] = useState(false);
-  const rule = useCriterionRule(criterion, savingRule, onSaveRule);
+  const rule = useCriterionRule(criterion, onSaveRule, {
+    saving: savingRule,
+    busy: held,
+  });
 
   // A rebalance moves this row's weight without this row having been dragged -- the server's
   // on the way back, the preview's while another row's pointer is down -- and a refused change
@@ -473,8 +476,6 @@ function CriterionRow({
           form={rule}
           attribute={criterion.attribute}
           title={title}
-          saving={savingRule}
-          held={held}
         />
       )}
     </div>
