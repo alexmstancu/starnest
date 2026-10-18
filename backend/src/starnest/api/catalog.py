@@ -17,9 +17,10 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from starnest.api.bodies import ContractBody, PartialChangeBody
-from starnest.api.dependencies import Candidates, Catalog, Criteria
+from starnest.api.dependencies import Adapters, Candidates, Catalog, Criteria
 from starnest.candidates import UnknownCandidateError
 from starnest.data import Attribute, DataSource, DataSourceId
+from starnest.data_acquisition import SourceAdapter
 
 router = APIRouter(tags=["catalog"])
 
@@ -77,6 +78,7 @@ class AttributeBody(ContractBody):
     allowed_range: AllowedRangeBody | None = None
     allowed_labels: tuple[str, ...] = ()
     effective_source_priority: tuple[str, ...] = ()
+    answerable_by: tuple[str, ...]
 
 
 class PillarsBody(BaseModel):
@@ -178,7 +180,7 @@ async def list_pillars(catalog: Catalog) -> PillarsBody:
 
 @router.get("/attributes", operation_id="listAttributes", response_model=AttributesBody)
 async def list_attributes(
-    catalog: Catalog, level: str | None = None, include_retired: bool = False
+    catalog: Catalog, adapters: Adapters, level: str | None = None, include_retired: bool = False
 ) -> AttributesBody:
     """The catalog, with every per-attribute declaration attached.
 
@@ -190,7 +192,7 @@ async def list_attributes(
     sources = await catalog.read_data_sources()
     return AttributesBody(
         items=tuple(
-            _attribute_body(attribute, sources)
+            _attribute_body(attribute, sources, adapters)
             for attribute in await catalog.read_attributes(
                 level=level, include_retired=include_retired
             )
@@ -198,7 +200,10 @@ async def list_attributes(
     )
 
 
-def _attribute_body(attribute: Attribute, sources: Sequence[DataSource]) -> AttributeBody:
+def _attribute_body(
+    attribute: Attribute, sources: Sequence[DataSource], adapters: Sequence[SourceAdapter]
+) -> AttributeBody:
+    priority = tuple(str(source) for source in attribute.effective_source_priority(sources).ordered)
     return AttributeBody(
         id=str(attribute.id),
         name=attribute.name,
@@ -230,10 +235,23 @@ def _attribute_body(attribute: Attribute, sources: Sequence[DataSource]) -> Attr
         # The whole resolved order, every source highest first -- not just the overrides (BE-39).
         # An override is partial (`reqs.md` 6.6): the sources it names lead, and every other
         # source keeps its global rank beneath them, which is the order the interface shows.
-        effective_source_priority=tuple(
-            str(source) for source in attribute.effective_source_priority(sources).ordered
-        ),
+        effective_source_priority=priority,
+        answerable_by=_sources_that_can_fetch(attribute, priority, adapters),
     )
+
+
+def _sources_that_can_fetch(
+    attribute: Attribute, priority: Sequence[str], adapters: Sequence[SourceAdapter]
+) -> tuple[str, ...]:
+    """The sources with a registered adapter declaring this attribute, in its priority order.
+
+    **Served, not inferred** (`reqs.md` Q235, UI-32). The priority order names every source for
+    every attribute, so an interface reading "no source" from it could never say so. Each
+    adapter declares what it answers; a source with several is named once, and whether it is
+    switched on does not enter into it -- that decides whether it is asked, not what it can do.
+    """
+    able = {str(adapter.data_source) for adapter in adapters if attribute.id in adapter.attributes}
+    return tuple(source for source in priority if source in able)
 
 
 _DAYS_IN_A_MONTH = 365.25 / 12
@@ -343,10 +361,10 @@ async def update_data_source(
 
 
 @router.get("/attributes/{attribute_id}", operation_id="getAttribute", response_model=AttributeBody)
-async def get_attribute(attribute_id: str, catalog: Catalog) -> AttributeBody:
+async def get_attribute(attribute_id: str, catalog: Catalog, adapters: Adapters) -> AttributeBody:
     """One attribute with its declarations. Raises a 404 for one the catalog does not hold."""
     attribute = await catalog.read_attribute(attribute_id)
-    return _attribute_body(attribute, await catalog.read_data_sources())
+    return _attribute_body(attribute, await catalog.read_data_sources(), adapters)
 
 
 @router.get("/candidates/{candidate_id}", operation_id="getCandidate", response_model=CandidateBody)

@@ -8,9 +8,15 @@ anybody editing TypeScript.
 import httpx
 import pytest
 
+from .conftest import a_stub_source, an_api
+from .contract import undeclared_fields, validate
+
 pytestmark = pytest.mark.acceptance
 
 COUNTRY = "country"
+OVERBURDEN = "country.housing_cost_overburden_rate"
+OVERCROWDING = "country.overcrowding_rate"
+COST_OF_LIVING = "country.cost_of_living_index"
 
 
 class TestThePillars:
@@ -148,6 +154,79 @@ class TestTheAttributes:
         order = attribute["effective_source_priority"]
         assert order[:2] == ["eurostat", "world_bank"]
         assert "manual" in order
+
+
+class TestWhichSourcesCanFetchAnAttribute:
+    """UI-32, decided as `answerable_by` (Q235). Whether any source can fetch an attribute was
+    inferred from its priority order, and since BE-39 that order names every source for every
+    attribute -- so the "no data source at all" card never listed anything and the "No source
+    yet" chip never appeared. The server knows: each registered adapter declares what it
+    answers, and that is what is served."""
+
+    async def test_an_attribute_names_the_sources_that_can_fetch_it(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.get(f"/v1/attributes/{OVERBURDEN}")
+
+        assert response.json()["answerable_by"] == ["eurostat"]
+        validate("getAttribute", response.json())
+        assert undeclared_fields("getAttribute", response.json()) == []
+
+    async def test_an_attribute_nothing_fetches_names_none(self, api: httpx.AsyncClient) -> None:
+        """The stub answers two attributes, so the cost of living -- which the catalog ranks
+        Eurostat first for -- has no adapter here, whatever its priority order says."""
+        response = await api.get(f"/v1/attributes/{COST_OF_LIVING}")
+
+        assert response.json()["answerable_by"] == []
+        assert response.json()["effective_source_priority"][:1] == ["eurostat"]
+        validate("getAttribute", response.json())
+
+    async def test_every_attribute_in_the_list_says_so(self, api: httpx.AsyncClient) -> None:
+        response = await api.get("/v1/attributes", params={"level": COUNTRY})
+
+        answerable = {
+            attribute["id"]: attribute["answerable_by"] for attribute in response.json()["items"]
+        }
+        assert {name for name, sources in answerable.items() if sources} == {
+            OVERBURDEN,
+            OVERCROWDING,
+        }
+        assert answerable[OVERCROWDING] == ["eurostat"]
+        validate("listAttributes", response.json())
+
+    async def test_several_sources_come_in_the_attribute_s_priority_order(
+        self, database_url: str
+    ) -> None:
+        """Registered World Bank first, and still named after Eurostat: the cost of living
+        ranks Eurostat ahead of the World Bank (`0443`), and the order is the attribute's, not
+        the registry's."""
+        sources = (
+            a_stub_source(data_source="world_bank", answers=(COST_OF_LIVING,)),
+            a_stub_source(answers=(COST_OF_LIVING,)),
+        )
+        async with an_api(database_url, sources) as api:
+            attribute = (await api.get(f"/v1/attributes/{COST_OF_LIVING}")).json()
+
+        assert attribute["answerable_by"] == ["eurostat", "world_bank"]
+
+    async def test_a_source_with_several_adapters_is_named_once(self, database_url: str) -> None:
+        sources = (a_stub_source(answers=(OVERBURDEN,)), a_stub_source(answers=(OVERBURDEN,)))
+        async with an_api(database_url, sources) as api:
+            attribute = (await api.get(f"/v1/attributes/{OVERBURDEN}")).json()
+
+        assert attribute["answerable_by"] == ["eurostat"]
+
+    async def test_a_source_switched_off_still_counts_as_able(self, api: httpx.AsyncClient) -> None:
+        """Switching a source off is a judgement about consulting it, not a fact about what it
+        can fetch; the screen says which sources are off separately."""
+        try:
+            await api.patch("/v1/data-sources/eurostat", json={"is_enabled": False})
+
+            attribute = (await api.get(f"/v1/attributes/{OVERBURDEN}")).json()
+
+            assert attribute["answerable_by"] == ["eurostat"]
+        finally:
+            await api.patch("/v1/data-sources/eurostat", json={"is_enabled": True})
 
 
 class TestSwitchingASourceOff:

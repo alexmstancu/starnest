@@ -850,6 +850,8 @@ export interface components {
             allowed_labels?: string[];
             /** @description The order sources are consulted for this attribute, highest first: the attribute's own overrides, then every other source in the global order beneath them. Resolved on the server so no client reimplements the rule. */
             effective_source_priority?: string[];
+            /** @description The sources whose registered adapter can fetch this attribute, in the order of `effective_source_priority`, each once (reqs.md Q235). Whether a source is switched on does not enter into it: that is a judgement about consulting it, not a fact about what it can fetch. Empty means no run can fetch it -- `manual` and `stand_in` are not adapters, and `llm` appears only where an LLM adapter is configured and declares it. */
+            answerable_by: string[];
         };
         DataSource: {
             id: string;

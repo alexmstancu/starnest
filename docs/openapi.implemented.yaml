@@ -41,6 +41,11 @@ components:
           anyOf:
           - $ref: '#/components/schemas/AllowedRangeBody'
           - type: 'null'
+        answerable_by:
+          items:
+            type: string
+          title: Answerable By
+          type: array
         breakdown_options:
           default: []
           items:
@@ -99,6 +104,7 @@ components:
       - name
       - level
       - value_type
+      - answerable_by
       title: AttributeBody
       type: object
     AttributeScoreBody:
