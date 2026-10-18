@@ -252,14 +252,19 @@ WHERE  v.data_acquisition_run = :data_acquisition_run
 ORDER  BY v.candidate, v.attribute, v.breakdown_option NULLS FIRST, v.id;
 
 -- name: select_last_retrieval_dates(level, candidates, attributes)
--- When each candidate/attribute pair last got an accepted answer. The run planner compares
--- this against the refetch age to decide what is worth fetching, which is what keeps a re-run
--- from paying for data that is still fresh.
+-- When each candidate/attribute pair last got an accepted answer from a switched-on source.
+-- The run planner compares this against the refetch age to decide what is worth fetching,
+-- which is what keeps a re-run from paying for data that is still fresh.
 --
 -- **A rejected figure is not an answer, so it is not fresh** (BE-08, NEW-27). A run records a
 -- figure that fails validation as a failure precisely so that it is asked about again; counted
 -- here as well, it made its own pair look fresh, and a plan or a scoped run then skipped the
 -- one item the failure exists to bring back.
+--
+-- **Nor is a switched-off source's figure** (NEW-35): it stays stored but never scores (Q232,
+-- `active_value` requires `source_is_enabled`). Counted here, it kept fresh an attribute that
+-- nothing scores, so switching off the only source with a fresh figure left the attribute
+-- unasked until the age ran out. Switching the source back on makes it an answer again.
 --
 -- Read from `value` rather than from `active_value` all the same: a figure that lost the
 -- active-value comparison was accepted, and asking its source again for it would pay twice
@@ -270,7 +275,9 @@ SELECT v.candidate,
        max(v.reference_period_end) AS last_reference_period_end
 FROM   value AS v
 JOIN   candidate AS c ON c.id = v.candidate
+JOIN   data_source AS s ON s.id = v.data_source
 WHERE  v.rejection_reason IS NULL
+  AND  s.is_enabled
   AND  (:level::text IS NULL OR c.level = :level)
   AND  (:candidates::text[] IS NULL OR v.candidate = ANY(:candidates))
   AND  (:attributes::text[] IS NULL OR v.attribute = ANY(:attributes))

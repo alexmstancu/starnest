@@ -9,21 +9,22 @@ scope, the value rows and the failure rows. A fake store could only return whate
 told to; what is under test is the derivation itself.
 """
 
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
 from psycopg_pool import AsyncConnectionPool
 
-from starnest.data import ConfidenceLevel, Ratio, ReferencePeriod, Value, ValueType
+from starnest.data import ConfidenceLevel, DataSourceId, Ratio, ReferencePeriod, Value, ValueType
 from starnest.data_acquisition import (
     AcquisitionFailure,
     RunAlreadyInFlightError,
     RunScope,
     RunStatus,
 )
-from starnest.storage import PostgresRunStore, PostgresValueStore
+from starnest.storage import PostgresCatalogStore, PostgresRunStore, PostgresValueStore
 
 pytestmark = pytest.mark.storage
 
@@ -515,12 +516,30 @@ async def portugal_last_answered(pool: AsyncConnectionPool) -> Mapping[tuple[str
     )
 
 
+@asynccontextmanager
+async def switched_off(pool: AsyncConnectionPool, source: str) -> AsyncIterator[None]:
+    """A source switched off for the length of a test, then put back as it was: the catalog is
+    not test data, so the pool fixture's emptying never reaches it (`conftest.py`)."""
+    catalog = PostgresCatalogStore(pool)
+    (before,) = [each for each in await catalog.read_data_sources() if each.id == source]
+    await catalog.set_data_source(DataSourceId(source), is_enabled=False)
+    try:
+        yield
+    finally:
+        await catalog.set_data_source(DataSourceId(source), is_enabled=before.is_enabled)
+
+
 class TestWhenAPairWasLastAnswered:
     """What the planner reads to judge what is still fresh (`reqs.md` 3.10, BE-25).
 
     **Only an accepted figure is an answer** (NEW-27). A rejected one is recorded as a failure
     so that a retry reaches it (BE-08); counted here as well, it made its own pair look fresh,
     and with a refetch age set neither a plan nor a scoped run would ask about it again.
+
+    **And only a figure that may score** (NEW-35). A switched-off source's figures stay stored
+    but never compete (Q232, the `active_value` view's `source_is_enabled`); counted here, they
+    kept an attribute fresh that nothing scores, so switching off its only fresh source left it
+    unasked until the age ran out.
     """
 
     async def test_a_pair_whose_only_figure_was_rejected_has_no_last_retrieval(
@@ -582,6 +601,47 @@ class TestWhenAPairWasLastAnswered:
             candidates=["country.portugal"], attributes=[OVERBURDEN]
         )
         assert active.data_source == "eurostat", "the premise: OECD's newer figure lost"
+        assert await portugal_last_answered(pool) == {("country.portugal", OVERBURDEN): LATER}
+
+    async def test_a_figure_from_a_switched_off_source_is_no_answer(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """Absent, as a pair never asked about is: the figure cannot score, so the planner has a
+        gap to fill rather than a figure to keep."""
+        await PostgresValueStore(pool).append(
+            [retrieved_at(a_figure(a_run, "country.portugal", OVERBURDEN, source="oecd"), LATER)]
+        )
+
+        async with switched_off(pool, "oecd"):
+            assert await portugal_last_answered(pool) == {}
+
+    async def test_a_switched_off_source_leaves_the_switched_on_source_s_date(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """The pair is as fresh as its newest figure that may still score, and no fresher."""
+        await PostgresValueStore(pool).append(
+            [
+                retrieved_at(
+                    a_figure(a_run, "country.portugal", OVERBURDEN, source="eurostat"), EARLIER
+                ),
+                retrieved_at(a_figure(a_run, "country.portugal", OVERBURDEN, source="oecd"), LATER),
+            ]
+        )
+
+        async with switched_off(pool, "oecd"):
+            assert await portugal_last_answered(pool) == {("country.portugal", OVERBURDEN): EARLIER}
+
+    async def test_switching_the_source_back_on_makes_its_figure_an_answer_again(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """The control: the switch decides, not the figure -- nothing was lost by switching off,
+        so nothing has to be fetched again once the source is back."""
+        await PostgresValueStore(pool).append(
+            [retrieved_at(a_figure(a_run, "country.portugal", OVERBURDEN, source="oecd"), LATER)]
+        )
+        async with switched_off(pool, "oecd"):
+            pass
+
         assert await portugal_last_answered(pool) == {("country.portugal", OVERBURDEN): LATER}
 
 
