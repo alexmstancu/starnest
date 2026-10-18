@@ -145,3 +145,14 @@ describe("storing a figure typed by hand, once", () => {
     expect(writes.sent).toBe(1);
   });
 });
+
+describe("what the form is given", () => {
+  /**
+   * NEW-38. **Nothing a caller never passes.** It took an `onStored` callback that no panel
+   * handed it, so the call after a stored figure was a branch nothing could reach -- the one
+   * line of this file no test ran, and a hook that read as though somebody listened.
+   */
+  it("takes the attribute and its kind, and nothing else", () => {
+    expect(useManualEntry).toHaveLength(2);
+  });
+});

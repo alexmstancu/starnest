@@ -37,7 +37,6 @@ export interface ManualEntryState {
 export function useManualEntry(
   attribute: string,
   kind: ManualKind,
-  onStored?: () => void,
 ): ManualEntryState {
   const [draft, setDraft] = useState<ManualDraft>(NOTHING_TYPED);
   const [problems, setProblems] = useState<readonly string[]>([]);
@@ -80,7 +79,6 @@ export function useManualEntry(
           setDraft(NOTHING_TYPED);
           setProblems([]);
         }
-        onStored?.();
       })
       .catch((error: unknown) => setFailure(error))
       .finally(() => {
@@ -88,7 +86,7 @@ export function useManualEntry(
         inFlight.current = false;
         setSaving(false);
       });
-  }, [attribute, kind, draft, onStored]);
+  }, [attribute, kind, draft]);
 
   return { draft, change, problems, saving, saved, failure, submit };
 }
