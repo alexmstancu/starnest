@@ -22,6 +22,14 @@ const BASE = "/v1";
 const PROPOSED_GATE = "country.visa_route_exists";
 const PROPOSED_FOR = "country.portugal";
 
+/**
+ * This panel, and nothing else on the screen. The household and settings panels beside it each
+ * keep a status line of their own (NEW-42), so a status asked for screen-wide would be three.
+ */
+function theProposals() {
+  return within(screen.getByRole("region", { name: "Gate proposals" }));
+}
+
 async function settled(): Promise<void> {
   await screen.findByRole("region", { name: "Gate proposals" });
   await waitFor(() =>
@@ -375,7 +383,7 @@ describe("what a research pass did", () => {
 
     await researchOnce();
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(await theProposals().findByRole("status")).toHaveTextContent(
       "The last pass made 2 calls and spent €0.04.",
     );
     expect(screen.getByText(/about €4\.20/)).toBeInTheDocument();
@@ -388,7 +396,7 @@ describe("what a research pass did", () => {
 
     await researchOnce();
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(await theProposals().findByRole("status")).toHaveTextContent(
       /stopped at the spend cap.*were not asked/,
     );
   });
@@ -400,7 +408,7 @@ describe("what a research pass did", () => {
 
     await researchOnce();
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(await theProposals().findByRole("status")).toHaveTextContent(
       "The last pass made no calls and spent nothing.",
     );
   });
@@ -541,7 +549,7 @@ describe("a research pass after an earlier one", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(EARLIER)).toBeNull();
     // A server failure may come after calls that were billed.
-    expect(screen.getByRole("status")).toHaveTextContent(NOT_KNOWN);
+    expect(theProposals().getByRole("status")).toHaveTextContent(NOT_KNOWN);
   });
 
   it("shows no earlier pass's spend once a later pass is refused", async () => {
@@ -595,7 +603,7 @@ describe("a research pass after an earlier one", () => {
       await screen.findByText(/backend did not answer/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(EARLIER)).toBeNull();
-    expect(screen.getByRole("status")).toHaveTextContent(NOT_KNOWN);
+    expect(theProposals().getByRole("status")).toHaveTextContent(NOT_KNOWN);
   });
 
   it("says the spend is not known when the proxy timed the pass out", async () => {
@@ -611,7 +619,7 @@ describe("a research pass after an earlier one", () => {
       await screen.findByText(/in a shape this interface does not recognise/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(EARLIER)).toBeNull();
-    expect(screen.getByRole("status")).toHaveTextContent(NOT_KNOWN);
+    expect(theProposals().getByRole("status")).toHaveTextContent(NOT_KNOWN);
   });
 
   it("drops an earlier pass's refusals when a later pass fails", async () => {

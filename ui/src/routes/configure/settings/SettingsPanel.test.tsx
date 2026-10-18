@@ -437,3 +437,70 @@ describe("an unset comparator limit", () => {
     expect(settings.queryByText(/as many comparators as you pick/)).toBeNull();
   });
 });
+
+/**
+ * NEW-42. **"Saved." was a paragraph that appeared with its word**, and a screen reader announces
+ * a change to a live region it already knows, not a region that arrives already saying something
+ * -- so a save was confirmed to everybody who could see it and to nobody who could not.
+ */
+describe("the settings panel's confirmation", () => {
+  it("keeps an empty status line in place before anything is saved", async () => {
+    renderShell("/configure");
+    const settings = await panel();
+
+    expect(settings.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("says Saved. in that same status line once the save lands", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const settings = await panel();
+    const status = settings.getByRole("status");
+
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(status).toHaveTextContent("Saved."));
+    expect(settings.getByRole("status")).toBe(status);
+  });
+
+  /** Emptied as a save starts and filled when it lands, so a second save is announced too. */
+  it("says Saved. again for a second save", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const settings = await panel();
+    const status = settings.getByRole("status");
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(status).toHaveTextContent("Saved."));
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.put("/v1/settings", async () => {
+        await held;
+      }),
+    );
+
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(status).toBeEmptyDOMElement());
+    release();
+    await waitFor(() => expect(status).toHaveTextContent("Saved."));
+    expect(settings.getByRole("status")).toBe(status);
+  });
+
+  it("says nothing in the status line when the save is refused", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const settings = await panel();
+
+    await user.clear(field("Top of the score range"));
+    await user.type(field("Top of the score range"), "0");
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+
+    expect(
+      await settings.findByText(/score scale maximum must be at least 1/i),
+    ).toBeInTheDocument();
+    expect(settings.getByRole("status")).toBeEmptyDOMElement();
+  });
+});

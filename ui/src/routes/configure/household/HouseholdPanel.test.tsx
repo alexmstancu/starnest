@@ -408,6 +408,67 @@ describe("the household panel while a save is in flight", () => {
 });
 
 /**
+ * NEW-42. **"Saved." was a paragraph that appeared with its word**, and a screen reader announces
+ * a change to a live region it already knows, not a region that arrives already saying something
+ * -- so a save was confirmed to everybody who could see it and to nobody who could not.
+ */
+describe("the household panel's confirmation", () => {
+  it("keeps an empty status line in place before anything is saved", async () => {
+    renderShell("/configure");
+    const household = await panel();
+
+    expect(household.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("says Saved. in that same status line once the save lands", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const household = await panel();
+    const status = household.getByRole("status");
+
+    await user.click(household.getByRole("button", { name: "Save household" }));
+
+    await waitFor(() => expect(status).toHaveTextContent("Saved."));
+    expect(household.getByRole("status")).toBe(status);
+  });
+
+  it("empties the status line, and keeps it there, once something is typed again", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const household = await panel();
+    const status = household.getByRole("status");
+    await user.click(household.getByRole("button", { name: "Save household" }));
+    await waitFor(() => expect(status).toHaveTextContent("Saved."));
+
+    await user.type(field("Maximum rent"), "0");
+
+    expect(household.getByRole("status")).toBe(status);
+    expect(status).toBeEmptyDOMElement();
+  });
+
+  it("says nothing in the status line when the save is refused", async () => {
+    mockServer.use(
+      http.put("/v1/household", () =>
+        HttpResponse.json(
+          { code: "invalid_field", message: "net_income must be positive." },
+          { status: 400 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const household = await panel();
+
+    await user.click(household.getByRole("button", { name: "Save household" }));
+
+    expect(await household.findByRole("alert")).toHaveTextContent(
+      /net_income must be positive/,
+    );
+    expect(household.getByRole("status")).toBeEmptyDOMElement();
+  });
+});
+
+/**
  * UI-26. **The citizenship picker adds rather than replaces**, so it is the one used most from
  * the keyboard: tab into its list, choose, and go on to the next passport.
  */

@@ -650,6 +650,15 @@ a:hover {
   color: var(--colour-text-muted);
 }
 
+/* A confirmation a screen reader announces (NEW-42) is a live region, and a live region has to
+   be on the page before its words arrive or it is never read out -- so between saves it stays,
+   empty. Empty, it takes no room: in a stage's column an empty paragraph still costs a gap. Out
+   of the flow rather than `display: none`, which would take it out of the accessibility tree,
+   and the announcement with it. */
+.panel__hint[role="status"]:empty {
+  position: absolute;
+}
+
 .panel__link {
   font-size: var(--font-size-small);
   color: var(--colour-accent);

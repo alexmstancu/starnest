@@ -56,7 +56,12 @@ function SettingsFields({ settings }: { settings: Settings }) {
       {/* No "try again" button: the way to retry a save is the save button, which is still
           there. */}
       {form.failure !== null && <ErrorNotice error={form.failure} />}
-      {form.saved && <p className="panel__hint">Saved.</p>}
+      {/* **A live region, always there and empty until a save lands** (NEW-42): a screen reader
+          announces a change to a region it already knows, so one that appeared already saying
+          "Saved." was never read out. */}
+      <p className="panel__hint" role="status">
+        {form.saved ? "Saved." : null}
+      </p>
 
       {/* The one blank that stops the product working, said once and loudly. The design's own
           prototype stated this rule and then ranked anyway (R3), which is worse than saying

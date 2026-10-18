@@ -110,7 +110,12 @@ function HouseholdFields({
           there. A second control that only cleared the message would offer a retry it does
           not perform. */}
       {form.failure !== null && <ErrorNotice error={form.failure} />}
-      {form.saved && <p className="panel__hint">Saved.</p>}
+      {/* **A live region, always there and empty until a save lands** (NEW-42): a screen reader
+          announces a change to a region it already knows, so one that appeared already saying
+          "Saved." was never read out. */}
+      <p className="panel__hint" role="status">
+        {form.saved ? "Saved." : null}
+      </p>
 
       <form onSubmit={form.save}>
         {/* **Fields across, not down.** Eight of them in one column is a page of scrolling
