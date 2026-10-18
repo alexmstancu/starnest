@@ -2191,6 +2191,86 @@ describe("what the busy label says while two acts overlap", () => {
  * "Acquiring now" and offered Stop again until the reader refreshed. **Only a read of the same
  * run gives way**; anything else the reader did meanwhile still outranks the stop (UI-04).
  */
+/**
+ * NEW-49, the other way to overtake a stop: **a start the server refused.** While a stop is
+ * being sent the run is still going, so a start is refused with `run_already_in_flight` -- and,
+ * holding the newest ticket while reading nothing back, it kept the stop's own read off the card,
+ * which went on offering Stop for a run already stopping.
+ */
+describe("a stop a refused start overtook", () => {
+  /** Every start refused as the server refuses one while a run is going, when the test says. */
+  function refuseStarts(): { release: () => void } {
+    const answer = heldAnswer();
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs`, async () => {
+        await answer.held;
+        return HttpResponse.json(
+          {
+            code: "run_already_in_flight",
+            message: "run 7 is still going, and one household runs one pass at a time",
+          },
+          { status: 409 },
+        );
+      }),
+    );
+    return answer;
+  }
+
+  /** Run 7 on the card, an acquisition estimated, then its stop clicked and held. */
+  async function aStopHeldBesideAnEstimate() {
+    const stop = aRunWhoseStopIsHeld();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    await estimate();
+    const startIt = await screen.findByRole("button", {
+      name: /start this acquisition/i,
+    });
+    await userEvent.click(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+    return { stop, startIt };
+  }
+
+  function expectTheStopOnTheCard(): void {
+    const card = within(
+      screen.getByRole("region", { name: /acquisition 7/i }),
+    );
+    expect(
+      card.queryByRole("button", { name: /stop — keep what completed/i }),
+    ).toBeNull();
+    expect(card.getByText("stopping")).toBeInTheDocument();
+  }
+
+  it("shows the stop once it is answered, though a start was refused before", async () => {
+    const { stop, startIt } = await aStopHeldBesideAnEstimate();
+    refuseStarts().release();
+
+    await userEvent.click(startIt);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "run_already_in_flight",
+    );
+    stop.release();
+
+    await waitFor(() => expectTheStopOnTheCard());
+  });
+
+  it("shows the stop, though the start was refused only after it was answered", async () => {
+    const { stop, startIt } = await aStopHeldBesideAnEstimate();
+    const refusal = refuseStarts();
+
+    await userEvent.click(startIt);
+    stop.release();
+    refusal.release();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "run_already_in_flight",
+    );
+    await waitFor(() => expectTheStopOnTheCard());
+  });
+});
+
 describe("a stop a refresh overtook", () => {
   /**
    * Run 7 on the card, still going, its stop clicked and held. `actsEnded` counts the acts that

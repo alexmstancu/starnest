@@ -157,6 +157,23 @@ export function useRunScreen(): RunScreenState {
   );
 
   /**
+   * **A refused start hands the card back** (NEW-49). A start takes the newest ticket on the
+   * click and, refused, reads nothing back -- so a stop answered meanwhile had its own read
+   * dropped, and the card went on offering Stop for a run already stopping. While the start is
+   * still the reader's newest act, the run on the card is read again before the refusal is
+   * reported; a read that fails then must not take the refusal's place.
+   */
+  const giveTheCardBack = useCallback(
+    async (ticket: number, onCard: number | undefined, refused: unknown): Promise<never> => {
+      if (onCard !== undefined && isCurrent(ticket)) {
+        await watch(claim(onCard), onCard).catch(() => undefined);
+      }
+      throw refused;
+    },
+    [claim, isCurrent, watch],
+  );
+
+  /**
    * **The last acquisition opens by itself, once.**
    *
    * The screen's three remedies are about what the last acquisition left behind, and a
@@ -202,8 +219,11 @@ export function useRunScreen(): RunScreenState {
     // read already on its way when the reader acts again can never land over the newer choice.
     start: (levelId) => {
       const ticket = claim();
+      const onCard = current?.id;
       void act("running", async () => {
-        const started = await startRun({ level: levelId });
+        const started = await startRun({ level: levelId }).catch((refused: unknown) =>
+          giveTheCardBack(ticket, onCard, refused),
+        );
         setPlan(null);
         setPlanOrigin(null);
         await watch(ticket, started.id);
@@ -233,12 +253,13 @@ export function useRunScreen(): RunScreenState {
     commit: () => {
       if (!armed) return;
       const ticket = claim();
+      const onCard = current?.id;
       void act("running", async () => {
         // Going uncapped is only ever accepted because the strip said so in as many words.
         const started = await startRun({
           ...armed.scope,
           accept_uncapped_spend: armed.commitment.uncapped,
-        });
+        }).catch((refused: unknown) => giveTheCardBack(ticket, onCard, refused));
         setArmed(null);
         await watch(ticket, started.id);
       });
