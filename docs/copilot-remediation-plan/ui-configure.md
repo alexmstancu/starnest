@@ -41,7 +41,7 @@ I've written plans for all 17 findings. 16 are still fully present at HEAD, and 
   - Rewrite the 4 existing research tests that assume a single request.
   - The nginx timeout itself can't run in vitest; the existing architecture guard keeps it locked.
 - **Migration / contract / docs:** No contract change.
-  - `docs/reqs.md` Appendix B: new Q233 recording the batching decision.
+  - `docs/reqs.md` Appendix B: a new decision entry recording the batching decision, at the next free number (Q233 is taken since NEW-24).
   - `docs/known-issues.md` P28: the per-request cap no longer bounds a pass; the page does.
   - `docs/design-brief.md`: progress, Stop and outcome have no design yet.
   - `ui/nginx.conf`: comment only.

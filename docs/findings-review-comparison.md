@@ -19,6 +19,8 @@ The table preserves the original IDs, order, severity labels, and both independe
 
 **Round 2 (2026-10-17):** the small-fix round of [copilot-remediation-plan.md](copilot-remediation-plan.md) fixed 37 more findings, each test-first, ending at `074d71b`. Five are closed without code and ST-08's remainder is closed, so the column now reads **56 FIXED, 4 PARTIAL, 25 NOT_FIXED, 5 CLOSED, 1 N/A**. BE-36's decision is now REAL: the household set its policy on 2026-10-12, and its stage 1 is planned for later. Commits per finding, and what is still open, are in [Round 2](#round-2-small-fixes-2026-10-17).
 
+**Round 2 review (2026-10-18):** four independent agents re-checked the round. BE-31 moves to PARTIAL: its forbidden import is gone and guarded, but the whole import table is still not enforced, which the plan left for later. The column now reads **55 FIXED, 5 PARTIAL, 25 NOT_FIXED, 5 CLOSED, 1 N/A**. What the review found, and the fixes that followed, are in [Round 2 review](#round-2-review-2026-10-18).
+
 | nr | finding_id | finding_summary | severity | gpt-6-astra | claude-opus-5 | action | decision | fix_status |
 |---:|---|---|---|---|---|---|---|---|
 | 1 | UI-01 | nginx's 60-second read timeout can interrupt synchronous paid gate research before its result and actual cost reach the browser. Continued work after disconnection was not runtime-verified. | High | REAL | REAL | no-op | REAL | PARTIAL |
@@ -84,7 +86,7 @@ The table preserves the original IDs, order, severity labels, and both independe
 | 61 | BE-28 | AssignedScore fallback uses an invalid constructor and cannot store an otherwise eligible paid answer. Current manual AssignedScores are excluded, making the branch latent. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 62 | BE-29 | Source JSON is decoded through binary floats before Decimal conversion, losing publisher precision for long numeric tokens. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 63 | BE-30 | Employer-response elements are stringified instead of validated as firm-name strings, allowing nulls, numbers, or objects to become labels. | Low | REAL | REAL | no-op | REAL | FIXED |
-| 64 | BE-31 | Comparison directly imports criteria despite the exhaustive dependency table, and the configured layer guard permits this forbidden edge. | Low | REAL | REAL | no-op | REAL | FIXED |
+| 64 | BE-31 | Comparison directly imports criteria despite the exhaustive dependency table, and the configured layer guard permits this forbidden edge. | Low | REAL | REAL | no-op | REAL | PARTIAL |
 | 65 | BE-32 | Bare pytest excludes paid live tests but still selects ordinary live-publisher tests, making the default invocation network-dependent. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 66 | BE-33 | Known/deferred spending durability remains per source, so death before the current source returns loses its billed totals. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 67 | BE-34 | Known/deferred gate research returns/logs spending but creates no durable billing record, leaving lost responses or process death unledgered. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
@@ -201,17 +203,17 @@ The round was scoped by the household to real bugs whose fix is a few lines in a
 | BE-09 | 268292f |
 | BE-10 | 3056c15 |
 | BE-17 | 0e60b7b |
-| BE-21 | 1423046 |
+| BE-21 | 1423046, 72fdad1 |
 | BE-25 | 612e5d9 |
-| BE-27 | 77a2abc |
+| BE-27 | 77a2abc, b092c2c |
 | BE-28 | 268292f |
 | BE-29 | 268292f |
 | BE-30 | 268292f |
-| BE-31 | 986cdd8 |
+| BE-31 | 986cdd8 (PARTIAL) |
 | BE-32 | c222046 |
-| BE-38 | c222046 |
+| BE-38 | c222046, dd2af3e |
 | ST-20 | fb53d42 |
-| UI-04 | fdcbc6e, b2a41e7 |
+| UI-04 | fdcbc6e, b2a41e7, 1da9392 |
 | UI-05 | b2a41e7 |
 | UI-06 | 49e4cae |
 | UI-07 | a04f86d |
@@ -226,7 +228,7 @@ The round was scoped by the household to real bugs whose fix is a few lines in a
 | UI-19 | f3ba2db |
 | UI-20 | fc1b406 |
 | UI-21 | fc1b406 |
-| UI-22 | e0fddab |
+| UI-22 | e0fddab, c75e2b4 |
 | UI-25 | f3ba2db |
 | UI-27 | b93632c |
 | UI-28 | 040d25b |
@@ -252,15 +254,41 @@ Details: [copilot-remediation-plan.md](copilot-remediation-plan.md) section 6.
 - After a failed research pass, the panel still showed the previous pass's spend as the last pass. `b5de286` clears it, says when a failed pass's cost is unknown, and `074d71b` re-reads what such a pass stored, so it isn't paid for twice.
 - After confirming a proposal, the gate's new sentence kept saying it ruled nobody out. `50713a2` re-reads the gate answers after a confirm or a research pass.
 
-**Still open:** the 25 NOT_FIXED and 4 PARTIAL findings are planned in [copilot-remediation-plan.md](copilot-remediation-plan.md):
+**Still open:** the 25 NOT_FIXED and 5 PARTIAL findings are planned in [copilot-remediation-plan.md](copilot-remediation-plan.md):
 
 - section 3 lists five that have a smaller fix awaiting the household's OK;
 - section 4 lists the rest, held for later.
 
-New defects found during the round are listed in that plan's section 7, together with these:
+New defects found during the round are listed in that plan's section 7. The four small ones found last were fixed the same way, test-first, on 2026-10-18:
 
-- the Compare refusal for an unset comparator limit has no "Change it in Configure" link (`shell/refusalRemedy.ts`);
-- with a refetch age set, a rejected pair counts as fresh and cannot be retried through the plan (`runs.sql:254`);
-- a billed empty research answer is described as "could not be reached";
-- the manual-entry submit has no in-flight guard.
+| Defect | Commit |
+|---|---|
+| NEW-26: the Compare refusal for an unset comparator limit offered no way to Configure | 9dc38a1 |
+| NEW-27: with a refetch age set, a rejected figure made its pair fresh, so the plan never asked again | a02dfb3 |
+| NEW-28: a billed research answer with no text was described as "could not be reached" | 75b2435 |
+| NEW-29: two quick submits of a hand-typed figure sent two POSTs | 347c800 |
+
+## Round 2 review (2026-10-18)
+
+Four independent agents re-read the round: a code review of the backend and of the UI, and a verification of every FIXED claim against the original finding, the code and the tests. The UI verification found all 33 UI claims fixed. The backend verification found 26 of 28 fixed. Two were partial:
+
+- **BE-21:** creating a criteria set under a malformed id still answered 500. Fixed by `72fdad1`; a probe of every other request shape found no other case.
+- **BE-31:** the forbidden import is gone and guarded, but the whole import table is not enforced. The plan left that guard for later, so BE-31 now reads PARTIAL.
+
+The reviews also found side effects of the round itself. Each was confirmed in the code (and on your data where it applies), then fixed test-first:
+
+| Defect | Commit |
+|---|---|
+| NEW-30: since `85d545d`, a figure rejected without a failure row counted as neither stored nor failed. That is every run before BE-08, and runs 15 to 17, whose 156 AI figures `0473` rejected. The Acquire screen dropped the `llm` source from those runs. | 64e0872 |
+| NEW-31: a research pass refused with 501 (the AI source switched off) said its cost was unknown and re-read the answers | 769b5e8 |
+| UI-04 (rest): a failed read of a run the reader had left still showed its error over the run they chose | 1da9392 |
+| UI-22 (rest): a non-euro figure that moved only in euros read "refreshed" beside two identical cells | c75e2b4 |
+| NEW-32: when their read failed, the browser suite's restores could clear your live spend cap or coverage floor, or write `matching` over Greece's gate answer (checked by lint and typecheck only: the browser suite still runs on the live database) | ffdcaef, f673460 |
+| NEW-33: BE-27 moved three tables' read date to a day nobody read the publishers. You chose to restore the dates; your current database keeps the 12 shortened notes until a table is really read again | b092c2c |
+| NEW-34: controls disabled while a save runs dropped keyboard focus. You chose to keep focus on the control | 7bf3184, 73ebfc4, 947ec2b, 2c8e0f1, bf05144, 17c5bdc |
+| NEW-35: freshness counted a switched-off source's figures, which cannot score | cfb0547 |
+| NEW-43: tabbing onto a weight slider, or clicking its thumb without dragging, sent a weight nobody chose. Chromium holds a slider's value snapped to its 0.5 step, so a stored 6.8 read back as 7 and was sent, rebalancing the pillar. This predates round 2; the focus work found it. | f230c3a |
+| Text left behind: the `start_run` comment (NEW-15) and the `make coverage` help line (BE-38) | dd2af3e |
+
+Recorded for later, in the plan's section 7: NEW-36 to NEW-42 and NEW-44 to NEW-47. One of them needs your attention: **NEW-47**. The builder's commit `2c04381` (2026-10-02, before this review) deleted 929 lines of `styles.css` without saying so, and 56 classes the screens still use have had no styles since. They include the criterion rows, the confirmation strip, the tiles and the danger button. It is a look, not a behaviour, but it is a lost write, and it needs a visual check and a restore.
 

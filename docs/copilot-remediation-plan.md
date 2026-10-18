@@ -1,6 +1,8 @@
 # Copilot remediation plan
 
-**Status:** plan only. No code has changed and nothing has been written to your database. Written 2026-10-15 against `c943761`, where `make check` is green: 2,863 backend tests, 96.92% coverage, 1,116 UI tests.
+**Status (2026-10-18):** round 2 is done. 37 findings and the 18 small defects found while planning were fixed test-first (section 2). Since then, 22 more defects were found (NEW-26 to NEW-47, section 7): 11 are fixed and 11 are recorded for later. BE-31 stays partial, as planned. Per finding, the tracker reads **55 FIXED, 5 PARTIAL, 25 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)). Still waiting for your OK: the five smaller fixes in section 3. Held for later: section 4, and the NEW items marked Later.
+
+This plan was written on 2026-10-15 against `c943761`, where `make check` was green: 2,863 backend tests, 96.92% coverage, 1,116 UI tests.
 
 **Sources:**
 
@@ -280,6 +282,28 @@ No migration, contract change or browser run happens this round.
 | NEW-23 | A corrected published table without a new date is silently ignored | Later (a new guard) | `published_tables/table.py:110` |
 | NEW-24 | reqs.md has two Q231 entries and no Q233, which `execution.py:139` cites | This round (D1) | `reqs.md:3051, 3257` |
 | NEW-25 | Breakdown reduction (arch.md 7.2 step 3) doesn't exist yet | Later (city level) | `S/evaluation/ranking.py:303-326` |
+| NEW-26 | The Compare refusal for an unset comparator limit offers no way to Configure | Fixed after the round (9dc38a1) | `ui/src/shell/refusalRemedy.ts` |
+| NEW-27 | With a refetch age set, a rejected figure makes its pair fresh, so neither the plan nor a scoped run asks again | Fixed after the round (a02dfb3) | `runs.sql` `select_last_retrieval_dates` |
+| NEW-28 | A billed research answer with no text is described as "could not be reached" | Fixed after the round (75b2435) | `S/data_sources/llm/gates.py` |
+| NEW-29 | Two quick submits of a hand-typed figure send two POSTs | Fixed after the round (347c800) | `ui/src/routes/run/useManualEntry.ts` |
+| NEW-30 | A figure rejected without a failure row (runs before BE-08; runs 15 to 17 after `0473`) counts as neither stored nor failed, so Acquire drops its source | Fixed by the review (64e0872) | `runs.sql` `select_run_by_source` |
+| NEW-31 | A research pass refused with 501 says its cost is unknown and re-reads | Fixed by the review (769b5e8) | `ui/src/routes/configure/proposals/proposalReading.ts` |
+| NEW-32 | When their read fails, the browser suite's restores can clear the live spend cap or coverage floor, or overwrite a gate answer | Fixed by the review (ffdcaef, f673460) | `ui/e2e/sanity.spec.ts`, `gate-c.spec.ts` |
+| NEW-33 | BE-27 moved three tables' read date to a day nobody read the publishers | Fixed by the review (b092c2c); you chose to restore the dates | `published_tables/tables/*.csv` |
+| NEW-34 | Controls disabled while a save runs drop keyboard focus | Fixed by the review (7bf3184, 73ebfc4, 947ec2b, 2c8e0f1, bf05144, 17c5bdc); you chose to keep focus on the control | 7 places in Configure |
+| NEW-35 | Freshness counts a switched-off source's figures, which cannot score | Fixed by the review (cfb0547) | `runs.sql` `select_last_retrieval_dates` |
+| NEW-36 | A PUT of a gate answer marked `llm` over a person's answer stores nothing and still answers 200 | Later (needs a refusal in the contract) | `S/api/rules.py:395-416` |
+| NEW-37 | The `nothing_to_fetch` refusal prints the age as "30 days, 0:00:00" | Later (nit) | `S/data_acquisition/execution.py:171-173` |
+| NEW-38 | `useManualEntry`'s `onStored` is never passed | Later (nit) | `ui/src/routes/run/useManualEntry.ts:40` |
+| NEW-39 | The diff's exact view leaves out an assigned score's rationale, so two scores differing only there read alike | Later (low) | `ui/src/format/figure.ts` |
+| NEW-40 | Planning a run for an unknown level answers 200 with nothing to do; starting one is refused | Later (with BE-24) | `S/api/runs.py:500-520` |
+| NEW-41 | The target contract declares no 422 on any operation, so no 422 body can be checked against it | Later (with NEW-18) | `docs/openapi.yaml` |
+| NEW-42 | "Saved." after a settings or household save is not announced to a screen reader | Later (low) | `SettingsPanel.tsx:59`, `HouseholdPanel.tsx:113` |
+| NEW-43 | Tabbing onto a weight slider, or clicking its thumb without dragging, sends the stored weight snapped to the 0.5 step (6.8 becomes 7) and rebalances | Fixed (f230c3a) | `CriteriaPanel.tsx`, `PillarWeightsPanel.tsx` |
+| NEW-44 | Older controls still disable themselves during a write and drop keyboard focus, as NEW-34 did | Later (low; NEW-34's fix applies) | `ProposalsPanel.tsx`, `ManualEntryPanel.tsx`, `RunScreen.tsx`, `ItemGroups.tsx` |
+| NEW-45 | Focus is still lost when a source is moved down or dragged (the row is re-mounted), and when a successful undo or reset removes the button pressed | Later (low) | `DataSourcesPanel.tsx`, `RecentChanges.tsx` |
+| NEW-46 | A held slider, lock or "blocks scoring" box looks unchanged, because no `:disabled` style ever covered them | Later (looks) | `styles.css` |
+| NEW-47 | The builder's `2c04381` (2026-10-02) deleted 929 lines of `styles.css` unannounced; 56 classes still used on screen have no styles, including the criterion rows, confirmation strip, tiles and danger button | Later (looks; needs a visual check and a restore) | `ui/src/styles.css` |
 
 Two more were folded into existing findings: BE-27 affects two more tables than reported, and a mixed retry drops a stand-in failure (part of BE-11).
 
