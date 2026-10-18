@@ -292,3 +292,22 @@ The reviews also found side effects of the round itself. Each was confirmed in t
 
 Recorded for later, in the plan's section 7: NEW-36 to NEW-42 and NEW-44 to NEW-47. One of them needs your attention: **NEW-47**. The builder's commit `2c04381` (2026-10-02, before this review) deleted 929 lines of `styles.css` without saying so, and 56 classes the screens still use have had no styles since. They include the criterion rows, the confirmation strip, the tiles and the danger button. It is a look, not a behaviour, but it is a lost write, and it needs a visual check and a restore.
 
+## Checkpoint (2026-10-18)
+
+Everything above, tested and reviewed again at `cfabd6c`:
+
+- **`make check`:** green. 3,027 backend tests at 97.25% coverage, the import contracts kept, every audit passing; 1,383 UI tests, eslint without errors.
+- **Browser suite** (Playwright), against the containers rebuilt at `cfabd6c`: 25 passed, 4 failed, 3 did not run.
+  - The four failures are specs left stale on 2026-10-04, when the builder's `2a13d73` named the weight sliders after their attributes' catalog names and `ddbf555` gave the Compare matrix a "Pillar" column instead of "Attribute". Neither changed since `acb56e5`, so none of the four comes from this review's commits (NEW-51).
+  - The three that did not run follow a failure in the same serial spec.
+  - Your live data came back as it was. Weights, rules, sources, settings and the gate answer are identical to before the run. The run added one `[e2e]` saved ranking, which the next boot discards, and run 123: one free Eurostat figure for Portugal.
+- **Five independent reviews** of `acb56e5..cfabd6c`, by area (acquisition and storage, API and evaluation, Configure, Acquire/Rank/Compare, and test integrity). The API and Configure reviews found nothing significant. The others found three defects in this review's own work, each confirmed in the code:
+
+| Defect | Severity | Status |
+|---|---|---|
+| NEW-48: since BE-08 (`cef4abb`), a retry can bill a paid source again for a country it answered, because a free source's rejected figure puts that country in the retry. It is BE-11's rectangle with a new trigger | Medium | Open |
+| NEW-49: since `fdcbc6e` (UI-04), a Refresh clicked while a Stop is being sent can leave the card showing no stop, with Stop live again | Medium | Open |
+| NEW-50: two UI-06 tests decide on a fixed one-second wait, so under load they pass without proving anything, or fail for no reason. One assertion has checked nothing since NEW-34 | Medium (tests) | Open |
+
+The Acquire review also confirmed UI-03's remaining part again: gate C's restore re-dates the gate answer and drops its period, pages and override. The fix is the browser suite's own database.
+

@@ -1,6 +1,6 @@
 # Copilot remediation plan
 
-**Status (2026-10-18):** round 2 is done. 37 findings and the 18 small defects found while planning were fixed test-first (section 2). Since then, 22 more defects were found (NEW-26 to NEW-47, section 7): 11 are fixed and 11 are recorded for later. BE-31 stays partial, as planned. Per finding, the tracker reads **55 FIXED, 5 PARTIAL, 25 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)). Still waiting for your OK: the five smaller fixes in section 3. Held for later: section 4, and the NEW items marked Later.
+**Status (2026-10-18):** round 2 is done. 37 findings and the 18 small defects found while planning were fixed test-first (section 2). Since then, 26 more defects were found (NEW-26 to NEW-51, section 7): 11 are fixed, 11 are recorded for later, and 4 found at the checkpoint are open. BE-31 stays partial, as planned. Per finding, the tracker reads **55 FIXED, 5 PARTIAL, 25 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)). Still waiting for your OK: the five smaller fixes in section 3. Held for later: section 4, and the NEW items marked Later.
 
 This plan was written on 2026-10-15 against `c943761`, where `make check` was green: 2,863 backend tests, 96.92% coverage, 1,116 UI tests.
 
@@ -304,6 +304,10 @@ No migration, contract change or browser run happens this round.
 | NEW-45 | Focus is still lost when a source is moved down or dragged (the row is re-mounted), and when a successful undo or reset removes the button pressed | Later (low) | `DataSourcesPanel.tsx`, `RecentChanges.tsx` |
 | NEW-46 | A held slider, lock or "blocks scoring" box looks unchanged, because no `:disabled` style ever covered them | Later (looks) | `styles.css` |
 | NEW-47 | The builder's `2c04381` (2026-10-02) deleted 929 lines of `styles.css` unannounced; 56 classes still used on screen have no styles, including the criterion rows, confirmation strip, tiles and danger button | Later (looks; needs a visual check and a restore) | `ui/src/styles.css` |
+| NEW-48 | A retry can bill a paid source again for a country it answered: since BE-08 a free source's rejected figure puts that country in the retry, and every retried source is asked about every retried country (BE-11) | Open (checkpoint review) | `S/data_acquisition/execution.py:566-574` |
+| NEW-49 | A Refresh clicked while a Stop is being sent outranks the stop's own read, so the card can show no stop and offer Stop again | Open (checkpoint review) | `ui/src/routes/run/useRunScreen.ts:250-266` |
+| NEW-50 | Two UI-06 tests decide on a fixed one-second wait; one assertion has checked nothing since NEW-34 | Open (checkpoint review) | `HouseholdPanel.test.tsx:366-373`, `SettingsPanel.test.tsx:357-367` |
+| NEW-51 | Four browser specs are stale since 2026-10-04: they look for sliders by attribute id and a Compare column called "Attribute" | Open (checkpoint test run) | `ui/e2e/gate-c.spec.ts`, `minimum-end-to-end.spec.ts`, `sanity.spec.ts` |
 
 Two more were folded into existing findings: BE-27 affects two more tables than reported, and a mixed retry drops a stand-in failure (part of BE-11).
 
