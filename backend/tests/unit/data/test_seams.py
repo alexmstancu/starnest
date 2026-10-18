@@ -60,6 +60,7 @@ class InMemoryValueStore(ValueStore):
     def __init__(self) -> None:
         self._values: list[Value] = []
         self._external_scores: list[ExternalScore] = []
+        self._reused: list[tuple[str, str]] = []
 
     async def read_active_values(self, *, level=None, candidates=(), attributes=()):
         return tuple(value for value in self._values if not value.is_rejected)
@@ -83,6 +84,9 @@ class InMemoryValueStore(ValueStore):
         )
         self._values.extend(stored)
         return stored
+
+    async def record_reuse(self, run, pairs):
+        self._reused.extend(pairs)
 
     async def read_external_scores(self, *, candidate=None, level=None):
         return tuple(self._external_scores)

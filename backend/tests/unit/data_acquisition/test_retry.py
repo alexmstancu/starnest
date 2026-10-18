@@ -160,6 +160,9 @@ class RecordingValueStore:
         self.appended.extend(values)
         return tuple(values)
 
+    async def record_reuse(self, run, pairs):  # type: ignore[no-untyped-def]
+        return None
+
     async def read_active_values(self, *, candidates=None, attributes=None):  # type: ignore[no-untyped-def]
         """What the stand-in step reads to find a figure worth borrowing."""
         return self._holds

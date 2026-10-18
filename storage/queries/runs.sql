@@ -85,6 +85,16 @@ WHERE  data_acquisition_run = :data_acquisition_run
   AND  candidate = :candidate
   AND  attribute = :attribute;
 
+-- name: insert_run_reuse(data_acquisition_run, pairs)!
+-- Record the (candidate, attribute) pairs a run re-confirmed from a source that answered but
+-- stored no new row -- a transcribed table re-read as the same observation (ST-09). The
+-- accounting reads these so the pair counts completed rather than unanswered. Idempotent: a pair
+-- re-confirmed twice in one run is the one row the primary key allows.
+INSERT INTO data_acquisition_run_reuse (data_acquisition_run, candidate, attribute)
+SELECT :data_acquisition_run, pair.candidate, pair.attribute
+FROM   jsonb_to_recordset(:pairs::jsonb) AS pair(candidate text, attribute text)
+ON CONFLICT ON CONSTRAINT data_acquisition_run_reuse_pkey DO NOTHING;
+
 -- Reading runs.
 
 -- name: select_runs(limit_rows, offset_rows)
@@ -115,16 +125,25 @@ SELECT r.id,
         WHERE  scope.data_acquisition_run = r.id)
        * (SELECT count(*) FROM data_acquisition_run_attribute AS scope
           WHERE  scope.data_acquisition_run = r.id) AS items_total,
-       (SELECT count(DISTINCT (v.candidate, v.attribute))
-        FROM   value AS v
-        WHERE  v.data_acquisition_run = r.id) AS items_completed,
+       (SELECT count(*)
+        FROM   (SELECT v.candidate, v.attribute
+                FROM   value AS v
+                WHERE  v.data_acquisition_run = r.id
+                UNION
+                SELECT reuse.candidate, reuse.attribute
+                FROM   data_acquisition_run_reuse AS reuse
+                WHERE  reuse.data_acquisition_run = r.id) AS answered) AS items_completed,
        (SELECT count(DISTINCT (f.candidate, f.attribute))
         FROM   data_acquisition_failure AS f
         WHERE  f.data_acquisition_run = r.id
           AND  NOT EXISTS (SELECT 1 FROM value AS v
                            WHERE  v.data_acquisition_run = r.id
                              AND  v.candidate = f.candidate
-                             AND  v.attribute = f.attribute)) AS items_failed
+                             AND  v.attribute = f.attribute)
+          AND  NOT EXISTS (SELECT 1 FROM data_acquisition_run_reuse AS reuse
+                           WHERE  reuse.data_acquisition_run = r.id
+                             AND  reuse.candidate = f.candidate
+                             AND  reuse.attribute = f.attribute)) AS items_failed
 FROM   data_acquisition_run AS r
 ORDER  BY r.started_at DESC, r.id DESC
 LIMIT  :limit_rows OFFSET :offset_rows;
@@ -170,16 +189,25 @@ SELECT r.id,
         WHERE  scope.data_acquisition_run = r.id)
        * (SELECT count(*) FROM data_acquisition_run_attribute AS scope
           WHERE  scope.data_acquisition_run = r.id) AS items_total,
-       (SELECT count(DISTINCT (v.candidate, v.attribute))
-        FROM   value AS v
-        WHERE  v.data_acquisition_run = r.id) AS items_completed,
+       (SELECT count(*)
+        FROM   (SELECT v.candidate, v.attribute
+                FROM   value AS v
+                WHERE  v.data_acquisition_run = r.id
+                UNION
+                SELECT reuse.candidate, reuse.attribute
+                FROM   data_acquisition_run_reuse AS reuse
+                WHERE  reuse.data_acquisition_run = r.id) AS answered) AS items_completed,
        (SELECT count(DISTINCT (f.candidate, f.attribute))
         FROM   data_acquisition_failure AS f
         WHERE  f.data_acquisition_run = r.id
           AND  NOT EXISTS (SELECT 1 FROM value AS v
                            WHERE  v.data_acquisition_run = r.id
                              AND  v.candidate = f.candidate
-                             AND  v.attribute = f.attribute)) AS items_failed,
+                             AND  v.attribute = f.attribute)
+          AND  NOT EXISTS (SELECT 1 FROM data_acquisition_run_reuse AS reuse
+                           WHERE  reuse.data_acquisition_run = r.id
+                             AND  reuse.candidate = f.candidate
+                             AND  reuse.attribute = f.attribute)) AS items_failed,
        -- items_unanswered closes the arithmetic (reqs.md Q217): a pair the scope names that
        -- produced neither a value nor a failure. Eurostat answers with a whole indicator and
        -- simply omits Liechtenstein, so the adapter records no figure and, rightly, no failure
@@ -199,7 +227,11 @@ SELECT r.id,
           AND  NOT EXISTS (SELECT 1 FROM data_acquisition_failure AS f
                            WHERE  f.data_acquisition_run = r.id
                              AND  f.candidate = scope_c.candidate
-                             AND  f.attribute = scope_a.attribute)) AS items_unanswered
+                             AND  f.attribute = scope_a.attribute)
+          AND  NOT EXISTS (SELECT 1 FROM data_acquisition_run_reuse AS reuse
+                           WHERE  reuse.data_acquisition_run = r.id
+                             AND  reuse.candidate = scope_c.candidate
+                             AND  reuse.attribute = scope_a.attribute)) AS items_unanswered
 FROM   data_acquisition_run AS r
 WHERE  r.id = :data_acquisition_run;
 
@@ -236,6 +268,10 @@ WHERE  scope_c.data_acquisition_run = :data_acquisition_run
                    WHERE  f.data_acquisition_run = :data_acquisition_run
                      AND  f.candidate = scope_c.candidate
                      AND  f.attribute = scope_a.attribute)
+  AND  NOT EXISTS (SELECT 1 FROM data_acquisition_run_reuse AS reuse
+                   WHERE  reuse.data_acquisition_run = :data_acquisition_run
+                     AND  reuse.candidate = scope_c.candidate
+                     AND  reuse.attribute = scope_a.attribute)
 ORDER  BY scope_c.candidate, scope_a.attribute;
 
 -- name: select_run_values(data_acquisition_run)

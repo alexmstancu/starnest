@@ -75,6 +75,7 @@ OBJECTIVE = {
     "data_source",
     "data_acquisition_run",
     "data_acquisition_failure",
+    "data_acquisition_run_reuse",
     "data_acquisition_run_attribute",
     "data_acquisition_run_candidate",
     "external_score",

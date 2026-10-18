@@ -235,6 +235,38 @@ class TestWhatNobodyAnswered:
         assert run.items_unanswered == 0
         assert run.unanswered == ()
 
+    async def test_a_re_confirmed_pair_counts_completed_not_unanswered(
+        self, pool: AsyncConnectionPool, a_wider_run: int
+    ) -> None:
+        """ST-09. A source re-confirmed a figure already on record -- a transcribed table re-read
+        as the same observation -- so the run stored no new row but did answer the pair. It
+        counts completed, drops out of the list of items to ask again, and the three counts still
+        sum to the total."""
+        store = PostgresRunStore(pool)
+        await PostgresValueStore(pool).record_reuse(a_wider_run, [("country.portugal", OVERBURDEN)])
+
+        run = await store.read_run(a_wider_run)
+
+        assert run.items_completed == 1
+        assert run.items_unanswered == 3
+        assert ("country.portugal", OVERBURDEN) not in [
+            (item.candidate, item.attribute) for item in run.unanswered
+        ]
+        assert run.items_completed + run.items_failed + run.items_unanswered == run.items_total
+
+    async def test_a_re_confirmed_pair_is_counted_once_even_if_recorded_twice(
+        self, pool: AsyncConnectionPool, a_wider_run: int
+    ) -> None:
+        """Idempotent per run: a retry re-reading the same table records the pair again, and the
+        primary key keeps it one row, so the count does not drift."""
+        values = PostgresValueStore(pool)
+        await values.record_reuse(a_wider_run, [("country.portugal", OVERBURDEN)])
+        await values.record_reuse(a_wider_run, [("country.portugal", OVERBURDEN)])
+
+        run = await PostgresRunStore(pool).read_run(a_wider_run)
+
+        assert run.items_completed == 1
+
 
 def a_figure(run: int, candidate: str, attribute: str, source: str = "eurostat") -> Value:
     """One stored figure, with the provenance every value carries and nothing incidental."""

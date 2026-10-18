@@ -11,7 +11,8 @@ answer everywhere at once. Reimplementing that ranking in Python would give it a
 definition that could drift, and drift silently.
 """
 
-from collections.abc import Mapping, Sequence
+import json
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from psycopg import AsyncConnection
@@ -181,6 +182,21 @@ class PostgresValueStore(ValueStore):
         """
         stored = [await self._append_one(value) for value in values]
         return tuple(value for value in stored if value is not None)
+
+    async def record_reuse(self, run: int, pairs: Iterable[tuple[str, str]]) -> None:
+        """Record the pairs this run re-confirmed but did not store again (ST-09).
+
+        One statement: the batch is small (the few transcribed items a run re-read) and the
+        insert is idempotent, so a retry re-reading the same table records nothing new."""
+        serialised = [
+            {"candidate": candidate, "attribute": attribute} for candidate, attribute in pairs
+        ]
+        if not serialised:
+            return
+        async with acquire(self._pool) as connection:
+            await self._queries.insert_run_reuse(
+                connection, data_acquisition_run=run, pairs=json.dumps(serialised)
+            )
 
     async def _append_one(self, value: Value) -> Value | None:
         async with acquire(self._pool) as connection:

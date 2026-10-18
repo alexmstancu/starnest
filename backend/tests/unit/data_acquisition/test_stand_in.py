@@ -236,6 +236,9 @@ class ActiveFiguresOnly:
         self.appended.extend(values)
         return tuple(values)
 
+    async def record_reuse(self, run, pairs):
+        return None
+
 
 class TestTheRunStep:
     async def test_it_asks_for_the_substitutes_figures_not_the_candidates(self) -> None:

@@ -109,6 +109,9 @@ class RecordingValueStore:
         self.appended.extend(values)
         return tuple(values)
 
+    async def record_reuse(self, run, pairs):
+        return None
+
 
 class RecordingRunStore(RunStore):
     """A store that remembers what was opened and closed, and answers reads from one Run."""

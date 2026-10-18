@@ -98,14 +98,26 @@ class StubAdapter(SourceAdapter):
 
 
 class RecordingValueStore:
-    """Just enough `ValueStore` to see what a run tried to append."""
+    """Just enough `ValueStore` to see what a run tried to append and re-confirm.
 
-    def __init__(self) -> None:
+    `already_holds` lets a test say which pairs are already on record, so `append` returns them
+    as no-ops the way the real store does for a re-read transcribed figure -- which is what makes
+    a reuse happen (ST-09)."""
+
+    def __init__(self, already_holds: frozenset[tuple[str, str]] = frozenset()) -> None:
         self.appended: list[Value] = []
+        self.reused: list[tuple[str, str]] = []
+        self._already_holds = already_holds
 
     async def append(self, values):
-        self.appended.extend(values)
-        return tuple(values)
+        newly = [
+            v for v in values if (str(v.candidate), str(v.attribute)) not in self._already_holds
+        ]
+        self.appended.extend(newly)
+        return tuple(newly)
+
+    async def record_reuse(self, run, pairs) -> None:
+        self.reused.extend(pairs)
 
 
 class TestWhatARunAsksFor:
@@ -193,6 +205,44 @@ class TestWhatARunKeeps:
 
         assert [value.candidate for value in store.appended] == [first.candidate]
         assert store.appended[0].data_acquisition_run == 7
+
+    async def test_a_source_re_confirming_a_stored_pair_records_a_reuse_not_a_gap(self) -> None:
+        """ST-09. The source answered, but the figure was already on record so the append is a
+        no-op -- a transcribed table re-read as the same observation. The run records the pair as
+        re-confirmed, so its accounting counts it completed rather than offering to ask again for
+        a figure that is already there."""
+        value = a_value()
+        pair = (str(value.candidate), str(value.attribute))
+        store = RecordingValueStore(already_holds=frozenset({pair}))
+        adapter = StubAdapter({OVERBURDEN: Acquired(values=(value,))}, declares=(OVERBURDEN,))
+
+        outcome = await acquire(
+            adapter=adapter,
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=store,
+            run=5,
+        )
+
+        assert store.appended == []
+        assert store.reused == [pair]
+        assert outcome.stored == ()
+
+    async def test_a_freshly_stored_pair_is_not_recorded_as_a_reuse(self) -> None:
+        """The other side: a pair stored for the first time is not re-confirmation, so nothing
+        goes to the reuse record -- only a no-op append is."""
+        store = RecordingValueStore()
+        adapter = StubAdapter({OVERBURDEN: Acquired(values=(a_value(),))}, declares=(OVERBURDEN,))
+
+        await acquire(
+            adapter=adapter,
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=store,
+            run=5,
+        )
+
+        assert store.reused == []
 
     async def test_a_run_completes_and_reports_what_failed(self) -> None:
         """`reqs.md` 6.4. A run that aborted on the first problem would be a run that never

@@ -19,7 +19,7 @@ here still reads only.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 from starnest.candidates import LevelHierarchy
 from starnest.data.attribute import Attribute, Pillar
@@ -109,6 +109,18 @@ class ValueStore(ABC):
         Append, never update: a correction is a new value that supersedes the old one through
         the active-value rule, and a value that failed validation is stored already carrying
         its `rejection_reason` rather than updated into rejection later.
+        """
+
+    @abstractmethod
+    async def record_reuse(self, run: int, pairs: Iterable[tuple[str, str]]) -> None:
+        """Record that this run re-confirmed each (candidate, attribute) pair -- the source
+        answered, but the figure was already on record so `append` stored no new row (ST-09).
+
+        A transcribed table is stamped with the day it was transcribed, so re-reading it is the
+        same observation and its append is a no-op. Without this the run would count the pair
+        `unanswered`, a pair with no value and no failure, and offer to ask again though the
+        figure is there. The accounting reads these rows so a re-confirmed pair counts as
+        completed. Idempotent per run; an empty set records nothing.
         """
 
     @abstractmethod

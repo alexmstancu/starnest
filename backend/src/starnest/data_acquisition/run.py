@@ -128,7 +128,18 @@ async def acquire(
                 )
             )
             if fetched:
-                stored.extend(await values.append(fetched))
+                newly = await values.append(fetched)
+                stored.extend(newly)
+                # **A pair the source answered that was already on record is re-confirmed, not
+                # unanswered** (ST-09). A transcribed table re-read is the same observation, so
+                # its append is a no-op and no new row carries this run -- but the source did
+                # answer. Recorded so the run counts the pair completed rather than offering to
+                # ask again for a figure that is there. Keyed on the pair: a new value for it
+                # means it was stored, so only a pair with nothing new is a reuse.
+                if run is not None:
+                    answered = {(str(v.candidate), str(v.attribute)) for v in fetched}
+                    stored_now = {(str(v.candidate), str(v.attribute)) for v in newly}
+                    await values.record_reuse(run, answered - stored_now)
             # Which source failed, stamped for the same reason as the run above: two sources
             # answer the total tax rate, and a retry has to know which one to ask again.
             #
