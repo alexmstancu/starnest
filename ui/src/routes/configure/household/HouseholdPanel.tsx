@@ -183,10 +183,14 @@ function HouseholdFields({
           />
         </div>
 
+        {/* **Disabled while nothing can be sent; held while a save is in flight** (NEW-34).
+            Disabled under the keyboard, Chromium would throw its focus to the page; held, it
+            keeps focus and the form refuses the submit until the answer is in. */}
         <button
           type="submit"
           className="button button--primary"
-          disabled={form.incomplete || form.saving || form.invalid.length > 0}
+          disabled={form.incomplete || form.invalid.length > 0}
+          aria-disabled={form.saving || undefined}
         >
           {form.saving ? "Saving…" : "Save household"}
         </button>

@@ -528,7 +528,7 @@ a:hover {
   border-color: var(--colour-accent);
 }
 
-.button--primary:active:not(:disabled) {
+.button--primary:active:not(:disabled, [aria-disabled="true"]) {
   background: var(--colour-accent-strong);
   border-color: var(--colour-accent-strong);
 }
@@ -842,7 +842,7 @@ select.field__control {
   box-shadow: var(--shadow-control);
 }
 
-.button--primary:hover:not(:disabled) {
+.button--primary:hover:not(:disabled, [aria-disabled="true"]) {
   border-color: var(--colour-accent-strong);
   background: var(--colour-accent-strong);
 }

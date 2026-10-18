@@ -1,8 +1,13 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { mockServer } from "../../../mocks/server";
+import {
+  expectHeld,
+  expectNotHeld,
+  followChromiumFocusFixup,
+} from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
 
 /**
@@ -84,6 +89,8 @@ describe("the household panel", () => {
     expect(
       household.getByRole("button", { name: "Save household" }),
     ).toBeDisabled();
+    // Disabled outright rather than held: nothing is in flight, there is only nothing to send.
+    expectNotHeld(household.getByRole("button", { name: "Save household" }));
     expect(
       household.getByText(
         /Income, adults, children, the home country and one citizenship/,
@@ -269,19 +276,78 @@ describe("the household panel while a save is in flight", () => {
 
     await user.click(household.getByRole("button", { name: "Save household" }));
     const saving = household.getByRole("button", { name: "Saving…" });
-    expect(saving).toBeDisabled();
-    // Enter in a field submits too, and the button being disabled does not stop that.
+    expectHeld(saving);
+    // Held, it still takes a click -- and Enter in a field submits as well. Neither sends.
+    await user.click(saving);
     fireEvent.submit(saving.closest("form")!);
     await waitFor(() => expect(writes.sent).toHaveLength(1));
 
     writes.release();
 
     await waitFor(() =>
-      expect(
-        household.getByRole("button", { name: "Save household" }),
-      ).toBeEnabled(),
+      expectNotHeld(household.getByRole("button", { name: "Save household" })),
     );
     expect(writes.sent).toHaveLength(1);
+  });
+
+  /**
+   * NEW-34. **Held, never disabled.** Chromium throws focus off a button the moment it is
+   * disabled and does not give it back, so a keyboard user who saved with Enter was put back on
+   * the page. jsdom keeps focus on a disabled button, which is why this follows Chromium's rule.
+   */
+  describe("from the keyboard", () => {
+    beforeEach(() => followChromiumFocusFixup());
+
+    it("keeps focus on Save while it saves, and a second Enter sends nothing", async () => {
+      const user = userEvent.setup();
+      const writes = holdHouseholdWrites();
+      renderShell("/configure");
+      const household = await panel();
+      const save = household.getByRole("button", { name: "Save household" });
+      act(() => save.focus());
+
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+      expect(save).toHaveFocus();
+      expectHeld(save);
+      expect(save).toHaveTextContent("Saving…");
+      await user.keyboard("{Enter}");
+
+      writes.release();
+
+      expect(await household.findByText("Saved.")).toBeInTheDocument();
+      await waitFor(() => expectNotHeld(save));
+      expect(save).toHaveFocus();
+      await user.keyboard("{Enter}");
+      // The third Enter's request arriving is what proves the second sent nothing.
+      await waitFor(() => expect(writes.sent).toHaveLength(2));
+    });
+
+    it("lets go of Save after a refused save, with focus still on it", async () => {
+      mockServer.use(
+        http.put("/v1/household", () =>
+          HttpResponse.json(
+            { code: "internal_error", message: "the household is locked" },
+            { status: 500 },
+          ),
+        ),
+      );
+      const user = userEvent.setup();
+      renderShell("/configure");
+      const household = await panel();
+      const save = household.getByRole("button", { name: "Save household" });
+      act(() => save.focus());
+
+      await user.keyboard("{Enter}");
+
+      expect(
+        await household.findByText(/the household is locked/),
+      ).toBeInTheDocument();
+      await waitFor(() => expectNotHeld(save));
+      expect(save).toBeEnabled();
+      expect(save).toHaveFocus();
+    });
   });
 
   it("keeps what was typed while the save was in flight", async () => {
@@ -329,6 +395,10 @@ describe("the household panel while a save is in flight", () => {
       /not a number that can be saved/i,
     );
     expect(field("Net annual income")).toHaveAttribute("aria-invalid", "false");
+    // Disabled outright, which is the one state Save is disabled for: nothing is in flight.
+    const save = household.getByRole("button", { name: "Save household" });
+    expect(save).toBeDisabled();
+    expectNotHeld(save);
     expect(sent).toEqual([]);
   });
 });
