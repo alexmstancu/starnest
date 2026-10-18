@@ -899,7 +899,7 @@ unless the error message is worth the duplication.**
 
 | Layer | Catches | Example |
 |---|---|---|
-| `api/` | Malformed requests | Missing field, unparseable id, unknown query parameter → `400` |
+| `api/` | Malformed requests | Missing field, unparseable id, unknown query parameter, undeclared body field, a `null` the domain gives no meaning → `422` `invalid_request`, never a `400` (BE-23) |
 | Policy modules | Domain invariants | Weights that would not sum to 100; a rebalance blocked because every other weight is locked; a threshold shape that contradicts the attribute's value type |
 | The database | Everything structural | Type agreement, one-of on non-match reasons, singletons, foreign keys, allowed ranges (section 3.3b) |
 
