@@ -365,10 +365,14 @@ describe("the household panel while a save is in flight", () => {
 
     writes.release();
 
+    // **Waited for, not timed** (NEW-50). The save is over once its button is back and no
+    // longer held, which is after the answer was handled -- a fixed second without "Saved."
+    // proved nothing when the answer came later than that, or never.
+    await waitFor(() =>
+      expectNotHeld(household.getByRole("button", { name: "Save household" })),
+    );
     // What was stored is older than what is on screen, so it is neither adopted nor called saved.
-    await expect(
-      household.findByText("Saved.", {}, { timeout: 1_000 }),
-    ).rejects.toThrow();
+    expect(household.queryByText("Saved.")).toBeNull();
     expect(field("Maximum rent")).toHaveValue("1600");
     expect(field("Target monthly spend")).toHaveValue("3100");
   });

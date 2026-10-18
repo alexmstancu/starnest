@@ -356,15 +356,16 @@ describe("the settings panel while a save is in flight", () => {
 
     writes.release();
 
+    // **Waited for, not timed** (NEW-50). The save is over once its button is back and no
+    // longer held -- which is also all `toBeEnabled()` here used to say, and has not since the
+    // button is held rather than disabled while it saves (NEW-34).
+    await waitFor(() =>
+      expectNotHeld(settings.getByRole("button", { name: "Save settings" })),
+    );
     // What was stored is older than what is on screen, so it is neither adopted nor called saved.
-    await expect(
-      settings.findByText("Saved.", {}, { timeout: 1_000 }),
-    ).rejects.toThrow();
+    expect(settings.queryByText("Saved.")).toBeNull();
     expect(field("Spend cap per acquisition")).toHaveValue("25");
     expect(field("Candidates you can compare at once")).toHaveValue("3");
-    expect(
-      settings.getByRole("button", { name: "Save settings" }),
-    ).toBeEnabled();
   });
 
   it("still takes what came back when nothing was typed since", async () => {
