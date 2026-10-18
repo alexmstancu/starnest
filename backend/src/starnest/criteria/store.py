@@ -22,6 +22,7 @@ candidate, modelled where findings are.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 
 from starnest.criteria.criteria_set import CriteriaSet
 from starnest.criteria.identifiers import CriteriaSetId
@@ -103,6 +104,22 @@ class CriteriaStore(ABC):
         Raises `UnknownCriteriaSetError` when there is nothing to replace. Creating instead
         would turn a mistyped identifier into a new set nobody asked for, which is the kind
         of success that is worse than a failure.
+        """
+
+    @abstractmethod
+    async def edit_criteria_set(
+        self,
+        criteria_set: CriteriaSetId | str,
+        mutate: Callable[[CriteriaSet], CriteriaSet],
+    ) -> CriteriaSet:
+        """Read the set, apply `mutate`, and write the result as one locked transaction.
+
+        The whole read-modify-write of a set belongs to one request on the server -- read the
+        set, ask the domain for the changed one, write it back whole -- so two overlapping edits
+        must serialise, or the later one silently restores what the earlier turned off (ST-02).
+        The implementation holds a lock across the read and the write; `mutate` is the caller's
+        own rebalance, rename or toggle, and a refusal it raises rolls the edit back. Returns the
+        set as written, which is what the response is built from.
         """
 
     @abstractmethod

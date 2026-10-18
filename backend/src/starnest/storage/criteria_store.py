@@ -15,6 +15,7 @@ set means writing the criteria first and hanging the rest off the ids that came 
 """
 
 import json
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
@@ -110,6 +111,48 @@ class PostgresCriteriaStore(CriteriaStore):
                 connection, criteria_set=str(criteria_set.id)
             )
             await self._write_contents(connection, criteria_set)
+
+    async def edit_criteria_set(
+        self,
+        criteria_set: CriteriaSetId | str,
+        mutate: Callable[[CriteriaSet], CriteriaSet],
+    ) -> CriteriaSet:
+        """Read the set, apply `mutate`, and write the result -- all in one transaction, under a
+        lock on the set, so two overlapping edits serialise and both land (ST-02).
+
+        The whole read-modify-write happens on the server inside one request: an endpoint reads
+        the set, asks the domain for the changed one, and hands it back. Two such requests racing
+        each read the same set and each replace it whole, so the later write silently restored
+        whatever the earlier had turned off -- a gate toggle lost to an unrelated weight edit.
+        Here the lock is taken first, so the second edit waits until the first commits and then
+        reads *its* result: the mutation it applies lands on top of the other, not instead of it.
+
+        `mutate` is the caller's own domain logic -- a rebalance, a rename, a gate toggled -- and
+        may raise (a weight that cannot move, an attribute the catalog does not hold); the
+        transaction then rolls back and the refusal reaches the caller unchanged. The id never
+        changes under an edit (it is assigned once, `arch.md` 3.2a), so the lock and the write
+        name the same set.
+        """
+        async with acquire(self._pool) as connection:
+            locked = await self._queries.lock_criteria_set(
+                connection, criteria_set=str(criteria_set)
+            )
+            if locked is None:
+                raise UnknownCriteriaSetError(
+                    f"there is no criteria set called {criteria_set!r} to edit"
+                )
+            row = await self._queries.select_criteria_set(
+                connection, criteria_set=str(criteria_set), level=None
+            )
+            changed = mutate(_criteria_set_from(row))
+            await self._queries.update_criteria_set_name(
+                connection, criteria_set=str(criteria_set), name=changed.name
+            )
+            await self._queries.delete_criteria_set_contents(
+                connection, criteria_set=str(criteria_set)
+            )
+            await self._write_contents(connection, changed)
+            return changed
 
     async def delete_criteria_set(self, criteria_set: CriteriaSetId | str) -> None:
         """Discard a set, unless a saved evaluation is holding it in place.

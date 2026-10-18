@@ -180,6 +180,21 @@ ORDER  BY c.attribute;
 INSERT INTO criteria_set (id, name)
 VALUES (:criteria_set, :name);
 
+-- name: lock_criteria_set(criteria_set)^
+-- Take a row lock on the set, held until the transaction commits, so a read-modify-write of the
+-- whole set serialises against any other (ST-02). An edit reads the set, rebalances or toggles
+-- in the domain, and writes it back whole; two overlapping edits each based on the same earlier
+-- read would clobber one another, and the later one would silently restore what the earlier
+-- turned off. With this taken first, the second edit waits here until the first commits and then
+-- reads its result, so both land. Returns the row, or nothing when there is no such set to lock.
+--
+-- A plain `SELECT ... FOR UPDATE`, not folded into `select_criteria_set`: that read aggregates
+-- the criteria and rules with `jsonb_agg`, and `FOR UPDATE` is not allowed beside an aggregate.
+SELECT id
+FROM   criteria_set
+WHERE  id = :criteria_set
+FOR    UPDATE;
+
 -- name: update_criteria_set_name(criteria_set, name)!
 -- A set is renamed, never re-identified: the id is assigned once (arch.md 3.2a).
 UPDATE criteria_set

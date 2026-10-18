@@ -10,10 +10,12 @@ The `minimal` set (`0121`) is the one minE2E scores with, so it is read here as 
 catalog holds it rather than as a fixture invented to be convenient.
 """
 
+import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from psycopg import errors
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.criteria import (
@@ -273,6 +275,85 @@ class TestWritingASet:
         the kind of success that is worse than a failure."""
         with pytest.raises(UnknownCriteriaSetError, match="to replace"):
             await criteria.replace_criteria_set(_a_set("never_created", weight="100"))
+
+    async def test_editing_an_unknown_set_is_refused(self, criteria: PostgresCriteriaStore) -> None:
+        with pytest.raises(UnknownCriteriaSetError, match="to edit"):
+            await criteria.edit_criteria_set("never_created", lambda current: current)
+
+    async def test_an_edit_applies_the_mutation_and_returns_what_was_written(
+        self, criteria: PostgresCriteriaStore
+    ) -> None:
+        await criteria.create_criteria_set(_a_set("edited_by_a_test", weight="100"))
+        try:
+            written = await criteria.edit_criteria_set(
+                "edited_by_a_test", lambda current: current.model_copy(update={"name": "renamed"})
+            )
+
+            assert written.name == "renamed"
+            read_back = await criteria.read_criteria_set("edited_by_a_test", level=COUNTRY)
+            assert read_back.name == "renamed"
+        finally:
+            await criteria.delete_criteria_set("edited_by_a_test")
+
+    async def test_two_overlapping_edits_serialise_and_both_land(
+        self, criteria: PostgresCriteriaStore
+    ) -> None:
+        """ST-02. The whole set is read, changed and written back on the server, so two edits
+        racing each read the same set and the later write used to restore what the earlier had
+        turned off -- a gate toggle lost to an unrelated weight edit. Run under a row lock on the
+        set, they serialise: the second reads the first's result and both changes persist.
+
+        Both edits run through the pool at once (`max_size` > 1), so without the lock one of the
+        two writes -- the rename or the lock -- would be lost. Here the assertion holds every
+        time."""
+        await criteria.create_criteria_set(_a_set("edited_concurrently", weight="100"))
+        try:
+            rename = criteria.edit_criteria_set(
+                "edited_concurrently",
+                lambda current: current.model_copy(update={"name": "renamed under contention"}),
+            )
+            lock_the_weight = criteria.edit_criteria_set(
+                "edited_concurrently",
+                lambda current: current.model_copy(
+                    update={
+                        "criteria": tuple(
+                            criterion.model_copy(update={"weight_locked": True})
+                            for criterion in current.criteria
+                        )
+                    }
+                ),
+            )
+
+            await asyncio.gather(rename, lock_the_weight)
+
+            read_back = await criteria.read_criteria_set("edited_concurrently", level=COUNTRY)
+            assert read_back.name == "renamed under contention"
+            assert read_back.criterion_for("country.life_satisfaction").weight_locked is True
+        finally:
+            await criteria.delete_criteria_set("edited_concurrently")
+
+    async def test_the_edit_lock_blocks_a_second_writer_on_the_same_set(
+        self, criteria: PostgresCriteriaStore, pool: AsyncConnectionPool
+    ) -> None:
+        """The lock `edit_criteria_set` relies on, shown directly through the very query it uses
+        (`lock_criteria_set`): while one transaction holds the set, a second asking for the same
+        row cannot take it (ST-02). Without the query's `FOR UPDATE` the second would read the
+        stale set and overwrite the first's change. A short `lock_timeout` turns a held lock into
+        a refusal rather than a hung test -- and drives the store's own query, so dropping the
+        lock from it makes this fail."""
+        await criteria.create_criteria_set(_a_set("locked_by_a_test", weight="100"))
+        try:
+            async with pool.connection() as holder:
+                await criteria._queries.lock_criteria_set(holder, criteria_set="locked_by_a_test")
+                async with pool.connection() as contender:
+                    await contender.execute("SET LOCAL lock_timeout = '300ms'")
+                    with pytest.raises(errors.LockNotAvailable):
+                        await criteria._queries.lock_criteria_set(
+                            contender, criteria_set="locked_by_a_test"
+                        )
+                    await contender.rollback()
+        finally:
+            await criteria.delete_criteria_set("locked_by_a_test")
 
     async def test_deleting_a_set_that_does_not_exist_is_refused(
         self, criteria: PostgresCriteriaStore

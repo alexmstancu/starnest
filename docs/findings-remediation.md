@@ -155,7 +155,7 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 | ID | sev | verdict | evidence (file:line) | trigger + note | fix_status |
 |---|---|---|---|---|---|
 | ST-01 | High | REAL | `api/runs.py:250-255`; `run_store.py:41-67`; `0004:5-23` | concurrency: check-then-insert, no partial-unique/advisory lock → two running runs | wave-1 |
-| ST-02 | Medium | REAL | `criteria_store.py:90-112`; `criteria.sql` | concurrency: no version token on replace → silent last-writer-wins | wave-2 |
+| ST-02 | Medium | REAL | `criteria_store.py:90-112`; `criteria.sql` | concurrency: no version token on replace → silent last-writer-wins | FIXED (server-side transactional lock, not a client token: `edit_criteria_set` reads+mutates+writes in one tx under `lock_criteria_set` (SELECT…FOR UPDATE); the 5 edit endpoints use it; overlapping edits serialise and both land. No migration/contract/UI change) |
 | ST-03 | High | REAL | `0487:33-43` | populated upgrade: unscoped `DELETE criterion` breaks custom sets' pillar-sum | wave-1 |
 | ST-04 | Medium | REAL | `0489:59-60`;`0490:54-55`;`0491:22-23`; CHECK `0468:21-22` | populated upgrade: unconditional percentile UPDATE blocks on target_range set | wave-2 |
 | ST-05 | Medium | REAL | `0478:38-44`;`0492:26-32`; FKs `0009:110,131,147,159,173` | populated upgrade: delete+reinsert blocks on RESTRICT child FKs; loses children | wave-2 |

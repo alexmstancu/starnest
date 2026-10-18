@@ -272,9 +272,9 @@ async def update_criterion(
     Raises `WeightsAllLockedError` -- a 409 -- when every other weight in the pillar is locked,
     naming the locks so the screen can say which ones.
     """
-    current = await criteria.read_criteria_set(criteria_set_id)
-    changed = _applied(current, attribute_id, change)
-    await criteria.replace_criteria_set(changed)
+    changed = await criteria.edit_criteria_set(
+        criteria_set_id, lambda current: _applied(current, attribute_id, change)
+    )
 
     pillar = changed.criterion_for(attribute_id).pillar
     level = changed.criterion_for(attribute_id).attribute.level_id
@@ -497,9 +497,10 @@ async def rename_criteria_set(
     criteria_set_id: str, body: RenameBody, criteria: Criteria
 ) -> CriteriaSetBody:
     """The name, and only the name. Weights move through their own endpoints."""
-    current = await criteria.read_criteria_set(criteria_set_id)
-    await criteria.replace_criteria_set(current.model_copy(update={"name": body.name}))
-    return _set_body(await criteria.read_criteria_set(criteria_set_id))
+    changed = await criteria.edit_criteria_set(
+        criteria_set_id, lambda current: current.model_copy(update={"name": body.name})
+    )
+    return _set_body(changed)
 
 
 @router.delete(
@@ -533,28 +534,32 @@ async def update_pillar_weight(
     half (`criteria/rebalancing.py`). The whole level comes back because the whole level
     changed; returning one number would leave the screen showing weights that do not sum.
     """
-    current = await criteria.read_criteria_set(criteria_set_id)
-    level = _the_level_of(current, pillar_id)
-    # **Only when a weight was sent.** A lock-only request moves nothing, and asking the domain
-    # to move a locked weight to the value it already holds is refused -- correctly, since that
-    # is still a move. Unlocking is its own change, and the move comes after.
-    changed = (
-        current
-        if body.weight is None
-        else current.with_pillar_weight(pillar_id, level, Decimal(str(body.weight)))
-    )
-    if body.weight_locked is not None:
-        changed = changed.model_copy(
-            update={
-                "pillar_weights": tuple(
-                    weight.model_copy(update={"weight_locked": body.weight_locked})
-                    if str(weight.pillar) == pillar_id and str(weight.level) == level
-                    else weight
-                    for weight in changed.pillar_weights
-                )
-            }
+
+    def mutate(current: CriteriaSet) -> CriteriaSet:
+        level = _the_level_of(current, pillar_id)
+        # **Only when a weight was sent.** A lock-only request moves nothing, and asking the
+        # domain to move a locked weight to the value it already holds is refused -- correctly,
+        # since that is still a move. Unlocking is its own change, and the move comes after.
+        moved = (
+            current
+            if body.weight is None
+            else current.with_pillar_weight(pillar_id, level, Decimal(str(body.weight)))
         )
-    await criteria.replace_criteria_set(changed)
+        if body.weight_locked is not None:
+            moved = moved.model_copy(
+                update={
+                    "pillar_weights": tuple(
+                        weight.model_copy(update={"weight_locked": body.weight_locked})
+                        if str(weight.pillar) == pillar_id and str(weight.level) == level
+                        else weight
+                        for weight in moved.pillar_weights
+                    )
+                }
+            )
+        return moved
+
+    changed = await criteria.edit_criteria_set(criteria_set_id, mutate)
+    level = _the_level_of(changed, pillar_id)
     return PillarWeightsBody(
         items=tuple(
             PillarWeightBody(
@@ -614,12 +619,13 @@ async def set_match_rule_enforcement(
     """
     if not any(str(rule.id) == match_rule_id for rule in await catalog.read_match_rules()):
         raise UnknownMatchRuleError(f"there is no gate {match_rule_id!r}")
-    current = await criteria.read_criteria_set(criteria_set_id)
-    enforced = set(current.enforced_match_rules)
-    enforced.add(match_rule_id) if body.is_enforced else enforced.discard(match_rule_id)
-    await criteria.replace_criteria_set(
-        current.model_copy(update={"enforced_match_rules": frozenset(enforced)})
-    )
+
+    def mutate(current: CriteriaSet) -> CriteriaSet:
+        enforced = set(current.enforced_match_rules)
+        enforced.add(match_rule_id) if body.is_enforced else enforced.discard(match_rule_id)
+        return current.model_copy(update={"enforced_match_rules": frozenset(enforced)})
+
+    await criteria.edit_criteria_set(criteria_set_id, mutate)
     return Response(status_code=204)
 
 
@@ -642,10 +648,11 @@ async def set_compound_rule_application(
     """
     if not any(str(rule.id) == compound_rule_id for rule in await catalog.read_compound_rules()):
         raise UnknownCompoundRuleError(f"there is no compound rule {compound_rule_id!r}")
-    current = await criteria.read_criteria_set(criteria_set_id)
-    applied = set(current.applied_compound_rules)
-    applied.add(compound_rule_id) if body.is_applied else applied.discard(compound_rule_id)
-    await criteria.replace_criteria_set(
-        current.model_copy(update={"applied_compound_rules": frozenset(applied)})
-    )
+
+    def mutate(current: CriteriaSet) -> CriteriaSet:
+        applied = set(current.applied_compound_rules)
+        applied.add(compound_rule_id) if body.is_applied else applied.discard(compound_rule_id)
+        return current.model_copy(update={"applied_compound_rules": frozenset(applied)})
+
+    await criteria.edit_criteria_set(criteria_set_id, mutate)
     return Response(status_code=204)
