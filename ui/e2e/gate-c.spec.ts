@@ -1,4 +1,10 @@
-import { expect, test, type Page, type APIRequestContext } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import { readSettings } from "./settings";
 /** Where the API lives for these setup calls -- the same origin the config gives the browser. */
 const BASE_URL = process.env["UI_ORIGIN"] ?? "http://localhost:5173";
@@ -349,8 +355,11 @@ test.describe("a comparison", () => {
     const ahead = page.getByText("Ahead on").first();
     await expect(ahead).toBeVisible();
 
-    const table = page.getByRole("table").filter({ hasText: "Attribute" });
-    await expect(table.getByRole("columnheader", { name: "Portugal" })).toBeVisible();
+    // **Named, not filtered.** This filtered for the flat table of attributes headed
+    // "Attribute", which ddbf555 removed: each pillar row of the matrix now opens to its own
+    // attributes, so the filter found no table at all. The focus column is headed as the focus.
+    const table = page.getByRole("table", { name: "Every pillar, focus against comparators" });
+    await expect(table.getByRole("columnheader", { name: "Portugal (focus)" })).toBeVisible();
     await expect(table.getByRole("columnheader", { name: "Spain" })).toBeVisible();
 
     // Never mixing levels (`reqs.md` 8.5): the roster offered is the selected level's, so a
@@ -414,7 +423,7 @@ async function scoreOf(page: Page, country: string): Promise<string> {
  * this looks rather than carrying a copy of it.
  */
 async function openPillarOf(page: Page, attribute: string): Promise<string> {
-  const weight = page.getByRole("slider", { name: `Weight for ${attribute}` });
+  const weight = await weightSlider(page, attribute);
   const weights = page.getByRole("region", { name: "Pillar weights" });
   // **`all()` does not wait.** It reads the rows that exist at this instant, and the criteria
   // set is still in flight when a test has just navigated -- so the list comes back empty and
@@ -463,9 +472,27 @@ async function openPillarOf(page: Page, attribute: string): Promise<string> {
   throw new Error(`no pillar on screen holds ${attribute}`);
 }
 
+/**
+ * The slider that weighs one criterion, found by the name the screen gives it.
+ *
+ * **"Weight for" the attribute's catalog name, never its id** (2a13d73): an accessible name is
+ * rendered text, and the design keeps ids out of rendered text. The name is read from the
+ * catalog rather than written here, because a copy goes stale the way the id did (NEW-51) --
+ * and stale, it fails as "no pillar on screen holds" an attribute that is right there.
+ */
+async function weightSlider(page: Page, attribute: string): Promise<Locator> {
+  const response = await page.request.get(`/v1/attributes/${attribute}`);
+  expect(
+    response.ok(),
+    `the catalog could not be read for ${attribute}: HTTP ${response.status()}`,
+  ).toBe(true);
+  const { name } = (await response.json()) as { name: string };
+  return page.getByRole("slider", { name: `Weight for ${name}`, exact: true });
+}
+
 async function currentWeight(page: Page, attribute: string): Promise<string> {
   await openPillarOf(page, attribute);
-  const input = page.getByRole("slider", { name: `Weight for ${attribute}` });
+  const input = await weightSlider(page, attribute);
   await input.waitFor();
   return input.inputValue();
 }
@@ -476,7 +503,7 @@ async function setCriterionWeight(page: Page, attribute: string, weight: string)
   await openPillarOf(page, attribute);
   // **A slider that commits on release**, as the design draws it. There is no Save: letting
   // go is the save, so the gesture is a fill followed by the pointer coming up.
-  const input = page.getByRole("slider", { name: `Weight for ${attribute}` });
+  const input = await weightSlider(page, attribute);
   await input.waitFor();
   if ((await input.inputValue()) === weight) return;
 

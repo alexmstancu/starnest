@@ -361,7 +361,7 @@ test.describe("what this session changed", () => {
    * is that undo makes the opposite **request** -- an undo that only moved a number on screen
    * would disagree with the server the moment anything else read it.
    */
-  test("records a weight change and takes it back", async ({ page }) => {
+  test("records a weight change and takes it back", async ({ page, request }) => {
     await page.goto("/configure");
     // The heading carries a count beside its words, so the region's name begins with them
     // rather than being them.
@@ -372,8 +372,12 @@ test.describe("what this session changed", () => {
     // **A slider that commits on release**, as the design draws it: a weight is a proportion,
     // and the question asked of it is "more or less than the one above". There is no Save --
     // letting go is the save.
+    //
+    // **Named for its attribute as the catalog names it, never by its id** (2a13d73).
+    const ruleOfLaw = await catalogName(request, "country.rule_of_law");
     const weight = page.getByRole("slider", {
-      name: "Weight for country.rule_of_law",
+      name: `Weight for ${ruleOfLaw}`,
+      exact: true,
     });
     await expect.poll(() => weight.inputValue()).not.toBe("");
     const before = await weight.inputValue();
@@ -384,7 +388,7 @@ test.describe("what this session changed", () => {
     await expect(weight).toHaveValue(after);
 
     // Named as the catalog names it, never by its id (NEW-07).
-    const entry = history.getByRole("listitem").filter({ hasText: "Rule of law" });
+    const entry = history.getByRole("listitem").filter({ hasText: ruleOfLaw });
     await expect(entry).toHaveCount(1);
 
     // The way back, and it must reach the server: the value is re-read after a reload.
@@ -396,9 +400,7 @@ test.describe("what this session changed", () => {
     // re-read from the server rather than from what the page still held.
     await page.reload();
     await attributesInside(page, "Governance");
-    await expect(
-      page.getByRole("slider", { name: "Weight for country.rule_of_law" }),
-    ).toHaveValue(before);
+    await expect(weight).toHaveValue(before);
   });
 });
 
@@ -516,6 +518,25 @@ async function attributesInside(page: Page, pillar: string) {
   });
   await inside.waitFor({ state: "visible" });
   return inside;
+}
+
+/**
+ * What the catalog calls an attribute, which is what the screen calls it too.
+ *
+ * **Read, never copied.** A copy of the id went stale the day the screen started naming
+ * attributes rather than printing their keys (2a13d73), and nothing said so until the suite
+ * next ran (NEW-51); a copy of the name would go stale the day a migration renames one.
+ */
+async function catalogName(
+  request: APIRequestContext,
+  attribute: string,
+): Promise<string> {
+  const response = await request.get(`/v1/attributes/${attribute}`);
+  expect(
+    response.ok(),
+    `the catalog could not be read for ${attribute}: HTTP ${response.status()}`,
+  ).toBe(true);
+  return ((await response.json()) as { name: string }).name;
 }
 
 /**

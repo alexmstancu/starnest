@@ -179,7 +179,7 @@ async function openPillarOf(
   page: import("@playwright/test").Page,
   attribute: string,
 ): Promise<void> {
-  const weight = page.getByRole("slider", { name: `Weight for ${attribute}` });
+  const weight = await weightSlider(page, attribute);
   const weights = page.getByRole("region", { name: "Pillar weights" });
   // **`all()` does not wait.** It reads the rows that exist at this instant, and the criteria
   // set is still in flight when a test has just navigated -- so the list comes back empty and
@@ -228,6 +228,24 @@ async function openPillarOf(
   throw new Error(`no pillar on screen holds ${attribute}`);
 }
 
+/**
+ * The slider that weighs one criterion, found by the name the screen gives it.
+ *
+ * **"Weight for" the attribute's catalog name, never its id** (2a13d73): an accessible name is
+ * rendered text, and the design keeps ids out of rendered text. The name is read from the
+ * catalog rather than written here, because a copy goes stale the way the id did (NEW-51) --
+ * and stale, it fails as "no pillar on screen holds" an attribute that is right there.
+ */
+async function weightSlider(page: Page, attribute: string): Promise<Locator> {
+  const response = await page.request.get(`/v1/attributes/${attribute}`);
+  expect(
+    response.ok(),
+    `the catalog could not be read for ${attribute}: HTTP ${response.status()}`,
+  ).toBe(true);
+  const { name } = (await response.json()) as { name: string };
+  return page.getByRole("slider", { name: `Weight for ${name}`, exact: true });
+}
+
 async function moveTheWeight(
   page: import("@playwright/test").Page,
   attribute: string,
@@ -236,7 +254,7 @@ async function moveTheWeight(
   await page.goto("/configure");
   await selectTheScoringSet(page);
   await openPillarOf(page, attribute);
-  const input = page.getByRole("slider", { name: `Weight for ${attribute}` });
+  const input = await weightSlider(page, attribute);
   await input.waitFor();
   const now = await input.inputValue();
   await setWeight(page, attribute, now === A_DIFFERENT_WEIGHT ? "60" : A_DIFFERENT_WEIGHT);
@@ -249,7 +267,7 @@ async function setWeight(
 ): Promise<void> {
   await selectTheScoringSet(page);
   await openPillarOf(page, attribute);
-  const input = page.getByRole("slider", { name: `Weight for ${attribute}` });
+  const input = await weightSlider(page, attribute);
   await input.waitFor();
 
   // Nothing to do: the panel sends only a weight that moved. A restore hits this whenever the
