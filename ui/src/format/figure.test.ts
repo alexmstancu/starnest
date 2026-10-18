@@ -234,4 +234,85 @@ describe("a figure exactly as stored", () => {
       }),
     ).toBe("1000.13 CHF");
   });
+
+  /**
+   * NEW-39. **An assigned score can change in its rationale alone**: the same 7 out of 10, given
+   * again for another reason. Shown as number, range and assigner only, the two read the same
+   * beside a diff calling them different -- the defect UI-22 fixed for a converted amount.
+   */
+  it("prints an assigned score with its rationale, in the assigner's words", () => {
+    expect(
+      describeFigure(
+        {
+          payload: {
+            value: 7,
+            range_min: 0,
+            range_max: 10,
+            assigned_by: "human",
+            rationale: "Permits take six weeks",
+          },
+        },
+        { exact: true },
+      ),
+    ).toBe("7 on 0–10 (assigned by human) — “Permits take six weeks”");
+  });
+
+  it("keeps every digit of an assigned score beside its rationale", () => {
+    expect(
+      describeFigure(
+        {
+          payload: {
+            value: 7.125,
+            range_min: 0,
+            range_max: 10,
+            assigned_by: "llm",
+            rationale: "Read from the ministry's page",
+          },
+        },
+        { exact: true },
+      ),
+    ).toBe("7.125 on 0–10 (assigned by llm) — “Read from the ministry's page”");
+  });
+
+  it("prints an assigned score with no rationale as it always has", () => {
+    expect(
+      describeFigure(
+        {
+          payload: { value: 7, range_min: 0, range_max: 10, assigned_by: "human" },
+        },
+        { exact: true },
+      ),
+    ).toBe("7 on 0–10 (assigned by human)");
+  });
+
+  it("keeps an empty rationale apart from none at all", () => {
+    expect(
+      describeFigure(
+        {
+          payload: {
+            value: 7,
+            range_min: 0,
+            range_max: 10,
+            assigned_by: "human",
+            rationale: "",
+          },
+        },
+        { exact: true },
+      ),
+    ).toBe("7 on 0–10 (assigned by human) — “”");
+  });
+
+  it("leaves the rationale out when exactness is not asked for", () => {
+    expect(
+      describeFigure({
+        payload: {
+          value: 7.125,
+          range_min: 0,
+          range_max: 10,
+          assigned_by: "human",
+          rationale: "Permits take six weeks",
+        },
+      }),
+    ).toBe("7.13 on 0–10 (assigned by human)");
+  });
 });

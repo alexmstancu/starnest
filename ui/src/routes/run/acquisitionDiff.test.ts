@@ -289,6 +289,75 @@ describe("what decides that a figure did not move", () => {
     expect(row?.later).toBe("1100 CHF");
   });
 
+  /**
+   * NEW-39. **An assigned score can change in its rationale alone**, and its number, range and
+   * assigner then read the same on both sides of a row that says it moved.
+   */
+  describe("an assigned score", () => {
+    const ease = { ...pair, attribute: "country.residency_admin_ease" };
+    const score = (rationale?: string, value = 7) => ({
+      ...ease,
+      payload: {
+        value,
+        range_min: 0,
+        range_max: 10,
+        assigned_by: "human",
+        ...(rationale === undefined ? {} : { rationale }),
+      },
+    });
+
+    it("shows the rationales when two scores differ in nothing else", () => {
+      const diff = diffAcquisitions(
+        [score("Permits take three months")],
+        [score("Permits take six weeks")],
+      );
+      const [row] = diff.rows;
+
+      expect(diff.refreshed).toBe(1);
+      expect(row?.earlier).toBe(
+        "7 on 0–10 (assigned by human) — “Permits take three months”",
+      );
+      expect(row?.later).toBe(
+        "7 on 0–10 (assigned by human) — “Permits take six weeks”",
+      );
+    });
+
+    it("shows a rationale given to a score that had none", () => {
+      const [row] = diffAcquisitions(
+        [score()],
+        [score("Permits take six weeks")],
+      ).rows;
+
+      expect(row?.change).toBe("refreshed");
+      expect(row?.earlier).toBe("7 on 0–10 (assigned by human)");
+      expect(row?.later).toBe(
+        "7 on 0–10 (assigned by human) — “Permits take six weeks”",
+      );
+    });
+
+    it("calls the same score unchanged, and shows it as it always has", () => {
+      const diff = diffAcquisitions(
+        [score("Permits take six weeks")],
+        [score("Permits take six weeks")],
+      );
+      const [row] = diff.rows;
+
+      expect(diff.unchanged).toBe(1);
+      expect(row?.earlier).toBe("7 on 0–10 (assigned by human)");
+      expect(row?.later).toBe("7 on 0–10 (assigned by human)");
+    });
+
+    it("keeps the scores alone where their numbers already tell the two apart", () => {
+      const [row] = diffAcquisitions(
+        [score("Permits take three months", 6)],
+        [score("Permits take six weeks", 7)],
+      ).rows;
+
+      expect(row?.earlier).toBe("6 on 0–10 (assigned by human)");
+      expect(row?.later).toBe("7 on 0–10 (assigned by human)");
+    });
+  });
+
   it("calls the same payload unchanged whatever the order of its keys", () => {
     const diff = diffAcquisitions(
       [{ ...pair, payload: { magnitude: 7.1, unit: "ladder_points" } }],

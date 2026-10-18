@@ -71,10 +71,10 @@ const EURO = "EUR";
 export interface FigureOptions {
   /**
    * The figure exactly as stored: every digit the wire carries, instead of the two decimals a
-   * person reads, and a converted amount's euro equivalent beside it. **Only where the usual
-   * line would hide a difference**: two figures that moved by less than the displayed
-   * precision, or in euros alone, read the same, and a screen calling them different has to
-   * show why.
+   * person reads, a converted amount's euro equivalent beside it, and the reason an assigned
+   * score was given. **Only where the usual line would hide a difference**: two figures that
+   * moved by less than the displayed precision, in euros alone, or in their reason alone, read
+   * the same, and a screen calling them different has to show why.
    */
   exact?: boolean;
 }
@@ -115,12 +115,18 @@ export function describeFigure(
       `–${digits(payload["scale_max"])} (${String(payload["provider"])})`
     );
   // An assigned score carries its range and who assigned it: a 7 out of 10 from a model is a
-  // different claim from a 7 out of 10 somebody wrote down (`reqs.md` 3.3a).
-  if ("value" in payload && "assigned_by" in payload)
-    return (
+  // different claim from a 7 out of 10 somebody wrote down (`reqs.md` 3.3a). **Shown exactly,
+  // it carries the reason given as well** (NEW-39): the same 7 given again for another reason
+  // reads the same without it. Quoted, so an empty reason still reads as one.
+  if ("value" in payload && "assigned_by" in payload) {
+    const score =
       `${digits(payload["value"])} on ${digits(payload["range_min"])}` +
-      `–${digits(payload["range_max"])} (assigned by ${String(payload["assigned_by"])})`
-    );
+      `–${digits(payload["range_max"])} (assigned by ${String(payload["assigned_by"])})`;
+    const rationale = payload["rationale"];
+    return options.exact === true && typeof rationale === "string"
+      ? `${score} — “${rationale}”`
+      : score;
+  }
   // **A ratio is a share *of* something, and the something is required** (P78). The contract
   // makes `basis` mandatory on `RatioPayload` -- `land_area`, `workforce`, `households` -- and
   // this fell through to the bare branch below, printing `17.3` where the figure means 17.3%

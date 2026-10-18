@@ -131,7 +131,8 @@ export function diffAcquisitions(
  * to two decimals, so a move smaller than that read the same on both sides and was called
  * unchanged. Where that happens the two are shown exactly, so "refreshed" beside two figures
  * stays checkable rather than trusted -- a converted amount that moved in euros alone, at a
- * fresher exchange rate, with its euro equivalent.
+ * fresher exchange rate, with its euro equivalent, and an assigned score given again for
+ * another reason with its reason (NEW-39).
  */
 function compared(
   earlier: ProducedValue,
