@@ -28,6 +28,7 @@ from starnest.api.dependencies import (
     Values,
 )
 from starnest.api.errors import absent, unknown_scope_refusal
+from starnest.candidates import LevelHierarchy
 from starnest.data_acquisition import (
     NOTHING,
     Run,
@@ -518,11 +519,13 @@ async def _scope_targets(
     **A named id that exists at no row is refused, not quietly dropped** (BE-24). The sets were
     intersected with what exists, so a misspelled country or an attribute from another level fell
     out and the run proceeded on the rest -- fetching, and where a source charges, spending, for
-    less than was asked while concealing the drop.
+    less than was asked while concealing the drop. **The level is one of those ids** (NEW-40): a
+    level that does not exist planned nothing with a 200 while starting it was refused.
     """
+    levels = await catalog.read_levels()
     roster = await candidates.read_candidates(level=scope.level)
     catalogued = await catalog.read_attributes(level=scope.level)
-    _reject_unknown_scope(scope, roster, catalogued)
+    _reject_unknown_scope(scope, levels, roster, catalogued)
     return (
         _named(roster, scope.candidates),
         _named(catalogued, scope.attributes),
@@ -537,17 +540,21 @@ def _named(rows: list, wanted: list[str] | None) -> list:
     return [row for row in rows if str(row.id) in chosen]
 
 
-def _reject_unknown_scope(scope: RunScopeBody, roster: list, catalogued: list) -> None:
-    """Refuse a scope naming a candidate or attribute no row answers to at its level.
+def _reject_unknown_scope(
+    scope: RunScopeBody, levels: LevelHierarchy, roster: list, catalogued: list
+) -> None:
+    """Refuse a scope naming a level, candidate or attribute no row answers to.
 
-    Every named id is checked and the refusal lists all of them at once, across both dimensions,
+    Every named id is checked and the refusal lists all of them at once, across every dimension,
     so a client sees every mistake in one pass rather than fixing them one 422 at a time.
     """
+    unknown_levels = [] if scope.level in levels else [scope.level]
     unknown_candidates = absent(scope.candidates, {str(row.id) for row in roster})
     unknown_attributes = absent(scope.attributes, {str(row.id) for row in catalogued})
-    if unknown_candidates or unknown_attributes:
+    if unknown_levels or unknown_candidates or unknown_attributes:
         raise unknown_scope_refusal(
             scope.level,
+            unknown_levels=unknown_levels,
             unknown_candidates=unknown_candidates,
             unknown_attributes=unknown_attributes,
         )

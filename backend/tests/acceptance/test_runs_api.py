@@ -296,6 +296,59 @@ class TestAScopeThatNamesSomethingUnknown:
 
         assert response.status_code == 200
 
+    async def test_planning_refuses_an_unknown_level(self, api: httpx.AsyncClient) -> None:
+        """NEW-40. A level nothing is catalogued at planned nothing and answered 200, while
+        starting the same scope was refused -- the plan and the run disagreeing about one
+        request, on the one level a client can mistype."""
+        response = await api.post("/v1/data-acquisition-runs/plan", json={"level": "atlantis"})
+
+        assert response.status_code == 422, f"answered {response.status_code}: {response.text}"
+        body = response.json()
+        assert body["code"] == "unknown_scope"
+        assert body["details"] == {"level": "atlantis", "unknown_levels": ["atlantis"]}
+        validate("planRun", body, status=422)
+
+    async def test_starting_refuses_an_unknown_level_as_planning_does(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.post("/v1/data-acquisition-runs", json={"level": "atlantis"})
+
+        assert response.status_code == 422, f"answered {response.status_code}: {response.text}"
+        assert response.json()["code"] == "unknown_scope"
+        validate("startRun", response.json(), status=422)
+        runs = (await api.get("/v1/data-acquisition-runs")).json()
+        assert runs["total"] == 0, "nothing ran"
+
+    async def test_an_unknown_level_is_named_with_every_id_named_at_it(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """Nothing exists at a level that does not, so every id the scope names is unknown too,
+        and all of them are named at once, as the other dimensions are."""
+        response = await api.post(
+            "/v1/data-acquisition-runs/plan",
+            json={
+                "level": "atlantis",
+                "candidates": ["country.greece"],
+                "attributes": [OVERBURDEN],
+            },
+        )
+
+        assert response.status_code == 422
+        details = response.json()["details"]
+        assert details["unknown_levels"] == ["atlantis"]
+        assert details["unknown_candidates"] == ["country.greece"]
+        assert details["unknown_attributes"] == [OVERBURDEN]
+
+    async def test_a_catalogued_level_with_nothing_to_fetch_still_plans(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """The control: `city` exists and no source answers it yet, which is a plan of nothing
+        rather than a scope naming something unknown."""
+        response = await api.post("/v1/data-acquisition-runs/plan", json={"level": "city"})
+
+        assert response.status_code == 200
+        assert response.json()["items_total"] == 0
+
 
 class TestWatchingARun:
     async def test_the_scope_recorded_is_what_was_asked_for(self, api: httpx.AsyncClient) -> None:
