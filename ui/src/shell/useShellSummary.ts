@@ -7,9 +7,13 @@ import { tallyMatchStatus, type CandidateCounts } from "./candidateCounts";
  * The two figures the sidebar carries besides the selectors: the candidate counts for the
  * selected level and criteria set, and the most recent data acquisition run.
  *
- * Both depend on the selection, so both re-fetch when it changes -- which is also why the
- * counts are not cached: a criteria set change makes every previous count wrong (`reqs.md`
+ * The counts depend on the selection, so they re-fetch when it changes -- which is also why
+ * they are not cached: a criteria set change makes every previous count wrong (`reqs.md`
  * section 3.4a, score and match status belong to an Evaluation, not to a candidate).
+ *
+ * **Both are read again whenever `freshness` changes** (UI-11): something elsewhere -- another
+ * screen, or a run that has just ended -- may have moved them, and the sidebar is the one place
+ * that would otherwise go on saying what they were.
  */
 
 const LAST_RUN_ONLY = 1;
@@ -23,6 +27,7 @@ export interface ShellSummary {
 export function useShellSummary(
   criteriaSetId: string | null,
   levelId: string | null,
+  freshness: number,
 ): ShellSummary {
   const countsFetcher = useCallback(
     async (signal: AbortSignal): Promise<CandidateCounts> => {
@@ -44,8 +49,12 @@ export function useShellSummary(
     return runs.items[0] ?? null;
   }, []);
 
-  const counts = useResource(countsFetcher, criteriaSetId !== null && levelId !== null);
-  const lastRun = useResource(lastRunFetcher);
+  const counts = useResource(
+    countsFetcher,
+    criteriaSetId !== null && levelId !== null,
+    freshness,
+  );
+  const lastRun = useResource(lastRunFetcher, true, freshness);
 
   const reload = useCallback(() => {
     counts.reload();

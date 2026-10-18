@@ -1,3 +1,5 @@
+import type { Run } from "../api/endpoints";
+
 /**
  * How far through an acquisition is, in words and as a width.
  *
@@ -15,4 +17,28 @@ export function acquiringProgress(
   }
   const portion = Math.max(0, Math.min(100, (done / total) * 100));
   return { reading: `${done} of ${total}`, portion };
+}
+
+/** As much of the newest run as a look needs to say whether it is running. */
+type LookedAt = Pick<Run, "id" | "run_status">;
+
+/** The run a look saw running, or null when the newest run is not running or there is none. */
+export function runningRunOf(newest: LookedAt | undefined): number | null {
+  return newest?.run_status === "running" ? newest.id : null;
+}
+
+/**
+ * Whether the run the previous look saw running has stopped running by this one (UI-11), which
+ * is when what the sidebar read about the runs and the ranking goes stale.
+ *
+ * **Never on the first look.** A run that had already stopped when the shell first asked did not
+ * stop under anybody, and whatever it changed was read with everything else. **Another run in
+ * its place is an end too**: looks are two seconds apart, and the run that was watched is over
+ * whether or not a new one has started since.
+ */
+export function acquisitionEnded(
+  seenRunning: number | null,
+  newest: LookedAt | undefined,
+): boolean {
+  return seenRunning !== null && runningRunOf(newest) !== seenRunning;
 }

@@ -2,7 +2,13 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { CITY_CANDIDATES, COUNTRY_CANDIDATES } from "../mocks/fixtures";
+import { formatDateTime, formatMoney } from "../format/display";
+import {
+  CITY_CANDIDATES,
+  COUNTRY_CANDIDATES,
+  HOUSEHOLD,
+  rankingFor,
+} from "../mocks/fixtures";
 import { mockServer } from "../mocks/server";
 import { TEST_CONFIG, renderShell } from "../testing/renderShell";
 import { ROUTES } from "../navigation/routes";
@@ -227,6 +233,250 @@ describe("the sidebar counts and last run", () => {
     renderShell("/rank");
 
     expect(await screen.findByText(/no acquisition yet/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * UI-11. **The sidebar kept what it read first.** It read the household once, and the counts and
+ * the last run only when the selection changed -- so a household just saved, a ranking a gate
+ * had just moved and a run that had just ended all stayed as they were when the page opened.
+ *
+ * **It reads them again when the screen changes and when a run it saw running stops**, the
+ * household's choice of the smaller fix: between those moments it can still be stale, and a
+ * save on the screen in front of you is not one of them.
+ */
+describe("what the sidebar reads again", () => {
+  /** Counts the GETs of one path, and lets each through to the mock that answers it. */
+  function countReads(path: string): { count: number } {
+    const reads = { count: 0 };
+    mockServer.use(
+      http.get(`/v1${path}`, () => {
+        reads.count += 1;
+        return undefined;
+      }),
+    );
+    return reads;
+  }
+
+  /** The figure a sidebar card shows beside one label, read afresh each time it is asked. */
+  function figure(card: string, label: string): ChildNode | null {
+    return within(screen.getByRole("region", { name: card })).getByText(label).nextSibling;
+  }
+
+  async function sidebarHasRead(): Promise<void> {
+    await sidebarIsLoaded();
+    await waitFor(() =>
+      expect(figure("Household summary", "Target monthly spend")).toHaveTextContent(
+        formatMoney(HOUSEHOLD.target_monthly_spend, "EUR"),
+      ),
+    );
+    await waitFor(() => expect(figure("Candidates", "Matching")).toHaveTextContent("2"));
+    await waitFor(() =>
+      expect(figure("Last acquisition", "Status")).toHaveTextContent("completed"),
+    );
+  }
+
+  /** The server's ranking moves on -- a gate enforced, a figure fetched -- and nothing matches. */
+  function nothingMatchesAnyMore(): void {
+    mockServer.use(
+      http.get("/v1/rankings", ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        const ranking = rankingFor(
+          query.get("criteria_set") ?? "",
+          query.get("level") ?? "",
+        );
+        return HttpResponse.json({
+          ...ranking,
+          candidates: ranking.candidates.map((each) => ({
+            ...each,
+            match_status: "not_matching",
+          })),
+        });
+      }),
+    );
+  }
+
+  it("shows the household a save has just stored once the screen changes", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await sidebarHasRead();
+    const household = within(await screen.findByRole("region", { name: "Household" }));
+    const spend = household.getByRole("textbox", { name: "Target monthly spend" });
+
+    await user.clear(spend);
+    await user.type(spend, "3100");
+    await user.click(household.getByRole("button", { name: "Save household" }));
+    expect(await household.findByText("Saved.")).toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+
+    await waitFor(() =>
+      expect(figure("Household summary", "Target monthly spend")).toHaveTextContent(
+        formatMoney(3100, "EUR"),
+      ),
+    );
+  });
+
+  it("counts the candidates again once the screen changes", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await sidebarHasRead();
+
+    nothingMatchesAnyMore();
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+
+    await waitFor(() => expect(figure("Candidates", "Matching")).toHaveTextContent("0"));
+    expect(figure("Candidates", "Not matching")).toHaveTextContent(
+      String(rankingFor("default", "country").candidates.length),
+    );
+  });
+
+  it("names the newest acquisition once the screen changes", async () => {
+    const newer = {
+      id: 8,
+      run_status: "halted_by_user",
+      triggered_by: "user",
+      started_at: "2026-09-21T09:00:00Z",
+      finished_at: "2026-09-21T09:20:00Z",
+      llm_call_count: 0,
+      cost_eur: 0,
+    };
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await sidebarHasRead();
+
+    // Started and stopped between two looks of the strip under the tabs, so it never saw it run.
+    mockServer.use(
+      http.get("/v1/data-acquisition-runs", () =>
+        HttpResponse.json({ items: [newer], total: 4 }),
+      ),
+    );
+    await user.click(screen.getByRole("link", { name: "Compare" }));
+
+    await waitFor(() =>
+      expect(figure("Last acquisition", "Status")).toHaveTextContent("halted by user"),
+    );
+    expect(figure("Last acquisition", "Started")).toHaveTextContent(
+      formatDateTime(newer.started_at),
+    );
+  });
+
+  /**
+   * **The strip under the tabs already watches a running run**, every two seconds and on every
+   * screen, so its end is something the shell knows without anybody moving -- this waits one look.
+   */
+  it("reports a run's end, and what it changed, without anybody moving", async () => {
+    let status = "running";
+    const watched = {
+      id: 8,
+      triggered_by: "user",
+      started_at: "2026-09-21T09:00:00Z",
+      cost_eur: 0,
+    };
+    mockServer.use(
+      http.get("/v1/data-acquisition-runs", () =>
+        HttpResponse.json({ items: [{ ...watched, run_status: status }], total: 1 }),
+      ),
+      http.get("/v1/data-acquisition-runs/:runId", () =>
+        HttpResponse.json({
+          ...watched,
+          run_status: status,
+          progress: { items_total: 96, items_completed: 24 },
+          failures: [],
+        }),
+      ),
+    );
+    renderShell("/rank");
+    await sidebarIsLoaded();
+    await waitFor(() =>
+      expect(figure("Last acquisition", "Status")).toHaveTextContent("running"),
+    );
+    await waitFor(() => expect(figure("Candidates", "Matching")).toHaveTextContent("2"));
+    // Seen running, which is what makes its end news.
+    expect(await screen.findByRole("status")).toHaveTextContent("24 of 96");
+
+    status = "completed";
+    nothingMatchesAnyMore();
+
+    await waitFor(() =>
+      expect(figure("Last acquisition", "Status")).toHaveTextContent("completed"),
+    );
+    await waitFor(() => expect(figure("Candidates", "Matching")).toHaveTextContent("0"));
+  });
+
+  it("reads nothing again when a save is refused", async () => {
+    mockServer.use(
+      http.put("/v1/household", () =>
+        HttpResponse.json(
+          { code: "invalid_field", message: "net_income must be positive." },
+          { status: 400 },
+        ),
+      ),
+    );
+    const households = countReads("/household");
+    const rankings = countReads("/rankings");
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await sidebarHasRead();
+    const household = within(await screen.findByRole("region", { name: "Household" }));
+    const before = { households: households.count, rankings: rankings.count };
+
+    await user.click(household.getByRole("button", { name: "Save household" }));
+
+    expect(await household.findByText(/net_income must be positive/)).toBeInTheDocument();
+    expect(households.count).toBe(before.households);
+    expect(rankings.count).toBe(before.rankings);
+  });
+
+  it("reads nothing again while the screen stays the same", async () => {
+    mockServer.use(
+      http.get("/v1/evaluations", () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 1,
+              criteria_set: "default",
+              level: "country",
+              computed_at: "2026-09-21T09:00:00Z",
+              score_scale_max: 100,
+              note: "Before the gates",
+            },
+          ],
+        }),
+      ),
+      http.get("/v1/evaluations/:evaluationId", () =>
+        HttpResponse.json(rankingFor("default", "country")),
+      ),
+    );
+    const households = countReads("/household");
+    const rankings = countReads("/rankings");
+    const user = userEvent.setup();
+    renderShell("/rank");
+    await sidebarHasRead();
+    const rank = within(screen.getByRole("region", { name: "Rank" }));
+    await waitFor(() =>
+      expect(rank.getByText("Criteria set").nextSibling).toHaveTextContent("default"),
+    );
+    const kept = await screen.findByRole("link", { name: /before the gates/i });
+    const before = { households: households.count, rankings: rankings.count };
+
+    // The tab of the screen already shown, then a saved ranking opened on it: two moves, one screen.
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+    await user.click(kept);
+
+    expect(await screen.findByText(/as it was when it was saved/i)).toBeInTheDocument();
+    expect(households.count).toBe(before.households);
+    expect(rankings.count).toBe(before.rankings);
+  });
+
+  /** The root only redirects, so nothing has been written there that the sidebar could miss. */
+  it("reads the household once when the address is the root, which only redirects", async () => {
+    const households = countReads("/household");
+    renderShell("/");
+    await sidebarHasRead();
+    await screen.findByRole("region", { name: "Household" });
+
+    // One for the sidebar and one for the panel on Configure.
+    expect(households.count).toBe(2);
   });
 });
 

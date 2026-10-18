@@ -35,6 +35,16 @@ export interface Selection {
    */
   savedRankingsVersion: number;
   noteSavedRanking: () => void;
+  /**
+   * Bumped whenever an acquisition the shell saw running stops running (UI-11).
+   *
+   * **The strip under the tabs watches the run and the sidebar reports it**, in different
+   * subtrees again -- so the same kind of counter as the one above, for the same reason: what
+   * changed is "the last run and the ranking are worth reading again", and the server stays
+   * the authority on what they now say.
+   */
+  acquisitionsEnded: number;
+  noteAcquisitionEnded: () => void;
 }
 
 const SelectionContext = createContext<Selection | null>(null);
@@ -50,6 +60,11 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
   const [savedRankingsVersion, setSavedRankingsVersion] = useState(0);
   const noteSavedRanking = useCallback(
     () => setSavedRankingsVersion((version) => version + 1),
+    [],
+  );
+  const [acquisitionsEnded, setAcquisitionsEnded] = useState(0);
+  const noteAcquisitionEnded = useCallback(
+    () => setAcquisitionsEnded((ended) => ended + 1),
     [],
   );
 
@@ -131,6 +146,8 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
       selectCriteriaSet: setCriteriaSetId,
       savedRankingsVersion,
       noteSavedRanking,
+      acquisitionsEnded,
+      noteAcquisitionEnded,
       status,
       error,
       reload,
@@ -142,6 +159,8 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
       criteriaSetId,
       savedRankingsVersion,
       noteSavedRanking,
+      acquisitionsEnded,
+      noteAcquisitionEnded,
       status,
       error,
       reload,

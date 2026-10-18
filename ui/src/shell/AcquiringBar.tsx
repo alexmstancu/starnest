@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { ROUTES } from "../navigation/routes";
+import { useSelection } from "./SelectionContext";
 import { acquiringProgress } from "./acquiringProgress";
 import { useAcquiring } from "./useAcquiring";
 
@@ -17,7 +18,10 @@ const ACQUIRE = ROUTES.find((route) => route.label === "Acquire")!;
  * stop, so the two read as one header rather than as two things that happen to overlap.
  */
 export function AcquiringBar() {
-  const acquiring = useAcquiring();
+  // **Watched on every screen, Acquire included**, so the sidebar hears that a run has ended
+  // wherever the reader is -- only the strip itself stays off Acquire.
+  const { noteAcquisitionEnded } = useSelection();
+  const acquiring = useAcquiring(noteAcquisitionEnded);
   const { pathname } = useLocation();
 
   if (acquiring === null || pathname === ACQUIRE.path) return null;

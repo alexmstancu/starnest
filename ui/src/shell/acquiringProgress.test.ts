@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { acquiringProgress } from "./acquiringProgress";
+import {
+  acquiringProgress,
+  acquisitionEnded,
+  runningRunOf,
+} from "./acquiringProgress";
 
 describe("how far through an acquisition is", () => {
   it("reads as a count of what is done out of what there is", () => {
@@ -30,5 +34,66 @@ describe("how far through an acquisition is", () => {
       reading: "96 of 96",
       portion: 100,
     });
+  });
+});
+
+/**
+ * UI-11. **When the run the shell watches stops, what the sidebar read about it is stale.** The
+ * strip under the tabs looks at the newest run every two seconds; these say which look is news.
+ */
+describe("which run a look saw running", () => {
+  it("is the newest run while it runs", () => {
+    expect(runningRunOf({ id: 8, run_status: "running" })).toBe(8);
+  });
+
+  it("is none once the newest run has stopped, however it stopped", () => {
+    for (const run_status of [
+      "completed",
+      "halted_on_spend_cap",
+      "halted_by_user",
+      "failed",
+    ] as const) {
+      expect(runningRunOf({ id: 8, run_status })).toBeNull();
+    }
+  });
+
+  it("is none when there has never been a run", () => {
+    expect(runningRunOf(undefined)).toBeNull();
+  });
+});
+
+describe("whether a run has ended since the last look", () => {
+  /** A run that had ended before anybody looked did not end under them. */
+  it("is never so on the first look, at a run that has stopped", () => {
+    expect(acquisitionEnded(null, { id: 7, run_status: "completed" })).toBe(false);
+  });
+
+  it("is never so on the first look, at a run that is running", () => {
+    expect(acquisitionEnded(null, { id: 8, run_status: "running" })).toBe(false);
+  });
+
+  it("is not so while the run seen running is still running", () => {
+    expect(acquisitionEnded(8, { id: 8, run_status: "running" })).toBe(false);
+  });
+
+  it("is so once the run seen running has finished", () => {
+    expect(acquisitionEnded(8, { id: 8, run_status: "completed" })).toBe(true);
+  });
+
+  it("is so once the run seen running has failed", () => {
+    expect(acquisitionEnded(8, { id: 8, run_status: "failed" })).toBe(true);
+  });
+
+  /** Ended and followed by another between two looks: the one that was watched is over. */
+  it("is so once another run has taken its place", () => {
+    expect(acquisitionEnded(8, { id: 9, run_status: "running" })).toBe(true);
+  });
+
+  it("is so when the runs have gone altogether", () => {
+    expect(acquisitionEnded(8, undefined)).toBe(true);
+  });
+
+  it("is not so when nothing was running and nothing is", () => {
+    expect(acquisitionEnded(null, undefined)).toBe(false);
   });
 });

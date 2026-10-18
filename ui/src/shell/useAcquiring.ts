@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { fetchRun, fetchRuns, type RunDetail } from "../api/endpoints";
+import { acquisitionEnded, runningRunOf } from "./acquiringProgress";
 
 /**
  * Whether an acquisition is in flight, and how far through it is.
@@ -11,6 +12,10 @@ import { fetchRun, fetchRuns, type RunDetail } from "../api/endpoints";
  *
  * **It stops asking the moment the run stops.** A poll that continues after `completed` is a
  * request per two seconds forever, which is the shape that makes a local app feel heavy.
+ *
+ * **And it says when the run it saw running stops** (UI-11), through `onEnded`: this is the
+ * one place in the shell that watches a run, and what the sidebar read about the runs and the
+ * ranking is stale from that moment. Never on the first look -- see `acquisitionEnded`.
  */
 export interface Acquiring {
   run: RunDetail | null;
@@ -20,8 +25,11 @@ export interface Acquiring {
 
 const EVERY = 2000;
 
-export function useAcquiring(): Acquiring | null {
+export function useAcquiring(onEnded: () => void): Acquiring | null {
   const [acquiring, setAcquiring] = useState<Acquiring | null>(null);
+  // An effect event, so a caller's new callback is used without restarting the poll -- which
+  // would forget the run it had seen running, and with it the end it was waiting for.
+  const reportEnded = useEffectEvent(onEnded);
 
   useEffect(() => {
     let live = true;
@@ -30,12 +38,16 @@ export function useAcquiring(): Acquiring | null {
     // and left the fetch itself running, so a poll begun just before a tab change outlived
     // the component that wanted it -- and this one polls on a timer, so they accumulate.
     const controller = new AbortController();
+    // Kept across a failed look: one that learned nothing has not seen the run stop.
+    let seenRunning: number | null = null;
 
     async function look(): Promise<void> {
       try {
         const { items } = await fetchRuns(1, { signal: controller.signal });
         const newest = items[0];
         if (!live) return;
+        if (acquisitionEnded(seenRunning, newest)) reportEnded();
+        seenRunning = runningRunOf(newest);
         if (newest?.run_status !== "running") {
           setAcquiring(null);
         } else {

@@ -22,6 +22,7 @@ import { ROUTES } from "../navigation/routes";
 import { ErrorNotice } from "./ErrorNotice";
 import { useSelection } from "./SelectionContext";
 import { levelsWithCandidates } from "./candidateCounts";
+import { useScreenChanges } from "./useScreenChanges";
 import { useShellSummary, type ShellSummary } from "./useShellSummary";
 
 /**
@@ -48,11 +49,23 @@ const RANK = ROUTES.find((route) => route.label === "Rank")!;
  *
  * Everything numeric in here came from the API. The only thing the sidebar computes is which
  * tab is current, which react-router already knows.
+ *
+ * **What it shows is read again when the screen changes, and when a run it saw running ends**
+ * (UI-11) -- the two moments something it reports is likely to have moved elsewhere. A save is
+ * seen once the reader moves on, not the moment it lands: the household's choice of the smaller
+ * fix.
  */
 export function Sidebar() {
   const { displayName } = useAppConfig();
   const selection = useSelection();
-  const summary = useShellSummary(selection.criteriaSetId, selection.levelId);
+  const screenChanges = useScreenChanges();
+  // Both only ever grow, so the sum changes whenever either does. The household is written on
+  // Configure alone, so a run's end leaves it be.
+  const summary = useShellSummary(
+    selection.criteriaSetId,
+    selection.levelId,
+    screenChanges + selection.acquisitionsEnded,
+  );
 
   return (
     <aside className="sidebar">
@@ -68,7 +81,7 @@ export function Sidebar() {
         </span>
       </header>
 
-      <HouseholdCard />
+      <HouseholdCard freshness={screenChanges} />
 
       {selection.status === "error" ? (
         <ErrorNotice error={selection.error} onRetry={selection.reload} />
@@ -177,9 +190,11 @@ function SelectionControls() {
  * It says "not set" rather than showing nothing: a household nobody has filled in is the
  * shipped state, and several gates and criterion defaults read it.
  */
-function HouseholdCard() {
+function HouseholdCard({ freshness }: { freshness: number }) {
   const { resource, reload } = useResource(
     useCallback((signal: AbortSignal) => fetchHousehold({ signal }), []),
+    true,
+    freshness,
   );
   // **The home country and the passports are candidate ids** -- `country.romania` -- and the
   // card was printing them raw, the same programmatic identifier the rest of the app was
