@@ -34,6 +34,11 @@ export function ProposalsPanel({
 }) {
   const proposals = useProposals(onAnswered);
   const [acceptUncapped, setAcceptUncapped] = useState(false);
+  // **Held while an estimate, a pass or a confirmation is in flight, never disabled** (NEW-44):
+  // Chromium throws focus off a control the moment it is disabled and does not give it back, so
+  // a keyboard user was put back on the page after each. Held, a button keeps focus and says
+  // so, and the hook turns its press away.
+  const held = proposals.busy !== null;
 
   return (
     <section className="panel" aria-labelledby="proposals-heading">
@@ -53,7 +58,7 @@ export function ProposalsPanel({
         <button
           type="button"
           className="button"
-          disabled={proposals.busy !== null}
+          aria-disabled={held || undefined}
           onClick={() => proposals.estimate(levelId)}
         >
           {proposals.busy === "estimating"
@@ -64,8 +69,11 @@ export function ProposalsPanel({
           <button
             type="button"
             className="button"
-            disabled={proposals.busy !== null}
+            aria-disabled={held || undefined}
             onClick={() => {
+              // Turned away whole, the box included: a held press that cleared it would forget
+              // an agreement given for the next pass.
+              if (held) return;
               proposals.research(levelId, acceptUncapped);
               // **Per request, never remembered** -- which is what the comment below has
               // always said and what the state did not do: left ticked, it authorised every
@@ -176,7 +184,7 @@ export function ProposalsPanel({
                   <ProposalRow
                     key={`${proposal.match_rule}-${proposal.candidate}`}
                     proposal={proposal}
-                    busy={proposals.busy !== null}
+                    held={held}
                     onConfirm={() => proposals.confirm(proposal)}
                   />
                 ))}
@@ -191,11 +199,12 @@ export function ProposalsPanel({
 
 function ProposalRow({
   proposal,
-  busy,
+  held,
   onConfirm,
 }: {
   proposal: MatchRuleResult;
-  busy: boolean;
+  /** A write is in flight, this row's or another: the button keeps focus, the hook refuses it. */
+  held: boolean;
   onConfirm: () => void;
 }) {
   const pages = proposal.citations ?? [];
@@ -224,7 +233,7 @@ function ProposalRow({
         <button
           type="button"
           className="button"
-          disabled={busy}
+          aria-disabled={held || undefined}
           onClick={onConfirm}
         >
           Confirm {proposal.match_rule} for {proposal.candidate}

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   fetchMatchRuleResults,
   planMatchRuleResearch,
@@ -22,6 +22,10 @@ import { spendIsKnown, type ResearchPass } from "./proposalReading";
  * **Researching spends money**, so the estimate comes first and separately: the plan is asked
  * instead of the pass, not before it, and the household agrees to a figure rather than to a
  * verb (`reqs.md` 6.3).
+ *
+ * **One act at a time, and a press during one is turned away here** (NEW-44). The panel holds
+ * its buttons rather than disabling them, so they keep a keyboard's focus -- which means a press
+ * still arrives, and is refused before it changes anything.
  */
 
 export interface Proposals {
@@ -68,14 +72,23 @@ export function useProposals(
   const [lastPass, setLastPass] = useState<ResearchPass | null>(null);
   const [spendNotKnown, setSpendNotKnown] = useState(false);
 
+  // A ref, because two presses in one tick would both pass a check on state that has not
+  // re-rendered yet.
+  const inFlight = useRef(false);
+
   const answers = resource.data?.items ?? [];
 
   function attempt(act: Proposals["busy"], work: () => Promise<unknown>): void {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(act);
     setFailure(null);
     void work()
       .catch((error: unknown) => setFailure(error))
-      .finally(() => setBusy(null));
+      .finally(() => {
+        inFlight.current = false;
+        setBusy(null);
+      });
   }
 
   return {
@@ -94,13 +107,14 @@ export function useProposals(
       attempt("estimating", async () => {
         setPlan(await planMatchRuleResearch({ level }));
       }),
-    research: (level, acceptUncapped) => {
-      // **The last pass's outcome goes as this one starts** (UI-14): left standing, it read as
-      // this pass's spend beside this pass's failure, on the one screen that spends money.
-      setLastPass(null);
-      setRefusals([]);
-      setSpendNotKnown(false);
+    research: (level, acceptUncapped) =>
       attempt("researching", async () => {
+        // **The last pass's outcome goes as this one starts** (UI-14): left standing, it read as
+        // this pass's spend beside this pass's failure, on the one screen that spends money.
+        // Inside the attempt, so a press turned away clears nothing.
+        setLastPass(null);
+        setRefusals([]);
+        setSpendNotKnown(false);
         const outcome = await researchMatchRules({
           level,
           accept_uncapped_spend: acceptUncapped,
@@ -128,8 +142,7 @@ export function useProposals(
         // for the same gate, and the stored answers are the only account of what now stands.
         reload();
         onAnswered();
-      });
-    },
+      }),
     confirm: (proposal) =>
       attempt("confirming", async () => {
         await putMatchRuleResult(proposal.match_rule, proposal.candidate, {

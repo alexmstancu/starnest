@@ -1,8 +1,13 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { mockServer } from "../../../mocks/server";
+import {
+  expectHeld,
+  expectNotHeld,
+  followChromiumFocusFixup,
+} from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
 
 /**
@@ -673,5 +678,299 @@ describe("a research pass after an earlier one", () => {
       await screen.findByText("The last pass made 1 call and spent €0.02."),
     ).toBeInTheDocument();
     expect(screen.queryByText(EARLIER)).toBeNull();
+  });
+});
+
+/**
+ * NEW-44. **Held, never disabled** -- NEW-34's rule, which this panel was written before. Its
+ * buttons took the native `disabled` while an estimate, a pass or a confirmation was in flight,
+ * and Chromium throws focus off a control the moment it is disabled and does not give it back:
+ * a keyboard user who estimated, researched or confirmed was put back on the page every time.
+ * jsdom keeps focus on a disabled control, which is why these follow Chromium's rule.
+ */
+describe("the gate proposals while a write is in flight", () => {
+  beforeEach(() => followChromiumFocusFixup());
+
+  /**
+   * Every request to one endpoint, counted and held until the test lets go -- then answered as
+   * given, or by the mock behind it when nothing is given.
+   */
+  function hold(
+    method: "post" | "put",
+    path: string,
+    answer?: () => Response,
+  ): { sent: number; release: () => void } {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const writes = { sent: 0, release: () => release() };
+    mockServer.use(
+      http[method](`${BASE}${path}`, async () => {
+        writes.sent += 1;
+        await held;
+        return answer?.();
+      }),
+    );
+    return writes;
+  }
+
+  const CONFIRM = `Confirm ${PROPOSED_GATE} for ${PROPOSED_FOR}`;
+  const CONFIRMATIONS = "/match-rule-results/:matchRuleId/:candidateId";
+
+  function refused(message: string): () => Response {
+    return () =>
+      HttpResponse.json({ code: "internal_error", message }, { status: 500 });
+  }
+
+  async function estimated(): Promise<void> {
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Estimate the research" }),
+    );
+    await theProposals().findByText(/64 gate answers to research/i);
+  }
+
+  it("keeps focus on Estimate while it estimates, and a second Enter sends nothing", async () => {
+    const user = userEvent.setup();
+    const estimates = hold("post", "/match-rule-research/plan");
+    renderShell("/configure");
+    await settled();
+    const estimate = theProposals().getByRole("button", {
+      name: "Estimate the research",
+    });
+    act(() => estimate.focus());
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(estimates.sent).toBe(1));
+
+    expect(estimate).toHaveFocus();
+    expectHeld(estimate);
+    expect(estimate).toHaveTextContent("Estimating…");
+    expectHeld(theProposals().getByRole("button", { name: CONFIRM }));
+    await user.keyboard("{Enter}");
+
+    estimates.release();
+
+    expect(
+      await theProposals().findByText(/64 gate answers to research/i),
+    ).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(estimate));
+    expect(estimate).toHaveFocus();
+    expectNotHeld(theProposals().getByRole("button", { name: CONFIRM }));
+    await user.keyboard("{Enter}");
+    // The third Enter's request arriving is what proves the second sent nothing.
+    await waitFor(() => expect(estimates.sent).toBe(2));
+  });
+
+  it("lets go of Estimate after a refused estimate, with focus still on it", async () => {
+    const user = userEvent.setup();
+    const estimates = hold(
+      "post",
+      "/match-rule-research/plan",
+      refused("the planner failed"),
+    );
+    renderShell("/configure");
+    await settled();
+    const estimate = theProposals().getByRole("button", {
+      name: "Estimate the research",
+    });
+    act(() => estimate.focus());
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(estimates.sent).toBe(1));
+    expectHeld(estimate);
+    estimates.release();
+
+    expect(
+      await theProposals().findByText("the planner failed"),
+    ).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(estimate));
+    expect(estimate).toBeEnabled();
+    expect(estimate).toHaveFocus();
+  });
+
+  it("keeps focus on Research the gates while it researches, and a second Enter sends nothing", async () => {
+    const user = userEvent.setup();
+    const passes = hold("post", "/match-rule-research");
+    renderShell("/configure");
+    await settled();
+    await estimated();
+    const research = theProposals().getByRole("button", {
+      name: "Research the gates",
+    });
+    act(() => research.focus());
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(passes.sent).toBe(1));
+
+    expect(research).toHaveFocus();
+    expectHeld(research);
+    expect(research).toHaveTextContent("Researching…");
+    expectHeld(
+      theProposals().getByRole("button", { name: "Estimate the research" }),
+    );
+    await user.keyboard("{Enter}");
+
+    passes.release();
+
+    expect(
+      await theProposals().findByText(
+        "The last pass made 2 calls and spent €0.04.",
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(research));
+    expect(research).toHaveFocus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(passes.sent).toBe(2));
+  });
+
+  it("lets go of Research the gates after a failed pass, with focus still on it", async () => {
+    const user = userEvent.setup();
+    const passes = hold(
+      "post",
+      "/match-rule-research",
+      refused("the model provider failed"),
+    );
+    renderShell("/configure");
+    await settled();
+    await estimated();
+    const research = theProposals().getByRole("button", {
+      name: "Research the gates",
+    });
+    act(() => research.focus());
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(passes.sent).toBe(1));
+    expectHeld(research);
+    passes.release();
+
+    expect(
+      await theProposals().findByText("the model provider failed"),
+    ).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(research));
+    expect(research).toBeEnabled();
+    expect(research).toHaveFocus();
+  });
+
+  it("keeps focus on Confirm while it is written, and lets go of it when refused", async () => {
+    const user = userEvent.setup();
+    const confirmations = hold(
+      "put",
+      CONFIRMATIONS,
+      refused("there is no candidate country.portugal"),
+    );
+    renderShell("/configure");
+    await settled();
+    const confirm = await theProposals().findByRole("button", {
+      name: CONFIRM,
+    });
+    act(() => confirm.focus());
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(confirmations.sent).toBe(1));
+
+    expect(confirm).toHaveFocus();
+    expectHeld(confirm);
+    expectHeld(
+      theProposals().getByRole("button", { name: "Estimate the research" }),
+    );
+    await user.keyboard("{Enter}");
+
+    confirmations.release();
+
+    expect(
+      await theProposals().findByText(/there is no candidate country\.portugal/i),
+    ).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(confirm));
+    expect(confirm).toBeEnabled();
+    expect(confirm).toHaveFocus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(confirmations.sent).toBe(2));
+  });
+
+  it("holds every other proposal's Confirm while one is written", async () => {
+    mockServer.use(
+      http.get(`${BASE}/match-rule-results`, () =>
+        HttpResponse.json({
+          items: [
+            {
+              match_rule: PROPOSED_GATE,
+              candidate: PROPOSED_FOR,
+              match_result: "not_matching",
+              data_source: "llm",
+              retrieval_date: "2026-09-12T09:00:00Z",
+              citations: ["https://example.gov/skilled-worker"],
+              is_proposal: true,
+            },
+            {
+              match_rule: PROPOSED_GATE,
+              candidate: "country.spain",
+              match_result: "matching",
+              data_source: "llm",
+              retrieval_date: "2026-09-12T09:00:00Z",
+              citations: ["https://example.gov/skilled-worker"],
+              is_proposal: true,
+            },
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    const confirmations = hold("put", CONFIRMATIONS, refused("refused"));
+    renderShell("/configure");
+    await settled();
+    const other = await theProposals().findByRole("button", {
+      name: `Confirm ${PROPOSED_GATE} for country.spain`,
+    });
+
+    await user.click(theProposals().getByRole("button", { name: CONFIRM }));
+    await waitFor(() => expect(confirmations.sent).toBe(1));
+
+    expectHeld(other);
+    await user.click(other);
+    confirmations.release();
+
+    await waitFor(() => expectNotHeld(other));
+    expect(confirmations.sent).toBe(1);
+  });
+
+  /** A press on a held button is turned away whole, the box it would have cleared included. */
+  it("sends nothing, and clears nothing, from a button pressed while it is held", async () => {
+    const asked = { plans: 0 };
+    mockServer.use(
+      http.post(`${BASE}/match-rule-research/plan`, () => {
+        asked.plans += 1;
+        return undefined;
+      }),
+    );
+    const user = userEvent.setup();
+    const passes = hold("post", "/match-rule-research");
+    const confirmations = hold("put", CONFIRMATIONS);
+    renderShell("/configure");
+    await settled();
+    await estimated();
+    const research = theProposals().getByRole("button", {
+      name: "Research the gates",
+    });
+    await user.click(research);
+    await waitFor(() => expect(passes.sent).toBe(1));
+    const uncapped = theProposals().getByRole("checkbox", {
+      name: /accept an uncapped spend/i,
+    });
+    // Ticked for the next pass while this one runs, which the box still allows.
+    await user.click(uncapped);
+
+    await user.click(research);
+    await user.click(
+      theProposals().getByRole("button", { name: "Estimate the research" }),
+    );
+    await user.click(theProposals().getByRole("button", { name: CONFIRM }));
+    passes.release();
+
+    await waitFor(() => expectNotHeld(research));
+    expect(passes.sent).toBe(1);
+    expect(asked.plans).toBe(1);
+    expect(confirmations.sent).toBe(0);
+    expect(uncapped).toBeChecked();
   });
 });
