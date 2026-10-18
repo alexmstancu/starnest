@@ -265,9 +265,10 @@ function CriterionRow({
   // so a readout taken from the slider would print 29.0 for a weight that is 29.17 -- the
   // screen contradicting the figure it was given.
   const [moving, setMoving] = useState(false);
-  // **This gesture's weight has gone** (UI-05). A gesture ends with up to four events, and a
-  // disabled slider still hears the blur: each one used to send the weight again. Cleared by
-  // the next movement, which is the next gesture. A ref, because the four can arrive in one tick.
+  // **This gesture's weight has gone** (UI-05). A gesture ends with up to four events, and the
+  // slider still hears them while its save runs: each one used to send the weight again. Cleared
+  // by the next movement, which is the next gesture. A ref, because the four can arrive in one
+  // tick.
   const sent = useRef(false);
   // Closed by default: forty-one criteria with their scales open at once is a screen nobody
   // can read. Local state, because which row is open is this component's own business and
@@ -306,8 +307,10 @@ function CriterionRow({
    * previous render saw.
    */
   function commit(asked: string) {
-    // The same release arriving again. Its answer ends the gesture, so this does not.
-    if (sent.current) return;
+    // The same release arriving again -- its answer ends the gesture, so this does not -- or a
+    // release while a write is in flight, which no gesture can have started: the slider takes
+    // no movement then.
+    if (sent.current || held) return;
     setMoving(false);
     // A range input always holds a number, so this never fires -- it is here because
     // `weightFrom` is honest about text that might not be one, and silently sending `NaN`
@@ -356,6 +359,10 @@ function CriterionRow({
         </span>
 
         <span className="criterion-row__controls">
+          {/* **Held while a write is in flight, never disabled** (NEW-34). Chromium throws
+              focus off a control the moment it is disabled and does not give it back, so a
+              keyboard user nudging a weight was put back on the page after every step. Held,
+              the slider keeps focus, says so, and ignores the keys: React puts the thumb back. */}
           <input
             className="criterion-row__slider"
             type="range"
@@ -363,9 +370,10 @@ function CriterionRow({
             max={ceiling}
             step={CRITERION_SLIDER.step}
             value={typed}
-            disabled={held}
+            aria-disabled={held || undefined}
             aria-label={`Weight for ${title}`}
             onChange={(event) => {
+              if (held) return;
               sent.current = false;
               setMoving(true);
               setTyped(event.target.value);
@@ -397,7 +405,8 @@ function CriterionRow({
             }
             aria-label={`Lock the weight for ${title}`}
             aria-pressed={locked}
-            disabled={held}
+            // Held, not disabled, for the slider's reason; the editor refuses the press meanwhile.
+            aria-disabled={held || undefined}
             title={
               locked
                 ? "Held where it is, and takes no share of a rebalance"

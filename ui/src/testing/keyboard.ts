@@ -1,0 +1,87 @@
+import { fireEvent } from "@testing-library/react";
+import type { UserEvent } from "@testing-library/user-event";
+import { expect } from "vitest";
+
+/**
+ * What a keyboard user meets that jsdom does not show: Chromium's focus fix-up, the arrow keys
+ * on a slider, and a control held still rather than disabled while a write is in flight.
+ */
+
+/**
+ * **A focused control that becomes disabled loses focus to the page at once** in Chromium, and
+ * enabling it again does not bring focus back. jsdom leaves focus on the disabled control, so a
+ * test can go on pressing keys on something a keyboard user has already been thrown out of --
+ * which is how controls that disabled themselves while a write was in flight passed every unit
+ * test while sending a keyboard user back to the page after every step (NEW-34).
+ *
+ * jsdom already applies the other half of the rule -- a focused element taken out of the
+ * document leaves focus on the page -- so only disabling is emulated here.
+ *
+ * **Opt-in, per test**: returns the way to stop, which is what `beforeEach` wants back.
+ */
+export function followChromiumFocusFixup(): () => void {
+  const observer = new MutationObserver(() => {
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && focused.matches(":disabled")) {
+      focusThePage();
+    }
+  });
+  observer.observe(document.body, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["disabled"],
+  });
+  return () => observer.disconnect();
+}
+
+/**
+ * Moves focus to the page, firing `blur` on the control that had it, as Chromium does.
+ *
+ * jsdom will not blur an element it no longer counts as focusable, and a disabled one is not --
+ * so the page takes focus instead, made focusable just long enough to do so.
+ */
+function focusThePage(): void {
+  const page = document.body;
+  page.tabIndex = -1;
+  page.focus();
+  page.removeAttribute("tabindex");
+}
+
+/**
+ * ArrowRight pressed on whatever has focus, handled the way a browser handles it on a slider.
+ *
+ * user-event sends the key and leaves a range input's value alone, so the step a browser takes
+ * between the key going down and coming up -- the value moving one step and `change` firing --
+ * is taken here. **Only when an enabled slider holds focus**: a key pressed after focus has gone
+ * to the page moves nothing, which is the defect these tests exist to see.
+ */
+export async function pressArrowRight(user: UserEvent): Promise<void> {
+  const focused = document.activeElement;
+  await user.keyboard("{ArrowRight>}");
+  if (
+    focused instanceof HTMLInputElement &&
+    focused.type === "range" &&
+    !focused.disabled
+  ) {
+    const stepped = Number(focused.value) + Number(focused.step);
+    fireEvent.change(focused, {
+      target: { value: String(Math.min(stepped, Number(focused.max))) },
+    });
+  }
+  await user.keyboard("{/ArrowRight}");
+}
+
+/**
+ * **Held, not disabled** (NEW-34): a write is in flight, so the control takes no input -- and it
+ * is still a control a keyboard can stand on, saying so with `aria-disabled` rather than with
+ * `disabled`, which would throw focus off it.
+ */
+export function expectHeld(control: HTMLElement): void {
+  expect(control).toBeEnabled();
+  expect(control).toHaveAttribute("aria-disabled", "true");
+}
+
+/** The write has answered and the control takes input again. */
+export function expectNotHeld(control: HTMLElement): void {
+  expect(control).not.toHaveAttribute("aria-disabled");
+}

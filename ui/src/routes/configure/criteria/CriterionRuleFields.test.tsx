@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, delay, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { mockServer } from "../../../mocks/server";
+import { expectHeld } from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
 
 /**
@@ -321,8 +322,8 @@ describe("changing the rule", () => {
     });
     fireEvent.change(slider, { target: { value: "30" } });
     fireEvent.pointerUp(slider);
-    // The save is in flight: the controls on the row are disabled while it is.
-    await waitFor(() => expect(slider).toBeDisabled());
+    // The save is in flight: the controls on the row are held while it is.
+    await waitFor(() => expectHeld(slider));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Save rule" })).toBeEnabled(),
     );

@@ -59,7 +59,7 @@ export function PillarWeightsPanel({
   const [failure, setFailure] = useState<unknown>(null);
   // **One write at a time** (UI-04): every answer is the whole level rebalanced, so two in
   // flight can land in either order and the older answer would be shown over the newer one.
-  // The state disables the rows; the ref refuses what arrives before they have re-rendered.
+  // The state holds the rows still; the ref refuses what arrives before they have re-rendered.
   const [saving, setSaving] = useState(false);
   const inFlight = useRef(false);
   // Destructured, because `ended` is listed as a dependency below and `react-hooks` reads a
@@ -277,8 +277,10 @@ function PillarRow({
    * previous render saw and deciding nothing moved.
    */
   function commit(asked: string) {
-    // The same release arriving again. Its answer ends the gesture, so this does not.
-    if (sent.current) return;
+    // The same release arriving again -- its answer ends the gesture, so this does not -- or a
+    // release while a write is in flight, which no gesture can have started: the slider takes
+    // no movement then.
+    if (sent.current || saving) return;
     setMoving(false);
     // A range input always holds a number, so this never fires -- it is here because
     // `weightFrom` is honest about text that might not be one, and silently sending `NaN`
@@ -344,6 +346,10 @@ function PillarRow({
           </button>
         )}
 
+        {/* **Held while a write is in flight, never disabled** (NEW-34). Chromium throws focus
+            off a control the moment it is disabled and does not give it back, so a keyboard
+            user nudging a weight was put back on the page after every step. Held, the slider
+            keeps focus, says so, and ignores the keys: React puts the thumb back. */}
         <input
           className="weight-row__slider"
           type="range"
@@ -351,9 +357,10 @@ function PillarRow({
           max={ceiling}
           step={PILLAR_SLIDER.step}
           value={typed}
-          disabled={saving}
+          aria-disabled={saving || undefined}
           aria-label={`${pillarName(names, weight.pillar)} weight`}
           onChange={(event) => {
+            if (saving) return;
             sent.current = false;
             setMoving(true);
             setTyped(event.target.value);
@@ -384,7 +391,8 @@ function PillarRow({
           }
           aria-label={`Lock ${pillarName(names, weight.pillar)}`}
           aria-pressed={weight.weight_locked}
-          disabled={saving}
+          // Held, not disabled, for the slider's reason; `lock` refuses the press meanwhile.
+          aria-disabled={saving || undefined}
           title={
             weight.weight_locked
               ? "Held where it is, and takes no share of a rebalance"

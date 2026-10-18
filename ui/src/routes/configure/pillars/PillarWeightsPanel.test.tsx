@@ -1,8 +1,14 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { mockServer } from "../../../mocks/server";
+import {
+  expectHeld,
+  expectNotHeld,
+  followChromiumFocusFixup,
+  pressArrowRight,
+} from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
 
 /**
@@ -106,8 +112,8 @@ function rowOf(pillar: string): HTMLElement {
 /**
  * Locks a pillar and waits for the answer.
  *
- * **One write at a time** (UI-04): every pillar control is disabled until an answer is in, so a
- * second click made before it would land on a disabled button and do nothing.
+ * **One write at a time** (UI-04): every pillar control is held until an answer is in, so a
+ * second click made before it would land on a held button and do nothing.
  */
 async function lockPillar(pillar: string): Promise<void> {
   const disc = () => screen.getByRole("button", { name: `Lock ${pillar}` });
@@ -604,18 +610,23 @@ describe("the pillar weights panel while a change is being saved", () => {
     await setWeight("Economy", "50");
     await waitFor(() => expect(writes.sent).toHaveLength(1));
 
-    expect(weightBox("Housing")).toBeDisabled();
-    expect(weightBox("Economy")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Lock Housing" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Lock Economy" })).toBeDisabled();
-    // A pointer lifting on a disabled slider still arrives, so the panel refuses it too.
+    expectHeld(weightBox("Housing"));
+    expectHeld(weightBox("Economy"));
+    expectHeld(screen.getByRole("button", { name: "Lock Housing" }));
+    expectHeld(screen.getByRole("button", { name: "Lock Economy" }));
+    // The rebalance the drag previewed stands until its answer replaces it.
+    expect(readingOf("Housing")).toBe("25.0%");
+    // A held slider still hears a pointer -- it is not disabled -- so the panel refuses it:
+    // nothing moves, and the preview is not ended by a release no gesture started.
     fireEvent.change(weightBox("Safety"), { target: { value: "30" } });
     fireEvent.pointerUp(weightBox("Safety"));
+    expect(weightBox("Safety")).toHaveValue("25");
+    expect(readingOf("Housing")).toBe("25.0%");
 
     writes.release();
 
-    await waitFor(() => expect(weightBox("Housing")).toBeEnabled());
-    expect(screen.getByRole("button", { name: "Lock Housing" })).toBeEnabled();
+    await waitFor(() => expectNotHeld(weightBox("Housing")));
+    expectNotHeld(screen.getByRole("button", { name: "Lock Housing" }));
     expect(writes.sent).toEqual([{ weight: 50 }]);
     // And the thumb it moved goes back to the weight the server holds.
     await waitFor(() => expect(weightBox("Safety")).toHaveValue("25"));
@@ -630,12 +641,12 @@ describe("the pillar weights panel while a change is being saved", () => {
     await user.click(screen.getByRole("button", { name: "Lock Housing" }));
     await waitFor(() => expect(writes.sent).toEqual([{ weight_locked: true }]));
 
-    expect(weightBox("Economy")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Lock Safety" })).toBeDisabled();
+    expectHeld(weightBox("Economy"));
+    expectHeld(screen.getByRole("button", { name: "Lock Safety" }));
 
     writes.release();
 
-    await waitFor(() => expect(weightBox("Economy")).toBeEnabled());
+    await waitFor(() => expectNotHeld(weightBox("Economy")));
   });
 
   it("sends one weight for one release, even when the mouse and focus let go too", async () => {
@@ -650,7 +661,7 @@ describe("the pillar weights panel while a change is being saved", () => {
     await waitFor(() => expect(readingOf("Housing")).toBe("29.2%"), {
       timeout: 15_000,
     });
-    await waitFor(() => expect(weightBox("Economy")).toBeEnabled());
+    await waitFor(() => expectNotHeld(weightBox("Economy")));
     // A later gesture, so every request the first one could have made is in before this is read.
     fireEvent.change(weightBox("Economy"), { target: { value: "45" } });
     fireEvent.pointerUp(weightBox("Economy"));
@@ -701,11 +712,101 @@ describe("the pillar weights panel while a change is being saved", () => {
     await waitFor(() => expect(readingOf("Economy")).toBe("45.0%"), {
       timeout: 15_000,
     });
-    await waitFor(() => expect(weightBox("Economy")).toBeEnabled());
+    await waitFor(() => expectNotHeld(weightBox("Economy")));
     fireEvent.change(weightBox("Economy"), { target: { value: "50" } });
     fireEvent.pointerUp(weightBox("Economy"));
 
     await waitFor(() => expect(sent.at(-1)).toEqual({ weight: 50 }));
     expect(sent).toEqual([{ weight: 45 }, { weight: 50 }]);
+  });
+
+  /**
+   * NEW-34. **Held, never disabled.** Chromium throws focus off a control the moment it is
+   * disabled and does not give it back, so a keyboard user who nudged a weight or pressed a lock
+   * landed on the page after every step and had to tab back. jsdom keeps focus on a disabled
+   * control, which is why these follow Chromium's rule rather than jsdom's.
+   */
+  describe("from the keyboard", () => {
+    beforeEach(() => followChromiumFocusFixup());
+
+    it("keeps focus on a slider while its weight is saved, and steps it no further until then", async () => {
+      const user = userEvent.setup();
+      const writes = holdPillarWrites();
+      renderShell("/configure");
+      const slider = await screen.findByRole("slider", { name: "Economy weight" });
+      act(() => slider.focus());
+
+      await pressArrowRight(user);
+      await waitFor(() => expect(writes.sent).toEqual([{ weight: 40.5 }]));
+
+      expect(slider).toHaveFocus();
+      expectHeld(slider);
+      // A second step while the first is on its way: nothing moves and nothing is sent.
+      await pressArrowRight(user);
+      expect(slider).toHaveValue("40.5");
+      expect(readingOf("Economy")).toBe("40.0%");
+
+      writes.release();
+
+      await waitFor(() => expect(readingOf("Economy")).toBe("40.5%"));
+      await waitFor(() => expectNotHeld(slider));
+      expect(slider).toHaveFocus();
+      await pressArrowRight(user);
+      // The third step's request arriving is what proves the second sent nothing.
+      await waitFor(() => expect(writes.sent).toHaveLength(2));
+      expect(writes.sent).toEqual([{ weight: 40.5 }, { weight: 41 }]);
+    });
+
+    it("keeps focus on a lock while it is saved, and a second press sends nothing", async () => {
+      const user = userEvent.setup();
+      const writes = holdPillarWrites();
+      renderShell("/configure");
+      await screen.findByRole("slider", { name: "Economy weight" });
+      const lock = screen.getByRole("button", { name: "Lock Housing" });
+      act(() => lock.focus());
+
+      await user.keyboard(" ");
+      await waitFor(() => expect(writes.sent).toEqual([{ weight_locked: true }]));
+
+      expect(lock).toHaveFocus();
+      expectHeld(lock);
+      await user.keyboard(" ");
+
+      writes.release();
+
+      await waitFor(() => expect(lock).toHaveAttribute("aria-pressed", "true"));
+      await waitFor(() => expectNotHeld(lock));
+      expect(lock).toHaveFocus();
+      await user.keyboard(" ");
+      await waitFor(() => expect(lock).toHaveAttribute("aria-pressed", "false"));
+      expect(writes.sent).toEqual([
+        { weight_locked: true },
+        { weight_locked: false },
+      ]);
+    });
+
+    it("lets go of the slider after a refused weight, with focus still on it", async () => {
+      mockServer.use(
+        http.put(
+          `${BASE}/criteria-sets/:criteriaSetId/pillar-weights/:pillarId`,
+          () =>
+            HttpResponse.json(
+              { code: "weights_all_locked", message: "Every other pillar is locked." },
+              { status: 409 },
+            ),
+        ),
+      );
+      const user = userEvent.setup();
+      renderShell("/configure");
+      const slider = await screen.findByRole("slider", { name: "Economy weight" });
+      act(() => slider.focus());
+
+      await pressArrowRight(user);
+
+      expect(await (await panel()).findByText(/weights_all_locked/)).toBeInTheDocument();
+      await waitFor(() => expectNotHeld(slider));
+      expect(slider).toHaveFocus();
+      await waitFor(() => expect(slider).toHaveValue("40"));
+    });
   });
 });

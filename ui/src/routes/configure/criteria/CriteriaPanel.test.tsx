@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { mockServer } from "../../../mocks/server";
+import { expectNotHeld } from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
 
 /**
@@ -261,8 +262,8 @@ describe("the criteria panel while a pointer is down", () => {
 
 /**
  * UI-05. **One gesture sends one weight.** A range input ends a gesture with up to four events
- * -- pointer, mouse, key and blur -- and the row is disabled while its save runs, which stops
- * the mouse but not the blur: focus leaving a disabled slider sent the weight a second time.
+ * -- pointer, mouse, key and blur -- and the row is held while its save runs, still focusable
+ * (NEW-34), so it hears every one of them: each used to send the weight a second time.
  */
 describe("the criteria panel when a gesture ends more than once", () => {
   /** Every criterion write, recorded and then answered by the stateful mock behind this one. */
@@ -293,7 +294,7 @@ describe("the criteria panel when a gesture ends more than once", () => {
     release(COST_OF_LIVING);
     fireEvent.blur(slider(COST_OF_LIVING));
     await waitFor(() => expect(readingOf(COST_OF_LIVING)).toBe("35.0%"));
-    await waitFor(() => expect(slider(COST_OF_LIVING)).toBeEnabled());
+    await waitFor(() => expectNotHeld(slider(COST_OF_LIVING)));
     // A later gesture, so every request the first one could have made is in before this is read.
     drag(COST_OF_LIVING, "40");
     release(COST_OF_LIVING);
@@ -312,7 +313,7 @@ describe("the criteria panel when a gesture ends more than once", () => {
     fireEvent.keyUp(slider(COST_OF_LIVING), { key: "ArrowLeft" });
     fireEvent.blur(slider(COST_OF_LIVING));
     await waitFor(() => expect(readingOf(COST_OF_LIVING)).toBe("45.0%"));
-    await waitFor(() => expect(slider(COST_OF_LIVING)).toBeEnabled());
+    await waitFor(() => expectNotHeld(slider(COST_OF_LIVING)));
     drag(COST_OF_LIVING, "40");
     release(COST_OF_LIVING);
 
