@@ -831,9 +831,10 @@ describe("the source priority panel while a change is being written", () => {
         { id: "llm", body: { default_priority: 10 } },
         { id: "eurostat", body: { default_priority: 50 } },
       ]);
-      // First now, so there is nowhere further up to go: disabled outright, not held.
+      // First now, so there is nowhere further up to go: disabled outright, not held. Waited
+      // for, because the order is drawn from the read-back a render before the hold lets go.
+      await waitFor(() => expectNotHeld(up));
       expect(up).toBeDisabled();
-      expectNotHeld(up);
     });
 
     it("keeps the list on screen and every control held until the order has been read again", async () => {
