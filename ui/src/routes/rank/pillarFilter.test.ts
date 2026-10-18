@@ -95,6 +95,24 @@ describe("what the active set has decided about an attribute", () => {
     ).toBeNull();
   });
 
+  it("says the set scores a criterion unless the criterion says otherwise", () => {
+    expect(judgementsByAttribute(criteria).get("country.rent")?.scored).toBe(true);
+  });
+
+  /**
+   * UI-15. **An excluded criterion judges and does not count** (`reqs.md` 5.3): it takes no
+   * weight and leaves no gap, so the weight the set would give it were it counted is not a
+   * weight it has -- printed beside its figure, it read as a share of the pillar.
+   */
+  it("gives no weight to a criterion the set does not score", () => {
+    const judged = judgementsByAttribute([
+      { attribute: "country.climate_zone", weight: 10, is_scored: false },
+    ]).get("country.climate_zone");
+
+    expect(judged?.scored).toBe(false);
+    expect(judged?.weight).toBeNull();
+  });
+
   it("is empty when there is no set yet", () => {
     expect(judgementsByAttribute(null).size).toBe(0);
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scoresByAttribute } from "./attributeScores";
+import { figureInUse, scoresByAttribute } from "./attributeScores";
 
 describe("what each attribute put into the total", () => {
   it("reads all three figures off one row", () => {
@@ -67,5 +67,72 @@ describe("what each attribute put into the total", () => {
     ]);
 
     expect(readings.get("a")?.score).toBe("2");
+  });
+});
+
+/**
+ * UI-15. **A reading belongs to the figure it was computed from**, and the pass computes from
+ * the active one. Keyed by attribute alone, the superseded and rejected figures beside it
+ * printed the active figure's score and points as though they had earned them.
+ */
+describe("what the In use column says about one figure", () => {
+  const readings = scoresByAttribute([
+    {
+      attribute: "country.rent",
+      normalised_score: 73,
+      effective_weight: 12.5,
+      contribution: 9.125,
+    },
+  ]);
+  const active = { attribute: "country.rent", is_active: true };
+
+  it("gives the pass's reading to the active figure of an attribute the set scores", () => {
+    expect(figureInUse(active, true, readings)).toEqual({
+      inUse: "scored",
+      reading: { score: "73", weightUsed: "12.5%", pointsAdded: "+9.1" },
+    });
+  });
+
+  it("gives none to a figure the active one superseded", () => {
+    expect(
+      figureInUse(
+        { attribute: "country.rent", is_active: false, rejection_reason: null },
+        true,
+        readings,
+      ),
+    ).toEqual({ inUse: "superseded", reading: null });
+  });
+
+  it("gives none to a figure the catalog rejected, and says it was rejected", () => {
+    expect(
+      figureInUse(
+        {
+          attribute: "country.rent",
+          is_active: false,
+          rejection_reason: "outside the attribute's allowed range",
+        },
+        true,
+        readings,
+      ),
+    ).toEqual({ inUse: "rejected", reading: null });
+  });
+
+  /**
+   * **Active, and nothing more.** A descriptive attribute has no criterion and an excluded one
+   * does not count (`reqs.md` 3.0, 5.3): its figure is the one in use, and calling it scored
+   * would claim a part in the total it never had.
+   */
+  it("calls the active figure of an attribute the set does not score active, with no reading", () => {
+    expect(figureInUse(active, false, readings)).toEqual({
+      inUse: "active",
+      reading: null,
+    });
+  });
+
+  it("calls a figure scored before the pass has arrived, with its reading still to come", () => {
+    expect(figureInUse(active, true, new Map())).toEqual({
+      inUse: "scored",
+      reading: null,
+    });
   });
 });

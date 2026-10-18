@@ -53,3 +53,57 @@ export function scoresByAttribute(
   }
   return readings;
 }
+
+/**
+ * What a stored figure is to the pass: the four words of the "In use" column.
+ *
+ * **Active is not the same as scored.** Being active is a comparison between the figures held
+ * for one attribute (`reqs.md` 3.6); being scored needs, besides, a criterion that counts the
+ * attribute -- and a descriptive attribute has none, while an excluded one judges without
+ * counting (`reqs.md` 3.0, 5.3).
+ */
+export type InUse = "scored" | "active" | "superseded" | "rejected";
+
+export interface StoredFigure {
+  attribute: string;
+  is_active: boolean;
+  rejection_reason?: string | null;
+}
+
+export interface FigureInUse {
+  inUse: InUse;
+  /** The pass's reading, on the figure it was computed from; null on every other row. */
+  reading: ScoreReading | null;
+}
+
+/**
+ * What the pass made of one stored figure (UI-15).
+ *
+ * **A reading belongs to the figure it was computed from, and the pass computes from the
+ * active one.** The readings are keyed by attribute, so handing one to every figure of that
+ * attribute printed the active figure's score and points beside the superseded and rejected
+ * ones -- evidence appearing to justify arithmetic done on another measurement.
+ *
+ * **The active figure is matched by `is_active`, not by the value the pass used**, which the
+ * ranking does not name: a figure stored between the two reads would be credited with a
+ * reading computed from its predecessor. Rare with one household and one writer, and the
+ * household chose this over a contract change.
+ *
+ * @param scoredBySet whether the active set has a criterion that counts this attribute.
+ */
+export function figureInUse(
+  figure: StoredFigure,
+  scoredBySet: boolean,
+  readings: ReadonlyMap<string, ScoreReading>,
+): FigureInUse {
+  if (!figure.is_active) {
+    return {
+      inUse: figure.rejection_reason ? "rejected" : "superseded",
+      reading: null,
+    };
+  }
+  if (!scoredBySet) {
+    return { inUse: "active", reading: null };
+  }
+  return { inUse: "scored", reading: readings.get(figure.attribute) ?? null };
+}

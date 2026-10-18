@@ -34,7 +34,12 @@ import {
 } from "./pillarFilter";
 import { pillarCompleteness, type Completeness } from "./pillarCompleteness";
 import { type PillarScore, pillarBars } from "./rankTable";
-import { scoresByAttribute, type ScoreReading } from "./attributeScores";
+import {
+  figureInUse,
+  scoresByAttribute,
+  type InUse,
+  type ScoreReading,
+} from "./attributeScores";
 
 /**
  * One candidate's evidence: every stored value, and the outside indices beside them.
@@ -269,7 +274,10 @@ function ValueTable({
   pillarNames: PillarNames;
   /** What the active set decided about each attribute: its weight, and whether it blocks. */
   judgements: Map<string, Judgement>;
-  /** What the pass made of each figure, from the ranking on screen. Empty until it arrives. */
+  /**
+   * What the pass made of each attribute, from the ranking on screen, for the one figure it
+   * scored (`figureInUse`). Empty until it arrives.
+   */
   contributions: ReadonlyMap<string, ScoreReading>;
 }) {
   if (values.length === 0) {
@@ -312,6 +320,11 @@ function ValueTable({
         <tbody>
           {foldRepeats(values).map(({ value, copies, firstRetrieved }) => {
             const judged = judgements.get(value.attribute);
+            const { inUse, reading } = figureInUse(
+              value,
+              judged?.scored === true,
+              contributions,
+            );
             return (
               <tr
                 key={value.id}
@@ -375,7 +388,7 @@ function ValueTable({
                 </td>
 
                 <td className="col--right value-weight">
-                  {contributions.get(value.attribute)?.score ?? ABSENT}
+                  {reading?.score ?? ABSENT}
                 </td>
 
                 {/* **The weight this set gives it, and nothing where it gives none.** An
@@ -388,11 +401,11 @@ function ValueTable({
                 </td>
 
                 <td className="col--right value-weight">
-                  {contributions.get(value.attribute)?.weightUsed ?? ABSENT}
+                  {reading?.weightUsed ?? ABSENT}
                 </td>
 
                 <td className="col--right value-weight">
-                  {contributions.get(value.attribute)?.pointsAdded ?? ABSENT}
+                  {reading?.pointsAdded ?? ABSENT}
                 </td>
 
                 <td>
@@ -401,18 +414,14 @@ function ValueTable({
                   </span>
                 </td>
 
-                {/* Three states, and the design gives each its own tint: a figure being
-                    scored, one a better source displaced, and one the catalog refused. They
-                    are not degrees of the same thing, which one column of plain words made
-                    them look like. */}
+                {/* Four states, and each has its own tint: a figure being scored, one in use
+                    that nothing counts, one a better source displaced, and one the catalog
+                    refused. They are not degrees of the same thing, which one column of plain
+                    words made them look like. */}
                 <td>
-                  {value.is_active ? (
-                    <span className="chip chip--accent">Scored</span>
-                  ) : value.rejection_reason ? (
-                    <span className="chip chip--not_matching">Rejected</span>
-                  ) : (
-                    <span className="chip chip--neutral">Superseded</span>
-                  )}
+                  <span className={`chip ${IN_USE[inUse].tint}`}>
+                    {IN_USE[inUse].label}
+                  </span>
                 </td>
               </tr>
             );
@@ -422,6 +431,20 @@ function ValueTable({
     </div>
   );
 }
+
+/**
+ * How the "In use" column names each state.
+ *
+ * **"Active" is the ontology's own word** (`reqs.md` Appendix A): the figure the active-value
+ * rule chose for its attribute. Quiet, because a figure no criterion counts is context and
+ * should not compete with the ones that are scored.
+ */
+const IN_USE: Record<InUse, { label: string; tint: string }> = {
+  scored: { label: "Scored", tint: "chip--accent" },
+  active: { label: "Active", tint: "chip--quiet" },
+  superseded: { label: "Superseded", tint: "chip--neutral" },
+  rejected: { label: "Rejected", tint: "chip--not_matching" },
+};
 
 /**
  * What each pillar put into the total, as the cards the design draws.

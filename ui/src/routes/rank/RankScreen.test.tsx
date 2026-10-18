@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { HOUSEHOLD } from "../../mocks/fixtures";
+import { HOUSEHOLD, STORED_VALUES, makeCriteriaSetDetails } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -411,7 +411,12 @@ describe("the drill-down", () => {
     // estimate, and the air connectivity count that no criterion scores.
     expect(rows).toHaveLength(4);
     expect(within(table).getAllByText("Superseded")).toHaveLength(1);
-    expect(within(table).getAllByText("Scored")).toHaveLength(3);
+    // **Scored twice, not three times** (UI-15): the air connectivity count is the figure in
+    // use for its attribute, and no criterion scores it, so it is active and nothing more.
+    await waitFor(() =>
+      expect(within(table).getAllByText("Scored")).toHaveLength(2),
+    );
+    expect(within(table).getAllByText("Active")).toHaveLength(1);
   });
 
   it("shows each figure with its source, both dates and its confidence", async () => {
@@ -1244,17 +1249,157 @@ describe("what the pass made of each figure", () => {
     );
   }
 
+  type TheValues = Awaited<ReturnType<typeof theValues>>;
+
+  /** The one row of an attribute whose text includes `saying`: its quote, or its chip. */
+  function rowOf(
+    table: TheValues,
+    attribute: RegExp,
+    saying: string,
+  ): HTMLElement {
+    const row = table
+      .getAllByRole("row", { name: attribute })
+      .find((each) => each.textContent?.includes(saying));
+    expect(row, `no ${String(attribute)} row saying "${saying}"`).toBeDefined();
+    return row!;
+  }
+
+  /**
+   * One cell of a stored value's row, by its column heading -- for the same reason the ranking
+   * table's cells are found that way: a column's position is an accident of layout.
+   */
+  function cellOf(
+    table: TheValues,
+    row: HTMLElement,
+    column: string,
+  ): HTMLElement {
+    const headings = table
+      .getAllByRole("columnheader")
+      .map((heading) => heading.textContent?.trim() ?? "");
+    const at = headings.indexOf(column);
+    expect(at, `no column headed "${column}"`).toBeGreaterThan(-1);
+    return row.children[at] as HTMLElement;
+  }
+
+  /** Score, weight used and points added: the three readings the pass made of a figure. */
+  const THE_PASS = ["Score 0–100", "Weight used", "Contribution"];
+
+  /** Waits until the pass's reading has reached the figure it was computed from. */
+  async function theActiveCostOfLiving(
+    table: TheValues,
+  ): Promise<HTMLElement> {
+    const active = rowOf(table, /cost of living index/i, "Eurostat 2025: 94.5");
+    await waitFor(() =>
+      expect(cellOf(table, active, "Contribution")).toHaveTextContent("+9.1"),
+    );
+    return active;
+  }
+
   it("prints the score, the weight used and the points added, all the server's", async () => {
     const table = await theValues();
 
     // The active figure, not the one it superseded: both rows carry the attribute's name, and
     // the pass scored the one it is using.
-    const row = table
-      .getAllByRole("row", { name: /cost of living index/i })
-      .find((each) => each.textContent?.includes("Scored"));
-    expect(row).toHaveTextContent("73");
-    expect(row).toHaveTextContent("12.5%");
-    expect(row).toHaveTextContent("+9.1");
+    const row = await theActiveCostOfLiving(table);
+    expect(row).toHaveTextContent("Scored");
+    expect(cellOf(table, row, "Score 0–100")).toHaveTextContent("73");
+    expect(cellOf(table, row, "Weight used")).toHaveTextContent("12.5%");
+    expect(cellOf(table, row, "Contribution")).toHaveTextContent("+9.1");
+  });
+
+  /**
+   * UI-15. **The pass's reading belongs to the figure it read.** Looked up by attribute, the
+   * 2024 figure the 2025 one superseded printed the 73, the 12.5% and the +9.1 that the 2025
+   * figure earned -- evidence appearing to justify arithmetic done on another measurement.
+   */
+  it("prints nothing against a figure the pass superseded", async () => {
+    const table = await theValues();
+    await theActiveCostOfLiving(table);
+
+    const superseded = rowOf(table, /cost of living index/i, "Eurostat 2024: 92.1");
+    for (const column of THE_PASS) {
+      expect(cellOf(table, superseded, column)).toHaveTextContent(/^—$/);
+    }
+  });
+
+  it("prints nothing against a figure the catalog rejected", async () => {
+    const active = STORED_VALUES.find((each) => each.id === 501)!;
+    mockServer.use(
+      http.get("/v1/values", () =>
+        HttpResponse.json({
+          items: [
+            active,
+            {
+              ...active,
+              id: 951,
+              payload: { magnitude: 999, unit: "index_eu27_100" },
+              quote: "Eurostat 2025: 999",
+              is_active: false,
+              rejection_reason: "outside the attribute's allowed range",
+            },
+          ],
+          total: 2,
+        }),
+      ),
+    );
+    const table = await theValues();
+    await theActiveCostOfLiving(table);
+
+    const rejected = rowOf(table, /cost of living index/i, "Rejected");
+    for (const column of THE_PASS) {
+      expect(cellOf(table, rejected, column)).toHaveTextContent(/^—$/);
+    }
+  });
+
+  /**
+   * UI-15. **Active is not scored.** `european_air_connectivity` is the figure in use for its
+   * attribute and no criterion judges it (`reqs.md` 3.0, Q228), so calling it "Scored" claimed
+   * a part in the total it never had.
+   */
+  it("calls a figure no criterion scores active, not scored", async () => {
+    const table = await theValues();
+    // The set has arrived once a figure it scores carries its reading; before then, "not
+    // scored" would be true of every row for the wrong reason.
+    expect(await theActiveCostOfLiving(table)).toHaveTextContent("Scored");
+
+    const connectivity = table.getByRole("row", {
+      name: /european air connectivity/i,
+    });
+    expect(cellOf(table, connectivity, "In use")).toHaveTextContent(/^Active$/);
+  });
+
+  /**
+   * **An excluded criterion judges and does not count** (`reqs.md` 5.3, `0122`): its attribute
+   * takes no weight and leaves no gap, so its figure is no more scored than a descriptive one
+   * -- and the weight the set would give it, were it counted, is not a weight it has.
+   */
+  it("calls a figure its criterion excludes active, and gives it no weight", async () => {
+    const sets = makeCriteriaSetDetails();
+    const theSet = sets["default"]!;
+    theSet.criteria = [
+      ...(theSet.criteria ?? []),
+      {
+        attribute: "country.european_air_connectivity",
+        pillar: "connectivity",
+        weight: 10,
+        weight_locked: false,
+        is_scored: false,
+        goal: "maximise",
+        normalisation_method: "percentile",
+        blocks_if_missing: false,
+      },
+    ];
+    mockServer.use(
+      http.get("/v1/criteria-sets/default", () => HttpResponse.json(theSet)),
+    );
+    const table = await theValues();
+    expect(await theActiveCostOfLiving(table)).toHaveTextContent("Scored");
+
+    const connectivity = table.getByRole("row", {
+      name: /european air connectivity/i,
+    });
+    expect(cellOf(table, connectivity, "In use")).toHaveTextContent(/^Active$/);
+    expect(cellOf(table, connectivity, "Weight")).toHaveTextContent(/^—$/);
   });
 
   it("keeps the configured weight beside the one the pass used", async () => {

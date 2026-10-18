@@ -48,12 +48,18 @@ export interface Judgement {
   weight: number | null;
   /** Whether the candidate cannot be scored at all without it (`blocks_if_missing`). */
   required: boolean;
+  /**
+   * Whether the set counts it. An excluded criterion still judges -- it matches and gates --
+   * and adds nothing to the total (`reqs.md` 5.3).
+   */
+  scored: boolean;
 }
 
 export interface Weighed {
   attribute: string;
   weight?: number;
   blocks_if_missing?: boolean;
+  is_scored?: boolean;
 }
 
 /**
@@ -62,17 +68,24 @@ export interface Weighed {
  * **The set's opinion, not the catalog's.** An attribute this set does not score appears in no
  * entry, so the table says nothing about its weight rather than showing a zero -- which would
  * read as "worth nothing" when the truth is "not judged here at all" (`reqs.md` 3.0).
+ *
+ * **An excluded criterion has no weight either** (UI-15): it takes none and leaves no gap, so
+ * the weight it would carry were it counted is not one it has.
  */
 export function judgementsByAttribute(
   criteria: readonly Weighed[] | null | undefined,
 ): Map<string, Judgement> {
   return new Map(
-    (criteria ?? []).map((each) => [
-      each.attribute,
-      {
-        weight: each.weight ?? null,
-        required: each.blocks_if_missing === true,
-      },
-    ]),
+    (criteria ?? []).map((each): [string, Judgement] => {
+      const scored = each.is_scored !== false;
+      return [
+        each.attribute,
+        {
+          weight: scored ? (each.weight ?? null) : null,
+          required: each.blocks_if_missing === true,
+          scored,
+        },
+      ];
+    }),
   );
 }
