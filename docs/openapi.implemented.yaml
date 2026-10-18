@@ -20,6 +20,7 @@ components:
       title: AllowedRangeBody
       type: object
     ApplicationBody:
+      additionalProperties: false
       properties:
         is_applied:
           title: Is Applied
@@ -763,46 +764,48 @@ components:
         sending it leaves the bound alone. Reading `None` as "unchanged" would make
         a bound
 
-        impossible to remove through the API.'
+        impossible to remove through the API.
+
+
+        **Null clears only what the design lets it clear** (BE-23): a bound, the breakdown
+        option,
+
+        the threshold -- and `reducer_mode`, which the design types without a null,
+        because null is
+
+        the only way to remove one. Everything else refuses it; `scale_anchors: null`
+        used to clear
+
+        the anchors, which is what `[]` says.'
       properties:
         blocks_if_missing:
-          anyOf:
-          - type: boolean
-          - type: 'null'
           title: Blocks If Missing
+          type: boolean
         breakdown_option:
           anyOf:
           - type: string
           - type: 'null'
           title: Breakdown Option
         goal:
-          anyOf:
-          - $ref: '#/components/schemas/Goal'
-          - type: 'null'
+          $ref: '#/components/schemas/Goal'
         is_scored:
-          anyOf:
-          - type: boolean
-          - type: 'null'
           title: Is Scored
+          type: boolean
         matching_threshold:
           anyOf:
           - $ref: '#/components/schemas/ThresholdBody'
           - type: 'null'
         normalisation_method:
-          anyOf:
-          - $ref: '#/components/schemas/NormalisationMethod'
-          - type: 'null'
+          $ref: '#/components/schemas/NormalisationMethod'
         reducer_mode:
           anyOf:
           - $ref: '#/components/schemas/ReducerMode'
           - type: 'null'
         scale_anchors:
-          anyOf:
-          - items:
-              $ref: '#/components/schemas/ScaleAnchorBody'
-            type: array
-          - type: 'null'
+          items:
+            $ref: '#/components/schemas/ScaleAnchorBody'
           title: Scale Anchors
+          type: array
         target_range_max:
           anyOf:
           - type: number
@@ -824,13 +827,10 @@ components:
             type: number
           - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
             type: string
-          - type: 'null'
           title: Weight
         weight_locked:
-          anyOf:
-          - type: boolean
-          - type: 'null'
           title: Weight Locked
+          type: boolean
         zero_score_above:
           anyOf:
           - type: number
@@ -888,19 +888,18 @@ components:
         priority. **Nothing here changes what the source measures** -- that is the
         catalog, and
 
-        the catalog is changed by migration (`reqs.md` 2, Q232).'
+        the catalog is changed by migration (`reqs.md` 2, Q232). Optional is not nullable:
+        a null
+
+        switch was taken as though it had been left out.'
       properties:
         default_priority:
-          anyOf:
-          - exclusiveMinimum: 0.0
-            type: integer
-          - type: 'null'
+          exclusiveMinimum: 0.0
           title: Default Priority
+          type: integer
         is_enabled:
-          anyOf:
-          - type: boolean
-          - type: 'null'
           title: Is Enabled
+          type: boolean
       title: DataSourceInput
       type: object
     DataSourcesBody:
@@ -932,6 +931,7 @@ components:
       title: DuplicateRequest
       type: object
     EnforcementBody:
+      additionalProperties: false
       properties:
         is_enforced:
           title: Is Enforced
@@ -1242,6 +1242,7 @@ components:
       title: LevelsBody
       type: object
     ManualValueBody:
+      additionalProperties: false
       description: '`ManualValueInput`. The source is implicitly `manual` and cannot
         be set here.'
       properties:
@@ -1401,6 +1402,7 @@ components:
       title: MatchRuleResultBody
       type: object
     MatchRuleResultInputBody:
+      additionalProperties: false
       properties:
         citations:
           default: []
@@ -1608,20 +1610,20 @@ components:
         lock-only body; this one required a weight and so could express the lock but
         never the
 
-        unlock.'
+        unlock.
+
+
+        Optional is not nullable: a null weight or lock was taken as though it had
+        been left out.'
       properties:
         weight:
-          anyOf:
-          - maximum: 100.0
-            minimum: 0.0
-            type: number
-          - type: 'null'
+          maximum: 100.0
+          minimum: 0.0
           title: Weight
+          type: number
         weight_locked:
-          anyOf:
-          - type: boolean
-          - type: 'null'
           title: Weight Locked
+          type: boolean
       title: PillarWeightInput
       type: object
     PillarWeightsBody:
@@ -1723,6 +1725,7 @@ components:
       title: ReducerMode
       type: string
     ReferencePeriodBody:
+      additionalProperties: false
       properties:
         end:
           format: date
@@ -1802,8 +1805,15 @@ components:
       title: ResearchPlanBody
       type: object
     ResearchRequestBody:
-      description: Which gates to research, and whether an uncapped spend is accepted
+      additionalProperties: false
+      description: 'Which gates to research, and whether an uncapped spend is accepted
         (`reqs.md` 6.3).
+
+
+        A misspelled `match_rules` used to fall to null, which is every gate at the
+        level -- a
+
+        paid pass over all of them when one was named (BE-23).'
       properties:
         accept_uncapped_spend:
           default: false
@@ -1831,6 +1841,7 @@ components:
       title: ResearchRequestBody
       type: object
     RetryBody:
+      additionalProperties: false
       description: Which part of the run to go over again. Absent means the failures,
         as it always did.
       properties:
@@ -2026,6 +2037,7 @@ components:
       title: RunPlanBody
       type: object
     RunRequestBody:
+      additionalProperties: false
       description: 'A scope, and whether an uncapped run is accepted (`reqs.md` 6.3).
 
 
@@ -2061,7 +2073,16 @@ components:
       title: RunRequestBody
       type: object
     RunScopeBody:
-      description: What a run is asked to cover. Null means everything at the level.
+      additionalProperties: false
+      description: 'What a run is asked to cover. Null means everything at the level.
+
+
+        **A field it does not declare is refused, never dropped** (BE-23): a misspelled
+
+        `candidates` fell to null, which is every candidate -- a run, paid where a
+        source charges,
+
+        over the whole level when one country was named.'
       properties:
         attributes:
           anyOf:
@@ -2100,6 +2121,7 @@ components:
       title: RunsBody
       type: object
     SaveEvaluationBody:
+      additionalProperties: false
       properties:
         criteria_set:
           title: Criteria Set
@@ -2118,6 +2140,7 @@ components:
       title: SaveEvaluationBody
       type: object
     ScaleAnchorBody:
+      additionalProperties: false
       properties:
         input_value:
           title: Input Value
@@ -2260,20 +2283,22 @@ components:
         that meant
 
         something other than what was sent is the fabricated judgement this application
-        prevents.'
+        prevents.
+
+
+        A bound may be null -- a range open on one side -- and nothing else may: a
+        null
+
+        `required_value` was read as `false`, which is a threshold nobody set.'
       properties:
         label:
-          anyOf:
-          - type: string
-          - type: 'null'
           title: Label
+          type: string
         labels:
-          anyOf:
-          - items:
-              $ref: '#/components/schemas/LabelThresholdBody'
-            type: array
-          - type: 'null'
+          items:
+            $ref: '#/components/schemas/LabelThresholdBody'
           title: Labels
+          type: array
         max_share:
           anyOf:
           - type: number
@@ -2303,10 +2328,8 @@ components:
           - type: 'null'
           title: Min Value
         required_value:
-          anyOf:
-          - type: boolean
-          - type: 'null'
           title: Required Value
+          type: boolean
       title: ThresholdBody
       type: object
     UnansweredBody:

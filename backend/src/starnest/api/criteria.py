@@ -26,7 +26,7 @@ from typing import ClassVar
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from starnest.api.bodies import ContractBody
+from starnest.api.bodies import ContractBody, PartialChangeBody
 from starnest.api.dependencies import Catalog, Criteria
 from starnest.api.errors import built_from_the_request
 from starnest.criteria import (
@@ -51,6 +51,8 @@ router = APIRouter(tags=["criteria"])
 
 
 class ScaleAnchorBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     # The domain's own bounds, mirrored: a native constraint failing inside `ScaleAnchor` is
     # left a 500 by `built_from_the_request`, so the request has to be refused here (BE-21).
     input_value: float = Field(allow_inf_nan=False)
@@ -110,16 +112,19 @@ class LabelThresholdBody(BaseModel):
     containment_rule: str
 
 
-class ThresholdBody(BaseModel):
+class ThresholdBody(PartialChangeBody):
     """One matching threshold, in whichever of the four shapes the attribute's type takes.
 
     **One body for four shapes**, because the contract types it as a `oneOf` and which one
     applies is decided by the attribute rather than by the client. Sending fields from two
     shapes at once is refused rather than resolved by precedence: a threshold that meant
     something other than what was sent is the fabricated judgement this application prevents.
+
+    A bound may be null -- a range open on one side -- and nothing else may: a null
+    `required_value` was read as `false`, which is a threshold nobody set.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    not_nullable: ClassVar[frozenset[str]] = frozenset({"labels", "required_value", "label"})
 
     min_value: Decimal | None = None
     max_value: Decimal | None = None
@@ -130,7 +135,7 @@ class ThresholdBody(BaseModel):
     max_share: Decimal | None = None
 
 
-class CriterionInput(BaseModel):
+class CriterionInput(PartialChangeBody):
     """Only the fields present are changed, and a field this endpoint cannot change is refused.
 
     **Every field the contract designs is now applied.** They used to be dropped: Pydantic
@@ -143,9 +148,24 @@ class CriterionInput(BaseModel):
     changed" means in practice: sending `target_range_min: null` *clears* the bound, and not
     sending it leaves the bound alone. Reading `None` as "unchanged" would make a bound
     impossible to remove through the API.
+
+    **Null clears only what the design lets it clear** (BE-23): a bound, the breakdown option,
+    the threshold -- and `reducer_mode`, which the design types without a null, because null is
+    the only way to remove one. Everything else refuses it; `scale_anchors: null` used to clear
+    the anchors, which is what `[]` says.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    not_nullable: ClassVar[frozenset[str]] = frozenset(
+        {
+            "is_scored",
+            "weight",
+            "weight_locked",
+            "goal",
+            "normalisation_method",
+            "blocks_if_missing",
+            "scale_anchors",
+        }
+    )
 
     # `Decimal` on the way IN and `float` on the way out, deliberately. A JSON number parsed
     # into a Decimal is exact, and the weight then reaches the rebalancing arithmetic without
@@ -213,7 +233,7 @@ def _the_threshold_in(sent: ThresholdBody | None) -> MatchingThreshold | None:
     if shape == "range":
         return RangeThreshold(min_value=sent.min_value, max_value=sent.max_value)
     if shape == "boolean":
-        return BooleanThreshold(required_value=bool(sent.required_value))
+        return BooleanThreshold(required_value=sent.required_value)
     if shape == "share":
         return ShareThreshold(
             label=sent.label or "", min_share=sent.min_share, max_share=sent.max_share
@@ -436,7 +456,7 @@ class RenameBody(BaseModel):
     name: str = Field(min_length=1)
 
 
-class PillarWeightInput(BaseModel):
+class PillarWeightInput(PartialChangeBody):
     """A pillar's weight, its lock, or both.
 
     **The weight is optional so a lock can travel alone** (P68). A lock holds its weight where
@@ -445,9 +465,11 @@ class PillarWeightInput(BaseModel):
     and refused before the flag is read. The criterion endpoint has always accepted a
     lock-only body; this one required a weight and so could express the lock but never the
     unlock.
+
+    Optional is not nullable: a null weight or lock was taken as though it had been left out.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    not_nullable: ClassVar[frozenset[str]] = frozenset({"weight", "weight_locked"})
 
     weight: float | None = Field(default=None, ge=0, le=100)
     weight_locked: bool | None = None
@@ -458,10 +480,14 @@ class PillarWeightsBody(BaseModel):
 
 
 class EnforcementBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     is_enforced: bool
 
 
 class ApplicationBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     is_applied: bool
 
 

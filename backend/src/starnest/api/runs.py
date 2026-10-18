@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from starnest.api.bodies import ContractBody
 from starnest.api.dependencies import (
@@ -47,7 +47,14 @@ router = APIRouter(tags=["acquisition"])
 
 
 class RunScopeBody(BaseModel):
-    """What a run is asked to cover. Null means everything at the level."""
+    """What a run is asked to cover. Null means everything at the level.
+
+    **A field it does not declare is refused, never dropped** (BE-23): a misspelled
+    `candidates` fell to null, which is every candidate -- a run, paid where a source charges,
+    over the whole level when one country was named.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     level: str
     candidates: tuple[str, ...] | None = None
@@ -127,6 +134,8 @@ class UnansweredBody(BaseModel):
 
 class RetryBody(BaseModel):
     """Which part of the run to go over again. Absent means the failures, as it always did."""
+
+    model_config = ConfigDict(extra="forbid")
 
     items: Literal["failed", "unanswered"] = "failed"
     accept_uncapped_spend: bool = False

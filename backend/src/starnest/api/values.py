@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import Any
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from starnest.api.dependencies import Candidates, Catalog, Values
 from starnest.api.errors import built_from_the_request
@@ -34,6 +34,8 @@ router = APIRouter(tags=["values"])
 
 
 class ReferencePeriodBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     start: date
     end: date
 
@@ -63,6 +65,8 @@ class ValuesBody(BaseModel):
 
 class ManualValueBody(BaseModel):
     """`ManualValueInput`. The source is implicitly `manual` and cannot be set here."""
+
+    model_config = ConfigDict(extra="forbid")
 
     candidate: str
     attribute: str

@@ -553,3 +553,45 @@ class TestResearchRefusesAnUnknownScope:
 
         assert response.status_code == 422
         assert response.json()["details"]["unknown_match_rules"] == ["no_such_gate"]
+
+
+class TestResearchRefusesAFieldItDoesNotDeclare:
+    """BE-23, on the paid path. A misspelled `match_rules` was dropped, and a scope naming no
+    gates means every gate asked at the level -- so a pass meant for one gate researched, and
+    billed for, all of them."""
+
+    async def test_the_pass_refuses_a_misspelled_gate_list_and_asks_nothing(
+        self, database_url: str
+    ) -> None:
+        researcher = StubResearcher()
+        async with an_api(database_url, (a_stub_source(),), researcher=researcher) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+
+            response = await api.post(
+                "/v1/match-rule-research",
+                json={
+                    "level": COUNTRY,
+                    "candidates": ["country.portugal"],
+                    "match_rule": ["uk_skilled_worker"],
+                },
+            )
+            stored = (await api.get("/v1/match-rule-results")).json()["items"]
+
+        assert response.status_code == 422, f"answered {response.status_code}: {response.text[:80]}"
+        assert response.json()["code"] == "invalid_request"
+        assert ["body", "match_rule"] in [
+            e["location"] for e in response.json()["details"]["errors"]
+        ]
+        assert researcher.asked == 0
+        assert stored == []
+
+    async def test_the_estimate_refuses_it_too(self, database_url: str) -> None:
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            response = await api.post(
+                "/v1/match-rule-research/plan",
+                json={"level": COUNTRY, "match_rule": ["uk_skilled_worker"]},
+            )
+
+        assert response.status_code == 422, f"answered {response.status_code}: {response.text[:80]}"
+        assert response.json()["code"] == "invalid_request"

@@ -15,9 +15,12 @@ from contextlib import contextmanager
 from typing import Any
 
 from fastapi import HTTPException, Request
+from fastapi.dependencies.models import Dependant
+from fastapi.dependencies.utils import get_validation_alias
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field, ValidationError
 
 from starnest.candidates import MalformedIdentifierError, UnknownCandidateError
@@ -270,3 +273,39 @@ def _validation_details(error: RequestValidationError) -> list[dict[str, Any]]:
         {"location": [str(part) for part in item.get("loc", ())], "problem": item.get("msg", "")}
         for item in error.errors()
     ]
+
+
+async def refuse_unknown_query_parameters(request: Request) -> None:
+    """Refuse a query parameter the operation does not declare, rather than ignore it (BE-23).
+
+    FastAPI drops one silently: a misspelled parameter answered as though it had not been sent,
+    `dry_run=true` started a real run, and a filter the server does not apply returned
+    everything unfiltered.
+    Every unknown name is listed at once, located in the query, and answered as any other
+    malformed request is: 422 `invalid_request`, by `request_validation_handler`.
+
+    **Declared means declared anywhere the operation reads from**, the sub-dependencies
+    included, and by the name a client sends -- an alias, where one is set.
+    """
+    route: APIRoute = request.scope["route"]
+    declared = _query_parameters_of(route.dependant)
+    unknown = [name for name in request.query_params if name not in declared]
+    if unknown:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "extra_forbidden",
+                    "loc": ("query", name),
+                    "msg": "Extra inputs are not permitted",
+                    "input": request.query_params.get(name),
+                }
+                for name in unknown
+            ]
+        )
+
+
+def _query_parameters_of(dependant: Dependant) -> set[str]:
+    """Every query name an operation reads, under the name FastAPI itself reads it by."""
+    return {get_validation_alias(parameter) for parameter in dependant.query_params}.union(
+        *(_query_parameters_of(sub) for sub in dependant.dependencies)
+    )

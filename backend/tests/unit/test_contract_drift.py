@@ -172,6 +172,60 @@ def _body_fields(schema: dict, document: dict, *, seen: frozenset[str] = frozens
     return names
 
 
+def _request_body_schemas(document: dict) -> dict[str, dict]:
+    """Every operation's JSON request body schema, by operation id."""
+    found: dict[str, dict] = {}
+    for item in document["paths"].values():
+        for method, operation in item.items():
+            if method == "parameters" or not isinstance(operation, dict):
+                continue
+            name = operation.get("operationId")
+            body = operation.get("requestBody") if name else None
+            schema = (body or {}).get("content", {}).get("application/json", {}).get("schema")
+            if schema is not None:
+                found[name] = schema
+    return found
+
+
+def _lax_objects(
+    schema: dict, document: dict, *, named: str = "", seen: frozenset[str] = frozenset()
+) -> set[str]:
+    """Every object schema reachable from this one that declares its fields and still takes more.
+
+    Followed through `$ref`, composition, array items and each declared property, because a
+    nested object is sent as surely as the body holding it: an anchor or a period with a
+    misspelled key is dropped exactly as a misspelled top-level field is. **An object declaring
+    no properties is a free-form map by design** -- a manual value's payload, whose shape the
+    attribute's value type decides -- and is left alone, since it declares nothing to refuse
+    against.
+    """
+    reference = schema.get("$ref")
+    if reference:
+        if reference in seen:
+            return set()
+        return _lax_objects(
+            _resolved(schema, document),
+            document,
+            named=reference.rsplit("/", 1)[-1],
+            seen=seen | {reference},
+        )
+    lax = (
+        {named or schema.get("title", "<inline>")}
+        if schema.get("properties") and schema.get("additionalProperties") is not False
+        else set()
+    )
+    nested = [
+        *schema.get("allOf", []),
+        *schema.get("anyOf", []),
+        *schema.get("oneOf", []),
+        *([schema["items"]] if isinstance(schema.get("items"), dict) else []),
+        *schema.get("properties", {}).values(),
+    ]
+    for part in nested:
+        lax |= _lax_objects(part, document, seen=seen)
+    return lax
+
+
 def _resolved(parameter: dict, document: dict) -> dict:
     """A parameter, following a `$ref` into the document's own components if it is one.
 
@@ -352,6 +406,30 @@ class TestNothingIsServedThatWasNotDesigned:
             f"these operations demand request body fields the design does not mark required: "
             f"{undeclared}. A client generated from docs/openapi.yaml types them optional, "
             "omits them, and is answered 422."
+        )
+
+    def test_every_request_body_refuses_a_field_it_does_not_declare(self, served: dict) -> None:
+        """**A misspelled field dropped is a request answered for something nobody asked**
+        (BE-23).
+
+        Pydantic ignores an unknown field unless told otherwise, and six bodies were never told.
+        The harmful one was the run's scope: `candidate` for `candidates` fell to its null
+        default, which means the whole level -- a run, paid where a source charges, over every
+        candidate when one was named. `match_rule` for `match_rules` researched every gate.
+
+        Asserted over the generated contract rather than over the classes, because that is what
+        a client reads: every object a request carries says `additionalProperties: false`, or
+        it says the field will be dropped.
+        """
+        lax = {
+            name: sorted(found)
+            for name, schema in _request_body_schemas(served).items()
+            if (found := _lax_objects(schema, served))
+        }
+
+        assert lax == {}, (
+            f"these request bodies take fields they do not declare and drop them: {lax}. "
+            "Give each `model_config = ConfigDict(extra='forbid')`."
         )
 
 

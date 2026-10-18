@@ -13,7 +13,7 @@ endpoints record and read the answers.
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.dependencies import (
     Candidates,
@@ -55,11 +55,15 @@ class MatchRulesBody(BaseModel):
 
 
 class ReferencePeriodBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     start: date
     end: date
 
 
 class MatchRuleResultInputBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     match_result: MatchResult
     reason: str | None = None
     data_source: str = str(MANUAL)
@@ -85,7 +89,13 @@ class MatchRuleResultBody(BaseModel):
 
 
 class ResearchRequestBody(BaseModel):
-    """Which gates to research, and whether an uncapped spend is accepted (`reqs.md` 6.3)."""
+    """Which gates to research, and whether an uncapped spend is accepted (`reqs.md` 6.3).
+
+    A misspelled `match_rules` used to fall to null, which is every gate at the level -- a
+    paid pass over all of them when one was named (BE-23).
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     level: str
     match_rules: tuple[str, ...] | None = None

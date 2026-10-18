@@ -8,7 +8,7 @@ already constructed and are put on the application state, so the same endpoints 
 database and a test's fakes without knowing which they have.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 
 from starnest.api import (
@@ -26,6 +26,7 @@ from starnest.api import values as value_endpoints
 from starnest.api.errors import (
     domain_error_handler,
     refusal_handler,
+    refuse_unknown_query_parameters,
     request_validation_handler,
 )
 from starnest.candidates import CandidateStore
@@ -89,7 +90,14 @@ def build_app(
         value_endpoints.router,
         rules.router,
     ):
-        app.include_router(router, prefix=API_PREFIX)
+        # Every operation refuses a query parameter it does not declare, as every body refuses
+        # a field it does not declare (BE-23): FastAPI would otherwise ignore it, and a filter
+        # ignored answers for something nobody asked.
+        app.include_router(
+            router,
+            prefix=API_PREFIX,
+            dependencies=[Depends(refuse_unknown_query_parameters)],
+        )
 
     # One handler for every domain fault, rather than a try/except in each endpoint: two
     # endpoints reporting the same fault differently is how a client comes to branch on prose.

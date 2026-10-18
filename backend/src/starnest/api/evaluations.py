@@ -11,7 +11,7 @@ one's effective weight after redistribution, and the exact stored value it was c
 from datetime import UTC, datetime
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from starnest.api.criteria import CriterionBody, _criterion_body
 from starnest.api.dependencies import (
@@ -50,6 +50,8 @@ class EvaluationsBody(BaseModel):
 
 
 class SaveEvaluationBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     criteria_set: str
     level: str
     note: str | None = None

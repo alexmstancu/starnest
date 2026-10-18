@@ -14,9 +14,9 @@ from datetime import timedelta
 from typing import ClassVar
 
 from fastapi import APIRouter
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from starnest.api.bodies import ContractBody
+from starnest.api.bodies import ContractBody, PartialChangeBody
 from starnest.api.dependencies import Candidates, Catalog, Criteria
 from starnest.candidates import UnknownCandidateError
 from starnest.data import Attribute, DataSource, DataSourceId
@@ -266,15 +266,16 @@ class DataSourceBody(BaseModel):
     is_enabled: bool = True
 
 
-class DataSourceInput(BaseModel):
+class DataSourceInput(PartialChangeBody):
     """What may be changed about a source: whether it is consulted, and where it stands.
 
     Both are optional and independent, so switching one off does not have to restate its
     priority. **Nothing here changes what the source measures** -- that is the catalog, and
-    the catalog is changed by migration (`reqs.md` 2, Q232).
+    the catalog is changed by migration (`reqs.md` 2, Q232). Optional is not nullable: a null
+    switch was taken as though it had been left out.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    not_nullable: ClassVar[frozenset[str]] = frozenset({"is_enabled", "default_priority"})
 
     is_enabled: bool | None = None
     default_priority: int | None = Field(default=None, gt=0)

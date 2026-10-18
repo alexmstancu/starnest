@@ -5,14 +5,20 @@ the error table has no row for -- so building a domain object from a request ans
 the domain had written a sentence. `built_from_the_request` unwraps a refusal the table maps, and
 leaves everything else exactly as it was: a native constraint the request body failed to mirror,
 or a bug, must stay a loud 500 rather than become a tidy 422 nobody investigates.
+
+And the other half of a malformed request (BE-23): a query parameter no route declares, which
+FastAPI would otherwise ignore.
 """
 
 import json
 from datetime import date
 from decimal import Decimal
+from typing import Annotated
 
+import httpx
 import pytest
-from fastapi import HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError, model_validator
 from starlette.requests import Request
 
@@ -21,6 +27,8 @@ from starnest.api.errors import (
     domain_error_handler,
     refusal_for,
     refusal_handler,
+    refuse_unknown_query_parameters,
+    request_validation_handler,
 )
 from starnest.candidates import MalformedIdentifierError
 from starnest.criteria import ScaleAnchor, ThresholdShapeError
@@ -126,3 +134,83 @@ class TestWhatTheHandlersLeaveAlone:
 
         assert response.status_code == 404
         assert json.loads(bytes(response.body)) == {"detail": "Not Found"}
+
+
+def _paging(page: int = 1, page_size: Annotated[int, Query(alias="page-size")] = 10) -> int:
+    """A dependency declaring query parameters of its own, one of them under an alias."""
+    return page * page_size
+
+
+def an_app_refusing_unknown_query_parameters() -> FastAPI:
+    """The wiring `build_app` uses, around routes small enough to read at a glance."""
+    router = APIRouter()
+
+    @router.get("/things")
+    async def things(level: str | None = None, paged: int = Depends(_paging)) -> dict:
+        return {"level": level, "paged": paged}
+
+    @router.post("/things")
+    async def add_a_thing() -> dict:
+        return {}
+
+    app = FastAPI()
+    app.add_exception_handler(RequestValidationError, request_validation_handler)
+    app.include_router(router, dependencies=[Depends(refuse_unknown_query_parameters)])
+    return app
+
+
+async def _get(path: str, method: str = "GET") -> httpx.Response:
+    transport = httpx.ASGITransport(app=an_app_refusing_unknown_query_parameters())
+    async with httpx.AsyncClient(transport=transport, base_url="http://api") as client:
+        return await client.request(method, path)
+
+
+class TestAQueryParameterNobodyDeclared:
+    """FastAPI ignores a query parameter no route declares (BE-23), so a misspelled one answered
+    as though it had not been sent and a filter the server does not apply returned everything
+    unfiltered."""
+
+    async def test_one_the_route_declares_is_taken(self) -> None:
+        response = await _get("/things?level=country")
+
+        assert (response.status_code, response.json()["level"]) == (200, "country")
+
+    async def test_one_a_dependency_declares_is_taken(self) -> None:
+        """Declared is declared wherever it is, including inside a sub-dependency."""
+        response = await _get("/things?page=3")
+
+        assert (response.status_code, response.json()["paged"]) == (200, 30)
+
+    async def test_one_declared_under_an_alias_is_taken_by_its_alias(self) -> None:
+        response = await _get("/things?page-size=2")
+
+        assert (response.status_code, response.json()["paged"]) == (200, 2)
+
+    async def test_an_alias_s_python_name_is_not_a_parameter(self) -> None:
+        response = await _get("/things?page_size=2")
+
+        assert response.status_code == 422
+
+    async def test_one_nobody_declared_is_refused_in_the_one_error_shape(self) -> None:
+        response = await _get("/things?levle=country")
+
+        assert response.status_code == 422
+        body = response.json()
+        assert body["code"] == "invalid_request"
+        assert body["details"]["errors"] == [
+            {"location": ["query", "levle"], "problem": "Extra inputs are not permitted"}
+        ]
+
+    async def test_every_one_nobody_declared_is_named_at_once(self) -> None:
+        response = await _get("/things?verbose=1&level=country&sort=name&sort=id")
+
+        assert [error["location"] for error in response.json()["details"]["errors"]] == [
+            ["query", "verbose"],
+            ["query", "sort"],
+        ]
+
+    async def test_a_route_that_takes_none_refuses_any(self) -> None:
+        assert (await _get("/things?dry_run=true", method="POST")).status_code == 422
+
+    async def test_a_route_sent_none_is_untouched(self) -> None:
+        assert (await _get("/things", method="POST")).status_code == 200

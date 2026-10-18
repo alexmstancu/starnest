@@ -285,6 +285,312 @@ class TestBoundaryValidationAndTheErrorShape:
         assert response.status_code == 422
 
 
+class TestAFieldNobodyDeclaredIsRefused:
+    """BE-23. Pydantic drops a field a body does not declare unless told otherwise, and the
+    bodies never told answered as though the field had not been sent. For a run's scope that is
+    the harmful case: a misspelled `candidates` fell to null, which means the whole level."""
+
+    async def test_a_misspelled_scope_field_is_refused_rather_than_planning_every_candidate(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.post(
+            "/v1/data-acquisition-runs/plan",
+            json={"level": COUNTRY, "candidate": ["country.portugal"]},
+        )
+
+        _assert_refused_naming(response, ["body", "candidate"])
+
+    async def test_a_misspelled_scope_field_is_refused_rather_than_running_every_candidate(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.post(
+            "/v1/data-acquisition-runs", json={"level": COUNTRY, "candidate": ["country.portugal"]}
+        )
+
+        _assert_refused_naming(response, ["body", "candidate"])
+        assert await _runs_recorded(api) == 0, "nothing ran"
+
+    async def test_a_misspelled_retry_field_is_refused_and_no_run_is_started(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """The stub source declines Portugal, so the run has failures a retry would reach."""
+        earlier = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+
+        response = await api.post(
+            f"/v1/data-acquisition-runs/{earlier['id']}/retry", json={"itmes": "unanswered"}
+        )
+
+        _assert_refused_naming(response, ["body", "itmes"])
+        assert await _runs_recorded(api) == 1, "no second run"
+
+    async def test_a_misspelled_gate_answer_field_is_refused_and_nothing_is_recorded(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await _gate_answers_recorded(api)
+
+        response = await api.put(
+            A_GATE_ANSWER_PATH, json={"match_result": "not_matching", "reasn": "no route"}
+        )
+
+        _assert_refused_naming(response, ["body", "reasn"])
+        assert await _gate_answers_recorded(api) == before, "nothing was recorded"
+
+    async def test_an_unknown_field_inside_a_gate_answer_s_period_is_refused(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await _gate_answers_recorded(api)
+
+        response = await api.put(
+            A_GATE_ANSWER_PATH,
+            json={
+                "match_result": "matching",
+                "reference_period": {"start": "2026-01-01", "end": "2026-12-31", "ends": "2027"},
+            },
+        )
+
+        _assert_refused_naming(response, ["body", "reference_period", "ends"])
+        assert await _gate_answers_recorded(api) == before, "nothing was recorded"
+
+    async def test_a_misspelled_manual_value_field_is_refused_and_nothing_is_stored(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await _values_stored(api)
+
+        response = await api.post(
+            "/v1/values/manual", json=A_TYPED_VALUE | {"qoute": "from the official gazette"}
+        )
+
+        _assert_refused_naming(response, ["body", "qoute"])
+        assert await _values_stored(api) == before, "nothing was stored"
+
+    async def test_an_unknown_field_inside_a_manual_value_s_period_is_refused(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await _values_stored(api)
+
+        response = await api.post(
+            "/v1/values/manual",
+            json=A_TYPED_VALUE
+            | {"reference_period": {"start": "2026-01-01", "end": "2026-12-31", "ends": "2027"}},
+        )
+
+        _assert_refused_naming(response, ["body", "reference_period", "ends"])
+        assert await _values_stored(api) == before, "nothing was stored"
+
+    async def test_a_misspelled_evaluation_field_is_refused_and_nothing_is_kept(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        await _set_the_score_scale(database_url, 100)
+
+        response = await api.post(
+            "/v1/evaluations",
+            json={"criteria_set": MINIMAL, "level": COUNTRY, "notes": "the one to compare"},
+        )
+
+        _assert_refused_naming(response, ["body", "notes"])
+        assert (await api.get("/v1/evaluations")).json()["items"] == [], "nothing was kept"
+
+    async def test_an_unknown_field_inside_a_scale_anchor_is_refused(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={
+                "normalisation_method": "fixed",
+                "scale_anchors": [_AN_ANCHOR | {"lable": "comfortable"}, _ANOTHER_ANCHOR],
+            },
+        )
+
+        _assert_refused_naming(response, ["body", "scale_anchors", "0", "lable"])
+        assert await _the_anchors_on_overburden(api, a_scratch_criteria_set) == []
+
+    @pytest.mark.parametrize(
+        ("rule", "body", "listed_in"),
+        [
+            ("match-rules/eu_free_movement", {"is_enforced": True}, "enforced_match_rules"),
+            ("compound-rules/cheap_but_taxed", {"is_applied": True}, "applied_compound_rules"),
+        ],
+        ids=["a gate", "a compound rule"],
+    )
+    async def test_an_unknown_field_beside_a_rule_switch_is_refused_and_nothing_changes(
+        self,
+        api: httpx.AsyncClient,
+        a_scratch_criteria_set: str,
+        rule: str,
+        body: dict,
+        listed_in: str,
+    ) -> None:
+        response = await api.put(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/{rule}",
+            json=body | {"because": "the household said so"},
+        )
+
+        _assert_refused_naming(response, ["body", "because"])
+        reread = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+        assert rule.rsplit("/", 1)[-1] not in reread[listed_in], "nothing changed"
+
+
+class TestANullTheDesignGivesNoMeaning:
+    """BE-23. **Left out means "no change"; null is a value, and only where the design gives
+    it one** -- a band's bound or a threshold, where null clears. Elsewhere a null was coerced
+    into something nobody sent (`scale_anchors: null` cleared the anchors, `required_value:
+    null` became `false`) or taken as though the field were absent."""
+
+    async def test_null_scale_anchors_are_refused_rather_than_clearing_them(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        path = f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}"
+        await api.patch(
+            path,
+            json={"normalisation_method": "fixed", "scale_anchors": [_AN_ANCHOR, _ANOTHER_ANCHOR]},
+        )
+
+        response = await api.patch(path, json={"scale_anchors": None})
+
+        _assert_refused_naming(response, ["body", "scale_anchors"])
+        assert len(await _the_anchors_on_overburden(api, a_scratch_criteria_set)) == 2
+
+    async def test_an_empty_list_of_anchors_still_clears_them(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """The control: clearing the anchors is a request the design can express."""
+        path = f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}"
+        await api.patch(
+            path,
+            json={"normalisation_method": "fixed", "scale_anchors": [_AN_ANCHOR, _ANOTHER_ANCHOR]},
+        )
+
+        response = await api.patch(path, json={"scale_anchors": []})
+
+        assert response.status_code == 200
+        assert await _the_anchors_on_overburden(api, a_scratch_criteria_set) == []
+
+    async def test_a_null_required_value_is_refused_as_a_null(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """It was coerced to `false`, and then refused -- if at all -- for its shape."""
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"matching_threshold": {"required_value": None}},
+        )
+
+        _assert_refused_naming(response, ["body", "matching_threshold", "required_value"])
+        assert await _the_threshold_on_overburden(api, a_scratch_criteria_set) is None
+
+    async def test_a_null_threshold_still_clears_it(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        """The control: the design documents `matching_threshold: null` as "Null clears it"."""
+        path = f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}"
+        await api.patch(path, json={"matching_threshold": {"min_value": None, "max_value": 30}})
+
+        response = await api.patch(path, json={"matching_threshold": None})
+
+        assert response.status_code == 200
+        assert await _the_threshold_on_overburden(api, a_scratch_criteria_set) is None
+
+    async def test_a_null_is_scored_is_refused_rather_than_ignored(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={"is_scored": None},
+        )
+
+        _assert_refused_naming(response, ["body", "is_scored"])
+
+    async def test_a_null_pillar_weight_is_refused_rather_than_ignored(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        response = await api.put(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/pillar-weights/housing",
+            json={"weight": None},
+        )
+
+        _assert_refused_naming(response, ["body", "weight"])
+
+    async def test_a_null_source_switch_is_refused_rather_than_ignored(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.patch("/v1/data-sources/eurostat", json={"is_enabled": None})
+
+        _assert_refused_naming(response, ["body", "is_enabled"])
+
+
+class TestAQueryParameterNobodyDeclared:
+    """BE-23. FastAPI ignores a query parameter no route declares, so a misspelled one answered
+    as though it had not been sent and a filter the server does not apply returned everything
+    unfiltered."""
+
+    async def test_an_unknown_query_parameter_is_refused_rather_than_ignored(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        await _set_the_score_scale(database_url, 100)
+
+        response = await api.get(
+            "/v1/rankings",
+            params={"criteria_set": MINIMAL, "level": COUNTRY, "criteria_sett": "remote_only"},
+        )
+
+        _assert_refused_naming(response, ["query", "criteria_sett"])
+
+    async def test_one_that_would_have_started_a_run_is_refused_and_nothing_runs(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """`dry_run=true` read as a dry run by whoever sent it, and started a real one."""
+        response = await api.post(
+            "/v1/data-acquisition-runs", params={"dry_run": "true"}, json={"level": COUNTRY}
+        )
+
+        _assert_refused_naming(response, ["query", "dry_run"])
+        assert await _runs_recorded(api) == 0, "nothing ran"
+
+    async def test_a_filter_the_server_does_not_apply_is_refused_rather_than_ignored(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """The design declares `pillar` on `listAttributes` and nothing serves it yet, so it
+        answered every pillar's attributes to a caller that asked for one."""
+        response = await api.get("/v1/attributes", params={"pillar": "housing"})
+
+        _assert_refused_naming(response, ["query", "pillar"])
+
+    async def test_a_declared_query_parameter_is_still_accepted(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.get(
+            "/v1/values",
+            params={
+                "candidate": "country.portugal",
+                "include_superseded": "true",
+                "limit": 5,
+                "offset": 0,
+            },
+        )
+
+        assert response.status_code == 200
+
+    async def test_a_repeated_list_parameter_is_still_accepted(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        await api.put("/v1/settings", json={"score_scale_max": 100, "comparator_limit": 5})
+
+        response = await api.get(
+            "/v1/comparisons",
+            params={
+                "criteria_set": MINIMAL,
+                "level": COUNTRY,
+                "focus": "country.portugal",
+                "comparators": ["country.greece", "country.spain"],
+            },
+        )
+
+        assert response.status_code == 200
+        assert [side["candidate"] for side in response.json()["comparators"]] == [
+            "country.greece",
+            "country.spain",
+        ]
+
+
 A_MALFORMED_SET_ID = pytest.mark.parametrize(
     "malformed",
     ["My Set", "a.b", "remote-only", "2026_plan"],
@@ -536,6 +842,23 @@ _ANOTHER_ANCHOR = {"input_value": 50, "score": 0}
 async def _the_threshold_on_overburden(api: httpx.AsyncClient, criteria_set: str) -> object:
     body = (await api.get(f"/v1/criteria-sets/{criteria_set}")).json()
     return next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)["matching_threshold"]
+
+
+async def _the_anchors_on_overburden(api: httpx.AsyncClient, criteria_set: str) -> list:
+    body = (await api.get(f"/v1/criteria-sets/{criteria_set}")).json()
+    return next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)["scale_anchors"]
+
+
+async def _runs_recorded(api: httpx.AsyncClient) -> int:
+    return (await api.get("/v1/data-acquisition-runs")).json()["total"]
+
+
+def _assert_refused_naming(response: httpx.Response, location: list[str]) -> None:
+    """A malformed request: 422 `invalid_request` in the one error shape, saying where."""
+    assert response.status_code == 422, f"answered {response.status_code}: {response.text[:120]}"
+    assert response.json()["code"] == "invalid_request"
+    _assert_in_the_one_error_shape(response.json())
+    assert location in [error["location"] for error in response.json()["details"]["errors"]]
 
 
 async def _the_household(api: httpx.AsyncClient) -> tuple[int, dict]:
