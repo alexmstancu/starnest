@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, delay, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  ATTRIBUTES,
   PAID_RUN_PLAN,
   RUNS,
   RUN_PLAN,
@@ -964,9 +965,13 @@ describe("picking out individual items", () => {
  * UX review H. Three reasons a figure is missing look identical in a ranking and have
  * entirely different remedies: a source refused, a source had nothing, or there is no source.
  * Only the first two are worth asking again about.
+ *
+ * **Read from `answerable_by`, against fixtures with every source in every priority** -- as the
+ * server resolves it since BE-39. With the old, shorter lists the card passed while reading "no
+ * source" from the priority order, which the real server never let it say.
  */
 describe("attributes with no data source at all", () => {
-  it("lists an attribute nobody would even be asked about", async () => {
+  it("lists an attribute no source can fetch, though every source is in its priority", async () => {
     renderShell("/acquire");
 
     const card = within(
@@ -979,7 +984,9 @@ describe("attributes with no data source at all", () => {
     ).toBeInTheDocument();
   });
 
-  it("leaves out attributes that do have a source", async () => {
+  it("leaves out attributes a source can fetch, switched on or not", async () => {
+    // The LLM is switched off in the fixtures and still able to fetch the employers: the
+    // switch decides whether a source is asked, not what it can fetch (Q235).
     renderShell("/acquire");
 
     const card = within(
@@ -991,6 +998,39 @@ describe("attributes with no data source at all", () => {
     expect(
       card.queryByRole("rowheader", { name: "Cost of living index" }),
     ).toBeNull();
+    expect(
+      card.queryByRole("rowheader", { name: "International employers" }),
+    ).toBeNull();
+  });
+
+  /**
+   * **The empty state is a claim too.** `answerable_by` names what can fetch an attribute
+   * whatever the switch says (Q235), so "every attribute has a source" must not promise that one
+   * will be asked -- a source switched off is not.
+   */
+  it("says every attribute has a source when one can fetch each, unless it is switched off", async () => {
+    mockServer.use(
+      http.get(`${BASE}/attributes`, () =>
+        HttpResponse.json({
+          items: ATTRIBUTES.filter(
+            (attribute) => attribute.answerable_by.length > 0,
+          ),
+        }),
+      ),
+    );
+    renderShell("/acquire");
+
+    const card = within(
+      await screen.findByRole("region", {
+        name: /attributes with no data source at all/i,
+      }),
+    );
+    expect(
+      await card.findByText(
+        "Every attribute at this level has at least one source that would be asked, unless it is switched off.",
+      ),
+    ).toBeInTheDocument();
+    expect(card.queryByRole("table")).toBeNull();
   });
 
   /** Retrying cannot conjure an adapter, so the card says so rather than offering a button. */
@@ -1008,10 +1048,10 @@ describe("attributes with no data source at all", () => {
     expect(card.queryByRole("button", { name: /retry/i })).toBeNull();
   });
 
-  it("does not offer hand entry, because the two lists never overlap", async () => {
-    // Every attribute the catalog lets a person answer also declares a source, so none of them
-    // ever appears among the attributes with nobody to ask. The form lives in its own card;
-    // putting it here first made it unreachable, which opening the screen showed and no test did.
+  it("lists an attribute only a person can answer, and leaves its form to the card beside it", async () => {
+    // **In both lists, honestly.** Hand entry is permitted and no adapter can fetch it, so it
+    // is a gap no run fills *and* a figure a person may type. The form stays in one place --
+    // two would put two candidate pickers on screen -- and this row says what to do.
     renderShell("/acquire");
 
     const card = within(
@@ -1019,12 +1059,20 @@ describe("attributes with no data source at all", () => {
         name: /attributes with no data source at all/i,
       }),
     );
-    await card.findByRole("rowheader", { name: "Nobody measures this" });
-
-    expect(
-      card.queryByRole("row", { name: /international employers/i }),
-    ).toBeNull();
+    const row = await card.findByRole("row", { name: /residency admin ease/i });
+    expect(row).toHaveTextContent("Enter a value by hand");
     expect(card.queryByRole("button", { name: /by hand/i })).toBeNull();
+
+    const handEntry = within(
+      await screen.findByRole("region", {
+        name: /figures you can enter by hand/i,
+      }),
+    );
+    expect(
+      within(
+        await handEntry.findByRole("row", { name: /residency admin ease/i }),
+      ).getByRole("button", { name: /enter a value by hand/i }),
+    ).toBeInTheDocument();
   });
 
   it("says why there is no form where the type has no editor", async () => {
@@ -2786,6 +2834,35 @@ describe("a figure typed by hand", () => {
     expect(
       card.getByRole("row", { name: /residency admin ease/i }),
     ).toHaveTextContent("Government");
+  });
+
+  /**
+   * UI-32. **What can fetch it, not who is ranked.** The priority order names every source for
+   * every attribute, `manual` among them -- so this column offered typing by hand as the
+   * alternative to typing by hand, beside sources no adapter stands behind.
+   */
+  it("names what else can fetch each one, not the whole priority order", async () => {
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", {
+        name: /figures you can enter by hand/i,
+      }),
+    );
+
+    const employers = await card.findByRole("row", {
+      name: /international employers/i,
+    });
+    expect(
+      within(employers).getByRole("cell", { name: "Otherwise: llm" }),
+    ).toBeInTheDocument();
+    expect(employers).not.toHaveTextContent(/manual|company_website/);
+
+    const residency = card.getByRole("row", { name: /residency admin ease/i });
+    expect(
+      within(residency).getByRole("cell", {
+        name: "Nothing else would answer it",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("stores a label set and reads back what it wrote", async () => {

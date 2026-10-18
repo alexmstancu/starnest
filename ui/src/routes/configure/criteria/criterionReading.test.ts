@@ -6,6 +6,7 @@ import {
   describeNormalisation,
   describeThreshold,
   describeValueType,
+  hasNoSource,
   titleOf,
   weightBarWidth,
 } from "./criterionReading";
@@ -182,26 +183,52 @@ describe("the chips on a row", () => {
     expect(chips.map((chip) => chip.text)).not.toContain("Required");
   });
 
-  /** Nobody would be asked, so no run can fill it -- which is a different gap from an empty one. */
-  it("says when nothing would ever fill the attribute", () => {
-    const chips = chipsFor(criterion(), {
-      id: "country.cost_of_living_index",
-      effective_source_priority: [],
-    });
+  /**
+   * Every source in its priority, as the server resolves it since BE-39 -- `manual` and `llm`
+   * included -- so the order cannot say whether anything can fetch the attribute.
+   * `answerable_by` can (`reqs.md` Q235), and both are carried so a row reading the wrong one
+   * fails.
+   */
+  const EVERY_SOURCE = ["eurostat", "oecd", "manual", "llm"];
+  const nothingCanFetch = {
+    id: "country.cost_of_living_index",
+    effective_source_priority: EVERY_SOURCE,
+    answerable_by: [] as string[],
+  };
+  const eurostatCanFetch = { ...nothingCanFetch, answerable_by: ["eurostat"] };
+
+  /** No adapter can fetch it, so no run can fill it -- which is a different gap from an empty one. */
+  it("says when nothing can fetch the attribute, though every source is in its priority", () => {
+    const chips = chipsFor(criterion(), nothingCanFetch);
     expect(chips.map((chip) => chip.text)).toContain("No source yet →");
     // **And it goes somewhere.** The other chips state the rule; this one states a gap, and a
     // gap with no route out leaves a reader holding a problem. The arrow says so.
     expect(chips.find((chip) => chip.key === "no-source")?.to).toBe(
       "/acquire?show=unsourced",
     );
+    expect(hasNoSource(nothingCanFetch)).toBe(true);
   });
 
-  it("says nothing about sources for an attribute that has one", () => {
-    const chips = chipsFor(criterion(), {
-      id: "country.cost_of_living_index",
-      effective_source_priority: ["eurostat"],
-    });
-    expect(chips.map((chip) => chip.text)).not.toContain("No source yet");
+  /**
+   * Asked by key, not by text. The chip reads "No source yet →", so asking an array of texts
+   * whether it holds "No source yet" is true whatever the row shows.
+   */
+  it("says nothing about sources for an attribute a source can fetch", () => {
+    const chips = chipsFor(criterion(), eurostatCanFetch);
+    expect(chips.map((chip) => chip.key)).not.toContain("no-source");
+    expect(hasNoSource(eurostatCanFetch)).toBe(false);
+  });
+
+  /**
+   * **Absent is "not said", never "nothing".** A catalog entry without the field has made no
+   * claim about sources, and a chip would put one in its mouth.
+   */
+  it("claims nothing when the catalog does not say which sources can fetch it", () => {
+    const unsaid = { id: "country.cost_of_living_index" };
+    expect(
+      chipsFor(criterion(), unsaid).map((chip) => chip.key),
+    ).not.toContain("no-source");
+    expect(hasNoSource(unsaid)).toBe(false);
   });
 
   /**
@@ -210,7 +237,8 @@ describe("the chips on a row", () => {
    */
   it("claims nothing about sources before the catalog has answered", () => {
     const chips = chipsFor(criterion(), undefined);
-    expect(chips.map((chip) => chip.text)).not.toContain("No source yet");
+    expect(chips.map((chip) => chip.key)).not.toContain("no-source");
+    expect(hasNoSource(undefined)).toBe(false);
   });
 
   it("omits the goal and the method a criterion does not state", () => {

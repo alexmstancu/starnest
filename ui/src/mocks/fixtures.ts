@@ -583,7 +583,20 @@ export const STARTED_RUN_DETAIL: RunDetail = {
  * Two values for one attribute and one for another: the drill-down's whole point is that a
  * superseded figure is still there, with the source that produced it (`reqs.md` 3.6).
  */
-/** The catalog's attributes, for the one-attribute-every-candidate drill-down (`reqs.md` 8.4). */
+/**
+ * The catalog's attributes, for the one-attribute-every-candidate drill-down (`reqs.md` 8.4).
+ *
+ * **Every source in every priority, as the server resolves it since BE-39**: an attribute's own
+ * overrides lead and every other source follows in the order of `DATA_SOURCES` -- eurostat,
+ * manual, llm. So the order says nothing about what can fetch an attribute; `answerable_by`
+ * does (`reqs.md` Q235). The short lists these used to carry let the Acquire screen pass while
+ * it read "no source" from an empty order -- which the server, listing every source, never
+ * sends.
+ *
+ * Two say nothing can fetch them: `country.nobody_measures_this`, which no form can answer
+ * either, and `country.residency_admin_ease`, which only a person can -- so it appears in both
+ * of the Acquire screen's lists, as it does against the real catalog.
+ */
 export const ATTRIBUTES: Attribute[] = [
   {
     /**
@@ -607,7 +620,8 @@ export const ATTRIBUTES: Attribute[] = [
     breakdown_options: [],
     allowed_range: null,
     allowed_labels: [],
-    effective_source_priority: ["oecd"],
+    effective_source_priority: ["oecd", "eurostat", "manual", "llm"],
+    answerable_by: ["oecd"],
   },
   {
     id: "country.cost_of_living_index",
@@ -623,7 +637,8 @@ export const ATTRIBUTES: Attribute[] = [
     breakdown_options: [],
     allowed_range: null,
     allowed_labels: [],
-    effective_source_priority: ["eurostat"],
+    effective_source_priority: ["eurostat", "manual", "llm"],
+    answerable_by: ["eurostat"],
   },
   {
     id: "country.nobody_measures_this",
@@ -639,7 +654,10 @@ export const ATTRIBUTES: Attribute[] = [
     breakdown_options: [],
     allowed_range: null,
     allowed_labels: [],
-    effective_source_priority: [],
+    effective_source_priority: ["eurostat", "manual", "llm"],
+    // Every source in its priority and none able to fetch it: no adapter declares it, and the
+    // LLM fallback leaves a hand-entry attribute alone.
+    answerable_by: [],
   },
   /**
    * The two shapes hand entry is actually for, mirroring the real catalog: five attributes
@@ -662,9 +680,12 @@ export const ATTRIBUTES: Attribute[] = [
     // No fixed vocabulary: only `climate_zone` has one, because named firms cannot be enumerated
     // in advance and a picker would refuse the answer.
     allowed_labels: [],
-    // As the server has it. A mock with no sources here would put this in the unsourced card
-    // as well, and the two lists never overlap against the real catalog.
-    effective_source_priority: ["llm", "company_website"],
+    // Its overrides lead, then the rest of the order. Only `llm` can fetch it -- the employers
+    // adapter declares it where a key is configured, and `company_website` is a catalog row
+    // with no adapter behind it. **Switched off in `DATA_SOURCES` and still able**: the switch
+    // decides whether a source is asked, not what it can fetch (Q235).
+    effective_source_priority: ["llm", "company_website", "eurostat", "manual"],
+    answerable_by: ["llm"],
   },
   {
     id: "country.residency_admin_ease",
@@ -680,7 +701,18 @@ export const ATTRIBUTES: Attribute[] = [
     breakdown_options: [],
     allowed_range: null,
     allowed_labels: [],
-    effective_source_priority: ["national_law", "world_bank"],
+    effective_source_priority: [
+      "national_law",
+      "world_bank",
+      "eurostat",
+      "manual",
+      "llm",
+    ],
+    // **Only a person can answer it**, as in the real catalog: no adapter declares it -- the
+    // `national_law` tables transcribe other attributes and the World Bank's indicators are not
+    // this one -- and the LLM fallback leaves hand-entry attributes alone, because there is no
+    // citable per-country gradient to fetch.
+    answerable_by: [],
   },
 ];
 

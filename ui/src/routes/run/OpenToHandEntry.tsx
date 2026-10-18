@@ -11,10 +11,12 @@ import { handEnterable } from "./unsourced";
  * The attributes a person may answer themselves.
  *
  * **A card of its own, because it is a different gap from the one beside it.** "No source at
- * all" means nobody would be asked and retrying changes nothing. This means the catalog permits
- * a figure typed by hand -- which every one of these also declares a source for, so the two
- * lists never overlap. Folding them together would have put the form where it could not be
- * reached (found by opening the screen, not by reading the code).
+ * all" means no adapter can fetch it and retrying changes nothing. This means the catalog
+ * permits a figure typed by hand, whether or not a source could also fetch it -- so an
+ * attribute only a person can answer honestly appears in both lists, and this is where its
+ * form is. Folding the two together would hide the form from every attribute a source can also
+ * fetch; done once, while "no source" was read from the priority order, it hid the form from
+ * all of them (found by opening the screen, not by reading the code).
  *
  * **It lists what the catalog permits, not what is missing.** Whether a candidate already has a
  * figure is per candidate, and the form asks which candidate; saying "empty" here would be a

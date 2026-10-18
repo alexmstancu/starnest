@@ -287,7 +287,8 @@ describe("the criteria list", () => {
           pillar_weights: [
             { pillar: "family", weight: 100, weight_locked: false },
           ],
-          // In the catalog with no source at all, which is the case this row exists to show.
+          // In the catalog with every source in its priority and none able to fetch it, which
+          // is the case this row exists to show.
           criteria: [
             {
               attribute: "country.nobody_measures_this",

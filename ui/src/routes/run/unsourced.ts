@@ -1,11 +1,16 @@
 /**
- * Attributes nothing can answer, because no source is connected to them at all.
+ * Attributes no run can answer, because no source can fetch them at all.
  *
  * **Distinct from an item a run failed to fetch, and the difference is what to do about it.**
  * A failure is a source refusing, so asking again may work. An unanswered item is a source
- * having no figure, so asking again may work when the publisher publishes. An attribute with
- * no source has nobody to ask, and retrying it forever changes nothing -- so the screen says
- * so instead of offering a button that would do nothing.
+ * having no figure, so asking again may work when the publisher publishes. An attribute no
+ * source can fetch has nobody to ask, and retrying it forever changes nothing -- so the screen
+ * says so instead of offering a button that would do nothing.
+ *
+ * **Which sources can fetch an attribute is the server's to say** (`reqs.md` Q235): its
+ * `answerable_by` names those whose registered adapter declares it. The priority order is not a
+ * stand-in -- since BE-39 it names every source for every attribute, `manual` and `llm`
+ * included, so reading "no source" from it could never find one.
  */
 
 export interface CatalogAttribute {
@@ -13,8 +18,12 @@ export interface CatalogAttribute {
   name: string;
   value_type?: string;
   pillar?: string | null;
-  /** The sources that would be asked, in order. Empty means nobody would be asked. */
-  effective_source_priority?: readonly string[];
+  /**
+   * The sources whose adapter can fetch it, in priority order, whether or not they are
+   * switched on. Empty means no run can fetch it; absent means the catalog has not said, which
+   * is not the same claim.
+   */
+  answerable_by?: readonly string[];
   /** Whether the catalog permits a figure typed in by hand for this attribute. */
   manual_entry?: boolean;
 }
@@ -86,7 +95,7 @@ export function unsourcedAttributes(
   );
 
   return attributes
-    .filter((attribute) => (attribute.effective_source_priority ?? []).length === 0)
+    .filter(nothingCanFetch)
     .map((attribute) => {
       const weight = weights.get(attribute.id);
       return {
@@ -102,28 +111,42 @@ export function unsourcedAttributes(
     .sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0));
 }
 
+/**
+ * Whether the catalog says no source can fetch this attribute.
+ *
+ * **Only when it says so.** An absent `answerable_by` is a catalog that has not answered, and
+ * reading "nothing" into silence would report a gap in the answer as a gap in the data -- so
+ * absent is false here, and only an empty list is true.
+ */
+function nothingCanFetch(attribute: CatalogAttribute): boolean {
+  return attribute.answerable_by?.length === 0;
+}
+
 
 export interface HandEnterable {
   id: string;
   name: string;
   pillar: string;
   kind: "LabelSet" | "AssignedScore";
-  /** What would answer it otherwise, so typing one is visibly a choice rather than the only way. */
+  /** What else can fetch it, so typing one is visibly a choice -- or plainly the only way. */
   otherwise: string;
 }
 
 /**
  * The attributes a person may answer themselves.
  *
- * **Not the same list as the unsourced ones, and that is the point.** Every attribute that
- * permits hand entry *does* declare sources -- `international_employers` names the LLM path,
- * `residency_admin_ease` names national law -- so none of them appear among the attributes with
- * nobody to ask. Offering the form only there would put it where it can never be reached.
+ * **Not the same list as the unsourced ones, though the two overlap.** This is every attribute
+ * a person may answer; that one is every attribute no source can fetch. One only a person can
+ * answer -- `residency_admin_ease`, whose per-country gradient nobody publishes -- is honestly
+ * in both, while `international_employers` is here alone wherever the LLM path is configured
+ * to fetch it. Offering the form only among the unsourced would hide it from every attribute
+ * something else could also answer.
  *
- * **Declared is not the same as built.** `national_law`, `company_website` and
- * `european_commission` are catalog rows with no adapter behind them, and nothing in the API
- * distinguishes the two -- so this says what *would* answer it rather than claiming anything
- * about what will.
+ * **What else would answer it is `answerable_by`, never the priority order.** The order names
+ * every source for every attribute -- `manual` among them, which is this very form, and sources
+ * with no adapter for this attribute, such as `company_website` -- so printing it offered typing
+ * by hand as the alternative to typing by hand. A source switched off still counts: the switch
+ * decides whether it is asked, not what it can fetch (Q235).
  */
 export function handEnterable(
   attributes: readonly CatalogAttribute[],
@@ -132,17 +155,27 @@ export function handEnterable(
   for (const attribute of attributes) {
     const kind = editorFor(attribute);
     if (kind === null) continue;
-    const sources = attribute.effective_source_priority ?? [];
     open.push({
       id: attribute.id,
       name: attribute.name,
       pillar: attribute.pillar ?? NO_PILLAR,
       kind,
-      otherwise:
-        sources.length === 0
-          ? "Nothing else would answer it"
-          : `Otherwise: ${sources.join(", ")}`,
+      otherwise: otherwiseFor(attribute),
     });
   }
   return open.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/**
+ * What would answer it besides a person, in words.
+ *
+ * Empty where the catalog has not said: silence is not "nothing", and this column is no place
+ * to guess at a source.
+ */
+function otherwiseFor(attribute: CatalogAttribute): string {
+  const able = attribute.answerable_by;
+  if (able === undefined) return "";
+  return able.length === 0
+    ? "Nothing else would answer it"
+    : `Otherwise: ${able.join(", ")}`;
 }

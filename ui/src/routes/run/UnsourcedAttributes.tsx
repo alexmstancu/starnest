@@ -10,17 +10,20 @@ import { highlighted, UNSOURCED } from "../../navigation/highlight";
 import { unsourcedAttributes } from "./unsourced";
 
 /**
- * Attributes with no data source at all, and what each gap costs.
+ * Attributes no source can fetch at all, and what each gap costs.
  *
  * **The honest framing is the whole point.** Retrying and refreshing cannot conjure an
  * adapter, so this card says so rather than offering a button that would do nothing. It sits
  * beside the failures deliberately: the three reasons a figure is missing look identical in a
  * ranking and have completely different remedies.
  *
- * **Hand entry is not offered here**, and the two lists are why: every attribute the catalog
- * lets a person answer also declares a source, so none of them ever appears in this one. The
- * form lives in `OpenToHandEntry` beside this card. Putting it here first made it unreachable,
- * which opening the screen showed and no test did.
+ * **Hand entry is not offered here, though the two lists now overlap.** An attribute only a
+ * person can answer -- hand entry permitted, no adapter able to fetch it -- honestly appears in
+ * both, and its remedy here says to enter it by hand. The form lives in `OpenToHandEntry` beside
+ * this card, which lists every attribute a person may answer, so there is one form in one place.
+ * It was first put here, while "no source" was read from the priority order and no hand-entry
+ * attribute ever qualified -- which made it unreachable, as opening the screen showed and no
+ * test did.
  */
 export function UnsourcedAttributes({ level }: { level: string }) {
   const headingId = useId();
@@ -106,8 +109,10 @@ export function UnsourcedAttributes({ level }: { level: string }) {
 
       {gaps.length === 0 ? (
         <p className="panel__hint">
+          {/* "Unless it is switched off" because `answerable_by` names what can fetch an
+              attribute whatever the switch says (Q235), and a source switched off is not asked. */}
           Every attribute at this level has at least one source that would be
-          asked.
+          asked, unless it is switched off.
         </p>
       ) : (
         <>

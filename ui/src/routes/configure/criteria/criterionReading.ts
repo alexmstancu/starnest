@@ -3,7 +3,7 @@
  * and how much of the pillar its weight fills. No React here, and no markup.
  *
  * **Two authorities, kept apart, which is the ontology's own split** (`reqs.md` 3.0). The
- * attribute is objective -- its value type and whether any source would answer it come from
+ * attribute is objective -- its value type and whether any source can fetch it come from
  * the catalog. The criterion is the household's rule about it -- goal, threshold, method,
  * whether its absence blocks. A row shows both, and this module is where each is turned into
  * a phrase without either pretending to be the other.
@@ -27,8 +27,11 @@ export interface CatalogAttribute {
   name?: string;
   value_type?: string;
   unit?: string | null;
-  /** The sources that would be asked, in order. Empty means nobody would be asked. */
-  effective_source_priority?: readonly string[];
+  /**
+   * The sources whose adapter can fetch it, in priority order (`reqs.md` Q235). Empty means no
+   * run can fetch it; absent means the catalog has not said, which is not the same claim.
+   */
+  answerable_by?: readonly string[];
 }
 
 /** The catalog as the rows read it: by attribute id, because that is what a criterion names. */
@@ -179,15 +182,16 @@ export function chipsFor(
 }
 
 /**
- * Whether nobody would be asked about this attribute at all.
+ * Whether no source can fetch this attribute at all.
  *
- * **Only when the catalog has answered.** An attribute this screen has not been told about is
- * not an attribute without sources, and saying so would report a request still in flight as a
- * hole in the data -- so an absent entry is false, not true.
+ * **Only when the catalog has answered, and has said so.** An attribute this screen has not
+ * been told about is not an attribute without sources, and saying so would report a request
+ * still in flight as a hole in the data -- so an absent entry is false, not true, and so is an
+ * entry with no `answerable_by`. The priority order is no stand-in: it names every source for
+ * every attribute (BE-39), so it could never say this.
  */
 export function hasNoSource(attribute?: CatalogAttribute): boolean {
-  if (attribute === undefined) return false;
-  return (attribute.effective_source_priority ?? []).length === 0;
+  return attribute?.answerable_by?.length === 0;
 }
 
 /**
