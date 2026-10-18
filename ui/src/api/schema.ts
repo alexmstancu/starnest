@@ -2213,6 +2213,15 @@ export interface operations {
                     "application/json": components["schemas"]["MatchRuleResult"];
                 };
             };
+            /** @description `answer_recorded_by_a_person` -- the answer comes from a model, and a person has already answered this gate for this candidate. A model's answer is a proposal and never replaces a person's (reqs.md 6.10 use 3), so nothing is stored; send it as `manual` to replace the person's answer. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             422: components["responses"]["InvalidRequest"];
         };
     };

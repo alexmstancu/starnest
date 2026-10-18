@@ -160,3 +160,51 @@ class TestWhatStillReplacesAnAnswer:
         kept = await the_answer(answers)
         assert kept.is_proposal is True
         assert kept.citations == (OFFICIAL_PAGE,)
+
+
+class TestItSaysWhetherItStoredTheAnswer:
+    """`record` answers whether it wrote, so the endpoint can refuse what the store declined
+    (NEW-36) instead of answering 200 with somebody else's answer -- while the research pass,
+    which declines silently by design, simply does not ask."""
+
+    async def test_an_answer_where_none_stood_is_stored(
+        self, answers: PostgresMatchRuleResultStore
+    ) -> None:
+        stored = await answers.record(
+            an_answer("manual", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING)
+        )
+
+        assert stored is True
+
+    async def test_a_proposal_over_a_person_s_answer_is_declined(
+        self, answers: PostgresMatchRuleResultStore
+    ) -> None:
+        await answers.record(an_answer("manual", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING))
+
+        stored = await answers.record(
+            an_answer("llm", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON)
+        )
+
+        assert stored is False
+
+    async def test_a_proposal_over_a_proposal_is_stored(
+        self, answers: PostgresMatchRuleResultStore
+    ) -> None:
+        await answers.record(an_answer("llm", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING))
+
+        stored = await answers.record(
+            an_answer("llm", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON)
+        )
+
+        assert stored is True
+
+    async def test_a_person_s_answer_over_a_proposal_is_stored(
+        self, answers: PostgresMatchRuleResultStore
+    ) -> None:
+        await answers.record(an_answer("llm", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING))
+
+        stored = await answers.record(
+            an_answer("manual", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON)
+        )
+
+        assert stored is True

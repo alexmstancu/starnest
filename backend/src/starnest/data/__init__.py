@@ -108,6 +108,7 @@ from starnest.data.payloads import (
 from starnest.data.population_centre import PopulationCentre
 from starnest.data.reference_period import InvalidReferencePeriodError, ReferencePeriod
 from starnest.data.rules import (
+    AnswerRecordedByAPersonError,
     CompoundRule,
     CompoundRuleCondition,
     CompoundRuleDeclarationError,
@@ -143,6 +144,7 @@ __all__ = [
     "SHARE_SUM_TOLERANCE",
     "ActiveValueKey",
     "AllowedRange",
+    "AnswerRecordedByAPersonError",
     "AssignedScore",
     "Assigner",
     "Attribute",

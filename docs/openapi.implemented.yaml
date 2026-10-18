@@ -3971,7 +3971,17 @@ paths:
         ruled out by hand: the
 
         `not_manually_excluded` gate, answered `not_matching`, with a reason (`reqs.md`
-        Q152).'
+        Q152).
+
+
+        **A model''s answer over one a person recorded is refused with 409** (NEW-36).
+        The store
+
+        declines it -- a model proposes and a person decides (`reqs.md` 6.10 use 3)
+        -- and this used
+
+        to answer 200 with the person''s answer, a success for a write that never
+        happened.'
       operationId: putMatchRuleResult
       parameters:
       - in: path

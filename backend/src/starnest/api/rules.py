@@ -26,6 +26,7 @@ from starnest.api.errors import absent, built_from_the_request, unknown_scope_re
 from starnest.candidates import CandidateId, UnknownCandidateError
 from starnest.data import (
     MANUAL,
+    AnswerRecordedByAPersonError,
     DataSourceId,
     MalformedMatchRuleResultError,
     MatchResult,
@@ -385,7 +386,12 @@ async def put_match_rule_result(
     candidates: Candidates,
 ) -> MatchRuleResultBody:
     """Record or override one gate's answer. Also how a candidate is ruled out by hand: the
-    `not_manually_excluded` gate, answered `not_matching`, with a reason (`reqs.md` Q152)."""
+    `not_manually_excluded` gate, answered `not_matching`, with a reason (`reqs.md` Q152).
+
+    **A model's answer over one a person recorded is refused with 409** (NEW-36). The store
+    declines it -- a model proposes and a person decides (`reqs.md` 6.10 use 3) -- and this used
+    to answer 200 with the person's answer, a success for a write that never happened.
+    """
     rule = next((r for r in await catalog.read_match_rules() if str(r.id) == match_rule_id), None)
     if rule is None:
         raise UnknownMatchRuleError(f"there is no gate {match_rule_id!r}")
@@ -421,7 +427,12 @@ async def put_match_rule_result(
             override_reason=body.override_reason,
             override_date=now if body.override_reason else None,
         )
-    await results.record(answer)
+    if not await results.record(answer):
+        raise AnswerRecordedByAPersonError(
+            f"a person has answered {match_rule_id} for {candidate_id}, and an answer from "
+            f"{body.data_source}, a model, never replaces one (reqs.md 6.10 use 3): nothing was "
+            "stored. Send it as manual to replace the person's answer."
+        )
     (stored,) = await results.read_results(candidate=candidate_id, match_rule=match_rule_id)
     return _result_body(stored)
 

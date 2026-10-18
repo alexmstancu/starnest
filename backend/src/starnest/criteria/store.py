@@ -150,5 +150,10 @@ class MatchRuleResultStore(ABC):
         """Every answer the filters allow; each narrows independently."""
 
     @abstractmethod
-    async def record(self, result: MatchRuleResult) -> None:
-        """Store one answer with its citations, replacing the previous answer and its pages."""
+    async def record(self, result: MatchRuleResult) -> bool:
+        """Store one answer with its citations, replacing the previous answer and its pages.
+
+        Answers whether it was stored. **A model's answer never replaces one a person recorded**
+        (`reqs.md` 6.10 use 3, NEW-02), so that one is declined and this answers `False` -- for
+        the caller to report, or, where nobody is waiting on it, to let pass.
+        """

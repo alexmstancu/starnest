@@ -61,12 +61,13 @@ class PostgresMatchRuleResultStore(MatchRuleResultStore):
             for row in rows
         )
 
-    async def record(self, result: MatchRuleResult) -> None:
+    async def record(self, result: MatchRuleResult) -> bool:
         """Store one answer with its pages -- unless it is a proposal and a person answered.
 
         The query declines to write a model's proposal over an answer a person recorded
         (NEW-02), and then the citations stay too: they are that answer's evidence, and
-        replacing them would put the proposal's pages beside the person's reason.
+        replacing them would put the proposal's pages beside the person's reason. Which of the
+        two happened is answered, so the endpoint can refuse what was declined (NEW-36).
         """
         period = result.reference_period
         async with acquire(self._pool) as connection:
@@ -84,10 +85,11 @@ class PostgresMatchRuleResultStore(MatchRuleResultStore):
                 override_date=result.override_date,
             )
             if not written:
-                return
+                return False
             await self._queries.replace_match_rule_result_citations(
                 connection,
                 match_rule=str(result.match_rule),
                 candidate=str(result.candidate),
                 urls=list(result.citations),
             )
+        return True

@@ -685,6 +685,14 @@ paths:
           description: OK
           content:
             application/json: { schema: { $ref: "#/components/schemas/MatchRuleResult" } }
+        "409":
+          description: >-
+            `answer_recorded_by_a_person` -- the answer comes from a model, and a person has
+            already answered this gate for this candidate. A model's answer is a proposal and
+            never replaces a person's (reqs.md 6.10 use 3), so nothing is stored; send it as
+            `manual` to replace the person's answer.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /compound-rules:

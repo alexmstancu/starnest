@@ -71,6 +71,14 @@ class RecordingResults:
         self.recorded.append(result)
 
 
+class AStoreAPersonGotToFirst(RecordingResults):
+    """Declines every proposal, as the store does once a person has answered the gate."""
+
+    async def record(self, result: MatchRuleResult) -> bool:  # type: ignore[override]
+        self.recorded.append(result)
+        return False
+
+
 def a_finding(result: MatchResult = MatchResult.NOT_MATCHING, cost: str = "0.05") -> Researched:
     return Researched(
         match_result=result,
@@ -113,6 +121,29 @@ class TestWhatItStores:
         assert proposal.citations == (A_PAGE,)
         assert str(proposal.data_source) == "llm"
         assert outcome.proposals == (proposal,)
+
+    async def test_a_proposal_the_store_declines_is_declined_silently(self) -> None:
+        """A person answered while the pass ran (NEW-02). The pass writes no response a person
+        reads, so it has nobody to refuse and simply goes on asking (NEW-36 refuses only the
+        endpoint)."""
+        researcher = StubResearcher(a_finding(), a_finding())
+
+        outcome = await research_gates(
+            researcher=researcher,
+            rules=[THE_GATE],
+            candidates=[PORTUGAL, SPAIN],
+            citizenships=["country.romania"],
+            results=AStoreAPersonGotToFirst(),
+            already_answered=[],
+            spend_cap_eur=Decimal(5),
+            uncapped_is_accepted=False,
+        )
+
+        assert researcher.asked == [
+            ("uk_skilled_worker", "country.portugal"),
+            ("uk_skilled_worker", "country.spain"),
+        ]
+        assert outcome.calls == 2
 
     async def test_an_answer_that_cited_nothing_is_stored_nowhere(self) -> None:
         """An opinion about a visa route is worth less than an open question."""

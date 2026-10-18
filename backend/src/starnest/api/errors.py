@@ -36,6 +36,7 @@ from starnest.criteria import (
     WeightsAllLockedError,
 )
 from starnest.data import (
+    AnswerRecordedByAPersonError,
     InvalidManualValueError,
     InvalidReferencePeriodError,
     MalformedMatchRuleResultError,
@@ -95,6 +96,7 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     NoResearcherConfiguredError: _refusal(501, "llm_not_configured"),
     ManualEntryNotPermittedError: _refusal(409, "manual_entry_not_permitted"),
     InvalidManualValueError: _refusal(409, "invalid_value"),
+    AnswerRecordedByAPersonError: _refusal(409, "answer_recorded_by_a_person"),
     # 422 -- the request describes something the domain will not accept.
     CriteriaSetError: _refusal(422, "invalid_criteria_set"),
     CriterionDeclarationError: _refusal(422, "invalid_criterion"),

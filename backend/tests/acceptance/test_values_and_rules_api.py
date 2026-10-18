@@ -10,6 +10,8 @@ from typing import ClassVar
 import httpx
 import pytest
 
+from .contract import response_schema, validate
+
 pytestmark = pytest.mark.acceptance
 
 COUNTRY = "country"
@@ -278,6 +280,99 @@ class TestTheGates:
 
         assert response.status_code == 422
         assert response.json()["code"] == "unknown_data_source"
+
+
+class TestAModelsAnswerNeverReplacesAPersons:
+    """NEW-36. A model's answer is a proposal until a person writes it (`reqs.md` 6.10 use 3),
+    so the store declines one sent over an answer a person recorded (NEW-02). The endpoint then
+    answered 200 with the person's answer -- a success for a write that never happened, and the
+    response read like the model's answer had been accepted. It is refused instead, and nothing
+    changes; the research pass, which writes no response, still declines silently."""
+
+    PATH: ClassVar[str] = "/v1/match-rule-results/uk_skilled_worker/country.united_kingdom"
+    A_PERSONS_ANSWER: ClassVar[dict] = {
+        "match_result": "matching",
+        "reason": "checked the official page myself",
+        "data_source": "manual",
+        "citations": ["https://www.gov.uk/skilled-worker-visa"],
+    }
+    A_MODELS_ANSWER: ClassVar[dict] = {
+        "match_result": "not_matching",
+        "reason": "the model read a list of eligible occupations",
+        "data_source": "llm",
+        "citations": ["https://www.gov.uk/government/publications/skilled-worker-visa"],
+    }
+
+    async def _the_answer(self, api: httpx.AsyncClient) -> dict:
+        (answer,) = (
+            await api.get("/v1/match-rule-results", params={"match_rule": "uk_skilled_worker"})
+        ).json()["items"]
+        return answer
+
+    async def test_a_model_s_answer_over_a_person_s_is_refused(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        await api.put(self.PATH, json=self.A_PERSONS_ANSWER)
+
+        response = await api.put(self.PATH, json=self.A_MODELS_ANSWER)
+
+        assert response.status_code == 409, f"answered {response.status_code}"
+        assert response.json()["code"] == "answer_recorded_by_a_person"
+        assert response_schema("putMatchRuleResult", 409) == {"$ref": "#/components/schemas/Error"}
+        validate("putMatchRuleResult", response.json(), status=409)
+
+    async def test_the_person_s_answer_stands_with_its_pages(self, api: httpx.AsyncClient) -> None:
+        await api.put(self.PATH, json=self.A_PERSONS_ANSWER)
+        before = await self._the_answer(api)
+
+        await api.put(self.PATH, json=self.A_MODELS_ANSWER)
+
+        assert await self._the_answer(api) == before
+
+    async def test_a_model_s_answer_over_a_person_s_override_is_refused(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        path = "/v1/match-rule-results/not_manually_excluded/country.greece"
+        await api.put(
+            path, json={"match_result": "not_matching", "override_reason": "ruled out by hand"}
+        )
+
+        response = await api.put(
+            path,
+            json={"match_result": "matching", "data_source": "llm", "citations": ["https://a"]},
+        )
+
+        assert (response.status_code, response.json()["code"]) == (
+            409,
+            "answer_recorded_by_a_person",
+        )
+
+    async def test_a_model_s_answer_where_nobody_answered_is_stored_as_a_proposal(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.put(self.PATH, json=self.A_MODELS_ANSWER)
+
+        assert response.status_code == 200
+        assert (response.json()["data_source"], response.json()["is_proposal"]) == ("llm", True)
+
+    async def test_a_model_s_answer_replaces_a_proposal(self, api: httpx.AsyncClient) -> None:
+        await api.put(self.PATH, json=self.A_MODELS_ANSWER)
+
+        response = await api.put(self.PATH, json=self.A_MODELS_ANSWER | {"match_result": "unknown"})
+
+        assert response.status_code == 200
+        assert (await self._the_answer(api))["match_result"] == "unknown"
+
+    async def test_a_person_s_answer_still_replaces_a_proposal(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """Confirming a proposal is writing it as `manual`, so this is how one is confirmed."""
+        await api.put(self.PATH, json=self.A_MODELS_ANSWER)
+
+        response = await api.put(self.PATH, json=self.A_PERSONS_ANSWER)
+
+        assert response.status_code == 200
+        assert (await self._the_answer(api))["is_proposal"] is False
 
 
 class TestTheCompoundRules:

@@ -36,9 +36,13 @@ class ProposalStore(Protocol):
     `criteria/`, which sits above this module in the layering (`arch.md` 6.2) -- and because one
     method is all this needs. A `Protocol`, so the concrete store satisfies it by shape: nothing
     in `storage/` has to know that this seam exists.
+
+    **What `record` answers is not read here.** A store declines a proposal a person got to
+    first (NEW-02), and a pass declines it silently: it writes no response anybody acts on, so
+    there is nobody to refuse -- only the endpoint that takes a gate's answer refuses (NEW-36).
     """
 
-    async def record(self, result: MatchRuleResult) -> None: ...
+    async def record(self, result: MatchRuleResult) -> object: ...
 
 
 class NoResearcherConfiguredError(ValueError):

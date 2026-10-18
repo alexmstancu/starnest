@@ -40,6 +40,16 @@ class MalformedMatchRuleResultError(ValueError):
     """A gate's answer contradicts itself: a half-recorded override, or a moment with no zone."""
 
 
+class AnswerRecordedByAPersonError(ValueError):
+    """A model's answer was sent over an answer a person recorded, which it never replaces.
+
+    `reqs.md` 6.10 use 3: what a model answers is a proposal until a person writes it, so it may
+    not overwrite what a person already gave (NEW-02). The research pass declines such a proposal
+    silently; a request that sends one is told, rather than answered as though it were stored
+    (NEW-36).
+    """
+
+
 class CompoundRuleDeclarationError(ValueError):
     """A catalog row carries something its shape has no meaning for."""
 
