@@ -74,6 +74,11 @@ export interface RunScreenState {
   armed: ArmedRun | null;
   current: RunDetail | null;
   busy: RunAct | null;
+  /**
+   * Whether a stop of `runId` is still in flight, until it has been read back -- whatever act
+   * is newest, which is all `busy` can say (NEW-52).
+   */
+  isStopping: (runId: number) => boolean;
   failure: unknown;
   history: Resource<{ items: Run[]; total: number }>;
   /**
@@ -116,6 +121,12 @@ export function useRunScreen(): RunScreenState {
   // Every act still going, oldest first. The label is the newest of them, so the first act to
   // end no longer clears the label of one still going (NEW-10).
   const going = useRef<{ what: RunAct }[]>([]);
+  // **The runs a stop is in flight for, until it has been read back** (NEW-52). Not `busy`,
+  // which names only the newest act: a refresh sent while a stop was written took the label, and
+  // Stop was offered again until the refresh had read the run back.
+  const [stopsInFlight, setStopsInFlight] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
 
   // Every run, not the newest ten: the history, the diff's choices and the month's spend all
   // read this list as every run there has been (UI-17).
@@ -220,6 +231,7 @@ export function useRunScreen(): RunScreenState {
     armed,
     current,
     busy,
+    isStopping: (runId) => stopsInFlight.has(runId),
     failure,
     history: history.resource,
     runs: runs ?? lastRuns,
@@ -294,14 +306,24 @@ export function useRunScreen(): RunScreenState {
     stop: () => {
       if (!current) return;
       const ticket = claim(current.id);
+      setStopsInFlight((runs) => new Set(runs).add(current.id));
       void act("stopping", async () => {
-        // The 202 carries the run back, so `stop_requested_at` is on screen immediately
-        // rather than after the next poll -- which is what lets the card explain why the
-        // button has gone before the run has actually ended.
-        const stopped = await stopRun(current.id);
-        // **Claimed again now the stop is written** (NEW-49): a refresh sent meanwhile may have
-        // read the run before it was, and standing over this read it would offer Stop again.
-        await watch(reclaim(ticket, current.id), stopped.id);
+        try {
+          // The 202 carries the run back, so `stop_requested_at` is on screen immediately
+          // rather than after the next poll -- which is what lets the card explain why the
+          // button has gone before the run has actually ended.
+          const stopped = await stopRun(current.id);
+          // **Claimed again now the stop is written** (NEW-49): a refresh sent meanwhile may
+          // have read the run before it was, and standing over this read it would offer Stop
+          // again.
+          await watch(reclaim(ticket, current.id), stopped.id);
+        } finally {
+          setStopsInFlight((runs) => {
+            const left = new Set(runs);
+            left.delete(current.id);
+            return left;
+          });
+        }
       });
     },
     // Through `act` like everything else. A backend that is down or a run that cannot be read

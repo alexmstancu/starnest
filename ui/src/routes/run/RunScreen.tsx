@@ -58,7 +58,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
       <RunReport
         run={run.current}
         busy={run.busy === "opening"}
-        stopping={run.busy === "stopping"}
+        stopping={run.isStopping(run.current.id)}
         onRefresh={run.refresh}
         onDismiss={run.close}
         onStop={run.stop}

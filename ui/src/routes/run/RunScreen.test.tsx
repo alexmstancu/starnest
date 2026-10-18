@@ -2621,6 +2621,102 @@ describe("a stop a refresh overtook", () => {
 });
 
 /**
+ * NEW-52. **Stop stays held for as long as its stop is in flight, whatever act is newest.** It
+ * was held only while `busy` said "stopping", and `busy` names the newest act (NEW-10) -- so a
+ * Refresh sent while the stop was written took the label, and Stop was offered again, pressable
+ * and saying it had not been pressed, until the refresh had read the run back.
+ */
+describe("a stop a refresh overlaps", () => {
+  /** Run 7 on the card, its stop sent and not answered, and a refresh read held behind it. */
+  async function aStopAndARefreshInFlight() {
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    const stop = card.getByRole("button", {
+      name: /stop — keep what completed/i,
+    });
+    const refresh = card.getByRole("button", { name: "Refresh" });
+    await userEvent.click(stop);
+    const read = holdTheNextReadOf(7);
+    await userEvent.click(refresh);
+    await waitFor(() => expect(read.arrived()).toBe(true));
+    return { card, stop, refresh, read };
+  }
+
+  it("keeps Stop held while the refresh reads, and after it, until the stop answers", async () => {
+    const answer = aRunWhoseStopIsHeld();
+    const { card, stop, refresh, read } = await aStopAndARefreshInFlight();
+
+    expectHeld(stop);
+    expect(stop).toHaveTextContent("Stopping…");
+
+    read.release();
+    await waitFor(() => expect(refresh).toHaveTextContent("Refresh"));
+    expectHeld(stop);
+    expect(stop).toHaveTextContent("Stopping…");
+
+    answer.release();
+    await waitFor(() => expect(card.getByText("stopping")).toBeInTheDocument());
+    expect(
+      card.queryByRole("button", { name: /stop — keep what completed|stopping/i }),
+    ).toBeNull();
+  });
+
+  it("takes Stop away once its stop is recorded, though the refresh is still reading", async () => {
+    const answer = aRunWhoseStopIsHeld();
+    const { card, read } = await aStopAndARefreshInFlight();
+
+    answer.release();
+    await waitFor(() => expect(card.getByText("stopping")).toBeInTheDocument());
+    expect(
+      card.queryByRole("button", { name: /stop — keep what completed|stopping/i }),
+    ).toBeNull();
+
+    read.release();
+    await waitFor(() =>
+      expect(card.getByRole("button", { name: "Refresh" })).toBeInTheDocument(),
+    );
+    expect(card.getByText("stopping")).toBeInTheDocument();
+  });
+
+  it("offers Stop again once a refused stop has answered, though a refresh overlapped it", async () => {
+    const refusal = heldAnswer();
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          run_status: "running",
+          finished_at: null,
+        }),
+      ),
+      http.post(`${BASE}/data-acquisition-runs/:runId/stop`, async () => {
+        await refusal.held;
+        return HttpResponse.json(
+          { code: "not_found", message: "there is no run numbered 7" },
+          { status: 404 },
+        );
+      }),
+    );
+    const { stop, refresh, read } = await aStopAndARefreshInFlight();
+
+    expectHeld(stop);
+    read.release();
+    await waitFor(() => expect(refresh).toHaveTextContent("Refresh"));
+    expectHeld(stop);
+
+    refusal.release();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "there is no run numbered 7",
+    );
+    await waitFor(() => expectNotHeld(stop));
+    expect(stop).toHaveTextContent("Stop — keep what completed");
+  });
+});
+
+/**
  * The hook's acts on the card, called with no card. The screen never offers them then, so this is
  * the hook's own contract: **an act with nothing to act on asks for nothing and claims nothing**
  * -- and so the opening view, which gives way to any claim, still opens.
