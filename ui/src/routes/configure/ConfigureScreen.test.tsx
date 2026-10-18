@@ -1021,18 +1021,23 @@ describe("while a change is being saved", () => {
     await saveWeight(TAX, "35");
     await waitFor(() => expect(writes.sent).toHaveLength(1));
 
-    expect(panel.getByRole("button", { name: "Undo this" })).toBeDisabled();
-    expect(
+    expectHeld(panel.getByRole("button", { name: "Undo this" }));
+    expectHeld(panel.getByRole("button", { name: "Back to where I started" }));
+    // Held, they still take a click -- and send nothing into the rebalance in flight.
+    await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
+    await userEvent.click(
       panel.getByRole("button", { name: "Back to where I started" }),
-    ).toBeDisabled();
+    );
 
     writes.release();
 
     await waitFor(() =>
-      expect(
+      expectNotHeld(
         panel.getByRole("button", { name: "Back to where I started" }),
-      ).toBeEnabled(),
+      ),
     );
+    await panel.findByText("2 in this session");
+    expect(writes.sent).toEqual(["default/country.total_tax_rate_effective"]);
   });
 
   it("holds the weights still while an undo is being sent", async () => {
@@ -1133,6 +1138,124 @@ describe("while a change is being saved", () => {
         "default/country.total_tax_rate_effective",
         "default/country.total_tax_rate_effective",
       ]);
+    });
+
+    it("keeps focus on an undo while it is sent, and a second Enter sends nothing", async () => {
+      const user = userEvent.setup();
+      renderShell("/configure");
+      await settled();
+      await saveWeight(COST_OF_LIVING, "40");
+      const panel = await historyPanel();
+      await panel.findByText("1 in this session");
+      const writes = holdCriterionWrites();
+      const undo = panel.getByRole("button", { name: "Undo this" });
+      act(() => undo.focus());
+
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+      expect(undo).toHaveFocus();
+      expectHeld(undo);
+      expectHeld(panel.getByRole("button", { name: "Back to where I started" }));
+      await user.keyboard("{Enter}");
+
+      writes.release();
+
+      // Undone, the change leaves the list -- and its button with it.
+      await panel.findByText("nothing yet");
+      expect(writes.sent).toEqual(["default/country.cost_of_living_index"]);
+    });
+
+    it("keeps focus on an undo held by a weight being saved, and undoes once that has answered", async () => {
+      const user = userEvent.setup();
+      renderShell("/configure");
+      await settled();
+      await saveWeight(COST_OF_LIVING, "40");
+      const panel = await historyPanel();
+      await panel.findByText("1 in this session");
+      const undo = panel.getByRole("button", { name: "Undo this" });
+      act(() => undo.focus());
+      const writes = holdCriterionWrites();
+
+      // A weight saved by a pointer while the keyboard waits on the undo.
+      await saveWeight(TAX, "35");
+      await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+      expect(undo).toHaveFocus();
+      expectHeld(undo);
+      await user.keyboard("{Enter}");
+
+      writes.release();
+
+      await panel.findByText("2 in this session");
+      await waitFor(() => expectNotHeld(undo));
+      expect(undo).toHaveFocus();
+      await user.keyboard("{Enter}");
+      await panel.findByText("nothing yet");
+      // The weight, then its undo and the undo of the change before it: nothing in between.
+      expect(writes.sent).toEqual([
+        "default/country.total_tax_rate_effective",
+        "default/country.total_tax_rate_effective",
+        "default/country.cost_of_living_index",
+      ]);
+    });
+
+    it("lets go of an undo the server refused, with focus still on it", async () => {
+      const user = userEvent.setup();
+      renderShell("/configure");
+      await settled();
+      await saveWeight(COST_OF_LIVING, "40");
+      const panel = await historyPanel();
+      await panel.findByText("1 in this session");
+      const sent: string[] = [];
+      mockServer.use(
+        http.patch(
+          "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+          ({ params }) => {
+            sent.push(String(params["attributeId"]));
+            return HttpResponse.json(
+              { code: "weights_all_locked", message: "no" },
+              { status: 409 },
+            );
+          },
+        ),
+      );
+      const undo = panel.getByRole("button", { name: "Undo this" });
+      act(() => undo.focus());
+
+      await user.keyboard("{Enter}");
+
+      expect(await panel.findByRole("alert")).toHaveTextContent(
+        /nothing to rebalance into/i,
+      );
+      await waitFor(() => expectNotHeld(undo));
+      expect(undo).toHaveFocus();
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(sent).toHaveLength(2));
+    });
+
+    it("keeps focus on the way back while it is sent, and a second Enter sends nothing", async () => {
+      const user = userEvent.setup();
+      renderShell("/configure");
+      await settled();
+      await saveWeight(COST_OF_LIVING, "40");
+      const panel = await historyPanel();
+      await panel.findByText("1 in this session");
+      const writes = holdCriterionWrites();
+      const back = panel.getByRole("button", { name: "Back to where I started" });
+      act(() => back.focus());
+
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+      expect(back).toHaveFocus();
+      expectHeld(back);
+      await user.keyboard("{Enter}");
+
+      writes.release();
+
+      await panel.findByText("nothing yet");
+      expect(writes.sent).toEqual(["default/country.cost_of_living_index"]);
     });
 
     it("lets go of a criterion's slider after a refused weight, with focus still on it", async () => {

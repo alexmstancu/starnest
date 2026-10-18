@@ -32,7 +32,16 @@ export function RecentChanges({
   const resetIsInexact = history.changes.some(
     (change) => change.caveat !== undefined,
   );
+  // **Held, never disabled, while a write is in flight** (NEW-34). Chromium throws focus off a
+  // button the moment it is disabled, so an undo pressed from the keyboard put the reader back
+  // on the page. Held, a button keeps focus and says so, and pressing it does nothing.
   const held = history.undoing || busy;
+  const undoThrough = (id: number) => {
+    if (!held) history.undoThrough(id);
+  };
+  const reset = () => {
+    if (!held) history.reset();
+  };
   // **Open, and collapsible rather than dismissible.** The rail's whole job is answering
   // "what have I just done", so it starts answering it; the collapse is for the reader who
   // has finished with it and wants the screen back. Local state, because nothing outside this
@@ -67,9 +76,9 @@ export function RecentChanges({
           <button
             type="button"
             className="action"
-            disabled={held}
+            aria-disabled={held || undefined}
             aria-describedby={resetIsInexact ? resetCaveatId : undefined}
-            onClick={history.reset}
+            onClick={reset}
           >
             Back to where I started
           </button>
@@ -130,9 +139,9 @@ export function RecentChanges({
                   <button
                     type="button"
                     className="action"
-                    disabled={held}
+                    aria-disabled={held || undefined}
                     aria-describedby={caveats === "" ? undefined : caveats}
-                    onClick={() => history.undoThrough(change.id)}
+                    onClick={() => undoThrough(change.id)}
                   >
                     {describeReach(reaching.length)}
                   </button>

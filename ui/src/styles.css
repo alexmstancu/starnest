@@ -1263,7 +1263,7 @@ select.field__control {
   cursor: pointer;
 }
 
-.action:hover:not(:disabled) {
+.action:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--colour-surface-sunken);
 }
 
@@ -1275,8 +1275,10 @@ select.field__control {
   color: var(--colour-danger);
 }
 
-/* Unavailable, not absent: the slot keeps its place so the other three never move. */
-.action:disabled {
+/* Unavailable, not absent: the slot keeps its place so the other three never move. Held while
+   a write is in flight looks the same (NEW-34). */
+.action:disabled,
+.action[aria-disabled="true"] {
   border-color: var(--colour-surface-hair);
   background: var(--colour-surface-raised);
   color: var(--colour-text-muted);

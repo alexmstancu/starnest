@@ -40,6 +40,10 @@ export function useChangeHistory(): ChangeHistory {
   // A ref, not state: an id must be unique across renders and never re-used, and nothing on
   // screen depends on its value.
   const nextId = useRef(1);
+  // **One undo at a time** (NEW-34). The buttons are held rather than disabled while one runs,
+  // so they still take a press; a ref, because two can arrive before the first has re-rendered,
+  // and the second would reverse what the first is already reversing.
+  const inFlight = useRef(false);
 
   const note = useCallback((entry: Omit<RecordedChange, "id" | "at">) => {
     setChanges((history) =>
@@ -52,6 +56,8 @@ export function useChangeHistory(): ChangeHistory {
   }, []);
 
   const undo = useCallback(async (reach: RecordedChange[]) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setUndoing(true);
     setFailure(null);
     try {
@@ -67,6 +73,7 @@ export function useChangeHistory(): ChangeHistory {
       // what the server holds, and a half-finished undo is a real state.
       setFailure(error);
     } finally {
+      inFlight.current = false;
       setUndoing(false);
     }
   }, []);
