@@ -15,7 +15,7 @@ downstream is only honest if this is (`reqs.md` 5.3).
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Protocol
@@ -156,3 +156,20 @@ class SourceAdapter(ABC):
         told only the identifier would have to restate it. Adding an attribute would then stop
         being a pure data change, which is the invariant the catalog exists to protect.
         """
+
+    async def fetch_in_batches(
+        self, attribute: Attribute, candidates: Sequence[Candidate]
+    ) -> AsyncIterator[Acquired]:
+        """One attribute's figures, in commit-sized batches, as they are produced.
+
+        **The unit a run commits.** `acquire` stores and records whatever each batch carries
+        before asking for the next, so the batch size is the window a process death can lose.
+
+        The default yields the whole attribute at once, which is right for every structured
+        source: one indicator comes back in one round trip, so there is nothing to stream and
+        nothing committed early would be gained. **A source that bills and asks per candidate
+        overrides this to yield each candidate as it lands** (BE-19), so a run that dies
+        part-way through a 32-country sweep keeps every paid answer it had already been handed,
+        rather than losing the lot with the batch that never returned.
+        """
+        yield await self.fetch(attribute, candidates)

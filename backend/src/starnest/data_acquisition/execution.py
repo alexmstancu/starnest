@@ -15,7 +15,7 @@ screen say which pass produced it, and what makes "re-run just this" answerable 
 """
 
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -641,6 +641,15 @@ class _AskedOnlyAbout(SourceAdapter):
 
     async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
         return await self._adapter.fetch(attribute, candidates)
+
+    async def fetch_in_batches(
+        self, attribute: Attribute, candidates: Sequence[Candidate]
+    ) -> AsyncIterator[Acquired]:
+        # Forwarded like the rest (P41): inherit the base's default and a retry over a paid
+        # source would buffer the whole attribute again, losing the per-candidate durability
+        # the run relies on (BE-19).
+        async for batch in self._adapter.fetch_in_batches(attribute, candidates):
+            yield batch
 
 
 class NothingToAskAgainError(ValueError):

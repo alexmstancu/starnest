@@ -15,7 +15,7 @@ confidence. `low` confidence is the floor for an LLM value, not a licence to ski
 
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from decimal import Decimal
 
 from starnest.candidates import Candidate
@@ -104,8 +104,25 @@ class LlmEmployersAdapter(SourceAdapter):
         self._meter = meter
 
     async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+        """The whole attribute, summed from the per-candidate batches `fetch_in_batches` yields.
+
+        Kept for callers that want it whole -- the estimate path and the tests -- while a run
+        goes through `fetch_in_batches` so each paid answer is committed as it lands (BE-19)."""
+        acquired = Acquired()
+        async for batch in self.fetch_in_batches(attribute, candidates):
+            acquired += batch
+        return acquired
+
+    async def fetch_in_batches(
+        self, attribute: Attribute, candidates: Sequence[Candidate]
+    ) -> AsyncIterator[Acquired]:
+        """One batch per candidate, because the question -- and the bill -- is per candidate.
+
+        Yielding each answer as it lands lets the run commit it before the next call, so a
+        process death part-way through a sweep keeps every paid figure already handed over
+        (BE-19), rather than losing the lot with a batch that never returned."""
         if attribute.id != INTERNATIONAL_EMPLOYERS:
-            return Acquired(
+            yield Acquired(
                 failures=(
                     AcquisitionFailure(
                         attribute=attribute.id,
@@ -113,6 +130,7 @@ class LlmEmployersAdapter(SourceAdapter):
                     ),
                 )
             )
+            return
 
         measuring = Measurements(
             attribute=attribute,
@@ -123,9 +141,6 @@ class LlmEmployersAdapter(SourceAdapter):
             # keeps it below every published figure in the priority order.
             confidence_level=ConfidenceLevel.LOW,
         )
-        values: list[Value] = []
-        failures: list[AcquisitionFailure] = []
-        cost, calls, searches = Decimal(0), 0, 0
 
         # One question per country, because the answer is about one country: asking for thirty-two
         # at once would return a list nobody could attribute to a page.
@@ -136,11 +151,13 @@ class LlmEmployersAdapter(SourceAdapter):
             # paid for in full. The candidates not asked about are reported as unanswered,
             # which is what a retry works from.
             if self._meter is not None and self._meter.is_exhausted:
-                failures.append(
-                    AcquisitionFailure(
-                        attribute=attribute.id,
-                        candidate=str(candidate.id),
-                        reason="the run reached its spend cap before this candidate was asked",
+                yield Acquired(
+                    failures=(
+                        AcquisitionFailure(
+                            attribute=attribute.id,
+                            candidate=str(candidate.id),
+                            reason="the run reached its spend cap before this candidate was asked",
+                        ),
                     )
                 )
                 continue
@@ -151,29 +168,28 @@ class LlmEmployersAdapter(SourceAdapter):
                 # for the reply whether or not we could use it, so dropping the cost here made
                 # the spend cap unenforceable exactly when a model is misbehaving. Zero when
                 # the call never reached the provider, which the exception states.
-                cost += unavailable.cost_eur
-                calls += unavailable.calls
                 self._record(unavailable.cost_eur, unavailable.calls)
-                failures.append(
-                    AcquisitionFailure(
-                        attribute=attribute.id,
-                        candidate=str(candidate.id),
-                        reason=str(unavailable),
-                    )
+                yield Acquired(
+                    failures=(
+                        AcquisitionFailure(
+                            attribute=attribute.id,
+                            candidate=str(candidate.id),
+                            reason=str(unavailable),
+                        ),
+                    ),
+                    cost_eur=unavailable.cost_eur,
+                    calls=unavailable.calls,
                 )
                 continue
-            cost += answered.cost_eur
             self._record(answered.cost_eur, answered.calls)
-            calls += answered.calls
-            searches += answered.web_searches
 
             outcome = _the_employers_named(answered, candidate, measuring)
             if isinstance(outcome, AcquisitionFailure):
-                failures.append(outcome)
+                yield Acquired(
+                    failures=(outcome,), cost_eur=answered.cost_eur, calls=answered.calls
+                )
             else:
-                values.append(outcome)
-
-        return Acquired(values=tuple(values), failures=tuple(failures), cost_eur=cost, calls=calls)
+                yield Acquired(values=(outcome,), cost_eur=answered.cost_eur, calls=answered.calls)
 
 
 MOST_EMPLOYERS_WORTH_NAMING = 12

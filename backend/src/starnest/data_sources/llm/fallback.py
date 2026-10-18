@@ -16,7 +16,7 @@ And it is asked per candidate, because the question is about one place.
 
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from decimal import Decimal, InvalidOperation
 
 from starnest.candidates import Candidate
@@ -127,8 +127,25 @@ class LlmFallbackAdapter(SourceAdapter):
         self._meter = meter
 
     async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+        """The whole attribute, summed from the per-candidate batches `fetch_in_batches` yields.
+
+        Kept for callers that want it whole -- the estimate path and the tests -- while a run
+        goes through `fetch_in_batches` so each paid answer is committed as it lands (BE-19)."""
+        acquired = Acquired()
+        async for batch in self.fetch_in_batches(attribute, candidates):
+            acquired += batch
+        return acquired
+
+    async def fetch_in_batches(
+        self, attribute: Attribute, candidates: Sequence[Candidate]
+    ) -> AsyncIterator[Acquired]:
+        """One batch per candidate, because the question -- and the bill -- is per candidate.
+
+        Yielding each answer as it lands lets the run commit it before the next call, so a
+        process death part-way through a sweep keeps every paid figure already handed over
+        (BE-19), rather than losing the lot with a batch that never returned."""
         if attribute.value_type not in ANSWERABLE:
-            return Acquired(
+            yield Acquired(
                 failures=(
                     AcquisitionFailure(
                         attribute=attribute.id,
@@ -142,6 +159,7 @@ class LlmFallbackAdapter(SourceAdapter):
                     ),
                 )
             )
+            return
 
         measuring = Measurements(
             attribute=attribute,
@@ -149,9 +167,7 @@ class LlmFallbackAdapter(SourceAdapter):
             retrieved=the_period_now().retrieved,
             confidence_level=ConfidenceLevel.LOW,
         )
-        values: list[Value] = []
-        failures: list[AcquisitionFailure] = []
-        cost, calls = Decimal(0), 0
+        answered_count, refused_count, total_cost = 0, 0, Decimal(0)
 
         for candidate in candidates:
             # **Checked before the call, never after** (P91). A sweep of 32 countries is 32
@@ -160,11 +176,14 @@ class LlmFallbackAdapter(SourceAdapter):
             # paid for in full. The candidates not asked about are reported as unanswered,
             # which is what a retry works from.
             if self._meter is not None and self._meter.is_exhausted:
-                failures.append(
-                    AcquisitionFailure(
-                        attribute=attribute.id,
-                        candidate=str(candidate.id),
-                        reason="the run reached its spend cap before this candidate was asked",
+                refused_count += 1
+                yield Acquired(
+                    failures=(
+                        AcquisitionFailure(
+                            attribute=attribute.id,
+                            candidate=str(candidate.id),
+                            reason="the run reached its spend cap before this candidate was asked",
+                        ),
                     )
                 )
                 continue
@@ -182,35 +201,41 @@ class LlmFallbackAdapter(SourceAdapter):
                 # for the reply whether or not we could use it, so dropping the cost here made
                 # the spend cap unenforceable exactly when a model is misbehaving. Zero when
                 # the call never reached the provider, which the exception states.
-                cost += unavailable.cost_eur
-                calls += unavailable.calls
                 self._record(unavailable.cost_eur, unavailable.calls)
-                failures.append(
-                    AcquisitionFailure(
-                        attribute=attribute.id,
-                        candidate=str(candidate.id),
-                        reason=str(unavailable),
-                    )
+                total_cost += unavailable.cost_eur
+                refused_count += 1
+                yield Acquired(
+                    failures=(
+                        AcquisitionFailure(
+                            attribute=attribute.id,
+                            candidate=str(candidate.id),
+                            reason=str(unavailable),
+                        ),
+                    ),
+                    cost_eur=unavailable.cost_eur,
+                    calls=unavailable.calls,
                 )
                 continue
-            cost += answered.cost_eur
-            calls += answered.calls
             self._record(answered.cost_eur, answered.calls)
+            total_cost += answered.cost_eur
 
             outcome = _the_figure_given(answered, candidate, measuring)
             if isinstance(outcome, AcquisitionFailure):
-                failures.append(outcome)
+                refused_count += 1
+                yield Acquired(
+                    failures=(outcome,), cost_eur=answered.cost_eur, calls=answered.calls
+                )
             else:
-                values.append(outcome)
+                answered_count += 1
+                yield Acquired(values=(outcome,), cost_eur=answered.cost_eur, calls=answered.calls)
 
         _log.info(
             "fallback for %s: %d answered, %d refused, %s EUR",
             attribute.id,
-            len(values),
-            len(failures),
-            cost,
+            answered_count,
+            refused_count,
+            total_cost,
         )
-        return Acquired(values=tuple(values), failures=tuple(failures), cost_eur=cost, calls=calls)
 
 
 def _the_unit_of(attribute: Attribute) -> str:

@@ -5,9 +5,11 @@ whatever an adapter returns -- which attributes it asks about, what it stores, a
 when a fetch fails. Eurostat's own behaviour is tested where Eurostat lives.
 """
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
+
+import pytest
 
 from starnest.candidates import Candidate
 from starnest.data import (
@@ -147,6 +149,50 @@ class TestWhatARunKeeps:
 
         assert len(store.appended) == 1
         assert outcome.stored == tuple(store.appended)
+
+    async def test_a_value_streamed_before_a_mid_sweep_death_is_already_stored(self) -> None:
+        """BE-19. A paid source asks per candidate and used to buffer every answer until the
+        whole attribute returned, so a process dying part-way lost the paid answers already in
+        hand. `acquire` now stores each batch as it is yielded, so a death after the first
+        candidate keeps the first candidate's figure -- and its failure reaches the run's own
+        list the same way."""
+        first = a_value()
+        store = RecordingValueStore()
+        collected: list[AcquisitionFailure] = []
+
+        class DiesAfterTheFirstCandidate(SourceAdapter):
+            @property
+            def data_source(self) -> DataSourceId:
+                return DataSourceId("llm")
+
+            @property
+            def attributes(self) -> tuple:
+                return (OVERBURDEN,)
+
+            async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]):
+                acquired = Acquired()
+                async for batch in self.fetch_in_batches(attribute, candidates):
+                    acquired += batch
+                return acquired
+
+            async def fetch_in_batches(
+                self, attribute: Attribute, candidates: Sequence[Candidate]
+            ) -> AsyncIterator[Acquired]:
+                yield Acquired(values=(first,))
+                raise RuntimeError("the process died mid-sweep")
+
+        with pytest.raises(RuntimeError, match="died mid-sweep"):
+            await acquire(
+                adapter=DiesAfterTheFirstCandidate(),
+                attributes=[an_attribute()],
+                candidates=[PORTUGAL],
+                values=store,
+                run=7,
+                collecting=collected,
+            )
+
+        assert [value.candidate for value in store.appended] == [first.candidate]
+        assert store.appended[0].data_acquisition_run == 7
 
     async def test_a_run_completes_and_reports_what_failed(self) -> None:
         """`reqs.md` 6.4. A run that aborted on the first problem would be a run that never

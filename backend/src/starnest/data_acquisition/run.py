@@ -85,73 +85,80 @@ async def acquire(
         adapter.meter_with(meter)
 
     for attribute in answerable:
-        spent_before = meter.spent_eur if meter is not None else Decimal(0)
-        calls_before = meter.calls if meter is not None else 0
-        acquired = await adapter.fetch(attribute, candidates)
-        cost += acquired.cost_eur
-        calls += acquired.calls
-        # Recorded before the append, because the call is already billed whatever happens to
-        # the figures it returned.
-        #
-        # **Whatever the source did not record itself.** A paid source holding the meter
-        # records each call as it makes it, so adding its total again would charge the run
-        # twice. Taking the difference covers both: a source that recorded everything adds
-        # nothing here, and one that declares `costs_money` and then ignores the meter is
-        # accounted for in full -- so the cap is never weaker than it was before the hook
-        # existed, which is a guarantee that must not rest on an adapter's good behaviour.
-        if meter is not None:
-            unrecorded_cost = acquired.cost_eur - (meter.spent_eur - spent_before)
-            unrecorded_calls = acquired.calls - (meter.calls - calls_before)
-            if unrecorded_cost > 0 or unrecorded_calls > 0:
-                meter.spent(
-                    cost_eur=max(unrecorded_cost, Decimal(0)),
-                    calls=max(unrecorded_calls, 0),
+        # **One batch at a time, not the whole attribute at once** (BE-19). A structured source
+        # yields its one indicator in a single batch; a paid source billing per candidate yields
+        # each candidate as it lands, so the loss window of a process death is the one batch in
+        # flight rather than every paid answer the source had already handed back. The meter is
+        # read against its own last reading rather than a snapshot taken before the attribute, so
+        # the difference stays per batch as the source records each call.
+        last_spent = meter.spent_eur if meter is not None else Decimal(0)
+        last_calls = meter.calls if meter is not None else 0
+        async for acquired in adapter.fetch_in_batches(attribute, candidates):
+            cost += acquired.cost_eur
+            calls += acquired.calls
+            # Recorded before the append, because the call is already billed whatever happens to
+            # the figures it returned.
+            #
+            # **Whatever the source did not record itself.** A paid source holding the meter
+            # records each call as it makes it, so adding its total again would charge the run
+            # twice. Taking the difference covers both: a source that recorded everything adds
+            # nothing here, and one that declares `costs_money` and then ignores the meter is
+            # accounted for in full -- so the cap is never weaker than it was before the hook
+            # existed, which is a guarantee that must not rest on an adapter's good behaviour.
+            if meter is not None:
+                unrecorded_cost = acquired.cost_eur - (meter.spent_eur - last_spent)
+                unrecorded_calls = acquired.calls - (meter.calls - last_calls)
+                if unrecorded_cost > 0 or unrecorded_calls > 0:
+                    meter.spent(
+                        cost_eur=max(unrecorded_cost, Decimal(0)),
+                        calls=max(unrecorded_calls, 0),
+                    )
+                last_spent = meter.spent_eur
+                last_calls = meter.calls
+
+            # Every value carries the run that fetched it (`reqs.md` 3.8), stamped here rather
+            # than by each adapter: which occasion a figure came from is a fact about the run,
+            # and an adapter that had to be told its own run id could forget.
+            fetched = (
+                acquired.values
+                if run is None
+                else tuple(
+                    value.model_copy(update={"data_acquisition_run": run})
+                    for value in acquired.values
                 )
-
-        # Every value carries the run that fetched it (`reqs.md` 3.8), stamped here rather than
-        # by each adapter: which occasion a figure came from is a fact about the run, and an
-        # adapter that had to be told its own run id could forget.
-        fetched = (
-            acquired.values
-            if run is None
-            else tuple(
-                value.model_copy(update={"data_acquisition_run": run}) for value in acquired.values
             )
-        )
-        if fetched:
-            stored.extend(await values.append(fetched))
-        # Which source failed, stamped for the same reason as the run above: two sources answer
-        # the total tax rate, and a retry has to know which one to ask again.
-        #
-        # **Handed to the caller as they happen, not only in the return value** (P66). The
-        # comment above explains why figures are appended per attribute rather than once at the
-        # end -- a process dying mid-source would lose the lot. Failures are the other half of
-        # what a run produces and were returned only on the way out, so the same death lost
-        # every one of them and the run was recorded as having failed on nothing. `collecting`
-        # is the caller's own list, so what is known survives an exception from the next
-        # `fetch`.
-        stamped = [
-            replace(failure, data_source=adapter.data_source) for failure in acquired.failures
-        ]
-        # **A figure stored and rejected is a failure as well** (BE-08, `reqs.md` 3.3a). It is
-        # kept with its reason and never becomes active, and a failure is the only thing a retry
-        # reads -- so without one, a run whose sole answer was 62 °C for an annual mean reported
-        # failing on nothing. The pair still counts as completed: the source did answer it.
-        stamped.extend(
-            AcquisitionFailure(
-                attribute=value.attribute,
-                candidate=str(value.candidate),
-                reason=f"the figure was stored and rejected: {value.rejection_reason}",
-                data_source=adapter.data_source,
+            if fetched:
+                stored.extend(await values.append(fetched))
+            # Which source failed, stamped for the same reason as the run above: two sources
+            # answer the total tax rate, and a retry has to know which one to ask again.
+            #
+            # **Handed to the caller as they happen, not only in the return value** (P66). A
+            # process dying mid-source would otherwise lose every failure it had collected and
+            # the run would be recorded as having failed on nothing. `collecting` is the caller's
+            # own list, so what is known survives an exception from the next batch.
+            stamped = [
+                replace(failure, data_source=adapter.data_source) for failure in acquired.failures
+            ]
+            # **A figure stored and rejected is a failure as well** (BE-08, `reqs.md` 3.3a). It
+            # is kept with its reason and never becomes active, and a failure is the only thing a
+            # retry reads -- so without one, a run whose sole answer was 62 °C for an annual mean
+            # reported failing on nothing. The pair still counts as completed: the source did
+            # answer it.
+            stamped.extend(
+                AcquisitionFailure(
+                    attribute=value.attribute,
+                    candidate=str(value.candidate),
+                    reason=f"the figure was stored and rejected: {value.rejection_reason}",
+                    data_source=adapter.data_source,
+                )
+                for value in acquired.values
+                if value.is_rejected
             )
-            for value in acquired.values
-            if value.is_rejected
-        )
-        failures.extend(stamped)
-        if collecting is not None:
-            collecting.extend(stamped)
+            failures.extend(stamped)
+            if collecting is not None:
+                collecting.extend(stamped)
 
-        # After this answer is stored, never before it: the cap stops the *next* call, and
+        # After this attribute is stored, never before it: the cap stops the *next* call, and
         # what has already been paid for is kept. The run one level up sees the exhausted meter
         # and halts, so the attributes left unasked are reported as unanswered rather than
         # silently dropped.

@@ -214,6 +214,23 @@ class TestTheFallbackFigure:
         assert value.payload.unit == "eur_per_month"
         assert value.confidence_level is ConfidenceLevel.LOW
 
+    async def test_it_yields_one_batch_per_candidate_so_the_run_commits_each(self) -> None:
+        """BE-19. The fallback asks per candidate, and yields each answer on its own so the run
+        stores it before the next call -- rather than buffering the whole sweep into one return a
+        mid-sweep death would lose."""
+        adapter = LlmFallbackAdapter(
+            a_model(an_answer('{"value": 1180.5, "period": "2025", "note": "INE, 2025"}')),
+            answers=("country.average_rent",),
+        )
+
+        batches = [
+            batch
+            async for batch in adapter.fetch_in_batches(a_quantity_attribute(), [PORTUGAL, SPAIN])
+        ]
+
+        assert len(batches) == 2
+        assert all(len(batch.values) + len(batch.failures) == 1 for batch in batches)
+
     async def test_the_period_is_the_one_the_publisher_chose_not_the_day_it_was_asked(
         self,
     ) -> None:
