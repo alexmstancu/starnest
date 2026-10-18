@@ -1383,8 +1383,8 @@ export interface components {
                 "application/json": components["schemas"]["CriteriaSet"];
             };
         };
-        /** @description Malformed request. */
-        BadRequest: {
+        /** @description The request is malformed, or names something the domain will not accept; `code` says which. `invalid_request` is a malformed request -- a body field or query parameter the operation does not declare, a value of the wrong type or out of range, a null the field refuses, an identifier that cannot be one -- and `details.errors` lists each offending `location` with its `problem`. Any other code is the domain's own refusal, such as `invalid_criterion`, `unknown_place` or `unknown_scope`. */
+        InvalidRequest: {
             headers: {
                 [name: string]: unknown;
             };
@@ -1439,6 +1439,7 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["Household"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     replaceHousehold: {
@@ -1455,7 +1456,7 @@ export interface operations {
         };
         responses: {
             200: components["responses"]["Household"];
-            400: components["responses"]["BadRequest"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     getSettings: {
@@ -1468,6 +1469,7 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["Settings"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     replaceSettings: {
@@ -1484,7 +1486,7 @@ export interface operations {
         };
         responses: {
             200: components["responses"]["Settings"];
-            400: components["responses"]["BadRequest"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     listLevels: {
@@ -1507,6 +1509,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     listPillars: {
@@ -1529,6 +1532,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     listAttributes: {
@@ -1562,6 +1566,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     getAttribute: {
@@ -1586,6 +1591,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     listDataSources: {
@@ -1608,6 +1614,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     updateDataSource: {
@@ -1639,6 +1646,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     listCandidates: {
@@ -1665,6 +1673,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     getCandidate: {
@@ -1689,6 +1698,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     listValues: {
@@ -1720,6 +1730,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     enterValueManually: {
@@ -1753,6 +1764,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     listCriteriaSets: {
@@ -1775,6 +1787,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     createCriteriaSet: {
@@ -1796,6 +1809,7 @@ export interface operations {
         responses: {
             201: components["responses"]["CriteriaSet"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     getCriteriaSet: {
@@ -1814,6 +1828,7 @@ export interface operations {
         responses: {
             200: components["responses"]["CriteriaSet"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     deleteCriteriaSet: {
@@ -1835,6 +1850,7 @@ export interface operations {
                 content?: never;
             };
             409: components["responses"]["Conflict"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     renameCriteriaSet: {
@@ -1855,6 +1871,7 @@ export interface operations {
         };
         responses: {
             200: components["responses"]["CriteriaSet"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     duplicateCriteriaSet: {
@@ -1877,6 +1894,7 @@ export interface operations {
         responses: {
             201: components["responses"]["CriteriaSet"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     updateCriterion: {
@@ -1920,6 +1938,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     updatePillarWeight: {
@@ -1954,6 +1973,7 @@ export interface operations {
                 };
             };
             409: components["responses"]["Conflict"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     setMatchRuleEnforcement: {
@@ -1981,6 +2001,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     setCompoundRuleApplication: {
@@ -2008,6 +2029,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     planMatchRuleResearch: {
@@ -2043,6 +2065,7 @@ export interface operations {
                     "application/json": components["schemas"]["ResearchPlan"];
                 };
             };
+            422: components["responses"]["InvalidRequest"];
             /** @description No model is configured, so there is nothing to estimate. */
             501: {
                 headers: {
@@ -2100,6 +2123,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            422: components["responses"]["InvalidRequest"];
             /** @description No model is configured, so nothing can be researched. */
             501: {
                 headers: {
@@ -2134,6 +2158,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     listMatchRuleResults: {
@@ -2159,6 +2184,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     putMatchRuleResult: {
@@ -2187,6 +2213,7 @@ export interface operations {
                     "application/json": components["schemas"]["MatchRuleResult"];
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     listCompoundRules: {
@@ -2212,6 +2239,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     listRuns: {
@@ -2238,6 +2266,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     startRun: {
@@ -2282,6 +2311,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     planRun: {
@@ -2306,6 +2336,7 @@ export interface operations {
                     "application/json": components["schemas"]["RunPlan"];
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     getRun: {
@@ -2329,6 +2360,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     stopRun: {
@@ -2352,6 +2384,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     retryRun: {
@@ -2399,6 +2432,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     getRanking: {
@@ -2423,6 +2457,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     getRankedCandidateDetail: {
@@ -2450,6 +2485,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     listEvaluations: {
@@ -2472,6 +2508,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     saveEvaluation: {
@@ -2501,6 +2538,7 @@ export interface operations {
                     "application/json": components["schemas"]["EvaluationSummary"];
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     getEvaluation: {
@@ -2524,6 +2562,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     getCandidateScoreDetail: {
@@ -2549,6 +2588,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     getEvaluationCriteria: {
@@ -2575,6 +2615,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidRequest"];
         };
     };
     getComparison: {
@@ -2609,6 +2650,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
     listExternalScores: {
@@ -2633,6 +2675,7 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["InvalidRequest"];
         };
     };
 }

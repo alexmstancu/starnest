@@ -433,6 +433,78 @@ class TestNothingIsServedThatWasNotDesigned:
         )
 
 
+def _responses_of(document: dict, *, prefix: str = "") -> dict[str, dict]:
+    """Every operation's declared responses, by operation id."""
+    return {
+        operation["operationId"]: operation.get("responses", {})
+        for item in document["paths"].values()
+        for method, operation in item.items()
+        if method != "parameters" and isinstance(operation, dict) and operation.get("operationId")
+    }
+
+
+def _schema_of(response: dict, document: dict) -> dict | None:
+    """The JSON schema a declared response carries, following a shared response's `$ref`."""
+    resolved = _resolved(response, document)
+    return resolved.get("content", {}).get("application/json", {}).get("schema")
+
+
+class TestEveryRefusalIsDescribed:
+    """**Every operation can answer 422**, and both contracts must say so in the one error shape.
+
+    A malformed request -- a field or query parameter the operation does not declare, a value of
+    the wrong type, a null where none is taken -- is refused with `422 invalid_request` by every
+    operation (BE-23). The design declared no 422 anywhere (NEW-41), so no acceptance test could
+    check a 422 body against it: `validate` reads an undeclared status as nothing to check. And
+    the generated contract described every 422 as FastAPI's `{detail: [...]}`, a shape this API
+    has not answered since its refusals took the one shape (NEW-18).
+    """
+
+    def test_the_design_declares_the_422_every_operation_can_answer(
+        self, served: dict, designed: dict
+    ) -> None:
+        declared = _responses_of(designed)
+        undeclared = sorted(
+            name
+            for name in _operations(served, prefix=API_PREFIX)
+            if "422" not in declared.get(name, {})
+            or _schema_of(declared[name]["422"], designed) != {"$ref": "#/components/schemas/Error"}
+        )
+
+        assert undeclared == [], (
+            f"these operations can answer 422 and the design declares no Error for it: {undeclared}"
+        )
+
+    def test_the_design_declares_no_400_the_api_never_answers(self, designed: dict) -> None:
+        """A malformed request is a 422 here, and always was -- the household kept it rather
+        than move every refusal to 400 (2026-10-14). A 400 in the design is a status no client
+        will ever be sent."""
+        declaring_400 = sorted(
+            name for name, responses in _responses_of(designed).items() if "400" in responses
+        )
+
+        assert declaring_400 == []
+
+    def test_the_generated_contract_describes_every_422_in_the_one_error_shape(
+        self, recorded: dict
+    ) -> None:
+        wrong = sorted(
+            name
+            for name, responses in _responses_of(recorded).items()
+            if "422" not in responses
+            or _schema_of(responses["422"], recorded) != {"$ref": "#/components/schemas/ErrorBody"}
+        )
+
+        assert wrong == [], f"these operations describe their 422 in another shape: {wrong}"
+
+    def test_the_generated_contract_carries_no_shape_this_api_never_answers(
+        self, recorded: dict
+    ) -> None:
+        schemas = set(recorded.get("components", {}).get("schemas", {}))
+
+        assert schemas & {"HTTPValidationError", "ValidationError"} == set()
+
+
 class TestWhatIsImplementedKeptItsDesignedIdentity:
     def test_every_served_operation_appears_in_the_design(
         self, served: dict, designed: dict

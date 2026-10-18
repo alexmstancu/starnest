@@ -22,6 +22,9 @@ info:
       coverage and weights carry decimals. Weights sum to 100 within a pillar, and pillar
       weights sum to 100 within a level.
     - Errors share one shape and are distinguished by a stable machine-readable `code`.
+    - **A request is refused rather than half-read.** A body field or query parameter the
+      operation does not declare answers `422 invalid_request` instead of being ignored. A
+      malformed request is always a 422, never a 400.
     - No authentication. The service binds to localhost (`reqs.md` 10).
 
 servers:
@@ -47,6 +50,7 @@ paths:
       operationId: getHousehold
       responses:
         "200": { $ref: "#/components/responses/Household" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
     put:
       tags: [household]
       operationId: replaceHousehold
@@ -55,7 +59,7 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/HouseholdInput" } } }
       responses:
         "200": { $ref: "#/components/responses/Household" }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /settings:
     get:
@@ -63,6 +67,7 @@ paths:
       operationId: getSettings
       responses:
         "200": { $ref: "#/components/responses/Settings" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
     put:
       tags: [household]
       operationId: replaceSettings
@@ -71,7 +76,7 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/SettingsInput" } } }
       responses:
         "200": { $ref: "#/components/responses/Settings" }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /levels:
     get:
@@ -88,6 +93,7 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/Level" } }
           description: OK
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /pillars:
     get:
@@ -106,6 +112,7 @@ paths:
                 required: [items]
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/Pillar" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /attributes:
     get:
@@ -140,6 +147,7 @@ paths:
                 required: [items]
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/Attribute" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /attributes/{attributeId}:
     get:
@@ -152,6 +160,7 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/Attribute" } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /data-sources:
     get:
@@ -167,6 +176,7 @@ paths:
                 required: [items]
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/DataSource" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /data-sources/{dataSourceId}:
     patch:
@@ -202,6 +212,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/DataSource" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /candidates:
     get:
@@ -222,6 +233,7 @@ paths:
                 required: [items]
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/Candidate" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /candidates/{candidateId}:
     get:
@@ -235,6 +247,7 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/CandidateDetail" } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /values:
     get:
@@ -271,6 +284,7 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/Value" } }
                   total: { type: integer }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /values/manual:
     post:
@@ -297,6 +311,7 @@ paths:
           description: The attribute does not permit manual entry, or the value failed validation.
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /criteria-sets:
     get:
@@ -312,6 +327,7 @@ paths:
                 required: [items]
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/CriteriaSetSummary" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
     post:
       tags: [criteria]
       operationId: createCriteriaSet
@@ -328,6 +344,7 @@ paths:
       responses:
         "201": { $ref: "#/components/responses/CriteriaSet" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /criteria-sets/{criteriaSetId}:
     get:
@@ -343,6 +360,7 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/CriteriaSet" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
     patch:
       tags: [criteria]
       operationId: renameCriteriaSet
@@ -357,6 +375,7 @@ paths:
               properties: { name: { type: string } }
       responses:
         "200": { $ref: "#/components/responses/CriteriaSet" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
     delete:
       tags: [criteria]
       operationId: deleteCriteriaSet
@@ -365,6 +384,7 @@ paths:
         "204": { description: Deleted }
         "409":
           $ref: "#/components/responses/Conflict"
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /criteria-sets/{criteriaSetId}/duplicate:
     post:
@@ -389,6 +409,7 @@ paths:
         # than overwritten: silently replacing a set somebody built loses the weights they
         # chose and says nothing (reqs.md Q191).
         "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /criteria-sets/{criteriaSetId}/criteria/{attributeId}:
     patch:
@@ -424,6 +445,7 @@ paths:
             `code: weights_all_locked`, with the blocking locks in `details`.
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /criteria-sets/{criteriaSetId}/pillar-weights/{pillarId}:
     put:
@@ -457,6 +479,7 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/PillarWeight" } }
         "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /criteria-sets/{criteriaSetId}/match-rules/{matchRuleId}:
     put:
@@ -476,6 +499,7 @@ paths:
               properties: { is_enforced: { type: boolean } }
       responses:
         "204": { description: Updated }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /criteria-sets/{criteriaSetId}/compound-rules/{compoundRuleId}:
     put:
@@ -495,6 +519,7 @@ paths:
               properties: { is_applied: { type: boolean } }
       responses:
         "204": { description: Updated }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /match-rule-research/plan:
     post:
@@ -537,6 +562,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ResearchPlan" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
         "501":
           description: No model is configured, so there is nothing to estimate.
           content:
@@ -597,6 +623,7 @@ paths:
           description: The research would cost money and no spend cap is set.
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
         "501":
           description: No model is configured, so nothing can be researched.
           content:
@@ -617,6 +644,7 @@ paths:
                 required: [items]
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/MatchRule" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /match-rule-results:
     get:
@@ -635,6 +663,7 @@ paths:
                 required: [items]
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/MatchRuleResult" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /match-rule-results/{matchRuleId}/{candidateId}:
     put:
@@ -656,6 +685,7 @@ paths:
           description: OK
           content:
             application/json: { schema: { $ref: "#/components/schemas/MatchRuleResult" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /compound-rules:
     get:
@@ -672,6 +702,7 @@ paths:
                 required: [items]
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/CompoundRule" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /data-acquisition-runs:
     get:
@@ -691,6 +722,7 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/Run" } }
                   total: { type: integer }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
     post:
       tags: [data acquisition]
       summary: Start a run
@@ -719,6 +751,7 @@ paths:
             failure, from being retried into a second concurrent run.
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /data-acquisition-runs/plan:
     post:
@@ -738,6 +771,7 @@ paths:
           description: OK
           content:
             application/json: { schema: { $ref: "#/components/schemas/RunPlan" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /data-acquisition-runs/{runId}:
     get:
@@ -751,6 +785,7 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/RunDetail" } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /data-acquisition-runs/{runId}/stop:
     post:
@@ -778,6 +813,7 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/Run" } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /data-acquisition-runs/{runId}/retry:
     post:
@@ -828,6 +864,7 @@ paths:
             would reach a source that charges and no spend cap is set (`spend_cap_not_set`).
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /rankings:
     get:
@@ -846,6 +883,7 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/Ranking" } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /rankings/candidates/{candidateId}:
     get:
@@ -871,6 +909,7 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/CandidateScoreDetail" } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /evaluations:
     get:
@@ -886,6 +925,7 @@ paths:
                 required: [items]
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/EvaluationSummary" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
     post:
       tags: [evaluation]
       summary: Keep a ranking
@@ -910,6 +950,7 @@ paths:
           description: Created
           content:
             application/json: { schema: { $ref: "#/components/schemas/EvaluationSummary" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /evaluations/{evaluationId}:
     get:
@@ -922,6 +963,7 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/Ranking" } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /evaluations/{evaluationId}/candidates/{candidateId}:
     get:
@@ -941,6 +983,7 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/CandidateScoreDetail" } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /evaluations/{evaluationId}/criteria:
     get:
@@ -964,6 +1007,7 @@ paths:
                   pillar_weights: { type: array, items: { $ref: "#/components/schemas/EvaluationPillarWeight" } }
                   criteria: { type: array, items: { $ref: "#/components/schemas/Criterion" } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /comparisons:
     get:
@@ -988,6 +1032,7 @@ paths:
           description: Levels mixed, or more comparators than the configured limit.
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /external-scores:
     get:
@@ -1007,6 +1052,7 @@ paths:
                 required: [items]
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/ExternalScore" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
 components:
 
@@ -1029,8 +1075,17 @@ components:
     CriteriaSet:
       description: OK
       content: { application/json: { schema: { $ref: "#/components/schemas/CriteriaSet" } } }
-    BadRequest:
-      description: Malformed request.
+    InvalidRequest:
+      # Every operation declares this, because every operation can answer it: a query parameter
+      # the operation does not declare is refused wherever it is sent (BE-23). A malformed
+      # request has always been a 422 here, never a 400 -- the household kept it (2026-10-14).
+      description: >-
+        The request is malformed, or names something the domain will not accept; `code` says
+        which. `invalid_request` is a malformed request -- a body field or query parameter the
+        operation does not declare, a value of the wrong type or out of range, a null the field
+        refuses, an identifier that cannot be one -- and `details.errors` lists each offending
+        `location` with its `problem`. Any other code is the domain's own refusal, such as
+        `invalid_criterion`, `unknown_place` or `unknown_scope`.
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     NotFound:
       description: No such resource.

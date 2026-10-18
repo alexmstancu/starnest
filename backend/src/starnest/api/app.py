@@ -24,6 +24,7 @@ from starnest.api import (
 )
 from starnest.api import values as value_endpoints
 from starnest.api.errors import (
+    ErrorBody,
     domain_error_handler,
     refusal_handler,
     refuse_unknown_query_parameters,
@@ -37,6 +38,24 @@ from starnest.evaluation import EvaluationStore
 from starnest.household import HouseholdStore
 
 API_PREFIX = "/v1"
+
+INVALID_REQUEST: dict[int | str, dict[str, object]] = {
+    422: {
+        "model": ErrorBody,
+        "description": (
+            "The request is malformed, or names something the domain will not accept; `code` "
+            "says which. `invalid_request` is a malformed request, with each offending location "
+            "in `details.errors`."
+        ),
+    }
+}
+"""The 422 every operation can answer, described in the one error shape (NEW-18).
+
+FastAPI documents its own `{detail: [...]}` for a 422 unless the route already declares one,
+and this API has answered `ErrorBody` since its refusals took the one shape -- so the generated
+contract described a body no client is ever sent. Declared on every route rather than only on
+those with parameters, because every route refuses a query parameter it does not declare.
+"""
 
 
 def build_app(
@@ -97,6 +116,7 @@ def build_app(
             router,
             prefix=API_PREFIX,
             dependencies=[Depends(refuse_unknown_query_parameters)],
+            responses=INVALID_REQUEST,
         )
 
     # One handler for every domain fault, rather than a try/except in each endpoint: two

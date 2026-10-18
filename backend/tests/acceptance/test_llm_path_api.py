@@ -17,6 +17,7 @@ from starnest.data import MatchResult, MatchRule
 from starnest.data_acquisition import Estimate, GateResearcher, Researched
 
 from .conftest import a_stub_source, an_api
+from .contract import validate
 
 pytestmark = pytest.mark.acceptance
 
@@ -580,6 +581,7 @@ class TestResearchRefusesAFieldItDoesNotDeclare:
 
         assert response.status_code == 422, f"answered {response.status_code}: {response.text[:80]}"
         assert response.json()["code"] == "invalid_request"
+        validate("researchMatchRules", response.json(), status=422)
         assert ["body", "match_rule"] in [
             e["location"] for e in response.json()["details"]["errors"]
         ]
@@ -595,3 +597,4 @@ class TestResearchRefusesAFieldItDoesNotDeclare:
 
         assert response.status_code == 422, f"answered {response.status_code}: {response.text[:80]}"
         assert response.json()["code"] == "invalid_request"
+        validate("planMatchRuleResearch", response.json(), status=422)

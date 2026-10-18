@@ -113,7 +113,10 @@ class TestRequestsThatDoNotMakeSense:
     ) -> None:
         """`criteria_set` and `level` are both required by the design. A ranking of "whatever
         you assume I meant" is the wrong kind of helpful."""
-        assert (await api.get("/v1/rankings")).status_code == 422
+        response = await api.get("/v1/rankings")
+
+        assert response.status_code == 422
+        _assert_in_the_one_error_shape("getRanking", response.json())
 
     async def test_a_weight_outside_the_percentage_range_is_refused(
         self, api: httpx.AsyncClient, a_scratch_criteria_set: str
@@ -124,6 +127,7 @@ class TestRequestsThatDoNotMakeSense:
         )
 
         assert response.status_code == 422
+        _assert_in_the_one_error_shape("updateCriterion", response.json())
 
     async def test_a_weight_that_is_not_a_number_is_refused(
         self, api: httpx.AsyncClient, a_scratch_criteria_set: str
@@ -134,23 +138,22 @@ class TestRequestsThatDoNotMakeSense:
         )
 
         assert response.status_code == 422
+        _assert_in_the_one_error_shape("updateCriterion", response.json())
 
     async def test_an_unknown_field_in_the_body_is_not_silently_swallowed(
         self, api: httpx.AsyncClient, a_scratch_criteria_set: str
     ) -> None:
         """A misspelled field ignored is a preference the user expressed and the application
-        discarded. Either refuse it or apply it; do not accept and drop it."""
+        discarded. Refused, as every undeclared field now is (BE-23), and nothing changed."""
         response = await api.patch(
             f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
             json={"wieght": 70},
         )
 
-        assert response.status_code in {200, 422}
-        if response.status_code == 200:
-            # It was ignored, so nothing may have changed.
-            body = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
-            overburden = next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)
-            assert float(overburden["weight"]) == 50
+        _assert_refused_naming("updateCriterion", response, ["body", "wieght"])
+        body = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
+        overburden = next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)
+        assert float(overburden["weight"]) == 50
 
     async def test_a_level_nothing_is_ranked_at_is_refused_rather_than_answered_emptily(
         self, api: httpx.AsyncClient, database_url: str
@@ -163,6 +166,7 @@ class TestRequestsThatDoNotMakeSense:
 
         assert response.status_code == 422
         assert response.json()["code"] == "cannot_be_ranked"
+        _assert_in_the_one_error_shape("getRanking", response.json())
 
 
 class TestARefusalTheStopRuleRequires:
@@ -206,6 +210,7 @@ class TestBoundaryValidationAndTheErrorShape:
         assert body["code"] == "invalid_request"
         assert body["message"]
         assert "detail" not in body
+        _assert_in_the_one_error_shape("getRanking", body)
 
     async def test_renaming_a_set_to_an_empty_name_is_refused_not_500(
         self, api: httpx.AsyncClient, a_scratch_criteria_set: str
@@ -217,6 +222,7 @@ class TestBoundaryValidationAndTheErrorShape:
         response = await api.patch(f"/v1/criteria-sets/{a_scratch_criteria_set}", json={"name": ""})
 
         assert response.status_code == 422
+        _assert_in_the_one_error_shape("renameCriteriaSet", response.json())
         reread = await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")
         assert reread.status_code == 200
         assert reread.json()["name"] == "Scratch", "nothing was written"
@@ -229,12 +235,14 @@ class TestBoundaryValidationAndTheErrorShape:
         )
 
         assert response.status_code == 422
+        _assert_in_the_one_error_shape("duplicateCriteriaSet", response.json())
         assert (await api.get("/v1/criteria-sets/dup_blank_name")).status_code == 404
 
     async def test_creating_a_set_with_a_blank_id_is_refused(self, api: httpx.AsyncClient) -> None:
         response = await api.post("/v1/criteria-sets", json={"id": "", "name": "Nameless"})
 
         assert response.status_code == 422
+        _assert_in_the_one_error_shape("createCriteriaSet", response.json())
 
     async def test_a_zero_score_scale_is_refused_not_500(self, api: httpx.AsyncClient) -> None:
         """`Settings` requires `score_scale_max > 0`; `SettingsBody` carried no bound, so the
@@ -243,12 +251,19 @@ class TestBoundaryValidationAndTheErrorShape:
 
         assert response.status_code == 422
         assert response.json()["code"] == "invalid_request"
+        _assert_in_the_one_error_shape("replaceSettings", response.json())
 
     async def test_a_coverage_over_one_hundred_is_refused(self, api: httpx.AsyncClient) -> None:
-        assert (await api.put("/v1/settings", json={"min_coverage": 150})).status_code == 422
+        response = await api.put("/v1/settings", json={"min_coverage": 150})
+
+        assert response.status_code == 422
+        _assert_in_the_one_error_shape("replaceSettings", response.json())
 
     async def test_a_negative_spend_cap_is_refused(self, api: httpx.AsyncClient) -> None:
-        assert (await api.put("/v1/settings", json={"run_spend_cap_eur": -5})).status_code == 422
+        response = await api.put("/v1/settings", json={"run_spend_cap_eur": -5})
+
+        assert response.status_code == 422
+        _assert_in_the_one_error_shape("replaceSettings", response.json())
 
     async def test_a_non_finite_spend_cap_is_refused(self, api: httpx.AsyncClient) -> None:
         """A NaN/Infinity cap would make the meter never trip; the float field forbids it."""
@@ -260,6 +275,7 @@ class TestBoundaryValidationAndTheErrorShape:
             headers={"content-type": "application/json"},
         )
         assert response.status_code == 422
+        _assert_in_the_one_error_shape("replaceSettings", response.json())
 
     async def test_an_unknown_setting_field_is_refused_not_silently_dropped(
         self, api: httpx.AsyncClient
@@ -268,7 +284,7 @@ class TestBoundaryValidationAndTheErrorShape:
         real setting (BE-23). `extra='forbid'` refuses it instead of accepting and dropping it."""
         response = await api.put("/v1/settings", json={"score_scale_max": 100, "coverage_min": 60})
 
-        assert response.status_code == 422
+        _assert_refused_naming("replaceSettings", response, ["body", "coverage_min"])
 
     async def test_a_negative_income_is_refused_not_500(self, api: httpx.AsyncClient) -> None:
         """`Household` requires `net_income >= 0`; `HouseholdBody` carried no bound, so a negative
@@ -276,13 +292,14 @@ class TestBoundaryValidationAndTheErrorShape:
         response = await api.put("/v1/household", json={**A_VALID_HOUSEHOLD, "net_income": -100})
 
         assert response.status_code == 422
+        _assert_in_the_one_error_shape("replaceHousehold", response.json())
 
     async def test_an_unknown_household_field_is_refused(self, api: httpx.AsyncClient) -> None:
         """A misspelled field in this whole-replace PUT would fall to its default and quietly
         change the stored household (BE-23)."""
         response = await api.put("/v1/household", json={**A_VALID_HOUSEHOLD, "incme": 9000})
 
-        assert response.status_code == 422
+        _assert_refused_naming("replaceHousehold", response, ["body", "incme"])
 
 
 class TestAFieldNobodyDeclaredIsRefused:
@@ -298,7 +315,7 @@ class TestAFieldNobodyDeclaredIsRefused:
             json={"level": COUNTRY, "candidate": ["country.portugal"]},
         )
 
-        _assert_refused_naming(response, ["body", "candidate"])
+        _assert_refused_naming("planRun", response, ["body", "candidate"])
 
     async def test_a_misspelled_scope_field_is_refused_rather_than_running_every_candidate(
         self, api: httpx.AsyncClient
@@ -307,7 +324,7 @@ class TestAFieldNobodyDeclaredIsRefused:
             "/v1/data-acquisition-runs", json={"level": COUNTRY, "candidate": ["country.portugal"]}
         )
 
-        _assert_refused_naming(response, ["body", "candidate"])
+        _assert_refused_naming("startRun", response, ["body", "candidate"])
         assert await _runs_recorded(api) == 0, "nothing ran"
 
     async def test_a_misspelled_retry_field_is_refused_and_no_run_is_started(
@@ -320,7 +337,7 @@ class TestAFieldNobodyDeclaredIsRefused:
             f"/v1/data-acquisition-runs/{earlier['id']}/retry", json={"itmes": "unanswered"}
         )
 
-        _assert_refused_naming(response, ["body", "itmes"])
+        _assert_refused_naming("retryRun", response, ["body", "itmes"])
         assert await _runs_recorded(api) == 1, "no second run"
 
     async def test_a_misspelled_gate_answer_field_is_refused_and_nothing_is_recorded(
@@ -332,7 +349,7 @@ class TestAFieldNobodyDeclaredIsRefused:
             A_GATE_ANSWER_PATH, json={"match_result": "not_matching", "reasn": "no route"}
         )
 
-        _assert_refused_naming(response, ["body", "reasn"])
+        _assert_refused_naming("putMatchRuleResult", response, ["body", "reasn"])
         assert await _gate_answers_recorded(api) == before, "nothing was recorded"
 
     async def test_an_unknown_field_inside_a_gate_answer_s_period_is_refused(
@@ -348,7 +365,7 @@ class TestAFieldNobodyDeclaredIsRefused:
             },
         )
 
-        _assert_refused_naming(response, ["body", "reference_period", "ends"])
+        _assert_refused_naming("putMatchRuleResult", response, ["body", "reference_period", "ends"])
         assert await _gate_answers_recorded(api) == before, "nothing was recorded"
 
     async def test_a_misspelled_manual_value_field_is_refused_and_nothing_is_stored(
@@ -360,7 +377,7 @@ class TestAFieldNobodyDeclaredIsRefused:
             "/v1/values/manual", json=A_TYPED_VALUE | {"qoute": "from the official gazette"}
         )
 
-        _assert_refused_naming(response, ["body", "qoute"])
+        _assert_refused_naming("enterValueManually", response, ["body", "qoute"])
         assert await _values_stored(api) == before, "nothing was stored"
 
     async def test_an_unknown_field_inside_a_manual_value_s_period_is_refused(
@@ -374,7 +391,7 @@ class TestAFieldNobodyDeclaredIsRefused:
             | {"reference_period": {"start": "2026-01-01", "end": "2026-12-31", "ends": "2027"}},
         )
 
-        _assert_refused_naming(response, ["body", "reference_period", "ends"])
+        _assert_refused_naming("enterValueManually", response, ["body", "reference_period", "ends"])
         assert await _values_stored(api) == before, "nothing was stored"
 
     async def test_a_misspelled_evaluation_field_is_refused_and_nothing_is_kept(
@@ -387,7 +404,7 @@ class TestAFieldNobodyDeclaredIsRefused:
             json={"criteria_set": MINIMAL, "level": COUNTRY, "notes": "the one to compare"},
         )
 
-        _assert_refused_naming(response, ["body", "notes"])
+        _assert_refused_naming("saveEvaluation", response, ["body", "notes"])
         assert (await api.get("/v1/evaluations")).json()["items"] == [], "nothing was kept"
 
     async def test_an_unknown_field_inside_a_scale_anchor_is_refused(
@@ -401,14 +418,24 @@ class TestAFieldNobodyDeclaredIsRefused:
             },
         )
 
-        _assert_refused_naming(response, ["body", "scale_anchors", "0", "lable"])
+        _assert_refused_naming("updateCriterion", response, ["body", "scale_anchors", "0", "lable"])
         assert await _the_anchors_on_overburden(api, a_scratch_criteria_set) == []
 
     @pytest.mark.parametrize(
-        ("rule", "body", "listed_in"),
+        ("operation", "rule", "body", "listed_in"),
         [
-            ("match-rules/eu_free_movement", {"is_enforced": True}, "enforced_match_rules"),
-            ("compound-rules/cheap_but_taxed", {"is_applied": True}, "applied_compound_rules"),
+            (
+                "setMatchRuleEnforcement",
+                "match-rules/eu_free_movement",
+                {"is_enforced": True},
+                "enforced_match_rules",
+            ),
+            (
+                "setCompoundRuleApplication",
+                "compound-rules/cheap_but_taxed",
+                {"is_applied": True},
+                "applied_compound_rules",
+            ),
         ],
         ids=["a gate", "a compound rule"],
     )
@@ -416,6 +443,7 @@ class TestAFieldNobodyDeclaredIsRefused:
         self,
         api: httpx.AsyncClient,
         a_scratch_criteria_set: str,
+        operation: str,
         rule: str,
         body: dict,
         listed_in: str,
@@ -425,7 +453,7 @@ class TestAFieldNobodyDeclaredIsRefused:
             json=body | {"because": "the household said so"},
         )
 
-        _assert_refused_naming(response, ["body", "because"])
+        _assert_refused_naming(operation, response, ["body", "because"])
         reread = (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).json()
         assert rule.rsplit("/", 1)[-1] not in reread[listed_in], "nothing changed"
 
@@ -447,7 +475,7 @@ class TestANullTheDesignGivesNoMeaning:
 
         response = await api.patch(path, json={"scale_anchors": None})
 
-        _assert_refused_naming(response, ["body", "scale_anchors"])
+        _assert_refused_naming("updateCriterion", response, ["body", "scale_anchors"])
         assert len(await _the_anchors_on_overburden(api, a_scratch_criteria_set)) == 2
 
     async def test_an_empty_list_of_anchors_still_clears_them(
@@ -474,7 +502,9 @@ class TestANullTheDesignGivesNoMeaning:
             json={"matching_threshold": {"required_value": None}},
         )
 
-        _assert_refused_naming(response, ["body", "matching_threshold", "required_value"])
+        _assert_refused_naming(
+            "updateCriterion", response, ["body", "matching_threshold", "required_value"]
+        )
         assert await _the_threshold_on_overburden(api, a_scratch_criteria_set) is None
 
     async def test_a_null_threshold_still_clears_it(
@@ -497,7 +527,7 @@ class TestANullTheDesignGivesNoMeaning:
             json={"is_scored": None},
         )
 
-        _assert_refused_naming(response, ["body", "is_scored"])
+        _assert_refused_naming("updateCriterion", response, ["body", "is_scored"])
 
     async def test_a_null_pillar_weight_is_refused_rather_than_ignored(
         self, api: httpx.AsyncClient, a_scratch_criteria_set: str
@@ -507,14 +537,14 @@ class TestANullTheDesignGivesNoMeaning:
             json={"weight": None},
         )
 
-        _assert_refused_naming(response, ["body", "weight"])
+        _assert_refused_naming("updatePillarWeight", response, ["body", "weight"])
 
     async def test_a_null_source_switch_is_refused_rather_than_ignored(
         self, api: httpx.AsyncClient
     ) -> None:
         response = await api.patch("/v1/data-sources/eurostat", json={"is_enabled": None})
 
-        _assert_refused_naming(response, ["body", "is_enabled"])
+        _assert_refused_naming("updateDataSource", response, ["body", "is_enabled"])
 
 
 class TestAQueryParameterNobodyDeclared:
@@ -532,7 +562,7 @@ class TestAQueryParameterNobodyDeclared:
             params={"criteria_set": MINIMAL, "level": COUNTRY, "criteria_sett": "remote_only"},
         )
 
-        _assert_refused_naming(response, ["query", "criteria_sett"])
+        _assert_refused_naming("getRanking", response, ["query", "criteria_sett"])
 
     async def test_one_that_would_have_started_a_run_is_refused_and_nothing_runs(
         self, api: httpx.AsyncClient
@@ -542,7 +572,7 @@ class TestAQueryParameterNobodyDeclared:
             "/v1/data-acquisition-runs", params={"dry_run": "true"}, json={"level": COUNTRY}
         )
 
-        _assert_refused_naming(response, ["query", "dry_run"])
+        _assert_refused_naming("startRun", response, ["query", "dry_run"])
         assert await _runs_recorded(api) == 0, "nothing ran"
 
     async def test_a_filter_the_server_does_not_apply_is_refused_rather_than_ignored(
@@ -552,7 +582,7 @@ class TestAQueryParameterNobodyDeclared:
         answered every pillar's attributes to a caller that asked for one."""
         response = await api.get("/v1/attributes", params={"pillar": "housing"})
 
-        _assert_refused_naming(response, ["query", "pillar"])
+        _assert_refused_naming("listAttributes", response, ["query", "pillar"])
 
     async def test_a_declared_query_parameter_is_still_accepted(
         self, api: httpx.AsyncClient
@@ -627,6 +657,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+        _assert_in_the_one_error_shape("replaceHousehold", response.json())
         assert await _the_household(api) == before, "nothing was written"
 
     async def test_a_home_city_outside_the_home_country_is_refused_not_500(
@@ -639,6 +670,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "unknown_place")
+        _assert_in_the_one_error_shape("replaceHousehold", response.json())
         assert "madrid" in response.json()["message"], "the domain's own sentence comes through"
         assert await _the_household(api) == before, "nothing was written"
 
@@ -650,6 +682,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "unknown_place")
+        _assert_in_the_one_error_shape("replaceHousehold", response.json())
 
     @pytest.mark.parametrize(
         "threshold",
@@ -670,6 +703,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_criterion")
+        _assert_in_the_one_error_shape("updateCriterion", response.json())
         assert await _the_threshold_on_overburden(api, a_scratch_criteria_set) is None
 
     async def test_a_blank_anchor_label_is_refused_not_500(
@@ -681,6 +715,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_criterion")
+        _assert_in_the_one_error_shape("updateCriterion", response.json())
 
     async def test_a_negative_anchor_score_is_refused_not_500(
         self, api: httpx.AsyncClient, a_scratch_criteria_set: str
@@ -691,6 +726,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+        _assert_in_the_one_error_shape("updateCriterion", response.json())
 
     async def test_a_non_finite_anchor_input_is_refused_not_500(
         self, api: httpx.AsyncClient, a_scratch_criteria_set: str
@@ -705,6 +741,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+        _assert_in_the_one_error_shape("updateCriterion", response.json())
 
     async def test_an_inverted_period_on_a_manual_value_is_refused_not_500(
         self, api: httpx.AsyncClient
@@ -717,6 +754,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_reference_period")
+        _assert_in_the_one_error_shape("enterValueManually", response.json())
         assert await _values_stored(api) == before, "nothing was written"
 
     async def test_a_malformed_breakdown_option_is_refused_not_500(
@@ -729,6 +767,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+        _assert_in_the_one_error_shape("enterValueManually", response.json())
         assert await _values_stored(api) == before, "nothing was written"
 
     async def test_an_inverted_period_on_a_gate_answer_is_refused_not_500(
@@ -745,6 +784,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_reference_period")
+        _assert_in_the_one_error_shape("putMatchRuleResult", response.json())
         assert await _gate_answers_recorded(api) == before, "nothing was recorded"
 
     async def test_a_gate_answer_dated_without_a_timezone_is_refused_not_500(
@@ -758,6 +798,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_match_rule_result")
+        _assert_in_the_one_error_shape("putMatchRuleResult", response.json())
         assert await _gate_answers_recorded(api) == before, "nothing was recorded"
 
     async def test_an_empty_override_reason_is_refused_not_500(
@@ -771,6 +812,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+        _assert_in_the_one_error_shape("putMatchRuleResult", response.json())
         assert await _gate_answers_recorded(api) == before, "nothing was recorded"
 
     async def test_a_malformed_source_id_is_refused_not_500(self, api: httpx.AsyncClient) -> None:
@@ -778,6 +820,7 @@ class TestADomainRefusalIsNot500:
         response = await api.patch("/v1/data-sources/Eurostat", json={"is_enabled": False})
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+        _assert_in_the_one_error_shape("updateDataSource", response.json())
 
     @A_MALFORMED_SET_ID
     async def test_a_new_set_under_a_malformed_id_is_refused_not_500(
@@ -790,7 +833,7 @@ class TestADomainRefusalIsNot500:
         response = await api.post("/v1/criteria-sets", json={"id": malformed, "name": "Mine"})
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
-        _assert_in_the_one_error_shape(response.json())
+        _assert_in_the_one_error_shape("createCriteriaSet", response.json())
         assert malformed in response.json()["message"], "the identifier rule's own sentence"
         assert await _criteria_sets_held(api) == before, "nothing was written"
 
@@ -819,7 +862,7 @@ class TestADomainRefusalIsNot500:
         )
 
         assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
-        _assert_in_the_one_error_shape(response.json())
+        _assert_in_the_one_error_shape("duplicateCriteriaSet", response.json())
         assert await _criteria_sets_held(api) == before, "nothing was written"
 
 
@@ -853,11 +896,11 @@ async def _runs_recorded(api: httpx.AsyncClient) -> int:
     return (await api.get("/v1/data-acquisition-runs")).json()["total"]
 
 
-def _assert_refused_naming(response: httpx.Response, location: list[str]) -> None:
+def _assert_refused_naming(operation: str, response: httpx.Response, location: list[str]) -> None:
     """A malformed request: 422 `invalid_request` in the one error shape, saying where."""
     assert response.status_code == 422, f"answered {response.status_code}: {response.text[:120]}"
     assert response.json()["code"] == "invalid_request"
-    _assert_in_the_one_error_shape(response.json())
+    _assert_in_the_one_error_shape(operation, response.json())
     assert location in [error["location"] for error in response.json()["details"]["errors"]]
 
 
@@ -878,17 +921,17 @@ async def _criteria_sets_held(api: httpx.AsyncClient) -> set[str]:
     return {summary["id"] for summary in (await api.get("/v1/criteria-sets")).json()["items"]}
 
 
-def _assert_in_the_one_error_shape(body: dict) -> None:
-    """Hold a refusal to the contract's one `Error` schema (`arch.md` 7.6).
+def _assert_in_the_one_error_shape(operation: str, body: dict) -> None:
+    """Hold a 422 to the one `Error` schema the design declares for its operation (`arch.md` 7.6).
 
-    Through the 409 `createCriteriaSet` declares, because the design declares no 422 for it and
-    `validate` reads an undeclared status as nothing to check -- asking for the 422 would pass
-    any body at all. Every refusal the design declares refs the same `Error`, which the first
-    line pins; JSON Schema allows a key nobody declared, which the last line refuses.
+    The first line pins that the design declares it at all: `validate` reads an undeclared
+    status as nothing to check, so without the pin any body would pass -- which is how these
+    went unchecked until every operation declared its 422 (NEW-41). JSON Schema allows a key
+    nobody declared, which the last line refuses.
     """
-    assert response_schema("createCriteriaSet", 409) == {"$ref": "#/components/schemas/Error"}
-    validate("createCriteriaSet", body, status=409)
-    assert undeclared_fields("createCriteriaSet", body, status=409) == []
+    assert response_schema(operation, 422) == {"$ref": "#/components/schemas/Error"}
+    validate(operation, body, status=422)
+    assert undeclared_fields(operation, body, status=422) == []
 
 
 async def _set_the_score_scale(database_url: str, scale: int | None) -> None:
