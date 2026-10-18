@@ -5,6 +5,7 @@ import {
   expect,
   test,
 } from "@playwright/test";
+import { readSettings } from "./settings";
 
 /**
  * The functional sanity suite: do the main flows still work?
@@ -515,18 +516,6 @@ async function attributesInside(page: Page, pillar: string) {
   });
   await inside.waitFor({ state: "visible" });
   return inside;
-}
-
-/** The settings as the API serves them. **A failed read is refused**, never read as settings. */
-async function readSettings(
-  request: APIRequestContext,
-): Promise<Record<string, unknown>> {
-  const response = await request.get("/v1/settings");
-  expect(
-    response.ok(),
-    `the settings could not be read: HTTP ${response.status()}`,
-  ).toBe(true);
-  return (await response.json()) as Record<string, unknown>;
 }
 
 /**

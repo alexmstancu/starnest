@@ -1,4 +1,5 @@
 import { expect, test, type Page, type APIRequestContext } from "@playwright/test";
+import { readSettings } from "./settings";
 /** Where the API lives for these setup calls -- the same origin the config gives the browser. */
 const BASE_URL = process.env["UI_ORIGIN"] ?? "http://localhost:5173";
 
@@ -155,10 +156,13 @@ test.describe("a candidate a gate ruled out", () => {
   // A gate answer is global, not part of this suite's own set, so writing one and resetting it to
   // a hardcoded `matching`/null erased whatever the household had recorded -- a real exclusion and
   // its provenance (UI-03). Capture the prior answer and restore it exactly.
-  let priorAnswer: { match_result: "matching" | "not_matching"; reason: string | null } | null =
-    null;
+  //
+  // **Never read is not "no answer"** (NEW-32): `undefined` until the read succeeds, so a read
+  // that failed restores nothing -- where `null` wrote `matching` over the household's answer.
+  let priorAnswer: GateAnswer | null | undefined;
 
   test.beforeEach(async ({ request }) => {
+    priorAnswer = undefined;
     priorAnswer = await readTheGateAnswer(request);
     await answerTheGate(request, "not_matching", "Gate C: recorded by the browser suite");
     await enforceTheGate(request, true);
@@ -168,10 +172,12 @@ test.describe("a candidate a gate ruled out", () => {
     // Restore exactly what was there. With no delete for a gate answer, an answer that was absent
     // is restored to the gate's benign default (`matching`, no reason) -- an isolated e2e database
     // is the complete fix. Enforcement is on this suite's own duplicated set, torn down anyway.
-    if (priorAnswer) {
-      await answerTheGate(request, priorAnswer.match_result, priorAnswer.reason);
-    } else {
-      await answerTheGate(request, "matching", null);
+    if (priorAnswer !== undefined) {
+      if (priorAnswer) {
+        await answerTheGate(request, priorAnswer.match_result, priorAnswer.reason);
+      } else {
+        await answerTheGate(request, "matching", null);
+      }
     }
     await enforceTheGate(request, false);
   });
@@ -197,13 +203,18 @@ test.describe("insufficient data", () => {
   // **Restored to whatever it was, never to null.** The floor is the household's decision
   // (`reqs.md` Q214, currently 60) and a suite that reset it to "unset" would quietly undo that
   // every time it ran -- a test with a side effect on the product's own configuration.
-  let floorBefore: number | null = null;
+  //
+  // **And only a floor this test actually read is put back** (NEW-32). Undefined until the read
+  // succeeds, so a failed read leaves nothing to restore -- where it used to send a null floor.
+  let floorBefore: number | null | undefined;
 
   test.beforeEach(async ({ request }) => {
+    floorBefore = undefined;
     floorBefore = await coverageFloor(request);
   });
 
   test.afterEach(async ({ request }) => {
+    if (floorBefore === undefined) return;
     await setCoverageFloor(request, floorBefore);
   });
 
@@ -494,9 +505,12 @@ async function weightsInPillar(page: Page, attribute: string): Promise<number[]>
   return weights;
 }
 
-async function readTheGateAnswer(
-  request: APIRequestContext,
-): Promise<{ match_result: "matching" | "not_matching"; reason: string | null } | null> {
+interface GateAnswer {
+  match_result: "matching" | "not_matching";
+  reason: string | null;
+}
+
+async function readTheGateAnswer(request: APIRequestContext): Promise<GateAnswer | null> {
   const response = await request.get(
     `/v1/match-rule-results?candidate=${THE_EXCLUDED_ONE.id}`,
   );
@@ -530,18 +544,20 @@ async function enforceTheGate(request: APIRequestContext, enforced: boolean): Pr
   expect(response.ok()).toBe(true);
 }
 
+/**
+ * The coverage floor, read so it can be put back. **Refused rather than guessed** (NEW-32): a
+ * body without the field read as `undefined`, and a restore carrying that clears the floor.
+ */
 async function coverageFloor(request: APIRequestContext): Promise<number | null> {
-  const settings = (await (await request.get("/v1/settings")).json()) as {
-    min_coverage: number | null;
-  };
-  return settings.min_coverage;
+  const floor = (await readSettings(request))["min_coverage"];
+  if (floor === null || typeof floor === "number") return floor;
+  throw new Error(`the settings carry no coverage floor to put back: ${JSON.stringify(floor)}`);
 }
 
 /** The floor is the household's decision, so the suite leaves it exactly as it found it. */
 async function setCoverageFloor(request: APIRequestContext, floor: number | null): Promise<void> {
-  const current = await (await request.get("/v1/settings")).json();
   const response = await request.put("/v1/settings", {
-    data: { ...current, min_coverage: floor },
+    data: { ...(await readSettings(request)), min_coverage: floor },
   });
   expect(response.ok()).toBe(true);
 }
