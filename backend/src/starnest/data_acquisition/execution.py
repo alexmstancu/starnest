@@ -169,7 +169,7 @@ async def open_run(
             # had nothing left to do.
             raise NothingToFetchError(
                 f"every attribute in this run's scope was fetched within the last "
-                f"{refetch_older_than}, so there is nothing to ask about again. Lower "
+                f"{_in_days(refetch_older_than)}, so there is nothing to ask about again. Lower "
                 f"'refetch data older than' in Configure to ask anyway"
             )
         if not adapters:
@@ -208,6 +208,16 @@ async def open_run(
         stand_ins=stand_ins,
         meter=CostMeter(cap_eur=spend_cap_eur),
     )
+
+
+def _in_days(age: timedelta) -> str:
+    """An age as the household set it: "30 days", "1 day" (NEW-37).
+
+    The setting is a whole number of days (`refetch_older_than_days`), and an interval printed
+    as itself read "30 days, 0:00:00" -- a clock time nobody chose, in the sentence telling
+    somebody which setting to lower.
+    """
+    return f"{age.days} day" if age.days == 1 else f"{age.days} days"
 
 
 async def attributes_still_fresh(

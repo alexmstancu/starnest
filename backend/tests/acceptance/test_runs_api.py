@@ -232,6 +232,32 @@ class TestStartingARun:
         assert detail["scope"]["candidates"] == ["country.greece"]
 
 
+class TestARunOfNothingButFreshFigures:
+    """The refusal names the age the household set, as the household set it (NEW-37).
+
+    The age travels as an interval, and an interval printed as itself reads "30 days, 0:00:00"
+    -- a clock time nobody set, in a sentence telling somebody which setting to lower.
+    """
+
+    @pytest.mark.parametrize(
+        ("days", "said"), [(30, "30 days"), (1, "1 day")], ids=["thirty days", "one day"]
+    )
+    async def test_the_age_reads_in_whole_days(
+        self, database_url: str, days: int, said: str
+    ) -> None:
+        only_overburden = {"level": COUNTRY, "attributes": [OVERBURDEN]}
+        async with an_api(database_url, (a_stub_source(silent_about=()),)) as api:
+            await api.put("/v1/settings", json={"refetch_older_than_days": days})
+            await api.post("/v1/data-acquisition-runs", json=only_overburden)
+
+            refused = await api.post("/v1/data-acquisition-runs", json=only_overburden)
+
+        assert refused.json()["code"] == "nothing_to_fetch"
+        message = refused.json()["message"]
+        assert f"fetched within the last {said}, so there is nothing" in message, message
+        assert "0:00:00" not in message
+
+
 class TestAScopeThatNamesSomethingUnknown:
     """BE-24. A misspelled candidate or an id from another level used to fall out of the
     intersection with what exists, and the run proceeded on the rest -- fetching, and where a
