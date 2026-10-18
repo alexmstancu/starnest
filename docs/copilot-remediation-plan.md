@@ -1,6 +1,6 @@
 # Copilot remediation plan
 
-**Status (2026-10-18):** round 2 is done. 37 findings and the 18 small defects found while planning were fixed test-first (section 2). Since then, 26 more defects were found (NEW-26 to NEW-51, section 7): 11 are fixed, 11 are recorded for later, and 4 found at the checkpoint are open. BE-31 stays partial, as planned. Per finding, the tracker reads **55 FIXED, 5 PARTIAL, 25 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)). Still waiting for your OK: the five smaller fixes in section 3. Held for later: section 4, and the NEW items marked Later.
+**Status (2026-10-18):** round 2 is done. 37 findings and the 18 small defects found while planning were fixed test-first (section 2). Since then, 28 more defects were found (NEW-26 to NEW-53, section 7): 15 are fixed and 13 are recorded for later, NEW-48 among them, held for BE-11 by your choice. BE-31 stays partial, as planned. Per finding, the tracker reads **55 FIXED, 5 PARTIAL, 25 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)). Still waiting for your OK: the five smaller fixes in section 3. Held for later: section 4, and the NEW items marked Later.
 
 This plan was written on 2026-10-15 against `c943761`, where `make check` was green: 2,863 backend tests, 96.92% coverage, 1,116 UI tests.
 
@@ -153,7 +153,7 @@ Each finding's full plan is in its appendix. Choices you already made for these 
 | UI-29: no way to answer a gate by hand | A new feature | A gate-answer form |
 | BE-36 stage 1: confirmed gate answers are invisible | A new panel | Recorded answers with their period and age |
 | BE-07: an old figure keeps its grade | Behaviour plus a catalog migration | Lower the grade in the ranking's confidence split; lengthen climate normals' max_age |
-| BE-11: a retry asks a cross product | A new table and view | Record and ask exactly the failed pairs |
+| BE-11: a retry asks a cross product | A new table and view | Record and ask exactly the failed pairs. NEW-48 adds a trigger; a tested start that asks each source only about what it failed on is on the local branch `copilot/fx-retry` (`468645b`), not merged, because without the item rows the run's recorded scope would show the pairs nobody needed to ask as unanswered |
 | ST-02: two edits to one set can undo each other | A store refactor | One locked transaction per edit |
 | ST-07 (rest): a saved ranking doesn't keep its evidence | New tables | Freeze the figures and answers behind each warning |
 | ST-09: re-read figures show as unanswered | A new table | Record re-confirmations |
@@ -303,11 +303,13 @@ No migration, contract change or browser run happens this round.
 | NEW-44 | Older controls still disable themselves during a write and drop keyboard focus, as NEW-34 did | Later (low; NEW-34's fix applies) | `ProposalsPanel.tsx`, `ManualEntryPanel.tsx`, `RunScreen.tsx`, `ItemGroups.tsx` |
 | NEW-45 | Focus is still lost when a source is moved down or dragged (the row is re-mounted), and when a successful undo or reset removes the button pressed | Later (low) | `DataSourcesPanel.tsx`, `RecentChanges.tsx` |
 | NEW-46 | A held slider, lock or "blocks scoring" box looks unchanged, because no `:disabled` style ever covered them | Later (looks) | `styles.css` |
-| NEW-47 | The builder's `2c04381` (2026-10-02) deleted 929 lines of `styles.css` unannounced; 56 classes still used on screen have no styles, including the criterion rows, confirmation strip, tiles and danger button | Later (looks; needs a visual check and a restore) | `ui/src/styles.css` |
-| NEW-48 | A retry can bill a paid source again for a country it answered: since BE-08 a free source's rejected figure puts that country in the retry, and every retried source is asked about every retried country (BE-11) | Open (checkpoint review) | `S/data_acquisition/execution.py:566-574` |
-| NEW-49 | A Refresh clicked while a Stop is being sent outranks the stop's own read, so the card can show no stop and offer Stop again | Open (checkpoint review) | `ui/src/routes/run/useRunScreen.ts:250-266` |
-| NEW-50 | Two UI-06 tests decide on a fixed one-second wait; one assertion has checked nothing since NEW-34 | Open (checkpoint review) | `HouseholdPanel.test.tsx:366-373`, `SettingsPanel.test.tsx:357-367` |
-| NEW-51 | Four browser specs are stale since 2026-10-04: they look for sliders by attribute id and a Compare column called "Attribute" | Open (checkpoint test run) | `ui/e2e/gate-c.spec.ts`, `minimum-end-to-end.spec.ts`, `sanity.spec.ts` |
+| NEW-47 | The builder's `2c04381` (2026-10-02) deleted 929 lines of `styles.css` unannounced; 60 classes still used on screen had no styles, including the criterion rows, confirmation strip, tiles, status pills and danger button | Fixed (54ef14f), restored from `2c04381^` and checked with before-and-after screenshots | `ui/src/styles.css` |
+| NEW-48 | A retry can bill a paid source again for a country it answered: since BE-08 a free source's rejected figure puts that country in the retry, and every retried source is asked about every retried country (BE-11) | Held, Low: only a direct call to `/retry` reaches it, since the app's Retry button starts a scoped run (UI-02). Fixed with BE-11 (your choice) | `S/data_acquisition/execution.py:566-574` |
+| NEW-49 | A Refresh, or a start the server refuses, while a Stop is being sent outranks the stop's own read, so the card can show no stop and offer Stop again | Fixed (8e5ece9, f9e432c) | `ui/src/routes/run/useRunScreen.ts:250-266` |
+| NEW-50 | Two UI-06 tests decide on a fixed one-second wait; one assertion has checked nothing since NEW-34 | Fixed (d3182d4) | `HouseholdPanel.test.tsx:366-373`, `SettingsPanel.test.tsx:357-367` |
+| NEW-51 | Four browser specs are stale since 2026-10-04: they look for sliders by attribute id and a Compare column called "Attribute" | Fixed (6865e27) | `ui/e2e/gate-c.spec.ts`, `minimum-end-to-end.spec.ts`, `sanity.spec.ts` |
+| NEW-52 | While a Refresh overlaps a Stop, the Stop button is offered again until the read returns; a second stop is accepted harmlessly | Later (low) | `ui/src/routes/run/RunScreen.tsx` |
+| NEW-53 | The browser specs' `openPillarOf` can read pillar names before their display names load, then wait out the test timeout | Later (low; a possible flake) | `ui/e2e/gate-c.spec.ts`, `minimum-end-to-end.spec.ts` |
 
 Two more were folded into existing findings: BE-27 affects two more tables than reported, and a mixed retry drops a stand-in failure (part of BE-11).
 

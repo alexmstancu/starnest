@@ -305,9 +305,23 @@ Everything above, tested and reviewed again at `cfabd6c`:
 
 | Defect | Severity | Status |
 |---|---|---|
-| NEW-48: since BE-08 (`cef4abb`), a retry can bill a paid source again for a country it answered, because a free source's rejected figure puts that country in the retry. It is BE-11's rectangle with a new trigger | Medium | Open |
-| NEW-49: since `fdcbc6e` (UI-04), a Refresh clicked while a Stop is being sent can leave the card showing no stop, with Stop live again | Medium | Open |
-| NEW-50: two UI-06 tests decide on a fixed one-second wait, so under load they pass without proving anything, or fail for no reason. One assertion has checked nothing since NEW-34 | Medium (tests) | Open |
+| NEW-48: since BE-08 (`cef4abb`), a retry can bill a paid source again for a country it answered, because a free source's rejected figure puts that country in the retry. It is BE-11's rectangle with a new trigger | Low: only a direct call to `/retry` reaches it; the app's Retry button starts a scoped run (UI-02) | Held for BE-11 (your choice). A tested fix (`468645b`) is kept on a local branch: merged alone, the run's recorded scope would show pairs nobody needed to ask as unanswered |
+| NEW-49: since `fdcbc6e` (UI-04), a Refresh clicked while a Stop is being sent can leave the card showing no stop, with Stop live again | Medium | Fixed (8e5ece9, f9e432c) |
+| NEW-50: two UI-06 tests decide on a fixed one-second wait, so under load they pass without proving anything, or fail for no reason. One assertion has checked nothing since NEW-34 | Medium (tests) | Fixed (d3182d4) |
 
 The Acquire review also confirmed UI-03's remaining part again: gate C's restore re-dates the gate answer and drops its period, pages and override. The fix is the browser suite's own database.
+
+**After the checkpoint**, you chose to fix these, to update the stale browser specs and to restore the missing styles in the same round:
+
+- NEW-51: the four stale browser specs were updated (`6865e27`). Sliders are found by the attribute's catalog name, read from the API; the comparison is found by its table's name.
+- NEW-47: the styles `2c04381` deleted were restored (`54ef14f`) from the version before it, adapted to the held controls of NEW-34. That covers 60 classes, not 56: four status-pill classes are built in code, so a text search missed them. Before-and-after screenshots show, for example, the criterion rows: their weight bars had drawn as black bands, and now align with their sliders, values, locks and chips.
+- NEW-49, the rest: the final review found a second way to drop a stop's read. While a stop is being sent, a start is always refused, and that refusal reads nothing back. `f9e432c` re-reads the card when a start is refused and is still the reader's newest act.
+- NEW-52 and NEW-53 were noticed on the way, and are recorded for later in the plan's section 7.
+
+**Final state at `f9e432c`** (pushed, and deployed to your containers):
+
+- `make check` is green: 3,027 backend tests at 97.25% coverage, every audit passing, and 1,395 UI tests.
+- The browser suite passes in full, **32 of 32**, up from 25.
+- Your live data came back as it was after each browser run. The browser suite adds a small free Eurostat run each time; this round added runs 123 to 125. It also re-dates Greece's gate answer, which is UI-03's remaining part. The `[e2e]` rankings were discarded by a backend restart.
+- A last code review of the final four commits found only the NEW-49 case above.
 
