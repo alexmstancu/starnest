@@ -242,7 +242,9 @@ ORDER  BY a.id;
 -- transcribed table (published_tables) stamps a fixed transcribed_on, so re-reading it is the
 -- *same* observation, not a re-fetch; ON CONFLICT DO NOTHING skips it rather than crashing a
 -- re-run on a UniqueViolation. A no-op returns no row, which the store reads as "already stored"
--- (a corrected transcribed figure gets a new row by bumping transcribed_on, never a silent edit).
+-- (a corrected transcribed figure gets a new row by bumping transcribed_on, never a silent edit;
+-- the new date must be the day the publisher was read again -- re-encoding an unchanged
+-- transcription is not a read and keeps its date, Q230, NEW-33).
 INSERT INTO value (candidate, attribute, value_type, data_source, breakdown_option,
                    data_acquisition_run, reference_period_start, reference_period_end,
                    retrieval_date, confidence_level, quote)

@@ -2,7 +2,7 @@
 # attribute: country.coastline_access
 # publication: World Resources Institute, coastline length from the World Vector Shoreline
 # publisher_url: https://web.archive.org/web/20120419075053/http://earthtrends.wri.org/text/coastal-marine/variable-61.html
-# transcribed_on: 2026-10-17
+# transcribed_on: 2026-10-02
 # confidence: medium
 # period: WRI computed these lengths in 2000 from the World Vector Shoreline (US Defense Mapping Agency, 1989). A coastline does not move on a decadal scale, which is why a figure of this age is still the figure; the period states when it was measured, not when it was read.
 # route: WRI's own page died with EarthTrends and survives on archive.org, so the column was read from Wikipedia's copy of it and cross-checked against the archived original. Medium confidence for that reason.

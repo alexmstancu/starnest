@@ -2,7 +2,7 @@
 # attribute: country.protected_land_share
 # publication: World Database on Protected Areas (WDPA), Protected Planet country profiles
 # publisher_url: https://www.protectedplanet.net/en
-# transcribed_on: 2026-10-17
+# transcribed_on: 2026-10-11
 # confidence: medium
 # period: the WDPA country profile is a living snapshot, read October 2026; the figures describe the national-designations inventory (EEA NatDA/CDDA + Emerald, updated 2025), so the period stated is 2025.
 # route: these are the non-EU-member countries Eurostat's sdg_15_20 does not cover. Protected Planet is the rank-1 source the catalog already declares for this attribute (0101); Eurostat (rank 2) answers the 27 EU members. Each figure was read from the country's Protected Planet profile (the coverage % is loaded by script, so the page was rendered in a browser) and cross-checked against Our World in Data's WDPA-sourced "share of land that is protected" series, which agreed to the decimal except GB (OWID 28.4 from an older snapshot vs the live 28.63).

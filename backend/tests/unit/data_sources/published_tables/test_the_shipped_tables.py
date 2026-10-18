@@ -12,6 +12,7 @@ of fault that looks like data rather than like a bug.
 """
 
 import re
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -86,6 +87,23 @@ def test_no_workings_is_cut_short_at_a_comma(attribute: str, country: str, endin
     by_code = {row.country_code: row for row in SHIPPED[attribute].rows}
 
     assert by_code[country].workings.endswith(ending)
+
+
+@pytest.mark.parametrize(
+    "attribute,read_on",
+    [
+        ("country.protected_land_share", date(2026, 10, 11)),
+        ("country.statutory_paid_leave", date(2026, 9, 20)),
+        ("country.coastline_access", date(2026, 10, 2)),
+    ],
+)
+def test_a_table_keeps_the_day_its_publisher_was_read(attribute: str, read_on: date) -> None:
+    """NEW-33. `transcribed_on` becomes every figure's retrieval date, which Q230 defines as the
+    day the publisher's table was read. BE-27 re-quoted twelve workings in these three files and
+    moved their date to the day of that edit -- but re-copying an unchanged table is not a read,
+    so 67 figures would have claimed a retrieval nobody made. A new date belongs here only with
+    a new read of the publisher: change this test in the same commit, and say which read."""
+    assert SHIPPED[attribute].transcribed_on == read_on
 
 
 class TestTheComputedTables:
