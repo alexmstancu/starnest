@@ -12,6 +12,7 @@ import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
 import { describeGaps, describeScope } from "./databaseHolds";
 import { describeFailures, failedItemCount } from "./failureGroups";
+import { HeldButton } from "./HeldButton";
 import { ItemGroups } from "./ItemGroups";
 import { OpenToHandEntry } from "./OpenToHandEntry";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";
@@ -145,11 +146,11 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                   not decoration: three cards stand side by side and each has an action at its
                   foot, so a label that says only "Retry everything that failed" leaves the
                   reader to look back up at the heading for the size of what they are about to
-                  start. */}
-              <button
-                type="button"
+                  start. Held while any act is in flight, never disabled (NEW-44). */}
+              <HeldButton
                 className="button button--primary"
-                disabled={run.busy !== null || levelId === null}
+                held={run.busy !== null}
+                disabled={levelId === null}
                 onClick={() =>
                   levelId !== null &&
                   run.propose(
@@ -160,7 +161,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                 }
               >
                 {`Retry ${formatCount(failedItemCount(run.current.failures))} failed`}
-              </button>
+              </HeldButton>
               <GapEstimate kind="failed" run={run} />
             </GapCard>
           )}
@@ -191,10 +192,10 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                   already draws -- retrying the same sources changes nothing, so this asks the
                   ones that had no row. The design uses one verb for both buckets and puts the
                   difference in the noun, which is the shorter way to say it. */}
-              <button
-                type="button"
+              <HeldButton
                 className="button"
-                disabled={run.busy !== null || levelId === null}
+                held={run.busy !== null}
+                disabled={levelId === null}
                 onClick={() =>
                   levelId !== null &&
                   run.propose(
@@ -205,7 +206,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                 }
               >
                 {`Retry ${formatCount(run.current.progress?.items_unanswered)} unanswered`}
-              </button>
+              </HeldButton>
               <GapEstimate kind="unanswered" run={run} />
             </GapCard>
           )}
@@ -220,16 +221,15 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
               what={`An acquisition over every ${levelId} candidate`}
               lead="Re-asks everything, including what is already stored and still fresh. The estimate first: what would be fetched, and what it would cost, before anything is."
             >
-              <button
-                type="button"
+              <HeldButton
                 className="button"
-                disabled={run.busy !== null}
+                held={run.busy !== null}
                 onClick={() => run.estimate(levelId)}
               >
                 {run.busy === "planning"
                   ? "Estimating…"
                   : "Estimate an acquisition"}
-              </button>
+              </HeldButton>
               <GapEstimate
                 kind="everything"
                 run={run}
@@ -354,14 +354,13 @@ function GapEstimate({
         ? onStart !== undefined && (
             // The one filled button in the application. The design reserves the primary for
             // the action a screen exists to take, and this screen exists to start a run.
-            <button
-              type="button"
+            <HeldButton
               className="button button--primary"
-              disabled={run.busy === "running"}
+              held={run.busy === "running"}
               onClick={onStart}
             >
               {run.busy === "running" ? "Running…" : "Start this acquisition"}
-            </button>
+            </HeldButton>
           )
         : (
             <div
@@ -374,22 +373,20 @@ function GapEstimate({
             >
               <p className="confirm__message">{armed.commitment.sentence}</p>
               <div className="confirm__acts">
-                <button
-                  type="button"
+                <HeldButton
                   className="button button--primary"
-                  disabled={run.busy === "running"}
+                  held={run.busy === "running"}
                   onClick={run.commit}
                 >
                   {run.busy === "running" ? "Starting…" : "Yes, start it"}
-                </button>
-                <button
-                  type="button"
+                </HeldButton>
+                <HeldButton
                   className="button"
-                  disabled={run.busy === "running"}
+                  held={run.busy === "running"}
                   onClick={run.cancel}
                 >
                   Not yet
-                </button>
+                </HeldButton>
               </div>
             </div>
           )}
@@ -561,28 +558,23 @@ function RunReport({
         </span>
         <div className="acquisition__acts">
           {/* **Refresh, not a poll.** A run that finished is not going to change, and a screen
-              that re-read it every second would spend the reader's backend on nothing. */}
-          <button
-            type="button"
-            className="button"
-            disabled={busy}
-            onClick={onRefresh}
-          >
+              that re-read it every second would spend the reader's backend on nothing. Held
+              while it reads, and Stop while it is sent, never disabled (NEW-44). */}
+          <HeldButton className="button" held={busy} onClick={onRefresh}>
             {busy ? "Reading…" : "Refresh"}
-          </button>
+          </HeldButton>
           {canStop && (
             /* **Says what it keeps, because that is the question.** "Stop" alone reads as
                "throw away what it has done", and the one thing a reader must know before
                clicking is that it does not. The loop reads the request between sources, so
                everything already written stays written. */
-            <button
-              type="button"
+            <HeldButton
               className="button button--danger"
-              disabled={stopping}
+              held={stopping}
               onClick={onStop}
             >
               {stopping ? "Stopping…" : "Stop — keep what completed"}
-            </button>
+            </HeldButton>
           )}
           {/* Dismiss only once there is nothing left to watch, as the design has it: putting a
               run away while it is still writing values would look like cancelling it. */}

@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { useCandidateNames } from "../../api/useCandidateNames";
 import { formatCount } from "../../format/display";
+import { HeldButton } from "./HeldButton";
 import { groupLabel, groupMeta, itemDetail, itemPhrase } from "./itemNames";
 import { type Item, groupBy, keyOf, questionsIn, scopeFor } from "./runScope";
 
@@ -35,6 +36,7 @@ export function ItemGroups({
   detailKind: "failed" | "unanswered";
   /** What the button will be called, e.g. "Retry". */
   act: string;
+  /** An estimate is being read, so the button is held until it answers (NEW-44). */
   busy: boolean;
   onPropose: (
     scope: ReturnType<typeof scopeFor>,
@@ -191,16 +193,18 @@ export function ItemGroups({
         </p>
       )}
 
-      <button
-        type="button"
+      {/* Held while an estimate is read, never disabled (NEW-44); disabled while nothing is
+          picked, where there is nothing to wait for. */}
+      <HeldButton
         className="button"
-        disabled={busy || chosen.length === 0}
+        held={busy}
+        disabled={chosen.length === 0}
         onClick={() =>
           onPropose(scope, `${act} ${formatCount(chosen.length)} selected`)
         }
       >
         {act} {formatCount(chosen.length)} selected
-      </button>
+      </HeldButton>
     </section>
   );
 }

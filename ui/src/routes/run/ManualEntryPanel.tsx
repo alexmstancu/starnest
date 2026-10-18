@@ -5,6 +5,7 @@ import { ErrorNotice } from "../../shell/ErrorNotice";
 import { candidateName } from "../../format/display";
 import { describeFigure } from "../../format/figure";
 import type { ManualDraft, ManualKind } from "./manualEntry";
+import { HeldButton } from "./HeldButton";
 import { useManualEntry } from "./useManualEntry";
 
 /**
@@ -194,14 +195,15 @@ export function ManualEntryPanel({
         </p>
       )}
 
-      <button
-        type="button"
+      {/* **Held while a figure is stored, never disabled** (NEW-44): disabled under the
+          keyboard, Chromium would throw its focus to the page. */}
+      <HeldButton
         className="button button--primary"
-        disabled={entry.saving}
+        held={entry.saving}
         onClick={entry.submit}
       >
         {entry.saving ? "Storing…" : "Store this figure"}
-      </button>
+      </HeldButton>
     </section>
   );
 }

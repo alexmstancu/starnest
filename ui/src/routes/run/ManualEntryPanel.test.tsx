@@ -1,9 +1,14 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { mockServer } from "../../mocks/server";
+import {
+  expectHeld,
+  expectNotHeld,
+  followChromiumFocusFixup,
+} from "../../testing/keyboard";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 
 /**
@@ -121,6 +126,91 @@ describe("storing a figure typed by hand", () => {
       await screen.findByText(/does not accept a manually entered value/),
     ).toBeInTheDocument();
     expect(field("Values")).toHaveValue("Siemens");
+  });
+});
+
+/**
+ * NEW-44. **Held, never disabled, while a figure is stored.** Chromium throws focus off a button
+ * the moment it is disabled and does not give it back, so a keyboard user who stored a figure
+ * with Enter was put back on the page. jsdom keeps focus on a disabled button, which is why these
+ * follow Chromium's rule.
+ */
+describe("storing a figure from the keyboard", () => {
+  beforeEach(() => followChromiumFocusFixup());
+
+  /** Holds every figure until the test lets go, then answers with `answer` or stores it. */
+  function holdManualWritesAnswering(
+    answer: () => Response | undefined,
+  ): { sent: number; release: () => void } {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const writes = { sent: 0, release: () => release() };
+    mockServer.use(
+      http.post("/v1/values/manual", async () => {
+        writes.sent += 1;
+        await held;
+        return answer();
+      }),
+    );
+    return writes;
+  }
+
+  it("keeps focus on Store while it stores, and a second Enter sends nothing", async () => {
+    const user = userEvent.setup();
+    const writes = holdManualWrites();
+    renderEntry();
+    await fillAFigure();
+    const store = screen.getByRole("button", { name: "Store this figure" });
+    act(() => store.focus());
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+    expect(store).toHaveFocus();
+    expectHeld(store);
+    expect(store).toHaveTextContent("Storing…");
+    await user.keyboard("{Enter}");
+
+    writes.release();
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/for Portugal/);
+    await waitFor(() => expectNotHeld(store));
+    expect(store).toHaveTextContent("Store this figure");
+    expect(store).toHaveFocus();
+    expect(writes.sent).toHaveLength(1);
+  });
+
+  it("lets go of Store after a refused figure, with focus still on it", async () => {
+    const user = userEvent.setup();
+    const writes = holdManualWritesAnswering(() =>
+      HttpResponse.json(
+        { code: "manual_entry_not_permitted", message: "no" },
+        { status: 409 },
+      ),
+    );
+    renderEntry();
+    await fillAFigure();
+    const store = screen.getByRole("button", { name: "Store this figure" });
+    act(() => store.focus());
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(writes.sent).toBe(1));
+    expectHeld(store);
+    await user.keyboard("{Enter}");
+
+    writes.release();
+
+    expect(
+      await screen.findByText(/does not accept a manually entered value/),
+    ).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(store));
+    expect(store).toBeEnabled();
+    expect(store).toHaveFocus();
+    await user.keyboard("{Enter}");
+    // The third Enter's request arriving is what proves the second sent nothing.
+    await waitFor(() => expect(writes.sent).toBe(2));
   });
 });
 

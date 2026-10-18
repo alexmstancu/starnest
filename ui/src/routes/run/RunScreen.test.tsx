@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, delay, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   PAID_RUN_PLAN,
   RUNS,
@@ -19,6 +19,11 @@ import {
 import type { Run } from "../../api/endpoints";
 import { formatMoney } from "../../format/display";
 import { mockServer } from "../../mocks/server";
+import {
+  expectHeld,
+  expectNotHeld,
+  followChromiumFocusFixup,
+} from "../../testing/keyboard";
 import { renderShell } from "../../testing/renderShell";
 import { useRunScreen } from "./useRunScreen";
 
@@ -2023,9 +2028,9 @@ function failTheNextReadOf(runId: number): {
  */
 async function everyActHasEnded(): Promise<void> {
   await waitFor(() =>
-    expect(
+    expectNotHeld(
       screen.getByRole("button", { name: /estimate an acquisition/i }),
-    ).toBeEnabled(),
+    ),
   );
 }
 
@@ -2377,7 +2382,7 @@ describe("what the busy label says while two acts overlap", () => {
     stop.release();
     await waitFor(() => expect(history.count).toBe(before + 1));
 
-    expect(card.getByRole("button", { name: "Reading…" })).toBeDisabled();
+    expectHeld(card.getByRole("button", { name: "Reading…" }));
 
     read.release();
     expect(
@@ -2400,7 +2405,7 @@ describe("what the busy label says while two acts overlap", () => {
     await userEvent.click(card.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(history.count).toBe(before + 1));
 
-    expect(card.getByRole("button", { name: "Stopping…" })).toBeDisabled();
+    expectHeld(card.getByRole("button", { name: "Stopping…" }));
 
     stop.release();
     await waitFor(() => expect(history.count).toBe(before + 2));
@@ -2893,5 +2898,350 @@ describe("arriving from a gap in Configure", () => {
     renderShell("/acquire?show=whatever");
 
     expect(await theCard()).not.toHaveFocus();
+  });
+});
+
+/**
+ * NEW-44. **Held, never disabled, while an act is in flight.** Chromium throws focus off a
+ * control the moment it is disabled and does not give it back, so a keyboard user who pressed
+ * Estimate, Retry, Start, Refresh or Stop was put back on the page while the request ran --
+ * NEW-34's defect, on the Acquire screen. jsdom keeps focus on a disabled control, which is why
+ * these follow Chromium's rule. What is not a write in flight -- nothing selected, no level --
+ * still disables outright.
+ */
+describe("acting from the keyboard", () => {
+  beforeEach(() => followChromiumFocusFixup());
+
+  /**
+   * Counts each request to `path` as it arrives and holds it until the test lets go; then
+   * answers with `answer`, or lets the mock's own handler answer when it gives nothing back.
+   */
+  function holdEach(
+    method: "get" | "post",
+    path: string,
+    answer: () => Response | undefined = () => undefined,
+  ): { requests: { sent: number }; release: () => void } {
+    const gate = heldAnswer();
+    const requests = { sent: 0 };
+    mockServer.use(
+      http[method](`${BASE}${path}`, async () => {
+        requests.sent += 1;
+        await gate.held;
+        return answer();
+      }),
+    );
+    return { requests, release: gate.release };
+  }
+
+  function refusal(code: string, message: string, status = 409) {
+    return () => HttpResponse.json({ code, message }, { status });
+  }
+
+  /** Puts focus on `control` and presses Enter there, as a keyboard user does. */
+  async function enterOn(
+    user: ReturnType<typeof userEvent.setup>,
+    control: HTMLElement,
+  ): Promise<void> {
+    act(() => control.focus());
+    await user.keyboard("{Enter}");
+  }
+
+  function theWholeLevelCard() {
+    return within(
+      screen.getByRole("region", { name: /an acquisition over every country/i }),
+    );
+  }
+
+  it("keeps focus on Estimate while it estimates, and a second Enter asks nothing", async () => {
+    const user = userEvent.setup();
+    const plans = holdEach("post", "/data-acquisition-runs/plan");
+    renderShell("/acquire");
+    const estimateIt = await screen.findByRole("button", {
+      name: /estimate an acquisition/i,
+    });
+
+    await enterOn(user, estimateIt);
+    await waitFor(() => expect(plans.requests.sent).toBe(1));
+
+    expect(estimateIt).toHaveFocus();
+    expectHeld(estimateIt);
+    expect(estimateIt).toHaveTextContent("Estimating…");
+    await user.keyboard("{Enter}");
+
+    plans.release();
+
+    expect(await theWholeLevelCard().findByText("Items")).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(estimateIt));
+    expect(estimateIt).toHaveFocus();
+    await user.keyboard("{Enter}");
+    // The third Enter's request arriving is what proves the second asked nothing.
+    await waitFor(() => expect(plans.requests.sent).toBe(2));
+  });
+
+  it("lets go of Estimate after a refused estimate, with focus still on it", async () => {
+    const user = userEvent.setup();
+    const plans = holdEach(
+      "post",
+      "/data-acquisition-runs/plan",
+      refusal("conflict", "no level"),
+    );
+    renderShell("/acquire");
+    const estimateIt = await screen.findByRole("button", {
+      name: /estimate an acquisition/i,
+    });
+
+    await enterOn(user, estimateIt);
+    await waitFor(() => expect(plans.requests.sent).toBe(1));
+    expectHeld(estimateIt);
+    plans.release();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/no level/i);
+    await waitFor(() => expectNotHeld(estimateIt));
+    expect(estimateIt).toBeEnabled();
+    expect(estimateIt).toHaveFocus();
+  });
+
+  it("keeps focus on Retry while its estimate is read, and a second Enter asks nothing", async () => {
+    const user = userEvent.setup();
+    const plans = holdEach("post", "/data-acquisition-runs/plan");
+    renderShell("/acquire");
+    const retry = await screen.findByRole("button", { name: "Retry 1 failed" });
+
+    await enterOn(user, retry);
+    await waitFor(() => expect(plans.requests.sent).toBe(1));
+
+    expect(retry).toHaveFocus();
+    expectHeld(retry);
+    await user.keyboard("{Enter}");
+
+    plans.release();
+
+    expect(
+      await screen.findByRole("button", { name: /yes, start it/i }),
+    ).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(retry));
+    expect(retry).toHaveFocus();
+    expect(plans.requests.sent).toBe(1);
+  });
+
+  it("keeps focus on a group's Retry while its estimate is read, and lets go once it is", async () => {
+    const user = userEvent.setup();
+    const plans = holdEach("post", "/data-acquisition-runs/plan");
+    renderShell("/acquire");
+    const group = within(
+      await screen.findByRole("region", { name: /which sources broke/i }),
+    );
+    // Nothing picked is not a write in flight: the button is disabled outright until there is.
+    const retrySelected = group.getByRole("button", { name: /^Retry 0 selected$/ });
+    expect(retrySelected).toBeDisabled();
+    expectNotHeld(retrySelected);
+    await user.click(group.getByRole("button", { name: "Select all" }));
+
+    await enterOn(user, retrySelected);
+    await waitFor(() => expect(plans.requests.sent).toBe(1));
+
+    expect(retrySelected).toHaveFocus();
+    expectHeld(retrySelected);
+    await user.keyboard("{Enter}");
+
+    plans.release();
+
+    expect(
+      await screen.findByRole("button", { name: /yes, start it/i }),
+    ).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(retrySelected));
+    expect(retrySelected).toHaveFocus();
+    expect(plans.requests.sent).toBe(1);
+  });
+
+  it("keeps focus on Start while the run is started, and lets go after a refusal", async () => {
+    const user = userEvent.setup();
+    renderShell("/acquire");
+    await estimate();
+    const startIt = await screen.findByRole("button", {
+      name: /start this acquisition/i,
+    });
+    const starts = holdEach(
+      "post",
+      "/data-acquisition-runs",
+      refusal("run_already_in_flight", "run 7 is still going"),
+    );
+
+    await enterOn(user, startIt);
+    await waitFor(() => expect(starts.requests.sent).toBe(1));
+
+    expect(startIt).toHaveFocus();
+    expectHeld(startIt);
+    expect(startIt).toHaveTextContent("Running…");
+    await user.keyboard("{Enter}");
+
+    starts.release();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "run_already_in_flight",
+    );
+    await waitFor(() => expectNotHeld(startIt));
+    expect(startIt).toHaveFocus();
+    await user.keyboard("{Enter}");
+    // The third Enter's request arriving is what proves the second sent nothing.
+    await waitFor(() => expect(starts.requests.sent).toBe(2));
+  });
+
+  /** A retry of the failed item, estimated and waiting for a yes. */
+  async function aRetryArmed(): Promise<{
+    yes: HTMLElement;
+    notYet: HTMLElement;
+  }> {
+    renderShell("/acquire");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Retry 1 failed" }),
+    );
+    return {
+      yes: await screen.findByRole("button", { name: /yes, start it/i }),
+      notYet: screen.getByRole("button", { name: "Not yet" }),
+    };
+  }
+
+  it("keeps focus on Yes while the run is started, and lets go after a refusal", async () => {
+    const user = userEvent.setup();
+    const { yes } = await aRetryArmed();
+    const starts = holdEach(
+      "post",
+      "/data-acquisition-runs",
+      refusal("run_already_in_flight", "run 7 is still going"),
+    );
+
+    await enterOn(user, yes);
+    await waitFor(() => expect(starts.requests.sent).toBe(1));
+
+    expect(yes).toHaveFocus();
+    expectHeld(yes);
+    expect(yes).toHaveTextContent("Starting…");
+    await user.keyboard("{Enter}");
+
+    starts.release();
+
+    // By its code: the confirmation it refused is an alert too.
+    expect(
+      await screen.findByText("run_already_in_flight"),
+    ).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(yes));
+    expect(yes).toHaveFocus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(starts.requests.sent).toBe(2));
+  });
+
+  it("holds Not yet while the run is started, so the confirmation stays until it answers", async () => {
+    const user = userEvent.setup();
+    const { yes, notYet } = await aRetryArmed();
+    const starts = holdEach(
+      "post",
+      "/data-acquisition-runs",
+      refusal("run_already_in_flight", "run 7 is still going"),
+    );
+    act(() => notYet.focus());
+
+    // Yes by pointer, which leaves focus where it was.
+    fireEvent.click(yes);
+    await waitFor(() => expect(starts.requests.sent).toBe(1));
+
+    expect(notYet).toHaveFocus();
+    expectHeld(notYet);
+    await user.keyboard("{Enter}");
+    expect(notYet).toBeInTheDocument();
+
+    starts.release();
+
+    // By its code: the confirmation it refused is an alert too.
+    expect(
+      await screen.findByText("run_already_in_flight"),
+    ).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(notYet));
+    expect(notYet).toHaveFocus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(notYet).not.toBeInTheDocument());
+  });
+
+  it("keeps focus on Refresh while the run is read, and a second Enter reads nothing", async () => {
+    const user = userEvent.setup();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    const refresh = card.getByRole("button", { name: "Refresh" });
+    const reads = holdEach("get", "/data-acquisition-runs/7");
+
+    await enterOn(user, refresh);
+    await waitFor(() => expect(reads.requests.sent).toBe(1));
+
+    expect(refresh).toHaveFocus();
+    expectHeld(refresh);
+    expect(refresh).toHaveTextContent("Reading…");
+    await user.keyboard("{Enter}");
+
+    reads.release();
+
+    await waitFor(() => expectNotHeld(refresh));
+    expect(refresh).toHaveTextContent("Refresh");
+    expect(refresh).toHaveFocus();
+    await user.keyboard("{Enter}");
+    // The third Enter's read arriving is what proves the second read nothing.
+    await waitFor(() => expect(reads.requests.sent).toBe(2));
+  });
+
+  it("keeps focus on Stop while the stop is sent, and lets go after a refusal", async () => {
+    const user = userEvent.setup();
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          run_status: "running",
+          finished_at: null,
+        }),
+      ),
+    );
+    const stops = holdEach(
+      "post",
+      "/data-acquisition-runs/:runId/stop",
+      refusal("not_found", "there is no run numbered 7", 404),
+    );
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    const stop = card.getByRole("button", {
+      name: /stop — keep what completed/i,
+    });
+
+    await enterOn(user, stop);
+    await waitFor(() => expect(stops.requests.sent).toBe(1));
+
+    expect(stop).toHaveFocus();
+    expectHeld(stop);
+    expect(stop).toHaveTextContent("Stopping…");
+    await user.keyboard("{Enter}");
+
+    stops.release();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "there is no run numbered 7",
+    );
+    await waitFor(() => expectNotHeld(stop));
+    expect(stop).toHaveFocus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(stops.requests.sent).toBe(2));
+  });
+
+  it("still disables a retry outright where there is no level to plan it in", async () => {
+    mockServer.use(
+      http.get(`${BASE}/levels`, () => HttpResponse.json({ items: [] })),
+    );
+    renderShell("/acquire");
+
+    const retry = await screen.findByRole("button", { name: "Retry 1 failed" });
+
+    expect(retry).toBeDisabled();
+    expectNotHeld(retry);
   });
 });
