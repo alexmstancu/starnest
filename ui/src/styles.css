@@ -2050,7 +2050,9 @@ select.field__control {
   left: 16px;
 }
 
-.switch:disabled {
+/* Held while a change is written and read back looks the same as disabled (NEW-34). */
+.switch:disabled,
+.switch[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -2069,7 +2071,8 @@ select.field__control {
   cursor: pointer;
 }
 
-.arrow:disabled {
+.arrow:disabled,
+.arrow[aria-disabled="true"] {
   border-color: var(--colour-surface-hair);
   color: var(--colour-text-muted);
   opacity: 0.45;

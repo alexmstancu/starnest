@@ -1,8 +1,13 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { mockServer } from "../../../mocks/server";
+import {
+  expectHeld,
+  expectNotHeld,
+  followChromiumFocusFixup,
+} from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
 
 /**
@@ -148,6 +153,8 @@ describe("the source priority panel", () => {
     expect(
       sources.getByRole("button", { name: "Move LLM with web search down" }),
     ).toBeDisabled();
+    // Disabled outright rather than held: nothing is in flight, there is only nowhere to go.
+    expectNotHeld(sources.getByRole("button", { name: "Move Eurostat up" }));
   });
 
   it("reports a refusal to change a source, and keeps the list readable", async () => {
@@ -629,27 +636,28 @@ describe("the source priority panel while a change is being written", () => {
     await waitFor(() => expect(sent).toHaveLength(1));
 
     for (const name of ["Eurostat", "Manual entry", "LLM with web search"]) {
-      expect(
-        sources.getByRole("switch", { name: `Consult ${name}` }),
-      ).toBeDisabled();
+      expectHeld(sources.getByRole("switch", { name: `Consult ${name}` }));
     }
-    expect(
-      sources.getByRole("button", { name: "Move Eurostat down" }),
-    ).toBeDisabled();
-    expect(
+    expectHeld(sources.getByRole("button", { name: "Move Eurostat down" }));
+    expectHeld(
       sources.getByRole("button", { name: "Move LLM with web search up" }),
-    ).toBeDisabled();
+    );
+    // Held, they still take a click -- and send nothing.
+    await user.click(sources.getByRole("switch", { name: "Consult Eurostat" }));
+    await user.click(
+      sources.getByRole("button", { name: "Move LLM with web search up" }),
+    );
 
     release();
 
     await waitFor(() =>
-      expect(
-        sources.getByRole("switch", { name: "Consult Eurostat" }),
-      ).toBeEnabled(),
+      expectNotHeld(sources.getByRole("switch", { name: "Consult Eurostat" })),
     );
-    expect(
+    expectNotHeld(
       sources.getByRole("button", { name: "Move LLM with web search up" }),
-    ).toBeEnabled();
+    );
+    // The move's own two writes, and nothing from the clicks made while it was in flight.
+    expect(sent).toEqual([{ default_priority: 10 }, { default_priority: 50 }]);
   });
 
   it("re-reads the order after a move that failed half way", async () => {
@@ -711,5 +719,200 @@ describe("the source priority panel while a change is being written", () => {
     expect(
       await sources.findByRole("switch", { name: "Consult Eurostat" }),
     ).toHaveAttribute("aria-checked", "true");
+  });
+
+  /**
+   * NEW-34. **Held, never disabled -- and never taken off the page.** Chromium throws focus off
+   * a control the moment it is disabled and does not give it back, and the list was also swapped
+   * for "Loading…" while it was read again after every change: either way a keyboard user who
+   * switched or moved a source was put back on the page. jsdom keeps focus on a disabled control,
+   * which is why these follow Chromium's rule rather than jsdom's.
+   */
+  describe("from the keyboard", () => {
+    beforeEach(() => followChromiumFocusFixup());
+
+    /**
+     * Every source write, recorded and held until the test lets go, then handed on to the
+     * stateful mock, so the order read back afterwards is the one the writes left.
+     */
+    function holdSourceWrites(): {
+      sent: { id: string; body: unknown }[];
+      release: () => void;
+    } {
+      let release = (): void => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const sent: { id: string; body: unknown }[] = [];
+      mockServer.use(
+        http.patch(
+          "/v1/data-sources/:dataSourceId",
+          async ({ params, request }) => {
+            sent.push({
+              id: String(params["dataSourceId"]),
+              body: await request.clone().json(),
+            });
+            await held;
+          },
+        ),
+      );
+      return { sent, release: () => release() };
+    }
+
+    it("keeps focus on a switch while it is written, and a second press sends nothing", async () => {
+      const user = userEvent.setup();
+      const writes = holdSourceWrites();
+      renderShell("/configure");
+      const sources = await panel();
+      const eurostat = await sources.findByRole("switch", {
+        name: "Consult Eurostat",
+      });
+      act(() => eurostat.focus());
+
+      await user.keyboard(" ");
+      await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+      expect(eurostat).toHaveFocus();
+      expectHeld(eurostat);
+      await user.keyboard(" ");
+
+      writes.release();
+
+      await waitFor(() =>
+        expect(eurostat).toHaveAttribute("aria-checked", "false"),
+      );
+      await waitFor(() => expectNotHeld(eurostat));
+      expect(eurostat).toHaveFocus();
+      await user.keyboard(" ");
+      await waitFor(() =>
+        expect(eurostat).toHaveAttribute("aria-checked", "true"),
+      );
+      expect(writes.sent).toEqual([
+        { id: "eurostat", body: { is_enabled: false } },
+        { id: "eurostat", body: { is_enabled: true } },
+      ]);
+    });
+
+    it("keeps focus on Move up while the move is written, and a second press sends nothing", async () => {
+      const user = userEvent.setup();
+      const writes = holdSourceWrites();
+      renderShell("/configure");
+      const sources = await panel();
+      const up = await sources.findByRole("button", {
+        name: "Move LLM with web search up",
+      });
+      act(() => up.focus());
+
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+      expect(up).toHaveFocus();
+      expectHeld(up);
+      await user.keyboard("{Enter}");
+
+      writes.release();
+
+      await waitFor(() =>
+        expect(namesInOrder(sources)).toEqual([
+          "Eurostat",
+          "LLM with web search",
+          "Manual entry",
+        ]),
+      );
+      await waitFor(() => expectNotHeld(up));
+      expect(up).toHaveFocus();
+      await user.keyboard("{Enter}");
+      await waitFor(() =>
+        expect(namesInOrder(sources)[0]).toBe("LLM with web search"),
+      );
+      expect(writes.sent).toEqual([
+        { id: "llm", body: { default_priority: 50 } },
+        { id: "manual", body: { default_priority: 90 } },
+        { id: "llm", body: { default_priority: 10 } },
+        { id: "eurostat", body: { default_priority: 50 } },
+      ]);
+      // First now, so there is nowhere further up to go: disabled outright, not held.
+      expect(up).toBeDisabled();
+      expectNotHeld(up);
+    });
+
+    it("keeps the list on screen and every control held until the order has been read again", async () => {
+      const user = userEvent.setup();
+      const writes = holdSourceWrites();
+      writes.release();
+      let releaseRead = (): void => undefined;
+      const readHeld = new Promise<void>((resolve) => {
+        releaseRead = resolve;
+      });
+      renderShell("/configure");
+      const sources = await panel();
+      const up = await sources.findByRole("button", {
+        name: "Move LLM with web search up",
+      });
+      mockServer.use(
+        http.get("/v1/data-sources", async () => {
+          await readHeld;
+        }),
+      );
+      act(() => up.focus());
+
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(writes.sent).toHaveLength(2));
+
+      // Both writes are in and the order is being read again. The list shown is the one from
+      // before them, so nothing may be computed from it -- but it is still there, and so is
+      // the control the keyboard is on.
+      expect(namesInOrder(sources)).toEqual([
+        "Eurostat",
+        "Manual entry",
+        "LLM with web search",
+      ]);
+      expect(up).toHaveFocus();
+      expectHeld(up);
+      expectHeld(sources.getByRole("switch", { name: "Consult Eurostat" }));
+      await user.keyboard("{Enter}");
+
+      releaseRead();
+
+      await waitFor(() =>
+        expect(namesInOrder(sources)).toEqual([
+          "Eurostat",
+          "LLM with web search",
+          "Manual entry",
+        ]),
+      );
+      await waitFor(() => expectNotHeld(up));
+      expect(up).toHaveFocus();
+      expect(writes.sent).toHaveLength(2);
+    });
+
+    it("lets go of the switch after a refused change, with focus still on it", async () => {
+      const user = userEvent.setup();
+      const reads = countReads();
+      mockServer.use(
+        http.patch("/v1/data-sources/:dataSourceId", () =>
+          HttpResponse.json(
+            { code: "unknown_data_source", message: "no such source" },
+            { status: 422 },
+          ),
+        ),
+      );
+      renderShell("/configure");
+      const sources = await panel();
+      const eurostat = await sources.findByRole("switch", {
+        name: "Consult Eurostat",
+      });
+      act(() => eurostat.focus());
+
+      await user.keyboard(" ");
+
+      expect(await sources.findByRole("alert")).toHaveTextContent(
+        "unknown_data_source",
+      );
+      await waitFor(() => expect(reads.count).toBe(2));
+      await waitFor(() => expectNotHeld(eurostat));
+      expect(eurostat).toHaveFocus();
+      expect(eurostat).toHaveAttribute("aria-checked", "true");
+    });
   });
 });

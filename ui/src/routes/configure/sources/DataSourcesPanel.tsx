@@ -28,10 +28,13 @@ import { advertiseMove, useSourceDrag } from "./useSourceDrag";
 export function DataSourcesPanel() {
   const sources = useDataSources();
   const positions = positionsOf(sources.sources);
-  // A reorder writes several rows one at a time, so any save in flight blocks every control
-  // (UI-07): a gesture started meanwhile would be computed from a list that is partly the old one.
-  const anySaving = sources.saving !== null;
-  const drag = useSourceDrag(sources.sources, sources.reorder, anySaving);
+  // A reorder writes several rows one at a time, so every control is held until a change has
+  // been written and read back (UI-07): a gesture started meanwhile would be computed from a
+  // list that is partly the old one. **Held, never disabled** (NEW-34): Chromium throws focus off
+  // a control the moment it is disabled, so a switch or arrow pressed from the keyboard put the
+  // reader back on the page. A held one keeps focus, says so, and the hook refuses the press.
+  const held = sources.saving !== null;
+  const drag = useSourceDrag(sources.sources, sources.reorder, held);
 
   return (
     <section className="stage" aria-labelledby="data-sources-heading">
@@ -83,7 +86,7 @@ export function DataSourcesPanel() {
                    would take if it were switched back on -- so where it stands is still a
                    decision worth making, and the row that shows no number is exactly the one
                    whose number somebody is setting for later. */
-                draggable={!anySaving}
+                draggable={!held}
                 onDragStart={(event) => {
                   advertiseMove(event.dataTransfer, source.id);
                   drag.start(source.id);
@@ -122,7 +125,7 @@ export function DataSourcesPanel() {
                   aria-checked={source.is_enabled}
                   aria-label={`Consult ${source.name}`}
                   className="switch"
-                  disabled={anySaving}
+                  aria-disabled={held || undefined}
                   title="Consult this source at all"
                   onClick={() =>
                     sources.setEnabled(source.id, !source.is_enabled)
@@ -142,12 +145,12 @@ export function DataSourcesPanel() {
                 </span>
 
                 <span className="source-row__move">
+                  {/* Disabled outright only where there is no neighbour to swap with. */}
                   <button
                     type="button"
                     className="arrow"
-                    disabled={
-                      anySaving || sources.moveTo(source.id, "up") === null
-                    }
+                    disabled={sources.moveTo(source.id, "up") === null}
+                    aria-disabled={held || undefined}
                     title="Higher priority"
                     onClick={() => sources.move(source.id, "up")}
                   >
@@ -159,9 +162,8 @@ export function DataSourcesPanel() {
                   <button
                     type="button"
                     className="arrow"
-                    disabled={
-                      anySaving || sources.moveTo(source.id, "down") === null
-                    }
+                    disabled={sources.moveTo(source.id, "down") === null}
+                    aria-disabled={held || undefined}
                     title="Lower priority"
                     onClick={() => sources.move(source.id, "down")}
                   >
