@@ -173,59 +173,59 @@ async function selectTheScoringSet(page: import("@playwright/test").Page): Promi
  * Opens the pillar an attribute is weighed inside.
  *
  * **A criterion's weight is a share of its pillar's**, so the screen keeps it there. Which
- * pillar holds what belongs to the catalog, so this looks rather than carrying a copy.
+ * pillar holds what belongs to the catalog, so this asks the catalog rather than carrying a
+ * copy -- and a criterion's pillar is its attribute's, by foreign key (`0106`).
+ *
+ * **Opened by the catalog's name, never by a name read off the screen** (NEW-53). The screen
+ * calls each pillar by its id made readable until the catalog's names arrive -- "Economics"
+ * before "Economy" -- so a name read mid-load addressed a row about to be renamed, and the test
+ * waited out its whole timeout for it. A locator built from the catalog's name resolves to the
+ * row the screen settles on, and waits for it.
  */
-async function openPillarOf(
-  page: import("@playwright/test").Page,
+async function openPillarOf(page: Page, attribute: string): Promise<void> {
+  const { pillar } = await catalogEntry(page, attribute);
+  const shown = await pillarName(page, pillar);
+  const row = page
+    .getByRole("region", { name: "Pillar weights" })
+    .getByRole("group", { name: shown, exact: true });
+  const opener = row.getByRole("button", { name: new RegExp(`^${escapeRegExp(shown)}`) });
+  if ((await opener.getAttribute("aria-expanded")) !== "true") {
+    await opener.click();
+  }
+  await (await weightSlider(page, attribute)).waitFor({ state: "visible" });
+}
+
+/** An attribute as the catalog has it: its name, and the pillar it belongs to. */
+async function catalogEntry(
+  page: Page,
   attribute: string,
-): Promise<void> {
-  const weight = await weightSlider(page, attribute);
-  const weights = page.getByRole("region", { name: "Pillar weights" });
-  // **`all()` does not wait.** It reads the rows that exist at this instant, and the criteria
-  // set is still in flight when a test has just navigated -- so the list comes back empty and
-  // the scan below concludes no pillar holds anything.
-  await weights.getByRole("group").first().waitFor({ state: "visible" });
-  // **Names, never indices.** `all()` hands back `nth(i)` locators resolved when they are
-  // used, and opening a pillar inserts its attribute rows into the same region -- so every
-  // index after the one just opened addresses something else. The scan below opens pillars as
-  // it goes, which is exactly the mutation that invalidates them. Each row is addressed by its
-  // accessible name instead, which survives the insertion. (`sanity.spec.ts` carries the same
-  // warning for the ranked table, where opening a row inserts its evidence.)
-  const names: string[] = [];
-  for (const row of await weights.getByRole("group").all()) {
-    names.push((await row.getAttribute("aria-label")) ?? "");
-  }
+): Promise<{ name: string; pillar: string }> {
+  const response = await page.request.get(`/v1/attributes/${attribute}`);
+  expect(
+    response.ok(),
+    `the catalog could not be read for ${attribute}: HTTP ${response.status()}`,
+  ).toBe(true);
+  const { name, pillar } = (await response.json()) as {
+    name: string;
+    pillar: string | null;
+  };
+  // A descriptive attribute has no pillar, and so no weight to open (`reqs.md` 3.0).
+  expect(pillar, `${attribute} belongs to no pillar, so nothing weighs it`).not.toBeNull();
+  return { name, pillar: pillar ?? "" };
+}
 
-  // **The likely pillar first.** An attribute is usually named after the pillar it is in --
-  // `country.housing_cost_overburden_rate` is housing -- so trying that one first turns a scan
-  // of eleven into a single click. It is a shortcut, not a rule: anything it misses is found
-  // by the scan that follows, which is why the pillar is never written down here.
-  //
-  // **Compared without case.** The attribute is a catalog id and the pillar is now a display
-  // name -- `housing` against "Housing" -- so a case-sensitive test matched nothing the day
-  // `0484` gave the pillars real names, and the shortcut silently stopped shortening anything.
-  names.sort(
-    (left, right) =>
-      Number(attribute.includes(right.toLowerCase())) -
-      Number(attribute.includes(left.toLowerCase())),
-  );
+/** What the screen calls a pillar once the catalog has answered: "Economy", not "Economics". */
+async function pillarName(page: Page, pillar: string): Promise<string> {
+  const response = await page.request.get("/v1/pillars");
+  expect(response.ok(), `the pillars could not be read: HTTP ${response.status()}`).toBe(true);
+  const { items } = (await response.json()) as { items: { id: string; name: string }[] };
+  const found = items.find((each) => each.id === pillar);
+  expect(found, `the catalog has no pillar ${pillar}`).toBeDefined();
+  return found?.name ?? pillar;
+}
 
-  for (const pillar of names) {
-    const row = weights.getByRole("group", { name: pillar, exact: true });
-    const opener = row.getByRole("button", { name: new RegExp(`^${pillar}`) });
-    if ((await opener.getAttribute("aria-expanded")) !== "true") {
-      await opener.click();
-    }
-    // **Waited for, not counted.** `count()` reads the DOM as it is; opening a pillar is a
-    // render away, so a bare count says "not here" for a pillar that is about to hold it.
-    try {
-      await weight.waitFor({ state: "visible", timeout: 1200 });
-      return;
-    } catch {
-      // Not this pillar. Try the next.
-    }
-  }
-  throw new Error(`no pillar on screen holds ${attribute}`);
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
@@ -233,16 +233,10 @@ async function openPillarOf(
  *
  * **"Weight for" the attribute's catalog name, never its id** (2a13d73): an accessible name is
  * rendered text, and the design keeps ids out of rendered text. The name is read from the
- * catalog rather than written here, because a copy goes stale the way the id did (NEW-51) --
- * and stale, it fails as "no pillar on screen holds" an attribute that is right there.
+ * catalog rather than written here, because a copy goes stale the way the id did (NEW-51).
  */
 async function weightSlider(page: Page, attribute: string): Promise<Locator> {
-  const response = await page.request.get(`/v1/attributes/${attribute}`);
-  expect(
-    response.ok(),
-    `the catalog could not be read for ${attribute}: HTTP ${response.status()}`,
-  ).toBe(true);
-  const { name } = (await response.json()) as { name: string };
+  const { name } = await catalogEntry(page, attribute);
   return page.getByRole("slider", { name: `Weight for ${name}`, exact: true });
 }
 
