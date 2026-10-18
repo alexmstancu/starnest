@@ -48,6 +48,19 @@ function focusThePage(): void {
 }
 
 /**
+ * **A slider holds its value snapped to its step** in Chromium (HTML's step-mismatch rule for a
+ * range input): handed a rebalanced 29.17 with a step of 0.5, it reads back 29. jsdom keeps
+ * 29.17, so a test of what a slider sends with nobody having moved it has to snap it first --
+ * or it cannot see a release that sends the snapped weight nobody chose (NEW-43).
+ */
+export function snapToStep(slider: HTMLInputElement): void {
+  const step = Number(slider.step);
+  const lowest = Number(slider.min);
+  const steps = Math.round((Number(slider.value) - lowest) / step);
+  slider.value = String(lowest + steps * step);
+}
+
+/**
  * ArrowRight pressed on whatever has focus, handled the way a browser handles it on a slider.
  *
  * user-event sends the key and leaves a range input's value alone, so the step a browser takes

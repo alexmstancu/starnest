@@ -265,11 +265,13 @@ function CriterionRow({
   // so a readout taken from the slider would print 29.0 for a weight that is 29.17 -- the
   // screen contradicting the figure it was given.
   const [moving, setMoving] = useState(false);
-  // **This gesture's weight has gone** (UI-05). A gesture ends with up to four events, and the
-  // slider still hears them while its save runs: each one used to send the weight again. Cleared
-  // by the next movement, which is the next gesture. A ref, because the four can arrive in one
-  // tick.
-  const sent = useRef(false);
+  // **Released once, and only after it moved** (UI-05, NEW-43). A gesture ends with up to four
+  // events, and the slider still hears them while its save runs: each one used to send the weight
+  // again. And a release with nothing moved before it -- focus arriving by Tab, a thumb clicked and
+  // let go -- used to send what the slider holds, which is the stored weight snapped to its step
+  // (Chromium reads a rebalanced 29.17 back as 29): a weight nobody chose. Set by a movement and
+  // spent by the release that follows it. A ref, because the four can arrive in one tick.
+  const unreleased = useRef(false);
   // Closed by default: forty-one criteria with their scales open at once is a screen nobody
   // can read. Local state, because which row is open is this component's own business and
   // nothing outside it needs to know.
@@ -310,10 +312,11 @@ function CriterionRow({
    * previous render saw.
    */
   function commit(asked: string) {
-    // The same release arriving again -- its answer ends the gesture, so this does not -- or a
-    // release while a write is in flight, which no gesture can have started: the slider takes
-    // no movement then.
-    if (sent.current || held) return;
+    // A release with no movement before it, or the same release arriving again -- its answer
+    // ends the gesture, so this does not -- or one while a write is in flight, which no gesture
+    // can have started: the slider takes no movement then.
+    if (!unreleased.current || held) return;
+    unreleased.current = false;
     setMoving(false);
     // A range input always holds a number, so this never fires -- it is here because
     // `weightFrom` is honest about text that might not be one, and silently sending `NaN`
@@ -325,7 +328,6 @@ function CriterionRow({
       onDragEnd();
       return;
     }
-    sent.current = true;
     onSave(criterion.attribute, moved);
   }
 
@@ -377,7 +379,7 @@ function CriterionRow({
             aria-label={`Weight for ${title}`}
             onChange={(event) => {
               if (held) return;
-              sent.current = false;
+              unreleased.current = true;
               setMoving(true);
               setTyped(event.target.value);
               // The panel is told as well as this row, because it is the only thing that knows

@@ -2,12 +2,14 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
+import { makeCriteriaSetDetails } from "../../../mocks/fixtures";
 import { mockServer } from "../../../mocks/server";
 import {
   expectHeld,
   expectNotHeld,
   followChromiumFocusFixup,
   pressArrowRight,
+  snapToStep,
 } from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
 
@@ -810,3 +812,81 @@ describe("the pillar weights panel while a change is being saved", () => {
     });
   });
 });
+
+/**
+ * NEW-43. **A slider nobody moved sends nothing.** A rebalance leaves weights between two steps
+ * of the slider, and Chromium holds a slider's value snapped to its step -- so a release with no
+ * movement before it (focus arriving by Tab, a thumb clicked and let go) used to send the snapped
+ * weight, which nobody chose, and rebalance every other pillar around it.
+ */
+describe("a pillar slider nobody moved", () => {
+  beforeEach(() => {
+    const set = makeCriteriaSetDetails()["default"];
+    mockServer.use(
+      http.get(`${BASE}/criteria-sets/:criteriaSetId`, () =>
+        HttpResponse.json({
+          ...set,
+          pillar_weights: [
+            { pillar: "economics", level: "country", weight: 40.2, weight_locked: false },
+            { pillar: "housing", level: "country", weight: 34.8, weight_locked: false },
+            { pillar: "safety", level: "country", weight: 25, weight_locked: false },
+          ],
+        }),
+      ),
+    );
+  });
+
+  /** Economy's slider as Chromium holds it: 40.2 snapped to the step, which reads 40. */
+  async function snappedEconomy(): Promise<HTMLInputElement> {
+    renderShell("/configure");
+    await waitFor(() => expect(readingOf("Economy")).toBe("40.2%"));
+    const slider = weightBox("Economy");
+    snapToStep(slider);
+    expect(slider.value, "the premise: the slider reads a weight nobody chose").toBe("40");
+    return slider;
+  }
+
+  /** A real gesture on another pillar, so anything the first could have sent is in before it. */
+  async function thenAMovedWeight(sent: unknown[]): Promise<void> {
+    await setWeight("Safety", "30");
+    await waitFor(() => expect(sent.at(-1)).toEqual({ weight: 30 }));
+  }
+
+  it("sends nothing when focus arrives on it and leaves again", async () => {
+    const sent = recordWeightRequests();
+    const slider = await snappedEconomy();
+
+    // Tab lands here: the key comes up on the slider, and focus later moves on.
+    fireEvent.keyUp(slider, { key: "Tab" });
+    fireEvent.blur(slider);
+
+    expectNotHeld(slider);
+    await thenAMovedWeight(sent);
+    expect(sent).toEqual([{ weight: 30 }]);
+  });
+
+  it("sends nothing when its thumb is clicked and let go without moving", async () => {
+    const sent = recordWeightRequests();
+    const slider = await snappedEconomy();
+
+    fireEvent.pointerUp(slider);
+    fireEvent.mouseUp(slider);
+
+    expectNotHeld(slider);
+    await thenAMovedWeight(sent);
+    expect(sent).toEqual([{ weight: 30 }]);
+  });
+
+  it("still sends the weight a key moved it to, once", async () => {
+    const user = userEvent.setup();
+    const sent = recordWeightRequests();
+    const slider = await snappedEconomy();
+    slider.focus();
+
+    await pressArrowRight(user);
+    fireEvent.blur(slider);
+
+    await waitFor(() => expect(sent).toEqual([{ weight: 40.5 }]));
+  });
+});
+

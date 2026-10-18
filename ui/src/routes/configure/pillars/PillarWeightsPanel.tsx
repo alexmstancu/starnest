@@ -240,10 +240,13 @@ function PillarRow({
   // screen contradicting the figure it was given.
   const [moving, setMoving] = useState(false);
 
-  // **This gesture's weight has gone** (UI-05). A gesture ends with up to four events, and each
-  // used to send the weight again while the first answer was on its way. Cleared by the next
-  // movement, which is the next gesture. A ref, because the four can arrive in one tick.
-  const sent = useRef(false);
+  // **Released once, and only after it moved** (UI-05, NEW-43). A gesture ends with up to four
+  // events, and each used to send the weight again while the first answer was on its way. And a
+  // release with nothing moved before it -- focus arriving by Tab, a thumb clicked and let go --
+  // used to send what the slider holds, which is the stored weight snapped to its step (Chromium
+  // reads a rebalanced 29.17 back as 29): a weight nobody chose. Set by a movement and spent by
+  // the release that follows it. A ref, because the four can arrive in one tick.
+  const unreleased = useRef(false);
 
   // A rebalance moves this row's weight without this row having been dragged -- the server's
   // on the way back, and the preview's while another row's pointer is down -- so the slider
@@ -277,10 +280,11 @@ function PillarRow({
    * previous render saw and deciding nothing moved.
    */
   function commit(asked: string) {
-    // The same release arriving again -- its answer ends the gesture, so this does not -- or a
-    // release while a write is in flight, which no gesture can have started: the slider takes
-    // no movement then.
-    if (sent.current || saving) return;
+    // A release with no movement before it, or the same release arriving again -- its answer
+    // ends the gesture, so this does not -- or one while a write is in flight, which no gesture
+    // can have started: the slider takes no movement then.
+    if (!unreleased.current || saving) return;
+    unreleased.current = false;
     setMoving(false);
     // A range input always holds a number, so this never fires -- it is here because
     // `weightFrom` is honest about text that might not be one, and silently sending `NaN`
@@ -292,7 +296,6 @@ function PillarRow({
       onDragEnd();
       return;
     }
-    sent.current = true;
     void onMove(weight.pillar, moved);
   }
 
@@ -361,7 +364,7 @@ function PillarRow({
           aria-label={`${pillarName(names, weight.pillar)} weight`}
           onChange={(event) => {
             if (saving) return;
-            sent.current = false;
+            unreleased.current = true;
             setMoving(true);
             setTyped(event.target.value);
             // The panel is told as well as this row, because it is the only thing that knows
