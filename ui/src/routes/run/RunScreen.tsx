@@ -252,9 +252,10 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           are attributes the catalog says a person may answer. The two lists never overlap. */}
       {levelId !== null && <OpenToHandEntry level={levelId} />}
 
-      {run.history.status === "ready" && (
-        <AcquisitionDiffPanel runs={run.history.data.items} />
-      )}
+      {/* **From the runs as last read, not from the history's state** (NEW-11): every act reads
+          the history again, and drawn only while it was ready the diff left the screen for each
+          re-read and came back with nothing chosen. */}
+      {run.runs !== null && <AcquisitionDiffPanel runs={run.runs} />}
 
       <h3 className="panel__heading">Every acquisition so far</h3>
       {run.history.status === "loading" && (

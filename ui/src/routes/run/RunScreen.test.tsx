@@ -7,10 +7,11 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse, delay, http } from "msw";
 import { describe, expect, it } from "vitest";
 import {
   PAID_RUN_PLAN,
+  RUNS,
   RUN_PLAN,
   STARTED_RUN_DETAIL,
   STORED_VALUES,
@@ -1166,6 +1167,229 @@ describe("what changed between two acquisitions", () => {
 
     expect(
       await panel.findByText(/neither acquisition produced a figure/i),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * NEW-11. **The two acquisitions chosen in the diff stay chosen.** Every act on this screen reads
+ * the history again as it ends, and the diff is drawn from that list -- so while the list was
+ * read again the diff left the screen, and it came back with nothing chosen. Comparing two
+ * acquisitions did not survive an estimate, a start, a refresh, an opening or a stop.
+ */
+describe("the two acquisitions chosen in the diff", () => {
+  /**
+   * Answers each read of the history with one more run than the read before -- 9 on the second,
+   * 10 on the third -- so a re-read that has landed is something on screen to wait for. The
+   * sidebar's and the strip's one-run reads fall through to the mock's own answer.
+   *
+   * **A re-read takes a round trip, as it does over a network.** Answered in the same breath it
+   * was asked, a re-read never showed its loading state at all, and the diff never left the
+   * screen -- which is how this passed every test while losing the reader's choice in a browser.
+   */
+  function aHistoryThatGrowsOnEveryRead(): void {
+    let reads = 0;
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, async ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        if (query.get("limit") === "1") return;
+        reads += 1;
+        if (reads > 1) await delay(20);
+        const added: Run[] = [];
+        for (let id = 7 + reads; id >= 9; id -= 1) {
+          added.push({
+            ...RUNS[0]!,
+            id,
+            started_at: `2026-09-${String(id + 4)}T08:00:00Z`,
+          });
+        }
+        const runs = [...added, ...RUNS];
+        const offset = Number(query.get("offset") ?? 0);
+        const limit = Number(query.get("limit") ?? runs.length);
+        return HttpResponse.json({
+          items: runs.slice(offset, offset + limit),
+          total: runs.length,
+        });
+      }),
+    );
+  }
+
+  /** Waits until the history's `nth` read has reached the screen. */
+  async function theHistoryRead(nth: number): Promise<void> {
+    await screen.findByRole("rowheader", { name: String(7 + nth) });
+  }
+
+  function theDiff() {
+    return within(
+      screen.getByRole("region", {
+        name: /what changed between two acquisitions/i,
+      }),
+    );
+  }
+
+  /** Runs 5 and 7 chosen, and their comparison on screen. */
+  async function fiveAgainstSeven(): Promise<void> {
+    await screen.findByRole("region", {
+      name: /what changed between two acquisitions/i,
+    });
+    await userEvent.selectOptions(
+      theDiff().getByRole("combobox", { name: /earlier acquisition/i }),
+      "5",
+    );
+    await userEvent.selectOptions(
+      theDiff().getByRole("combobox", { name: /later acquisition/i }),
+      "7",
+    );
+    await theDiff().findByRole("row", { name: /Total effective tax rate/i });
+  }
+
+  function expectFiveAgainstSeven(): void {
+    const diff = theDiff();
+    expect(
+      diff.getByRole("combobox", { name: /earlier acquisition/i }),
+    ).toHaveValue("5");
+    expect(
+      diff.getByRole("combobox", { name: /later acquisition/i }),
+    ).toHaveValue("7");
+    expect(
+      diff.getByRole("row", { name: /Total effective tax rate/i }),
+    ).toHaveTextContent("newly acquired");
+  }
+
+  it("keeps them through an estimate", async () => {
+    aHistoryThatGrowsOnEveryRead();
+    renderShell("/acquire");
+    await fiveAgainstSeven();
+
+    await estimate();
+    await theHistoryRead(2);
+
+    expectFiveAgainstSeven();
+  });
+
+  it("keeps them through a start", async () => {
+    aHistoryThatGrowsOnEveryRead();
+    renderShell("/acquire");
+    await fiveAgainstSeven();
+    await estimate();
+    await theHistoryRead(2);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /start this acquisition/i }),
+    );
+    await theHistoryRead(3);
+
+    expectFiveAgainstSeven();
+  });
+
+  it("keeps them through opening another acquisition", async () => {
+    aHistoryThatGrowsOnEveryRead();
+    renderShell("/acquire");
+    await fiveAgainstSeven();
+
+    await openFromHistory("6");
+    await theHistoryRead(2);
+
+    expect(
+      screen.getByRole("region", { name: /acquisition 6/i }),
+    ).toBeInTheDocument();
+    expectFiveAgainstSeven();
+  });
+
+  it("keeps them through a refresh of the card", async () => {
+    aHistoryThatGrowsOnEveryRead();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    await fiveAgainstSeven();
+
+    await userEvent.click(card.getByRole("button", { name: "Refresh" }));
+    await theHistoryRead(2);
+
+    expectFiveAgainstSeven();
+  });
+
+  it("keeps them through a stop", async () => {
+    aRunWhoseStopIsHeld().release();
+    aHistoryThatGrowsOnEveryRead();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    await fiveAgainstSeven();
+
+    await userEvent.click(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+    await theHistoryRead(2);
+
+    expectFiveAgainstSeven();
+  });
+
+  it("keeps them on screen while the history is being read again", async () => {
+    const answer = heldAnswer();
+    let reads = 0;
+    let waiting = false;
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, async ({ request }) => {
+        if (new URL(request.url).searchParams.get("limit") === "1") return;
+        reads += 1;
+        if (reads === 1) return;
+        waiting = true;
+        await answer.held;
+      }),
+    );
+    renderShell("/acquire");
+    await fiveAgainstSeven();
+
+    await estimate();
+    await waitFor(() => expect(waiting).toBe(true));
+
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expectFiveAgainstSeven();
+
+    answer.release();
+    await screen.findByRole("rowheader", { name: "7" });
+    expectFiveAgainstSeven();
+  });
+
+  it("keeps them when the history cannot be read again", async () => {
+    let reads = 0;
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, ({ request }) => {
+        if (new URL(request.url).searchParams.get("limit") === "1") return;
+        reads += 1;
+        if (reads === 1) return;
+        return HttpResponse.json(
+          { code: "internal_error", message: "the history could not be read" },
+          { status: 500 },
+        );
+      }),
+    );
+    renderShell("/acquire");
+    await fiveAgainstSeven();
+
+    await estimate();
+
+    expect(
+      await screen.findByText("the history could not be read"),
+    ).toBeInTheDocument();
+    expectFiveAgainstSeven();
+  });
+
+  it("offers the acquisitions the history lists once it has been read again", async () => {
+    aHistoryThatGrowsOnEveryRead();
+    renderShell("/acquire");
+    await fiveAgainstSeven();
+
+    await estimate();
+    await theHistoryRead(2);
+
+    expect(
+      within(
+        theDiff().getByRole("combobox", { name: /later acquisition/i }),
+      ).getByRole("option", { name: /^acquisition 9 —/i }),
     ).toBeInTheDocument();
   });
 });

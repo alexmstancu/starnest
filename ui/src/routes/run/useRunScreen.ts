@@ -76,6 +76,11 @@ export interface RunScreenState {
   busy: RunAct | null;
   failure: unknown;
   history: Resource<{ items: Run[]; total: number }>;
+  /**
+   * Every run as last read: kept while the history is read again, so what is drawn from it --
+   * and what the reader chose there -- stays on screen (NEW-11). Null until the first read.
+   */
+  runs: Run[] | null;
   reloadHistory: () => void;
   dismissFailure: () => void;
   estimate: (levelId: string) => void;
@@ -199,6 +204,16 @@ export function useRunScreen(): RunScreenState {
     void watch(UNCLAIMED, newest.id).catch(() => undefined);
   }, [runs, watch, unclaimed]);
 
+  /**
+   * **The runs as last read, kept while they are read again** (NEW-11). Every act reads the
+   * history again as it ends, and a re-read has no list until it answers -- so the diff, drawn
+   * from the list, left the screen and came back with nothing chosen. A run is never deleted, so
+   * the list read last stays true until the next one lands; the history table still says it is
+   * reading, and still reports a re-read that failed.
+   */
+  const [lastRuns, setLastRuns] = useState<Run[] | null>(null);
+  if (runs !== null && runs !== lastRuns) setLastRuns(runs);
+
   return {
     plan,
     planOrigin,
@@ -207,6 +222,7 @@ export function useRunScreen(): RunScreenState {
     busy,
     failure,
     history: history.resource,
+    runs: runs ?? lastRuns,
     reloadHistory: history.reload,
     dismissFailure: () => setFailure(null),
     estimate: (levelId) =>
