@@ -20,6 +20,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi import FastAPI
+from pydantic import ValidationError
 
 from starnest.data import Attribute, RatioParameters, ValueType
 from starnest.main import (
@@ -249,6 +250,8 @@ class TestWiringTheLlmPath:
             "LLM_USD_PER_WEB_SEARCH",
             "EUR_USD_RATE",
             "LLM_INPUT_TOKENS_PER_CALL",
+            "LLM_TIMEOUT_SECONDS",
+            "LLM_MAX_RETRIES",
         ):
             monkeypatch.delenv(name, raising=False)
 
@@ -313,6 +316,51 @@ class TestWiringTheLlmPath:
 
         assert model is not None
 
+    def test_the_client_gives_up_before_the_proxy_and_never_retries_by_itself(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """NEW-04. The SDK's own defaults -- 600 s a call and two automatic retries -- outlast
+        the proxy's 300 s for research and can hold a run for half an hour; and a retry after a
+        timeout can bill a second time for an answer the first call may already have paid for.
+        """
+        made = _record_the_clients_made(monkeypatch)
+
+        _the_model(self.a_configured_environment())
+
+        (settings,) = made
+        assert (settings["timeout"], settings["max_retries"]) == (240, 0)
+
+    def test_the_limits_are_the_environment_s_to_change(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        made = _record_the_clients_made(monkeypatch)
+
+        _the_model(self.a_configured_environment(llm_timeout_seconds=90, llm_max_retries=1))
+
+        (settings,) = made
+        assert (settings["timeout"], settings["max_retries"]) == (90, 1)
+
+    def test_the_limits_are_read_from_their_variables(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "120")
+        monkeypatch.setenv("LLM_MAX_RETRIES", "2")
+
+        environment = self.an_environment()
+
+        assert (environment.llm_timeout_seconds, environment.llm_max_retries) == (120, 2)
+
+    @pytest.mark.parametrize(
+        ("limit", "value"),
+        [("llm_timeout_seconds", 0), ("llm_timeout_seconds", -30), ("llm_max_retries", -1)],
+        ids=["no time at all", "a negative time", "a negative retry count"],
+    )
+    def test_a_limit_that_cannot_hold_refuses_the_boot(self, limit: str, value: int) -> None:
+        """Technical configuration that cannot mean anything stops the start, as a missing
+        database does, rather than reaching the SDK as a call that fails at once."""
+        with pytest.raises(ValidationError, match=limit):
+            self.an_environment(**{limit: value})
+
     def test_the_configured_path_registers_the_employers_source(self) -> None:
         sources = _the_paid_sources(self.a_configured_environment())
 
@@ -360,6 +408,19 @@ class TestWiringTheLlmPath:
             )
 
         assert "sk-ant-a-key-that-must-not-appear" not in caplog.text
+
+
+def _record_the_clients_made(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    """Stand in for the SDK's client, recording how each one was made and connecting nowhere."""
+    made: list[dict[str, object]] = []
+
+    class RecordingClient:
+        def __init__(self, **settings: object) -> None:
+            made.append(settings)
+            self.messages = object()
+
+    monkeypatch.setattr("anthropic.AsyncAnthropic", RecordingClient)
+    return made
 
 
 class TestTheFallbackDeclaration:

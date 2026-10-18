@@ -81,6 +81,20 @@ class Environment(BaseSettings):
         description="Which model the LLM path asks (reqs.md 6.10). A name rather than a "
         "hardcoded constant, because the best model for the money changes.",
     )
+    llm_timeout_seconds: float = Field(
+        default=240,
+        gt=0,
+        description="How long one call to the model may take before it is abandoned (NEW-04). "
+        "Under the proxy's 300 s for research, so a call gives up before the page waiting on "
+        "it does; the SDK's own 600 s outlasted it.",
+    )
+    llm_max_retries: int = Field(
+        default=0,
+        ge=0,
+        description="How many times the SDK retries a failed call by itself. None by default "
+        "(NEW-04): a retry after a timeout can bill a second time for an answer the first call "
+        "may already have paid for, and two of them held a run for half an hour.",
+    )
     llm_input_usd_per_mtok: Decimal | None = Field(
         default=None,
         description="US dollars per million input tokens, exactly as Anthropic's pricing page "
@@ -450,7 +464,11 @@ def _the_model(environment: "Environment") -> object | None:
     # On the record, because a spend measured with an unknown rate is a spend nobody can check.
     boot.info("llm prices: %s", pricing.describe())
     return LlmWithSearch(
-        AsyncAnthropic(api_key=environment.anthropic_api_key).messages,
+        AsyncAnthropic(
+            api_key=environment.anthropic_api_key,
+            timeout=environment.llm_timeout_seconds,
+            max_retries=environment.llm_max_retries,
+        ).messages,
         model=environment.llm_model,
         pricing=pricing,
         input_tokens_per_call=environment.llm_input_tokens_per_call,
