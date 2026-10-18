@@ -408,6 +408,38 @@ describe("the household panel while a save is in flight", () => {
 });
 
 /**
+ * UI-26. **The citizenship picker adds rather than replaces**, so it is the one used most from
+ * the keyboard: tab into its list, choose, and go on to the next passport.
+ */
+describe("the household panel from the keyboard", () => {
+  it("adds a passport chosen from the list, and leaves the keyboard in the picker", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    const citizenships = screen.getByRole("combobox", { name: "Citizenships" });
+    await user.click(citizenships);
+    await user.type(citizenships, "Port");
+
+    await user.tab();
+    expect(
+      within(screen.getByRole("listbox", { name: "Citizenships" })).getByRole(
+        "option",
+        { name: "Portugal" },
+      ),
+    ).toHaveFocus();
+    await user.keyboard("{Enter}");
+
+    expect(
+      await within(
+        screen.getByRole("list", { name: /citizenships held/i }),
+      ).findByText("Portugal"),
+    ).toBeInTheDocument();
+    expect(citizenships).toHaveFocus();
+    expect(screen.queryByRole("listbox", { name: "Citizenships" })).toBeNull();
+  });
+});
+
+/**
  * UI-27. **The home country and the citizenships are chosen from the roster**, so a roster that
  * could not be read left two required pickers offering nothing, with no word as to why.
  */

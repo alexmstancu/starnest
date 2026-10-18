@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import {
   type CandidateOption,
   chosenName,
@@ -15,9 +15,14 @@ import {
  * all went in, and the save either failed at the server or recorded a country that does not
  * exist. Typing now only narrows the list; the stored value changes when an option is chosen.
  *
- * **Leaving a half-typed name discards it.** On blur the box goes back to showing whatever is
- * actually stored, so the screen never displays a choice that was not made. That is the whole
- * difference between a filter and a field.
+ * **Leaving a half-typed name discards it.** When focus leaves the picker the box goes back to
+ * showing whatever is actually stored, so the screen never displays a choice that was not made.
+ * That is the whole difference between a filter and a field.
+ *
+ * **The picker is the box and its list together** (UI-26). The options are tab stops, so Tab
+ * from the box onto one is not leaving: the list used to close 120 ms after the box lost focus
+ * to anything, its own options included, and took the option Tab had just reached off the page
+ * with the keyboard on it. Choosing, or Escape, puts focus back in the box before the list goes.
  */
 export function CandidateField({
   id,
@@ -42,30 +47,23 @@ export function CandidateField({
   const listId = useId();
   const [typed, setTyped] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const blurring = useRef<number | undefined>(undefined);
-
-  // **The blur timer has to be cancelled when this unmounts.** It calls `setState` 120ms later,
-  // and nothing stopped it: in a test that fires blur and asserts, the update lands outside
-  // `act` and React says so; in a full suite it fires after jsdom has been torn down and
-  // crashes with `ReferenceError: window is not defined`, which vitest reports as "this might
-  // cause false positive tests". Both were already happening and scrolling past a green build.
-  // In a browser it is a smaller fault of the same kind -- a state update on a component the
-  // reader has navigated away from.
-  useEffect(
-    () => () => {
-      if (blurring.current !== undefined) window.clearTimeout(blurring.current);
-    },
-    [],
-  );
+  const box = useRef<HTMLInputElement>(null);
 
   const shown = typed ?? chosenName(options, value);
   const offered = matching(options, typed ?? "");
   const stranger = isAStranger(options, value);
 
-  function choose(option: CandidateOption): void {
-    onChange(option.id);
+  function close(): void {
     setTyped(null);
     setOpen(false);
+  }
+
+  function choose(option: CandidateOption): void {
+    onChange(option.id);
+    // Before the list goes: an option chosen from the keyboard holds focus, and closing the list
+    // would take it -- and the keyboard -- off the page.
+    box.current?.focus();
+    close();
   }
 
   return (
@@ -73,8 +71,23 @@ export function CandidateField({
       <label className="field__label" htmlFor={id}>
         {label}
       </label>
-      <div className="combo">
+      <div
+        className="combo"
+        onBlur={(event) => {
+          const stillInside =
+            event.relatedTarget instanceof Node &&
+            event.currentTarget.contains(event.relatedTarget);
+          if (!stillInside) close();
+        }}
+        onKeyDown={(event) => {
+          // From the box or from an option, and either way focus ends in the box.
+          if (event.key !== "Escape") return;
+          box.current?.focus();
+          close();
+        }}
+      >
         <input
+          ref={box}
           id={id}
           className="field__control"
           role="combobox"
@@ -91,19 +104,9 @@ export function CandidateField({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          // **A click on an option is a blur first.** Closing the list on blur alone would
-          // unmount the option before its click landed, so the list stays up for a tick.
-          onBlur={() => {
-            blurring.current = window.setTimeout(() => {
-              setTyped(null);
-              setOpen(false);
-            }, 120);
-          }}
+          // A choice leaves focus in the box, so a click on it is what opens the list again.
+          onClick={() => setOpen(true)}
           onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              setTyped(null);
-              setOpen(false);
-            }
             if (event.key === "Enter" && offered.length === 1 && offered[0]) {
               event.preventDefault();
               choose(offered[0]);
@@ -126,10 +129,10 @@ export function CandidateField({
                     }
                     role="option"
                     aria-selected={option.id === value}
-                    onMouseDown={() => {
-                      // Before the blur timer, so choosing survives the focus leaving.
-                      window.clearTimeout(blurring.current);
-                    }}
+                    // **The box keeps focus while the mouse chooses**, so a click never leaves the
+                    // picker and needs no grace period -- and Safari, which does not focus a
+                    // clicked button, is not left closing the list under the click.
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={() => choose(option)}
                   >
                     {option.name}
