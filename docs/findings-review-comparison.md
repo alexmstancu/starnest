@@ -21,6 +21,8 @@ The table preserves the original IDs, order, severity labels, and both independe
 
 **Round 2 review (2026-10-18):** four independent agents re-checked the round. BE-31 moves to PARTIAL: its forbidden import is gone and guarded, but the whole import table is still not enforced, which the plan left for later. The column now reads **55 FIXED, 5 PARTIAL, 25 NOT_FIXED, 5 CLOSED, 1 N/A**. What the review found, and the fixes that followed, are in [Round 2 review](#round-2-review-2026-10-18).
 
+**After the other agent's fixes (2026-10-18):** its ST-02, BE-19 and ST-09 were checked against the code and are FIXED; UI-23 is FIXED too, because NEW-51 was UI-23 found again by running the browser suite. The column now reads **59 FIXED, 5 PARTIAL, 21 NOT_FIXED, 5 CLOSED, 1 N/A**. Details in [The other agent's fixes, checked](#the-other-agents-fixes-checked-2026-10-18).
+
 | nr | finding_id | finding_summary | severity | gpt-6-astra | claude-opus-5 | action | decision | fix_status |
 |---:|---|---|---|---|---|---|---|---|
 | 1 | UI-01 | nginx's 60-second read timeout can interrupt synchronous paid gate research before its result and actual cost reach the browser. Continued work after disconnection was not runtime-verified. | High | REAL | REAL | no-op | REAL | PARTIAL |
@@ -45,7 +47,7 @@ The table preserves the original IDs, order, severity labels, and both independe
 | 20 | UI-20 | External-score rows omit reference and retrieval dates, so users cannot distinguish edition age despite the provenance requirement. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 21 | UI-21 | Repeat folding ignores quotes and citations, hiding distinct evidence behind observations with equal numeric payloads. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 22 | UI-22 | Acquisition diff decides whether measurements changed by comparing rounded display strings rather than underlying payloads. | Low | REAL | REAL | no-op | REAL | FIXED |
-| 23 | UI-23 | Browser-gate selectors expect obsolete attribute-ID labels and comparison markup that disagree with the current product. This is a test-suite defect, not proof of broken product behavior. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 23 | UI-23 | Browser-gate selectors expect obsolete attribute-ID labels and comparison markup that disagree with the current product. This is a test-suite defect, not proof of broken product behavior. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 24 | UI-24 | Acquire does not poll its displayed running/stopping report; it stays stale until manual Refresh despite the live-progress requirement. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 25 | UI-25 | Clearing comparison focus produces an empty string that leaves Compare enabled, but submission silently does nothing. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 26 | UI-26 | Tabbing into a household-picker option starts a blur timer that closes the list and removes the focused option. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
@@ -74,7 +76,7 @@ The table preserves the original IDs, order, severity labels, and both independe
 | 49 | BE-16 | A legally configured zero cap is already exhausted at zero spend and halts an entirely free sweep after its first work. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 50 | BE-17 | Billed empty gate-research answers lose their cost and call count when converted to failed results, making the research cap ineffective on that path. | High | REAL | REAL | no-op | REAL | FIXED |
 | 51 | BE-18 | Negative configured prices or token estimates can understate spending and compromise the cap model. Astra separately narrows the original non-finite configuration claim. | Medium | REAL | REAL | no-op | REAL | FIXED |
-| 52 | BE-19 | Completed paid candidate outcomes remain buffered until an attribute fetch returns, so hard death can lose earlier completed answers and failures. | High | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 52 | BE-19 | Completed paid candidate outcomes remain buffered until an attribute fetch returns, so hard death can lose earlier completed answers and failures. | High | REAL | REAL | no-op | REAL | FIXED |
 | 53 | BE-20 | Some parser/conversion exceptions escape contextual source handling, abort remaining acquisition without recording the current failed item. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 54 | BE-21 | Loose request/domain validation boundaries can produce 500s, and ordinary framework validation errors do not use the promised uniform error body. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 55 | BE-22 | Unvalidated rename/duplicate copies can persist an empty-name criteria set that subsequent validated reads cannot load. | High | REAL | REAL | no-op | REAL | FIXED |
@@ -95,14 +97,14 @@ The table preserves the original IDs, order, severity labels, and both independe
 | 70 | BE-38 | Backend coverage combines line and branch percentages into one floor, allowing one metric below the separately promised threshold. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 71 | BE-39 | Attribute responses serve only source-priority overrides rather than the contractually resolved order including remaining global sources. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 72 | ST-01 | The running-run check and insertion are not atomic, so concurrent starts can create multiple active acquisitions and duplicate financial work. | High | REAL | REAL | no-op | REAL | FIXED |
-| 73 | ST-02 | Whole-set read/modify/replace has no stale-version protection, allowing one successful edit to erase an unrelated concurrent decision. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 73 | ST-02 | Whole-set read/modify/replace has no stale-version protection, allowing one successful edit to erase an unrelated concurrent decision. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 74 | ST-03 | Career retirement removes posting weights from every profile but compensates only named defaults, potentially invalidating customized or duplicated sets during upgrade. | High | REAL | REAL | no-op | REAL | FIXED |
 | 75 | ST-04 | Normalisation migrations overwrite custom fixed interpretations or violate valid target-range constraints, silently changing choices or blocking upgrade. | Medium | REAL | REAL | no-op | REAL | CLOSED |
 | 76 | ST-05 | Type-correction migrations delete criteria without handling restrictive anchor/threshold children, blocking upgrades with configured interpretations. | Medium | REAL | REAL | no-op | REAL | CLOSED |
 | 77 | ST-06 | Housing replacement transfers weight but hardcodes inclusion and unlocks, discarding prior user exclusion and lock decisions. | Medium | REAL | REAL | no-op | REAL | CLOSED |
 | 78 | ST-07 | Saved evaluations omit supported interpretation fields and exact unscored rule-input evidence, preventing complete historical explanation after later changes. | Medium | REAL | REAL | no-op | REAL | PARTIAL |
 | 79 | ST-08 | Historical criteria read current attribute types even though migrations retype the same IDs, allowing saved interpretation to drift during upgrade. | Medium | REAL | REAL | no-op | REAL | FIXED |
-| 80 | ST-09 | Successful rereads of unchanged transcribed observations insert no new row or reuse association and are consequently reported as unanswered. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 80 | ST-09 | Successful rereads of unchanged transcribed observations insert no new row or reuse association and are consequently reported as unanswered. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 81 | ST-10 | External-score queries return all editions without selecting or labeling the current edition, with incomplete deterministic ordering. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 82 | ST-11 | Separate run-detail queries under READ COMMITTED can observe different snapshots and return counts inconsistent with their lists or source totals. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 83 | ST-12 | SQL does not pin run-linked evidence to planned scope and level, allowing out-of-scope writes that break progress partition arithmetic. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
@@ -324,4 +326,16 @@ The Acquire review also confirmed UI-03's remaining part again: gate C's restore
 - The browser suite passes in full, **32 of 32**, up from 25.
 - Your live data came back as it was after each browser run. The browser suite adds a small free Eurostat run each time; this round added runs 123 to 125. It also re-dates Greece's gate answer, which is UI-03's remaining part. The `[e2e]` rankings were discarded by a backend restart.
 - A last code review of the final four commits found only the NEW-49 case above.
+
+## The other agent's fixes, checked (2026-10-18)
+
+While the decisions above were open, the other agent committed three fixes to `master`. Each was read against the code; none undoes anything this review fixed, and the backend tests that cover them pass.
+
+| Finding | Commit | Checked |
+|---|---|---|
+| ST-02 | `5358c3c` | Each set edit reads, mutates and writes in one transaction, under a `FOR UPDATE` row lock (`pool.connection()` commits at the end of the block), so overlapping edits serialise and both land. The mutations are plain functions on the same connection, so the single-connection pool cannot deadlock. FIXED |
+| BE-19 | `d7a1263` | The two AI adapters yield each candidate as it lands, and `acquire` stores each batch before asking for the next. BE-08's failure for a rejected figure is kept in the new loop. FIXED. Its cost is still saved only when the whole source ends, so BE-33 stays open |
+| ST-09 | `608919f`, then `b673fde` | A re-read transcribed figure counts as answered, not unanswered. Its new table recorded no source, so the source-by-source bars could not show it (NEW-54); `b673fde` amended `0501` before it was applied anywhere, and the bars now credit the source. FIXED |
+
+Consequences for the plan: the next migration is `0502`; the held NEW-48 commit no longer works as written, since a run now asks through `fetch_in_batches`; and keeping one database connection (NEW-21) no longer rests on ST-02.
 

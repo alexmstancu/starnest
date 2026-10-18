@@ -1,6 +1,6 @@
 # Copilot remediation plan
 
-**Status (2026-10-18):** round 2 is done. 37 findings and the 18 small defects found while planning were fixed test-first (section 2). Since then, 28 more defects were found (NEW-26 to NEW-53, section 7): 15 are fixed and 13 are recorded for later, NEW-48 among them, held for BE-11 by your choice. BE-31 stays partial, as planned. Per finding, the tracker reads **55 FIXED, 5 PARTIAL, 25 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)). Still waiting for your OK: the five smaller fixes in section 3. Held for later: section 4, and the NEW items marked Later.
+**Status (2026-10-18):** round 2 is done. 37 findings and the 18 small defects found while planning were fixed test-first (section 2). Since then, 29 more defects were found (NEW-26 to NEW-54, section 7): 16 are fixed and 13 are recorded for later, NEW-48 among them, held for BE-11 by your choice. BE-31 stays partial, as planned. The other agent fixed ST-02, BE-19 and ST-09 on 2026-10-18, checked against the code. Per finding, the tracker reads **59 FIXED, 5 PARTIAL, 21 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)). On 2026-10-18 you chose how to do the five in section 3, which items in section 7 come next, and that gate research gets a plan before any code (section 6).
 
 This plan was written on 2026-10-15 against `c943761`, where `make check` was green: 2,863 backend tests, 96.92% coverage, 1,116 UI tests.
 
@@ -138,6 +138,8 @@ These UC fixes are adapted to standalone versions because the bigger fixes they 
 | UI-32: the "no data source" card is always empty | A new `answerable_by` contract field (M) | Remove the card and the Configure chip (S) | A designed feature, until it's done properly |
 | BE-23: unknown fields and illegal nulls are accepted | A base class plus a check for unknown query parameters (M) | Refuse unknown fields on the remaining bodies, and fix the two null coercions (S) | Unknown query parameters are still ignored |
 
+**Your choices (2026-10-18):** the small fix for UI-11, UI-15 and UI-26; the full fix for UI-32 (`answerable_by`) and for BE-23, which also takes NEW-36 and the contract's 422s (NEW-41, NEW-18).
+
 ## 4. Later: kept planned, not in this round
 
 Each finding's full plan is in its appendix. Choices you already made for these are in section 6.
@@ -146,17 +148,17 @@ Each finding's full plan is in its appendix. Choices you already made for these 
 |---|---|---|
 | UI-01 (High): gate research can exceed the proxy timeout | A new flow, plus a migration (NEW-01) | Research asks only the gates and countries that apply (NEW-01), in small batches the page sends |
 | UI-03 (High): the browser tests use your live data | New Makefile flows that create a database | Their own throwaway database, copied from your newest backup, and their own servers |
-| BE-19 and BE-33 (High, Low): paid answers wait in memory until a whole sweep ends | A refactor of the acquisition loop | Store each paid answer and its cost before buying the next |
+| BE-19 and BE-33 (High, Low): paid answers wait in memory until a whole sweep ends | BE-19 done by the other agent (`d7a1263`): each paid answer is stored as it lands. BE-33 is still open: its cost is saved only when the whole source ends | Save each answer's cost with it |
 | UI-18: scores assume a 0–100 scale | Cannot happen at your setting (100) | Read the configured or frozen scale everywhere |
-| UI-23: browser tests use stale control names | Can't be verified until UI-03 | Selector replacements, listed in the appendix |
+| UI-23: browser tests use stale control names | Done: NEW-51 (`6865e27`) was this finding, found again by running the suite, which now passes 32 of 32 | — |
 | UI-24: Acquire doesn't follow a live run | A new polling flow | Poll the shown run until it ends |
 | UI-29: no way to answer a gate by hand | A new feature | A gate-answer form |
 | BE-36 stage 1: confirmed gate answers are invisible | A new panel | Recorded answers with their period and age |
-| BE-07: an old figure keeps its grade | Behaviour plus a catalog migration | Lower the grade in the ranking's confidence split; lengthen climate normals' max_age |
-| BE-11: a retry asks a cross product | A new table and view | Record and ask exactly the failed pairs. NEW-48 adds a trigger; a tested start that asks each source only about what it failed on is on the local branch `copilot/fx-retry` (`468645b`), not merged, because without the item rows the run's recorded scope would show the pairs nobody needed to ask as unanswered |
-| ST-02: two edits to one set can undo each other | A store refactor | One locked transaction per edit |
-| ST-07 (rest): a saved ranking doesn't keep its evidence | New tables | Freeze the figures and answers behind each warning |
-| ST-09: re-read figures show as unanswered | A new table | Record re-confirmations |
+| BE-07: an old figure keeps its grade | Behaviour plus a catalog migration | Lower the grade in the ranking's confidence split; lengthen climate normals' max_age. The other agent's next item: you chose the age-only downgrade at read, with saved rankings keeping their frozen split |
+| BE-11: a retry asks a cross product | A new table and view | Record and ask exactly the failed pairs. NEW-48 adds a trigger; a tested start that asks each source only about what it failed on is on the local branch `copilot/fx-retry` (`468645b`), not merged, because without the item rows the run's recorded scope would show the pairs nobody needed to ask as unanswered. Since BE-19 a run asks through `fetch_in_batches`, so that commit must filter there too |
+| ST-02: two edits to one set can undo each other | Done by the other agent (`5358c3c`) | One locked transaction per edit |
+| ST-07 (rest): a saved ranking doesn't keep its evidence | New tables | Freeze the figures and answers behind each warning. The other agent's next item (you chose to build it) |
+| ST-09: re-read figures show as unanswered | Done by the other agent (`608919f`), with the source added by `b673fde` (NEW-54) | Record re-confirmations |
 | BE-34: research spending has no durable record | A new table | A write-only ledger |
 | ST-10: no current edition for outside scores | A contract field | `is_current` |
 | ST-11: one poll can mix two moments | Cannot happen with one connection | A single-statement poll |
@@ -234,14 +236,21 @@ No migration, contract change or browser run happens this round.
 - UI-13: a confirmed AI answer is dated from your confirmation.
 - UI-19: the raw number stays the server's, labelled, with the bar coloured by scores.
 - BE-08: a pair whose only figure was rejected still counts as completed, and its failure is listed.
-- BE-27: bump `transcribed_on`.
+- BE-27: bump `transcribed_on`. Reversed: you chose to restore the dates (NEW-33).
 - `make rollback` backs up first.
 - UI-33: no contract text change.
 
-**Still open, not blocking this round:**
+**Given to me, 2026-10-18:**
 
-- Remove the Greece answer that old browser runs left in your live database? It rules nothing out.
-- The single database connection (NEW-21).
+- Restore the three tables' dates (NEW-33). Keep keyboard focus on a control while it saves (NEW-34).
+- Fix NEW-49 and NEW-50, update the stale browser specs (NEW-51) and restore the deleted styles (NEW-47); hold NEW-48 for BE-11.
+- Section 3: small fixes for UI-11, UI-15 and UI-26; full fixes for UI-32 and BE-23, with NEW-36, NEW-41 and NEW-18 folded into BE-23.
+- AI calls get explicit limits (NEW-04): 240 s per call and no automatic retry, set in `.env`.
+- Keep one database connection (NEW-21) until a slowdown is measured. ST-02 is fixed now, so the remaining reason is ST-11.
+- Keep the Greece answer until the browser suite has its own database (UI-03); every browser run writes it back anyway.
+- Gate research (UI-01, NEW-01): a plan before any code.
+- Next small batch: NEW-11, NEW-37, NEW-38, NEW-39, NEW-40, NEW-42, NEW-44, NEW-52 and NEW-53.
+- NEW-54 is mine to fix (done, `b673fde`). Deploy once it is settled. The other agent and I take turns in the shared working tree.
 
 **Closed without code:**
 
@@ -257,27 +266,27 @@ No migration, contract change or browser run happens this round.
 
 | ID | Defect | Round | Evidence |
 |---|---|---|---|
-| NEW-01 | Research asks all 5 gates about all 32 countries (160 paid calls), though only the UK, Swiss and Liechtenstein gates are researchable and each concerns one country | Later (migration) | `S/api/rules.py:95-125`, `research.py:182-208`, reqs.md 7.3 |
+| NEW-01 | Research asks all 5 gates about all 32 countries (160 paid calls), though only the UK, Swiss and Liechtenstein gates are researchable and each concerns one country | Next: a plan first (decided), with a migration numbered `0502` | `S/api/rules.py:95-125`, `research.py:182-208`, reqs.md 7.3 |
 | NEW-02 | A research proposal can overwrite an answer a person recorded while the pass runs | This round (BB3) | `S/api/rules.py:341`, `research.py:164`, `criteria.sql:631-653` |
 | NEW-03 | The research estimate ignores the `llm` switch, so it prices a pass that is then refused | This round (BB3) | `S/api/rules.py:272` |
-| NEW-04 | The AI client uses SDK defaults (600 s, two retries), which outlast the proxy's 300 s | Later (a new setting) | `S/main.py:453` |
+| NEW-04 | The AI client uses SDK defaults (600 s, two retries), which outlast the proxy's 300 s | Next (decided: 240 s, no automatic retry, in `.env`) | `S/main.py:453` |
 | NEW-05 | Two mock endpoints answer differently from the server | This round (UR6) | `ui/src/mocks/handlers.ts:319-343, 583` |
 | NEW-06 | Rule explanations print candidate ids | This round (UC5) | `RulesPanel.tsx`, `ruleEffect.ts` |
 | NEW-07 | Recent changes prints attribute ids | This round (UC1) | `useCriteriaEditor.ts:111, 148` |
 | NEW-08 | Pillar ids appear in prose | This round (UR4) | `pillarCompleteness.ts:65`, `CandidateDetail.tsx:275` |
 | NEW-09 | The hand-entry card prints a raw pillar id | This round (UR4) | `OpenToHandEntry.tsx:102` |
 | NEW-10 | Acquire's busy label clears early when two actions overlap | This round (UR1) | `useRunScreen.ts:108-120` |
-| NEW-11 | Every Acquire action resets the diff's chosen pair | Later (a shared hook change) | `useRunScreen.ts:114`, `useResource.ts:54` |
+| NEW-11 | Every Acquire action resets the diff's chosen pair | Next batch (decided 2026-10-18) | `useRunScreen.ts:114`, `useResource.ts:54` |
 | NEW-12 | The BE-39 commit removed a test class header | This round (BB6) | `T/acceptance/test_catalog_api.py:~152` |
 | NEW-13 | `listRuns` defaults to 20 while the contract says 100 | This round (BA4) | `openapi.yaml:1019`, `S/api/runs.py:421` |
 | NEW-14 | A source that hits the spend cap skips logging its failures | This round (BA3) | `execution.py:288-298` |
 | NEW-15 | `start_run`'s published docstring says the run is inline | This round (BA4) | `S/api/runs.py:233-241` |
 | NEW-16 | A research refusal hides the real reason | This round (BA2) | `research.py:148-151` |
 | NEW-17 | The comparison weighs rounded scores | This round (BB5) | `S/comparison/comparison.py:156-200` |
-| NEW-18 | The generated contract still describes every 422 as `{detail}` | Later (generator customisation) | `openapi.implemented.yaml:1124-1131` |
+| NEW-18 | The generated contract still describes every 422 as `{detail}` | Next, with BE-23 (decided) | `openapi.implemented.yaml:1124-1131` |
 | NEW-19 | A comment says pydantic's `ValidationError` is not a `ValueError` | This round (BB2) | `S/criteria/criteria_set.py:359-362` |
 | NEW-20 | `make rollback` takes no backup | This round (BA5) | `Makefile:75-76` |
-| NEW-21 | The backend uses one database connection for everything | Later (your decision) | `S/main.py:164` |
+| NEW-21 | The backend uses one database connection for everything | Decided: keep one until a slowdown is measured | `S/main.py:164` |
 | NEW-22 | A Dockerfile comment describes a `pg_dump` that no container runs | This round (BA5) | `backend/Dockerfile:22-27` |
 | NEW-23 | A corrected published table without a new date is silently ignored | Later (a new guard) | `published_tables/table.py:110` |
 | NEW-24 | reqs.md has two Q231 entries and no Q233, which `execution.py:139` cites | This round (D1) | `reqs.md:3051, 3257` |
@@ -292,15 +301,15 @@ No migration, contract change or browser run happens this round.
 | NEW-33 | BE-27 moved three tables' read date to a day nobody read the publishers | Fixed by the review (b092c2c); you chose to restore the dates | `published_tables/tables/*.csv` |
 | NEW-34 | Controls disabled while a save runs drop keyboard focus | Fixed by the review (7bf3184, 73ebfc4, 947ec2b, 2c8e0f1, bf05144, 17c5bdc); you chose to keep focus on the control | 7 places in Configure |
 | NEW-35 | Freshness counts a switched-off source's figures, which cannot score | Fixed by the review (cfb0547) | `runs.sql` `select_last_retrieval_dates` |
-| NEW-36 | A PUT of a gate answer marked `llm` over a person's answer stores nothing and still answers 200 | Later (needs a refusal in the contract) | `S/api/rules.py:395-416` |
-| NEW-37 | The `nothing_to_fetch` refusal prints the age as "30 days, 0:00:00" | Later (nit) | `S/data_acquisition/execution.py:171-173` |
-| NEW-38 | `useManualEntry`'s `onStored` is never passed | Later (nit) | `ui/src/routes/run/useManualEntry.ts:40` |
-| NEW-39 | The diff's exact view leaves out an assigned score's rationale, so two scores differing only there read alike | Later (low) | `ui/src/format/figure.ts` |
-| NEW-40 | Planning a run for an unknown level answers 200 with nothing to do; starting one is refused | Later (with BE-24) | `S/api/runs.py:500-520` |
-| NEW-41 | The target contract declares no 422 on any operation, so no 422 body can be checked against it | Later (with NEW-18) | `docs/openapi.yaml` |
-| NEW-42 | "Saved." after a settings or household save is not announced to a screen reader | Later (low) | `SettingsPanel.tsx:59`, `HouseholdPanel.tsx:113` |
+| NEW-36 | A PUT of a gate answer marked `llm` over a person's answer stores nothing and still answers 200 | Next, with BE-23 (decided: a 409 with a code) | `S/api/rules.py:395-416` |
+| NEW-37 | The `nothing_to_fetch` refusal prints the age as "30 days, 0:00:00" | Next batch (decided 2026-10-18) | `S/data_acquisition/execution.py:171-173` |
+| NEW-38 | `useManualEntry`'s `onStored` is never passed | Next batch (decided 2026-10-18) | `ui/src/routes/run/useManualEntry.ts:40` |
+| NEW-39 | The diff's exact view leaves out an assigned score's rationale, so two scores differing only there read alike | Next batch (decided 2026-10-18) | `ui/src/format/figure.ts` |
+| NEW-40 | Planning a run for an unknown level answers 200 with nothing to do; starting one is refused | Next batch (decided 2026-10-18) | `S/api/runs.py:500-520` |
+| NEW-41 | The target contract declares no 422 on any operation, so no 422 body can be checked against it | Next, with BE-23 (decided) | `docs/openapi.yaml` |
+| NEW-42 | "Saved." after a settings or household save is not announced to a screen reader | Next batch (decided 2026-10-18) | `SettingsPanel.tsx:59`, `HouseholdPanel.tsx:113` |
 | NEW-43 | Tabbing onto a weight slider, or clicking its thumb without dragging, sends the stored weight snapped to the 0.5 step (6.8 becomes 7) and rebalances | Fixed (f230c3a) | `CriteriaPanel.tsx`, `PillarWeightsPanel.tsx` |
-| NEW-44 | Older controls still disable themselves during a write and drop keyboard focus, as NEW-34 did | Later (low; NEW-34's fix applies) | `ProposalsPanel.tsx`, `ManualEntryPanel.tsx`, `RunScreen.tsx`, `ItemGroups.tsx` |
+| NEW-44 | Older controls still disable themselves during a write and drop keyboard focus, as NEW-34 did | Next batch (decided 2026-10-18) | `ProposalsPanel.tsx`, `ManualEntryPanel.tsx`, `RunScreen.tsx`, `ItemGroups.tsx` |
 | NEW-45 | Focus is still lost when a source is moved down or dragged (the row is re-mounted), and when a successful undo or reset removes the button pressed | Later (low) | `DataSourcesPanel.tsx`, `RecentChanges.tsx` |
 | NEW-46 | A held slider, lock or "blocks scoring" box looks unchanged, because no `:disabled` style ever covered them | Later (looks) | `styles.css` |
 | NEW-47 | The builder's `2c04381` (2026-10-02) deleted 929 lines of `styles.css` unannounced; 60 classes still used on screen had no styles, including the criterion rows, confirmation strip, tiles, status pills and danger button | Fixed (54ef14f), restored from `2c04381^` and checked with before-and-after screenshots | `ui/src/styles.css` |
@@ -308,8 +317,9 @@ No migration, contract change or browser run happens this round.
 | NEW-49 | A Refresh, or a start the server refuses, while a Stop is being sent outranks the stop's own read, so the card can show no stop and offer Stop again | Fixed (8e5ece9, f9e432c) | `ui/src/routes/run/useRunScreen.ts:250-266` |
 | NEW-50 | Two UI-06 tests decide on a fixed one-second wait; one assertion has checked nothing since NEW-34 | Fixed (d3182d4) | `HouseholdPanel.test.tsx:366-373`, `SettingsPanel.test.tsx:357-367` |
 | NEW-51 | Four browser specs are stale since 2026-10-04: they look for sliders by attribute id and a Compare column called "Attribute" | Fixed (6865e27) | `ui/e2e/gate-c.spec.ts`, `minimum-end-to-end.spec.ts`, `sanity.spec.ts` |
-| NEW-52 | While a Refresh overlaps a Stop, the Stop button is offered again until the read returns; a second stop is accepted harmlessly | Later (low) | `ui/src/routes/run/RunScreen.tsx` |
-| NEW-53 | The browser specs' `openPillarOf` can read pillar names before their display names load, then wait out the test timeout | Later (low; a possible flake) | `ui/e2e/gate-c.spec.ts`, `minimum-end-to-end.spec.ts` |
+| NEW-52 | While a Refresh overlaps a Stop, the Stop button is offered again until the read returns; a second stop is accepted harmlessly | Next batch (decided 2026-10-18) | `ui/src/routes/run/RunScreen.tsx` |
+| NEW-53 | The browser specs' `openPillarOf` can read pillar names before their display names load, then wait out the test timeout | Next batch (decided 2026-10-18) | `ui/e2e/gate-c.spec.ts`, `minimum-end-to-end.spec.ts` |
+| NEW-54 | ST-09's reuse table recorded no source, so the source-by-source bars could not show a re-read figure | Fixed (b673fde), amending `0501` before it was applied anywhere | `storage/migrations/0501-…sql`, `runs.sql` `select_run_by_source` |
 
 Two more were folded into existing findings: BE-27 affects two more tables than reported, and a mixed retry drops a stand-in failure (part of BE-11).
 
