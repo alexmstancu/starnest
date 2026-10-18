@@ -139,7 +139,7 @@ async def acquire(
                 if run is not None:
                     answered = {(str(v.candidate), str(v.attribute)) for v in fetched}
                     stored_now = {(str(v.candidate), str(v.attribute)) for v in newly}
-                    await values.record_reuse(run, answered - stored_now)
+                    await values.record_reuse(run, adapter.data_source, answered - stored_now)
             # Which source failed, stamped for the same reason as the run above: two sources
             # answer the total tax rate, and a retry has to know which one to ask again.
             #

@@ -109,7 +109,7 @@ class RecordingValueStore:
         self.appended.extend(values)
         return tuple(values)
 
-    async def record_reuse(self, run, pairs):
+    async def record_reuse(self, run, data_source, pairs):
         return None
 
 

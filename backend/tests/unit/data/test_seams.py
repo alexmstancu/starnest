@@ -85,7 +85,7 @@ class InMemoryValueStore(ValueStore):
         self._values.extend(stored)
         return stored
 
-    async def record_reuse(self, run, pairs):
+    async def record_reuse(self, run, data_source, pairs):
         self._reused.extend(pairs)
 
     async def read_external_scores(self, *, candidate=None, level=None):

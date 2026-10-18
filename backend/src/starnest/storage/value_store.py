@@ -183,7 +183,9 @@ class PostgresValueStore(ValueStore):
         stored = [await self._append_one(value) for value in values]
         return tuple(value for value in stored if value is not None)
 
-    async def record_reuse(self, run: int, pairs: Iterable[tuple[str, str]]) -> None:
+    async def record_reuse(
+        self, run: int, data_source: DataSourceId | str, pairs: Iterable[tuple[str, str]]
+    ) -> None:
         """Record the pairs this run re-confirmed but did not store again (ST-09).
 
         One statement: the batch is small (the few transcribed items a run re-read) and the
@@ -195,7 +197,10 @@ class PostgresValueStore(ValueStore):
             return
         async with acquire(self._pool) as connection:
             await self._queries.insert_run_reuse(
-                connection, data_acquisition_run=run, pairs=json.dumps(serialised)
+                connection,
+                data_acquisition_run=run,
+                data_source=str(data_source),
+                pairs=json.dumps(serialised),
             )
 
     async def _append_one(self, value: Value) -> Value | None:

@@ -12,6 +12,7 @@ afterwards, exactly as the storage suite does.
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 import httpx
 import pytest
@@ -352,6 +353,7 @@ def a_stub_source(
     charges: bool = False,
     eur_per_call: str = "0.05",
     before_answering: "Callable[[], Awaitable[None]] | None" = None,
+    retrieved: "datetime | None" = None,
 ) -> SourceAdapter:
     """A source that answers instantly with figures the test controls.
 
@@ -366,6 +368,10 @@ def a_stub_source(
     every run of the suite. What is under test here is the *run*: that it is recorded before
     anything is fetched, that values carry it, that failures are kept and that progress can be
     polled. Eurostat's own behaviour is tested where Eurostat lives, against captured responses.
+
+    **`retrieved` fixes the retrieval date**, as a transcribed table does: re-reading it is then
+    the same observation, so a second run stores nothing new and re-confirms instead (ST-09).
+    Left out, every answer is stamped now, as a live source's is.
     """
     from collections.abc import Sequence
     from datetime import UTC, date, datetime
@@ -458,7 +464,7 @@ def a_stub_source(
                         reference_period=ReferencePeriod(
                             start=date(2025, 1, 1), end=date(2025, 12, 31)
                         ),
-                        retrieval_date=datetime.now(UTC),
+                        retrieval_date=retrieved or datetime.now(UTC),
                         confidence_level=ConfidenceLevel.HIGH,
                         payload=a_figure_shaped_for(attribute),
                     )

@@ -107,6 +107,7 @@ class RecordingValueStore:
     def __init__(self, already_holds: frozenset[tuple[str, str]] = frozenset()) -> None:
         self.appended: list[Value] = []
         self.reused: list[tuple[str, str]] = []
+        self.reused_by: list[str] = []
         self._already_holds = already_holds
 
     async def append(self, values):
@@ -116,8 +117,10 @@ class RecordingValueStore:
         self.appended.extend(newly)
         return tuple(newly)
 
-    async def record_reuse(self, run, pairs) -> None:
+    async def record_reuse(self, run, data_source, pairs) -> None:
+        pairs = list(pairs)
         self.reused.extend(pairs)
+        self.reused_by.extend(str(data_source) for _ in pairs)
 
 
 class TestWhatARunAsksFor:
@@ -227,6 +230,25 @@ class TestWhatARunKeeps:
         assert store.appended == []
         assert store.reused == [pair]
         assert outcome.stored == ()
+
+    async def test_a_reuse_is_recorded_under_the_source_that_re_read_it(self) -> None:
+        """NEW-54. Two sources can re-read the same pair, and the breakdown credits each source
+        with what it answered -- so a reuse is recorded against the source, as a failure is."""
+        value = a_value()
+        store = RecordingValueStore(
+            already_holds=frozenset({(str(value.candidate), str(value.attribute))})
+        )
+        adapter = StubAdapter({OVERBURDEN: Acquired(values=(value,))}, declares=(OVERBURDEN,))
+
+        await acquire(
+            adapter=adapter,
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=store,
+            run=5,
+        )
+
+        assert store.reused_by == [str(adapter.data_source)]
 
     async def test_a_freshly_stored_pair_is_not_recorded_as_a_reuse(self) -> None:
         """The other side: a pair stored for the first time is not re-confirmation, so nothing

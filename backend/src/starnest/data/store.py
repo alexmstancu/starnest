@@ -112,9 +112,12 @@ class ValueStore(ABC):
         """
 
     @abstractmethod
-    async def record_reuse(self, run: int, pairs: Iterable[tuple[str, str]]) -> None:
-        """Record that this run re-confirmed each (candidate, attribute) pair -- the source
-        answered, but the figure was already on record so `append` stored no new row (ST-09).
+    async def record_reuse(
+        self, run: int, data_source: DataSourceId | str, pairs: Iterable[tuple[str, str]]
+    ) -> None:
+        """Record that `data_source` re-confirmed each (candidate, attribute) pair in this run --
+        it answered, but the figure was already on record so `append` stored no new row (ST-09).
+        The source is named as a failure's is, so the run's breakdown credits it (NEW-54).
 
         A transcribed table is stamped with the day it was transcribed, so re-reading it is the
         same observation and its append is a no-op. Without this the run would count the pair

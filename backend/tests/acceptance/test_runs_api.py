@@ -1006,6 +1006,28 @@ class TestWhichSourceGotItThere:
         # failed on, so a failure here is not a gap in the corpus.
         assert detail["progress"]["items_failed"] == 0
 
+    async def test_a_source_that_re_read_its_figures_is_credited_with_them(
+        self, database_url: str
+    ) -> None:
+        """NEW-54. A transcribed table re-read is the same observation (ST-09): the second run
+        stores nothing new and re-confirms every pair instead. Its totals count those pairs
+        answered, so its breakdown has to credit the source that re-read them -- or a run shows
+        every pair answered beside a breakdown with nobody in it."""
+        from datetime import UTC, datetime
+
+        transcribed = a_stub_source(silent_about=(), retrieved=datetime(2026, 10, 11, tzinfo=UTC))
+        async with an_api(database_url, (transcribed,)) as api:
+            first = await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+            assert first.status_code == 202, first.text
+            again = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{again['id']}")).json()
+
+        assert detail["progress"]["items_completed"] == 32 * 2, "the premise: all re-confirmed"
+        assert {
+            r["data_source"]: (r["items_stored"], r["items_failed"]) for r in detail["by_source"]
+        } == {"eurostat": (32 * 2, 0)}
+        validate("getRun", detail)
+
     async def test_every_entry_names_a_source_and_carries_both_counts(
         self, database_url: str
     ) -> None:

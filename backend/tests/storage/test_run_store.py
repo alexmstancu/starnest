@@ -243,7 +243,9 @@ class TestWhatNobodyAnswered:
         counts completed, drops out of the list of items to ask again, and the three counts still
         sum to the total."""
         store = PostgresRunStore(pool)
-        await PostgresValueStore(pool).record_reuse(a_wider_run, [("country.portugal", OVERBURDEN)])
+        await PostgresValueStore(pool).record_reuse(
+            a_wider_run, "eurostat", [("country.portugal", OVERBURDEN)]
+        )
 
         run = await store.read_run(a_wider_run)
 
@@ -260,8 +262,8 @@ class TestWhatNobodyAnswered:
         """Idempotent per run: a retry re-reading the same table records the pair again, and the
         primary key keeps it one row, so the count does not drift."""
         values = PostgresValueStore(pool)
-        await values.record_reuse(a_wider_run, [("country.portugal", OVERBURDEN)])
-        await values.record_reuse(a_wider_run, [("country.portugal", OVERBURDEN)])
+        await values.record_reuse(a_wider_run, "eurostat", [("country.portugal", OVERBURDEN)])
+        await values.record_reuse(a_wider_run, "eurostat", [("country.portugal", OVERBURDEN)])
 
         run = await PostgresRunStore(pool).read_run(a_wider_run)
 
@@ -418,6 +420,91 @@ class TestWhichSourceGotItThere:
         self, pool: AsyncConnectionPool, a_two_source_run: int
     ) -> None:
         assert (await PostgresRunStore(pool).read_run(a_two_source_run)).by_source == ()
+
+    # **A figure read again is credited to the source that read it** (NEW-54). ST-09 counts a
+    # re-confirmed pair completed in the run's totals; without its source, the breakdown could
+    # credit nobody, and a run that only re-read transcribed tables showed every pair answered
+    # beside a breakdown with no source in it.
+
+    async def test_a_source_that_only_re_confirmed_a_figure_is_listed_with_it_stored(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        store = PostgresRunStore(pool)
+        await PostgresValueStore(pool).record_reuse(
+            a_two_source_run, "eurostat", [("country.portugal", OVERBURDEN)]
+        )
+
+        reach = {
+            r.data_source: (r.items_stored, r.items_failed)
+            for r in (await store.read_run(a_two_source_run)).by_source
+        }
+
+        assert reach == {"eurostat": (1, 0)}
+
+    async def test_a_re_confirmed_figure_is_credited_to_the_source_that_re_read_it(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        store = PostgresRunStore(pool)
+        await PostgresValueStore(pool).append(
+            [a_figure(a_two_source_run, "country.portugal", OVERBURDEN, source="eurostat")]
+        )
+        await PostgresValueStore(pool).record_reuse(
+            a_two_source_run, "oecd", [("country.liechtenstein", OVERBURDEN)]
+        )
+
+        reach = {
+            r.data_source: (r.items_stored, r.items_failed)
+            for r in (await store.read_run(a_two_source_run)).by_source
+        }
+
+        assert reach == {"eurostat": (1, 0), "oecd": (1, 0)}
+
+    async def test_a_new_figure_and_a_re_confirmed_one_from_one_source_count_two(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        store = PostgresRunStore(pool)
+        await PostgresValueStore(pool).append(
+            [a_figure(a_two_source_run, "country.portugal", OVERBURDEN, source="eurostat")]
+        )
+        await PostgresValueStore(pool).record_reuse(
+            a_two_source_run, "eurostat", [("country.portugal", OVERCROWDING)]
+        )
+
+        reach = {
+            r.data_source: (r.items_stored, r.items_failed)
+            for r in (await store.read_run(a_two_source_run)).by_source
+        }
+
+        assert reach == {"eurostat": (2, 0)}
+
+    async def test_a_re_read_figure_its_source_rejected_is_a_failure_not_also_stored(
+        self, pool: AsyncConnectionPool, a_two_source_run: int
+    ) -> None:
+        """A rejected figure re-read is still rejected, and BE-08 records it as its source's
+        failure. Credited as re-confirmed as well, one pair would read stored and failed at
+        once -- the double count `85d545d` took out of the breakdown."""
+        store = PostgresRunStore(pool)
+        await PostgresValueStore(pool).record_reuse(
+            a_two_source_run, "eurostat", [("country.portugal", OVERBURDEN)]
+        )
+        await store.record_failures(
+            a_two_source_run,
+            [
+                AcquisitionFailure(
+                    OVERBURDEN,
+                    "the figure was stored and rejected: out of range",
+                    candidate="country.portugal",
+                    data_source="eurostat",
+                )
+            ],
+        )
+
+        reach = {
+            r.data_source: (r.items_stored, r.items_failed)
+            for r in (await store.read_run(a_two_source_run)).by_source
+        }
+
+        assert reach == {"eurostat": (0, 1)}
 
     async def test_a_rejected_figure_counts_for_its_source_as_a_failure_not_as_stored(
         self, pool: AsyncConnectionPool, a_two_source_run: int

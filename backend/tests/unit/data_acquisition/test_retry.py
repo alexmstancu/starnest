@@ -160,7 +160,7 @@ class RecordingValueStore:
         self.appended.extend(values)
         return tuple(values)
 
-    async def record_reuse(self, run, pairs):  # type: ignore[no-untyped-def]
+    async def record_reuse(self, run, data_source, pairs):  # type: ignore[no-untyped-def]
         return None
 
     async def read_active_values(self, *, candidates=None, attributes=None):  # type: ignore[no-untyped-def]

@@ -10,14 +10,20 @@
 --
 -- This table records that the source answered the pair for this run even though nothing new was
 -- stored. The accounting reads it so a re-confirmed pair counts as completed, not unanswered. It
--- mirrors `data_acquisition_failure`: the same three-column key, keyed to the run, so a run's
--- reuses go when the run does and a pair is recorded at most once per run.
+-- mirrors `data_acquisition_failure`: the same key, keyed to the run, so a run's reuses go when
+-- the run does and a pair is recorded at most once per run and source.
+--
+-- **It names the source that re-read the pair** (NEW-54), as a failure does. Two sources can
+-- answer one pair, and the run's breakdown credits each source with what it answered; without
+-- the source, a run that only re-read transcribed tables counted every pair answered beside a
+-- breakdown with nobody in it.
 
 CREATE TABLE data_acquisition_run_reuse (
     data_acquisition_run bigint NOT NULL REFERENCES data_acquisition_run (id),
+    data_source          text   NOT NULL REFERENCES data_source (id),
     candidate            text   NOT NULL REFERENCES candidate (id),
     attribute            text   NOT NULL REFERENCES attribute (id),
 
     CONSTRAINT data_acquisition_run_reuse_pkey
-        PRIMARY KEY (data_acquisition_run, candidate, attribute)
+        PRIMARY KEY (data_acquisition_run, data_source, candidate, attribute)
 );

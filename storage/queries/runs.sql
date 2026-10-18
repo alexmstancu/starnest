@@ -85,13 +85,14 @@ WHERE  data_acquisition_run = :data_acquisition_run
   AND  candidate = :candidate
   AND  attribute = :attribute;
 
--- name: insert_run_reuse(data_acquisition_run, pairs)!
+-- name: insert_run_reuse(data_acquisition_run, data_source, pairs)!
 -- Record the (candidate, attribute) pairs a run re-confirmed from a source that answered but
 -- stored no new row -- a transcribed table re-read as the same observation (ST-09). The
--- accounting reads these so the pair counts completed rather than unanswered. Idempotent: a pair
--- re-confirmed twice in one run is the one row the primary key allows.
-INSERT INTO data_acquisition_run_reuse (data_acquisition_run, candidate, attribute)
-SELECT :data_acquisition_run, pair.candidate, pair.attribute
+-- accounting reads these so the pair counts completed rather than unanswered, and the breakdown
+-- credits the source named here (NEW-54). Idempotent: a pair one source re-confirmed twice in
+-- one run is the one row the primary key allows.
+INSERT INTO data_acquisition_run_reuse (data_acquisition_run, data_source, candidate, attribute)
+SELECT :data_acquisition_run, :data_source, pair.candidate, pair.attribute
 FROM   jsonb_to_recordset(:pairs::jsonb) AS pair(candidate text, attribute text)
 ON CONFLICT ON CONSTRAINT data_acquisition_run_reuse_pkey DO NOTHING;
 
@@ -381,12 +382,30 @@ RETURNING id;
 -- missing. UNION de-duplicates the pairs a run did write a failure for, so each counts once.
 -- Only this count reads it: the failure list, and so a retry, stay the failure rows, and must not
 -- re-ask a paid source about a figure rejected long after it answered.
+--
+-- **A figure the source re-read counts as stored by it** (NEW-54). A transcribed table re-read is
+-- the same observation, so no new row carries this run (ST-09), and the run's totals count the
+-- pair completed from its reuse row. Credited to the source that re-read it, the breakdown agrees
+-- with the totals; left out, a run that only re-read tables listed nobody. A re-read figure that
+-- its source rejected again is that source's failure (BE-08), so it is not credited as stored
+-- as well -- one pair read stored and failed at once is the double count `85d545d` removed.
 SELECT reached.data_source,
-       (SELECT count(DISTINCT (v.candidate, v.attribute))
-        FROM   value AS v
-        WHERE  v.data_acquisition_run = :data_acquisition_run
-          AND  v.data_source = reached.data_source
-          AND  v.rejection_reason IS NULL) AS items_stored,
+       (SELECT count(*)
+        FROM   (SELECT v.candidate, v.attribute
+                FROM   value AS v
+                WHERE  v.data_acquisition_run = :data_acquisition_run
+                  AND  v.data_source = reached.data_source
+                  AND  v.rejection_reason IS NULL
+                UNION
+                SELECT u.candidate, u.attribute
+                FROM   data_acquisition_run_reuse AS u
+                WHERE  u.data_acquisition_run = :data_acquisition_run
+                  AND  u.data_source = reached.data_source
+                  AND  NOT EXISTS (SELECT 1 FROM data_acquisition_failure AS f
+                                   WHERE  f.data_acquisition_run = u.data_acquisition_run
+                                     AND  f.data_source = u.data_source
+                                     AND  f.candidate = u.candidate
+                                     AND  f.attribute = u.attribute)) AS stored) AS items_stored,
        (SELECT count(*)
         FROM   (SELECT f.candidate, f.attribute
                 FROM   data_acquisition_failure AS f
@@ -404,6 +423,10 @@ FROM   (SELECT DISTINCT data_source
         UNION
         SELECT DISTINCT data_source
         FROM   data_acquisition_failure
+        WHERE  data_acquisition_run = :data_acquisition_run
+        UNION
+        SELECT DISTINCT data_source
+        FROM   data_acquisition_run_reuse
         WHERE  data_acquisition_run = :data_acquisition_run) AS reached
 ORDER  BY reached.data_source;
 
