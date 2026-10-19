@@ -1,6 +1,6 @@
 # Copilot remediation plan
 
-**Status (2026-10-19):** round 2 and Phase B are done. Round 2 fixed 37 findings and the 18 small defects found while planning, test-first (section 2). Phase B fixed the five in section 3, UI-11, UI-15 and UI-26 the small way and UI-32 and BE-23 in full, together with NEW-04, NEW-11, NEW-18 and ten of the defects recorded since round 2. Since round 2, 38 more defects were found (NEW-26 to NEW-63, section 7): 27 are fixed and 11 are recorded for later, NEW-48 among them, held for BE-11 by your choice. BE-31 stays partial, as planned. The other agent fixed ST-02, BE-19 and ST-09 on 2026-10-18, checked against the code. Per finding, the tracker reads **64 FIXED, 4 PARTIAL, 17 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)). Now being built: gate research (UI-01, NEW-01, BE-34), whose plan you approved on 2026-10-18, with NEW-60 and NEW-63 (section 6).
+**Status (2026-10-19):** round 2, Phase B and gate research are done. Round 2 fixed 37 findings and the 18 small defects found while planning, test-first (section 2). Phase B fixed the five in section 3, UI-11, UI-15 and UI-26 the small way and UI-32 and BE-23 in full, together with NEW-04, NEW-11, NEW-18 and ten of the defects recorded since round 2. Gate research (UI-01, NEW-01, BE-34), as you approved it on 2026-10-18, now asks 3 paid questions instead of 160, one per request, held to the spend cap, with every billed call ledgered (migrations `0502` and `0503`). Since round 2, 40 more defects were found (NEW-26 to NEW-65, section 7): 29 are fixed and 11 are recorded for later, NEW-48 among them, held for BE-11 by your choice. BE-31 stays partial, as planned. The other agent fixed ST-02, BE-19 and ST-09 on 2026-10-18, checked against the code. Per finding, the tracker reads **66 FIXED, 3 PARTIAL, 16 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)).
 
 This plan was written on 2026-10-15 against `c943761`, where `make check` was green: 2,863 backend tests, 96.92% coverage, 1,116 UI tests.
 
@@ -148,7 +148,7 @@ Each finding's full plan is in its appendix. Choices you already made for these 
 
 | Finding | Why later | Planned fix |
 |---|---|---|
-| UI-01 (High): gate research can exceed the proxy timeout | A new flow, plus a migration (NEW-01) | Research asks only the gates and countries that apply (NEW-01), one gate per request the page sends. Planned and approved (section 6); next |
+| UI-01 (High): gate research can exceed the proxy timeout | Done (2026-10-19): `34f9b30`, `36bad8c`, `634fb1e`, with NEW-01 (`567faf4`) | Research asks only the gates and countries that apply, one gate per request the page sends, the pass held to the spend cap |
 | UI-03 (High): the browser tests use your live data | New Makefile flows that create a database | Their own throwaway database, copied from your newest backup, and their own servers |
 | BE-19 and BE-33 (High, Low): paid answers wait in memory until a whole sweep ends | BE-19 done by the other agent (`d7a1263`): each paid answer is stored as it lands. BE-33 is still open: its cost is saved only when the whole source ends | Save each answer's cost with it |
 | UI-18: scores assume a 0–100 scale | Cannot happen at your setting (100) | Read the configured or frozen scale everywhere |
@@ -161,7 +161,7 @@ Each finding's full plan is in its appendix. Choices you already made for these 
 | ST-02: two edits to one set can undo each other | Done by the other agent (`5358c3c`) | One locked transaction per edit |
 | ST-07 (rest): a saved ranking doesn't keep its evidence | New tables | Freeze the figures and answers behind each warning. The other agent's next item (you chose to build it) |
 | ST-09: re-read figures show as unanswered | Done by the other agent (`608919f`), with the source added by `b673fde` (NEW-54) | Record re-confirmations |
-| BE-34: research spending has no durable record | A new table | A write-only ledger, built with gate research (approved) |
+| BE-34: research spending has no durable record | Done (2026-10-19): `c99e4a1`, migration `0503` | A write-only ledger |
 | ST-10: no current edition for outside scores | A contract field | `is_current` |
 | ST-11: one poll can mix two moments | Cannot happen with one connection | A single-statement poll |
 | ST-12 to ST-18: integrity gaps that nothing triggers today | Migrations | Constraints, each with a pre-check that stops the migration before changing anything |
@@ -278,7 +278,7 @@ No migration, contract change or browser run happens this round.
 
 | ID | Defect | Round | Evidence |
 |---|---|---|---|
-| NEW-01 | Research asks all 5 gates about all 32 countries (160 paid calls), though only the UK, Swiss and Liechtenstein gates are researchable and each concerns one country | Next: a plan first (decided), with a migration numbered `0502` | `S/api/rules.py:95-125`, `research.py:182-208`, reqs.md 7.3 |
+| NEW-01 | Research asks all 5 gates about all 32 countries (160 paid calls), though only the UK, Swiss and Liechtenstein gates are researchable and each concerns one country | Fixed (567faf4): 3 paid calls, not 160 (`0502`, Q236) | `S/api/rules.py:95-125`, `research.py:182-208`, reqs.md 7.3 |
 | NEW-02 | A research proposal can overwrite an answer a person recorded while the pass runs | This round (BB3) | `S/api/rules.py:341`, `research.py:164`, `criteria.sql:631-653` |
 | NEW-03 | The research estimate ignores the `llm` switch, so it prices a pass that is then refused | This round (BB3) | `S/api/rules.py:272` |
 | NEW-04 | The AI client uses SDK defaults (600 s, two retries), which outlast the proxy's 300 s | Fixed (d883af3): 240 s per call and no automatic retry, set in `.env` (`LLM_TIMEOUT_SECONDS`, `LLM_MAX_RETRIES`) | `S/main.py:453` |
@@ -322,7 +322,7 @@ No migration, contract change or browser run happens this round.
 | NEW-42 | "Saved." after a settings or household save is not announced to a screen reader | Fixed (b4d3e5f) | `SettingsPanel.tsx:59`, `HouseholdPanel.tsx:113` |
 | NEW-43 | Tabbing onto a weight slider, or clicking its thumb without dragging, sends the stored weight snapped to the 0.5 step (6.8 becomes 7) and rebalances | Fixed (f230c3a) | `CriteriaPanel.tsx`, `PillarWeightsPanel.tsx` |
 | NEW-44 | Older controls still disable themselves during a write and drop keyboard focus, as NEW-34 did | Fixed (45f2c25 on Proposals; 46d84d1 on Acquire, through a shared `HeldButton`) | `ProposalsPanel.tsx`, `ManualEntryPanel.tsx`, `RunScreen.tsx`, `ItemGroups.tsx` |
-| NEW-45 | Focus is still lost when a source is moved down or dragged (the row is re-mounted), when a successful undo or reset removes the button pressed, and when confirming a proposal removes its button | Later (low) | `DataSourcesPanel.tsx`, `RecentChanges.tsx`, `ProposalsPanel.tsx` |
+| NEW-45 | Focus is still lost when a source is moved down or dragged (the row is re-mounted), when a successful undo or reset removes the button pressed, when confirming a proposal removes its button, and when the re-read at the end of a research pass blanks the list | Later (low) | `DataSourcesPanel.tsx`, `RecentChanges.tsx`, `ProposalsPanel.tsx` |
 | NEW-46 | A held slider, lock or "blocks scoring" box looks unchanged, because no `:disabled` style ever covered them | Later (looks) | `styles.css` |
 | NEW-47 | The builder's `2c04381` (2026-10-02) deleted 929 lines of `styles.css` unannounced; 60 classes still used on screen had no styles, including the criterion rows, confirmation strip, tiles, status pills and danger button | Fixed (54ef14f), restored from `2c04381^` and checked with before-and-after screenshots | `ui/src/styles.css` |
 | NEW-48 | A retry can bill a paid source again for a country it answered: since BE-08 a free source's rejected figure puts that country in the retry, and every retried source is asked about every retried country (BE-11) | Held, Low: only a direct call to `/retry` reaches it, since the app's Retry button starts a scoped run (UI-02). Fixed with BE-11 (your choice) | `S/data_acquisition/execution.py:566-574` |
@@ -337,10 +337,12 @@ No migration, contract change or browser run happens this round.
 | NEW-57 | Start, "Yes, start it" and "Not yet" are let go during a start once Refresh is pressed, because `busy` names only the newest act. A second start is refused by the database guard (`0498`), but its ticket outranks the first, so the run that did start leaves the card and the old one returns under a `run_already_in_flight` banner. Predates this review; NEW-52's kind | Fixed (8bad828): you chose to fix it at once, with NEW-52's pattern | `ui/src/routes/run/RunScreen.tsx:358-390`, `useRunScreen.ts` |
 | NEW-58 | An excluded criterion that blocks if missing still shows "Required" on Rank's drill-down, though the ranking only ever blocks on criteria that count | Later (low) | `ui/src/routes/rank/pillarFilter.ts:85`, `CandidateDetail.tsx` |
 | NEW-59 | The diff's exact view joins a label set with ", ", so a label containing a comma reads as two | Later (nit) | `ui/src/format/figure.ts:150-155` |
-| NEW-60 | The research estimate and the research pass answer 200 for an unknown level, as runs did before NEW-40 | Proposed: with the research build, which changes the same endpoints | `S/api/rules.py:280-340` |
+| NEW-60 | The research estimate and the research pass answer 200 for an unknown level, as runs did before NEW-40 | Fixed with the research build (d6ef9a9) | `S/api/rules.py:280-340` |
 | NEW-61 | Four optional request fields the design types as non-nullable still accept `null`, meaning what leaving them out means (`note`, `retrieval_date`, `target_monthly_spend`, `max_rent`); the UI never sends one | Later (nit) | `S/api/household.py:47-48`, `S/api/values.py` |
 | NEW-62 | The generated contract says `ErrorBody.details` may be `null`; the design says an object, and the server leaves it out when there are none | Later (nit) | `S/api/errors.py:68`, `openapi.implemented.yaml:956-961` |
-| NEW-63 | A research response lists a proposal the store declined to write, because a person's answer stood (NEW-02) | Proposed: with the research build, which changes the same endpoints | `S/api/rules.py:326-370`, `research.py` |
+| NEW-63 | A research response lists a proposal the store declined to write, because a person's answer stood (NEW-02) | Fixed with the research build (5e7787f, 89307fc) | `S/api/rules.py:326-370`, `research.py` |
+| NEW-64 | `match_rule_candidate` does not check that a listed candidate sits at its gate's level; research checks the level anyway, so nothing goes wrong today | Later (nit) | `storage/migrations/0502-research-asks-only-the-gates-it-can-answer.sql` |
+| NEW-65 | The research panel does not say which level a pass is researching, and switching level mid-pass keeps the pass on the old one (v1 has one level) | Later (low) | `ui/src/routes/configure/proposals/useResearchPass.ts`, `ProposalsPanel.tsx` |
 
 Two more were folded into existing findings: BE-27 affects two more tables than reported, and a mixed retry drops a stand-in failure (part of BE-11).
 

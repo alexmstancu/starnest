@@ -25,9 +25,11 @@ The table preserves the original IDs, order, severity labels, and both independe
 
 **Phase B (2026-10-19):** UI-11, UI-15, UI-26 and UI-32 are FIXED, and BE-23 moves from PARTIAL to FIXED. The column now reads **64 FIXED, 4 PARTIAL, 17 NOT_FIXED, 5 CLOSED, 1 N/A**. Details in [Phase B](#phase-b-the-decided-items-2026-10-19).
 
+**Gate research (2026-10-19):** UI-01 moves from PARTIAL to FIXED and BE-34 from NOT_FIXED to FIXED. The column now reads **66 FIXED, 3 PARTIAL, 16 NOT_FIXED, 5 CLOSED, 1 N/A**. Details in [Gate research](#gate-research-2026-10-19).
+
 | nr | finding_id | finding_summary | severity | gpt-6-astra | claude-opus-5 | action | decision | fix_status |
 |---:|---|---|---|---|---|---|---|---|
-| 1 | UI-01 | nginx's 60-second read timeout can interrupt synchronous paid gate research before its result and actual cost reach the browser. Continued work after disconnection was not runtime-verified. | High | REAL | REAL | no-op | REAL | PARTIAL |
+| 1 | UI-01 | nginx's 60-second read timeout can interrupt synchronous paid gate research before its result and actual cost reach the browser. Continued work after disconnection was not runtime-verified. | High | REAL | REAL | no-op | REAL | FIXED |
 | 2 | UI-02 | Whole-bucket failed/unanswered retry buttons start a request without the estimate and confirmation used by selected-item retries. They also cannot convey explicit uncapped acceptance. | High | REAL | REAL | no-op | REAL | FIXED |
 | 3 | UI-03 | Browser tests replace global Greece gate answers without restoring the previous answer and provenance. A sanity test can also leave a changed spend cap after an intervening failure. | High | REAL | REAL | no-op | REAL | PARTIAL |
 | 4 | UI-04 | Unguarded asynchronous completions can merge old-set responses into a newly selected set or overwrite newer weights and run selections. | Medium | REAL | REAL | no-op | REAL | FIXED |
@@ -93,7 +95,7 @@ The table preserves the original IDs, order, severity labels, and both independe
 | 64 | BE-31 | Comparison directly imports criteria despite the exhaustive dependency table, and the configured layer guard permits this forbidden edge. | Low | REAL | REAL | no-op | REAL | PARTIAL |
 | 65 | BE-32 | Bare pytest excludes paid live tests but still selects ordinary live-publisher tests, making the default invocation network-dependent. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 66 | BE-33 | Known/deferred spending durability remains per source, so death before the current source returns loses its billed totals. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
-| 67 | BE-34 | Known/deferred gate research returns/logs spending but creates no durable billing record, leaving lost responses or process death unledgered. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 67 | BE-34 | Known/deferred gate research returns/logs spending but creates no durable billing record, leaving lost responses or process death unledgered. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 68 | BE-36 | Finite-period confirmed gates keep applying and are skipped by research. Whether expiry should invalidate manual decisions remains a policy question. | Medium | UNCERTAIN | REAL | verify | REAL | NOT_FIXED |
 | 69 | BE-37 | Fallback eligibility excludes an entire attribute whenever any structured adapter declares it, rather than considering candidate-specific gaps or failed sources. | Low | REAL | REAL | no-op | REAL | CLOSED |
 | 70 | BE-38 | Backend coverage combines line and branch percentages into one floor, allowing one metric below the separately promised threshold. | Medium | REAL | REAL | no-op | REAL | FIXED |
@@ -384,3 +386,26 @@ Defects fixed in the same phase:
 **Recorded for later** in the plan's section 7: NEW-55 to NEW-63. One needs your attention: **NEW-57**. Since before this review, pressing Refresh during a start lets go of Start, so a second start can be sent. The database refuses it, but the card then drops the run that did start and shows the old one under a `run_already_in_flight` banner. The fix is NEW-52's: track a start apart from `busy`.
 
 **After Phase B (2026-10-19):** you chose to fix NEW-57 at once. `8bad828` holds Start, "Yes, start it" and "Not yet" for as long as a start is in flight, whatever act is newest, as NEW-52 does for Stop. It was written test-first, with 100% of its changed lines covered. `make ui-check` passed (1,497 tests), and so did the browser suite against the rebuilt containers (32 of 32). Your live data came back as it was, apart from run 128's one free figure and Greece's re-dated answer.
+
+## Gate research (2026-10-19)
+
+The plan you approved on 2026-10-18, built test-first in two lanes that shared no file: the server's, then the page's. Every item began with tests that failed for the right reason, and 100% of the changed lines are covered.
+
+| Finding | Commit(s) on `master` | What changed |
+|---|---|---|
+| NEW-01 | 567faf4 | Research asks only the gates the catalog marks researchable, about the countries each concerns (migration `0502`, decision Q236): the UK Skilled Worker route about the United Kingdom, the Swiss and Liechtenstein quotas about Switzerland and Liechtenstein. A pass over the country level is 3 paid calls, not 160, and a gate research cannot answer costs nothing |
+| BE-34 | c99e4a1 | Every billed research call is written to a spend ledger as it returns (migration `0503`), before its proposal is stored and before the next question, so a pass that dies keeps the record of what it paid for. Write-only, by decision |
+| UI-01 | 34f9b30, 36bad8c, 634fb1e | The page asks one gate per request, so each request is one paid call at most (each call is bounded to 240 s, under the proxy's 300 s). It holds the whole pass to the spend cap, stops when you press "Stop after this question" or leave Configure, survives a switch of criteria set, shows its progress, and re-reads the answers once at the end |
+| NEW-60 | d6ef9a9 | The research estimate and pass refuse an unknown level with 422, as runs do |
+| NEW-63 | 5e7787f, 89307fc | A proposal a person's answer displaced during a pass is reported among the answers not stored, rather than listed as a proposal. The review found that the panel headed that list "Answered without citing anything", which this proposal had not done; the list is now headed "Asked, but nothing was stored", and the contract names both causes |
+| Contract text | 8c90549 | The estimate's and the pass's descriptions say research asks only what it can answer. Descriptions only: no shape changes |
+
+**Checked at `8c90549`:**
+
+- `make check` is green: 3,200 backend tests at 97.30% coverage, the import contracts kept, every audit passing; 1,553 UI tests at 98.99% coverage, eslint without errors.
+- `make migrate` took the backup `backups/20261019-170218.dump`, then applied `0502` and `0503`. Your database now marks the three gates researchable, each with its country, and the ledger is empty.
+- After the rebuild, the live estimate for the country level is **3 calls, at most €0.22**. A gate research cannot answer costs nothing, and an unknown level is refused. The ranking is unchanged (the Netherlands 77, Ireland and Malta 72).
+- The browser suite passed in full, 32 of 32. Your live data came back as it was, apart from run 129's one free figure and Greece's re-dated answer; the `[e2e]` ranking was discarded by a backend restart.
+- Independent reviews:
+  - The server lane: the NEW-63 heading, fixed in `89307fc`; nothing else.
+  - The page lane: nothing in the pass itself. No request goes after Stop, leaving Configure or the cap; the cap holds exactly at its boundary; the acceptance never carries into the next pass. It confirmed one older gap: a keyboard user standing in the proposals table when a pass ends is put back on the page, because the re-read at the end blanks the table for a moment. That predates this build and is recorded under NEW-45.
