@@ -79,6 +79,11 @@ export interface RunScreenState {
    * which is all `busy` can say (NEW-52).
    */
   isStopping: (runId: number) => boolean;
+  /**
+   * Whether a start is in flight -- whatever act is newest, which is all `busy` can say
+   * (NEW-57). Every way to start is held on it.
+   */
+  starting: boolean;
   failure: unknown;
   history: Resource<{ items: Run[]; total: number }>;
   /**
@@ -130,6 +135,11 @@ export function useRunScreen(): RunScreenState {
   const [stopsAsked, setStopsAsked] = useState<ReadonlySet<number>>(
     () => new Set(),
   );
+  // **Whether a start is in flight** (NEW-57), apart from `busy` for the reason Stop is: a
+  // refresh sent while a start went out took the label, and every way to start was let go -- so
+  // a second start could be sent, which the database refuses, and its claim took the card from
+  // the run that did start.
+  const [starting, setStarting] = useState(false);
 
   // Every run, not the newest ten: the history, the diff's choices and the month's spend all
   // read this list as every run there has been (UI-17).
@@ -155,6 +165,16 @@ export function useRunScreen(): RunScreenState {
     },
     [history],
   );
+
+  /** Runs one start with every way to start held until it has ended, however it ends. */
+  const holdingStarts = useCallback(async (action: () => Promise<void>) => {
+    setStarting(true);
+    try {
+      await action();
+    } finally {
+      setStarting(false);
+    }
+  }, []);
 
   /**
    * Reads a run back, and shows it if the reader is still waiting on the act that asked.
@@ -235,6 +255,7 @@ export function useRunScreen(): RunScreenState {
     current,
     busy,
     isStopping: (runId) => stopsAsked.has(runId),
+    starting,
     failure,
     history: history.resource,
     runs: runs ?? lastRuns,
@@ -251,14 +272,16 @@ export function useRunScreen(): RunScreenState {
     start: (levelId) => {
       const ticket = claim();
       const onCard = current?.id;
-      void act("running", async () => {
-        const started = await startRun({ level: levelId }).catch((refused: unknown) =>
-          giveTheCardBack(ticket, onCard, refused),
-        );
-        setPlan(null);
-        setPlanOrigin(null);
-        await watch(ticket, started.id);
-      });
+      void act("running", () =>
+        holdingStarts(async () => {
+          const started = await startRun({ level: levelId }).catch((refused: unknown) =>
+            giveTheCardBack(ticket, onCard, refused),
+          );
+          setPlan(null);
+          setPlanOrigin(null);
+          await watch(ticket, started.id);
+        }),
+      );
     },
     propose: (scope, what, origin) =>
       void act("planning", async () => {
@@ -285,15 +308,17 @@ export function useRunScreen(): RunScreenState {
       if (!armed) return;
       const ticket = claim();
       const onCard = current?.id;
-      void act("running", async () => {
-        // Going uncapped is only ever accepted because the strip said so in as many words.
-        const started = await startRun({
-          ...armed.scope,
-          accept_uncapped_spend: armed.commitment.uncapped,
-        }).catch((refused: unknown) => giveTheCardBack(ticket, onCard, refused));
-        setArmed(null);
-        await watch(ticket, started.id);
-      });
+      void act("running", () =>
+        holdingStarts(async () => {
+          // Going uncapped is only ever accepted because the strip said so in as many words.
+          const started = await startRun({
+            ...armed.scope,
+            accept_uncapped_spend: armed.commitment.uncapped,
+          }).catch((refused: unknown) => giveTheCardBack(ticket, onCard, refused));
+          setArmed(null);
+          await watch(ticket, started.id);
+        }),
+      );
     },
     cancel: () => {
       setArmed(null);

@@ -357,10 +357,10 @@ function GapEstimate({
             // the action a screen exists to take, and this screen exists to start a run.
             <HeldButton
               className="button button--primary"
-              held={run.busy === "running"}
+              held={run.starting}
               onClick={onStart}
             >
-              {run.busy === "running" ? "Running…" : "Start this acquisition"}
+              {run.starting ? "Running…" : "Start this acquisition"}
             </HeldButton>
           )
         : (
@@ -376,14 +376,14 @@ function GapEstimate({
               <div className="confirm__acts">
                 <HeldButton
                   className="button button--primary"
-                  held={run.busy === "running"}
+                  held={run.starting}
                   onClick={run.commit}
                 >
-                  {run.busy === "running" ? "Starting…" : "Yes, start it"}
+                  {run.starting ? "Starting…" : "Yes, start it"}
                 </HeldButton>
                 <HeldButton
                   className="button"
-                  held={run.busy === "running"}
+                  held={run.starting}
                   onClick={run.cancel}
                 >
                   Not yet

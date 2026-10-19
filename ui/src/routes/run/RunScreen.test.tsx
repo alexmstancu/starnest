@@ -3486,4 +3486,72 @@ describe("acting from the keyboard", () => {
     expect(retry).toBeDisabled();
     expectNotHeld(retry);
   });
+
+  /**
+   * NEW-57. **Every way to start stays held for as long as a start is in flight, whatever act
+   * is newest.** They were held only while `busy` said "running", and a Refresh sent meanwhile
+   * took the label -- so a second start could be sent. The database refuses it, but its claim
+   * took the card from the run that did start, and put the old one back under the refusal.
+   */
+  async function aRefreshReadingWhileAStartIsSent(
+    user: ReturnType<typeof userEvent.setup>,
+    startBy: HTMLElement,
+  ): Promise<{ starts: { requests: { sent: number } }; release: () => void }> {
+    const card = within(screen.getByRole("region", { name: /acquisition 7/i }));
+    const starts = holdEach("post", "/data-acquisition-runs");
+    await user.click(startBy);
+    await waitFor(() => expect(starts.requests.sent).toBe(1));
+    const reads = holdEach("get", "/data-acquisition-runs/7");
+    await user.click(card.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(reads.requests.sent).toBe(1));
+    return {
+      starts,
+      release: () => {
+        reads.release();
+        starts.release();
+      },
+    };
+  }
+
+  it("keeps Start held while the run is started, though a refresh is read meanwhile", async () => {
+    const user = userEvent.setup();
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    await estimate();
+    const startIt = await screen.findByRole("button", {
+      name: /start this acquisition/i,
+    });
+    const { starts, release } = await aRefreshReadingWhileAStartIsSent(
+      user,
+      startIt,
+    );
+
+    expectHeld(startIt);
+    expect(startIt).toHaveTextContent("Running…");
+    await user.click(startIt);
+
+    release();
+    await everyActHasEnded();
+    expect(starts.requests.sent).toBe(1);
+  });
+
+  it("keeps Yes and Not yet held while the run is started, though a refresh is read meanwhile", async () => {
+    const user = userEvent.setup();
+    const { yes, notYet } = await aRetryArmed();
+    const { starts, release } = await aRefreshReadingWhileAStartIsSent(
+      user,
+      yes,
+    );
+
+    expectHeld(yes);
+    expect(yes).toHaveTextContent("Starting…");
+    expectHeld(notYet);
+    await user.click(yes);
+    await user.click(notYet);
+    expect(notYet).toBeInTheDocument();
+
+    release();
+    await everyActHasEnded();
+    expect(starts.requests.sent).toBe(1);
+  });
 });
