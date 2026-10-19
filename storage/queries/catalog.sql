@@ -179,9 +179,19 @@ ORDER  BY s.candidate, s.attribute;
 -- name: select_match_rules(level)
 -- The named gates. A rule with a NULL level applies at every level, so it is returned
 -- whatever level is asked for.
+--
+-- Each comes with whether a model may research it and the candidates it concerns (0502), in
+-- one array per gate. An empty array is every candidate at the gate's level, never none.
 SELECT r.id,
        r.name,
-       r.level
+       r.level,
+       r.researchable,
+       ARRAY(
+           SELECT c.candidate
+           FROM   match_rule_candidate AS c
+           WHERE  c.match_rule = r.id
+           ORDER  BY c.candidate
+       ) AS concerned_candidates
 FROM   match_rule AS r
 WHERE  :level::text IS NULL OR r.level IS NULL OR r.level = :level
 ORDER  BY r.id;

@@ -409,7 +409,13 @@ class TestTheFallbackFigure:
 
 class TestResearchingAGate:
     def a_gate(self) -> MatchRule:
-        return MatchRule(id="uk_skilled_worker", name="UK Skilled Worker route", level="country")
+        # Researchable, or the pass would ask it nothing (NEW-01).
+        return MatchRule(
+            id="uk_skilled_worker",
+            name="UK Skilled Worker route",
+            level="country",
+            researchable=True,
+        )
 
     async def test_it_reports_what_the_official_page_said_and_the_page(self) -> None:
         found = await LlmGateResearcher(
@@ -557,7 +563,12 @@ class TestResearchingAGate:
         assert "connection refused" in found.reason
 
     def another_gate(self) -> MatchRule:
-        return MatchRule(id="ch_work_permit_quota", name="Swiss work permit quota", level="country")
+        return MatchRule(
+            id="ch_work_permit_quota",
+            name="Swiss work permit quota",
+            level="country",
+            researchable=True,
+        )
 
 
 class Proposals:

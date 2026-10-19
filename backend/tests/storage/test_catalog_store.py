@@ -313,6 +313,52 @@ async def test_a_gate_with_no_level_is_returned_whichever_level_is_asked_for(
     assert all(rule.applies_at("country") for rule in at_country)
 
 
+THE_GATES_RESEARCH_CAN_ANSWER = {
+    "ch_eu_efta_quota": ("country.switzerland",),
+    "li_eea_quota": ("country.liechtenstein",),
+    "uk_skilled_worker": ("country.united_kingdom",),
+}
+"""`reqs.md` 7.3's three "Manual, LLM-assisted" gates and the one country each concerns (`0502`).
+
+**Named rather than described**, as the rows above are, because these rows decide what research
+costs: a mapper that dropped either column would send every gate to the model about every
+candidate again, 160 paid calls where three are asked, with nothing on screen looking wrong.
+"""
+
+
+async def test_only_the_gates_research_can_answer_come_back_researchable(
+    catalog: PostgresCatalogStore,
+) -> None:
+    rules = await catalog.read_match_rules()
+
+    assert {str(rule.id) for rule in rules if rule.researchable} == set(
+        THE_GATES_RESEARCH_CAN_ANSWER
+    )
+
+
+async def test_each_researchable_gate_comes_back_concerning_its_one_country(
+    catalog: PostgresCatalogStore,
+) -> None:
+    rules = {str(rule.id): rule for rule in await catalog.read_match_rules(level="country")}
+
+    assert {
+        gate: tuple(str(candidate) for candidate in rules[gate].concerned_candidates)
+        for gate in THE_GATES_RESEARCH_CAN_ANSWER
+    } == THE_GATES_RESEARCH_CAN_ANSWER
+
+
+async def test_a_gate_that_names_no_candidate_comes_back_concerning_every_one(
+    catalog: PostgresCatalogStore,
+) -> None:
+    """No rows means every candidate at the gate's level, so the two gates research cannot
+    answer -- one definitional, one the household's own -- still concern every country."""
+    rules = {str(rule.id): rule for rule in await catalog.read_match_rules()}
+
+    for gate in ("eu_free_movement", A_GATE_ASKED_AT_EVERY_LEVEL):
+        assert rules[gate].concerned_candidates == ()
+        assert rules[gate].concerns("country.portugal")
+
+
 async def test_a_compound_rule_comes_back_carrying_the_children_its_shape_reads(
     catalog: PostgresCatalogStore,
 ) -> None:

@@ -218,6 +218,9 @@ class CatalogStore(ABC):
     async def read_match_rules(self, *, level: str | None = None) -> tuple[MatchRule, ...]:
         """The named gates (`reqs.md` 3.7). A rule with no level is returned at every level.
 
+        Each says whether research may ask a model about it and which candidates it concerns
+        (`reqs.md` 7.3): facts about the gate, held in the catalog like the gate itself.
+
         **Whether a gate is enforced is not here and could not be.** That is a preference held
         by a criteria set, and reading it through this seam would put the subjective half of
         the ontology behind the objective one (`arch.md` 3.6). This returns what exists, never

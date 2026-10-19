@@ -115,6 +115,10 @@ async def research_gates(
 ) -> ResearchOutcome:
     """Ask about every gate nobody has confirmed, and store what comes back as a proposal.
 
+    **Only the pairs `gates_to_ask` names are asked**: a gate the catalog marks researchable,
+    about a candidate it concerns (NEW-01). A pass with none to ask spends nothing, so it needs
+    no cap either.
+
     **A confirmed answer is never re-asked.** Somebody looked, wrote it down, and paying a model
     to disagree with them is not research -- it is noise with a bill. A previous *proposal* is
     asked again, because nothing about it was settled.
@@ -123,8 +127,9 @@ async def research_gates(
     asked when this would spend with no ceiling set, and it stops at the ceiling with everything
     already found kept.
     """
+    to_ask = gates_to_ask(rules, candidates, already_answered)
     refuse_unless_capped(
-        costs_money=researcher.costs_money,
+        costs_money=researcher.costs_money and bool(to_ask),
         cap_eur=spend_cap_eur,
         uncapped_is_accepted=uncapped_is_accepted,
     )
@@ -132,7 +137,7 @@ async def research_gates(
 
     proposals: list[MatchRuleResult] = []
     refusals: list[str] = []
-    for rule, candidate in gates_to_ask(rules, candidates, already_answered):
+    for rule, candidate in to_ask:
         if meter.is_exhausted:
             _log.warning("research halted on its spend cap: %s", meter.describe())
             return ResearchOutcome(
@@ -199,6 +204,11 @@ def gates_to_ask(
     already confirmed -- would promise work that never happens, which is worse than no estimate
     at all (`reqs.md` 6.3).
 
+    **Only a gate the catalog marks researchable is asked, and only about the candidates it
+    concerns** (`reqs.md` 7.3, NEW-01). The others are definitional or the household's own, and a
+    model asked about them -- or about a country the gate is not about -- is billed for an
+    answer nobody can use.
+
     A previous *proposal* is asked again, because nothing about it was settled; a confirmed
     answer never is, because paying a model to disagree with somebody who looked is noise with
     a bill.
@@ -211,8 +221,10 @@ def gates_to_ask(
     return tuple(
         (rule, candidate)
         for rule in rules
+        if rule.researchable
         for candidate in candidates
         if rule.applies_at(str(candidate.id.level_id))
+        and rule.concerns(str(candidate.id))
         and (str(rule.id), str(candidate.id)) not in confirmed
     )
 
@@ -226,8 +238,8 @@ def plan_research(
 ) -> Estimate:
     """What a research pass would cost, without asking anything.
 
-    The count is exact -- one question per gate per candidate, which is how the researcher is
-    built -- and the money is the researcher's own arithmetic, because it is the only thing that
-    knows what it charges.
+    The count is exact -- one question per pair `gates_to_ask` names, which is how the
+    researcher is built -- and the money is the researcher's own arithmetic, because it is the
+    only thing that knows what it charges.
     """
     return researcher.estimate_for(len(gates_to_ask(rules, candidates, already_answered)))

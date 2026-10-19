@@ -93,6 +93,11 @@ class MatchRule(BaseModel):
     Distinct from a criterion's matching threshold, which reads a measured value and decides.
     A gate carries a judgement with nothing to compute (`reqs.md` 3.7), which is also why it
     has no value type, no unit and no goal.
+
+    **Whether research may ask a model about it, and about whom, are catalog facts** (`reqs.md`
+    7.3, NEW-01). Three gates are answered by reading official pages, and each is a question about
+    one country; the others are definitional or the household's own, and asking a model about
+    them would be billed for an answer nobody can use.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -106,6 +111,20 @@ class MatchRule(BaseModel):
             "excluded whether it is a country or a city."
         ),
     )
+    researchable: bool = Field(
+        default=False,
+        description=(
+            "Whether a model may be asked to research it (`reqs.md` 6.10 use 3). Only a gate "
+            "decided by reading official pages is; nothing else is worth paying to ask."
+        ),
+    )
+    concerned_candidates: tuple[CandidateId, ...] = Field(
+        default=(),
+        description=(
+            "The candidates the gate is a question about. Empty means every candidate at its "
+            "level -- read through `concerns`, never directly."
+        ),
+    )
 
     def applies_at(self, level: str) -> bool:
         """Whether this gate is asked at that level.
@@ -114,6 +133,15 @@ class MatchRule(BaseModel):
         is the kind of null that is read as "not applicable anywhere" by whoever meets it next.
         """
         return self.level is None or self.level == level
+
+    def concerns(self, candidate: str) -> bool:
+        """Whether this gate is a question about that candidate.
+
+        The same null as `applies_at`, and decided here for the same reason: no candidates named
+        means every candidate, and a call site testing membership itself would read an empty list
+        as "about nobody".
+        """
+        return not self.concerned_candidates or candidate in self.concerned_candidates
 
 
 class MatchRuleResult(BaseModel):

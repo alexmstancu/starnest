@@ -118,6 +118,39 @@ class TestAGate:
         """Enforcement is a preference and lives in a criteria set (`reqs.md` 3.7)."""
         assert "is_enforced" not in MatchRule.model_fields
 
+    def test_is_not_researchable_unless_the_catalog_says_so(self) -> None:
+        """NEW-01. `reqs.md` 7.3 names three gates "Manual, LLM-assisted"; the others are
+        definitional or the household's own, and a model asked about them is billed for an
+        answer nobody can use."""
+        definitional = MatchRule(
+            id="eu_free_movement", name="EU/EEA free movement", level="country"
+        )
+
+        assert definitional.researchable is False
+
+    def test_naming_no_candidate_concerns_every_candidate(self) -> None:
+        """No candidates named means every candidate at its level -- the null-means-all rule,
+        decided once here so no call site re-derives it, as `applies_at` does for the level."""
+        everyone = MatchRule(id="eu_free_movement", name="EU/EEA free movement", level="country")
+
+        assert everyone.concerned_candidates == ()
+        assert everyone.concerns("country.portugal")
+        assert everyone.concerns("country.united_kingdom")
+
+    def test_naming_candidates_concerns_only_those(self) -> None:
+        """The UK route is a question about the United Kingdom, and about nowhere else."""
+        uk_only = MatchRule(
+            id="uk_skilled_worker",
+            name="UK Skilled Worker route",
+            level="country",
+            researchable=True,
+            concerned_candidates=("country.united_kingdom",),
+        )
+
+        assert uk_only.researchable is True
+        assert uk_only.concerns("country.united_kingdom")
+        assert not uk_only.concerns("country.portugal")
+
     def test_refuses_a_name_that_says_nothing(self) -> None:
         with pytest.raises(ValidationError):
             MatchRule(id="uk_skilled_worker", name="")

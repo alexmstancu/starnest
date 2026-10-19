@@ -85,6 +85,8 @@ OBJECTIVE = {
     "match_rule",
     "match_rule_result",
     "match_rule_result_citation",
+    # Which candidates a gate concerns: the UK route is a question about the UK (NEW-01).
+    "match_rule_candidate",
     "compound_rule",
     "compound_rule_condition",
     "compound_rule_input",

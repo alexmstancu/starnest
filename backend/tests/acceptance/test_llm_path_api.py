@@ -24,6 +24,9 @@ pytestmark = pytest.mark.acceptance
 COUNTRY = "country"
 OVERBURDEN = "country.housing_cost_overburden_rate"
 A_PAGE = "https://example.gov/skilled-worker"
+# `0502`: the UK route is researchable and concerns the United Kingdom alone, so a proposal for
+# it can only be about this country (NEW-01).
+THE_UK = "country.united_kingdom"
 
 
 class StubResearcher(GateResearcher):
@@ -295,6 +298,29 @@ class TestResearchingTheGates:
         assert refused.status_code == 409
         assert refused.json()["code"] == "spend_cap_not_set"
 
+    async def test_a_gate_research_cannot_answer_asks_nothing_and_refuses_nothing(
+        self, database_url: str
+    ) -> None:
+        """NEW-01. Free movement is definitional (`reqs.md` 7.3), so the pass has nothing to ask
+        and nothing to spend -- not even a cap to require, though none is set here."""
+        researcher = StubResearcher()
+        async with an_api(database_url, (a_stub_source(),), researcher=researcher) as api:
+            await _with_a_household(api)
+
+            response = await api.post(
+                "/v1/match-rule-research",
+                json={"level": COUNTRY, "match_rules": ["eu_free_movement"]},
+            )
+            stored = (await api.get("/v1/match-rule-results")).json()["items"]
+
+        assert response.status_code == 200, f"answered {response.status_code}: {response.text}"
+        body = response.json()
+        assert (body["proposals"], body["refusals"], body["calls"]) == ([], [], 0)
+        assert body["cost_eur"] == 0
+        assert researcher.asked == 0
+        assert stored == []
+        validate("researchMatchRules", body)
+
     async def test_it_stores_proposals_with_their_sources(self, database_url: str) -> None:
         async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
             await _with_a_cap(api, 50)
@@ -305,13 +331,13 @@ class TestResearchingTheGates:
                     "/v1/match-rule-research",
                     json={
                         "level": COUNTRY,
-                        "candidates": ["country.portugal"],
+                        "candidates": [THE_UK],
                         "match_rules": ["uk_skilled_worker"],
                     },
                 )
             ).json()
 
-            stored = (await api.get("/v1/match-rule-results?candidate=country.portugal")).json()
+            stored = (await api.get(f"/v1/match-rule-results?candidate={THE_UK}")).json()
 
         (proposal,) = outcome["proposals"]
         assert proposal["is_proposal"] is True
@@ -332,11 +358,11 @@ class TestResearchingTheGates:
                 f"/v1/criteria-sets/{a_scratch_criteria_set}/match-rules/uk_skilled_worker",
                 json={"is_enforced": True},
             )
-            await api.post(
+            researched = await api.post(
                 "/v1/match-rule-research",
                 json={
                     "level": COUNTRY,
-                    "candidates": ["country.portugal"],
+                    "candidates": [THE_UK],
                     "match_rules": ["uk_skilled_worker"],
                 },
             )
@@ -345,11 +371,12 @@ class TestResearchingTheGates:
                 await api.get(f"/v1/rankings?criteria_set={a_scratch_criteria_set}&level={COUNTRY}")
             ).json()
 
-        portugal = next(
-            row for row in ranking["candidates"] if row["candidate"] == "country.portugal"
-        )
-        assert portugal["match_status"] != "not_matching"
-        assert portugal["non_match_reasons"] == []
+        # The proposal exists -- otherwise "rules nothing out" would hold of nothing at all.
+        (proposal,) = researched.json()["proposals"]
+        assert proposal["match_result"] == "not_matching"
+        united_kingdom = next(row for row in ranking["candidates"] if row["candidate"] == THE_UK)
+        assert united_kingdom["match_status"] != "not_matching"
+        assert united_kingdom["non_match_reasons"] == []
 
     async def test_confirming_it_replaces_the_proposal(
         self, database_url: str, a_scratch_criteria_set: str
@@ -372,17 +399,17 @@ class TestResearchingTheGates:
                 f"/v1/criteria-sets/{a_scratch_criteria_set}/match-rules/uk_skilled_worker",
                 json={"is_enforced": True},
             )
-            await api.post(
+            researched = await api.post(
                 "/v1/match-rule-research",
                 json={
                     "level": COUNTRY,
-                    "candidates": ["country.portugal"],
+                    "candidates": [THE_UK],
                     "match_rules": ["uk_skilled_worker"],
                 },
             )
 
             confirmed = await api.put(
-                "/v1/match-rule-results/uk_skilled_worker/country.portugal",
+                f"/v1/match-rule-results/uk_skilled_worker/{THE_UK}",
                 json={
                     "match_result": "not_matching",
                     "reason": "checked the official page myself",
@@ -390,9 +417,10 @@ class TestResearchingTheGates:
                 },
             )
 
-            answers = (await api.get("/v1/match-rule-results?candidate=country.portugal")).json()[
-                "items"
-            ]
+            answers = (await api.get(f"/v1/match-rule-results?candidate={THE_UK}")).json()["items"]
+
+        # There was a proposal to replace: research asked the one country the route concerns.
+        assert len(researched.json()["proposals"]) == 1
 
         assert confirmed.json()["is_proposal"] is False
         # One row, not two: confirming **replaces** the proposal rather than sitting beside it,
@@ -409,7 +437,7 @@ class TestResearchingTheGates:
             await _with_a_cap(api, 50)
             await _with_a_household(api)
             await api.put(
-                "/v1/match-rule-results/uk_skilled_worker/country.portugal",
+                f"/v1/match-rule-results/uk_skilled_worker/{THE_UK}",
                 json={"match_result": "matching", "data_source": "manual"},
             )
 
@@ -417,7 +445,7 @@ class TestResearchingTheGates:
                 "/v1/match-rule-research",
                 json={
                     "level": COUNTRY,
-                    "candidates": ["country.portugal"],
+                    "candidates": [THE_UK],
                     "match_rules": ["uk_skilled_worker"],
                 },
             )
@@ -434,7 +462,10 @@ class TestEstimatingAResearchPassBeforeAgreeingToIt:
     disagree about what a pass is.
     """
 
-    async def test_it_prices_every_gate_against_every_candidate(self, database_url: str) -> None:
+    async def test_it_prices_a_gate_only_for_the_country_it_concerns(
+        self, database_url: str
+    ) -> None:
+        """NEW-01. The UK route was priced against all thirty-two countries; it concerns one."""
         async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
             plan = (
                 await api.post(
@@ -443,10 +474,33 @@ class TestEstimatingAResearchPassBeforeAgreeingToIt:
                 )
             ).json()
 
-        assert plan["gates_total"] == 32
-        assert plan["llm_call_count"] == 32
-        assert plan["estimated_cost_eur"] == pytest.approx(0.64)
+        assert plan["gates_total"] == 1
+        assert plan["llm_call_count"] == 1
+        assert plan["estimated_cost_eur"] == pytest.approx(0.02)
         assert "flat rate per gate" in plan["estimate_basis"]
+
+    async def test_a_pass_over_the_whole_level_is_three_questions(self, database_url: str) -> None:
+        """NEW-01. Five gates against thirty-two countries was 160 paid calls. Three gates are
+        answered by reading official pages (`reqs.md` 7.3), and each concerns one country."""
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            plan = (await api.post("/v1/match-rule-research/plan", json={"level": COUNTRY})).json()
+
+        assert (plan["gates_total"], plan["llm_call_count"]) == (3, 3)
+        assert plan["estimated_cost_eur"] == pytest.approx(0.06)
+
+    async def test_a_gate_research_cannot_answer_is_estimated_at_nothing(
+        self, database_url: str
+    ) -> None:
+        """Not refused: the page asks one gate per request, including the two with nothing to
+        ask, and a refusal there would read as a fault rather than as nothing to do."""
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            planned = await api.post(
+                "/v1/match-rule-research/plan",
+                json={"level": COUNTRY, "match_rules": ["eu_free_movement"]},
+            )
+
+        assert planned.status_code == 200
+        assert (planned.json()["gates_total"], planned.json()["estimated_cost_eur"]) == (0, 0)
 
     async def test_it_spends_nothing_and_stores_nothing(self, database_url: str) -> None:
         """The whole point: it is asked *instead* of the pass, not before it."""
@@ -476,18 +530,13 @@ class TestEstimatingAResearchPassBeforeAgreeingToIt:
         looked is noise with a bill, and an estimate that counted it would overstate the work."""
         async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
             await api.put(
-                "/v1/match-rule-results/uk_skilled_worker/country.portugal",
+                f"/v1/match-rule-results/uk_skilled_worker/{THE_UK}",
                 json={"match_result": "matching", "data_source": "manual"},
             )
 
-            plan = (
-                await api.post(
-                    "/v1/match-rule-research/plan",
-                    json={"level": COUNTRY, "match_rules": ["uk_skilled_worker"]},
-                )
-            ).json()
+            plan = (await api.post("/v1/match-rule-research/plan", json={"level": COUNTRY})).json()
 
-        assert plan["gates_total"] == 31
+        assert plan["gates_total"] == 2
 
     async def test_with_no_model_there_is_nothing_to_estimate(self, api: httpx.AsyncClient) -> None:
         """501, as the pass itself answers: an estimate of zero would read as "this is free"."""

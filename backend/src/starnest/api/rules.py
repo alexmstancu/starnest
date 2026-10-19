@@ -291,10 +291,11 @@ async def plan_match_rule_research(
     """What researching the gates would cost, without asking anything.
 
     **The estimate before the spend** (`reqs.md` 6.3, Q22): research is the most expensive thing
-    this application does -- one call per gate per candidate -- and the household should see the
-    bill before agreeing to it rather than after. It counts the same pairs the pass would ask
-    about, through the same function (`gates_to_ask`), so the two cannot disagree: a gate asked
-    only at another level, or one somebody has already confirmed, is in neither.
+    this application does -- one call per gate per candidate it concerns -- and the household
+    should see the bill before agreeing to it rather than after. It counts the same pairs the pass
+    would ask about, through the same function (`gates_to_ask`), so the two cannot disagree: a
+    gate research cannot answer, a candidate the gate is not about, a gate asked only at another
+    level, or one somebody has already confirmed, is in neither (NEW-01).
 
     Nothing is stored and nothing is charged. With no model configured this is a 501, as the
     pass itself is: an estimate of zero would read as "this would cost nothing". So is a
@@ -337,6 +338,10 @@ async def research_match_rules(
 
     `reqs.md` 6.10 use 3. **What comes back is a proposal**: stored with its sources, displayed,
     and ruling nothing out until a human writes the same answer through `putMatchRuleResult`.
+
+    **Only a gate the catalog marks researchable is asked, and only about the candidates it
+    concerns** (`reqs.md` 7.3, NEW-01). A scope naming a gate research cannot answer asks nothing
+    and costs nothing, and is answered rather than refused: the page asks one gate per request.
 
     **It costs money**, so the cap applies as it does to a run: refused with 409 when none is set
     unless this request accepts an uncapped one, and it halts at the cap keeping every proposal

@@ -16,7 +16,7 @@ from typing import Any
 
 from psycopg_pool import AsyncConnectionPool
 
-from starnest.candidates import Level, LevelHierarchy, LevelId
+from starnest.candidates import CandidateId, Level, LevelHierarchy, LevelId
 from starnest.data import (
     AllowedRange,
     Attribute,
@@ -218,7 +218,10 @@ class PostgresCatalogStore(CatalogStore):
 
     async def read_match_rules(self, *, level: str | None = None) -> tuple[MatchRule, ...]:
         """The named gates. A rule with no level is asked at every level, so it comes back
-        whichever level was requested -- the filter is in the query, where the null lives."""
+        whichever level was requested -- the filter is in the query, where the null lives.
+
+        Each carries whether research may ask about it and the candidates it concerns, which
+        come back empty for a gate that concerns every candidate at its level (NEW-01)."""
         async with acquire(self._pool) as connection:
             rows = [row async for row in self._queries.select_match_rules(connection, level=level)]
         return tuple(
@@ -226,6 +229,10 @@ class PostgresCatalogStore(CatalogStore):
                 id=MatchRuleId(row.id),
                 name=row.name,
                 level=LevelId(row.level) if row.level else None,
+                researchable=row.researchable,
+                concerned_candidates=tuple(
+                    CandidateId(candidate) for candidate in row.concerned_candidates
+                ),
             )
             for row in rows
         )
