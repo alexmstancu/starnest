@@ -8,7 +8,8 @@ import {
   type ResearchPlan,
 } from "../../../api/endpoints";
 import { useResource, type Resource } from "../../../api/useResource";
-import { spendIsKnown, type ResearchPass } from "./proposalReading";
+import { type ResearchPass } from "./proposalReading";
+import { spendIsKnown } from "./researchPass";
 
 /**
  * The gate answers a model proposed, and what confirming one does.
