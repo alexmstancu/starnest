@@ -322,7 +322,7 @@ function ValueTable({
             const judged = judgements.get(value.attribute);
             const { inUse, reading } = figureInUse(
               value,
-              judged?.scored === true,
+              judged?.scored,
               contributions,
             );
             return (

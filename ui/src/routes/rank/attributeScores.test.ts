@@ -135,4 +135,34 @@ describe("what the In use column says about one figure", () => {
       reading: null,
     });
   });
+
+  /**
+   * **Where the set has said nothing, the pass answers.** The set is a separate read that can
+   * fail or still be on its way, and the ranking carries a reading for every criterion that
+   * counts and for nothing else -- so taking the set's silence for "not scored" hid the pass's
+   * numbers from the one figure it had scored.
+   */
+  it("calls a figure scored, with the pass's reading, when only the pass has said so", () => {
+    expect(figureInUse(active, undefined, readings)).toEqual({
+      inUse: "scored",
+      reading: { score: "73", weightUsed: "12.5%", pointsAdded: "+9.1" },
+    });
+  });
+
+  it("calls a figure active when neither the set nor the pass has scored it", () => {
+    expect(figureInUse(active, undefined, new Map())).toEqual({
+      inUse: "active",
+      reading: null,
+    });
+  });
+
+  it("still gives no reading to a superseded figure when only the pass has spoken", () => {
+    expect(
+      figureInUse(
+        { attribute: "country.rent", is_active: false, rejection_reason: null },
+        undefined,
+        readings,
+      ),
+    ).toEqual({ inUse: "superseded", reading: null });
+  });
 });

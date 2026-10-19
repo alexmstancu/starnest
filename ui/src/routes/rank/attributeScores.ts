@@ -89,11 +89,17 @@ export interface FigureInUse {
  * reading computed from its predecessor. Rare with one household and one writer, and the
  * household chose this over a contract change.
  *
- * @param scoredBySet whether the active set has a criterion that counts this attribute.
+ * **Where the set has said nothing, the pass answers.** The set is a separate read that can
+ * fail or still be on its way, and the ranking carries a reading for every criterion that
+ * counts and for nothing else -- so taking the set's silence for "not scored" hid the pass's
+ * numbers from the figure it had scored.
+ *
+ * @param scoredBySet whether the active set has a criterion that counts this attribute, or
+ *   undefined where the set has said nothing: unread, or not one of its criteria.
  */
 export function figureInUse(
   figure: StoredFigure,
-  scoredBySet: boolean,
+  scoredBySet: boolean | undefined,
   readings: ReadonlyMap<string, ScoreReading>,
 ): FigureInUse {
   if (!figure.is_active) {
@@ -102,7 +108,7 @@ export function figureInUse(
       reading: null,
     };
   }
-  if (!scoredBySet) {
+  if (!(scoredBySet ?? readings.has(figure.attribute))) {
     return { inUse: "active", reading: null };
   }
   return { inUse: "scored", reading: readings.get(figure.attribute) ?? null };

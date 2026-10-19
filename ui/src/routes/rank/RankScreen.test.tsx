@@ -1402,6 +1402,33 @@ describe("what the pass made of each figure", () => {
     expect(cellOf(table, connectivity, "Weight")).toHaveTextContent(/^—$/);
   });
 
+  /**
+   * **The set is a separate read, and its failure is silent here**, so it may not take the
+   * pass's numbers with it. The ranking answers which attributes count -- it reads every
+   * criterion that does and nothing else -- so the figure it scored keeps its reading, and the
+   * one nothing counts stays active.
+   */
+  it("keeps the pass's reading on the figure it scored when the set cannot be read", async () => {
+    mockServer.use(
+      http.get("/v1/criteria-sets/default", () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "the set could not be read" },
+          { status: 500 },
+        ),
+      ),
+    );
+    const table = await theValues();
+
+    const active = await theActiveCostOfLiving(table);
+    expect(cellOf(table, active, "In use")).toHaveTextContent(/^Scored$/);
+    expect(cellOf(table, active, "Score 0–100")).toHaveTextContent("73");
+    expect(cellOf(table, active, "Weight used")).toHaveTextContent("12.5%");
+    const connectivity = table.getByRole("row", {
+      name: /european air connectivity/i,
+    });
+    expect(cellOf(table, connectivity, "In use")).toHaveTextContent(/^Active$/);
+  });
+
   it("keeps the configured weight beside the one the pass used", async () => {
     // Both, because they answer different questions: what this set says the attribute is
     // worth, and what it was actually worth once the missing figures had been redistributed.
