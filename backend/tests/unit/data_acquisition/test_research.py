@@ -81,27 +81,35 @@ class StubResearcher(GateResearcher):
 
 
 class RecordingResults:
-    """The one method the use case needs, which is why the port is one method wide."""
+    """The one method the use case needs, which is why the port is one method wide. It answers
+    whether it stored the result, as the real store does (NEW-63)."""
 
     def __init__(self) -> None:
         self.recorded: list[MatchRuleResult] = []
 
-    async def record(self, result: MatchRuleResult) -> None:
+    async def record(self, result: MatchRuleResult) -> bool:
         self.recorded.append(result)
+        return True
 
 
 class AStoreAPersonGotToFirst(RecordingResults):
-    """Declines every proposal, as the store does once a person has answered the gate."""
+    """Declines the proposal for a candidate a person answered while the pass ran, as the store
+    does (NEW-02) -- for every candidate, unless some are named."""
 
-    async def record(self, result: MatchRuleResult) -> bool:  # type: ignore[override]
-        self.recorded.append(result)
+    def __init__(self, *answered_for: str) -> None:
+        super().__init__()
+        self._answered_for = set(answered_for)
+
+    async def record(self, result: MatchRuleResult) -> bool:
+        if self._answered_for and str(result.candidate) not in self._answered_for:
+            return await super().record(result)
         return False
 
 
 class AStoreThatFails(RecordingResults):
     """Fails on every write, as a store does when its database goes away mid-pass."""
 
-    async def record(self, result: MatchRuleResult) -> None:
+    async def record(self, result: MatchRuleResult) -> bool:
         raise RuntimeError("the database went away")
 
 
@@ -170,10 +178,9 @@ class TestWhatItStores:
         assert str(proposal.data_source) == "llm"
         assert outcome.proposals == (proposal,)
 
-    async def test_a_proposal_the_store_declines_is_declined_silently(self) -> None:
-        """A person answered while the pass ran (NEW-02). The pass writes no response a person
-        reads, so it has nobody to refuse and simply goes on asking (NEW-36 refuses only the
-        endpoint)."""
+    async def test_a_declined_proposal_does_not_stop_the_pass(self) -> None:
+        """A person answered while the pass ran (NEW-02). Nothing about the next gate changed,
+        so the pass goes on asking (NEW-36 refuses only the endpoint that takes an answer)."""
         researcher = StubResearcher(a_finding(), a_finding())
 
         outcome = await research_gates(
@@ -192,6 +199,39 @@ class TestWhatItStores:
             ("uk_skilled_worker", "country.spain"),
         ]
         assert outcome.calls == 2
+
+    async def test_a_declined_proposal_is_not_listed_as_a_proposal(self) -> None:
+        """NEW-63. The response listed it as though it stood, beside the person's answer the
+        store had kept instead."""
+        outcome = await research_gates(
+            researcher=StubResearcher(a_finding(), a_finding()),
+            rules=[THE_GATE],
+            candidates=[PORTUGAL, SPAIN],
+            citizenships=["country.romania"],
+            results=AStoreAPersonGotToFirst("country.spain"),
+            spend_cap_eur=Decimal(5),
+        )
+
+        assert [str(proposal.candidate) for proposal in outcome.proposals] == ["country.portugal"]
+
+    async def test_a_declined_proposal_is_reported_because_it_was_billed(self) -> None:
+        """Not listed, and not hidden either: the call cost money, so the response says what it
+        bought and why nothing was kept."""
+        outcome = await research_gates(
+            researcher=StubResearcher(a_finding(cost="0.05")),
+            rules=[THE_GATE],
+            candidates=[PORTUGAL],
+            citizenships=["country.romania"],
+            results=AStoreAPersonGotToFirst(),
+            spend_cap_eur=Decimal(5),
+        )
+
+        (refusal,) = outcome.refusals
+        assert refusal == (
+            "uk_skilled_worker for country.portugal: a person answered this gate while the "
+            "pass ran, so the proposal was not stored"
+        )
+        assert (outcome.proposals, outcome.calls, outcome.cost_eur) == ((), 1, Decimal("0.05"))
 
     async def test_an_answer_that_cited_nothing_is_stored_nowhere(self) -> None:
         """An opinion about a visa route is worth less than an open question."""

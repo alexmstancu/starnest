@@ -40,12 +40,12 @@ class ProposalStore(Protocol):
     method is all this needs. A `Protocol`, so the concrete store satisfies it by shape: nothing
     in `storage/` has to know that this seam exists.
 
-    **What `record` answers is not read here.** A store declines a proposal a person got to
-    first (NEW-02), and a pass declines it silently: it writes no response anybody acts on, so
-    there is nobody to refuse -- only the endpoint that takes a gate's answer refuses (NEW-36).
+    **`record` answers whether it stored the proposal, and the pass reads it** (NEW-63). A store
+    declines a proposal a person got to first (NEW-02); the pass then leaves it out of the
+    proposals it reports and names it among the refusals, because the call was still billed.
     """
 
-    async def record(self, result: MatchRuleResult) -> object: ...
+    async def record(self, result: MatchRuleResult) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -199,17 +199,16 @@ async def research_gates(
             )
             continue
 
-        proposal = MatchRuleResult(
-            match_rule=rule.id,
-            candidate=candidate.id,
-            match_result=found.match_result,
-            data_source=_RESEARCHED_BY,
-            retrieval_date=datetime.now(tz=UTC),
-            reason=found.reason,
-            citations=found.citations,
-            is_proposal=True,
-        )
-        await results.record(proposal)
+        proposal = _proposal_from(rule, candidate, found)
+        if not await results.record(proposal):
+            # A person answered this gate while the model was being asked, and a model never
+            # replaces a person (NEW-02). Listing the proposal would show one that is not stored;
+            # leaving it out would hide a call that was billed (NEW-63).
+            refusals.append(
+                f"{rule.id} for {candidate.id}: a person answered this gate while the pass "
+                "ran, so the proposal was not stored"
+            )
+            continue
         proposals.append(proposal)
         _log.info(
             "proposed %s for %s: %s (%s)",
@@ -247,6 +246,20 @@ async def _ledger_what_it_billed(
             llm_call_count=found.calls,
             cost_eur=found.cost_eur,
         )
+    )
+
+
+def _proposal_from(rule: MatchRule, candidate: Candidate, found: Researched) -> MatchRuleResult:
+    """What the researcher found, as an answer nobody has confirmed (`reqs.md` 6.10 use 3)."""
+    return MatchRuleResult(
+        match_rule=rule.id,
+        candidate=candidate.id,
+        match_result=found.match_result,
+        data_source=_RESEARCHED_BY,
+        retrieval_date=datetime.now(tz=UTC),
+        reason=found.reason,
+        citations=found.citations,
+        is_proposal=True,
     )
 
 

@@ -67,7 +67,8 @@ class PostgresMatchRuleResultStore(MatchRuleResultStore):
         The query declines to write a model's proposal over an answer a person recorded
         (NEW-02), and then the citations stay too: they are that answer's evidence, and
         replacing them would put the proposal's pages beside the person's reason. Which of the
-        two happened is answered, so the endpoint can refuse what was declined (NEW-36).
+        two happened is answered, so the endpoint can refuse what was declined (NEW-36) and a
+        research pass can report it rather than list it (NEW-63).
         """
         period = result.reference_period
         async with acquire(self._pool) as connection:

@@ -155,5 +155,6 @@ class MatchRuleResultStore(ABC):
 
         Answers whether it was stored. **A model's answer never replaces one a person recorded**
         (`reqs.md` 6.10 use 3, NEW-02), so that one is declined and this answers `False` -- for
-        the caller to report, or, where nobody is waiting on it, to let pass.
+        the caller to report: the endpoint that takes an answer refuses it (NEW-36), and a
+        research pass names it among its refusals rather than its proposals (NEW-63).
         """

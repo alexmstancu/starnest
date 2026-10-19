@@ -44,9 +44,9 @@ class AnswerRecordedByAPersonError(ValueError):
     """A model's answer was sent over an answer a person recorded, which it never replaces.
 
     `reqs.md` 6.10 use 3: what a model answers is a proposal until a person writes it, so it may
-    not overwrite what a person already gave (NEW-02). The research pass declines such a proposal
-    silently; a request that sends one is told, rather than answered as though it were stored
-    (NEW-36).
+    not overwrite what a person already gave (NEW-02). The research pass reports such a proposal
+    among its refusals rather than its proposals (NEW-63); a request that sends one is told,
+    rather than answered as though it were stored (NEW-36).
     """
 
 

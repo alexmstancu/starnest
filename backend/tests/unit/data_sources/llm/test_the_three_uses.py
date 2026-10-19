@@ -577,5 +577,6 @@ class Proposals:
     def __init__(self) -> None:
         self.recorded: list[MatchRuleResult] = []
 
-    async def record(self, result: MatchRuleResult) -> None:
+    async def record(self, result: MatchRuleResult) -> bool:
         self.recorded.append(result)
+        return True

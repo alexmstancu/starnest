@@ -6,7 +6,7 @@ proposals, which hold whoever answers. Whether the real SDK still returns the sh
 reads is `make live-llm`'s question, and that is the only thing in this repository that spends.
 """
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from decimal import Decimal
 
 import httpx
@@ -65,6 +65,23 @@ class AResearcherThatDiesMidPass(StubResearcher):
         if self.asked:
             raise RuntimeError("the process died here")
         return await super().research(rule=rule, candidate=candidate, citizenships=citizenships)
+
+
+class AResearcherAPersonOvertakes(StubResearcher):
+    """While it researches a gate, a person answers the same gate by hand -- the race NEW-02
+    settles in the person's favour. `meanwhile` is set once a client exists to answer with."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.meanwhile: Callable[[MatchRule, Candidate], Awaitable[None]] | None = None
+
+    async def research(
+        self, *, rule: MatchRule, candidate: Candidate, citizenships: Sequence[str]
+    ) -> Researched:
+        found = await super().research(rule=rule, candidate=candidate, citizenships=citizenships)
+        if self.meanwhile is not None:
+            await self.meanwhile(rule, candidate)
+        return found
 
 
 async def _the_spend_ledger(database_url: str) -> list[tuple]:
@@ -456,6 +473,49 @@ class TestResearchingTheGates:
         assert answer["is_proposal"] is False
         assert answer["data_source"] == "manual"
         assert answer["reason"] == "checked the official page myself"
+
+    async def test_a_proposal_a_person_overtook_is_reported_rather_than_listed(
+        self, database_url: str
+    ) -> None:
+        """NEW-63. A person answered the gate while the model was being asked about it, so the
+        store kept the person's answer and declined the proposal (NEW-02) -- and the response
+        still listed the proposal as though it stood. It was billed, so it is reported."""
+        researcher = AResearcherAPersonOvertakes()
+        async with an_api(database_url, (a_stub_source(),), researcher=researcher) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+
+            async def a_person_answers(rule: MatchRule, candidate: Candidate) -> None:
+                answered = await api.put(
+                    f"/v1/match-rule-results/{rule.id}/{candidate.id}",
+                    json={
+                        "match_result": "matching",
+                        "reason": "checked the official page myself",
+                        "data_source": "manual",
+                    },
+                )
+                assert answered.status_code == 200, answered.text
+
+            researcher.meanwhile = a_person_answers
+            response = await api.post(
+                "/v1/match-rule-research",
+                json={
+                    "level": COUNTRY,
+                    "candidates": [THE_UK],
+                    "match_rules": ["uk_skilled_worker"],
+                },
+            )
+            stored = (await api.get(f"/v1/match-rule-results?candidate={THE_UK}")).json()["items"]
+
+        assert response.status_code == 200, f"answered {response.status_code}: {response.text}"
+        body = response.json()
+        validate("researchMatchRules", body)
+        assert body["proposals"] == []
+        (refusal,) = body["refusals"]
+        assert refusal.startswith(f"uk_skilled_worker for {THE_UK}: a person answered")
+        assert (body["calls"], body["cost_eur"]) == (1, pytest.approx(0.02))
+        (answer,) = stored
+        assert (answer["data_source"], answer["is_proposal"]) == ("manual", False)
 
     async def test_a_confirmed_answer_is_never_researched_again(self, database_url: str) -> None:
         """Paying a model to disagree with somebody who looked is noise with a bill."""
