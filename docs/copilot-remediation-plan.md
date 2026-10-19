@@ -1,6 +1,6 @@
 # Copilot remediation plan
 
-**Status (2026-10-19):** round 2 and Phase B are done. Round 2 fixed 37 findings and the 18 small defects found while planning, test-first (section 2). Phase B fixed the five in section 3, UI-11, UI-15 and UI-26 the small way and UI-32 and BE-23 in full, together with NEW-04, NEW-11, NEW-18 and ten of the defects recorded since round 2. Since round 2, 38 more defects were found (NEW-26 to NEW-63, section 7): 26 are fixed and 12 are recorded for later, NEW-48 among them, held for BE-11 by your choice. BE-31 stays partial, as planned. The other agent fixed ST-02, BE-19 and ST-09 on 2026-10-18, checked against the code. Per finding, the tracker reads **64 FIXED, 4 PARTIAL, 17 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)). Next: gate research (UI-01, NEW-01, BE-34), whose plan you approved on 2026-10-18 (section 6).
+**Status (2026-10-19):** round 2 and Phase B are done. Round 2 fixed 37 findings and the 18 small defects found while planning, test-first (section 2). Phase B fixed the five in section 3, UI-11, UI-15 and UI-26 the small way and UI-32 and BE-23 in full, together with NEW-04, NEW-11, NEW-18 and ten of the defects recorded since round 2. Since round 2, 38 more defects were found (NEW-26 to NEW-63, section 7): 27 are fixed and 11 are recorded for later, NEW-48 among them, held for BE-11 by your choice. BE-31 stays partial, as planned. The other agent fixed ST-02, BE-19 and ST-09 on 2026-10-18, checked against the code. Per finding, the tracker reads **64 FIXED, 4 PARTIAL, 17 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)). Now being built: gate research (UI-01, NEW-01, BE-34), whose plan you approved on 2026-10-18, with NEW-60 and NEW-63 (section 6).
 
 This plan was written on 2026-10-15 against `c943761`, where `make check` was green: 2,863 backend tests, 96.92% coverage, 1,116 UI tests.
 
@@ -258,6 +258,12 @@ No migration, contract change or browser run happens this round.
 - Next small batch: NEW-11, NEW-37, NEW-38, NEW-39, NEW-40, NEW-42, NEW-44, NEW-52 and NEW-53.
 - NEW-54 is mine to fix (done, `b673fde`). Deploy once it is settled. The other agent and I take turns in the shared working tree.
 
+**Given to me, 2026-10-19:**
+
+- Fix NEW-57 at once, with NEW-52's pattern (done, `8bad828`).
+- Fix NEW-60 and NEW-63 with the research build, which changes the same endpoints.
+- Start the approved gate-research build.
+
 **Closed without code:**
 
 | Finding | Why |
@@ -328,7 +334,7 @@ No migration, contract change or browser run happens this round.
 | NEW-54 | ST-09's reuse table recorded no source, so the source-by-source bars could not show a re-read figure | Fixed (b673fde), amending `0501` before it was applied anywhere | `storage/migrations/0501-…sql`, `runs.sql` `select_run_by_source` |
 | NEW-55 | After a settings save, "Saved." stays on screen while the form is edited again, so it vouches for figures that are no longer the saved ones | Later (low) | `ui/src/routes/configure/settings/SettingsPanel.tsx`, `useSettingsForm.ts` |
 | NEW-56 | Rank's save control still disables itself natively during a save, so keyboard focus drops to the page (NEW-34's kind) | Later (low) | `ui/src/routes/rank/SaveControl.tsx` |
-| NEW-57 | Start, "Yes, start it" and "Not yet" are let go during a start once Refresh is pressed, because `busy` names only the newest act. A second start is refused by the database guard (`0498`), but its ticket outranks the first, so the run that did start leaves the card and the old one returns under a `run_already_in_flight` banner. Predates this review; NEW-52's kind | Later (medium): the fix is NEW-52's, a start tracked apart from `busy` | `ui/src/routes/run/RunScreen.tsx:358-390`, `useRunScreen.ts` |
+| NEW-57 | Start, "Yes, start it" and "Not yet" are let go during a start once Refresh is pressed, because `busy` names only the newest act. A second start is refused by the database guard (`0498`), but its ticket outranks the first, so the run that did start leaves the card and the old one returns under a `run_already_in_flight` banner. Predates this review; NEW-52's kind | Fixed (8bad828): you chose to fix it at once, with NEW-52's pattern | `ui/src/routes/run/RunScreen.tsx:358-390`, `useRunScreen.ts` |
 | NEW-58 | An excluded criterion that blocks if missing still shows "Required" on Rank's drill-down, though the ranking only ever blocks on criteria that count | Later (low) | `ui/src/routes/rank/pillarFilter.ts:85`, `CandidateDetail.tsx` |
 | NEW-59 | The diff's exact view joins a label set with ", ", so a label containing a comma reads as two | Later (nit) | `ui/src/format/figure.ts:150-155` |
 | NEW-60 | The research estimate and the research pass answer 200 for an unknown level, as runs did before NEW-40 | Proposed: with the research build, which changes the same endpoints | `S/api/rules.py:280-340` |

@@ -382,3 +382,5 @@ Defects fixed in the same phase:
   - Configure, the shell, UI-32's screens and the two follow-up fixes: nothing found.
 
 **Recorded for later** in the plan's section 7: NEW-55 to NEW-63. One needs your attention: **NEW-57**. Since before this review, pressing Refresh during a start lets go of Start, so a second start can be sent. The database refuses it, but the card then drops the run that did start and shows the old one under a `run_already_in_flight` banner. The fix is NEW-52's: track a start apart from `busy`.
+
+**After Phase B (2026-10-19):** you chose to fix NEW-57 at once. `8bad828` holds Start, "Yes, start it" and "Not yet" for as long as a start is in flight, whatever act is newest, as NEW-52 does for Stop. It was written test-first, with 100% of its changed lines covered. `make ui-check` passed (1,497 tests), and so did the browser suite against the rebuilt containers (32 of 32). Your live data came back as it was, apart from run 128's one free figure and Greece's re-dated answer.
