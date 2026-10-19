@@ -560,7 +560,8 @@ function RunReport({
         <div className="acquisition__acts">
           {/* **Refresh, not a poll.** A run that finished is not going to change, and a screen
               that re-read it every second would spend the reader's backend on nothing. Held
-              while it reads, and Stop while it is sent, never disabled (NEW-44). */}
+              while it reads, and Stop once it has been asked for, never disabled (NEW-44,
+              NEW-52). */}
           <HeldButton className="button" held={busy} onClick={onRefresh}>
             {busy ? "Reading…" : "Refresh"}
           </HeldButton>

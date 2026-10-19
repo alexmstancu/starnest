@@ -75,8 +75,8 @@ export interface RunScreenState {
   current: RunDetail | null;
   busy: RunAct | null;
   /**
-   * Whether a stop of `runId` is still in flight, until it has been read back -- whatever act
-   * is newest, which is all `busy` can say (NEW-52).
+   * Whether a stop of `runId` has been asked for and not refused -- whatever act is newest,
+   * which is all `busy` can say (NEW-52).
    */
   isStopping: (runId: number) => boolean;
   failure: unknown;
@@ -121,10 +121,13 @@ export function useRunScreen(): RunScreenState {
   // Every act still going, oldest first. The label is the newest of them, so the first act to
   // end no longer clears the label of one still going (NEW-10).
   const going = useRef<{ what: RunAct }[]>([]);
-  // **The runs a stop is in flight for, until it has been read back** (NEW-52). Not `busy`,
-  // which names only the newest act: a refresh sent while a stop was written took the label, and
-  // Stop was offered again until the refresh had read the run back.
-  const [stopsInFlight, setStopsInFlight] = useState<ReadonlySet<number>>(
+  // **The runs a stop has been asked for** (NEW-52). Not `busy`, which names only the newest
+  // act: a refresh or a start sent while a stop was written took the label, and Stop was offered
+  // again. Held from the click, and let go only if the stop is refused. **Accepted, it stays
+  // asked**: when a newer act holds the card the stop's own read is dropped, so the card can go
+  // on showing the run as read before the stop -- and once a read shows the stop, Stop is not
+  // drawn at all.
+  const [stopsAsked, setStopsAsked] = useState<ReadonlySet<number>>(
     () => new Set(),
   );
 
@@ -231,7 +234,7 @@ export function useRunScreen(): RunScreenState {
     armed,
     current,
     busy,
-    isStopping: (runId) => stopsInFlight.has(runId),
+    isStopping: (runId) => stopsAsked.has(runId),
     failure,
     history: history.resource,
     runs: runs ?? lastRuns,
@@ -305,25 +308,26 @@ export function useRunScreen(): RunScreenState {
     close: clear,
     stop: () => {
       if (!current) return;
-      const ticket = claim(current.id);
-      setStopsInFlight((runs) => new Set(runs).add(current.id));
+      const runId = current.id;
+      const ticket = claim(runId);
+      setStopsAsked((runs) => new Set(runs).add(runId));
       void act("stopping", async () => {
-        try {
-          // The 202 carries the run back, so `stop_requested_at` is on screen immediately
-          // rather than after the next poll -- which is what lets the card explain why the
-          // button has gone before the run has actually ended.
-          const stopped = await stopRun(current.id);
-          // **Claimed again now the stop is written** (NEW-49): a refresh sent meanwhile may
-          // have read the run before it was, and standing over this read it would offer Stop
-          // again.
-          await watch(reclaim(ticket, current.id), stopped.id);
-        } finally {
-          setStopsInFlight((runs) => {
+        // The 202 carries the run back, so `stop_requested_at` is on screen immediately
+        // rather than after the next poll -- which is what lets the card explain why the
+        // button has gone before the run has actually ended.
+        const stopped = await stopRun(runId).catch((refused: unknown) => {
+          // Refused, so nothing was recorded, and Stop is offered again.
+          setStopsAsked((runs) => {
             const left = new Set(runs);
-            left.delete(current.id);
+            left.delete(runId);
             return left;
           });
-        }
+          throw refused;
+        });
+        // **Claimed again now the stop is written** (NEW-49): a refresh sent meanwhile may
+        // have read the run before it was, and standing over this read it would offer Stop
+        // again.
+        await watch(reclaim(ticket, runId), stopped.id);
       });
     },
     // Through `act` like everything else. A backend that is down or a run that cannot be read

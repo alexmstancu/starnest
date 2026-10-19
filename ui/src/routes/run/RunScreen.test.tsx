@@ -1968,6 +1968,48 @@ describe("stopping a run", () => {
     });
   });
 
+  /**
+   * NEW-52. **A stop the server recorded stays asked, though its read-back failed.** The card
+   * still shows the run as read before the stop; offering Stop there would say it was never
+   * pressed, when the run is already stopping.
+   */
+  it("keeps Stop held after a stop the server recorded, though reading the run back failed", async () => {
+    let asked = false;
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        asked
+          ? HttpResponse.json(
+              { code: "internal_error", message: "the run could not be read" },
+              { status: 500 },
+            )
+          : HttpResponse.json({
+              ...STARTED_RUN_DETAIL,
+              id: Number(params["runId"]),
+              run_status: "running",
+              finished_at: null,
+            }),
+      ),
+      http.post(`${BASE}/data-acquisition-runs/:runId/stop`, ({ params }) => {
+        asked = true;
+        return HttpResponse.json(
+          { ...STARTED_RUN_DETAIL, id: Number(params["runId"]) },
+          { status: 202 },
+        );
+      }),
+    );
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+
+    await userEvent.click(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("internal_error");
+    expectHeld(card.getByRole("button", { name: "Stopping…" }));
+  });
+
   it("reports a refusal rather than leaving the button looking ignored", async () => {
     mockServer.use(
       http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
@@ -2544,6 +2586,33 @@ describe("a stop a refused start overtook", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "run_already_in_flight",
     );
+    await waitFor(() => expectTheStopOnTheCard());
+  });
+
+  /**
+   * NEW-52, in the start's order. The stop is written while the start is still the newest act,
+   * so the stop's own read is dropped and the card shows run 7 as read before it -- with Stop
+   * drawn. Let go once its stop had ended, Stop was pressable again until the refused start
+   * read the card back, and for good if that read failed. **Accepted, a stop stays asked.**
+   */
+  it("keeps Stop held after its stop is written, while the start pressed meanwhile is unanswered", async () => {
+    const history = countHistoryReads();
+    const { stop, startIt } = await aStopHeldBesideAnEstimate();
+    const refusal = refuseStarts();
+    await userEvent.click(startIt);
+    // The opening read and the estimate's: every act that ends reads the history again.
+    await waitFor(() => expect(history.count).toBe(2));
+
+    stop.release();
+    // The stop has ended -- written, read back, and kept off the card by the newer start.
+    await waitFor(() => expect(history.count).toBe(3));
+
+    const card = within(
+      screen.getByRole("region", { name: /acquisition 7/i }),
+    );
+    expectHeld(card.getByRole("button", { name: "Stopping…" }));
+
+    refusal.release();
     await waitFor(() => expectTheStopOnTheCard());
   });
 });
