@@ -143,6 +143,11 @@ class RecordingRunStore(RunStore):
         port declares it."""
         return None
 
+    async def record_research_spend(self, spend) -> None:
+        """No gate is researched by asking a run again. Implemented because the port declares
+        it."""
+        return None
+
     async def read_run(self, run: int) -> Run:
         return self._answers_with
 

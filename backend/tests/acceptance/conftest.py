@@ -40,6 +40,7 @@ WRITABLE_TABLES = (
     "match_rule_result",
     "external_score",
     "evaluation",
+    "match_rule_research_spend",
 )
 """What an acceptance test may write and what is emptied afterwards.
 

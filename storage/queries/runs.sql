@@ -1,5 +1,6 @@
 -- RunStore (arch.md 6.3): create a run with its planned scope, append what each item produced,
--- and read status, cost, progress and failures back.
+-- and read status, cost, progress and failures back. It also keeps the gate-research spend
+-- ledger (BE-34): research spends money and is not a run, so its bill is kept beside the runs'.
 --
 -- A run is one programmatic pass that fetches from sources and writes value rows -- nothing
 -- else is a run (reqs.md 3.8). The values themselves are appended through values.sql carrying
@@ -95,6 +96,15 @@ INSERT INTO data_acquisition_run_reuse (data_acquisition_run, data_source, candi
 SELECT :data_acquisition_run, :data_source, pair.candidate, pair.attribute
 FROM   jsonb_to_recordset(:pairs::jsonb) AS pair(candidate text, attribute text)
 ON CONFLICT ON CONSTRAINT data_acquisition_run_reuse_pkey DO NOTHING;
+
+-- name: insert_research_spend(match_rule, candidate, data_source, llm_call_count, cost_eur)!
+-- What one gate-research call billed (BE-34). Research writes gate answers, not values, so it is
+-- not a run (reqs.md 3.8) and its spend has no run row to accrue on; this is its ledger. Written
+-- per call as the call returns, so a pass that dies keeps the record of every call it paid for.
+-- `researched_at` is the database's clock: the moment the record was kept. Nothing reads this
+-- back through the API -- the ledger is write-only by decision.
+INSERT INTO match_rule_research_spend (match_rule, candidate, data_source, llm_call_count, cost_eur)
+VALUES (:match_rule, :candidate, :data_source, :llm_call_count, :cost_eur);
 
 -- Reading runs.
 

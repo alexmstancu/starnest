@@ -21,6 +21,7 @@ from starnest.api.dependencies import (
     Households,
     MatchRuleResults,
     Researcher,
+    Runs,
 )
 from starnest.api.errors import absent, built_from_the_request, unknown_scope_refusal
 from starnest.candidates import CandidateId, UnknownCandidateError
@@ -333,6 +334,7 @@ async def research_match_rules(
     catalog: Catalog,
     candidates: Candidates,
     households: Households,
+    runs: Runs,
 ) -> ResearchOutcomeBody:
     """Ask a model to read the official pages about every gate nobody has confirmed.
 
@@ -345,8 +347,10 @@ async def research_match_rules(
 
     **It costs money**, so the cap applies as it does to a run: refused with 409 when none is set
     unless this request accepts an uncapped one, and it halts at the cap keeping every proposal
-    already found. With no model configured there is nothing to ask, which is a 501 rather than
-    an empty success -- an empty success would read as "no gate needed researching".
+    already found. **Every call that billed anything is ledgered as it returns** (BE-34), so the
+    spend is on record even when this response never arrives. With no model configured there is
+    nothing to ask, which is a 501 rather than an empty success -- an empty success would read as
+    "no gate needed researching".
     """
     if researcher is None:
         raise NoResearcherConfiguredError(
@@ -367,6 +371,7 @@ async def research_match_rules(
         already_answered=await results.read_results(),
         spend_cap_eur=(await households.get_settings()).run_spend_cap_eur,
         uncapped_is_accepted=body.accept_uncapped_spend,
+        ledger=runs,
     )
     return ResearchOutcomeBody(
         proposals=tuple(_result_body(proposal) for proposal in outcome.proposals),

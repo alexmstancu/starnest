@@ -87,6 +87,8 @@ OBJECTIVE = {
     "match_rule_result_citation",
     # Which candidates a gate concerns: the UK route is a question about the UK (NEW-01).
     "match_rule_candidate",
+    # What each gate-research call billed, beside the runs' own spend (BE-34).
+    "match_rule_research_spend",
     "compound_rule",
     "compound_rule_condition",
     "compound_rule_input",

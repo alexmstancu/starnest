@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from decimal import Decimal
 
 import httpx
+import psycopg
 import pytest
 
 from starnest.candidates import Candidate
@@ -52,6 +53,32 @@ class StubResearcher(GateResearcher):
             cost_eur=Decimal("0.02"),
             calls=1,
         )
+
+
+class AResearcherThatDiesMidPass(StubResearcher):
+    """Bills for the first gate it is asked about and dies on the second -- the shape of a
+    process killed, or a request abandoned, half way through a pass."""
+
+    async def research(
+        self, *, rule: MatchRule, candidate: Candidate, citizenships: Sequence[str]
+    ) -> Researched:
+        if self.asked:
+            raise RuntimeError("the process died here")
+        return await super().research(rule=rule, candidate=candidate, citizenships=citizenships)
+
+
+async def _the_spend_ledger(database_url: str) -> list[tuple]:
+    """What research has been billed, as the ledger holds it (BE-34).
+
+    Read from the table, because nothing reads it through the API: it is write-only by decision,
+    and "what has this month cost?" is a question for the database rather than for a screen.
+    """
+    async with await psycopg.AsyncConnection.connect(database_url) as connection:
+        cursor = await connection.execute(
+            "SELECT match_rule, candidate, data_source, llm_call_count, cost_eur "
+            "FROM match_rule_research_spend ORDER BY id"
+        )
+        return await cursor.fetchall()
 
 
 async def _with_a_cap(api: httpx.AsyncClient, cap: float | None) -> None:
@@ -451,6 +478,56 @@ class TestResearchingTheGates:
             )
 
         assert researcher.asked == 0
+
+
+class TestWhatResearchSpentIsKept:
+    """BE-34, revisiting Q224. Research writes gate answers, not figures, so it is not a run and
+    its cost reached only the response and the log. A response lost to a timeout, or a pass that
+    died, took the only record of what it had cost with it. Each billed call is now a row."""
+
+    async def test_what_research_spent_is_on_record_even_when_the_pass_dies(
+        self, database_url: str
+    ) -> None:
+        researcher = AResearcherThatDiesMidPass()
+        async with an_api(database_url, (a_stub_source(),), researcher=researcher) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+
+            with pytest.raises(RuntimeError, match="the process died"):
+                await api.post("/v1/match-rule-research", json={"level": COUNTRY})
+
+            ledger = await _the_spend_ledger(database_url)
+
+        assert ledger == [("ch_eu_efta_quota", "country.switzerland", "llm", 1, Decimal("0.02"))]
+
+    async def test_a_finished_pass_keeps_one_row_for_every_call_it_paid_for(
+        self, database_url: str
+    ) -> None:
+        """And the rows add up to what the response reported, so the two accounts agree."""
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+
+            outcome = (await api.post("/v1/match-rule-research", json={"level": COUNTRY})).json()
+            ledger = await _the_spend_ledger(database_url)
+
+        assert [(gate, candidate) for gate, candidate, *_ in ledger] == [
+            ("ch_eu_efta_quota", "country.switzerland"),
+            ("li_eea_quota", "country.liechtenstein"),
+            ("uk_skilled_worker", "country.united_kingdom"),
+        ]
+        assert sum(cost for *_, cost in ledger) == pytest.approx(Decimal(str(outcome["cost_eur"])))
+        assert sum(calls for *_, calls, _cost in ledger) == outcome["calls"]
+
+    async def test_an_estimate_spends_nothing_and_so_ledgers_nothing(
+        self, database_url: str
+    ) -> None:
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            await api.post("/v1/match-rule-research/plan", json={"level": COUNTRY})
+
+            ledger = await _the_spend_ledger(database_url)
+
+        assert ledger == []
 
 
 class TestEstimatingAResearchPassBeforeAgreeingToIt:

@@ -11,15 +11,26 @@ told to; what is under test is the derivation itself.
 
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from psycopg import errors
 from psycopg_pool import AsyncConnectionPool
 
-from starnest.data import ConfidenceLevel, DataSourceId, Ratio, ReferencePeriod, Value, ValueType
+from starnest.candidates import CandidateId
+from starnest.data import (
+    ConfidenceLevel,
+    DataSourceId,
+    MatchRuleId,
+    Ratio,
+    ReferencePeriod,
+    Value,
+    ValueType,
+)
 from starnest.data_acquisition import (
     AcquisitionFailure,
+    ResearchSpend,
     RunAlreadyInFlightError,
     RunScope,
     RunStatus,
@@ -891,3 +902,82 @@ class TestAskingARunToStop:
         )
 
         assert (await store.read_run(a_run)).status is RunStatus.HALTED_BY_USER
+
+
+def a_spend(gate: str, candidate: str, cost: str, *, calls: int = 1) -> ResearchSpend:
+    """What one gate-research call billed, as the research pass hands it over."""
+    return ResearchSpend(
+        match_rule=MatchRuleId(gate),
+        candidate=CandidateId(candidate),
+        data_source=DataSourceId("llm"),
+        llm_call_count=calls,
+        cost_eur=Decimal(cost),
+    )
+
+
+async def _the_ledger(pool: AsyncConnectionPool) -> list[tuple]:
+    """The ledger as the table holds it. Read directly, because nothing reads it through the
+    API: it is write-only by decision (BE-34)."""
+    async with pool.connection() as connection:
+        cursor = await connection.execute(
+            "SELECT match_rule, candidate, data_source, llm_call_count, cost_eur, researched_at "
+            "FROM match_rule_research_spend ORDER BY id"
+        )
+        return [tuple(row) for row in await cursor.fetchall()]
+
+
+class TestTheResearchSpendLedger:
+    """BE-34, revisiting Q224. **Gate research spends money and writes no run**, so what each
+    call billed is kept in a ledger of its own, one row per billed call, written as it happens."""
+
+    async def test_research_spend_is_written_per_call(self, pool: AsyncConnectionPool) -> None:
+        store = PostgresRunStore(pool)
+
+        await store.record_research_spend(
+            a_spend("ch_eu_efta_quota", "country.switzerland", "0.04")
+        )
+        await store.record_research_spend(
+            a_spend("uk_skilled_worker", "country.united_kingdom", "0.07", calls=2)
+        )
+
+        assert [row[:5] for row in await _the_ledger(pool)] == [
+            ("ch_eu_efta_quota", "country.switzerland", "llm", 1, Decimal("0.04")),
+            ("uk_skilled_worker", "country.united_kingdom", "llm", 2, Decimal("0.07")),
+        ]
+
+    async def test_each_row_is_stamped_with_the_moment_it_was_kept(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """ "What did this month cost?" is a sum over a span, so every row needs its moment --
+        an instant, with its zone, set by the database rather than trusted from the caller."""
+        await PostgresRunStore(pool).record_research_spend(
+            a_spend("li_eea_quota", "country.liechtenstein", "0.05")
+        )
+
+        ((*_, researched_at),) = await _the_ledger(pool)
+        assert researched_at.tzinfo is not None
+        assert abs(researched_at - datetime.now(UTC)) < timedelta(minutes=5)
+
+    async def test_a_negative_cost_is_refused(self, pool: AsyncConnectionPool) -> None:
+        with pytest.raises(errors.CheckViolation):
+            await PostgresRunStore(pool).record_research_spend(
+                a_spend("uk_skilled_worker", "country.united_kingdom", "-0.01")
+            )
+
+    async def test_a_negative_call_count_is_refused(self, pool: AsyncConnectionPool) -> None:
+        with pytest.raises(errors.CheckViolation):
+            await PostgresRunStore(pool).record_research_spend(
+                a_spend("uk_skilled_worker", "country.united_kingdom", "0.01", calls=-1)
+            )
+
+    async def test_a_gate_the_catalog_does_not_have_is_refused(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """Spend on a gate that does not exist is a fault upstream, and a row naming it would be
+        money nobody could trace to a question."""
+        with pytest.raises(errors.ForeignKeyViolation):
+            await PostgresRunStore(pool).record_research_spend(
+                a_spend("no_such_gate", "country.united_kingdom", "0.01")
+            )
+
+        assert await _the_ledger(pool) == []

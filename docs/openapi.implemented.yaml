@@ -3861,10 +3861,16 @@ paths:
         unless this request accepts an uncapped one, and it halts at the cap keeping
         every proposal
 
-        already found. With no model configured there is nothing to ask, which is
-        a 501 rather than
+        already found. **Every call that billed anything is ledgered as it returns**
+        (BE-34), so the
 
-        an empty success -- an empty success would read as "no gate needed researching".'
+        spend is on record even when this response never arrives. With no model configured
+        there is
+
+        nothing to ask, which is a 501 rather than an empty success -- an empty success
+        would read as
+
+        "no gate needed researching".'
       operationId: researchMatchRules
       requestBody:
         content:

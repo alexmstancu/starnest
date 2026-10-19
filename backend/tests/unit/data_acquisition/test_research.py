@@ -98,6 +98,35 @@ class AStoreAPersonGotToFirst(RecordingResults):
         return False
 
 
+class AStoreThatFails(RecordingResults):
+    """Fails on every write, as a store does when its database goes away mid-pass."""
+
+    async def record(self, result: MatchRuleResult) -> None:
+        raise RuntimeError("the database went away")
+
+
+class RecordingLedger:
+    """Keeps what each research call billed, in the order it was written (BE-34)."""
+
+    def __init__(self) -> None:
+        self.recorded: list = []
+
+    async def record_research_spend(self, spend) -> None:  # type: ignore[no-untyped-def]
+        self.recorded.append(spend)
+
+
+class AResearcherThatDies(StubResearcher):
+    """Answers the first question it is asked and dies on the second, which is the shape of a
+    process killed mid-pass."""
+
+    async def research(
+        self, *, rule: MatchRule, candidate: Candidate, citizenships: Sequence[str]
+    ) -> Researched:
+        if self.asked:
+            raise RuntimeError("the process died here")
+        return await super().research(rule=rule, candidate=candidate, citizenships=citizenships)
+
+
 def a_finding(result: MatchResult = MatchResult.NOT_MATCHING, cost: str = "0.05") -> Researched:
     return Researched(
         match_result=result,
@@ -369,6 +398,121 @@ class TestMoney:
         outcome, _ = await researching(StubResearcher(a_finding(cost="0"), charges=False), cap=None)
 
         assert len(outcome.proposals) == 1
+
+
+async def researching_into(
+    ledger: RecordingLedger,
+    researcher: StubResearcher,
+    *,
+    results: RecordingResults | None = None,
+    candidates: Sequence[Candidate] = (PORTUGAL,),
+    cap: Decimal = Decimal(5),
+):
+    return await research_gates(
+        researcher=researcher,
+        rules=[THE_GATE],
+        candidates=list(candidates),
+        citizenships=["country.romania"],
+        results=results or RecordingResults(),
+        spend_cap_eur=cap,
+        ledger=ledger,
+    )
+
+
+class TestTheSpendLedger:
+    """BE-34, revisiting Q224. **What research spent is written as it is spent.**
+
+    The meter lived as long as the request, so a pass that died -- or a response the page never
+    received -- took the only record of what it had cost with it. Every call that billed anything
+    is written the moment the researcher returns: before its proposal is stored, and before the
+    next question is asked.
+    """
+
+    async def test_every_billed_answer_is_recorded_before_the_next_question(self) -> None:
+        """The first question bills 0.05 and the second kills the pass; the first stays kept."""
+        ledger = RecordingLedger()
+
+        with pytest.raises(RuntimeError, match="the process died"):
+            await researching_into(
+                ledger, AResearcherThatDies(a_finding(cost="0.05")), candidates=(PORTUGAL, SPAIN)
+            )
+
+        (spend,) = ledger.recorded
+        assert (str(spend.match_rule), str(spend.candidate), str(spend.data_source)) == (
+            "uk_skilled_worker",
+            "country.portugal",
+            "llm",
+        )
+        assert (spend.llm_call_count, spend.cost_eur) == (1, Decimal("0.05"))
+
+    async def test_the_spend_is_recorded_before_its_proposal_is_stored(self) -> None:
+        """A store that fails on the write after a billed call still leaves the bill on record:
+        the money was spent whether or not the answer could be kept."""
+        ledger = RecordingLedger()
+
+        with pytest.raises(RuntimeError, match="the database went away"):
+            await researching_into(ledger, StubResearcher(a_finding()), results=AStoreThatFails())
+
+        assert [spend.cost_eur for spend in ledger.recorded] == [Decimal("0.05")]
+
+    async def test_a_call_that_billed_nothing_is_not_recorded(self) -> None:
+        """A model that could not be reached charged nothing, and a row of zeros is no spend."""
+        ledger = RecordingLedger()
+        unreached = Researched(
+            match_result=MatchResult.UNKNOWN,
+            reason="the model could not be reached: connection refused",
+            citations=(),
+        )
+
+        await researching_into(ledger, StubResearcher(unreached))
+
+        assert ledger.recorded == []
+
+    async def test_a_call_counted_at_no_cost_is_still_recorded(self) -> None:
+        """The edge: a reply reporting no usage prices at zero and still reached the model. The
+        call is what the ledger counts, whatever it cost."""
+        ledger = RecordingLedger()
+        reached = Researched(
+            match_result=MatchResult.UNKNOWN,
+            reason="the model answered with no text at all",
+            citations=(),
+            cost_eur=Decimal(0),
+            calls=1,
+        )
+
+        await researching_into(ledger, StubResearcher(reached))
+
+        (spend,) = ledger.recorded
+        assert (spend.llm_call_count, spend.cost_eur) == (1, Decimal(0))
+
+    async def test_an_answer_refused_for_citing_nothing_is_still_recorded(self) -> None:
+        """Refused, so nothing was stored -- and billed, so the ledger keeps it."""
+        ledger = RecordingLedger()
+        uncited = Researched(
+            match_result=MatchResult.NOT_MATCHING,
+            reason="I think",
+            citations=(),
+            cost_eur=Decimal("0.05"),
+            calls=1,
+        )
+
+        outcome = await researching_into(ledger, StubResearcher(uncited))
+
+        assert outcome.refusals
+        assert [spend.cost_eur for spend in ledger.recorded] == [Decimal("0.05")]
+
+    async def test_a_pass_halted_on_its_cap_has_recorded_every_call_it_paid_for(self) -> None:
+        ledger = RecordingLedger()
+
+        outcome = await researching_into(
+            ledger,
+            StubResearcher(a_finding(cost="1"), a_finding(cost="1")),
+            candidates=(PORTUGAL, SPAIN),
+            cap=Decimal(1),
+        )
+
+        assert outcome.halted_on_spend_cap is True
+        assert [str(spend.candidate) for spend in ledger.recorded] == ["country.portugal"]
 
 
 class TestPlanningAPassBeforePayingForIt:

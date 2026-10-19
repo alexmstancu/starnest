@@ -21,6 +21,7 @@ from enum import StrEnum
 
 from starnest.data import DataSourceId
 from starnest.data_acquisition.adapter import AcquisitionFailure
+from starnest.data_acquisition.research import ResearchSpend
 
 
 class RunStatus(StrEnum):
@@ -160,6 +161,16 @@ class RunStore(ABC):
 
         An increment rather than a write of the total, because two sources may be in flight and
         a read-modify-write would lose one of their costs.
+        """
+
+    @abstractmethod
+    async def record_research_spend(self, spend: ResearchSpend) -> None:
+        """Keep what one gate-research call billed, as it happens (BE-34).
+
+        Research writes gate answers rather than values, so it is not a run (`reqs.md` 3.8)
+        and has no run row to accrue on; this is its ledger instead, beside the runs' own spend.
+        One row per billed call, so a pass that dies -- or a response nobody received -- keeps
+        the record of what it paid for. **Write-only**: nothing reads it back through the API.
         """
 
     @abstractmethod

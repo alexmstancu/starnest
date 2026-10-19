@@ -193,6 +193,10 @@ class RecordingRunStore(RunStore):
     async def add_spend(self, run: int, *, calls: int, cost_eur: Decimal) -> None:
         return None
 
+    async def record_research_spend(self, spend) -> None:  # type: ignore[no-untyped-def]
+        """No gate is researched by a retry. Implemented because the port declares it."""
+        return None
+
     async def read_run(self, run: int) -> Run:
         return self._answers_with
 

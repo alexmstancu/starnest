@@ -27,6 +27,7 @@ WRITABLE_TABLES = (
     "settings",
     "data_acquisition_run",
     "evaluation",
+    "match_rule_research_spend",
 )
 """Everything a storage test may write.
 
@@ -38,7 +39,8 @@ can never be in. CASCADE reaches the ten typed payload tables and the citation t
 have no rows of their own that outlive their parent value, and a run's scope and failure rows.
 `evaluation` and `data_acquisition_run` joined when their stores began writing rows: the
 acceptance suite counts them, so one left behind here would fail a test there for no reason
-of its own.
+of its own. `match_rule_research_spend` is the gate-research spend ledger (BE-34): written at
+runtime per billed call, never seeded.
 """
 
 

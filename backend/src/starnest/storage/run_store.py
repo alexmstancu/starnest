@@ -20,6 +20,7 @@ from psycopg_pool import AsyncConnectionPool
 from starnest.data import DataSourceId
 from starnest.data_acquisition import (
     AcquisitionFailure,
+    ResearchSpend,
     Run,
     RunAlreadyInFlightError,
     RunScope,
@@ -139,6 +140,18 @@ class PostgresRunStore(RunStore):
                 data_acquisition_run=run,
                 llm_call_count=calls,
                 cost_eur=cost_eur,
+            )
+
+    async def record_research_spend(self, spend: ResearchSpend) -> None:
+        """One row per billed call, committed on its own so nothing after it can take it back."""
+        async with acquire(self._pool) as connection:
+            await self._queries.insert_research_spend(
+                connection,
+                match_rule=str(spend.match_rule),
+                candidate=str(spend.candidate),
+                data_source=str(spend.data_source),
+                llm_call_count=spend.llm_call_count,
+                cost_eur=spend.cost_eur,
             )
 
     async def read_run(self, run: int) -> Run:

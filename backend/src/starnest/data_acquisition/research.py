@@ -21,12 +21,15 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Protocol
 
-from starnest.candidates import Candidate
-from starnest.data import MatchResult, MatchRule, MatchRuleResult
+from starnest.candidates import Candidate, CandidateId
+from starnest.data import DataSourceId, MatchResult, MatchRule, MatchRuleId, MatchRuleResult
 from starnest.data_acquisition.estimate import NOTHING, Estimate
 from starnest.data_acquisition.spend import CostMeter, refuse_unless_capped
 
 _log = logging.getLogger("starnest.research")
+
+_RESEARCHED_BY = DataSourceId("llm")
+"""The source a researched answer, and the bill for it, are recorded under (`reqs.md` 6.10)."""
 
 
 class ProposalStore(Protocol):
@@ -43,6 +46,32 @@ class ProposalStore(Protocol):
     """
 
     async def record(self, result: MatchRuleResult) -> object: ...
+
+
+@dataclass(frozen=True)
+class ResearchSpend:
+    """What one research call billed: which gate, about which candidate, from which source."""
+
+    match_rule: MatchRuleId
+    candidate: CandidateId
+    data_source: DataSourceId
+    llm_call_count: int
+    cost_eur: Decimal
+
+
+class ResearchLedger(Protocol):
+    """Somewhere to keep what each research call billed (BE-34).
+
+    **Research writes gate answers, not figures, so it is not a run** (`reqs.md` 3.8), and its
+    cost has no run row to accrue on. Without this the meter lived as long as the request: a
+    response lost to a timeout, or a pass that died, took the only record of the spend with it.
+
+    Declared here rather than imported for the reason `ProposalStore` is -- one method is all
+    this needs, and the run store satisfies it by shape. **Write-only**: nothing here, and
+    nothing in the API, reads it back.
+    """
+
+    async def record_research_spend(self, spend: ResearchSpend) -> None: ...
 
 
 class NoResearcherConfiguredError(ValueError):
@@ -112,6 +141,7 @@ async def research_gates(
     already_answered: Sequence[MatchRuleResult] = (),
     spend_cap_eur: Decimal | None = None,
     uncapped_is_accepted: bool = False,
+    ledger: ResearchLedger | None = None,
 ) -> ResearchOutcome:
     """Ask about every gate nobody has confirmed, and store what comes back as a proposal.
 
@@ -126,6 +156,10 @@ async def research_gates(
     **The cap applies here as it does to a run** (`reqs.md` 6.3): refused before anything is
     asked when this would spend with no ceiling set, and it stops at the ceiling with everything
     already found kept.
+
+    **Every call that billed anything is ledgered the moment it returns** (BE-34): before its
+    proposal is stored and before the next question is asked, so a pass that dies keeps the
+    record of what it paid for. Given no ledger, the spend is reported and logged only.
     """
     to_ask = gates_to_ask(rules, candidates, already_answered)
     refuse_unless_capped(
@@ -150,6 +184,7 @@ async def research_gates(
 
         found = await researcher.research(rule=rule, candidate=candidate, citizenships=citizenships)
         meter.spent(cost_eur=found.cost_eur, calls=found.calls)
+        await _ledger_what_it_billed(ledger, rule, candidate, found)
 
         if not found.citations:
             # The whole point of asking is the pages. An answer with none is an opinion, and an
@@ -168,7 +203,7 @@ async def research_gates(
             match_rule=rule.id,
             candidate=candidate.id,
             match_result=found.match_result,
-            data_source="llm",
+            data_source=_RESEARCHED_BY,
             retrieval_date=datetime.now(tz=UTC),
             reason=found.reason,
             citations=found.citations,
@@ -189,6 +224,29 @@ async def research_gates(
         refusals=tuple(refusals),
         cost_eur=meter.spent_eur,
         calls=meter.calls,
+    )
+
+
+async def _ledger_what_it_billed(
+    ledger: ResearchLedger | None, rule: MatchRule, candidate: Candidate, found: Researched
+) -> None:
+    """Keep what one call billed, when it billed anything and there is a ledger to keep it in.
+
+    A call that never reached the provider cost nothing and counted no call, and a row of zeros
+    would record a spend that never happened. A reply priced at zero still reached the model, so
+    the call it counted is kept.
+    """
+    billed_anything = found.cost_eur > 0 or found.calls > 0
+    if ledger is None or not billed_anything:
+        return
+    await ledger.record_research_spend(
+        ResearchSpend(
+            match_rule=rule.id,
+            candidate=candidate.id,
+            data_source=_RESEARCHED_BY,
+            llm_call_count=found.calls,
+            cost_eur=found.cost_eur,
+        )
     )
 
 
