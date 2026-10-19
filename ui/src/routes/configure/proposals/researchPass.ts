@@ -42,7 +42,7 @@ export interface PassTally {
    */
   spentMicroEur: number;
   proposed: number;
-  /** Gates the model answered without citing anything, so nothing was stored for them. */
+  /** Gates asked but not stored: the model cited nothing, or a person answered first (NEW-63). */
   refusals: readonly string[];
   /** The last answer said the server's own meter stopped it at the cap. */
   haltedOnSpendCap: boolean;

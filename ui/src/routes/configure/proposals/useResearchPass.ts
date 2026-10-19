@@ -51,7 +51,7 @@ export interface ResearchPass {
   stopAsked: boolean;
   /** What to say now: the pass's progress while it runs, how the last one ended after. */
   statusLine: { text: string; warning: boolean } | null;
-  /** What the model answered without citing anything, so nothing was stored for it. */
+  /** Gates asked but not stored: the model cited nothing, or a person answered first. */
   refusals: readonly string[];
   /** Why the last pass ended early, when a request was refused or failed. Null otherwise. */
   failure: unknown;

@@ -2108,7 +2108,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         proposals: components["schemas"]["MatchRuleResult"][];
-                        /** @description Gates the model answered without citing anything, so nothing was stored. */
+                        /** @description Gates asked whose answer was not stored: the model cited nothing (or could not be reached), or a person answered the gate while the pass ran (NEW-63). Each line gives its reason. */
                         refusals?: string[];
                         cost_eur: number;
                         calls: number;

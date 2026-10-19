@@ -165,7 +165,7 @@ export function ProposalsPanel({
       {pass.refusals.length > 0 && (
         <>
           <p className="screen__note" id="research-refusals">
-            Answered without citing anything, so nothing was stored:
+            Asked, but nothing was stored:
           </p>
           <ul className="lock-list" aria-labelledby="research-refusals">
             {pass.refusals.map((refusal, index) => (

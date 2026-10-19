@@ -317,7 +317,7 @@ describe("spending money on research", () => {
     await passSays(/asked every gate/);
 
     const uncited = theProposals().getByRole("list", {
-      name: /answered without citing anything/i,
+      name: /asked, but nothing was stored/i,
     });
     expect(
       within(uncited)
@@ -327,6 +327,37 @@ describe("spending money on research", () => {
       "country.visa_route_exists: the model cited nothing",
       "country.uk_skilled_worker: the model cited nothing",
     ]);
+  });
+
+  /**
+   * NEW-63. **A proposal a person's answer displaced is listed too, and it cited its pages.**
+   * The server reports it among the refusals because the call was billed and nothing was
+   * stored -- so the heading over them must not say the model cited nothing, which is true of
+   * only one of the two causes. Each line carries its own reason.
+   */
+  it("lists a proposal a person's answer displaced without saying it cited nothing", async () => {
+    const displaced =
+      "country.uk_skilled_worker for country.united_kingdom: a person answered this gate " +
+      "while the pass ran, so the proposal was not stored";
+    watchResearch({
+      answer: ({ match_rules }) =>
+        match_rules?.[0] === "country.uk_skilled_worker"
+          ? answered({ cost_eur: 0.04, calls: 1, refusals: [displaced] })
+          : undefined,
+    });
+    renderShell("/configure");
+    await settled();
+
+    await researched();
+    await passSays(/asked every gate/);
+
+    const notStored = theProposals().getByRole("list", {
+      name: /asked, but nothing was stored/i,
+    });
+    expect(within(notStored).getByRole("listitem")).toHaveTextContent(displaced);
+    expect(
+      theProposals().queryByText(/without citing anything/i),
+    ).not.toBeInTheDocument();
   });
 });
 

@@ -614,7 +614,7 @@ paths:
                     items: { $ref: "#/components/schemas/MatchRuleResult" }
                   refusals:
                     type: array
-                    description: Gates the model answered without citing anything, so nothing was stored.
+                    description: "Gates asked whose answer was not stored: the model cited nothing (or could not be reached), or a person answered the gate while the pass ran (NEW-63). Each line gives its reason."
                     items: { type: string }
                   cost_eur: { type: number }
                   calls: { type: integer }
