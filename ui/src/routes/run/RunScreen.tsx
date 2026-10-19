@@ -248,8 +248,9 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           same in a ranking and have entirely different remedies. */}
       {levelId !== null && <UnsourcedAttributes level={levelId} />}
 
-      {/* Beside it, and separate: "no source at all" means nobody would be asked, while these
-          are attributes the catalog says a person may answer. The two lists never overlap. */}
+      {/* Beside it, and separate: "no source at all" means no adapter can fetch it, while these
+          are attributes the catalog says a person may answer. One only a person can answer is
+          honestly in both lists, and its form is here (UI-32). */}
       {levelId !== null && <OpenToHandEntry level={levelId} />}
 
       {/* **From the runs as last read, not from the history's state** (NEW-11): every act reads

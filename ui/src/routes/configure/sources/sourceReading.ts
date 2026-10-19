@@ -1,13 +1,14 @@
 /**
  * How a source reads on its row, beside its name.
  *
- * **The design asks for the source's attribute count here, and the contract does not carry
- * one.** `DataSource` serves an id, a name, a kind, a tier, a priority and a switch, and
- * nothing anywhere says which attributes a source answers: `Attribute.effective_source_priority`
- * is the *resolved global order*, so every source appears under every attribute, and
- * `RunPlan.by_source` counts candidate-and-attribute pairs for one scope rather than catalog
- * reach. Serving the count is a backend change, so this says the next most useful thing
- * instead and the column is one fact rather than none.
+ * **The design asks for the source's attribute count here, and `DataSource` does not carry
+ * one.** It serves an id, a name, a kind, a tier, a priority and a switch.
+ * `Attribute.effective_source_priority` is the *resolved global order*, so every source appears
+ * under every attribute, and `RunPlan.by_source` counts candidate-and-attribute pairs for one
+ * scope rather than catalog reach. `Attribute.answerable_by` (`reqs.md` Q235) now names the
+ * sources that can fetch each attribute, so the count could be derived from the catalog; until
+ * that is built, this says the next most useful thing and the column is one fact rather than
+ * none.
  *
  * **What it says instead is how the figure was come by**, which is the fact a reader of a
  * priority order needs: the order exists to decide which evidence wins, and "a model read a
