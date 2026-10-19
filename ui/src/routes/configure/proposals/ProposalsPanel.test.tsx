@@ -1,13 +1,19 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { SETTINGS } from "../../../mocks/fixtures";
 import { mockServer } from "../../../mocks/server";
 import {
   expectHeld,
   expectNotHeld,
   followChromiumFocusFixup,
 } from "../../../testing/keyboard";
+import {
+  COUNTRY_GATES,
+  gatesAsked,
+  watchResearch,
+} from "../../../testing/research";
 import { renderShell } from "../../../testing/renderShell";
 
 /**
@@ -20,12 +26,19 @@ import { renderShell } from "../../../testing/renderShell";
  * judgement this code made: there are none.
  *
  * **And it is the only screen that can spend money**, so the estimate is a separate act with
- * its own button.
+ * its own button, and a research pass goes one gate at a time, held to the spend cap (UI-01).
  */
 
 const BASE = "/v1";
 const PROPOSED_GATE = "country.visa_route_exists";
 const PROPOSED_FOR = "country.portugal";
+
+/**
+ * How a pass over the mock's five gates ends when nothing interrupts it: three of them are gates
+ * research can answer, at one call and four cents each, against an estimate of twelve cents.
+ */
+const ALL_ASKED =
+  "The last pass asked every gate, 5 of 5: it made 3 calls and spent €0.12 of at most €0.12.";
 
 /**
  * This panel, and nothing else on the screen. The household and settings panels beside it each
@@ -40,6 +53,55 @@ async function settled(): Promise<void> {
   await waitFor(() =>
     expect(screen.queryByText("Loading…")).not.toBeInTheDocument(),
   );
+}
+
+/** What a pass costs and asks, which every pass needs first. */
+async function estimated(): Promise<void> {
+  await userEvent.click(
+    theProposals().getByRole("button", { name: "Estimate the research" }),
+  );
+  await theProposals().findByText(/3 gate answers to research/i);
+}
+
+/** An estimate, and then the pass it allows. */
+async function researched(): Promise<void> {
+  await estimated();
+  await userEvent.click(
+    theProposals().getByRole("button", { name: "Research the gates" }),
+  );
+}
+
+/** The panel's own live region: a pass's progress while it runs, and how it ended after. */
+function statusLine(): HTMLElement {
+  return theProposals().getByRole("status");
+}
+
+async function passSays(text: string | RegExp): Promise<void> {
+  await waitFor(() => expect(statusLine()).toHaveTextContent(text));
+}
+
+/** The spend cap the pass reads at its start. */
+function capAt(eur: number | null): void {
+  mockServer.use(
+    http.get(`${BASE}/settings`, () =>
+      HttpResponse.json({ ...SETTINGS, run_spend_cap_eur: eur }),
+    ),
+  );
+}
+
+/** One request's answer, as the server sends it. */
+function answered(outcome: {
+  cost_eur: number;
+  calls: number;
+  halted_on_spend_cap?: boolean;
+  refusals?: string[];
+}): Response {
+  return HttpResponse.json({
+    proposals: [],
+    refusals: [],
+    halted_on_spend_cap: false,
+    ...outcome,
+  });
 }
 
 describe("what the panel shows", () => {
@@ -116,111 +178,84 @@ describe("spending money on research", () => {
 
     await user.click(screen.getByRole("button", { name: "Estimate the research" }));
 
-    expect(await screen.findByText(/64 gate answers to research/i)).toBeInTheDocument();
-    expect(screen.getByText(/about €4\.20/)).toBeInTheDocument();
+    expect(await screen.findByText(/3 gate answers to research/i)).toBeInTheDocument();
+    expect(screen.getByText(/about €0\.12/)).toBeInTheDocument();
     expect(screen.getByText(/a ceiling, not a forecast/i)).toHaveTextContent(
       /12,000 input tokens per call/,
     );
   });
 
   it("estimating spends nothing, because it is asked instead of the pass", async () => {
-    const asked: string[] = [];
-    const user = userEvent.setup();
-    mockServer.use(
-      http.post(`${BASE}/match-rule-research`, () => {
-        asked.push("researched");
-        return HttpResponse.json({
-          proposals: [],
-          cost_eur: 0,
-          calls: 0,
-          halted_on_spend_cap: false,
-        });
-      }),
-    );
+    const research = watchResearch();
     renderShell("/configure");
     await settled();
 
-    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/64 gate answers to research/i);
+    await estimated();
 
-    expect(asked).toEqual([]);
+    expect(research.sent).toEqual([]);
   });
 
-  it("sends the uncapped acceptance only when it is given", async () => {
+  it("sends the uncapped acceptance with every request of a pass, only when it is given", async () => {
     /**
-     * The bypass of `reqs.md` 6.3, Q220: refused by default, allowed when somebody says so,
-     * per request and never remembered. Offered only after an estimate, because agreeing to an
-     * uncapped spend before seeing the figure is the decision this panel exists to prevent.
+     * The bypass of `reqs.md` 6.3, Q220: refused by default, allowed when somebody says so, per
+     * pass and never remembered. Offered only after an estimate, because agreeing to an uncapped
+     * spend before seeing the figure is the decision this panel exists to prevent.
      */
-    const sent: unknown[] = [];
-    const user = userEvent.setup();
-    mockServer.use(
-      http.post(`${BASE}/match-rule-research`, async ({ request }) => {
-        sent.push(await request.json());
-        return HttpResponse.json({
-          proposals: [],
-          cost_eur: 0,
-          calls: 0,
-          halted_on_spend_cap: false,
-        });
-      }),
-    );
+    const research = watchResearch();
     renderShell("/configure");
     await settled();
+    await researched();
+    await passSays(ALL_ASKED);
 
-    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/64 gate answers to research/i);
-    await user.click(screen.getByRole("button", { name: "Research the gates" }));
-    await waitFor(() => expect(sent).toHaveLength(1));
-
-    expect(sent[0]).toMatchObject({ accept_uncapped_spend: false });
-
-    await user.click(
-      screen.getByRole("checkbox", { name: /accept an uncapped spend/i }),
+    await estimated();
+    await userEvent.click(
+      theProposals().getByRole("checkbox", { name: /accept an uncapped spend/i }),
     );
-    await user.click(screen.getByRole("button", { name: "Research the gates" }));
-    await waitFor(() => expect(sent).toHaveLength(2));
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Research the gates" }),
+    );
+    await waitFor(() => expect(research.sent).toHaveLength(10));
+    await waitFor(() => expect(research.answered).toBe(10));
 
-    expect(sent[1]).toMatchObject({ accept_uncapped_spend: true });
+    expect(research.sent.map((body) => body.accept_uncapped_spend)).toEqual([
+      ...Array<boolean>(5).fill(false),
+      ...Array<boolean>(5).fill(true),
+    ]);
   });
 
-  it("does not remember the acceptance into the next pass", async () => {
-    // **Per request, never remembered** -- which the panel's own comment claimed while the
+  it("does not carry the acceptance into the next pass", async () => {
+    // **Per pass, never remembered** -- which the panel's own comment claimed while the
     // checkbox stayed ticked, so one agreement authorised every later pass in silence.
-    const sent: unknown[] = [];
-    const user = userEvent.setup();
-    mockServer.use(
-      http.post(`${BASE}/match-rule-research`, async ({ request }) => {
-        sent.push(await request.json());
-        return HttpResponse.json({
-          proposals: [],
-          cost_eur: 0,
-          calls: 0,
-          halted_on_spend_cap: false,
-        });
-      }),
-    );
+    const research = watchResearch();
     renderShell("/configure");
     await settled();
-    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/64 gate answers to research/i);
-
-    await user.click(
-      screen.getByRole("checkbox", { name: /accept an uncapped spend/i }),
+    await estimated();
+    await userEvent.click(
+      theProposals().getByRole("checkbox", { name: /accept an uncapped spend/i }),
     );
-    await user.click(screen.getByRole("button", { name: "Research the gates" }));
-    await waitFor(() => expect(sent).toHaveLength(1));
-    await user.click(screen.getByRole("button", { name: "Research the gates" }));
-    await waitFor(() => expect(sent).toHaveLength(2));
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Research the gates" }),
+    );
+    await passSays(ALL_ASKED);
 
-    expect(sent[0]).toMatchObject({ accept_uncapped_spend: true });
-    expect(sent[1]).toMatchObject({ accept_uncapped_spend: false });
+    await estimated();
+    expect(
+      theProposals().getByRole("checkbox", { name: /accept an uncapped spend/i }),
+    ).not.toBeChecked();
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Research the gates" }),
+    );
+    await waitFor(() => expect(research.answered).toBe(10));
+
+    expect(research.sent.map((body) => body.accept_uncapped_spend)).toEqual([
+      ...Array<boolean>(5).fill(true),
+      ...Array<boolean>(5).fill(false),
+    ]);
   });
 
   it("shows the refusal when no spend cap is set", async () => {
-    const user = userEvent.setup();
-    mockServer.use(
-      http.post(`${BASE}/match-rule-research`, () =>
+    watchResearch({
+      answer: () =>
         HttpResponse.json(
           {
             code: "spend_cap_not_set",
@@ -229,14 +264,11 @@ describe("spending money on research", () => {
           },
           { status: 409 },
         ),
-      ),
-    );
+    });
     renderShell("/configure");
     await settled();
 
-    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/64 gate answers to research/i);
-    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+    await researched();
 
     expect(await screen.findByText(/no spend cap is set/i)).toBeInTheDocument();
   });
@@ -244,26 +276,57 @@ describe("spending money on research", () => {
   it("names a gate the model answered without citing anything", async () => {
     /** An answer with no pages is an opinion, and nothing is stored for it -- so the screen
      * says which gate is still open rather than letting it vanish. */
-    const user = userEvent.setup();
-    mockServer.use(
-      http.post(`${BASE}/match-rule-research`, () =>
-        HttpResponse.json({
-          proposals: [],
-          refusals: ["country.eu_free_movement for country.malta: the model cited nothing"],
-          cost_eur: 0.02,
-          calls: 1,
-          halted_on_spend_cap: false,
-        }),
-      ),
-    );
+    watchResearch({
+      answer: ({ match_rules }) =>
+        match_rules?.[0] === "country.residence_quota_open"
+          ? answered({
+              cost_eur: 0.04,
+              calls: 1,
+              refusals: [
+                "country.residence_quota_open for country.estonia: the model cited nothing",
+              ],
+            })
+          : undefined,
+    });
     renderShell("/configure");
     await settled();
 
-    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/64 gate answers to research/i);
-    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+    await researched();
 
     expect(await screen.findByText(/the model cited nothing/i)).toBeInTheDocument();
+  });
+
+  it("lists what the model cited nothing for, from every request of the pass", async () => {
+    watchResearch({
+      answer: ({ match_rules }) => {
+        const gate = match_rules?.[0];
+        return gate === "country.visa_route_exists" ||
+          gate === "country.uk_skilled_worker"
+          ? answered({
+              cost_eur: 0.04,
+              calls: 1,
+              refusals: [`${gate}: the model cited nothing`],
+            })
+          : undefined;
+      },
+    });
+    renderShell("/configure");
+    await settled();
+
+    await researched();
+    await passSays(/asked every gate/);
+
+    const uncited = theProposals().getByRole("list", {
+      name: /answered without citing anything/i,
+    });
+    expect(
+      within(uncited)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "country.visa_route_exists: the model cited nothing",
+      "country.uk_skilled_worker: the model cited nothing",
+    ]);
   });
 });
 
@@ -358,64 +421,306 @@ describe("confirming a proposal", () => {
 });
 
 /**
- * UI-14. **What a pass actually spent, and whether it was cut short.** The response carries the
+ * UI-01. **A research pass went as one request for the whole level** -- every gate about every
+ * candidate inside it -- and a request that long has no proxy ceiling that is safe. It goes one
+ * gate at a time now: each request is one gate's question, the server asks only the gates
+ * research can answer, and the page holds the whole pass to the spend cap, because the server's
+ * meter starts again with every request.
+ */
+describe("a research pass, one gate at a time", () => {
+  it("asks about every gate at the level, one per request, and names no candidate", async () => {
+    const research = watchResearch();
+    renderShell("/configure");
+    await settled();
+
+    await researched();
+    await passSays(ALL_ASKED);
+
+    expect(gatesAsked(research)).toEqual(COUNTRY_GATES.map((gate) => [gate]));
+    expect(research.sent.map((body) => body.level)).toEqual(
+      COUNTRY_GATES.map(() => "country"),
+    );
+    expect(research.sent.filter((body) => "candidates" in body)).toEqual([]);
+  });
+
+  it("asks the gates in the order the catalog lists them", async () => {
+    mockServer.use(
+      http.get(`${BASE}/match-rules`, () =>
+        HttpResponse.json({
+          items: [
+            { id: "country.uk_skilled_worker", name: "UK Skilled Worker route", level: "country" },
+            { id: "not_manually_excluded", name: "Not excluded by hand", level: null },
+            { id: "country.visa_route_exists", name: "A visa route exists", level: "country" },
+          ],
+        }),
+      ),
+    );
+    const research = watchResearch();
+    renderShell("/configure");
+    await settled();
+
+    await researched();
+    await passSays(/asked every gate, 3 of 3/);
+
+    expect(gatesAsked(research)).toEqual([
+      ["country.uk_skilled_worker"],
+      ["not_manually_excluded"],
+      ["country.visa_route_exists"],
+    ]);
+  });
+
+  it("stops before the next gate once the pass has spent the cap", async () => {
+    capAt(0.08);
+    const research = watchResearch();
+    renderShell("/configure");
+    await settled();
+
+    await researched();
+
+    await passSays(
+      "The last pass stopped at the spend cap of €0.08: it made 2 calls and spent €0.08 of at most €0.12, and 1 gate was not asked.",
+    );
+    // Two gates research can answer, at four cents each, and the free ones between them.
+    expect(gatesAsked(research)).toEqual(
+      COUNTRY_GATES.slice(0, 4).map((gate) => [gate]),
+    );
+    expect(statusLine()).toHaveClass("notice--warning");
+  });
+
+  it("asks every gate with no cap set, once the reader has accepted an uncapped pass", async () => {
+    capAt(null);
+    const research = watchResearch();
+    renderShell("/configure");
+    await settled();
+    await estimated();
+    await userEvent.click(
+      theProposals().getByRole("checkbox", { name: /accept an uncapped spend/i }),
+    );
+
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Research the gates" }),
+    );
+
+    await passSays(ALL_ASKED);
+    expect(gatesAsked(research)).toEqual(COUNTRY_GATES.map((gate) => [gate]));
+  });
+
+  it("ends when the server says it stopped at the spend cap", async () => {
+    const research = watchResearch({
+      answer: (_body, index) =>
+        index === 2
+          ? answered({ cost_eur: 0, calls: 0, halted_on_spend_cap: true })
+          : undefined,
+    });
+    renderShell("/configure");
+    await settled();
+
+    await researched();
+
+    await passSays(
+      "The last pass stopped at the spend cap of €10.00: it made 1 call and spent €0.04 of at most €0.12, and 4 gates were not asked.",
+    );
+    expect(research.sent).toHaveLength(2);
+  });
+
+  it("ends after one request when the first is refused", async () => {
+    const research = watchResearch({
+      answer: () =>
+        HttpResponse.json(
+          {
+            code: "spend_cap_not_set",
+            message: "this would spend money and no spend cap is set",
+          },
+          { status: 409 },
+        ),
+    });
+    renderShell("/configure");
+    await settled();
+
+    await researched();
+
+    expect(
+      await theProposals().findByText(/no spend cap is set/i),
+    ).toBeInTheDocument();
+    await passSays(
+      "The last pass was refused at gate 1 of 5, which spent nothing: it made no calls and spent nothing, and 5 gates were not asked.",
+    );
+    expect(research.sent).toHaveLength(1);
+  });
+
+  it("ends on a failure, and says what that request spent is not known", async () => {
+    const research = watchResearch({
+      answer: (_body, index) => (index === 2 ? HttpResponse.error() : undefined),
+    });
+    renderShell("/configure");
+    await settled();
+
+    await researched();
+
+    expect(
+      await theProposals().findByText(/backend did not answer/i),
+    ).toBeInTheDocument();
+    await passSays(
+      "The last pass failed at gate 2 of 5, and what that request spent is not known: before it, the pass made 1 call and spent €0.04 of at most €0.12, and the 3 gates after it were not asked.",
+    );
+    expect(research.sent).toHaveLength(2);
+  });
+
+  it("asks nothing when the spend cap cannot be read, and says the pass did not start", async () => {
+    const research = watchResearch();
+    renderShell("/configure");
+    await settled();
+    await estimated();
+    mockServer.use(
+      http.get(`${BASE}/settings`, () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "the settings could not be read" },
+          { status: 500 },
+        ),
+      ),
+    );
+
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Research the gates" }),
+    );
+
+    expect(
+      await theProposals().findByText("the settings could not be read"),
+    ).toBeInTheDocument();
+    await passSays(
+      "The last pass did not start, because the spend cap and the gates could not be read: it asked nothing and spent nothing.",
+    );
+    expect(research.sent).toEqual([]);
+    expect(statusLine()).toHaveClass("notice--warning");
+  });
+
+  it("says how far it has got while it runs", async () => {
+    const research = watchResearch({ holdAt: 2 });
+    renderShell("/configure");
+    await settled();
+
+    await researched();
+
+    await passSays(
+      "Asking gate 2 of 5: Free movement applies. So far 1 call, €0.04 spent of at most €0.12.",
+    );
+    research.release();
+    await passSays(ALL_ASKED);
+  });
+
+  it("asks nothing more once Stop is pressed, and says you stopped it", async () => {
+    const research = watchResearch({ holdAt: 2 });
+    renderShell("/configure");
+    await settled();
+    await researched();
+    await waitFor(() => expect(research.sent).toHaveLength(2));
+
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Stop after this question" }),
+    );
+
+    expect(statusLine()).toHaveTextContent(
+      "Stopping once gate 2 of 5 is answered: Free movement applies.",
+    );
+    research.release();
+    await passSays(
+      "You stopped the last pass after 2 of 5 gates: it made 1 call and spent €0.04 of at most €0.12, and 3 gates were not asked.",
+    );
+    expect(research.sent).toHaveLength(2);
+    expect(statusLine()).not.toHaveClass("notice--warning");
+  });
+
+  it("reads the answers again once, at the end of the pass, not after every question", async () => {
+    const order: string[] = [];
+    const log = ({ request }: { request: Request }) => {
+      const path = new URL(request.url).pathname;
+      if (path === `${BASE}/match-rule-research` || path === `${BASE}/match-rule-results`) {
+        order.push(`${request.method} ${path}`);
+      }
+    };
+    mockServer.events.on("request:start", log);
+    onTestFinished(() => mockServer.events.removeListener("request:start", log));
+    // Held half way, so the screen draws the pass mid-flight: unheld, every answer lands in one
+    // turn of the event loop, and a read after each question would be batched into one.
+    const research = watchResearch({ holdAt: 3 });
+    renderShell("/configure");
+    await settled();
+
+    await researched();
+    await passSays("Asking gate 3 of 5");
+    research.release();
+
+    // What the pass stored, in this list and in the gate's own sentence above it.
+    expect(
+      await theProposals().findByRole("button", {
+        name: "Confirm country.uk_skilled_worker for country.united_kingdom",
+      }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(
+          screen.getByRole("region", { name: "Match rules & gates" }),
+        ).getByRole("listitem", { name: "UK Skilled Worker route" }),
+      ).toHaveTextContent(/1 proposed answer awaits confirmation/),
+    );
+    expect(order.slice(order.indexOf(`POST ${BASE}/match-rule-research`))).toEqual([
+      ...COUNTRY_GATES.map(() => `POST ${BASE}/match-rule-research`),
+      `GET ${BASE}/match-rule-results`,
+      `GET ${BASE}/match-rule-results`,
+    ]);
+  });
+});
+
+/**
+ * UI-14. **What a pass actually spent, and whether it was cut short.** Each answer carries the
  * cost, the calls and whether the cap stopped it; the panel kept only the refusals, so a pass
  * halted half way looked finished and the estimate was the only figure on screen.
  */
 describe("what a research pass did", () => {
-  async function researchOnce(): Promise<void> {
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/64 gate answers to research/i);
-    await user.click(screen.getByRole("button", { name: "Research the gates" }));
-  }
+  it("keeps an empty status line in place before any pass", async () => {
+    renderShell("/configure");
+    await settled();
 
-  function answeringResearch(outcome: {
-    cost_eur: number;
-    calls: number;
-    halted_on_spend_cap: boolean;
-  }) {
-    mockServer.use(
-      http.post(`${BASE}/match-rule-research`, () =>
-        HttpResponse.json({ proposals: [], refusals: [], ...outcome }),
-      ),
-    );
-  }
+    expect(statusLine()).toBeEmptyDOMElement();
+  });
 
   it("says what the pass actually spent, beside what it was estimated to", async () => {
     renderShell("/configure");
     await settled();
 
-    await researchOnce();
+    await researched();
 
-    expect(await theProposals().findByRole("status")).toHaveTextContent(
-      "The last pass made 2 calls and spent €0.04.",
-    );
-    expect(screen.getByText(/about €4\.20/)).toBeInTheDocument();
-  });
-
-  it("says the pass stopped at the spend cap, rather than looking finished", async () => {
-    answeringResearch({ cost_eur: 9.98, calls: 240, halted_on_spend_cap: true });
-    renderShell("/configure");
-    await settled();
-
-    await researchOnce();
-
-    expect(await theProposals().findByRole("status")).toHaveTextContent(
-      /stopped at the spend cap.*were not asked/,
-    );
+    await passSays(ALL_ASKED);
+    expect(statusLine()).not.toHaveClass("notice--warning");
   });
 
   it("says a pass that asked nothing charged nothing", async () => {
-    answeringResearch({ cost_eur: 0, calls: 0, halted_on_spend_cap: false });
+    watchResearch({ answer: () => answered({ cost_eur: 0, calls: 0 }) });
     renderShell("/configure");
     await settled();
 
-    await researchOnce();
+    await researched();
 
-    expect(await theProposals().findByRole("status")).toHaveTextContent(
-      "The last pass made no calls and spent nothing.",
+    await passSays(
+      "The last pass asked every gate, 5 of 5: it made no calls and spent nothing.",
     );
+  });
+
+  it("needs a fresh estimate before another pass, since the last one spent it", async () => {
+    renderShell("/configure");
+    await settled();
+    await researched();
+    await passSays(ALL_ASKED);
+
+    expect(
+      theProposals().queryByRole("button", { name: "Research the gates" }),
+    ).toBeNull();
+    expect(theProposals().queryByText(/3 gate answers to research/i)).toBeNull();
+
+    await estimated();
+    expect(
+      theProposals().getByRole("button", { name: "Research the gates" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -525,20 +830,16 @@ describe("the period a proposal holds for", () => {
  * screen that spends money.
  */
 describe("a research pass after an earlier one", () => {
-  const EARLIER = "The last pass made 2 calls and spent €0.04.";
-  const NOT_KNOWN = /failed before it said what it spent/i;
+  const NOT_KNOWN = /not known/i;
 
   async function researchOnceThenAgain(failure: () => Response): Promise<void> {
-    const user = userEvent.setup();
     renderShell("/configure");
     await settled();
-    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/64 gate answers to research/i);
-    await user.click(screen.getByRole("button", { name: "Research the gates" }));
-    await screen.findByText(EARLIER);
+    await researched();
+    await passSays(ALL_ASKED);
 
     mockServer.use(http.post(`${BASE}/match-rule-research`, failure));
-    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+    await researched();
   }
 
   it("shows no earlier pass's spend once a later pass fails on the server", async () => {
@@ -552,9 +853,10 @@ describe("a research pass after an earlier one", () => {
     expect(
       await screen.findByText("the model provider failed"),
     ).toBeInTheDocument();
-    expect(screen.queryByText(EARLIER)).toBeNull();
+    await passSays(/failed at gate 1 of 5/);
+    expect(screen.queryByText(ALL_ASKED)).toBeNull();
     // A server failure may come after calls that were billed.
-    expect(theProposals().getByRole("status")).toHaveTextContent(NOT_KNOWN);
+    expect(statusLine()).toHaveTextContent(NOT_KNOWN);
   });
 
   it("shows no earlier pass's spend once a later pass is refused", async () => {
@@ -571,9 +873,10 @@ describe("a research pass after an earlier one", () => {
     expect(
       await screen.findByText(/no spend cap is set/i),
     ).toBeInTheDocument();
-    expect(screen.queryByText(EARLIER)).toBeNull();
+    await passSays(/refused at gate 1 of 5, which spent nothing/);
+    expect(screen.queryByText(ALL_ASKED)).toBeNull();
     // Refused before the model was asked anything, so nothing about its spend is in doubt.
-    expect(screen.queryByText(NOT_KNOWN)).toBeNull();
+    expect(statusLine()).not.toHaveTextContent(NOT_KNOWN);
   });
 
   /**
@@ -597,8 +900,9 @@ describe("a research pass after an earlier one", () => {
       await screen.findByText(/the llm source is switched off/i),
     ).toBeInTheDocument();
     expect(screen.getByText("llm_not_configured")).toBeInTheDocument();
-    expect(screen.queryByText(EARLIER)).toBeNull();
-    expect(screen.queryByText(NOT_KNOWN)).toBeNull();
+    await passSays(/refused at gate 1 of 5, which spent nothing/);
+    expect(screen.queryByText(ALL_ASKED)).toBeNull();
+    expect(statusLine()).not.toHaveTextContent(NOT_KNOWN);
   });
 
   it("says the spend is not known when the backend could not be reached", async () => {
@@ -607,11 +911,11 @@ describe("a research pass after an earlier one", () => {
     expect(
       await screen.findByText(/backend did not answer/i),
     ).toBeInTheDocument();
-    expect(screen.queryByText(EARLIER)).toBeNull();
-    expect(theProposals().getByRole("status")).toHaveTextContent(NOT_KNOWN);
+    expect(screen.queryByText(ALL_ASKED)).toBeNull();
+    await passSays(NOT_KNOWN);
   });
 
-  it("says the spend is not known when the proxy timed the pass out", async () => {
+  it("says the spend is not known when the proxy timed the request out", async () => {
     await researchOnceThenAgain(
       () =>
         new HttpResponse("<html>504 Gateway Time-out</html>", {
@@ -623,29 +927,24 @@ describe("a research pass after an earlier one", () => {
     expect(
       await screen.findByText(/in a shape this interface does not recognise/i),
     ).toBeInTheDocument();
-    expect(screen.queryByText(EARLIER)).toBeNull();
-    expect(theProposals().getByRole("status")).toHaveTextContent(NOT_KNOWN);
+    expect(screen.queryByText(ALL_ASKED)).toBeNull();
+    await passSays(NOT_KNOWN);
   });
 
   it("drops an earlier pass's refusals when a later pass fails", async () => {
-    const user = userEvent.setup();
-    mockServer.use(
-      http.post(`${BASE}/match-rule-research`, () =>
-        HttpResponse.json({
-          proposals: [],
-          refusals: ["country.eu_free_movement for country.malta: the model cited nothing"],
+    watchResearch({
+      answer: () =>
+        answered({
           cost_eur: 0.02,
           calls: 1,
-          halted_on_spend_cap: false,
+          refusals: ["country.eu_free_movement for country.malta: the model cited nothing"],
         }),
-      ),
-    );
+    });
     renderShell("/configure");
     await settled();
-    await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/64 gate answers to research/i);
-    await user.click(screen.getByRole("button", { name: "Research the gates" }));
-    await screen.findByText(/the model cited nothing/i);
+    await researched();
+    await passSays(/asked every gate/);
+    expect(theProposals().getAllByText(/the model cited nothing/i)).toHaveLength(5);
 
     mockServer.use(
       http.post(`${BASE}/match-rule-research`, () =>
@@ -655,7 +954,7 @@ describe("a research pass after an earlier one", () => {
         ),
       ),
     );
-    await user.click(screen.getByRole("button", { name: "Research the gates" }));
+    await researched();
 
     expect(
       await screen.findByText("the model provider failed"),
@@ -664,20 +963,12 @@ describe("a research pass after an earlier one", () => {
   });
 
   it("replaces the first pass's spend with the second's", async () => {
-    await researchOnceThenAgain(() =>
-      HttpResponse.json({
-        proposals: [],
-        refusals: [],
-        cost_eur: 0.02,
-        calls: 1,
-        halted_on_spend_cap: false,
-      }),
-    );
+    await researchOnceThenAgain(() => answered({ cost_eur: 0.01, calls: 1 }));
 
-    expect(
-      await screen.findByText("The last pass made 1 call and spent €0.02."),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(EARLIER)).toBeNull();
+    await passSays(
+      "The last pass asked every gate, 5 of 5: it made 5 calls and spent €0.05 of at most €0.12.",
+    );
+    expect(screen.queryByText(ALL_ASKED)).toBeNull();
   });
 });
 
@@ -687,6 +978,9 @@ describe("a research pass after an earlier one", () => {
  * and Chromium throws focus off a control the moment it is disabled and does not give it back:
  * a keyboard user who estimated, researched or confirmed was put back on the page every time.
  * jsdom keeps focus on a disabled control, which is why these follow Chromium's rule.
+ *
+ * **A pass is held for as long as it runs** (UI-01): one request per gate, so the buttons stay
+ * held across every question, and Estimate, Research and every Confirm turn a press away.
  */
 describe("the gate proposals while a write is in flight", () => {
   beforeEach(() => followChromiumFocusFixup());
@@ -723,11 +1017,8 @@ describe("the gate proposals while a write is in flight", () => {
       HttpResponse.json({ code: "internal_error", message }, { status: 500 });
   }
 
-  async function estimated(): Promise<void> {
-    await userEvent.click(
-      theProposals().getByRole("button", { name: "Estimate the research" }),
-    );
-    await theProposals().findByText(/64 gate answers to research/i);
+  function estimateButton(): HTMLElement {
+    return theProposals().getByRole("button", { name: "Estimate the research" });
   }
 
   it("keeps focus on Estimate while it estimates, and a second Enter sends nothing", async () => {
@@ -735,9 +1026,7 @@ describe("the gate proposals while a write is in flight", () => {
     const estimates = hold("post", "/match-rule-research/plan");
     renderShell("/configure");
     await settled();
-    const estimate = theProposals().getByRole("button", {
-      name: "Estimate the research",
-    });
+    const estimate = estimateButton();
     act(() => estimate.focus());
 
     await user.keyboard("{Enter}");
@@ -752,7 +1041,7 @@ describe("the gate proposals while a write is in flight", () => {
     estimates.release();
 
     expect(
-      await theProposals().findByText(/64 gate answers to research/i),
+      await theProposals().findByText(/3 gate answers to research/i),
     ).toBeInTheDocument();
     await waitFor(() => expectNotHeld(estimate));
     expect(estimate).toHaveFocus();
@@ -771,9 +1060,7 @@ describe("the gate proposals while a write is in flight", () => {
     );
     renderShell("/configure");
     await settled();
-    const estimate = theProposals().getByRole("button", {
-      name: "Estimate the research",
-    });
+    const estimate = estimateButton();
     act(() => estimate.focus());
 
     await user.keyboard("{Enter}");
@@ -789,67 +1076,123 @@ describe("the gate proposals while a write is in flight", () => {
     expect(estimate).toHaveFocus();
   });
 
-  it("keeps focus on Research the gates while it researches, and a second Enter sends nothing", async () => {
+  it("keeps focus on Research the gates while the pass runs, and a second Enter starts nothing", async () => {
     const user = userEvent.setup();
-    const passes = hold("post", "/match-rule-research");
+    const research = watchResearch({ holdAt: 1 });
     renderShell("/configure");
     await settled();
     await estimated();
-    const research = theProposals().getByRole("button", {
+    const start = theProposals().getByRole("button", {
       name: "Research the gates",
     });
-    act(() => research.focus());
+    act(() => start.focus());
 
     await user.keyboard("{Enter}");
-    await waitFor(() => expect(passes.sent).toBe(1));
+    await waitFor(() => expect(research.sent).toHaveLength(1));
 
-    expect(research).toHaveFocus();
-    expectHeld(research);
-    expect(research).toHaveTextContent("Researching…");
-    expectHeld(
-      theProposals().getByRole("button", { name: "Estimate the research" }),
-    );
+    expect(start).toHaveFocus();
+    expectHeld(start);
+    expect(start).toHaveTextContent("Researching…");
+    expectHeld(estimateButton());
+    expectHeld(theProposals().getByRole("button", { name: CONFIRM }));
     await user.keyboard("{Enter}");
 
-    passes.release();
+    research.release();
 
-    expect(
-      await theProposals().findByText(
-        "The last pass made 2 calls and spent €0.04.",
-      ),
-    ).toBeInTheDocument();
-    await waitFor(() => expectNotHeld(research));
-    expect(research).toHaveFocus();
-    await user.keyboard("{Enter}");
-    await waitFor(() => expect(passes.sent).toBe(2));
+    await passSays(ALL_ASKED);
+    // One request per gate, once: the second Enter started no pass of its own.
+    expect(research.sent).toHaveLength(5);
   });
 
-  it("lets go of Research the gates after a failed pass, with focus still on it", async () => {
+  /**
+   * **The estimate is spent by the pass it allowed**, so Research the gates leaves the page when
+   * the pass ends -- and a keyboard user standing on it would be put back on the page. Estimate is
+   * the act the next pass needs, so that is where focus goes.
+   */
+  it("puts focus on Estimate when the pass ends and takes Research the gates with it", async () => {
     const user = userEvent.setup();
-    const passes = hold(
-      "post",
-      "/match-rule-research",
-      refused("the model provider failed"),
-    );
+    watchResearch();
     renderShell("/configure");
     await settled();
     await estimated();
-    const research = theProposals().getByRole("button", {
+    const start = theProposals().getByRole("button", {
       name: "Research the gates",
     });
-    act(() => research.focus());
+    act(() => start.focus());
 
     await user.keyboard("{Enter}");
-    await waitFor(() => expect(passes.sent).toBe(1));
-    expectHeld(research);
-    passes.release();
+
+    await passSays(ALL_ASKED);
+    expect(
+      theProposals().queryByRole("button", { name: "Research the gates" }),
+    ).toBeNull();
+    await waitFor(() => expect(estimateButton()).toHaveFocus());
+  });
+
+  it("puts focus on Estimate after a failed pass, with Research the gates gone", async () => {
+    const user = userEvent.setup();
+    const research = watchResearch({
+      holdAt: 1,
+      answer: refused("the model provider failed"),
+    });
+    renderShell("/configure");
+    await settled();
+    await estimated();
+    const start = theProposals().getByRole("button", {
+      name: "Research the gates",
+    });
+    act(() => start.focus());
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(research.sent).toHaveLength(1));
+    expectHeld(start);
+    research.release();
 
     expect(
       await theProposals().findByText("the model provider failed"),
     ).toBeInTheDocument();
-    await waitFor(() => expectNotHeld(research));
-    expect(research).toBeEnabled();
-    expect(research).toHaveFocus();
+    await waitFor(() => expect(estimateButton()).toHaveFocus());
+    expectNotHeld(estimateButton());
+  });
+
+  it("leaves focus where the reader put it when a pass ends", async () => {
+    const research = watchResearch({ holdAt: 2 });
+    renderShell("/configure");
+    await settled();
+    await researched();
+    await waitFor(() => expect(research.sent).toHaveLength(2));
+    const picker = screen.getByRole("combobox", { name: /active criteria set/i });
+    act(() => picker.focus());
+
+    research.release();
+
+    await passSays(ALL_ASKED);
+    expect(picker).toHaveFocus();
+  });
+
+  it("keeps Stop held once pressed, with focus on it, and asks nothing more", async () => {
+    const user = userEvent.setup();
+    const research = watchResearch({ holdAt: 1 });
+    renderShell("/configure");
+    await settled();
+    await researched();
+    await waitFor(() => expect(research.sent).toHaveLength(1));
+    const stop = theProposals().getByRole("button", {
+      name: "Stop after this question",
+    });
+    act(() => stop.focus());
+
+    await user.keyboard("{Enter}");
+
+    expect(stop).toHaveFocus();
+    expectHeld(stop);
+    expect(stop).toHaveTextContent("Stopping after this question…");
+    await user.keyboard("{Enter}");
+    research.release();
+
+    await passSays("You stopped the last pass after 1 of 5 gates");
+    expect(research.sent).toHaveLength(1);
+    await waitFor(() => expect(estimateButton()).toHaveFocus());
   });
 
   it("keeps focus on Confirm while it is written, and lets go of it when refused", async () => {
@@ -934,8 +1277,7 @@ describe("the gate proposals while a write is in flight", () => {
     expect(confirmations.sent).toBe(1);
   });
 
-  /** A press on a held button is turned away whole, the box it would have cleared included. */
-  it("sends nothing, and clears nothing, from a button pressed while it is held", async () => {
+  it("holds Estimate, Research and every Confirm while a pass runs, and a press sends nothing", async () => {
     const asked = { plans: 0 };
     mockServer.use(
       http.post(`${BASE}/match-rule-research/plan`, () => {
@@ -944,33 +1286,53 @@ describe("the gate proposals while a write is in flight", () => {
       }),
     );
     const user = userEvent.setup();
-    const passes = hold("post", "/match-rule-research");
+    const research = watchResearch({ holdAt: 1 });
+    const confirmations = hold("put", CONFIRMATIONS);
+    renderShell("/configure");
+    await settled();
+    await researched();
+    await waitFor(() => expect(research.sent).toHaveLength(1));
+    const start = theProposals().getByRole("button", { name: "Researching…" });
+    const confirm = theProposals().getByRole("button", { name: CONFIRM });
+
+    expectHeld(estimateButton());
+    expectHeld(start);
+    expectHeld(confirm);
+    await user.click(estimateButton());
+    await user.click(start);
+    await user.click(confirm);
+    research.release();
+
+    await passSays(ALL_ASKED);
+    expect(research.sent).toHaveLength(5);
+    expect(asked.plans).toBe(1);
+    expect(confirmations.sent).toBe(0);
+  });
+
+  /** A press on a held button is turned away whole, the box it would have cleared included. */
+  it("sends nothing, and clears nothing, from Research pressed while a confirmation is written", async () => {
+    const user = userEvent.setup();
+    const research = watchResearch();
     const confirmations = hold("put", CONFIRMATIONS);
     renderShell("/configure");
     await settled();
     await estimated();
-    const research = theProposals().getByRole("button", {
-      name: "Research the gates",
-    });
-    await user.click(research);
-    await waitFor(() => expect(passes.sent).toBe(1));
     const uncapped = theProposals().getByRole("checkbox", {
       name: /accept an uncapped spend/i,
     });
-    // Ticked for the next pass while this one runs, which the box still allows.
     await user.click(uncapped);
-
-    await user.click(research);
-    await user.click(
-      theProposals().getByRole("button", { name: "Estimate the research" }),
-    );
     await user.click(theProposals().getByRole("button", { name: CONFIRM }));
-    passes.release();
+    await waitFor(() => expect(confirmations.sent).toBe(1));
+    const start = theProposals().getByRole("button", {
+      name: "Research the gates",
+    });
 
-    await waitFor(() => expectNotHeld(research));
-    expect(passes.sent).toBe(1);
-    expect(asked.plans).toBe(1);
-    expect(confirmations.sent).toBe(0);
+    expectHeld(start);
+    await user.click(start);
+    confirmations.release();
+
+    await waitFor(() => expectNotHeld(start));
+    expect(research.sent).toEqual([]);
     expect(uncapped).toBeChecked();
   });
 });

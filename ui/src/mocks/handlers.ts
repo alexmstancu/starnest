@@ -24,6 +24,8 @@ import {
   LEVELS,
   MATCH_RULES,
   MATCH_RULE_RESULTS,
+  RESEARCHED_PROPOSALS,
+  RESEARCH_CALL_COST_EUR,
   RESEARCH_PLAN,
   RUNS,
   RUN_PLAN,
@@ -295,21 +297,47 @@ export const handlers = [
   ),
 
   /**
-   * A research pass. **No model is involved and none should be**: what a mock can be right
-   * about is the application's own rules -- a proposal is stored, it is marked unconfirmed, and
-   * it rules nothing out -- and those hold whoever answered.
+   * One research request, answered as the server answers it since UI-01: it asks only a gate
+   * research can answer, about the one candidate that gate concerns, and never one a person has
+   * already answered -- one call each, at a few cents. A request for any other gate asks
+   * nothing and costs nothing, which is what lets the page ask about every gate.
+   *
+   * **No model is involved and none should be**: what a mock can be right about is the
+   * application's own rules -- a proposal is stored, it is marked unconfirmed, and it rules
+   * nothing out -- and those hold whoever answered.
    */
-  http.post(`${BASE}/match-rule-research`, () =>
-    HttpResponse.json({
-      proposals: matchRuleResults.filter(
-        (answer) => answer.is_proposal === true,
+  http.post(`${BASE}/match-rule-research`, async ({ request }) => {
+    const scope = (await request.json()) as {
+      level: string;
+      match_rules?: string[] | null;
+    };
+    const named =
+      scope.match_rules ??
+      MATCH_RULES.filter(
+        (rule) => rule.level === null || rule.level === scope.level,
+      ).map((rule) => rule.id);
+    const asked = RESEARCHED_PROPOSALS.filter(
+      (finding) =>
+        named.includes(finding.match_rule) &&
+        !matchRuleResults.some(
+          (stored) => isSameAnswer(stored, finding) && stored.is_proposal !== true,
+        ),
+    );
+    // A proposal replaces an earlier one for the same gate and candidate, as the store's does.
+    matchRuleResults = [
+      ...matchRuleResults.filter(
+        (stored) => !asked.some((finding) => isSameAnswer(stored, finding)),
       ),
+      ...asked.map((finding) => ({ ...finding })),
+    ];
+    return HttpResponse.json({
+      proposals: asked,
       refusals: [],
-      cost_eur: 0.04,
-      calls: 2,
+      cost_eur: asked.length * RESEARCH_CALL_COST_EUR,
+      calls: asked.length,
       halted_on_spend_cap: false,
-    }),
-  ),
+    });
+  }),
 
   /**
    * Confirming a proposal **replaces** it rather than sitting beside it (`reqs.md` 6.10 use 3):
@@ -945,4 +973,9 @@ function withMembership(
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/** Two answers about the same gate for the same candidate: one row, whoever wrote it. */
+function isSameAnswer(one: MatchRuleResult, other: MatchRuleResult): boolean {
+  return one.match_rule === other.match_rule && one.candidate === other.candidate;
 }

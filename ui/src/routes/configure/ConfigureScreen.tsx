@@ -8,6 +8,7 @@ import { DataSourcesPanel } from "./sources/DataSourcesPanel";
 import { HouseholdPanel } from "./household/HouseholdPanel";
 import { PillarWeightsPanel } from "./pillars/PillarWeightsPanel";
 import { ProposalsPanel } from "./proposals/ProposalsPanel";
+import { useResearchPass } from "./proposals/useResearchPass";
 import { RulesPanel } from "./rules/RulesPanel";
 import { SettingsPanel } from "./settings/SettingsPanel";
 import { RecentChanges } from "./RecentChanges";
@@ -44,6 +45,10 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
     () => setAnswersVersion((version) => version + 1),
     [],
   );
+  // **The research pass is the screen's, not the panel's** (UI-01). Switching the criteria set
+  // remounts the rules and the proposals inside them, and a pass held there would end with
+  // them; leaving Configure is what ends one.
+  const pass = useResearchPass(noteAnswered);
 
   return (
     <section className="screen screen--configure" aria-labelledby="screen-heading">
@@ -115,6 +120,8 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                     key={`proposals-${levelId}`}
                     levelId={levelId}
                     onAnswered={noteAnswered}
+                    answersFreshness={answersVersion}
+                    pass={pass}
                   />
                 </RulesPanel>
               )}

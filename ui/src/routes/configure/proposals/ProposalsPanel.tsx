@@ -1,13 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
 import { formatMoney } from "../../../format/display";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
-import {
-  SPEND_NOT_KNOWN,
-  describePass,
-  describePeriod,
-} from "./proposalReading";
+import { describePeriod } from "./proposalReading";
+import { useFocusAfterPass } from "./useFocusAfterPass";
 import { useProposals } from "./useProposals";
+import type { ResearchPass } from "./useResearchPass";
 
 /**
  * Gate answers a model proposed, and the one act that makes them count (`reqs.md` 6.10 use 3).
@@ -20,25 +18,40 @@ import { useProposals } from "./useProposals";
  * **Researching costs money**, and this is the only screen in the application that can spend
  * any. So the estimate is a separate act with its own button: the household agrees to a figure,
  * not to a verb. The refusal when no spend cap is set is shown with the one thing that answers
- * it -- an explicit acceptance of an uncapped pass, per request and never remembered.
+ * it -- an explicit acceptance of an uncapped pass, per pass and never remembered.
  *
- * **Markup only.** Reading, estimating, researching and confirming are `useProposals.ts`.
+ * **A pass asks one gate at a time, and says so as it goes** (UI-01, UI-14): which gate, the
+ * calls and the spend beside the estimate's ceiling, a Stop that takes effect after the question
+ * in flight, and how it ended. The pass is the screen's, handed in, so switching the criteria
+ * set -- which draws this panel again -- does not end it.
+ *
+ * **Markup only.** Reading, estimating and confirming are `useProposals.ts`; the pass is
+ * `useResearchPass.ts`.
  */
 export function ProposalsPanel({
   levelId,
   onAnswered,
+  answersFreshness,
+  pass,
 }: {
   levelId: string;
   /** A gate answer has been written here, so anything else describing the answers re-reads. */
   onAnswered: () => void;
+  /** Changes when a gate answer has been written anywhere, so the proposals are read again. */
+  answersFreshness: number;
+  /** The research pass the screen holds: running, or how the last one ended. */
+  pass: ResearchPass;
 }) {
-  const proposals = useProposals(onAnswered);
+  const proposals = useProposals(onAnswered, answersFreshness);
   const [acceptUncapped, setAcceptUncapped] = useState(false);
+  const estimateButton = useRef<HTMLButtonElement>(null);
+  useFocusAfterPass(pass.end, estimateButton);
   // **Held while an estimate, a pass or a confirmation is in flight, never disabled** (NEW-44):
   // Chromium throws focus off a control the moment it is disabled and does not give it back, so
-  // a keyboard user was put back on the page after each. Held, a button keeps focus and says
-  // so, and the hook turns its press away.
-  const held = proposals.busy !== null;
+  // a keyboard user was put back on the page after each. Held, a button keeps focus and says so,
+  // and its press is turned away -- here, before it changes anything, and by the hooks behind.
+  const held = proposals.busy !== null || pass.running;
+  const plan = proposals.plan;
 
   return (
     <section className="panel" aria-labelledby="proposals-heading">
@@ -56,16 +69,19 @@ export function ProposalsPanel({
 
       <div className="rule-form__actions">
         <button
+          ref={estimateButton}
           type="button"
           className="button"
           aria-disabled={held || undefined}
-          onClick={() => proposals.estimate(levelId)}
+          onClick={() => {
+            if (!held) proposals.estimate(levelId);
+          }}
         >
           {proposals.busy === "estimating"
             ? "Estimating…"
             : "Estimate the research"}
         </button>
-        {proposals.plan !== null && (
+        {(plan !== null || pass.running) && (
           <button
             type="button"
             className="button"
@@ -73,35 +89,49 @@ export function ProposalsPanel({
             onClick={() => {
               // Turned away whole, the box included: a held press that cleared it would forget
               // an agreement given for the next pass.
-              if (held) return;
-              proposals.research(levelId, acceptUncapped);
-              // **Per request, never remembered** -- which is what the comment below has
-              // always said and what the state did not do: left ticked, it authorised every
-              // later pass silently. The box is cleared as the pass is asked for, so agreeing
-              // again is a deliberate act again.
+              if (held || plan === null) return;
+              pass.start({
+                level: levelId,
+                acceptUncapped,
+                ceilingEur: plan.estimated_cost_eur,
+              });
+              // **An estimate allows one pass**, and this is it: the next needs a fresh one.
+              proposals.forgetPlan();
+              // **Per pass, never remembered.** Left ticked, it authorised every later pass
+              // silently; cleared as the pass starts, agreeing again is a deliberate act again.
               setAcceptUncapped(false);
             }}
           >
-            {proposals.busy === "researching"
-              ? "Researching…"
-              : "Research the gates"}
+            {pass.running ? "Researching…" : "Research the gates"}
+          </button>
+        )}
+        {pass.running && (
+          // Held once pressed, as the run's Stop is (NEW-52): the first press is the one that
+          // counts, and a live button after it invites the thought that it did not work.
+          <button
+            type="button"
+            className="button"
+            aria-disabled={pass.stopAsked || undefined}
+            onClick={pass.stop}
+          >
+            {pass.stopAsked
+              ? "Stopping after this question…"
+              : "Stop after this question"}
           </button>
         )}
       </div>
 
       {/* Only offered once an estimate exists, because agreeing to an uncapped spend before
           seeing what it would cost is the decision this panel exists to prevent. */}
-      {proposals.plan !== null && (
+      {plan !== null && (
         <>
           <p className="screen__note">
-            {proposals.plan.gates_total} gate answers to research,{" "}
-            {proposals.plan.llm_call_count} calls, about{" "}
-            {formatMoney(proposals.plan.estimated_cost_eur, "EUR")}.
+            {plan.gates_total} gate answers to research, {plan.llm_call_count}{" "}
+            calls, about {formatMoney(plan.estimated_cost_eur, "EUR")}.
           </p>
-          {proposals.plan.estimate_basis != null && (
+          {plan.estimate_basis != null && (
             <p className="screen__note">
-              The cost is a ceiling, not a forecast:{" "}
-              {proposals.plan.estimate_basis}
+              The cost is a ceiling, not a forecast: {plan.estimate_basis}
             </p>
           )}
           <label className="field field--inline" htmlFor="accept-uncapped">
@@ -116,33 +146,32 @@ export function ProposalsPanel({
         </>
       )}
 
-      {/* Beside the estimate, so a ceiling and what was actually spent read together. A stop
-          at the spend cap is a warning, because the gates after it were never asked. */}
-      {proposals.lastPass !== null &&
-        (proposals.lastPass.halted_on_spend_cap ? (
-          <div className="notice notice--warning" role="status">
-            <p className="notice__message">{describePass(proposals.lastPass)}</p>
-          </div>
-        ) : (
-          <p className="screen__note" role="status">
-            {describePass(proposals.lastPass)}
-          </p>
-        ))}
-      {/* A warning, not a note: money may have been spent that nothing on screen accounts for. */}
-      {proposals.spendNotKnown && (
-        <div className="notice notice--warning" role="status">
-          <p className="notice__message">{SPEND_NOT_KNOWN}</p>
-        </div>
-      )}
+      {/* **A live region, always there** (NEW-42): a screen reader announces a change to a region
+          it already knows, so the pass's progress and its end are read out as they happen. An end
+          the reader did not ask for -- the cap, a refusal, a failure -- is a warning, because the
+          gates after it were never asked or what it spent is not known. */}
+      <p
+        className={
+          pass.statusLine?.warning === true
+            ? "panel__hint notice notice--warning"
+            : "panel__hint"
+        }
+        role="status"
+      >
+        {pass.statusLine?.text}
+      </p>
+      {pass.failure !== null && <ErrorNotice error={pass.failure} />}
 
-      {proposals.refusals.length > 0 && (
+      {pass.refusals.length > 0 && (
         <>
           <p className="screen__note" id="research-refusals">
             Answered without citing anything, so nothing was stored:
           </p>
           <ul className="lock-list" aria-labelledby="research-refusals">
-            {proposals.refusals.map((refusal) => (
-              <li key={refusal}>{refusal}</li>
+            {pass.refusals.map((refusal, index) => (
+              // By position as well: the server names each pair it refused, but a list built
+              // across a pass's requests must not lose a line to a repeated sentence.
+              <li key={`${index}-${refusal}`}>{refusal}</li>
             ))}
           </ul>
         </>
@@ -185,7 +214,9 @@ export function ProposalsPanel({
                     key={`${proposal.match_rule}-${proposal.candidate}`}
                     proposal={proposal}
                     held={held}
-                    onConfirm={() => proposals.confirm(proposal)}
+                    onConfirm={() => {
+                      if (!held) proposals.confirm(proposal);
+                    }}
                   />
                 ))}
               </tbody>
@@ -203,7 +234,7 @@ function ProposalRow({
   onConfirm,
 }: {
   proposal: MatchRuleResult;
-  /** A write is in flight, this row's or another: the button keeps focus, the hook refuses it. */
+  /** A write or a pass is in flight: the button keeps focus, and its press is turned away. */
   held: boolean;
   onConfirm: () => void;
 }) {

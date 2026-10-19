@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { fetchLevels } from "../../api/endpoints";
 import { mockServer } from "../../mocks/server";
 import {
   expectHeld,
@@ -9,6 +10,11 @@ import {
   followChromiumFocusFixup,
   pressArrowRight,
 } from "../../testing/keyboard";
+import {
+  COUNTRY_GATES,
+  gatesAsked,
+  watchResearch,
+} from "../../testing/research";
 import { renderShell } from "../../testing/renderShell";
 
 /**
@@ -1526,7 +1532,7 @@ describe("a gate's sentence once its answers change", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/64 gate answers to research/i);
+    await screen.findByText(/3 gate answers to research/i);
     await user.click(screen.getByRole("button", { name: "Research the gates" }));
 
     await waitFor(() =>
@@ -1567,7 +1573,7 @@ describe("a gate's sentence once its answers change", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/64 gate answers to research/i);
+    await screen.findByText(/3 gate answers to research/i);
     await user.click(screen.getByRole("button", { name: "Research the gates" }));
 
     expect(
@@ -1615,7 +1621,7 @@ describe("a gate's sentence once its answers change", () => {
     await settled();
     const gate = await visaGate();
     await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/64 gate answers to research/i);
+    await screen.findByText(/3 gate answers to research/i);
     const before = reads.count;
 
     await user.click(screen.getByRole("button", { name: "Research the gates" }));
@@ -1666,6 +1672,69 @@ describe("a gate's sentence once its answers change", () => {
     );
 
     expect(reads).toBe(0);
+  });
+});
+
+/**
+ * UI-01. **A research pass belongs to the screen, not to the panel that started it.** Switching
+ * the criteria set remounts the rules and the proposals beneath them, which would have taken a
+ * pass held there with them and left what it spent unsaid. Leaving Configure is what stops one,
+ * and then it asks nothing more.
+ */
+describe("a research pass while the screen changes around it", () => {
+  function theProposals() {
+    return within(screen.getByRole("region", { name: "Gate proposals" }));
+  }
+
+  async function startAPass(): Promise<void> {
+    await screen.findByRole("region", { name: "Gate proposals" });
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Estimate the research" }),
+    );
+    await theProposals().findByText(/3 gate answers to research/i);
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Research the gates" }),
+    );
+  }
+
+  it("goes on asking when the criteria set is switched mid-pass", async () => {
+    const research = watchResearch({ holdAt: 2 });
+    renderShell("/configure");
+    await settled();
+    await startAPass();
+    await waitFor(() => expect(research.sent).toHaveLength(2));
+
+    await chooseSet("remote-only");
+
+    // Another panel, drawn for another set, showing the pass the screen still holds.
+    expect(theProposals().getByRole("status")).toHaveTextContent(
+      "Asking gate 2 of 5",
+    );
+    research.release();
+    await waitFor(() =>
+      expect(theProposals().getByRole("status")).toHaveTextContent(
+        "The last pass asked every gate, 5 of 5",
+      ),
+    );
+    expect(gatesAsked(research)).toEqual(COUNTRY_GATES.map((gate) => [gate]));
+  });
+
+  it("asks nothing more once Configure is left mid-pass", async () => {
+    const research = watchResearch({ holdAt: 1 });
+    renderShell("/configure");
+    await settled();
+    await startAPass();
+    await waitFor(() => expect(research.sent).toHaveLength(1));
+
+    await userEvent.click(screen.getByRole("link", { name: "Rank" }));
+    await screen.findByRole("heading", { name: "Rank", level: 2 });
+    research.release();
+
+    await waitFor(() => expect(research.answered).toBe(1));
+    // A round trip through the mock after the question in flight was answered, by which the
+    // next one would have been asked.
+    await fetchLevels();
+    expect(research.sent).toHaveLength(1);
   });
 });
 

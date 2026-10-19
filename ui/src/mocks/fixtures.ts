@@ -925,6 +925,10 @@ export const HOUSEHOLD: Household = {
 /**
  * Gates. One is asked at every level, which is what a null level means -- the Configure screen
  * has to render that without calling it "null".
+ *
+ * **Three of them are gates research can answer** (`RESEARCHED_PROPOSALS`), and two are not --
+ * which is the shape of the real catalog, where only the UK, Swiss and Liechtenstein gates are,
+ * one country each. The order is the order a research pass asks them in.
  */
 export const MATCH_RULES: MatchRule[] = [
   {
@@ -938,7 +942,29 @@ export const MATCH_RULES: MatchRule[] = [
     level: "country",
   },
   { id: "not_manually_excluded", name: "Not excluded by hand", level: null },
+  {
+    id: "country.uk_skilled_worker",
+    name: "UK Skilled Worker route",
+    level: "country",
+  },
+  {
+    id: "country.residence_quota_open",
+    name: "A residence quota is open",
+    level: "country",
+  },
 ];
+
+/** A proposal research made and nobody has confirmed: stored, and what research proposes again. */
+const VISA_ROUTE_PROPOSAL: MatchRuleResult = {
+  match_rule: "country.visa_route_exists",
+  candidate: "country.portugal",
+  match_result: "not_matching",
+  data_source: "llm",
+  retrieval_date: "2026-09-12T09:00:00Z",
+  reason: "The official page lists no route for these citizenships.",
+  citations: ["https://example.gov/skilled-worker"],
+  is_proposal: true,
+};
 
 /**
  * Gate answers as stored: one a model proposed and one a person settled.
@@ -947,16 +973,7 @@ export const MATCH_RULES: MatchRule[] = [
  * fixture with only proposals would let "this is unconfirmed" pass while meaning nothing.
  */
 export const MATCH_RULE_RESULTS: MatchRuleResult[] = [
-  {
-    match_rule: "country.visa_route_exists",
-    candidate: "country.portugal",
-    match_result: "not_matching",
-    data_source: "llm",
-    retrieval_date: "2026-09-12T09:00:00Z",
-    reason: "The official page lists no route for these citizenships.",
-    citations: ["https://example.gov/skilled-worker"],
-    is_proposal: true,
-  },
+  VISA_ROUTE_PROPOSAL,
   {
     match_rule: "country.eu_free_movement",
     candidate: "country.spain",
@@ -968,11 +985,47 @@ export const MATCH_RULE_RESULTS: MatchRuleResult[] = [
   },
 ];
 
-/** What a research pass would ask and cost, which is asked instead of the pass. */
+/**
+ * What research proposes for each gate it can answer: one candidate each, with the pages it
+ * read. **Which gates these are is the server's to decide, and the contract does not carry it**,
+ * so a pass asks about every gate at the level and a request for any other answers having asked
+ * nothing (UI-01).
+ */
+export const RESEARCHED_PROPOSALS: MatchRuleResult[] = [
+  VISA_ROUTE_PROPOSAL,
+  {
+    match_rule: "country.uk_skilled_worker",
+    candidate: "country.united_kingdom",
+    match_result: "matching",
+    data_source: "llm",
+    retrieval_date: "2026-09-12T09:01:00Z",
+    reason: "The route is open to these citizenships with a sponsoring employer.",
+    citations: ["https://example.gov/uk-skilled-worker"],
+    is_proposal: true,
+  },
+  {
+    match_rule: "country.residence_quota_open",
+    candidate: "country.estonia",
+    match_result: "matching",
+    data_source: "llm",
+    retrieval_date: "2026-09-12T09:02:00Z",
+    reason: "This year's quota has places left.",
+    citations: ["https://example.gov/residence-quota"],
+    is_proposal: true,
+  },
+];
+
+/** What one researched question costs: one call, a few cents. */
+export const RESEARCH_CALL_COST_EUR = 0.04;
+
+/**
+ * What a research pass would ask and cost, which is asked instead of the pass: one question for
+ * each gate research can answer, at `RESEARCH_CALL_COST_EUR` each.
+ */
 export const RESEARCH_PLAN: ResearchPlan = {
-  gates_total: 64,
-  llm_call_count: 64,
-  estimated_cost_eur: 4.2,
+  gates_total: 3,
+  llm_call_count: 3,
+  estimated_cost_eur: 0.12,
   estimate_basis:
     "a ceiling: 12,000 input tokens per call (configured, measured by make live-llm)",
 };
