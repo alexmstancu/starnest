@@ -112,15 +112,20 @@ async def _research_targets(
 
     Shared by the estimate and the pass so the bill and the spend read the scope the same way --
     and so a misspelled gate or an out-of-level candidate is refused rather than dropped from a
-    paid request, which used to spend on the rest while concealing the drop.
+    paid request, which used to spend on the rest while concealing the drop. **The level is one
+    of those ids** (NEW-60): a level nothing is catalogued at estimated and researched nothing
+    with a 200, where a run's scope is refused (NEW-40).
     """
+    levels = await catalog.read_levels()
     rules = await catalog.read_match_rules()
     roster = await candidates.read_candidates(level=body.level)
+    unknown_levels = [] if body.level in levels else [body.level]
     unknown_rules = absent(body.match_rules, {str(rule.id) for rule in rules})
     unknown_candidates = absent(body.candidates, {str(candidate.id) for candidate in roster})
-    if unknown_rules or unknown_candidates:
+    if unknown_levels or unknown_rules or unknown_candidates:
         raise unknown_scope_refusal(
             body.level,
+            unknown_levels=unknown_levels,
             unknown_match_rules=unknown_rules,
             unknown_candidates=unknown_candidates,
         )

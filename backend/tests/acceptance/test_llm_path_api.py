@@ -646,7 +646,7 @@ class TestResearchRefusesAnUnknownScope:
     """BE-24, on the paid path. A misspelled gate or candidate used to fall out of the
     intersection with what exists, so a research pass asked a model about -- and billed for -- a
     smaller scope than was requested, concealing the drop. Now the scope is refused and every
-    unknown id is named, before anything is asked."""
+    unknown id is named, before anything is asked. **The level is one of those ids** (NEW-60)."""
 
     async def test_the_pass_refuses_an_unknown_candidate_and_spends_nothing(
         self, database_url: str
@@ -680,6 +680,69 @@ class TestResearchRefusesAnUnknownScope:
 
         assert response.status_code == 422
         assert response.json()["details"]["unknown_match_rules"] == ["no_such_gate"]
+
+    async def test_the_estimate_refuses_an_unknown_level(self, database_url: str) -> None:
+        """NEW-60. A level nothing is catalogued at estimated nothing and answered 200, which a
+        run's plan did too until NEW-40 -- on the one field a client can mistype that names
+        everything else."""
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            response = await api.post("/v1/match-rule-research/plan", json={"level": "atlantis"})
+
+        assert response.status_code == 422, f"answered {response.status_code}: {response.text}"
+        body = response.json()
+        assert body["code"] == "unknown_scope"
+        assert body["details"] == {"level": "atlantis", "unknown_levels": ["atlantis"]}
+        validate("planMatchRuleResearch", body, status=422)
+
+    async def test_the_pass_refuses_an_unknown_level_and_asks_nothing(
+        self, database_url: str
+    ) -> None:
+        researcher = StubResearcher()
+        async with an_api(database_url, (a_stub_source(),), researcher=researcher) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+
+            response = await api.post("/v1/match-rule-research", json={"level": "atlantis"})
+            stored = (await api.get("/v1/match-rule-results")).json()["items"]
+            ledger = await _the_spend_ledger(database_url)
+
+        assert response.status_code == 422, f"answered {response.status_code}: {response.text}"
+        assert response.json()["code"] == "unknown_scope"
+        validate("researchMatchRules", response.json(), status=422)
+        assert researcher.asked == 0
+        assert (stored, ledger) == ([], [])
+
+    async def test_an_unknown_level_is_named_with_every_unknown_id_at_once(
+        self, database_url: str
+    ) -> None:
+        """Nothing is a candidate at a level that does not exist, so a named candidate is unknown
+        too; a gate is catalogued whatever the level, so only a gate that exists nowhere is."""
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            response = await api.post(
+                "/v1/match-rule-research/plan",
+                json={
+                    "level": "atlantis",
+                    "candidates": ["country.greece"],
+                    "match_rules": ["uk_skilled_worker", "no_such_gate"],
+                },
+            )
+
+        assert response.status_code == 422
+        details = response.json()["details"]
+        assert details["unknown_levels"] == ["atlantis"]
+        assert details["unknown_candidates"] == ["country.greece"]
+        assert details["unknown_match_rules"] == ["no_such_gate"]
+
+    async def test_a_catalogued_level_with_nothing_to_research_still_estimates(
+        self, database_url: str
+    ) -> None:
+        """The control: `city` exists and has nothing research can answer yet, which is an
+        estimate of nothing rather than a scope naming something unknown."""
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            response = await api.post("/v1/match-rule-research/plan", json={"level": "city"})
+
+        assert response.status_code == 200, f"answered {response.status_code}: {response.text}"
+        assert response.json()["gates_total"] == 0
 
 
 class TestResearchRefusesAFieldItDoesNotDeclare:
