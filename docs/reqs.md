@@ -404,6 +404,20 @@ erDiagram
         text id PK
         text level FK
         text name
+        bool researchable
+    }
+    MATCH_RULE_CANDIDATE {
+        text match_rule FK
+        text candidate FK
+    }
+    MATCH_RULE_RESEARCH_SPEND {
+        bigint id PK
+        timestamptz researched_at
+        text match_rule FK
+        text candidate FK
+        text data_source FK
+        int llm_call_count
+        numeric cost_eur
     }
     MATCH_RULE_RESULT {
         text match_rule FK
@@ -651,6 +665,11 @@ erDiagram
     DATA_SOURCE ||--o{ MATCH_RULE_RESULT : evidences
     MATCH_RULE ||--o{ MATCH_RULE_RESULT_CITATION : cited
     CANDIDATE ||--o{ MATCH_RULE_RESULT_CITATION : cited
+    MATCH_RULE ||--o{ MATCH_RULE_CANDIDATE : concerns
+    CANDIDATE ||--o{ MATCH_RULE_CANDIDATE : "is concerned by"
+    MATCH_RULE ||--o{ MATCH_RULE_RESEARCH_SPEND : "researched at"
+    CANDIDATE ||--o{ MATCH_RULE_RESEARCH_SPEND : "researched for"
+    DATA_SOURCE ||--o{ MATCH_RULE_RESEARCH_SPEND : billed
     COMPOUND_RULE ||--o{ COMPOUND_RULE_CONDITION : tests
     ATTRIBUTE ||--o{ COMPOUND_RULE_CONDITION : "is tested by"
     EVALUATION ||--o{ EVALUATION_SCALE_ANCHOR : freezes
@@ -765,6 +784,11 @@ erDiagram
 | `CANDIDATE \|\|--o{ MATCH_RULE_RESULT` | One candidate, many rules | The result is a **fact about the world** — whether a visa route exists — so it lives on the objective side, like a value |
 | `MATCH_RULE \|\|--o{ MATCH_RULE_RESULT_CITATION` | The pages a gate's verdict was read from | A `MATCH_RULE_RESULT` is decided by manual or LLM-assisted research (section 6.9), which must show its sources exactly as a value does. The citation's key is the pair `(match_rule, candidate)` — the result's own key — so the diagram shows both halves rather than one line to the result |
 | `CANDIDATE \|\|--o{ MATCH_RULE_RESULT_CITATION` | The other half of that pair | |
+| `MATCH_RULE \|\|--o{ MATCH_RULE_CANDIDATE` | The candidates a gate is a question about | The UK route concerns the United Kingdom and nowhere else, so research asks a model about it there only (Q236). **No rows means every candidate at the gate's level**, which is what every gate declared without any has always meant |
+| `CANDIDATE \|\|--o{ MATCH_RULE_CANDIDATE` | The other half | |
+| `MATCH_RULE \|\|--o{ MATCH_RULE_RESEARCH_SPEND` | What researching a gate billed, one row per call | Research writes gate answers rather than values, so it is not a run and has no run row to accrue on (section 3.8). Written as each call returns, so a pass that dies keeps the record of what it paid for (Q236) |
+| `CANDIDATE \|\|--o{ MATCH_RULE_RESEARCH_SPEND` | Which candidate the billed question was about | |
+| `DATA_SOURCE \|\|--o{ MATCH_RULE_RESEARCH_SPEND` | Who billed it | `llm`, the one paid source today. Named on the row, so a second paid source needs no second ledger |
 | `COMPOUND_RULE \|\|--o{ COMPOUND_RULE_CONDITION` | The conditions an `AllConditionsHold` rule ANDs | Each names one attribute and its own band, in that attribute's own unit (section 3.7a). A rule carries conditions or inputs, never both |
 | `ATTRIBUTE \|\|--o{ COMPOUND_RULE_CONDITION` | The other half | |
 | `EVALUATION \|\|--o{ EVALUATION_SCALE_ANCHOR` | The anchors frozen at the moment the evaluation ran | Without them a saved evaluation shows scores its own drill-down can no longer reproduce, once the anchors are revised (Q188, Q193). Keyed on the evaluation and attribute rather than a criterion, because the criterion it was copied from stays editable and may since have been deleted |
@@ -1487,6 +1511,8 @@ eligibility but are not measurements of the place.
 |---|---|
 | `id`, `name` | Identifier and display name |
 | `level` | Which level it applies at |
+| `researchable` | Whether a model may be asked to research it (section 6.10 use 3). True only for a gate decided by reading official pages -- the "Manual, LLM-assisted" gates of section 7.3 (Q236) |
+| `match_rule_candidate` | The candidates the gate is a question about, one row each. **None means every candidate at its level**, so a gate that concerns everybody names nobody |
 
 **The result** (`match_rule_result`) is one rule's answer for one candidate:
 
@@ -1623,6 +1649,12 @@ candidate, the attribute and the error, which is exactly the unit selective retr
 
 Values link back to the run that produced them, which is what makes retry and
 "what changed since last run" possible.
+
+**Gate research is not a run, and what it spends is ledgered beside the runs** (Q236). It writes
+gate answers rather than values, so it has no run row to accrue on. Each research call that
+billed anything is written to `match_rule_research_spend` -- the gate, the candidate, the source,
+the calls and the cost -- the moment it returns, so a pass that dies keeps the record of what it
+paid for. "What has this month cost?" is a sum over the runs and that table.
 
 ### 3.9 Household
 
@@ -2682,6 +2714,14 @@ not matching regardless of score** — and stays visible, with its score, showin
 > of the 32 seeded countries. The UK and Swiss filters are the reason the v1 seed was widened
 > beyond the EU (section 6.1) — without them the mechanism would ship untested.
 
+**Which gates research may ask a model about, and about whom, are catalog rows** (Q236, `0502`).
+`match_rule.researchable` marks the three "Manual, LLM-assisted" gates above, and
+`match_rule_candidate` names the one country each is a question about -- `uk_skilled_worker` the
+United Kingdom, `ch_eu_efta_quota` Switzerland, `li_eea_quota` Liechtenstein. A gate with no such
+rows concerns every candidate at its level. `eu_free_movement` is definitional and
+`not_manually_excluded` is the household's own, so neither is researched: a pass over the
+country level asks three questions, not 160.
+
 
 ### 7.4 Compound rule catalog
 
@@ -3249,7 +3289,7 @@ Recorded from a front-to-back read of this document.
 | Q221 | **The `international_employers` type is a `LabelSet`, as section 7.1 always said** (2026-09-12) | Section 6.10's summary line called it an `AssignedScore` plus a list. The catalog table in 7.1 and the database both say `LabelSet` -- named firms -- and the catalog wins, as it did for Q215. Named firms are checkable and a score is not: a list can be looked up, "7 out of 10" cannot, and the household can strike a name it disagrees with |
 | Q222 | **The LLM's prices are configured in US dollars and converted by a named rate** (2026-09-12) | Anthropic publishes and bills in USD; this application works in euro. Both halves are configuration: the three prices exactly as the pricing page states them, and `EUR_USD_RATE` as the ECB quotes it (1 EUR = *n* USD). **What is in `.env` is what is on the page** -- no mental arithmetic between reading a price and setting it, and no silent drift when one changes. The conversion names its rate, which is the rule section 5.5 applies to every monetary value, and the boot log prints it: a spend measured with an unknown rate is a spend nobody can check. The rate is a setting rather than a fetch because this is a spend guard and not a stored measurement -- being within a percent of today's rate is the whole requirement |
 | Q223 | **A composite is barred when its formula trades one good against another** (2026-09-12) | Section 3.5a's test -- "has someone already applied weights to it?" -- classified four attributes that rank all 32 countries today as figures this application may never ingest: the three WGI governance indices (an unobserved-components model over ~30 expert surveys) and `healthcare_system_quality` (WHO's composite of 14 tracer indicators), both of whose sources section 7.1 names as **scored**. A rule that contradicts the catalog it governs is not yet a rule: the next attribute would be typed by whichever document its author read first (`known-issues.md` P2). The narrowing generalises the reading Q203 already adopted for `cost_of_living_index` -- weights **within** one dimension make a better measurement of one thing, weights **across** dimensions encode somebody's answer to the question the household is here to answer for itself. Applying the old test literally was the alternative, and it would have emptied the governance and health pillars with no raw pan-European measure to put in their place. The cost is that the test now asks for judgement, so the four settled cases are written into 3.5a as worked examples |
-| Q224 | **Spend outside a run is reported but not yet ledgered** (2026-09-12) | Gate research spends money and writes gate answers rather than values, and a run is defined as a pass that writes values (section 3.8) -- so its cost reaches the response and the log, and no table: "what has this month cost?" cannot be answered from the database (`known-issues.md` P28). Deferred deliberately rather than overlooked. The per-request cap already bounds every spend, and there is exactly one paid source, so a ledger built now would be a second home for money beside the run row designed against a single caller. Revisit when a second paid source exists -- which is also when the choice between a ledger and widening the run record stops being a coin toss |
+| Q224 | **Spend outside a run is reported but not yet ledgered** (2026-09-12) | Gate research spends money and writes gate answers rather than values, and a run is defined as a pass that writes values (section 3.8) -- so its cost reaches the response and the log, and no table: "what has this month cost?" cannot be answered from the database (`known-issues.md` P28). Deferred deliberately rather than overlooked. The per-request cap already bounds every spend, and there is exactly one paid source, so a ledger built now would be a second home for money beside the run row designed against a single caller. Revisit when a second paid source exists -- which is also when the choice between a ledger and widening the run record stops being a coin toss. **Revisited by Q236**: the ledger exists (`0503`) |
 | Q225 | **A run is estimated from ceilings, and the one figure that cannot be derived is measured** (2026-09-12) | Section 6.3 asks for a dry-run estimate, and it reported zero for every run -- hardcoded from when every source was free, so the one screen that exists to answer "what will this cost?" answered "nothing", whatever the run was. The estimate now comes from the source itself, because a source is the only thing that knows what it charges. Two of the three figures behind an LLM call's price are ceilings the client already imposes and sends with every request: `max_tokens` caps the output, `max_searches` caps the searches. The input side cannot be known in advance -- the provider injects the pages it searched into the context, so the prompt's own length says little, and the input side dominates the bill. It is therefore **configured and measured** rather than assumed: `make live-llm` makes one real call and prints what it billed, and `LLM_INPUT_TOKENS_PER_CALL` is set from that. **The estimate carries what it rests on** (`estimate_basis`), because a euro figure with no stated assumptions can be trusted but not checked. A figure set too low costs money rather than accuracy, and the cap is what catches it -- the two mechanisms Q22 deliberately kept separate. **Gate research gets its own estimate** (`planMatchRuleResearch`), counting the same pairs the pass would ask through the same function, because it is the most expensive thing this application does and until now the only way to learn the cost was to pay it |
 | Q226 | **A second criteria set ships: `remote_only`** (2026-09-13, migration `0469`) | The MVP's own claim, tested: a scenario is **re-weighted rows, not new machinery** (`devplan.md` 8). Nothing measured changes -- the same 43 attributes, the same figures, the same provenance -- and switching sets re-ranks instantly without fetching anything (section 5.6). The scenario: you work remotely for an employer outside the country you live in, so the local job market stops deciding where you may live, and three secondary things become decisive -- whether a tax treaty makes remote work viable at all (economics 20 -> 35), whether the connection is good enough to work over (broadband 25 -> 40), and whether residency is obtainable without a local employer sponsoring you (residency admin 15 -> 25). Career falls from 14% of the level to 4%. **The criteria are copied by SELECT rather than retyped**, because a hand-typed list would silently omit an attribute the day one is added and the omission would read as a deliberate exclusion. Every number is provisional, exactly as Q104's are. It changes the answer: Cyprus rises from 4th to 2nd, Ireland and Liechtenstein leave the top ten |
 | Q227 | **Air connectivity splits into two attributes, one European and one worldwide** (2026-09-13, migration `0470`) | `international_air_connectivity` counts "international destinations served", and Eurostat `avia_paocc` -- the only free source that could answer it -- carries a partner list of 35 European countries and three aggregates. No Brazil, no United States, no Gulf hub. A count from it would be European connectivity wearing the word "international", which is the fault Q202 fixed for `crime_safety_index`: a name promising one quantity over a figure measuring another. Two attributes now, each measuring what its name says -- the European one counted from Eurostat, the worldwide one answered by the LLM path with the pages it read (and from 2026-10-12, by the OpenFlights adapter wired as its rank-2 source, `0497`). Their weight was split rather than duplicated, because the two overlap and air travel must not count twice in one pillar |
@@ -3261,3 +3301,4 @@ Recorded from a front-to-back read of this document.
 | Q233 | **A run does not re-fetch what is still fresh** (2026-09-21, commit `86d67af`) | The household sets `refetch_older_than_days` (section 3.10). An attribute is left out of a run only when every candidate in scope already holds a figure retrieved more recently than that. Whole attributes rather than pairs, because a run's scope is candidates times attributes and a per-pair skip could not be expressed without restructuring the fetch. Empty skips nothing -- the shipped state, and exactly what runs did before -- so a scope only narrows because somebody set a number. A retry gets no threshold: it asks again about items that produced no answer, and judging them by when they were last asked would refuse the retry for being recent |
 | Q234 | **The second tab is "Acquire", not "Run"** (2026-09-20; recorded as a second Q231 until 2026-10-17, a number MIPEX already held) | Every other tab names the work -- Configure, Rank, Compare. "Run" named the mechanism, and the mechanism is the application's, not the reader's. The tab is where figures are fetched, so it says so, and it matches the vocabulary the rest of the system already uses: a `data_acquisition` module, `POST /v1/data-acquisition-runs`, "data acquisition run" throughout this document. The route moves with the label -- a tab called Acquire living at `/run` is the same drift under a different name. **The runs themselves stay runs**: the entity is unchanged, which is why the sidebar still links to "Run history" |
 | Q235 | **An attribute says which sources can fetch it: `answerable_by`** (2026-10-18, UI-32) | The Acquire screen's "no data source at all" card and Configure's "No source yet" chip inferred "nothing can fetch this" from an empty `effective_source_priority` -- and since BE-39 that list names every source for every attribute, `llm` and `manual` included, so the card never listed anything and the chip never appeared. Which sources can fetch an attribute is a fact the server already holds -- each registered adapter declares what it answers -- so it is **served rather than inferred**: `Attribute.answerable_by` names the sources whose registered adapter declares the attribute, in the attribute's resolved priority order, each once however many adapters it has. **It ignores the on/off switch** (Q232): switching a source off is a judgement about consulting it, not a fact about what it can fetch. **Empty means no run can fetch it**, which for a manual-entry attribute is the honest reason to type it by hand; `manual` and `stand_in` are not adapters and never appear, and `llm` appears only where an LLM adapter is configured and declares the attribute. Rejected: removing the card and the chip (a designed feature lost until done properly), and one `planRun` per attribute (about 45 requests every time the screen opens) |
+| Q236 | **Gate research asks only what it can answer, and every billed call is ledgered** (2026-10-19, NEW-01, BE-34; revisits Q224) | Research asked every gate about every candidate at the level -- five country gates over 32 countries, 160 paid calls -- while section 7.3 names three "Manual, LLM-assisted", each a question about one country. Whether a model may research a gate is `match_rule.researchable`, and which candidates a gate concerns is `match_rule_candidate`, where no rows means every candidate at its level: catalog rows (`0502`), so a level-wide pass is three questions, and a scope naming a gate research cannot answer asks nothing, costs nothing and is answered rather than refused. **The page asks one gate per request and holds the pass to the spend cap**, and the per-request cap still bounds every request. **That made Q224's premise false** -- a pass is now many requests, and a response lost to a timeout, or a process that died, took the only record of its spend with it -- so every call that billed anything is written to `match_rule_research_spend` (`0503`) the moment the researcher returns, before its proposal is stored or the next question asked. **Write-only**: no operation reads it, so the contract is unchanged, and "what has this month cost?" is a sum over the runs and this table. Rejected: a read endpoint over the ledger (a contract change, and the only thing that would let the page's running total survive a lost response), and widening a run to cover a pass that writes no values (section 3.8 keeps a run narrow) |

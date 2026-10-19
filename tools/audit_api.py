@@ -49,6 +49,14 @@ COVERED_ELSEWHERE = {
     "FX_RATE": "FxRate, inside MonetaryPayload",
     "STAND_IN": "Value.data_source stand_in, with Value.quote naming the substitute and the reason",
     "POPULATION_CENTRE": "Value.quote of each climate figure, which names every place and its weight",
+    "MATCH_RULE_CANDIDATE": (
+        "deliberately not exposed (Q236): it decides which pairs research asks about, and "
+        "planMatchRuleResearch reports their count; the MatchRule body is unchanged"
+    ),
+    "MATCH_RULE_RESEARCH_SPEND": (
+        "deliberately not exposed: the research spend ledger is write-only by decision (Q236), "
+        "and each researchMatchRules response reports its own cost_eur and calls"
+    ),
 }
 
 

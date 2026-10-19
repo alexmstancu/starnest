@@ -381,7 +381,8 @@ database rather than only in prose:
 | `level`, `candidate`, `pillar`, `attribute` | `criteria_set`, `criterion` |
 | `value` and its typed children | `evaluation`, `candidate_result` |
 | `data_source`, `run`, `external_score` | `household` |
-| `match_rule`, `match_rule_result` | |
+| `match_rule`, `match_rule_result`, `match_rule_candidate` | |
+| `match_rule_research_spend` -- what gate research billed, beside the runs' own spend | |
 
 **No table on the left ever carries a foreign key to one on the right.** Values do not know
 which criteria set is active; candidates do not store a score. That is what makes a
