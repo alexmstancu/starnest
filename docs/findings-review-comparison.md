@@ -23,6 +23,8 @@ The table preserves the original IDs, order, severity labels, and both independe
 
 **After the other agent's fixes (2026-10-18):** its ST-02, BE-19 and ST-09 were checked against the code and are FIXED; UI-23 is FIXED too, because NEW-51 was UI-23 found again by running the browser suite. The column now reads **59 FIXED, 5 PARTIAL, 21 NOT_FIXED, 5 CLOSED, 1 N/A**. Details in [The other agent's fixes, checked](#the-other-agents-fixes-checked-2026-10-18).
 
+**Phase B (2026-10-19):** UI-11, UI-15, UI-26 and UI-32 are FIXED, and BE-23 moves from PARTIAL to FIXED. The column now reads **64 FIXED, 4 PARTIAL, 17 NOT_FIXED, 5 CLOSED, 1 N/A**. Details in [Phase B](#phase-b-the-decided-items-2026-10-19).
+
 | nr | finding_id | finding_summary | severity | gpt-6-astra | claude-opus-5 | action | decision | fix_status |
 |---:|---|---|---|---|---|---|---|---|
 | 1 | UI-01 | nginx's 60-second read timeout can interrupt synchronous paid gate research before its result and actual cost reach the browser. Continued work after disconnection was not runtime-verified. | High | REAL | REAL | no-op | REAL | PARTIAL |
@@ -35,11 +37,11 @@ The table preserves the original IDs, order, severity labels, and both independe
 | 8 | UI-08 | Undo-history keys omit criteria-set identity, so consecutive edits to one attribute in different sets can collapse and undo into the wrong set. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 9 | UI-09 | Reversing only the edited weight cannot recover sibling proportions after they were reduced to zero, despite the UI presenting the operation as undo. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 10 | UI-10 | Nonblank invalid numeric settings can become NaN or infinity and serialize as null, clearing configuration rather than reporting invalid input. | Medium | REAL | REAL | no-op | REAL | FIXED |
-| 11 | UI-11 | Relevant writes do not invalidate persistent sidebar resources, leaving household context, match counts, or the last-run summary stale. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 11 | UI-11 | Relevant writes do not invalidate persistent sidebar resources, leaving household context, match counts, or the last-run summary stale. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 12 | UI-12 | Rule-effect explanations count unconfirmed proposals as exclusions and describe compound rules as affecting nobody even when warnings apply. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 13 | UI-13 | Confirmation omits a proposal's reference period and does not display it. The loss is latent while the current researcher supplies no periods. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 14 | UI-14 | The proposal screen discards actual research cost, call count, and cap-halt status, leaving partial completion and spending undisclosed. | Medium | REAL | REAL | no-op | REAL | FIXED |
-| 15 | UI-15 | Alternative/rejected values display the selected value's score and contribution, while active descriptive or excluded values can be labeled Scored. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 15 | UI-15 | Alternative/rejected values display the selected value's score and contribution, while active descriptive or excluded values can be labeled Scored. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 16 | UI-16 | Candidate provenance fetches only one 500-value page while claiming to show every stored observation. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 17 | UI-17 | Only ten runs feed the claimed complete history and monthly-spend total, omitting older runs and their recorded costs. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 18 | UI-18 | Score presentation assumes a 100-point maximum and can clamp valid larger pillar scores to 100 or mislabel live/frozen scales. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
@@ -50,13 +52,13 @@ The table preserves the original IDs, order, severity labels, and both independe
 | 23 | UI-23 | Browser-gate selectors expect obsolete attribute-ID labels and comparison markup that disagree with the current product. This is a test-suite defect, not proof of broken product behavior. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 24 | UI-24 | Acquire does not poll its displayed running/stopping report; it stays stale until manual Refresh despite the live-progress requirement. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 25 | UI-25 | Clearing comparison focus produces an empty string that leaves Compare enabled, but submission silently does nothing. | Low | REAL | REAL | no-op | REAL | FIXED |
-| 26 | UI-26 | Tabbing into a household-picker option starts a blur timer that closes the list and removes the focused option. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 26 | UI-26 | Tabbing into a household-picker option starts a blur timer that closes the list and removes the focused option. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 27 | UI-27 | Candidate-roster read failures become empty required pickers without an actionable error or retry, blocking household/manual-entry workflows. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 28 | UI-28 | A successful empty criteria-set refresh is treated like loading and retains a deleted selection, reachable through overlapping or independent deletions. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 29 | UI-29 | No UI workflow independently enters or overrides a gate answer; the exposed write only confirms a proposal unchanged. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
 | 30 | UI-30 | External-score React keys omit reference-period end, allowing distinct same-start editions to collide. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 31 | UI-31 | Settings help says an unset comparator limit means unlimited comparison, although the backend refuses comparisons until it is set. | Low | REAL | REAL | no-op | REAL | FIXED |
-| 32 | UI-32 | The UI treats source-priority membership as adapter capability and makes unsupported claims about whether acquisition can answer an attribute. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 32 | UI-32 | The UI treats source-priority membership as adapter capability and makes unsupported claims about whether acquisition can answer an attribute. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 33 | UI-33 | Multiple adapters sharing a publisher produce duplicate plan-row keys and indistinguishable counts in the Per source table. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 34 | BE-01 | Criterion matching thresholds are stored and served but never evaluated when deciding a candidate's match status. | High | REAL | REAL | no-op | REAL | FIXED |
 | 35 | BE-02 | Normalised criterion scores are rounded before weighting, which can change displayed totals and reverse rankings. | High | REAL | REAL | no-op | REAL | FIXED |
@@ -80,7 +82,7 @@ The table preserves the original IDs, order, severity labels, and both independe
 | 53 | BE-20 | Some parser/conversion exceptions escape contextual source handling, abort remaining acquisition without recording the current failed item. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 54 | BE-21 | Loose request/domain validation boundaries can produce 500s, and ordinary framework validation errors do not use the promised uniform error body. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 55 | BE-22 | Unvalidated rename/duplicate copies can persist an empty-name criteria set that subsequent validated reads cannot load. | High | REAL | REAL | no-op | REAL | FIXED |
-| 56 | BE-23 | Unknown body/query fields and unsupported nulls can be ignored or coerced, resulting in silent no-ops, cleared settings/anchors, or unintended threshold values. | Low | REAL | REAL | no-op | REAL | PARTIAL |
+| 56 | BE-23 | Unknown body/query fields and unsupported nulls can be ignored or coerced, resulting in silent no-ops, cleared settings/anchors, or unintended threshold values. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 57 | BE-24 | Bulk acquisition/research silently intersects mixed valid and unknown scope IDs instead of reporting the omitted inputs. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 58 | BE-25 | Plans omit freshness filtering that execution applies, advertising work and cost that may be skipped or refused as nothing-to-fetch. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 59 | BE-26 | Weather aggregation accepts incomplete or misaligned nonempty series and labels their averages with the entire requested year/season. | Medium | REAL | REAL | no-op | REAL | FIXED |
@@ -339,3 +341,44 @@ While the decisions above were open, the other agent committed three fixes to `m
 
 Consequences for the plan: the next migration is `0502`; the held NEW-48 commit no longer works as written, since a run now asks through `fetch_in_batches`; and keeping one database connection (NEW-21) no longer rests on ST-02.
 
+
+## Phase B: the decided items (2026-10-19)
+
+On 2026-10-18 you chose the small fix for UI-11, UI-15 and UI-26, the full fix for UI-32 and BE-23, and a batch of the recorded defects. Each started with tests that failed for the right reason, then the fix, then the same tests passing, with 100% coverage of the changed lines. Three lanes ran in parallel without sharing a file, and a fourth did UI-32's screens once its server half had landed. Each lane passed its half of `make check`, and independent reviews read every commit.
+
+| Finding | Commit(s) on `master` | What changed |
+|---|---|---|
+| UI-11 | 48e14e8 | The sidebar re-reads the household, the match counts and the last run when you change screens, and when a run you are watching ends |
+| UI-15 | a8d2b71, 9be5ac6 | Score and contribution show only on the figure the pass scored, and an active figure nothing counts reads "Active". The review found that the first commit hid the numbers when the set could not be read; the second takes the ranking's word then |
+| UI-26 | c53af61 | The household picker stays open while focus is anywhere inside it |
+| UI-32 | d217dd9, 7c6cb9e, c3f18e4 | The server says which sources can fetch each attribute (`answerable_by`, Q235), and the Acquire card, Configure's chip and the hand-entry card read it. On your data, four attributes have nothing that can fetch them: `remote_work_tax_treaty`, `climate_zone`, `pension_portability` and `residency_admin_ease` |
+| BE-23 | d8d5636 | Undeclared body fields, undeclared query parameters and nulls with no meaning are refused as 422 `invalid_request` |
+
+Defects fixed in the same phase:
+
+| Defect | Commit |
+|---|---|
+| NEW-04: the AI client waited up to 600 s and retried twice, outlasting the proxy's 300 s | d883af3 |
+| NEW-11: every Acquire action reset the diff's chosen pair | 876d75c |
+| NEW-18 and NEW-41: no operation declared a 422, and the generated contract described one as `{detail}` | 27f6d6c |
+| NEW-36: a model's gate answer sent over a person's stored nothing and still answered 200 | c96d40a |
+| NEW-37: the refetch age printed as "30 days, 0:00:00" | 3464c9d |
+| NEW-38: `useManualEntry`'s `onStored` was never passed | 9eabba5 |
+| NEW-39: the exact diff left out an assigned score's rationale | eebf7fc |
+| NEW-40: planning a run for an unknown level answered 200 with nothing to do | 041008f |
+| NEW-42: "Saved." was not announced to a screen reader | b4d3e5f |
+| NEW-44: older controls disabled themselves during a write and dropped keyboard focus | 45f2c25, 46d84d1 |
+| NEW-52: Stop was offered again while a Refresh overlapped it. The review found that a start pressed during the stop did the same; the second commit keeps Stop held until the stop is refused | 6d72d97, d7b6bfb |
+| NEW-53: a browser spec could read pillar names before they had loaded | 5b44462 |
+| `arch.md` 7.3 promised a 400 for a malformed request; the contract and the code say 422 | 891b413 |
+
+**Checked at `d7b6bfb`:**
+
+- `make check` is green: 3,151 backend tests at 97.29% coverage, the import contracts kept, every audit passing; 1,495 UI tests at 98.97% coverage, eslint without errors.
+- The containers were rebuilt and the browser suite passed in full, 32 of 32. Your live data came back as it was: the browser run added one free Eurostat figure (run 127), re-dated Greece's gate answer (UI-03's remaining part) and saved an `[e2e]` ranking, which a backend restart discarded.
+- Independent reviews:
+  - Backend and contract: nothing found. The reviewer also sent the UI's real request shapes to the built app, and none was refused.
+  - Acquire, Rank and the browser specs: the two gaps fixed by `9be5ac6` and `d7b6bfb`, and an older defect recorded as NEW-57.
+  - Configure, the shell, UI-32's screens and the two follow-up fixes: nothing found.
+
+**Recorded for later** in the plan's section 7: NEW-55 to NEW-63. One needs your attention: **NEW-57**. Since before this review, pressing Refresh during a start lets go of Start, so a second start can be sent. The database refuses it, but the card then drops the run that did start and shows the old one under a `run_already_in_flight` banner. The fix is NEW-52's: track a start apart from `busy`.
