@@ -340,3 +340,31 @@ list now carries the per-row *Stored* and *Failed* counts the fourth pass flagge
 gap, and the run-summary progress meter now renders its three segments in colour (completed teal,
 failed red, unanswered grey) -- it had regressed to a single black bar for want of a CSS rule per
 segment kind, fixed 2026-10-12. Both match what the design already specified.
+
+## Gate research, one question at a time: progress, Stop and outcome have no design (2026-10-19)
+
+UI-01 and UI-14. Gate research went as one request for the whole level, which no proxy ceiling
+could hold; it is now a **pass the Configure screen sends one gate per request**, held to the
+spend cap by the page, because the server's meter starts again with every request. What a pass
+shows after the press is new, and three things are built and shipping with no design to follow:
+
+- **Progress.** A status line, always on the page and empty until a pass starts, that names the
+  gate being asked ("gate 2 of 5") with the calls so far and the spend beside the estimate's "at
+  most" ceiling. Estimate, Research and every Confirm are held -- `aria-disabled`, focus kept --
+  while it runs.
+- **Stop.** "Stop after this question", beside the held Research button while a pass runs. It
+  takes effect once the request in flight answers, because the server finishes a call it has
+  begun and keeps what it found, and it holds as "Stopping after this question…" once pressed,
+  as the run's Stop does.
+- **Outcome.** How the last pass ended, in the same line: finished; stopped at the spend cap,
+  with the cap, the spend and the gates not asked; stopped by you; refused, which spent nothing;
+  failed, whose spend is not known; or not started, because the cap or the gates could not be
+  read. Every end the reader did not ask for takes the amber warning band, and one that came
+  from an error also shows its error notice. The pass spends the estimate that allowed it, so
+  the next pass needs a fresh one -- and focus moves to Estimate when Research leaves the page
+  under it.
+
+They are built in the design's own idiom -- `.panel__hint` for the line, `.notice--warning` for
+an end nobody asked for, a held `.button` -- with no new class and no new token. **Please draw
+the three states**, and say whether the outcome belongs in the line or in a card of its own:
+it is the one place on this screen that reports money already spent.
