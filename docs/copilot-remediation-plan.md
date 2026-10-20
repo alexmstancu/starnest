@@ -1,6 +1,6 @@
 # Copilot remediation plan
 
-**Status (2026-10-19):** round 2, Phase B and gate research are done. Round 2 fixed 37 findings and the 18 small defects found while planning, test-first (section 2). Phase B fixed the five in section 3, UI-11, UI-15 and UI-26 the small way and UI-32 and BE-23 in full, together with NEW-04, NEW-11, NEW-18 and ten of the defects recorded since round 2. Gate research (UI-01, NEW-01, BE-34), as you approved it on 2026-10-18, now asks 3 paid questions instead of 160, one per request, held to the spend cap, with every billed call ledgered (migrations `0502` and `0503`). Since round 2, 40 more defects were found (NEW-26 to NEW-65, section 7): 29 are fixed and 11 are recorded for later, NEW-48 among them, held for BE-11 by your choice. BE-31 stays partial, as planned. The other agent fixed ST-02, BE-19 and ST-09 on 2026-10-18, checked against the code. Per finding, the tracker reads **66 FIXED, 3 PARTIAL, 16 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)).
+**Status (2026-10-20):** round 2, Phase B, gate research and UI-03 are done. Round 2 fixed 37 findings and the 18 small defects found while planning, test-first (section 2). Phase B fixed the five in section 3, UI-11, UI-15 and UI-26 the small way and UI-32 and BE-23 in full, together with NEW-04, NEW-11, NEW-18 and ten of the defects recorded since round 2. Gate research (UI-01, NEW-01, BE-34), as you approved it on 2026-10-18, now asks 3 paid questions instead of 160, one per request, held to the spend cap, with every billed call ledgered (migrations `0502` and `0503`). Since round 2, 40 more defects were found (NEW-26 to NEW-65, section 7): 29 are fixed and 11 are recorded for later, NEW-48 among them, held for BE-11 by your choice. BE-31 stays partial, as planned. The other agent fixed ST-02, BE-19 and ST-09 on 2026-10-18, checked against the code. Since 2026-10-20 the browser suite runs on its own throwaway database (UI-03), so it no longer touches your live data. Per finding, the tracker reads **67 FIXED, 2 PARTIAL, 16 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)).
 
 This plan was written on 2026-10-15 against `c943761`, where `make check` was green: 2,863 backend tests, 96.92% coverage, 1,116 UI tests.
 
@@ -149,7 +149,7 @@ Each finding's full plan is in its appendix. Choices you already made for these 
 | Finding | Why later | Planned fix |
 |---|---|---|
 | UI-01 (High): gate research can exceed the proxy timeout | Done (2026-10-19): `34f9b30`, `36bad8c`, `634fb1e`, with NEW-01 (`567faf4`) | Research asks only the gates and countries that apply, one gate per request the page sends, the pass held to the spend cap |
-| UI-03 (High): the browser tests use your live data | New Makefile flows that create a database | Their own throwaway database, copied from your newest backup, and their own servers |
+| UI-03 (High): the browser tests use your live data | Done (2026-10-20): `05f17bd`, `854d78a` | Their own throwaway database, copied from your newest backup, and their own servers |
 | BE-19 and BE-33 (High, Low): paid answers wait in memory until a whole sweep ends | BE-19 done by the other agent (`d7a1263`): each paid answer is stored as it lands. BE-33 is still open: its cost is saved only when the whole source ends | Save each answer's cost with it |
 | UI-18: scores assume a 0–100 scale | Cannot happen at your setting (100) | Read the configured or frozen scale everywhere |
 | UI-23: browser tests use stale control names | Done: NEW-51 (`6865e27`) was this finding, found again by running the suite, which now passes 32 of 32 | — |
@@ -263,6 +263,11 @@ No migration, contract change or browser run happens this round.
 - Fix NEW-57 at once, with NEW-52's pattern (done, `8bad828`).
 - Fix NEW-60 and NEW-63 with the research build, which changes the same endpoints.
 - Start the approved gate-research build.
+
+**Given to me, 2026-10-20:**
+
+- UI-03 next, with the plan as presented: the browser suite gets its own throwaway database (done, `05f17bd`, `854d78a`).
+- Delete the Greece answer the browser suite wrote into your live database, after a backup (done: `backups/20261020-165241.dump`, then one checked transaction).
 
 **Closed without code:**
 

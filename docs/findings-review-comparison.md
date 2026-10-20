@@ -27,11 +27,13 @@ The table preserves the original IDs, order, severity labels, and both independe
 
 **Gate research (2026-10-19):** UI-01 moves from PARTIAL to FIXED and BE-34 from NOT_FIXED to FIXED. The column now reads **66 FIXED, 3 PARTIAL, 16 NOT_FIXED, 5 CLOSED, 1 N/A**. Details in [Gate research](#gate-research-2026-10-19).
 
+**The browser suite's own database (2026-10-20):** UI-03 moves from PARTIAL to FIXED. The column now reads **67 FIXED, 2 PARTIAL, 16 NOT_FIXED, 5 CLOSED, 1 N/A**. Details in [The browser suite's own database](#the-browser-suites-own-database-2026-10-20).
+
 | nr | finding_id | finding_summary | severity | gpt-6-astra | claude-opus-5 | action | decision | fix_status |
 |---:|---|---|---|---|---|---|---|---|
 | 1 | UI-01 | nginx's 60-second read timeout can interrupt synchronous paid gate research before its result and actual cost reach the browser. Continued work after disconnection was not runtime-verified. | High | REAL | REAL | no-op | REAL | FIXED |
 | 2 | UI-02 | Whole-bucket failed/unanswered retry buttons start a request without the estimate and confirmation used by selected-item retries. They also cannot convey explicit uncapped acceptance. | High | REAL | REAL | no-op | REAL | FIXED |
-| 3 | UI-03 | Browser tests replace global Greece gate answers without restoring the previous answer and provenance. A sanity test can also leave a changed spend cap after an intervening failure. | High | REAL | REAL | no-op | REAL | PARTIAL |
+| 3 | UI-03 | Browser tests replace global Greece gate answers without restoring the previous answer and provenance. A sanity test can also leave a changed spend cap after an intervening failure. | High | REAL | REAL | no-op | REAL | FIXED |
 | 4 | UI-04 | Unguarded asynchronous completions can merge old-set responses into a newly selected set or overwrite newer weights and run selections. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 5 | UI-05 | Multiple release/blur handlers can commit the same pillar-slider gesture before the server prop updates, creating duplicate rebalance requests. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 6 | UI-06 | Save completion replaces or clears the current draft even when the user entered newer edits while the request was pending. | Medium | REAL | REAL | no-op | REAL | FIXED |
@@ -409,3 +411,25 @@ The plan you approved on 2026-10-18, built test-first in two lanes that shared n
 - Independent reviews:
   - The server lane: the NEW-63 heading, fixed in `89307fc`; nothing else.
   - The page lane: nothing in the pass itself. No request goes after Stop, leaving Configure or the cap; the cap holds exactly at its boundary; the acceptance never carries into the next pass. It confirmed one older gap: a keyboard user standing in the proposals table when a pass ends is put back on the page, because the re-read at the end blanks the table for a moment. That predates this build and is recorded under NEW-45.
+
+## The browser suite's own database (2026-10-20)
+
+You approved the plan for UI-03 and chose to delete the Greece answer the suite had written.
+
+| Finding | Commit | What changed |
+|---|---|---|
+| UI-03 | 05f17bd, 854d78a | `make e2e` restores your newest backup into a throwaway `<db>_e2e` database, migrates it (so a pending migration is rehearsed on real data first), runs the suite on a backend and a Vite it starts itself on ports 8100 and 5180, and drops the copy whatever the outcome. The config refuses to run without that database, refuses any database whose name does not end in `_e2e`, never reuses a running server, and has no AI key, so the suite cannot spend. R-2 goes with it: the suite can no longer turn an answer into a manual one in your data |
+
+It was written test-first: five architecture guards failed first, then passed. One choice differs from the plan. Gate C still puts Greece's answer back after each test, because a later spec ranks with `local_employment`, which enforces that gate; on the copy, that reset can no longer touch your data.
+
+**Checked:**
+
+- `make ui-check` is green: 1,558 tests, eslint without errors.
+- A real `make e2e`: 32 of 32 passed in 37 s, **your live database identical before and after**, and no `_e2e` database left behind.
+- Refused as intended: no backup ("run make backup"), a bare `playwright test` ("run the browser suite with `make e2e`"), a URL pointing at the live database (refused by name, without printing the password), and a busy backend port (the backend cannot bind, and the copy is still dropped).
+- The Greece answer: `make backup` took `backups/20261020-165241.dump`, then one transaction deleted the suite's `not_manually_excluded` answer for Greece. It refused unless exactly that one row matched (manual, `matching`, no reason, no override); it had no citations. Your ranking is unchanged: Greece 46, matching.
+- Independent review: one real gap, three minor points, all fixed in `854d78a`.
+  - The guards checked keywords, not what each server is started with: deleting the backend's database line would have sent it back to your live database through `.env`, with every guard green. They now read each server's entry: no reuse, the e2e database, no AI key, Vite proxying to the e2e backend.
+  - `make e2e E2E_DB=<your database>` would have dropped and restored over your live database before Playwright could refuse. The name is now derived and cannot be passed.
+  - A restore or migration that fails now drops the copy at once, and a stale setup comment in minE2E was corrected.
+- **An incident of mine while verifying, repaired at once.** To force a migration failure I passed `DATABASE_PORT=1` to `make`. GNU make exports command-line variables to its recipes, so `docker compose` read it and recreated your database container with its port published on 1 instead of 5432. The data volume was untouched: your live data is identical to the snapshot before. I recreated the container with the normal port, the backend reconnected by itself, and the ranking is unchanged. The failure path was then verified safely, with a variable `compose.yaml` never reads.
