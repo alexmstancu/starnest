@@ -7,7 +7,6 @@ import {
 } from "@playwright/test";
 import { readSettings } from "./settings";
 
-
 /**
  * GATE C -- the product, driven by a browser (`devplan.md`).
  *

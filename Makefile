@@ -170,10 +170,14 @@ ui-check: ui-lint ui-typecheck ui-coverage  ## The interface gate
 # on a throwaway copy of the newest backup, migrated to this checkout (so a pending migration is
 # rehearsed on real data first), served by a backend and a Vite that Playwright starts on ports
 # Docker does not publish, and dropped afterwards whatever the suite found. The recipes are
-# silent because the database URL carries the password. Ctrl-C leaves the copy behind; the next
-# run drops it before restoring.
+# silent because the database URL carries the password. A restore or a migration that fails
+# drops the copy at once; Ctrl-C leaves it behind, and the next run drops it before restoring.
+#
+# **The name is derived and cannot be passed** (`override`): the recipes drop and restore over it
+# before Playwright's own `_e2e` refusal runs, so `make e2e E2E_DB=<live>` must not be able to
+# point them at the live database.
 
-E2E_DB           := $(POSTGRES_DB)_e2e
+override E2E_DB  := $(POSTGRES_DB)_e2e
 E2E_BACKEND_PORT ?= 8100
 E2E_UI_PORT      ?= 5180
 E2E_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@127.0.0.1:$(or $(DATABASE_PORT),5432)/$(E2E_DB)
@@ -185,8 +189,7 @@ e2e-database:  ## A throwaway copy of the newest backup, migrated to this checko
 	@test -n "$(POSTGRES_DB)" || { echo "e2e: no .env -- run make env"; exit 1; }
 	@test -n "$(NEWEST_BACKUP)" || { echo "e2e: no backup in ./backups -- run make backup"; exit 1; }
 	@echo "e2e: $(notdir $(NEWEST_BACKUP)) -> $(E2E_DB)"
-	@$(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB) && createdb $(E2E_DB) && pg_restore --no-owner --no-privileges --single-transaction --dbname=$(E2E_DB) /backups/$(notdir $(NEWEST_BACKUP))'
-	@cd $(BACKEND) && uv run yoyo apply --batch --database '$(subst postgresql://,postgresql+psycopg://,$(E2E_DATABASE_URL))' ../$(STORAGE)/migrations
+	@{ $(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB) && createdb $(E2E_DB) && pg_restore --no-owner --no-privileges --single-transaction --dbname=$(E2E_DB) /backups/$(notdir $(NEWEST_BACKUP))' && cd $(BACKEND) && uv run yoyo apply --batch --database '$(subst postgresql://,postgresql+psycopg://,$(E2E_DATABASE_URL))' ../$(STORAGE)/migrations; } || { $(MAKE) -C $(CURDIR) --no-print-directory e2e-drop; echo "e2e: the copy could not be restored or migrated, so it was dropped"; exit 1; }
 
 e2e-drop:  ## Drop the browser suite's throwaway database
 	@$(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB)'

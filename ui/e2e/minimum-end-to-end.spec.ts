@@ -1,6 +1,5 @@
 import { type Locator, type Page, expect, test } from "@playwright/test";
 
-
 /**
  * minE2E's acceptance test, and the only one that counts (`docs/mine2e.md`):
  *
@@ -8,9 +7,11 @@ import { type Locator, type Page, expect, test } from "@playwright/test";
  *   ranked table with a score, a coverage percentage and a match status -- served by the real
  *   backend, from the real database, over the real contract.
  *
- * **Against the real stack.** No mock is running: `playwright.config.ts` starts the API and the
- * interface, and the database must be up and migrated (`make up`, `make migrate`) with figures
- * fetched (`make acquire`). A gate that passed against a mock would prove the mock works.
+ * **Against the real stack.** No mock is running: `make e2e` restores the newest backup into a
+ * throwaway database and migrates it, and `playwright.config.ts` starts the API and the interface
+ * on it (UI-03). The figures are the backup's, so new ones reach the suite after the next `make
+ * backup`, which `make migrate` also takes. A gate that passed against a mock would prove the
+ * mock works.
  *
  * **It asserts shape, never a particular country's score.** The figures are Eurostat's and
  * change when Eurostat publishes; a test that pinned Finland to 82 would fail for being right
