@@ -12,7 +12,7 @@ of the result whatever its status.
 weighting doing what it is for, rather than a shape invented for these tests.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -788,6 +788,67 @@ class TestWhatTheScoreRestsOn:
 
         assert portugal.coverage == Decimal(0)
         assert portugal.coverage_by_confidence == {}
+
+    def test_a_figure_aged_past_its_max_age_drops_a_grade_in_the_split(self) -> None:
+        """BE-07. The split reads each figure's stored grade, but a figure aged past its
+        attribute's max_age is worth less now than when it was fetched, so a live ranking drops
+        it one grade (low is the floor). Saved evaluations keep their frozen split; only this
+        live read re-derives it."""
+        values = three_countries_one_missing_its_rent()
+        values["country.portugal"] = (
+            values["country.portugal"][0],
+            a_value(
+                candidate="country.portugal",
+                attribute=RENT,
+                payload=Count(count=5),
+                confidence_level=ConfidenceLevel.LOW,
+            ),
+        )
+        aged = {str(a_criterion().attribute): timedelta(days=30), RENT: timedelta(days=30)}
+
+        portugal = by_candidate(rank(two_pillars(), values, max_age=aged, as_of=date(2030, 1, 1)))[
+            "country.portugal"
+        ]
+
+        assert portugal.coverage_by_confidence[ConfidenceLevel.HIGH] == Decimal(0)
+        assert portugal.coverage_by_confidence[ConfidenceLevel.MEDIUM] == Decimal(50)
+        assert portugal.coverage_by_confidence[ConfidenceLevel.LOW] == Decimal(50)
+
+    def test_a_fresh_figure_keeps_its_grade(self) -> None:
+        """The control: as of a date inside the figures' period, nothing is stale and the split
+        is the stored one."""
+        values = three_countries_one_missing_its_rent()
+        values["country.portugal"] = (
+            values["country.portugal"][0],
+            a_value(
+                candidate="country.portugal",
+                attribute=RENT,
+                payload=Count(count=5),
+                confidence_level=ConfidenceLevel.LOW,
+            ),
+        )
+        aged = {str(a_criterion().attribute): timedelta(days=30), RENT: timedelta(days=30)}
+
+        portugal = by_candidate(rank(two_pillars(), values, max_age=aged, as_of=date(2026, 6, 1)))[
+            "country.portugal"
+        ]
+
+        assert portugal.coverage_by_confidence[ConfidenceLevel.HIGH] == Decimal(50)
+        assert portugal.coverage_by_confidence[ConfidenceLevel.LOW] == Decimal(50)
+
+    def test_an_attribute_with_no_max_age_never_goes_stale(self) -> None:
+        """An attribute declaring no max_age never ages (a coastline does not), so no amount of
+        time downgrades its figure."""
+        portugal = by_candidate(
+            rank(
+                two_pillars(),
+                three_countries_one_missing_its_rent(),
+                max_age={},
+                as_of=date(2030, 1, 1),
+            )
+        )["country.portugal"]
+
+        assert portugal.coverage_by_confidence[ConfidenceLevel.HIGH] == Decimal(100)
 
 
 class TestATargetRangeCriterion:

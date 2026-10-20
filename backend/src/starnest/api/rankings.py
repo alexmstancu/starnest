@@ -183,6 +183,13 @@ async def the_ranking(
     for answer in await match_rule_results.read_results(level=level):
         answers.setdefault(str(answer.candidate), []).append(answer)
 
+    # How fast each attribute's data goes stale, so the confidence split can drop a grade for a
+    # figure aged past it (BE-07). Objective catalog data, read here and passed in -- the
+    # ranking works on criteria and values and does not otherwise know the catalog.
+    max_age = {
+        str(attribute.id): attribute.max_age
+        for attribute in await catalog.read_attributes(level=level)
+    }
     results = rank_candidates(
         criteria=criteria_set_read,
         level=level,
@@ -192,6 +199,7 @@ async def the_ranking(
         compound_rules=await catalog.read_compound_rules(level=level),
         gate_answers=answers,
         home_candidate=await _home_country(households),
+        max_age=max_age,
     )
     return TheRanking(
         criteria=criteria_set_read,

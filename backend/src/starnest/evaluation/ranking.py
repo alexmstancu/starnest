@@ -20,6 +20,7 @@ evaluation store's.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from starnest.candidates import CandidateId
@@ -64,6 +65,8 @@ def rank_candidates(
     compound_rules: Sequence[CompoundRule] = (),
     gate_answers: Mapping[str, Sequence[MatchRuleResult]] = {},
     home_candidate: str | None = None,
+    max_age: Mapping[str, timedelta | None] = {},
+    as_of: date | None = None,
 ) -> tuple[CandidateResult, ...]:
     """Score every candidate, and put them in order.
 
@@ -90,7 +93,13 @@ def rank_candidates(
     _refuse_a_pillar_nothing_scores_into(criteria, level)
 
     weights = _level_wide_weights(criteria, scored_criteria, level)
-    readings = _readings_by_criterion(scored_criteria, values)
+    # **The confidence split is re-derived for age here, nowhere else** (BE-07). A figure's
+    # stored grade is what it was worth when fetched; one aged past its attribute's `max_age` is
+    # worth a grade less now, and the split says what a score rests on *now*. Only the live
+    # ranking does this -- a saved evaluation froze its split and reads it back unchanged.
+    readings = _readings_by_criterion(
+        scored_criteria, values, max_age, as_of or datetime.now(UTC).date()
+    )
     scores = _scores_by_criterion(scored_criteria, readings, score_scale_max=score_scale_max)
 
     # **Which compound rules a set applies is a preference** (`reqs.md` 3.7a), on the same
@@ -314,7 +323,10 @@ class Reading:
 
 
 def _readings_by_criterion(
-    scored: Sequence[Criterion], values: ValuesByCandidate
+    scored: Sequence[Criterion],
+    values: ValuesByCandidate,
+    max_age: Mapping[str, timedelta | None],
+    as_of: date,
 ) -> dict[str, dict[str, Reading]]:
     """Every comparable figure, per criterion, per candidate.
 
@@ -322,6 +334,11 @@ def _readings_by_criterion(
     absent, which is the same state as never having been fetched. That is deliberate: from the
     point of view of a score there is no difference between a figure nobody found and a figure
     that could not be read, and coverage reports both the same way.
+
+    **A figure aged past its attribute's `max_age` carries a grade less** (BE-07). The stored
+    grade was its worth at fetch; the split is what the score rests on now, so staleness -- the
+    one thing that changes after a figure is stored -- is applied here. An attribute with no
+    `max_age` never ages, which `has_aged_past` already answers.
     """
     by_attribute = {str(criterion.attribute): criterion for criterion in scored}
     readings: dict[str, dict[str, Reading]] = {attribute: {} for attribute in by_attribute}
@@ -334,8 +351,10 @@ def _readings_by_criterion(
                 figure = figure_of(value)
             except UnscoreableValueError:
                 continue
+            stale = value.reference_period.has_aged_past(max_age.get(attribute), on=as_of)
+            confidence = value.confidence_level.downgraded() if stale else value.confidence_level
             readings[attribute][candidate] = Reading(
-                figure=figure, confidence=value.confidence_level, value=value.id
+                figure=figure, confidence=confidence, value=value.id
             )
     return readings
 
