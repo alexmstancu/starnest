@@ -433,3 +433,22 @@ It was written test-first: five architecture guards failed first, then passed. O
   - `make e2e E2E_DB=<your database>` would have dropped and restored over your live database before Playwright could refuse. The name is now derived and cannot be passed.
   - A restore or migration that fails now drops the copy at once, and a stale setup comment in minE2E was corrected.
 - **An incident of mine while verifying, repaired at once.** To force a migration failure I passed `DATABASE_PORT=1` to `make`. GNU make exports command-line variables to its recipes, so `docker compose` read it and recreated your database container with its port published on 1 instead of 5432. The data volume was untouched: your live data is identical to the snapshot before. I recreated the container with the normal port, the backend reconnected by itself, and the ranking is unchanged. The failure path was then verified safely, with a variable `compose.yaml` never reads.
+
+## NEW-45: keyboard focus after a control goes away (2026-10-20)
+
+You approved the plan and chose where focus lands. `d4df1ad` and `746e8a4`, test-first, with 100% of their changed lines covered:
+
+| Where | Before | Now |
+|---|---|---|
+| Recent changes, after an undo or "Back to where I started" | The pressed button left with its entry, and focus went to the page | Focus goes to the "Recent changes" heading button, where a stray Enter only folds the panel |
+| Gate proposals, after a confirm | The confirmed row left the table with its Confirm | Focus goes to the next proposal's Confirm, or to Estimate once none is left |
+| Gate proposals, at the end of a research pass | The re-read blanked the table, taking a held Confirm with it | The last list stays on screen until the new one lands, as the run history does (NEW-11), and focus stays where it was |
+| Source priority, a row moved to either end | Its arrow that way became disabled, and the browser dropped focus | Focus goes to the row's other arrow |
+
+**One part did not reproduce.** NEW-45 also named a row moved down or dragged. React records the focused element before each commit and gives it focus again after, so a moved row keeps its focus. That holds in jsdom as in a browser, and the test that shows it passed before the fix; it is kept as a guard. A drag starts with a pointer press, which leaves no control focused to keep. A shared helper moves focus only when it was lost, so focus a reader put somewhere else stays where they put it.
+
+**Checked:** `make ui-check` green (1,577 tests, 99% of lines); the browser suite 32 of 32 on its own database; the containers rebuilt and smoke-checked.
+
+**Independent review:** one real gap in `d4df1ad`, fixed test-first in `746e8a4`. The list kept on screen during a re-read was not held, so a row just confirmed could be confirmed twice, and at the end of a research pass a row the pass had replaced could have been confirmed from its outdated content. Every Confirm is now held from the moment the answers are written until the new list lands. The review confirmed the rest, including that React gives focus back to an element it moves, in a browser as in jsdom. A second review of `746e8a4` found nothing: both windows are closed with no render in between, and the hold cannot stick.
+
+**Noticed, recorded for later:** NEW-66, the Proposals table prints raw gate and candidate ids rather than their names.
