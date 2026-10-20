@@ -6,8 +6,6 @@ import {
   type Page,
 } from "@playwright/test";
 import { readSettings } from "./settings";
-/** Where the API lives for these setup calls -- the same origin the config gives the browser. */
-const BASE_URL = process.env["UI_ORIGIN"] ?? "http://localhost:5173";
 
 
 /**
@@ -38,8 +36,11 @@ const BASE_URL = process.env["UI_ORIGIN"] ?? "http://localhost:5173";
 const SCORING_SET = "e2e_gate_c";
 const SHIPPED_SOURCE = "minimal";
 
-test.beforeAll(async ({ playwright }) => {
-  const api = await playwright.request.newContext({ baseURL: BASE_URL });
+test.beforeAll(async ({ playwright }, testInfo) => {
+  // The origin the config gives the browser: this run's own Vite, on this run's own database.
+  const api = await playwright.request.newContext({
+    baseURL: testInfo.project.use.baseURL,
+  });
   await api.delete(`/v1/criteria-sets/${SCORING_SET}`);
   const made = await api.post(`/v1/criteria-sets/${SHIPPED_SOURCE}/duplicate`, {
     data: { id: SCORING_SET, name: SCORING_SET },
@@ -55,8 +56,11 @@ test.beforeAll(async ({ playwright }) => {
   await api.dispose();
 });
 
-test.afterAll(async ({ playwright }) => {
-  const api = await playwright.request.newContext({ baseURL: BASE_URL });
+test.afterAll(async ({ playwright }, testInfo) => {
+  // The origin the config gives the browser: this run's own Vite, on this run's own database.
+  const api = await playwright.request.newContext({
+    baseURL: testInfo.project.use.baseURL,
+  });
   await api.delete(`/v1/criteria-sets/${SCORING_SET}`);
   await api.dispose();
 });
@@ -159,12 +163,13 @@ test.describe("provenance on a displayed number", () => {
 });
 
 test.describe("a candidate a gate ruled out", () => {
-  // A gate answer is global, not part of this suite's own set, so writing one and resetting it to
-  // a hardcoded `matching`/null erased whatever the household had recorded -- a real exclusion and
-  // its provenance (UI-03). Capture the prior answer and restore it exactly.
+  // **On this run's own copy of the database** (UI-03), so nothing outside the run can be
+  // overwritten -- the household's own answers are not in reach. The answer is still put back
+  // after each test, because a later spec in this run ranks with `local_employment`, which
+  // enforces this gate, and an exclusion left behind would decide its results.
   //
   // **Never read is not "no answer"** (NEW-32): `undefined` until the read succeeds, so a read
-  // that failed restores nothing -- where `null` wrote `matching` over the household's answer.
+  // that failed restores nothing.
   let priorAnswer: GateAnswer | null | undefined;
 
   test.beforeEach(async ({ request }) => {
@@ -175,9 +180,8 @@ test.describe("a candidate a gate ruled out", () => {
   });
 
   test.afterEach(async ({ request }) => {
-    // Restore exactly what was there. With no delete for a gate answer, an answer that was absent
-    // is restored to the gate's benign default (`matching`, no reason) -- an isolated e2e database
-    // is the complete fix. Enforcement is on this suite's own duplicated set, torn down anyway.
+    // What was there, as far as the API can write it back: there is no delete for a gate answer,
+    // so one that was absent becomes the gate's benign default (`matching`, no reason).
     if (priorAnswer !== undefined) {
       if (priorAnswer) {
         await answerTheGate(request, priorAnswer.match_result, priorAnswer.reason);

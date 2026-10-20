@@ -308,7 +308,7 @@ describe("the reverse proxy", () => {
      * Gate research returns its result in the response rather than being started and polled, so
      * the 60s read timeout that suits a POST-then-poll acquisition run would turn one slow LLM
      * call -- a request is one gate's question since UI-01 -- into a 504 that hides the proposal,
-     * its cost and any cap halt. The browser suite runs against Vite and the msw mock, never
+     * its cost and any cap halt. The browser suite runs against Vite's dev proxy, never
      * nginx, so this is the only place the production proxy path is checked at all -- a text
      * guard, since the timeout itself cannot be exercised here.
      */
@@ -319,5 +319,55 @@ describe("the reverse proxy", () => {
     const research = /proxy_read_timeout\s+(\d+)s/.exec(researchBlock);
     expect(research).not.toBeNull();
     expect(Number(research?.[1])).toBeGreaterThan(60);
+  });
+});
+
+/**
+ * UI-03. **The browser suite runs on a stack of its own, never yours.** It writes -- weights,
+ * gates, settings, a small acquisition -- and it used to attach to whatever answered on the
+ * ports Docker publishes, which is the live database. `make e2e` now restores a throwaway copy
+ * and the config starts a backend and a Vite on it. These guard the config and the specs as
+ * text, as the proxy guard above does, because no unit test can start Playwright.
+ */
+describe("the browser suite's own stack", () => {
+  const UI_ROOT = join(SOURCE, "..");
+  const config = readFileSync(join(UI_ROOT, "playwright.config.ts"), "utf8");
+  const specs = readdirSync(join(UI_ROOT, "e2e"))
+    .filter((name) => name.endsWith(".ts"))
+    .map((name) => ({
+      name,
+      text: readFileSync(join(UI_ROOT, "e2e", name), "utf8"),
+    }));
+  const everyFile = [{ name: "playwright.config.ts", text: config }, ...specs];
+
+  it("never attaches to a server it did not start", () => {
+    expect(config).not.toMatch(/reuseExistingServer:\s*true/);
+    expect(config).toMatch(/reuseExistingServer:\s*false/);
+  });
+
+  it("names neither port the Docker stack publishes", () => {
+    const naming = everyFile
+      .filter(({ text }) => /\b(8000|5173)\b/.test(text))
+      .map(({ name }) => name);
+    expect(naming).toEqual([]);
+  });
+
+  it("starts its backend on the throwaway database make e2e restored", () => {
+    expect(config).toMatch(/E2E_DATABASE_URL/);
+    expect(config).toMatch(/_e2e/);
+  });
+
+  it("lets no spec choose its own origin", () => {
+    const choosing = everyFile
+      .filter(({ text }) => text.includes("UI_ORIGIN"))
+      .map(({ name }) => name);
+    expect(choosing).toEqual([]);
+  });
+
+  it("is restored before the suite runs and dropped whatever it finds", () => {
+    const makefile = readFileSync(join(UI_ROOT, "..", "Makefile"), "utf8");
+    const recipe = makefile.slice(makefile.indexOf("\ne2e:"));
+    expect(recipe).toMatch(/^\ne2e:\s+e2e-database\b/);
+    expect(recipe.slice(0, recipe.indexOf("\n\n"))).toMatch(/status=\$\$\?.*e2e-drop.*exit \$\$status/s);
   });
 });

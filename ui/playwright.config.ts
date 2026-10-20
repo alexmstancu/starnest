@@ -5,6 +5,39 @@ import { defineConfig, devices } from "@playwright/test";
 // nothing from src/ -- which is what makes them a test of the product rather than of the
 // implementation.
 
+/**
+ * **A stack of its own, never yours** (UI-03). The suite writes -- a pillar weight, a gate's
+ * enforcement and answer, the spend cap, a small acquisition -- and it used to attach to
+ * whatever answered on the ports Docker publishes, which is the live database. `make e2e`
+ * restores a throwaway copy of the newest backup, migrates it, and hands its address here; this
+ * starts a backend and a Vite on it, on ports Docker does not publish, and never reuses a
+ * server it did not start. Run any other way, it refuses rather than guess at a database.
+ */
+function required(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value === "") {
+    throw new Error(
+      `${name} is not set: run the browser suite with \`make e2e\`, which restores its own database`,
+    );
+  }
+  return value;
+}
+
+const databaseUrl = required("E2E_DATABASE_URL");
+const backendPort = required("E2E_BACKEND_PORT");
+const uiPort = required("E2E_UI_PORT");
+
+// **Only a database named for the suite.** The URL carries the password, so the refusal names
+// the database and nothing else.
+const databaseName = new URL(databaseUrl).pathname.replace(/^\//, "");
+if (!databaseName.endsWith("_e2e")) {
+  throw new Error(
+    `refusing to run the browser suite against "${databaseName}": only a throwaway database whose name ends in _e2e, as \`make e2e\` makes one`,
+  );
+}
+
+const backendOrigin = `http://127.0.0.1:${backendPort}`;
+
 export default defineConfig({
   testDir: "./e2e",
   // **One worker, in order.** These specs share one backend and one database, and several of
@@ -23,7 +56,7 @@ export default defineConfig({
   use: {
     // `localhost` rather than `127.0.0.1`: Vite binds the name, which resolves to ::1 first,
     // so the numeric form reaches nothing.
-    baseURL: process.env["UI_ORIGIN"] ?? "http://localhost:5173",
+    baseURL: `http://localhost:${uiPort}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -31,26 +64,28 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 
   // The real backend, not a mock. A gate that passes against a mock proves the mock works.
-  //
-  // This was `npm run dev:mock` until the backend answered, and the change to `npm run dev` is
-  // the one-word change that comment promised. Both servers are started here so `make e2e` is
-  // one command: the database must already be up (`make up`) and migrated, because a test
-  // suite that migrates is a test suite that can destroy data.
-  webServer: process.env["UI_ORIGIN"]
-    ? undefined
-    : [
-        {
-          command:
-            'cd ../backend && uv run python -c "from starnest.main import run; run()"',
-          url: "http://127.0.0.1:8000/v1/settings",
-          reuseExistingServer: true,
-          timeout: 60_000,
-        },
-        {
-          command: "npm run dev",
-          url: "http://localhost:5173",
-          reuseExistingServer: true,
-          timeout: 60_000,
-        },
-      ],
+  webServer: [
+    {
+      command:
+        'cd ../backend && uv run python -c "from starnest.main import run; run()"',
+      url: `${backendOrigin}/v1/settings`,
+      // Never someone else's server: a busy port is refused, not borrowed.
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: {
+        DATABASE_URL: databaseUrl,
+        PORT: backendPort,
+        // **The suite cannot spend.** With no key the paid path is off, so no spec can reach
+        // a model by accident -- structural rather than true because no spec happens to.
+        ANTHROPIC_API_KEY: "",
+      },
+    },
+    {
+      command: `npm run dev -- --port ${uiPort} --strictPort`,
+      url: `http://localhost:${uiPort}`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: { BACKEND_ORIGIN: backendOrigin },
+    },
+  ],
 });

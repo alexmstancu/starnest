@@ -9,9 +9,9 @@ import { expect, test } from "@playwright/test";
  * backend. Its job until then is to prove the Playwright harness runs at all -- a harness
  * discovered to be broken at a gate is discovered too late.
  *
- * It runs against the msw mock (`npm run dev:mock`), which is why it asserts that screens
- * appear rather than what any number on them is. A gate that passed against a mock would
- * prove the mock works.
+ * It runs against the same stack as every spec -- `make e2e`'s own backend and throwaway
+ * database -- and still asserts only that screens appear, never what any number on them is:
+ * the gates and the sanity suite check the numbers.
  */
 
 const TABS = ["Configure", "Acquire", "Rank", "Compare"] as const;

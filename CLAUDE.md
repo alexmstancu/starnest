@@ -318,7 +318,7 @@ Makefile      every command the project has
 | **`make check`** | **Backend lint + boundaries + coverage + audits, then `ui-check`. Both sides. This is the gate** |
 | `make migrate` | Backs up first, then applies migrations. **Never automatic** (`arch.md` 7.4) |
 | `make ui-check` | The interface gate: `ui-lint` (eslint, type-aware) + `ui-typecheck` + `ui-coverage` (85% bar) |
-| `make ui-coverage` / `make e2e` | Interface coverage (85% bar); Playwright |
+| `make ui-coverage` / `make e2e` | Interface coverage (85% bar); Playwright **on its own throwaway database** -- the newest backup restored and migrated, its own backend and Vite on ports 8100/5180, dropped afterwards. It never touches the live database (UI-03). `E2E_ARGS=e2e/sanity.spec.ts` narrows it |
 | `make docker-build` / `docker-up` / `docker-migrate` / `docker-down` | The four containers: database, backend, the interface on `127.0.0.1:5173`, and the live schema diagram on `127.0.0.1:4174` (`docker compose restart schema-diagram` after a migration) |
 | `make schema-diagram` / `schema-diagram-open` | Interactive ER diagram of the **live** schema, via Liam ERD. Output is generated and gitignored — run `make migrate` first, or the diagram shows the schema you have rather than the one you wrote |
 

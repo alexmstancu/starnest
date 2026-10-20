@@ -1,6 +1,4 @@
 import { type Locator, type Page, expect, test } from "@playwright/test";
-/** Where the API lives for these setup calls -- the same origin the config gives the browser. */
-const BASE_URL = process.env["UI_ORIGIN"] ?? "http://localhost:5173";
 
 
 /**
@@ -35,8 +33,11 @@ const BASE_URL = process.env["UI_ORIGIN"] ?? "http://localhost:5173";
 const MINIMAL_SET = "e2e_min";
 const SHIPPED_SOURCE = "minimal";
 
-test.beforeAll(async ({ playwright }) => {
-  const api = await playwright.request.newContext({ baseURL: BASE_URL });
+test.beforeAll(async ({ playwright }, testInfo) => {
+  // The origin the config gives the browser: this run's own Vite, on this run's own database.
+  const api = await playwright.request.newContext({
+    baseURL: testInfo.project.use.baseURL,
+  });
   await api.delete(`/v1/criteria-sets/${MINIMAL_SET}`);
   const made = await api.post(`/v1/criteria-sets/${SHIPPED_SOURCE}/duplicate`, {
     data: { id: MINIMAL_SET, name: MINIMAL_SET },
@@ -45,8 +46,11 @@ test.beforeAll(async ({ playwright }) => {
   await api.dispose();
 });
 
-test.afterAll(async ({ playwright }) => {
-  const api = await playwright.request.newContext({ baseURL: BASE_URL });
+test.afterAll(async ({ playwright }, testInfo) => {
+  // The origin the config gives the browser: this run's own Vite, on this run's own database.
+  const api = await playwright.request.newContext({
+    baseURL: testInfo.project.use.baseURL,
+  });
   await api.delete(`/v1/criteria-sets/${MINIMAL_SET}`);
   await api.dispose();
 });

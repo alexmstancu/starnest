@@ -11,7 +11,7 @@
 .PHONY: help up down logs serve acquire rank migrate rollback backup \
         test test-storage test-acceptance live coverage coverage-open lint format boundaries audit openapi check \
         ui-install ui-lint ui-typecheck ui-test ui-coverage ui-coverage-open ui-check ui-client \
-        e2e e2e-report \
+        e2e e2e-database e2e-drop e2e-report \
         docker-build docker-up docker-migrate docker-down env \
         schema-diagram schema-diagram-open
 
@@ -164,9 +164,35 @@ ui-check: ui-lint ui-typecheck ui-coverage  ## The interface gate
 
 # --- End to end ----------------------------------------------------------------
 # Owned by the master agent, never by the workstream that wrote the screen (devplan.md 0.2).
+#
+# **Its own stack, never yours** (UI-03). The suite writes -- weights, gates, settings, a small
+# acquisition -- and it used to do so through the containers, to the live database. Now it runs
+# on a throwaway copy of the newest backup, migrated to this checkout (so a pending migration is
+# rehearsed on real data first), served by a backend and a Vite that Playwright starts on ports
+# Docker does not publish, and dropped afterwards whatever the suite found. The recipes are
+# silent because the database URL carries the password. Ctrl-C leaves the copy behind; the next
+# run drops it before restoring.
 
-e2e:  ## Playwright, against the real backend
-	cd $(UI) && npm run e2e
+E2E_DB           := $(POSTGRES_DB)_e2e
+E2E_BACKEND_PORT ?= 8100
+E2E_UI_PORT      ?= 5180
+E2E_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@127.0.0.1:$(or $(DATABASE_PORT),5432)/$(E2E_DB)
+NEWEST_BACKUP    := $(lastword $(sort $(wildcard backups/*.dump)))
+# The backup service has the PostgreSQL client tools, which the host does not.
+PG_TOOLS         := docker compose --profile tools run --rm -T --entrypoint sh backup -c
+
+e2e-database:  ## A throwaway copy of the newest backup, migrated to this checkout
+	@test -n "$(POSTGRES_DB)" || { echo "e2e: no .env -- run make env"; exit 1; }
+	@test -n "$(NEWEST_BACKUP)" || { echo "e2e: no backup in ./backups -- run make backup"; exit 1; }
+	@echo "e2e: $(notdir $(NEWEST_BACKUP)) -> $(E2E_DB)"
+	@$(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB) && createdb $(E2E_DB) && pg_restore --no-owner --no-privileges --single-transaction --dbname=$(E2E_DB) /backups/$(notdir $(NEWEST_BACKUP))'
+	@cd $(BACKEND) && uv run yoyo apply --batch --database '$(subst postgresql://,postgresql+psycopg://,$(E2E_DATABASE_URL))' ../$(STORAGE)/migrations
+
+e2e-drop:  ## Drop the browser suite's throwaway database
+	@$(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB)'
+
+e2e: e2e-database  ## Playwright on its own throwaway database, never the live one (E2E_ARGS= to narrow)
+	@cd $(UI) && E2E_DATABASE_URL='$(E2E_DATABASE_URL)' E2E_BACKEND_PORT=$(E2E_BACKEND_PORT) E2E_UI_PORT=$(E2E_UI_PORT) npm run e2e -- $(E2E_ARGS); status=$$?; $(MAKE) -C $(CURDIR) --no-print-directory e2e-drop; exit $$status
 
 e2e-report:  ## Open the last Playwright report
 	cd $(UI) && npm run e2e:report
