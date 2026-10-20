@@ -361,6 +361,24 @@ def _magnitudes_of(values: Sequence[Value]) -> dict[str, Decimal]:
     return magnitudes
 
 
+def _figure_sources_of(values: Sequence[Value]) -> dict[str, int]:
+    """The id of the value behind each attribute's figure, matching `_magnitudes_of`'s choice.
+
+    Same iteration and the same last-wins, so a rule's figure and the id this records come from
+    the one value. A value with no id yet -- never stored -- contributes none: there is no row to
+    freeze. This is the source/date chain a saved warning keeps (ST-07)."""
+    sources: dict[str, int] = {}
+    for value in values:
+        if value.id is None:
+            continue
+        try:
+            figure_of(value)
+        except UnscoreableValueError:
+            continue
+        sources[str(value.attribute)] = value.id
+    return sources
+
+
 def _scores_by_criterion(
     scored: Sequence[Criterion],
     readings: Mapping[str, Mapping[str, Reading]],
@@ -449,7 +467,10 @@ def _result_for(
     # insufficient_data in its place -- as this did before, by refusing early -- hid a refusal the
     # reader needs. Warnings attach whether or not there is a score, for the same reason.
     warnings, ruled_out_by_a_rule = judgements_of(
-        rules=compound_rules, figures=figures, level=level
+        rules=compound_rules,
+        figures=figures,
+        level=level,
+        value_ids=_figure_sources_of(candidate_values),
     )
     refusals = (
         gates_that_rule_out(enforced=criteria.enforced_match_rules, answers=gate_answers)

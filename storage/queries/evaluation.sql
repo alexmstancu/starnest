@@ -160,6 +160,17 @@ FROM   jsonb_to_recordset(:warnings::jsonb) AS warning(
            compound_rule    text,
            detail           text);
 
+-- name: insert_candidate_warning_inputs(inputs)!
+-- The value rows each warning read to fire -- its frozen source/date chain (ST-07). Written
+-- after the warnings so the foreign key to candidate_warning holds. A warning that read a figure
+-- with no stored row contributes no input, so a warning may have none.
+INSERT INTO candidate_warning_input (candidate_result, compound_rule, value_id)
+SELECT input.candidate_result, input.compound_rule, input.value_id
+FROM   jsonb_to_recordset(:inputs::jsonb) AS input(
+           candidate_result bigint,
+           compound_rule    text,
+           value_id         bigint);
+
 -- Reading a saved evaluation back.
 
 -- name: select_evaluations()
@@ -224,7 +235,13 @@ SELECT r.id,
        COALESCE(
            (SELECT jsonb_agg(jsonb_build_object(
                        'compound_rule', warning.compound_rule,
-                       'detail',        warning.detail)
+                       'detail',        warning.detail,
+                       'input_values',  COALESCE(
+                           (SELECT jsonb_agg(input.value_id ORDER BY input.value_id)
+                            FROM   candidate_warning_input AS input
+                            WHERE  input.candidate_result = warning.candidate_result
+                              AND  input.compound_rule = warning.compound_rule),
+                           '[]'::jsonb))
                      ORDER BY warning.compound_rule)
             FROM   candidate_warning AS warning
             WHERE  warning.candidate_result = r.id),
@@ -307,7 +324,13 @@ SELECT r.id,
        COALESCE(
            (SELECT jsonb_agg(jsonb_build_object(
                        'compound_rule', warning.compound_rule,
-                       'detail',        warning.detail)
+                       'detail',        warning.detail,
+                       'input_values',  COALESCE(
+                           (SELECT jsonb_agg(input.value_id ORDER BY input.value_id)
+                            FROM   candidate_warning_input AS input
+                            WHERE  input.candidate_result = warning.candidate_result
+                              AND  input.compound_rule = warning.compound_rule),
+                           '[]'::jsonb))
                      ORDER BY warning.compound_rule)
             FROM   candidate_warning AS warning
             WHERE  warning.candidate_result = r.id),

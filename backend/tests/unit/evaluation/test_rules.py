@@ -84,6 +84,26 @@ class TestACompoundRule:
         assert [str(w.compound_rule) for w in warnings] == ["cheap_but_taxed"]
         assert non_matches == ()
 
+    def test_a_warning_records_the_value_rows_its_conditions_read(self) -> None:
+        """ST-07: the warning keeps the ids of the figures it fired on, in condition order, so a
+        saved evaluation can be reopened to the source and date behind each."""
+        warnings, _ = judgements_of(
+            rules=[a_rule()],
+            figures=FIGURES,
+            level="country",
+            value_ids={PRICES: 101, TAX: 202},
+        )
+
+        (warning,) = warnings
+        assert warning.input_values == (101, 202)
+
+    def test_a_warning_with_no_value_ids_keeps_an_empty_chain(self) -> None:
+        """Bare magnitudes were passed, so there is nothing to point at -- the honest empty
+        chain, not a guess."""
+        (warning,), _ = judged(a_rule())
+
+        assert warning.input_values == ()
+
     def test_the_detail_shows_the_figures_that_made_it_fire(self) -> None:
         (warning,), _ = judged(a_rule())
 

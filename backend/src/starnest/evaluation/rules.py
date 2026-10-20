@@ -51,6 +51,10 @@ class RuleWarning:
 
     compound_rule: CompoundRuleId
     detail: str
+    input_values: tuple[int, ...] = ()
+    """The ids of the value rows the rule read to fire -- the source/date chain behind the
+    flag. Frozen with a saved evaluation so the warning can be reopened to the figures that
+    triggered it (ST-07). Empty when the caller passed figures without their value ids."""
 
 
 @dataclass(frozen=True)
@@ -68,13 +72,19 @@ def judgements_of(
     rules: Sequence[CompoundRule],
     figures: Mapping[str, Decimal],
     level: str,
+    value_ids: Mapping[str, int] | None = None,
 ) -> tuple[tuple[RuleWarning, ...], tuple[NonMatch, ...]]:
     """Every compound rule that fires for one candidate, split by what its outcome does.
 
     A rule that reads a figure the candidate does not have cannot hold: an unmeasured condition
     is not a satisfied one, and treating absence as agreement would flag candidates for what
     nobody found.
+
+    `value_ids` maps each attribute to the id of the value its figure came from, so a warning can
+    record the rows it read (ST-07). Optional: a caller that tracks no ids -- a test passing bare
+    magnitudes -- leaves a warning's `input_values` empty, which is the honest "unknown chain".
     """
+    sources = value_ids or {}
     fired = [
         rule
         for rule in rules
@@ -82,7 +92,11 @@ def judgements_of(
     ]
     return (
         tuple(
-            RuleWarning(compound_rule=rule.id, detail=_detail(rule, figures))
+            RuleWarning(
+                compound_rule=rule.id,
+                detail=_detail(rule, figures),
+                input_values=_inputs_read(rule, sources),
+            )
             for rule in fired
             if rule.outcome is RuleOutcome.WARNING
         ),
@@ -91,6 +105,17 @@ def judgements_of(
             for rule in fired
             if rule.outcome is RuleOutcome.NOT_MATCHING
         ),
+    )
+
+
+def _inputs_read(rule: CompoundRule, value_ids: Mapping[str, int]) -> tuple[int, ...]:
+    """The value ids behind the figures this rule's conditions read, in condition order. A
+    condition whose attribute has no id on record contributes nothing -- the rule still fired on
+    its magnitude, but there is no row to point at."""
+    return tuple(
+        value_ids[str(condition.attribute)]
+        for condition in rule.conditions
+        if str(condition.attribute) in value_ids
     )
 
 

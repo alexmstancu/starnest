@@ -64,16 +64,28 @@ def test_the_backup_it_waits_for_is_a_tool_like_itself() -> None:
 
 def test_every_make_target_that_runs_yoyo_backs_up_first() -> None:
     """NEW-20. A rollback changes the schema as surely as a migration does, and at least three
-    rollback scripts delete stored figures."""
+    rollback scripts delete stored figures.
+
+    `e2e-database` is exempt: it runs yoyo against a throwaway copy it restores from the newest
+    backup and drops afterwards (UI-03), never the live database, so there is nothing of the
+    household's to back up first -- the copy already is a backup.
+    """
     running_yoyo = {
         name: prerequisites
         for name, (prerequisites, recipe) in make_targets().items()
         if any(re.search(r"\byoyo (apply|rollback)\b", line) for line in recipe)
     }
+    against_the_live_database = {
+        name: prerequisites
+        for name, prerequisites in running_yoyo.items()
+        if name != "e2e-database"
+    }
 
-    assert sorted(running_yoyo) == ["migrate", "rollback"]
+    assert sorted(against_the_live_database) == ["migrate", "rollback"]
     assert {
-        name for name, prerequisites in running_yoyo.items() if "backup" not in prerequisites
+        name
+        for name, prerequisites in against_the_live_database.items()
+        if "backup" not in prerequisites
     } == set()
 
 

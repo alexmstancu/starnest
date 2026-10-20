@@ -20,7 +20,7 @@ from starnest.criteria import (
     RangeThreshold,
     ReducerMode,
 )
-from starnest.data import ConfidenceLevel, ValueType
+from starnest.data import ConfidenceLevel, Ratio, ReferencePeriod, Value, ValueType
 from starnest.evaluation import (
     AttributeScore,
     CandidateResult,
@@ -29,7 +29,7 @@ from starnest.evaluation import (
     RuleWarning,
     UnknownEvaluationError,
 )
-from starnest.storage import PostgresCriteriaStore, PostgresEvaluationStore
+from starnest.storage import PostgresCriteriaStore, PostgresEvaluationStore, PostgresValueStore
 from starnest.storage.connections import acquire
 from starnest.storage.evaluation_store import TEST_EVALUATION_MARKER
 
@@ -360,6 +360,57 @@ class TestTheRulesTravelWithTheResult:
         assert [str(w.compound_rule) for w in read.warnings] == ["cheap_but_taxed"]
         assert [str(r.match_rule) for r in read.non_match_reasons] == ["uk_skilled_worker"]
         assert read.non_match_reasons[0].reason_detail == "no sponsor"
+
+    async def test_a_warning_keeps_the_value_rows_behind_it(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """ST-07 remainder: a saved warning records the ids of the figures it read, so its
+        source/date chain can be reopened later. The value must exist for the frozen input to
+        reference, so one is stored first and its id is what the warning carries."""
+        (figure,) = await PostgresValueStore(pool).append(
+            [
+                Value(
+                    candidate=PORTUGAL,
+                    attribute="country.housing_cost_overburden_rate",
+                    value_type=ValueType.RATIO,
+                    data_source="eurostat",
+                    reference_period=ReferencePeriod(
+                        start=datetime(2025, 1, 1).date(), end=datetime(2025, 12, 31).date()
+                    ),
+                    retrieval_date=datetime(2026, 9, 1, tzinfo=UTC),
+                    confidence_level=ConfidenceLevel.HIGH,
+                    payload=Ratio(value=Decimal("6.3"), basis="households"),
+                )
+            ]
+        )
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        store = PostgresEvaluationStore(pool)
+        flagged = a_result(
+            PORTUGAL,
+            71,
+            1,
+            warnings=(
+                RuleWarning(
+                    compound_rule="cheap_but_taxed",
+                    detail="cheap and taxed",
+                    input_values=(figure.id,),
+                ),
+            ),
+        )
+
+        saved = await store.save(
+            criteria=criteria,
+            level=COUNTRY,
+            results=[flagged],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+        )
+
+        (read,) = await store.read_results(saved.id)
+        (warning,) = read.warnings
+        assert warning.input_values == (figure.id,)
+        drilled = await store.read_candidate(saved.id, PORTUGAL)
+        assert drilled.warnings[0].input_values == (figure.id,)
 
     async def test_a_reason_naming_an_excluded_criterion_is_kept(
         self, pool: AsyncConnectionPool

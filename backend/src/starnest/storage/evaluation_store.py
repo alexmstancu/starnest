@@ -169,6 +169,22 @@ class PostgresEvaluationStore(EvaluationStore):
                 await self._queries.insert_candidate_warnings(
                     connection, warnings=json.dumps(warnings)
                 )
+            # The value rows behind each warning, written after the warnings so the foreign key
+            # holds (ST-07). A warning with no input ids contributes none.
+            warning_inputs = [
+                {
+                    "candidate_result": identifiers[str(result.candidate)],
+                    "compound_rule": str(flag.compound_rule),
+                    "value_id": value_id,
+                }
+                for result in results
+                for flag in result.warnings
+                for value_id in flag.input_values
+            ]
+            if warning_inputs:
+                await self._queries.insert_candidate_warning_inputs(
+                    connection, inputs=json.dumps(warning_inputs)
+                )
         return SavedEvaluation(
             id=evaluation,
             criteria_set=str(criteria.id),
@@ -363,7 +379,11 @@ def _result_from(row: Any, attribute_scores: tuple[AttributeScore, ...] = ()) ->
         # pillar cards at all while the live one showed eleven.
         pillar_scores=pillars_of(attribute_scores),
         warnings=tuple(
-            RuleWarning(compound_rule=CompoundRuleId(flag["compound_rule"]), detail=flag["detail"])
+            RuleWarning(
+                compound_rule=CompoundRuleId(flag["compound_rule"]),
+                detail=flag["detail"],
+                input_values=tuple(flag.get("input_values", [])),
+            )
             for flag in getattr(row, "warnings", []) or []
         ),
         non_match_reasons=tuple(
