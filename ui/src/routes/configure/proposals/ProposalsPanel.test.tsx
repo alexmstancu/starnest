@@ -1341,42 +1341,109 @@ describe("the gate proposals while a write is in flight", () => {
   });
 
   /**
-   * NEW-45. **The table stays while a pass's answers are read again.** The read used to blank
-   * it into "Loading…", taking the Confirm a keyboard user was waiting on -- held while the pass
-   * ran -- off the page with it.
+   * Every read of the answers made once `start()` is called, held until the test lets go, then
+   * answered by the mock behind it. **From `start()`**, so the panel's first read goes through.
    */
-  it("keeps the proposals, and focus on them, while a pass's answers are read again", async () => {
+  function holdAnswerReads(): {
+    start: () => void;
+    asked: () => boolean;
+    release: () => void;
+  } {
     let holding = false;
-    const reread = { asked: false, release: (): void => undefined };
+    let asked = false;
+    let release = (): void => undefined;
     const held = new Promise<void>((resolve) => {
-      reread.release = resolve;
+      release = resolve;
     });
     mockServer.use(
       http.get(`${BASE}/match-rule-results`, async () => {
         if (!holding) return;
-        reread.asked = true;
+        asked = true;
         await held;
       }),
     );
+    return {
+      start: () => {
+        holding = true;
+      },
+      asked: () => asked,
+      release: () => release(),
+    };
+  }
+
+  /**
+   * NEW-45. **The table stays while a pass's answers are read again, and is held until they
+   * land.** The read used to blank it into "Loading…", taking the Confirm a keyboard user was
+   * waiting on off the page with it. Kept, the list is the one from before the pass -- whose
+   * proposals the pass may have replaced -- so its Confirm takes no press until the new list has
+   * landed: confirming an outdated row would write it as the person's answer over the proposal
+   * the pass just paid for.
+   */
+  it("keeps the proposals held, with focus on them, while a pass's answers are read again", async () => {
+    const reads = holdAnswerReads();
     watchResearch();
     renderShell("/configure");
     await settled();
     const confirm = await theProposals().findByRole("button", {
       name: CONFIRM,
     });
-    holding = true;
+    reads.start();
     await researched();
     act(() => confirm.focus());
 
-    await waitFor(() => expect(reread.asked).toBe(true));
+    await waitFor(() => expect(reads.asked()).toBe(true));
     expect(confirm).toBeInTheDocument();
     expect(confirm).toHaveFocus();
+    expectHeld(confirm);
 
-    reread.release();
+    reads.release();
 
     await passSays(ALL_ASKED);
     await waitFor(() => expectNotHeld(confirm));
     expect(confirm).toHaveFocus();
+  });
+
+  /**
+   * The same window after a confirmation: written, and read again. **Until the read lands the
+   * confirmed row is still listed**, so every Confirm stays held -- a second Enter on it would
+   * write the person's answer twice, and a live button would look as though the first had not
+   * taken.
+   */
+  it("holds every Confirm while the answers a confirmation wrote are read again", async () => {
+    twoProposals();
+    const confirmations = { sent: 0 };
+    mockServer.use(
+      http.put(`${BASE}${CONFIRMATIONS}`, () => {
+        confirmations.sent += 1;
+      }),
+    );
+    const reads = holdAnswerReads();
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    const confirm = await theProposals().findByRole("button", {
+      name: CONFIRM,
+    });
+    const other = theProposals().getByRole("button", {
+      name: `Confirm ${PROPOSED_GATE} for country.spain`,
+    });
+    reads.start();
+    act(() => confirm.focus());
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(reads.asked()).toBe(true));
+
+    expect(confirm).toBeInTheDocument();
+    expectHeld(confirm);
+    expectHeld(other);
+    await user.keyboard("{Enter}");
+
+    reads.release();
+
+    await waitFor(() => expect(confirm).not.toBeInTheDocument());
+    await waitFor(() => expectNotHeld(other));
+    expect(other).toHaveFocus();
+    expect(confirmations.sent).toBe(1);
   });
 
   it("holds every other proposal's Confirm while one is written", async () => {

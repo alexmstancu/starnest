@@ -34,6 +34,13 @@ export interface Proposals {
   proposals: MatchRuleResult[];
   /** How many answers a person has already settled, for context beside the proposals. */
   confirmedCount: number;
+  /**
+   * Whether the list on screen was read before the answers were last written -- by a confirm or
+   * a research pass -- so a newer one is on its way (NEW-45). **Confirm is held while it is**: a
+   * row just confirmed, or one a pass has since replaced, is still listed, and confirming it
+   * would write the person's answer from an outdated row.
+   */
+  stale: boolean;
   /** What a pass would ask and cost. Null until asked for, and once a pass has spent it. */
   plan: ResearchPlan | null;
   busy: "estimating" | "confirming" | null;
@@ -72,12 +79,21 @@ export function useProposals(
   // **The answers as last read, kept while they are read again** (NEW-45). A re-read has no list
   // until it answers, so the table left the screen for each one -- after a confirm, and at the
   // end of a research pass -- and took the Confirm a keyboard user was on with it. The list read
-  // last stays true until the next lands, as the run history's does (NEW-11).
+  // last stays on screen until the next lands, as the run history's does (NEW-11), **with the
+  // write it was read after**: from the moment the answers are written again it is outdated, so
+  // `stale` says so in that same render, before the re-read has even been sent.
   const read = resource.status === "ready" ? resource.data.items : null;
-  const [lastRead, setLastRead] = useState<MatchRuleResult[] | null>(null);
-  if (read !== null && read !== lastRead) setLastRead(read);
-  const answers = read ?? lastRead ?? [];
+  const [lastRead, setLastRead] = useState<{
+    items: MatchRuleResult[];
+    after: number;
+  } | null>(null);
+  if (read !== null && read !== lastRead?.items) {
+    setLastRead({ items: read, after: answersFreshness });
+  }
+  const answers = read ?? lastRead?.items ?? [];
   const rereading = resource.status === "loading" && lastRead !== null;
+  const stale =
+    rereading || (lastRead !== null && lastRead.after !== answersFreshness);
 
   function attempt(act: Proposals["busy"], work: () => Promise<unknown>): void {
     if (inFlight.current) return;
@@ -98,6 +114,7 @@ export function useProposals(
     proposals: answers.filter((answer) => answer.is_proposal === true),
     confirmedCount: answers.filter((answer) => answer.is_proposal !== true)
       .length,
+    stale,
     plan,
     busy,
     failure,

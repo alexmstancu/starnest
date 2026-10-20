@@ -53,6 +53,9 @@ export function ProposalsPanel({
   // a keyboard user was put back on the page after each. Held, a button keeps focus and says so,
   // and its press is turned away -- here, before it changes anything, and by the hooks behind.
   const held = proposals.busy !== null || pass.running;
+  // **A Confirm is held as well while the list is outdated** (NEW-45): kept on screen while the
+  // answers are read again, it still lists a row just confirmed, or one a pass has replaced.
+  const confirmHeld = held || proposals.stale;
   const plan = proposals.plan;
 
   return (
@@ -215,10 +218,10 @@ export function ProposalsPanel({
                   <ProposalRow
                     key={proposalKey(proposal)}
                     proposal={proposal}
-                    held={held}
+                    held={confirmHeld}
                     confirmRef={confirmFocus.buttonRef(proposal)}
                     onConfirm={() => {
-                      if (held) return;
+                      if (confirmHeld) return;
                       confirmFocus.pressed(proposal, index);
                       proposals.confirm(proposal);
                     }}
@@ -240,7 +243,10 @@ function ProposalRow({
   onConfirm,
 }: {
   proposal: MatchRuleResult;
-  /** A write or a pass is in flight: the button keeps focus, and its press is turned away. */
+  /**
+   * A write or a pass is in flight, or the list predates the last write to the answers: the
+   * button keeps focus, and its press is turned away.
+   */
   held: boolean;
   /** Its Confirm button, so focus can be handed to it once a row above has gone (NEW-45). */
   confirmRef: (element: HTMLButtonElement | null) => void;
