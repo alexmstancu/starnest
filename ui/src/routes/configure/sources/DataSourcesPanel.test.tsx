@@ -837,6 +837,60 @@ describe("the source priority panel while a change is being written", () => {
       expect(up).toBeDisabled();
     });
 
+    /**
+     * NEW-45. **A row moved down takes its focus with it.** React keeps the rows keyed and moves
+     * the one that went down in the document, and a browser drops focus from an element it
+     * moves -- so Move down, unlike Move up, put a keyboard user back on the page. Focus goes
+     * back to the control they pressed, which is the same element, now one row lower.
+     */
+    it("keeps focus on Move down once the move is read back", async () => {
+      const user = userEvent.setup();
+      renderShell("/configure");
+      const sources = await panel();
+      const down = await sources.findByRole("button", {
+        name: "Move Eurostat down",
+      });
+      act(() => down.focus());
+
+      await user.keyboard("{Enter}");
+
+      await waitFor(() =>
+        expect(namesInOrder(sources)).toEqual([
+          "Manual entry",
+          "Eurostat",
+          "LLM with web search",
+        ]),
+      );
+      await waitFor(() => expect(down).toHaveFocus());
+    });
+
+    it("moves focus to Move up when a move down leaves nothing below", async () => {
+      const user = userEvent.setup();
+      renderShell("/configure");
+      const sources = await panel();
+      const down = await sources.findByRole("button", {
+        name: "Move Manual entry down",
+      });
+      act(() => down.focus());
+
+      await user.keyboard("{Enter}");
+
+      await waitFor(() =>
+        expect(namesInOrder(sources)).toEqual([
+          "Eurostat",
+          "LLM with web search",
+          "Manual entry",
+        ]),
+      );
+      // Last now, so its own arrow is disabled outright and cannot hold focus.
+      await waitFor(() => expect(down).toBeDisabled());
+      await waitFor(() =>
+        expect(
+          sources.getByRole("button", { name: "Move Manual entry up" }),
+        ).toHaveFocus(),
+      );
+    });
+
     it("keeps the list on screen and every control held until the order has been read again", async () => {
       const user = userEvent.setup();
       const writes = holdSourceWrites();

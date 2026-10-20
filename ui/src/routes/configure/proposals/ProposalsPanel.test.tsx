@@ -1262,6 +1262,123 @@ describe("the gate proposals while a write is in flight", () => {
     await waitFor(() => expect(confirmations.sent).toBe(2));
   });
 
+  /**
+   * Two proposals for one gate, held as the server holds them: confirming one turns it into a
+   * person's answer, so the next read lists it no longer.
+   */
+  function twoProposals(): void {
+    const answers: Record<string, unknown>[] = [PROPOSED_FOR, "country.spain"].map(
+      (candidate) => ({
+        match_rule: PROPOSED_GATE,
+        candidate,
+        match_result: "matching",
+        data_source: "llm",
+        retrieval_date: "2026-09-12T09:00:00Z",
+        citations: ["https://example.gov/skilled-worker"],
+        is_proposal: true,
+      }),
+    );
+    mockServer.use(
+      http.get(`${BASE}/match-rule-results`, () =>
+        HttpResponse.json({ items: answers }),
+      ),
+      http.put(`${BASE}${CONFIRMATIONS}`, async ({ params, request }) => {
+        const at = answers.findIndex(
+          (answer) =>
+            answer["match_rule"] === params["matchRuleId"] &&
+            answer["candidate"] === params["candidateId"],
+        );
+        answers[at] = {
+          ...answers[at],
+          ...((await request.json()) as Record<string, unknown>),
+          is_proposal: false,
+        };
+        return HttpResponse.json(answers[at]);
+      }),
+    );
+  }
+
+  /**
+   * NEW-45. **A confirmed proposal leaves the table, and its button with it** -- which put a
+   * keyboard user back on the page. Focus goes to the next proposal's Confirm, so a review goes
+   * on where it was; to Estimate, the panel's next act, once none is left.
+   */
+  it("moves focus to the next proposal's Confirm once one is confirmed", async () => {
+    twoProposals();
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    const confirm = await theProposals().findByRole("button", {
+      name: CONFIRM,
+    });
+    act(() => confirm.focus());
+
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => expect(confirm).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        theProposals().getByRole("button", {
+          name: `Confirm ${PROPOSED_GATE} for country.spain`,
+        }),
+      ).toHaveFocus(),
+    );
+  });
+
+  it("moves focus to Estimate once the last proposal is confirmed", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    const confirm = await theProposals().findByRole("button", {
+      name: CONFIRM,
+    });
+    act(() => confirm.focus());
+
+    await user.keyboard("{Enter}");
+
+    await theProposals().findByText(/no proposal is waiting/i);
+    await waitFor(() => expect(estimateButton()).toHaveFocus());
+  });
+
+  /**
+   * NEW-45. **The table stays while a pass's answers are read again.** The read used to blank
+   * it into "Loading…", taking the Confirm a keyboard user was waiting on -- held while the pass
+   * ran -- off the page with it.
+   */
+  it("keeps the proposals, and focus on them, while a pass's answers are read again", async () => {
+    let holding = false;
+    const reread = { asked: false, release: (): void => undefined };
+    const held = new Promise<void>((resolve) => {
+      reread.release = resolve;
+    });
+    mockServer.use(
+      http.get(`${BASE}/match-rule-results`, async () => {
+        if (!holding) return;
+        reread.asked = true;
+        await held;
+      }),
+    );
+    watchResearch();
+    renderShell("/configure");
+    await settled();
+    const confirm = await theProposals().findByRole("button", {
+      name: CONFIRM,
+    });
+    holding = true;
+    await researched();
+    act(() => confirm.focus());
+
+    await waitFor(() => expect(reread.asked).toBe(true));
+    expect(confirm).toBeInTheDocument();
+    expect(confirm).toHaveFocus();
+
+    reread.release();
+
+    await passSays(ALL_ASKED);
+    await waitFor(() => expectNotHeld(confirm));
+    expect(confirm).toHaveFocus();
+  });
+
   it("holds every other proposal's Confirm while one is written", async () => {
     mockServer.use(
       http.get(`${BASE}/match-rule-results`, () =>

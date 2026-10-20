@@ -2,6 +2,7 @@ import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { inPriorityOrder, positionsOf } from "./sourceOrder";
 import { howItAnswers } from "./sourceReading";
 import { useDataSources } from "./useDataSources";
+import { useArrowFocus } from "./useArrowFocus";
 import { advertiseMove, useSourceDrag } from "./useSourceDrag";
 
 /**
@@ -35,6 +36,7 @@ export function DataSourcesPanel() {
   // reader back on the page. A held one keeps focus, says so, and the hook refuses the press.
   const held = sources.saving !== null;
   const drag = useSourceDrag(sources.sources, sources.reorder, held);
+  const arrows = useArrowFocus(sources.sources, !held);
 
   return (
     <section className="stage" aria-labelledby="data-sources-heading">
@@ -149,10 +151,14 @@ export function DataSourcesPanel() {
                   <button
                     type="button"
                     className="arrow"
+                    ref={arrows.arrowRef(source.id, "up")}
                     disabled={sources.moveTo(source.id, "up") === null}
                     aria-disabled={held || undefined}
                     title="Higher priority"
-                    onClick={() => sources.move(source.id, "up")}
+                    onClick={() => {
+                      if (!held) arrows.pressed(source.id, "up");
+                      sources.move(source.id, "up");
+                    }}
                   >
                     <span className="visually-hidden">
                       Move {source.name} up
@@ -162,10 +168,14 @@ export function DataSourcesPanel() {
                   <button
                     type="button"
                     className="arrow"
+                    ref={arrows.arrowRef(source.id, "down")}
                     disabled={sources.moveTo(source.id, "down") === null}
                     aria-disabled={held || undefined}
                     title="Lower priority"
-                    onClick={() => sources.move(source.id, "down")}
+                    onClick={() => {
+                      if (!held) arrows.pressed(source.id, "down");
+                      sources.move(source.id, "down");
+                    }}
                   >
                     <span className="visually-hidden">
                       Move {source.name} down

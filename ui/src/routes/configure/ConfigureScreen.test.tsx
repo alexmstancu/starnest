@@ -1173,6 +1173,55 @@ describe("while a change is being saved", () => {
       expect(writes.sent).toEqual(["default/country.cost_of_living_index"]);
     });
 
+    /**
+     * NEW-45. **An undo takes the pressed button away with its entry**, and "Back to where I
+     * started" takes itself away with the last one -- so a keyboard user was put back on the
+     * page after either. Focus goes to the panel's own heading button, which is always there,
+     * and where a stray Enter only folds the panel rather than undoing anything more.
+     */
+    it("puts focus on Recent changes once an undo has taken the pressed button away", async () => {
+      const user = userEvent.setup();
+      renderShell("/configure");
+      await settled();
+      await saveWeight(COST_OF_LIVING, "40");
+      await saveWeight(TAX, "35");
+      const panel = await historyPanel();
+      await panel.findByText("2 in this session");
+      const undo = panel.getByRole("button", { name: "Undo this" });
+      act(() => undo.focus());
+
+      await user.keyboard("{Enter}");
+
+      await panel.findByText("1 in this session");
+      await waitFor(() =>
+        expect(
+          panel.getByRole("button", { name: /recent changes/i }),
+        ).toHaveFocus(),
+      );
+    });
+
+    it("puts focus on Recent changes once Back to where I started has gone", async () => {
+      const user = userEvent.setup();
+      renderShell("/configure");
+      await settled();
+      await saveWeight(COST_OF_LIVING, "40");
+      const panel = await historyPanel();
+      await panel.findByText("1 in this session");
+      const back = panel.getByRole("button", {
+        name: "Back to where I started",
+      });
+      act(() => back.focus());
+
+      await user.keyboard("{Enter}");
+
+      await panel.findByText("nothing yet");
+      await waitFor(() =>
+        expect(
+          panel.getByRole("button", { name: /recent changes/i }),
+        ).toHaveFocus(),
+      );
+    });
+
     it("keeps focus on an undo held by a weight being saved, and undoes once that has answered", async () => {
       const user = userEvent.setup();
       renderShell("/configure");

@@ -3,6 +3,7 @@ import type { MatchRuleResult } from "../../../api/endpoints";
 import { formatMoney } from "../../../format/display";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { describePeriod } from "./proposalReading";
+import { proposalKey, useFocusAfterConfirm } from "./useFocusAfterConfirm";
 import { useFocusAfterPass } from "./useFocusAfterPass";
 import { useProposals } from "./useProposals";
 import type { ResearchPass } from "./useResearchPass";
@@ -46,6 +47,7 @@ export function ProposalsPanel({
   const [acceptUncapped, setAcceptUncapped] = useState(false);
   const estimateButton = useRef<HTMLButtonElement>(null);
   useFocusAfterPass(pass.end, estimateButton);
+  const confirmFocus = useFocusAfterConfirm(proposals, estimateButton);
   // **Held while an estimate, a pass or a confirmation is in flight, never disabled** (NEW-44):
   // Chromium throws focus off a control the moment it is disabled and does not give it back, so
   // a keyboard user was put back on the page after each. Held, a button keeps focus and says so,
@@ -209,13 +211,16 @@ export function ProposalsPanel({
                 </tr>
               </thead>
               <tbody>
-                {proposals.proposals.map((proposal) => (
+                {proposals.proposals.map((proposal, index) => (
                   <ProposalRow
-                    key={`${proposal.match_rule}-${proposal.candidate}`}
+                    key={proposalKey(proposal)}
                     proposal={proposal}
                     held={held}
+                    confirmRef={confirmFocus.buttonRef(proposal)}
                     onConfirm={() => {
-                      if (!held) proposals.confirm(proposal);
+                      if (held) return;
+                      confirmFocus.pressed(proposal, index);
+                      proposals.confirm(proposal);
                     }}
                   />
                 ))}
@@ -231,11 +236,14 @@ export function ProposalsPanel({
 function ProposalRow({
   proposal,
   held,
+  confirmRef,
   onConfirm,
 }: {
   proposal: MatchRuleResult;
   /** A write or a pass is in flight: the button keeps focus, and its press is turned away. */
   held: boolean;
+  /** Its Confirm button, so focus can be handed to it once a row above has gone (NEW-45). */
+  confirmRef: (element: HTMLButtonElement | null) => void;
   onConfirm: () => void;
 }) {
   const pages = proposal.citations ?? [];
@@ -262,6 +270,7 @@ function ProposalRow({
       </td>
       <td>
         <button
+          ref={confirmRef}
           type="button"
           className="button"
           aria-disabled={held || undefined}

@@ -1,7 +1,8 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { describeReach, describeWhen, reachOf } from "./changeHistory";
 import type { ChangeHistory } from "./useChangeHistory";
+import { useFocusAfterUndo } from "./useFocusAfterUndo";
 
 /**
  * What this session has changed, newest first, and the way back.
@@ -36,11 +37,17 @@ export function RecentChanges({
   // button the moment it is disabled, so an undo pressed from the keyboard put the reader back
   // on the page. Held, a button keeps focus and says so, and pressing it does nothing.
   const held = history.undoing || busy;
+  const heading = useRef<HTMLButtonElement>(null);
+  const focus = useFocusAfterUndo(history, heading);
   const undoThrough = (id: number) => {
-    if (!held) history.undoThrough(id);
+    if (held) return;
+    focus.pressed();
+    history.undoThrough(id);
   };
   const reset = () => {
-    if (!held) history.reset();
+    if (held) return;
+    focus.pressed();
+    history.reset();
   };
   // **Open, and collapsible rather than dismissible.** The rail's whole job is answering
   // "what have I just done", so it starts answering it; the collapse is for the reader who
@@ -56,6 +63,7 @@ export function RecentChanges({
             the list a screen reader navigates by. */}
         <h3 id={headingId} className="rail__heading">
           <button
+            ref={heading}
             type="button"
             className="rail__disclosure"
             aria-expanded={shown}

@@ -69,7 +69,15 @@ export function useProposals(
   // re-rendered yet.
   const inFlight = useRef(false);
 
-  const answers = resource.data?.items ?? [];
+  // **The answers as last read, kept while they are read again** (NEW-45). A re-read has no list
+  // until it answers, so the table left the screen for each one -- after a confirm, and at the
+  // end of a research pass -- and took the Confirm a keyboard user was on with it. The list read
+  // last stays true until the next lands, as the run history's does (NEW-11).
+  const read = resource.status === "ready" ? resource.data.items : null;
+  const [lastRead, setLastRead] = useState<MatchRuleResult[] | null>(null);
+  if (read !== null && read !== lastRead) setLastRead(read);
+  const answers = read ?? lastRead ?? [];
+  const rereading = resource.status === "loading" && lastRead !== null;
 
   function attempt(act: Proposals["busy"], work: () => Promise<unknown>): void {
     if (inFlight.current) return;
@@ -85,7 +93,7 @@ export function useProposals(
   }
 
   return {
-    status: resource.status,
+    status: rereading ? "ready" : resource.status,
     error: resource.error,
     proposals: answers.filter((answer) => answer.is_proposal === true),
     confirmedCount: answers.filter((answer) => answer.is_proposal !== true)
