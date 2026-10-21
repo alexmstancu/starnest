@@ -209,6 +209,47 @@ class TestWhatARunKeeps:
         assert [value.candidate for value in store.appended] == [first.candidate]
         assert store.appended[0].data_acquisition_run == 7
 
+    async def test_spend_billed_before_a_mid_sweep_death_is_already_recorded(self) -> None:
+        """BE-33. A run's spend was written only when a source finished, so a death mid-sweep
+        kept the figures already stored (BE-19) but lost the record of what they cost -- the
+        provider billed it and the run understated it. Recorded per batch, the spend of what was
+        billed before the death survives."""
+        persisted: list[tuple[int, Decimal]] = []
+
+        class DiesAfterBillingOneCall(SourceAdapter):
+            @property
+            def data_source(self) -> DataSourceId:
+                return DataSourceId("llm")
+
+            @property
+            def attributes(self) -> tuple:
+                return (OVERBURDEN,)
+
+            async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]):
+                acquired = Acquired()
+                async for batch in self.fetch_in_batches(attribute, candidates):
+                    acquired += batch
+                return acquired
+
+            async def fetch_in_batches(self, attribute: Attribute, candidates: Sequence[Candidate]):
+                yield Acquired(cost_eur=Decimal("0.05"), calls=1)
+                raise RuntimeError("the process died mid-sweep")
+
+        async def record(calls: int, cost: Decimal) -> None:
+            persisted.append((calls, cost))
+
+        with pytest.raises(RuntimeError, match="died mid-sweep"):
+            await acquire(
+                adapter=DiesAfterBillingOneCall(),
+                attributes=[an_attribute()],
+                candidates=[PORTUGAL],
+                values=RecordingValueStore(),
+                run=9,
+                record_spend=record,
+            )
+
+        assert persisted == [(1, Decimal("0.05"))]
+
     async def test_a_source_re_confirming_a_stored_pair_records_a_reuse_not_a_gap(self) -> None:
         """ST-09. The source answered, but the figure was already on record so the append is a
         no-op -- a transcribed table re-read as the same observation. The run records the pair as

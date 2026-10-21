@@ -13,7 +13,7 @@ and have them land with real provenance -- which is the only thing minE2E needs,
 thing that can be judged before any figure exists.
 """
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal
 
@@ -46,6 +46,7 @@ async def acquire(
     run: int | None = None,
     meter: CostMeter | None = None,
     collecting: list[AcquisitionFailure] | None = None,
+    record_spend: Callable[[int, Decimal], Awaitable[None]] | None = None,
 ) -> RunOutcome:
     """Fetch every attribute this source can answer, and append what it found.
 
@@ -115,6 +116,15 @@ async def acquire(
                     )
                 last_spent = meter.spent_eur
                 last_calls = meter.calls
+
+            # **The spend is made durable per batch, not once the source finishes** (BE-33). A
+            # run's cost used to be written only after a source's whole sweep, so a death
+            # mid-sweep kept the figures already stored (BE-19) but lost the record of what they
+            # cost -- the provider billed it, and the run understated it. Persisted here as each
+            # batch is billed, before the next call, so what dies owes nothing it had not
+            # recorded. The sum across batches is the source's total, so nothing is counted twice.
+            if record_spend is not None and (acquired.calls or acquired.cost_eur):
+                await record_spend(acquired.calls, acquired.cost_eur)
 
             # Every value carries the run that fetched it (`reqs.md` 3.8), stamped here rather
             # than by each adapter: which occasion a figure came from is a fact about the run,

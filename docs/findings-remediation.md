@@ -147,7 +147,8 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 | BE-31 | Low | REAL | `comparison/comparison.py:26,200`; `pyproject.toml:183-197` | comparison imports criteria; import-linter layer order permits the forbidden edge | FIXED (test_architecture.py `test_each_policy_module_imports_only_what_the_table_allows`: enforces arch.md 6.1's exact May-import table on DIRECT imports via grimp -- catches a table-forbidden downward edge the layers contract permits, without false-positiving the legitimate transitive reach. import-linter's forbidden is transitive and cannot express exact edges) |
 
 | BE-32 | Low | REAL | `pyproject.toml:58-64`; `conftest.py:109-131` | bare `pytest` deselects only `live_llm`; plain `live` network tests still run | wave-3 |
-| BE-33 | Low | REAL (known/deferred P36) | `execution.py:281-287`; `fallback.py:178-191` | per-source spend durability; death before source returns loses its billed totals | wave-3 |
+| BE-33 | Low | REAL (known/deferred P36) | `execution.py:281-287`; `fallback.py:178-191` | per-source spend durability; death before source returns loses its billed totals | FIXED (closes P36: `acquire` takes a `record_spend` callback and writes the run's cost/calls per batch as each is billed, not once the source ends; `continue_run` passes `runs.add_spend` and keeps only the log -- a death mid-sweep keeps the spend already billed, as BE-19 keeps the figures) |
+
 | BE-34 | Low | REAL (known/deferred P28/Q224) | `research.py:122-179`; `api/rules.py:310-326` | gate research spend not durably ledgered | wave-3 |
 | BE-36 | Medium | REAL | `evaluation/rules.py:150-179`; `research.py:110-115,190-208` | confirmed gate answers ignore period; re-research skips them — see policy above | policy-set (wave-2) |
 | BE-37 | Low | **UNREAL** | `main.py:356-387` | attribute-level fallback is documented reqs 6.10 use-1 intent; only case fabricates a figure | no-fix |

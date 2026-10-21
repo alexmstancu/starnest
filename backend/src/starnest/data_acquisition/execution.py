@@ -312,6 +312,10 @@ async def continue_run(opened: OpenedRun) -> Run:
                 # what this buys is that a `fetch` raising partway through leaves the ones
                 # already found in hand (P66).
                 collecting=failures,
+                # **The spend is written as each batch is billed, not once the source ends**
+                # (BE-33, closing P36): a death mid-sweep then keeps the record of what it had
+                # already cost, as BE-19 keeps the figures. The sum is the source's total.
+                record_spend=lambda calls, cost: runs.add_spend(run, calls=calls, cost_eur=cost),
             )
             _log.info(
                 "run %d: %s answered %d figure(s) and failed on %d",
@@ -334,11 +338,9 @@ async def continue_run(opened: OpenedRun) -> Run:
                     failure.reason,
                 )
             if outcome.calls or outcome.cost_eur:
-                # `acquire` has already metered this, per answer. Only the durable record is
-                # written here, and it is written per source rather than per call because that
-                # is a database round trip -- P36 is the finding about closing that gap.
-                await runs.add_spend(run, calls=outcome.calls, cost_eur=outcome.cost_eur)
-                # Logged as it accumulates, so a halt is never a surprise (`arch.md` 9.4).
+                # `acquire` has both metered this per answer and written it to the run durably,
+                # batch by batch (BE-33). Here only the running total is logged, so a halt is
+                # never a surprise (`arch.md` 9.4).
                 _log.info("run %d spend: %s", run, meter.describe())
             if meter.has_spent_to_its_cap:
                 # The cap is a stop, not a failure. What was fetched is stored and the status
