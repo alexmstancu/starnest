@@ -122,7 +122,8 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 | BE-08 | Medium | REAL | `data/measurements.py:90-102`; `data_acquisition/run.py:114-138` | range-rejected figure stored as Value, not a failure; selective retry can't reach it | wave-2 |
 | BE-09 | Low | REAL (latent) | `data_sources/who/adapter.py:164-195` | WHO builds Value without rejection_reason_for; credible-range bypass (latent) | wave-3 |
 | BE-10 | High | REAL | `execution.py:532-564`; `run.py:84-85,124-125` | retry wrapper never forwarded `meter_with`; fresh/exhausted meter breaks cap on retries | wave-1 |
-| BE-11 | Medium | REAL (scoped) | `execution.py:495-520` | retry candidate union re-bills succeeded candidates on a per-candidate paid adapter | wave-2 |
+| BE-11 | Medium | REAL (scoped) | `execution.py:495-520` | retry candidate union re-bills succeeded candidates on a per-candidate paid adapter | FIXED (NEW-48: `_FailedOn` narrows each retried source to its OWN failed candidates+attributes, filtered in both `fetch` and `fetch_in_batches` so a per-candidate paid source is not re-billed for another source's failed candidate; within-source rectangle kept, cross-source bleed removed. ask_again's expansion left as a documented remainder) |
+
 | BE-12 | High | REAL | `api/runs.py:321-387` | retry awaits inline (blocks) yet returns 202; no in-flight guard → concurrent paid passes | wave-1 |
 | BE-13 | Medium | **UNREAL** | `execution.py:603-604`; `main.py:379-383` | distinct billing defect unreachable (disjoint registry); symptom is BE-14 | no-fix |
 | BE-14 | Medium | REAL | `execution.py:185-189,411-427` | an unrelated enabled paid adapter forces a cap on free named-scope work | FIXED (prior commit 218c56a: `_a_paid_source_would_be_asked(adapters, answerable)` -- costs_money reflects the selected scope, not the registry) |

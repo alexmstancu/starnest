@@ -46,7 +46,13 @@ from starnest.data_acquisition import (
     execute_run,
     retry_run,
 )
-from starnest.data_acquisition.execution import _AskedOnlyAbout
+from starnest.data_acquisition.execution import _AskedOnlyAbout, _FailedOn
+
+
+def _only_about(attributes, candidates=("country.portugal",)) -> _FailedOn:
+    """A `_FailedOn` for the wrapper tests, which care about one dimension at a time."""
+    return _FailedOn(attributes=frozenset(attributes), candidates=frozenset(candidates))
+
 
 COUNTRY = {"id": "country", "depth_order": 1}
 OVERBURDEN = "country.housing_cost_overburden_rate"
@@ -362,14 +368,14 @@ class TestTheNarrowedSource:
 
     def test_it_says_what_the_source_it_wraps_charges(self) -> None:
         wrapped = _AskedOnlyAbout(
-            StubSource("llm", (OVERBURDEN,), charges=True), frozenset({OVERBURDEN})
+            StubSource("llm", (OVERBURDEN,), charges=True), _only_about({OVERBURDEN})
         )
 
         assert wrapped.costs_money is True
 
     def test_it_gives_the_estimate_of_the_source_it_wraps(self) -> None:
         wrapped = _AskedOnlyAbout(
-            StubSource("llm", (OVERBURDEN,), charges=True), frozenset({OVERBURDEN})
+            StubSource("llm", (OVERBURDEN,), charges=True), _only_about({OVERBURDEN})
         )
 
         assert wrapped.estimate_for(4) == A_PRICED_CALL
@@ -377,7 +383,7 @@ class TestTheNarrowedSource:
     def test_a_free_source_stays_free_through_the_wrapper(self) -> None:
         """The control: the defaults it used to inherit are the right answer here, and a fix
         that forwarded nothing would pass the two tests above and fail this one."""
-        wrapped = _AskedOnlyAbout(StubSource("eurostat", (OVERBURDEN,)), frozenset({OVERBURDEN}))
+        wrapped = _AskedOnlyAbout(StubSource("eurostat", (OVERBURDEN,)), _only_about({OVERBURDEN}))
 
         assert wrapped.costs_money is False
         assert wrapped.estimate_for(4) == Estimate()
@@ -385,7 +391,7 @@ class TestTheNarrowedSource:
     def test_it_still_narrows_the_attributes_to_what_failed(self) -> None:
         """What the wrapper exists for, which no fix may cost."""
         wrapped = _AskedOnlyAbout(
-            StubSource("eurostat", (OVERBURDEN, OVERCROWDING)), frozenset({OVERCROWDING})
+            StubSource("eurostat", (OVERBURDEN, OVERCROWDING)), _only_about({OVERCROWDING})
         )
 
         assert wrapped.attributes == (OVERCROWDING,)
@@ -397,7 +403,7 @@ class TestTheNarrowedSource:
         paid = PaidPerCandidate((OVERBURDEN,))
         meter = CostMeter(cap_eur=Decimal(1))
 
-        _AskedOnlyAbout(paid, frozenset({OVERBURDEN})).meter_with(meter)
+        _AskedOnlyAbout(paid, _only_about({OVERBURDEN})).meter_with(meter)
 
         assert paid.meter is meter
 
@@ -410,6 +416,54 @@ class TestTheNarrowedSource:
         overridden = {name for name in vars(_AskedOnlyAbout) if not name.startswith("_")}
 
         assert defined - overridden == set()
+
+
+class TestARetryAsksEachSourceOnlyAboutItsOwnFailures:
+    """BE-11, NEW-48. A retry's candidate list is the union of every source's failures, and a
+    run fetches through `fetch_in_batches` (BE-19); a paid source billing per candidate must be
+    narrowed there, or one source's failure pays again for a country another source answered."""
+
+    async def test_a_paid_source_is_not_asked_about_another_sources_failed_candidate(
+        self,
+    ) -> None:
+        paid = PaidPerCandidate((OVERBURDEN,))
+        failed = Run(
+            id=21,
+            status=RunStatus.COMPLETED,
+            started_at=datetime.now(UTC),
+            triggered_by="user",
+            scope=RunScope(
+                level="country",
+                candidates=(str(PORTUGAL.id), str(SPAIN.id)),
+                attributes=(OVERBURDEN,),
+            ),
+            failures=(
+                AcquisitionFailure(
+                    attribute=OVERBURDEN,
+                    reason="503",
+                    candidate=str(PORTUGAL.id),
+                    data_source=DataSourceId("eurostat"),
+                ),
+                AcquisitionFailure(
+                    attribute=OVERBURDEN,
+                    reason="the model could not be reached",
+                    candidate=str(SPAIN.id),
+                    data_source=DataSourceId("llm"),
+                ),
+            ),
+        )
+
+        await retry_run(
+            failed=failed,
+            adapters=[paid, StubSource("eurostat", (OVERBURDEN,))],
+            attributes=[an_attribute(OVERBURDEN)],
+            candidates=[PORTUGAL, SPAIN],
+            values=RecordingValueStore(),
+            runs=RecordingRunStore(answers_with=failed),
+            spend_cap_eur=Decimal(10),
+        )
+
+        assert paid.asked_about == [str(SPAIN.id)]
 
 
 class TestWhatARetryMaySpend:

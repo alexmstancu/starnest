@@ -559,11 +559,18 @@ async def retry_run(
     retry narrows both to the failures. **The old run is untouched** -- it keeps its record of
     what went wrong, and the new one records what happened this time.
 
-    **The scope is the smallest one covering the failures**: every failed candidate against every
-    failed attribute. Each source is asked only about the attributes *it* failed on, so OECD
-    failing on the tax rate does not re-ask the estimate that answered it. Asking a source about
-    a candidate that did not fail costs nothing extra -- every source here answers a whole
-    indicator in one request -- and stores one more observation of a figure already held.
+    **Each source is asked only about the attributes and the candidates *it* failed on.** OECD
+    failing on the tax rate does not re-ask the estimate that answered it, and Eurostat failing
+    on Portugal does not send the LLM, which failed only on Spain, back to Portugal (NEW-48).
+    Asking a source about a candidate that did not fail was once said to cost nothing, since a
+    structured source answers a whole indicator in one request. The LLM adapters ask and bill
+    per candidate, and since BE-08 every figure rejected by its credible range is a failure --
+    so one source's failure billed another again for a country it had already answered (BE-11).
+
+    **The scope is still the smallest one covering the failures**: every failed candidate against
+    every failed attribute, because a run's scope is two lists. So it can name a pair no source
+    is asked about, which the new run counts as unanswered, and a source that failed on two pairs
+    is still asked about the rectangle they span -- but never about another source's failures.
 
     Declared stand-ins run afterwards as in any run, so a substitute's figure that arrives in the
     retry is lent on in the same pass.
@@ -601,13 +608,27 @@ async def retry_run(
     )
 
 
+@dataclass(frozen=True)
+class _FailedOn:
+    """What one source failed on in the run being retried, and so all it is asked about again."""
+
+    attributes: frozenset[AttributeId]
+    candidates: frozenset[str | None]
+
+
 def _what_each_source_failed_on(
     failures: Sequence[AcquisitionFailure],
-) -> dict[DataSourceId | None, frozenset[AttributeId]]:
-    by_source: dict[DataSourceId | None, set[AttributeId]] = {}
+) -> dict[DataSourceId | None, _FailedOn]:
+    by_source: dict[DataSourceId | None, list[AcquisitionFailure]] = {}
     for failure in failures:
-        by_source.setdefault(failure.data_source, set()).add(failure.attribute)
-    return {source: frozenset(failed_on) for source, failed_on in by_source.items()}
+        by_source.setdefault(failure.data_source, []).append(failure)
+    return {
+        source: _FailedOn(
+            attributes=frozenset(failure.attribute for failure in its_failures),
+            candidates=frozenset(failure.candidate for failure in its_failures),
+        )
+        for source, its_failures in by_source.items()
+    }
 
 
 class _AskedOnlyAbout(SourceAdapter):
@@ -625,11 +646,20 @@ class _AskedOnlyAbout(SourceAdapter):
     a paid source asked again kept the meter of whichever run it last served: an exhausted one
     refused every candidate of the retry, and a live one recorded the retry's calls against
     another run's cap.
+
+    **The candidates are narrowed here too, where the source is asked** (NEW-48, BE-11). A run
+    hands every source the same candidate list -- the retry's, drawn from every source's failures
+    -- so one source's failure would send another, billing per candidate, back to a country it
+    had already answered. The narrowing happens in both `fetch` and `fetch_in_batches`, because a
+    run fetches through the latter (BE-19) and only the former would leave the paid path unfixed.
     """
 
-    def __init__(self, adapter: SourceAdapter, attributes: frozenset[AttributeId]) -> None:
+    def __init__(self, adapter: SourceAdapter, failed_on: _FailedOn) -> None:
         self._adapter = adapter
-        self._attributes = attributes
+        self._failed_on = failed_on
+
+    def _only_the_candidates_it_failed_on(self, candidates: Sequence[Candidate]) -> list[Candidate]:
+        return [c for c in candidates if c.id in self._failed_on.candidates]
 
     @property
     def data_source(self) -> DataSourceId:
@@ -647,18 +677,27 @@ class _AskedOnlyAbout(SourceAdapter):
 
     @property
     def attributes(self) -> tuple[AttributeId, ...]:
-        return tuple(a for a in self._adapter.attributes if a in self._attributes)
+        return tuple(a for a in self._adapter.attributes if a in self._failed_on.attributes)
 
     async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
-        return await self._adapter.fetch(attribute, candidates)
+        failed_for = self._only_the_candidates_it_failed_on(candidates)
+        # Nothing left to ask is not a question, and a source charging per request would still
+        # bill one about nobody.
+        if not failed_for:
+            return Acquired()
+        return await self._adapter.fetch(attribute, failed_for)
 
     async def fetch_in_batches(
         self, attribute: Attribute, candidates: Sequence[Candidate]
     ) -> AsyncIterator[Acquired]:
-        # Forwarded like the rest (P41): inherit the base's default and a retry over a paid
-        # source would buffer the whole attribute again, losing the per-candidate durability
-        # the run relies on (BE-19).
-        async for batch in self._adapter.fetch_in_batches(attribute, candidates):
+        # Narrowed to this source's own failed candidates (NEW-48) and forwarded like the rest
+        # (P41): a run fetches through here (BE-19), so leaving it unfiltered would send a paid
+        # source back to a candidate another source failed on -- and buffer the whole attribute,
+        # losing the per-candidate durability the run relies on.
+        failed_for = self._only_the_candidates_it_failed_on(candidates)
+        if not failed_for:
+            return
+        async for batch in self._adapter.fetch_in_batches(attribute, failed_for):
             yield batch
 
 
