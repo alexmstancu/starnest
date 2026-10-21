@@ -144,7 +144,8 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 | BE-28 | Low | REAL (latent) | `llm/fallback.py:322-325`; `data/payloads.py:337-365` | AssignedScore fallback uses wrong kwarg + omits range → always errors (latent) | wave-3 |
 | BE-29 | Low | REAL (latent) | `data_sources/transport.py:85-87`; `eurostat/jsonstat.py:126-145` | JSON decoded via binary float before Decimal → precision loss for long tokens | wave-3 |
 | BE-30 | Low | REAL | `llm/employers.py:212-235` | employer elements `str()`-coerced, not validated as non-blank firm names | wave-3 |
-| BE-31 | Low | REAL | `comparison/comparison.py:26,200`; `pyproject.toml:183-197` | comparison imports criteria; import-linter layer order permits the forbidden edge | wave-3 |
+| BE-31 | Low | REAL | `comparison/comparison.py:26,200`; `pyproject.toml:183-197` | comparison imports criteria; import-linter layer order permits the forbidden edge | FIXED (test_architecture.py `test_each_policy_module_imports_only_what_the_table_allows`: enforces arch.md 6.1's exact May-import table on DIRECT imports via grimp -- catches a table-forbidden downward edge the layers contract permits, without false-positiving the legitimate transitive reach. import-linter's forbidden is transitive and cannot express exact edges) |
+
 | BE-32 | Low | REAL | `pyproject.toml:58-64`; `conftest.py:109-131` | bare `pytest` deselects only `live_llm`; plain `live` network tests still run | wave-3 |
 | BE-33 | Low | REAL (known/deferred P36) | `execution.py:281-287`; `fallback.py:178-191` | per-source spend durability; death before source returns loses its billed totals | wave-3 |
 | BE-34 | Low | REAL (known/deferred P28/Q224) | `research.py:122-179`; `api/rules.py:310-326` | gate research spend not durably ledgered | wave-3 |

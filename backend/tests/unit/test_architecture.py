@@ -157,6 +157,60 @@ def test_the_layering_names_every_module_that_exists() -> None:
     assert _modules_that_exist() - _layered_modules() == set()
 
 
+# arch.md 6.1's "May import" column, policy module by policy module. The empty set is a module
+# that imports no other -- `candidates/` is the stable core.
+ALLOWED_IMPORTS = {
+    "candidates": frozenset(),
+    "data": frozenset({"candidates"}),
+    "household": frozenset({"candidates"}),
+    "criteria": frozenset({"candidates", "data", "household"}),
+    "data_acquisition": frozenset({"candidates", "data"}),
+    "evaluation": frozenset({"candidates", "data", "household", "criteria"}),
+    "comparison": frozenset({"candidates", "data", "evaluation"}),
+}
+POLICY_MODULES = frozenset(ALLOWED_IMPORTS)
+
+
+def _policy_module_of(module: str) -> str | None:
+    """The policy module a dotted name belongs to -- `starnest.data.attribute` is `data` -- or
+    None for anything outside the policy core (the API, a plugin, a top-level file)."""
+    parts = module.split(".")
+    return (
+        parts[1] if len(parts) > 1 and parts[0] == PACKAGE and parts[1] in POLICY_MODULES else None
+    )
+
+
+@pytest.mark.parametrize("module", sorted(ALLOWED_IMPORTS))
+def test_each_policy_module_imports_only_what_the_table_allows(
+    module: str, graph: grimp.ImportGraph
+) -> None:
+    """arch.md 6.2 rule 2: the import table of 6.1 is exhaustive, so a direct import it does not
+    list is a violation -- which the layers contract cannot say, because it forbids only *upward*
+    imports and a table-forbidden edge can run downward. `comparison` reaching into `criteria`
+    for a shared constant was exactly such an edge, below the layering and so invisible to it
+    (BE-31).
+
+    Judged on **direct** imports: a module reaching a forbidden one THROUGH an allowed one --
+    `comparison` -> `evaluation` -> `criteria` -- is not the forbidden direct edge and must not be
+    read as one, which is why a transitive `forbidden` contract cannot express this and a test
+    on the graph's direct edges can.
+    """
+    prefix = f"{PACKAGE}.{module}"
+    its_files = {m for m in graph.modules if m == prefix or m.startswith(f"{prefix}.")}
+    imports = {
+        _policy_module_of(target)
+        for source in its_files
+        for target in graph.find_modules_directly_imported_by(source)
+    }
+    cross_module = {policy for policy in imports if policy is not None and policy != module}
+
+    assert cross_module <= ALLOWED_IMPORTS[module], (
+        f"{module}/ directly imports {sorted(cross_module - ALLOWED_IMPORTS[module])}, which "
+        f"arch.md 6.1 does not list among its allowed imports "
+        f"({sorted(ALLOWED_IMPORTS[module]) or 'nothing'})"
+    )
+
+
 def test_the_layering_names_nothing_that_has_gone() -> None:
     """A layer naming a module nobody has any more constrains nothing and reads as though it
     does. `import-linter` treats an unknown module as an error, so this mostly guards the
