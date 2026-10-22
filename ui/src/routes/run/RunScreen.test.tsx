@@ -26,6 +26,7 @@ import {
   followChromiumFocusFixup,
 } from "../../testing/keyboard";
 import { renderShell } from "../../testing/renderShell";
+import { serveSourceNames } from "../../testing/sourceNames";
 import { useRunScreen } from "./useRunScreen";
 
 /**
@@ -61,6 +62,26 @@ describe("estimating a run", () => {
     expect(
       screen.getByRole("table", { name: /per source/i }),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * RB-4. **No programmatic identifiers in rendered text**, and a source id is one: the plan
+   * listed `world_bank` where the catalog says "World Bank".
+   */
+  it("names each source in the plan as the catalog does, never by its id", async () => {
+    serveSourceNames({ world_bank: "World Bank" });
+    renderShell("/acquire");
+
+    await estimate();
+
+    const plan = await screen.findByRole("table", { name: /per source/i });
+    expect(
+      await within(plan).findByRole("rowheader", { name: "World Bank" }),
+    ).toBeInTheDocument();
+    expect(
+      within(plan).getByRole("rowheader", { name: "Eurostat" }),
+    ).toBeInTheDocument();
+    expect(plan).not.toHaveTextContent(/\b(world_bank|eurostat)\b/);
   });
 
   it("says what a cost rests on, because a free plan has nothing to explain", async () => {
@@ -130,6 +151,7 @@ describe("estimating a run", () => {
 
 describe("running and retrying", () => {
   it("shows the run's progress and what it could not answer", async () => {
+    serveSourceNames({ oecd: "OECD" });
     renderShell("/acquire");
     await estimate();
 
@@ -146,11 +168,9 @@ describe("running and retrying", () => {
     const broke = within(
       screen.getByRole("region", { name: /which sources broke/i }),
     );
-    expect(
-      broke.getByRole("button", { name: /^oecd 1 item$/i }),
-    ).toBeInTheDocument();
+    const head = await broke.findByRole("button", { name: "OECD 1 item" });
 
-    await userEvent.click(broke.getByRole("button", { name: /^oecd 1 item$/i }));
+    await userEvent.click(head);
 
     expect(
       broke.getByText(/the oecd's cloudflare front answered with a browser challenge/i),
@@ -663,6 +683,7 @@ describe("a run's progress", () => {
  */
 describe("re-asking about part of a run", () => {
   async function openRun() {
+    serveSourceNames({ oecd: "OECD" });
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
@@ -671,15 +692,18 @@ describe("re-asking about part of a run", () => {
     await screen.findByRole("region", { name: /acquisition 8/i });
   }
 
+  /**
+   * RB-4. **Named as the catalog names the source.** The head printed the failure's `oecd`,
+   * on the reasoning that the id is what the publisher is called; the catalog calls it "OECD".
+   */
   it("groups failures by the source that refused", async () => {
     await openRun();
 
     const group = within(
       await screen.findByRole("region", { name: /which sources broke/i }),
     );
-    expect(
-      group.getByRole("button", { name: /^oecd 1 item$/i }),
-    ).toBeInTheDocument();
+    const head = await group.findByRole("button", { name: "OECD 1 item" });
+    expect(head).not.toHaveTextContent(/\boecd\b/);
   });
 
   /** Nothing refused an unanswered item, so the useful question is the attribute. */
@@ -691,8 +715,7 @@ describe("re-asking about part of a run", () => {
         name: /which values went unanswered/i,
       }),
     );
-    // The group head is the attribute's name. A source's head stays the source's own key --
-    // "oecd" is what the publisher is called, and naming it would print "Oecd".
+    // The group head is the attribute's name, as a failure's head is its source's.
     expect(
       group.getByRole("button", { name: /^Overcrowding rate 1 item$/i }),
     ).toBeInTheDocument();
@@ -842,20 +865,24 @@ describe("re-asking about part of a run", () => {
 
 describe("picking out individual items", () => {
   async function failureGroup() {
+    serveSourceNames({ oecd: "OECD" });
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
       screen.getByRole("button", { name: /start this acquisition/i }),
     );
     await screen.findByRole("region", { name: /acquisition 8/i });
-    return within(
+    const group = within(
       await screen.findByRole("region", { name: /which sources broke/i }),
     );
+    // The names arrive after the group does, and every test here reads the head by its name.
+    await group.findByRole("button", { name: "OECD 1 item" });
+    return group;
   }
 
   it("opens a group to show the items inside it", async () => {
     const group = await failureGroup();
-    const head = group.getByRole("button", { name: /^oecd 1 item$/i });
+    const head = group.getByRole("button", { name: "OECD 1 item" });
     expect(head).toHaveAttribute("aria-expanded", "false");
 
     await userEvent.click(head);
@@ -874,7 +901,7 @@ describe("picking out individual items", () => {
 
   it("closes a group that was open", async () => {
     const group = await failureGroup();
-    const head = group.getByRole("button", { name: /^oecd 1 item$/i });
+    const head = group.getByRole("button", { name: "OECD 1 item" });
 
     await userEvent.click(head);
     await userEvent.click(head);
@@ -890,17 +917,17 @@ describe("picking out individual items", () => {
   it("says in the group's own head how many of it are picked", async () => {
     const group = await failureGroup();
     expect(
-      group.getByRole("button", { name: /^oecd 1 item$/i }),
+      group.getByRole("button", { name: "OECD 1 item" }),
     ).toBeInTheDocument();
 
     await userEvent.click(group.getByRole("button", { name: "All" }));
     expect(
-      group.getByRole("button", { name: /^oecd 1 item, 1 picked$/i }),
+      group.getByRole("button", { name: "OECD 1 item, 1 picked" }),
     ).toBeInTheDocument();
 
     await userEvent.click(group.getByRole("button", { name: "None" }));
     expect(
-      group.getByRole("button", { name: /^oecd 1 item$/i }),
+      group.getByRole("button", { name: "OECD 1 item" }),
     ).toBeInTheDocument();
   });
 
@@ -918,7 +945,7 @@ describe("picking out individual items", () => {
 
   it("picks a single item without touching the others", async () => {
     const group = await failureGroup();
-    await userEvent.click(group.getByRole("button", { name: /^oecd 1 item$/i }));
+    await userEvent.click(group.getByRole("button", { name: "OECD 1 item" }));
 
     await userEvent.click(
       group.getByRole("checkbox", {
@@ -1158,6 +1185,37 @@ describe("what changed between two acquisitions", () => {
       name: /Total effective tax rate/i,
     });
     expect(row).toHaveTextContent("newly acquired");
+  });
+
+  /**
+   * RB-4. **The source column names the source as the catalog does.** It printed
+   * `eurostat_estimate` -- a database key, where the catalog says "Estimated from Eurostat
+   * tax-benefit figures".
+   */
+  it("names each pair's source as the catalog does, never by its id", async () => {
+    serveSourceNames({
+      eurostat_estimate: "Estimated from Eurostat tax-benefit figures",
+    });
+    renderShell("/acquire");
+    const panel = await compare("5", "7");
+
+    const estimated = await panel.findByRole("row", {
+      name: /Total effective tax rate/i,
+    });
+    expect(
+      await within(estimated).findByRole("cell", {
+        name: "Estimated from Eurostat tax-benefit figures",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(panel.getByRole("row", { name: /Cost of living index/i })).getByRole(
+        "cell",
+        { name: "Eurostat" },
+      ),
+    ).toBeInTheDocument();
+    expect(
+      panel.getByRole("table", { name: "What changed" }),
+    ).not.toHaveTextContent(/\beurostat(_estimate)?\b/);
   });
 
   it("names a pair both runs produced as refreshed", async () => {
@@ -1602,14 +1660,37 @@ describe("the acquisition card", () => {
   it("breaks the run down by source, including the one that answered nothing", async () => {
     // OECD's front door is Cloudflare-challenged, so a run where it answers nothing is the
     // shipped case -- and the source a reader came to this panel to find.
+    serveSourceNames({ oecd: "OECD" });
     const card = await theCard();
 
     expect(
-      card.getByRole("img", { name: "eurostat: 93 stored" }),
+      await card.findByRole("img", { name: "OECD: 0 stored, 1 failed" }),
     ).toBeInTheDocument();
     expect(
-      card.getByRole("img", { name: "oecd: 0 stored, 1 failed" }),
+      card.getByRole("img", { name: "Eurostat: 93 stored" }),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * RB-4. **No programmatic identifiers in rendered text -- nor in what a hover or a screen
+   * reader says.** Each bar printed its source's id three times: as its label, as its
+   * accessible name and in its tooltip.
+   */
+  it("names each source as the catalog does, never by its id", async () => {
+    serveSourceNames({ oecd: "OECD" });
+    const card = await theCard();
+
+    const breakdown = card.getByRole("list");
+    expect(await within(breakdown).findByText("OECD")).toBeInTheDocument();
+    expect(within(breakdown).getByText("Eurostat")).toBeInTheDocument();
+    expect(
+      within(breakdown)
+        .getAllByRole("img")
+        .map((bar) => bar.getAttribute("aria-label")),
+    ).toEqual(["Eurostat: 93 stored", "OECD: 0 stored, 1 failed"]);
+    // The tooltip is an SVG `<title>`, so it is text: the hover reads the same sentence.
+    expect(breakdown).toHaveTextContent("OECD: 0 stored, 1 failed");
+    expect(breakdown).not.toHaveTextContent(/\b(oecd|eurostat)\b/);
   });
 
   it("states what was charged even when nothing was", async () => {
@@ -1857,8 +1938,9 @@ describe("a wall of identical failures", () => {
   it("holds the whole wall behind one collapsed group", async () => {
     const broke = await aRunThatFailed(outOfCredit);
 
+    // The catalog's name for `llm`, which its id made readable ("Llm") could never be (RB-4).
     expect(
-      broke.getByRole("button", { name: /^llm 5 items$/i }),
+      await broke.findByRole("button", { name: "LLM with web search 5 items" }),
     ).toBeInTheDocument();
     // Nothing of the message, and none of the five candidates, until it is opened.
     expect(screen.queryByText(/credit balance/i)).toBeNull();
@@ -1868,7 +1950,9 @@ describe("a wall of identical failures", () => {
   it("names every candidate and its reason once opened", async () => {
     const broke = await aRunThatFailed(outOfCredit);
 
-    await userEvent.click(broke.getByRole("button", { name: /^llm 5 items$/i }));
+    await userEvent.click(
+      await broke.findByRole("button", { name: "LLM with web search 5 items" }),
+    );
 
     // **"Pension portability for Austria", never two keys with a space between them.** The
     // design writes this phrase itself, and bars both a `·` and a bare identifier.
@@ -1972,7 +2056,9 @@ describe("a wall of identical failures", () => {
     );
     const broke = await aRunThatFailed(outOfCredit);
 
-    await userEvent.click(broke.getByRole("button", { name: /^llm 5 items$/i }));
+    await userEvent.click(
+      await broke.findByRole("button", { name: "LLM with web search 5 items" }),
+    );
 
     expect(
       await broke.findByRole("checkbox", {
@@ -3070,9 +3156,14 @@ describe("a figure typed by hand", () => {
 
     // **"for Portugal", not "for country.portugal".** This panel already fetched every
     // candidate to fill the select above, so the name was one lookup away in data it held.
-    expect(await form.findByRole("status")).toHaveTextContent(
-      /Farfetch, OutSystems.*Portugal.*manual/i,
+    // And "under Manual entry", the catalog's name for the source, never its id (RB-4).
+    const stored = await form.findByRole("status");
+    await waitFor(() =>
+      expect(stored).toHaveTextContent(
+        /Farfetch, OutSystems for Portugal, under Manual entry\./,
+      ),
     );
+    expect(stored).not.toHaveTextContent(/\bmanual\b/);
   });
 
   it("stores the score as a human's, never the model's", async () => {

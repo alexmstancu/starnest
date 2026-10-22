@@ -15,6 +15,7 @@ import {
   candidateName,
   pillarName,
   safeHttpUrl,
+  sourceName,
 } from "./display";
 
 describe("formatPercentage", () => {
@@ -159,6 +160,34 @@ describe("what to call a pillar", () => {
     expect(pillarName(new Map([["housing", "Housing"]]), "nowhere")).toBe(
       "Nowhere",
     );
+  });
+});
+
+describe("what to call a data source", () => {
+  /**
+   * RB-4. **The fixture has to be one the fallback cannot produce.** `eurostat` reads
+   * "Eurostat" either way, so it would pass with the lookup deleted; the catalog calls
+   * `world_bank` "World Bank" and `llm` "LLM with web search", which no title-casing reaches.
+   */
+  it("uses the catalog's name, which the id cannot be read into", () => {
+    const names = new Map([
+      ["world_bank", "World Bank"],
+      ["llm", "LLM with web search"],
+    ]);
+
+    expect(sourceName(names, "world_bank")).toBe("World Bank");
+    expect(sourceName(names, "llm")).toBe("LLM with web search");
+  });
+
+  it("falls back to the id made readable, never the id, when the catalog has not answered", () => {
+    // An empty map is what a failed or in-flight read looks like, and the column beside a
+    // figure must still say something a person would write.
+    expect(sourceName(new Map(), "world_bank")).toBe("World bank");
+    expect(sourceName(new Map(), "eurostat_estimate")).toBe("Eurostat estimate");
+  });
+
+  it("falls back for a source the catalog does not have", () => {
+    expect(sourceName(new Map([["eurostat", "Eurostat"]]), "oecd")).toBe("Oecd");
   });
 });
 

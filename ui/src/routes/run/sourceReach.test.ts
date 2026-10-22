@@ -2,70 +2,143 @@ import { describe, expect, it } from "vitest";
 import { inFlight, outcomeSentence, runState, sourceBars } from "./sourceReach";
 
 describe("source by source", () => {
+  /** What the catalog calls the sources these runs report: "OECD", which `oecd` cannot become. */
+  const NAMES = new Map([
+    ["eurostat", "Eurostat"],
+    ["oecd", "OECD"],
+  ]);
+
   it("fills each source's bar by its own success rate, not by its share of the run", () => {
     // Eurostat answered 100 of 100 and OECD 1 of 2. On a shared track Eurostat would dwarf
     // OECD and the reader would conclude OECD did well; on its own track OECD reads as half.
-    const bars = sourceBars([
-      { data_source: "eurostat", items_stored: 100, items_failed: 0 },
-      { data_source: "oecd", items_stored: 1, items_failed: 1 },
-    ]);
+    const bars = sourceBars(
+      [
+        { data_source: "eurostat", items_stored: 100, items_failed: 0 },
+        { data_source: "oecd", items_stored: 1, items_failed: 1 },
+      ],
+      NAMES,
+    );
 
     expect(bars.map((bar) => bar.width)).toEqual(["100%", "50%"]);
   });
 
   it("keeps a source that stored nothing, and marks it", () => {
     // The source a reader came here to find is precisely the one that answered nothing.
-    const bars = sourceBars([
-      { data_source: "oecd", items_stored: 0, items_failed: 12 },
-    ]);
+    const bars = sourceBars(
+      [{ data_source: "oecd", items_stored: 0, items_failed: 12 }],
+      NAMES,
+    );
 
     expect(bars).toEqual([
       {
         source: "oecd",
+        name: "OECD",
         width: "0%",
         reading: "0 of 12",
-        sentence: "oecd: 0 stored, 12 failed",
+        sentence: "OECD: 0 stored, 12 failed",
         barren: true,
       },
     ]);
   });
 
-  it("puts the sources that stored something above the ones that stored nothing", () => {
-    const bars = sourceBars([
-      { data_source: "oecd", items_stored: 0, items_failed: 4 },
+  /**
+   * RB-4. **No programmatic identifiers in rendered text**, and the label and the sentence are
+   * all a bar prints -- the sentence is its accessible name and its tooltip. The id stays on the
+   * bar as `source`, which is what tells one bar from another and is never printed.
+   */
+  it("names each source as the catalog does, in its label and its sentence", () => {
+    const [bar] = sourceBars(
+      [{ data_source: "world_bank", items_stored: 32, items_failed: 0 }],
+      new Map([["world_bank", "World Bank"]]),
+    );
+
+    expect(bar).toMatchObject({
+      source: "world_bank",
+      name: "World Bank",
+      sentence: "World Bank: 32 stored",
+    });
+  });
+
+  it("names a source by its id made readable until the catalog answers", () => {
+    const [bar] = sourceBars(
+      [{ data_source: "world_bank", items_stored: 30, items_failed: 2 }],
+      new Map(),
+    );
+
+    expect(bar?.name).toBe("World bank");
+    expect(bar?.sentence).toBe("World bank: 30 stored, 2 failed");
+  });
+
+  /**
+   * **Ordered by id, not by name, on purpose.** The names arrive after the bars do; an order
+   * taken from them would move every bar under the reader's eye the moment the catalog
+   * answered. `eurostat_estimate` is named "Estimated from Eurostat tax-benefit figures", which
+   * sorts above "Eurostat" -- and the bars stay where they were drawn.
+   */
+  it("keeps its order when the names arrive", () => {
+    const reaches = [
+      { data_source: "eurostat_estimate", items_stored: 5, items_failed: 0 },
       { data_source: "eurostat", items_stored: 9, items_failed: 0 },
+    ];
+    const named = new Map([
+      ["eurostat", "Eurostat"],
+      ["eurostat_estimate", "Estimated from Eurostat tax-benefit figures"],
     ]);
+
+    expect(sourceBars(reaches, new Map()).map((bar) => bar.source)).toEqual([
+      "eurostat",
+      "eurostat_estimate",
+    ]);
+    expect(sourceBars(reaches, named).map((bar) => bar.source)).toEqual([
+      "eurostat",
+      "eurostat_estimate",
+    ]);
+  });
+
+  it("puts the sources that stored something above the ones that stored nothing", () => {
+    const bars = sourceBars(
+      [
+        { data_source: "oecd", items_stored: 0, items_failed: 4 },
+        { data_source: "eurostat", items_stored: 9, items_failed: 0 },
+      ],
+      NAMES,
+    );
 
     expect(bars.map((bar) => bar.source)).toEqual(["eurostat", "oecd"]);
   });
 
   it("says only the stored count where nothing failed", () => {
-    const bars = sourceBars([
-      { data_source: "who", items_stored: 32, items_failed: 0 },
-    ]);
+    const bars = sourceBars(
+      [{ data_source: "who", items_stored: 32, items_failed: 0 }],
+      NAMES,
+    );
 
     expect(bars.map((bar) => bar.reading)).toEqual(["32"]);
   });
 
   it("drops a row that names no source or touched nothing", () => {
     expect(
-      sourceBars([
-        { data_source: "", items_stored: 4, items_failed: 0 },
-        { data_source: "imf", items_stored: 0, items_failed: 0 },
-      ]),
+      sourceBars(
+        [
+          { data_source: "", items_stored: 4, items_failed: 0 },
+          { data_source: "imf", items_stored: 0, items_failed: 0 },
+        ],
+        NAMES,
+      ),
     ).toEqual([]);
   });
 
   it("has nothing to draw for a run with no breakdown", () => {
-    expect(sourceBars(null)).toEqual([]);
-    expect(sourceBars(undefined)).toEqual([]);
-    expect(sourceBars([])).toEqual([]);
+    expect(sourceBars(null, NAMES)).toEqual([]);
+    expect(sourceBars(undefined, NAMES)).toEqual([]);
+    expect(sourceBars([], NAMES)).toEqual([]);
   });
 
   it("survives counts that arrive missing or negative", () => {
-    const bars = sourceBars([
-      { data_source: "imf", items_stored: null, items_failed: 3 },
-    ]);
+    const bars = sourceBars(
+      [{ data_source: "imf", items_stored: null, items_failed: 3 }],
+      NAMES,
+    );
 
     expect(bars.map((bar) => bar.width)).toEqual(["0%"]);
   });

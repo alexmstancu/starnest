@@ -107,6 +107,26 @@ describe("storing a figure typed by hand", () => {
     expect(field("Values")).toHaveValue("");
   });
 
+  /**
+   * RB-4. **The source it was stored under, as the catalog names it.** The confirmation ended
+   * "under manual." -- the source's id, where the catalog says "Manual entry".
+   */
+  it("says which source it stored the figure under, by the catalog's name", async () => {
+    const user = userEvent.setup();
+    renderEntry();
+    await fillAFigure();
+
+    await user.click(screen.getByRole("button", { name: "Store this figure" }));
+
+    const stored = await screen.findByRole("status");
+    await waitFor(() =>
+      expect(stored).toHaveTextContent(
+        "Stored Siemens for Portugal, under Manual entry.",
+      ),
+    );
+    expect(stored).not.toHaveTextContent(/\bmanual\b/);
+  });
+
   it("keeps the figure when the server refuses it", async () => {
     const user = userEvent.setup();
     mockServer.use(

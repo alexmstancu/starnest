@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { HOUSEHOLD, STORED_VALUES, makeCriteriaSetDetails } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
+import { serveSourceNames } from "../../testing/sourceNames";
 
 /**
  * The ranking table, tested against the three cases `reqs.md` makes rules about: a matching
@@ -420,6 +421,9 @@ describe("the drill-down", () => {
   });
 
   it("shows each figure with its source, both dates and its confidence", async () => {
+    serveSourceNames({
+      eurostat_estimate: "Estimated from Eurostat tax-benefit figures",
+    });
     renderShell("/rank");
     const row = await rankingRow("Portugal");
 
@@ -436,7 +440,13 @@ describe("the drill-down", () => {
       name: /total effective tax rate/i,
     });
     expect(estimate).toHaveTextContent("41.5");
-    expect(estimate).toHaveTextContent("eurostat_estimate");
+    // RB-4: the source as the catalog names it -- a name its id could never be read into.
+    await waitFor(() =>
+      expect(estimate).toHaveTextContent(
+        "Estimated from Eurostat tax-benefit figures",
+      ),
+    );
+    expect(estimate).not.toHaveTextContent("eurostat_estimate");
     expect(estimate).toHaveTextContent("low");
   });
 
@@ -572,7 +582,7 @@ describe("the drill-down", () => {
       name: /outside opinions/i,
     });
     expect(
-      within(outside).getByRole("link", { name: "numbeo" }),
+      await within(outside).findByRole("link", { name: "Numbeo" }),
     ).toHaveAttribute(
       "href",
       "https://www.numbeo.com/crime/indices_explained.jsp",
@@ -691,10 +701,10 @@ describe("the drill-down", () => {
     });
     // The header names the publisher first; its two dates stack under the name (UI-20).
     expect(
-      within(outside).getByRole("rowheader", { name: /^numbeo/ }),
+      await within(outside).findByRole("rowheader", { name: /^Numbeo/ }),
     ).toBeInTheDocument();
     const figures = screen.getByRole("table", { name: /every stored value/i });
-    expect(within(figures).queryByText("numbeo")).toBeNull();
+    expect(within(figures).queryByText("Numbeo")).toBeNull();
   });
 
   it("closes again", async () => {
@@ -868,6 +878,28 @@ const NUMBEO = {
  * index from this year's.
  */
 describe("an outside opinion's provenance", () => {
+  /**
+   * RB-4. **A publisher is a data source, named as the catalog names it.** The column printed
+   * the source's id; `rsf` is one whose catalog name the id could never be read into.
+   */
+  it("names the publisher as the catalog does, never by its id", async () => {
+    serveSourceNames({ rsf: "Reporters Without Borders" });
+    outsideOpinions({
+      ...NUMBEO,
+      data_source: "rsf",
+      published_scale: "0-100, higher is freer",
+    });
+
+    const outside = await portugalsOutsideOpinions();
+
+    expect(
+      await within(outside).findByRole("rowheader", {
+        name: /^Reporters Without Borders/,
+      }),
+    ).toBeInTheDocument();
+    expect(outside).not.toHaveTextContent(/\brsf\b/i);
+  });
+
   it("dates each outside opinion: the period it describes and when it was fetched", async () => {
     const outside = await portugalsOutsideOpinions();
 

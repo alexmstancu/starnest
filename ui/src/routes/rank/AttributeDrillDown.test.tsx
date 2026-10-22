@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { screen, within } from "@testing-library/react";
 import { renderShell } from "../../testing/renderShell";
+import { serveSourceNames } from "../../testing/sourceNames";
 import { mockServer } from "../../mocks/server";
 
 /**
@@ -64,7 +65,38 @@ describe("the attribute drill-down", () => {
     expect(
       within(table).getByRole("rowheader", { name: "United Kingdom" }),
     ).toBeInTheDocument();
-    expect(within(table).getAllByText("eurostat")).toHaveLength(2);
+    // RB-4: the source as the catalog names it, never its id.
+    expect(await within(table).findAllByText("Eurostat")).toHaveLength(2);
+    expect(table).not.toHaveTextContent(/\beurostat\b/);
+  });
+
+  /**
+   * RB-4. **The catalog's name, which the id cannot be read into.** "Eurostat" above is what the
+   * fallback makes of `eurostat` too, so it would pass with the lookup deleted; the estimated
+   * tax rate's source is `eurostat_estimate`, which the catalog calls "Estimated from Eurostat
+   * tax-benefit figures".
+   */
+  it("names where each figure came from as the catalog does", async () => {
+    serveSourceNames({
+      eurostat_estimate: "Estimated from Eurostat tax-benefit figures",
+    });
+    const user = userEvent.setup();
+    renderShell("/rank");
+    const panel = await theDrillDown();
+
+    await within(panel).findByRole("option", { name: "Total effective tax rate" });
+    await user.selectOptions(
+      within(panel).getByRole("combobox", { name: "Attribute" }),
+      "country.total_tax_rate_effective",
+    );
+
+    const table = await within(panel).findByRole("table");
+    expect(
+      await within(table).findByRole("cell", {
+        name: "Estimated from Eurostat tax-benefit figures",
+      }),
+    ).toBeInTheDocument();
+    expect(table).not.toHaveTextContent(/eurostat_estimate/);
   });
 
   it("says an attribute nobody measures is a hole in the score, not an empty table", async () => {

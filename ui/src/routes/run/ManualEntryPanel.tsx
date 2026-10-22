@@ -1,8 +1,9 @@
 import { useCallback, useId } from "react";
 import { fetchCandidates } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
+import { useSourceNames } from "../../api/useSourceNames";
 import { ErrorNotice } from "../../shell/ErrorNotice";
-import { candidateName } from "../../format/display";
+import { candidateName, sourceName } from "../../format/display";
 import { describeFigure } from "../../format/figure";
 import type { ManualDraft, ManualKind } from "./manualEntry";
 import { HeldButton } from "./HeldButton";
@@ -34,6 +35,7 @@ export function ManualEntryPanel({
 }) {
   const headingId = useId();
   const entry = useManualEntry(attribute, kind);
+  const sources = useSourceNames();
   const candidates = useResource(
     useCallback(
       (signal: AbortSignal) => fetchCandidates(level, { signal }),
@@ -191,7 +193,7 @@ export function ManualEntryPanel({
         <p className="notice notice--good" role="status">
           Stored {describeFigure(entry.saved)} for{" "}
           {candidateName(named, entry.saved.candidate)}, under{" "}
-          {entry.saved.data_source}.
+          {sourceName(sources, entry.saved.data_source)}.
         </p>
       )}
 

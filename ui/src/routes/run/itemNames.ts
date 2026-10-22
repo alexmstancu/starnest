@@ -19,12 +19,18 @@
  * this only says how the two go together.
  */
 
-import { attributeName, candidateName } from "../../format/display";
+import { attributeName, candidateName, sourceName } from "../../format/display";
 
 /** The two catalogs a pair has to be read against. */
 export interface ItemNames {
   attributes: ReadonlyMap<string, string>;
   candidates: ReadonlyMap<string, string>;
+}
+
+/** The two catalogs a group's head is read against: failures by source, the rest by attribute. */
+export interface GroupNames {
+  attributes: ReadonlyMap<string, string>;
+  sources: ReadonlyMap<string, string>;
 }
 
 /**
@@ -44,17 +50,19 @@ export function itemPhrase(
 /**
  * What to call one group of items, which depends on what they were grouped by.
  *
- * **A source is already its own name and an attribute is not.** Failures group by source, where
- * `eurostat` and `oecd` are what the publisher is called and what every other panel on this
- * screen prints; unanswered items group by attribute, where the key is a key. Passing both
- * through one naming function would turn "oecd" into "Oecd", so the grouping decides.
+ * **Both keys are ids, each with its own catalog** (RB-4). Failures group by source and
+ * unanswered items by attribute; a source's key was once printed as it came, on the reasoning
+ * that `oecd` is what the publisher is called -- it is what the database calls it, and the
+ * catalog says "OECD".
  */
 export function groupLabel(
-  names: ItemNames,
+  names: GroupNames,
   groupedBy: "data_source" | "attribute",
   key: string,
 ): string {
-  return groupedBy === "attribute" ? attributeName(names.attributes, key) : key;
+  return groupedBy === "attribute"
+    ? attributeName(names.attributes, key)
+    : sourceName(names.sources, key);
 }
 
 /** Long enough for a sentence, short enough that a row stays a row. */

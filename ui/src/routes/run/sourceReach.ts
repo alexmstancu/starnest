@@ -14,6 +14,8 @@
  * arithmetic lives here and the component draws what it is given.
  */
 
+import { sourceName } from "../../format/display";
+
 export interface SourceReach {
   data_source?: string | null;
   items_stored?: number | null;
@@ -21,7 +23,10 @@ export interface SourceReach {
 }
 
 export interface SourceBar {
+  /** The source's id: what tells one bar from another, and never what is printed. */
   source: string;
+  /** What the catalog calls it, which is what is printed (RB-4). */
+  name: string;
   /** Percentage width of the fill, as an SVG attribute. */
   width: string;
   /** "142 of 145", or "142" where nothing failed. Fits the column; the sentence is the title. */
@@ -34,6 +39,7 @@ export interface SourceBar {
 
 export function sourceBars(
   reaches: readonly SourceReach[] | null | undefined,
+  names: ReadonlyMap<string, string>,
 ): SourceBar[] {
   const bars: SourceBar[] = [];
   for (const reach of reaches ?? []) {
@@ -45,23 +51,29 @@ export function sourceBars(
     // A source in the breakdown that touched nothing cannot be there: the list is the union of
     // the sources that stored something and the sources that failed at something.
     if (touched === 0) continue;
+    const name = sourceName(names, source);
     bars.push({
       source,
+      name,
       width: `${(stored / touched) * 100}%`,
       reading: failed > 0 ? `${stored} of ${touched}` : `${stored}`,
       sentence:
         failed > 0
-          ? `${source}: ${stored} stored, ${failed} failed`
-          : `${source}: ${stored} stored`,
+          ? `${name}: ${stored} stored, ${failed} failed`
+          : `${name}: ${stored} stored`,
       barren: stored === 0,
     });
   }
   // Most productive first. A breakdown ordered by name buries the source that did the work
   // among the ones that did none.
-  return bars.sort(byStoredThenName);
+  return bars.sort(byStoredThenId);
 }
 
-function byStoredThenName(left: SourceBar, right: SourceBar): number {
+/**
+ * **By id among equals, not by name.** The names arrive after the bars are drawn, and an order
+ * taken from them would move every bar under the reader's eye the moment the catalog answered.
+ */
+function byStoredThenId(left: SourceBar, right: SourceBar): number {
   if (left.barren !== right.barren) return left.barren ? 1 : -1;
   return left.source.localeCompare(right.source);
 }

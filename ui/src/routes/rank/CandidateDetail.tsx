@@ -14,7 +14,8 @@ import {
   useAttributeNames,
   type AttributeNames,
 } from "../../api/useAttributeNames";
-import { attributeName, pillarName } from "../../format/display";
+import { useSourceNames, type SourceNames } from "../../api/useSourceNames";
+import { attributeName, pillarName, sourceName } from "../../format/display";
 import {
   ABSENT,
   formatDate,
@@ -76,6 +77,7 @@ export function CandidateDetail({
 }) {
   const names = usePillarNames();
   const attributeNames = useAttributeNames();
+  const sourceNames = useSourceNames();
   const values = useResource(
     useCallback(
       (signal: AbortSignal) => fetchValues(candidate, { signal }),
@@ -190,6 +192,7 @@ export function CandidateDetail({
         <ValueTable
           names={attributeNames}
           pillarNames={names}
+          sourceNames={sourceNames}
           judgements={judgements}
           contributions={contributions}
           values={valuesInPillar(
@@ -216,7 +219,10 @@ export function CandidateDetail({
         <p className="screen__note">Loading…</p>
       )}
       {external.resource.status === "ready" && (
-        <ExternalScoreTable scores={external.resource.data.items} />
+        <ExternalScoreTable
+          scores={external.resource.data.items}
+          names={sourceNames}
+        />
       )}
     </section>
   );
@@ -263,6 +269,7 @@ function ValueTable({
   pillar,
   names,
   pillarNames,
+  sourceNames,
   judgements,
   contributions,
 }: {
@@ -272,6 +279,8 @@ function ValueTable({
   names: AttributeNames;
   /** The catalog's pillar names, for the same rule in the sentence about an empty pillar. */
   pillarNames: PillarNames;
+  /** The catalog's source names, for the same rule in each figure's provenance (RB-4). */
+  sourceNames: SourceNames;
   /** What the active set decided about each attribute: its weight, and whether it blocks. */
   judgements: Map<string, Judgement>;
   /**
@@ -350,7 +359,7 @@ function ValueTable({
                   <span className="value-cell__meta">
                     <span className="value-cell__label">Source</span>
                     <span className="value-cell__fact">
-                      {value.data_source}
+                      {sourceName(sourceNames, value.data_source)}
                       <Citations citations={value.citations} />
                     </span>
                     {copies > 1 && (
@@ -572,7 +581,17 @@ function PublisherName({
   );
 }
 
-function ExternalScoreTable({ scores }: { scores: ExternalScore[] }) {
+function ExternalScoreTable({
+  scores,
+  names,
+}: {
+  scores: ExternalScore[];
+  /**
+   * The catalog's source names. **A publisher is a data source** -- `external_score.data_source`
+   * references `data_source (id)` -- so it is named as every other source is (RB-4).
+   */
+  names: SourceNames;
+}) {
   if (scores.length === 0) {
     return (
       <p className="screen__note">
@@ -612,7 +631,7 @@ function ExternalScoreTable({ scores }: { scores: ExternalScore[] }) {
             >
               <th scope="row">
                 <PublisherName
-                  publisher={score.data_source}
+                  publisher={sourceName(names, score.data_source)}
                   methodology={score.methodology_url}
                 />
                 {/* **Both dates, as every stored figure has them** (UI-20): what period the

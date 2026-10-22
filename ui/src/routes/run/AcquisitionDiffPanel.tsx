@@ -3,11 +3,13 @@ import { type Run, fetchValuesFromRun } from "../../api/endpoints";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { useCandidateNames } from "../../api/useCandidateNames";
 import { useResource } from "../../api/useResource";
+import { useSourceNames } from "../../api/useSourceNames";
 import {
   attributeName,
   candidateName,
   formatCount,
   formatDateTime,
+  sourceName,
 } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { diffAcquisitions, progressOf, runIdFrom } from "./acquisitionDiff";
@@ -30,6 +32,7 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
   const [later, setLater] = useState<number | null>(null);
   const attributes = useAttributeNames();
   const candidates = useCandidateNames();
+  const sources = useSourceNames();
 
   // Read again when either run may have moved on, which a refresh of the history reveals
   // (UIR-A1, RB-3). `runs` is a new list only when the history has been read again.
@@ -175,7 +178,11 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
                         {candidateName(candidates, row.candidate)}
                       </th>
                       <td>{attributeName(attributes, row.attribute)}</td>
-                      <td>{row.data_source ?? "—"}</td>
+                      <td>
+                        {row.data_source == null
+                          ? "—"
+                          : sourceName(sources, row.data_source)}
+                      </td>
                       <td className="col--right">{row.earlier ?? "—"}</td>
                       <td className="col--right">{row.later ?? "—"}</td>
                       <td>

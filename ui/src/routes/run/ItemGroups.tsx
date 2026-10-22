@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { useCandidateNames } from "../../api/useCandidateNames";
+import { useSourceNames } from "../../api/useSourceNames";
 import { formatCount } from "../../format/display";
 import { HeldButton } from "./HeldButton";
 import { groupLabel, groupMeta, itemDetail, itemPhrase } from "./itemNames";
@@ -56,6 +57,7 @@ export function ItemGroups({
   const names = {
     attributes: useAttributeNames(),
     candidates: useCandidateNames(),
+    sources: useSourceNames(),
   };
 
   const groups = groupBy(items, groupedBy);
@@ -118,7 +120,7 @@ export function ItemGroups({
                     })
                   }
                 >
-                  {/* **"▸ oecd  12 items, 3 picked".** The design puts the count and the
+                  {/* **"▸ OECD  12 items, 3 picked".** The design puts the count and the
                       selection in one meta string beside the name rather than in a column of
                       its own, so a collapsed list reads as a list and not as a table. */}
                   <span className="group__caret" aria-hidden="true">

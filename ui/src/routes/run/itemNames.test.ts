@@ -15,6 +15,10 @@ const NAMES = {
     ["country.malta", "Malta"],
     ["country.liechtenstein", "Liechtenstein"],
   ]),
+  sources: new Map([
+    ["oecd", "OECD"],
+    ["llm", "LLM with web search"],
+  ]),
 };
 
 describe("one item of an acquisition, as a phrase", () => {
@@ -77,12 +81,19 @@ describe("one item of an acquisition, as a phrase", () => {
 
 describe("what to call a group of items", () => {
   /**
-   * **A source is already its own name and an attribute is not.** Passing both through one
-   * naming function would print "Oecd" for a publisher every other panel here calls "oecd".
+   * RB-4. **A source's key is an id too**, and printing it put `oecd` and `llm` at the head of
+   * the failures where the catalog says "OECD" and "LLM with web search". It used to be left
+   * alone on the reasoning that `oecd` *is* the publisher's name -- it is the publisher's id.
    */
-  it("leaves a source alone, because the key is the publisher's name", () => {
-    expect(groupLabel(NAMES, "data_source", "oecd")).toBe("oecd");
-    expect(groupLabel(NAMES, "data_source", "eurostat")).toBe("eurostat");
+  it("names a source as the catalog does", () => {
+    expect(groupLabel(NAMES, "data_source", "oecd")).toBe("OECD");
+    expect(groupLabel(NAMES, "data_source", "llm")).toBe("LLM with web search");
+  });
+
+  it("names a source the catalog has not answered for by its id made readable", () => {
+    expect(groupLabel(NAMES, "data_source", "eurostat_estimate")).toBe(
+      "Eurostat estimate",
+    );
   });
 
   it("names an attribute, because the key is a key", () => {

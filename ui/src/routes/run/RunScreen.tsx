@@ -4,7 +4,13 @@ import {
   type RunDetail,
   type RunPlan,
 } from "../../api/endpoints";
-import { formatCount, formatDateTime, formatMoney } from "../../format/display";
+import { useSourceNames } from "../../api/useSourceNames";
+import {
+  formatCount,
+  formatDateTime,
+  formatMoney,
+  sourceName,
+} from "../../format/display";
 import type { RouteDefinition } from "../../navigation/routes";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
@@ -408,6 +414,7 @@ function GapEstimate({
  * paid calls, a ceiling -- are in the card; this is the detail behind them.
  */
 function PerSourcePlan({ plan }: { plan: RunPlan }) {
+  const names = useSourceNames();
   const sources = plan.by_source ?? [];
   if (sources.length === 0) return null;
   return (
@@ -425,7 +432,7 @@ function PerSourcePlan({ plan }: { plan: RunPlan }) {
         <tbody>
           {sources.map((source) => (
             <tr key={source.data_source}>
-              <th scope="row">{source.data_source}</th>
+              <th scope="row">{sourceName(names, source.data_source ?? "")}</th>
               <td>{formatCount(source.items)}</td>
             </tr>
           ))}
@@ -743,7 +750,8 @@ function SourceBySource({
 }: {
   reaches?: readonly SourceReach[] | null;
 }) {
-  const bars = sourceBars(reaches);
+  const names = useSourceNames();
+  const bars = sourceBars(reaches, names);
   if (bars.length === 0) return null;
 
   return (
@@ -752,7 +760,7 @@ function SourceBySource({
       <ul className="reach__list">
         {bars.map((bar) => (
           <li key={bar.source} className="reach__row">
-            <span className="reach__source">{bar.source}</span>
+            <span className="reach__source">{bar.name}</span>
             <svg
               className="reach__track"
               viewBox="0 0 100 5"

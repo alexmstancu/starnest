@@ -6,7 +6,13 @@ import {
   type StoredValue,
 } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
-import { formatDate, formatDateTime, candidateName} from "../../format/display";
+import { useSourceNames } from "../../api/useSourceNames";
+import {
+  formatDate,
+  formatDateTime,
+  candidateName,
+  sourceName,
+} from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { describeFigure } from "../../format/figure";
 
@@ -95,6 +101,7 @@ export function AttributeDrillDown({ levelId }: { levelId: string | null }) {
 
 function AcrossCandidates({ values }: { values: StoredValue[] }) {
   const candidateNames = useCandidateNames();
+  const sourceNames = useSourceNames();
   if (values.length === 0) {
     return (
       <p className="screen__note">
@@ -131,7 +138,7 @@ function AcrossCandidates({ values }: { values: StoredValue[] }) {
                 <td title={value.quote ?? undefined}>
                   {describeFigure(value)}
                 </td>
-                <td>{value.data_source}</td>
+                <td>{sourceName(sourceNames, value.data_source)}</td>
                 <td>
                   {formatDate(value.reference_period.start)} to{" "}
                   {formatDate(value.reference_period.end)}

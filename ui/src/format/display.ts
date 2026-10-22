@@ -163,6 +163,21 @@ export function pillarName(names: ReadonlyMap<string, string>, pillar: string): 
 }
 
 /**
+ * One data source's name, or its id made readable.
+ *
+ * **The catalog's name, not the id** (RB-4). A plan, a run, a stored value and an outside
+ * opinion all carry a source *id* -- `world_bank`, `llm` -- where the catalog has said "World
+ * Bank" and "LLM with web search" since `0100`, and the design allows no programmatic
+ * identifier in rendered text.
+ *
+ * **Falls back to the id made readable, as `pillarName` does**: the names are a label read once
+ * per page, and nothing that shows a source should wait for them, or go blank if they fail.
+ */
+export function sourceName(names: ReadonlyMap<string, string>, source: string): string {
+  return names.get(source) ?? formatIdentifier(source);
+}
+
+/**
  * One attribute's name, or its id made readable.
  *
  * **The design states this as a rule**: "No programmatic identifiers in rendered text -- no
