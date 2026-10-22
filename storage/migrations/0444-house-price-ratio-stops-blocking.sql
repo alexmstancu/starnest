@@ -23,13 +23,13 @@
 -- attribute's by a composite foreign key.
 -- depends: 0443-cost-of-living-becomes-a-quantity
 
+-- **Locked first** (BE-A1): a set edit committed between the copy below and its delete was
+-- replaced by the older copy. SHARE ROW EXCLUSIVE waits for an edit in flight and holds off
+-- new ones until this commits, while reads go on.
+LOCK TABLE criterion IN SHARE ROW EXCLUSIVE MODE;
+
 INSERT INTO unit (id, name) VALUES ('years_of_income', 'Years of income')
 ON CONFLICT (id) DO NOTHING;
-
--- **Locked before the copy** (BE-A1): a set edit committed between the copy below and its
--- delete was replaced by the older copy. SHARE ROW EXCLUSIVE waits for an edit in flight and
--- holds off new ones until this commits, while reads go on.
-LOCK TABLE criterion IN SHARE ROW EXCLUSIVE MODE;
 
 CREATE TEMPORARY TABLE held_criterion ON COMMIT DROP AS
 SELECT * FROM criterion WHERE attribute = 'country.house_price_to_income_ratio';
@@ -46,11 +46,14 @@ INSERT INTO attribute_quantity_parameter (attribute, value_type, unit)
 VALUES ('country.house_price_to_income_ratio', 'Quantity', 'years_of_income')
 ON CONFLICT (attribute) DO UPDATE SET unit = EXCLUDED.unit;
 
--- Every criterion that held it comes back with the new type, the same weight and goal, and --
--- the point of this migration -- no longer blocking.
+-- Every criterion that held it comes back with the new type, every rule a person put on it --
+-- the same number is being described, so a lock, a band and its zero points all still mean
+-- what they meant (RE-3) -- and, the point of this migration, no longer blocking.
 INSERT INTO criterion (
-    criteria_set, attribute, pillar, value_type, is_scored, weight, goal, normalisation_method,
-    blocks_if_missing)
-SELECT criteria_set, attribute, pillar, 'Quantity', is_scored, weight, goal,
-       normalisation_method, false
+    criteria_set, attribute, pillar, value_type, breakdown_option, is_scored, weight,
+    weight_locked, goal, target_range_min, target_range_max, zero_score_below,
+    zero_score_above, normalisation_method, reducer_mode, blocks_if_missing)
+SELECT criteria_set, attribute, pillar, 'Quantity', breakdown_option, is_scored, weight,
+       weight_locked, goal, target_range_min, target_range_max, zero_score_below,
+       zero_score_above, normalisation_method, reducer_mode, false
 FROM   held_criterion;

@@ -213,138 +213,264 @@ def test_a_rollback_clears_a_figures_own_rows_before_the_figure(
 #: one waits for any write already in flight and holds off any new one until the transaction ends.
 WRITER_BLOCKING_MODES = frozenset({"share", "share row exclusive", "exclusive", "access exclusive"})
 
-
-def without_comments(sql: str) -> str:
-    return re.sub(r"^\s*--.*$", "", sql, flags=re.M)
-
-
-def tables_read_by(statement: str) -> set[str]:
-    named = re.findall(r"\b(?:from|join)\s+\"?([a-z_]+)\"?", statement, re.I)
-    return {name.lower() for name in named}
-
-
 LOCK_STATEMENT = re.compile(
     r"^\s*lock\s+(?:table\s+)?(?:only\s+)?(.+?)"
-    r"(?:\s+in\s+([a-z ]+?)\s+mode)?(?:\s+nowait)?\s*;",
-    re.I | re.M | re.S,
+    r"(?:\s+in\s+([a-z ]+?)\s+mode)?(?:\s+nowait)?\s*$",
+    re.I | re.S,
 )
 
 
-def locks_taken(sql: str) -> list[tuple[int, str, set[str]]]:
-    """Every `LOCK` statement: where it starts, the mode it takes, and the tables it names.
+def code_of(sql: str) -> str:
+    """The SQL with its comments removed and its string literals emptied.
 
-    A `LOCK` that names no mode takes ACCESS EXCLUSIVE, PostgreSQL's default.
+    **A table named in prose is not a table read.** Comments run to whole paragraphs here, and a
+    refusal's message says "restore from the backup", which a reader of `FROM <name>` takes for a
+    table called `the`. A dollar-quoted body stays: a `DO` block is code, and it is the code a
+    refusal decides with.
     """
-    return [
-        (
-            match.start(),
-            " ".join((match.group(2) or "access exclusive").lower().split()),
-            {name.strip().strip('"').lower() for name in match.group(1).split(",")},
+    kept: list[str] = []
+    at = 0
+    while at < len(sql):
+        if sql.startswith("--", at):
+            end = sql.find("\n", at)
+            at = len(sql) if end < 0 else end
+        elif sql.startswith("/*", at):
+            end = sql.find("*/", at + 2)
+            at = len(sql) if end < 0 else end + 2
+            kept.append(" ")
+        elif sql[at] == "'":
+            end = at + 1
+            while end < len(sql) and not (sql[end] == "'" and not sql.startswith("''", end)):
+                end += 2 if sql.startswith("''", end) else 1
+            kept.append("''")
+            at = end + 1
+        else:
+            kept.append(sql[at])
+            at += 1
+    return "".join(kept)
+
+
+def statements_in(code: str) -> list[str]:
+    """`code` cut at every semicolon, a `DO` block's too: each piece still reads what it read."""
+    return [piece for piece in (part.strip() for part in code.split(";")) if piece]
+
+
+def tables_read_by(statement: str) -> set[str]:
+    named = re.findall(r"\b(?:from|join)\s+(?:only\s+)?\"?([a-z_]+)\"?", statement, re.I)
+    return {name.lower() for name in named}
+
+
+def tables_changed_by(statement: str) -> set[str]:
+    named = re.findall(r"\b(?:delete\s+from|update)\s+(?:only\s+)?\"?([a-z_]+)\"?", statement, re.I)
+    return {name.lower() for name in named} - {"set"}
+
+
+def locked_first(code: str) -> set[str]:
+    """The tables locked, in a mode that holds off writers, before anything else is done.
+
+    **First, not merely before.** Under READ COMMITTED a lock taken just before a read is enough,
+    since each statement takes its own snapshot; under REPEATABLE READ the snapshot is the first
+    statement's, and a lock after it guards a read that may already be stale. Locks first holds
+    under either, and reads as what it is: the migration claims what it will decide on.
+    """
+    held: set[str] = set()
+    for statement in statements_in(code):
+        lock = LOCK_STATEMENT.match(statement)
+        if lock is None:
+            break
+        mode = " ".join((lock.group(2) or "access exclusive").lower().split())
+        if mode in WRITER_BLOCKING_MODES:
+            held |= {
+                name.strip().strip('"').rstrip("*").strip().lower()
+                for name in lock.group(1).split(",")
+            }
+    return held
+
+
+def read_by_a_refusal(code: str) -> set[str]:
+    """Every table a `DO` block that raises reads: the evidence a refusal decides on."""
+    return {
+        table
+        for block in re.findall(r"\bdo\s+\$\$(.*?)\$\$", code, re.I | re.S)
+        if re.search(r"\braise\s+exception\b", block, re.I)
+        for table in tables_read_by(block)
+    }
+
+
+def copied_then_changed(code: str) -> set[str]:
+    """Every table rows are copied from and that the same migration then deletes from or updates.
+
+    A copy is any statement that writes rows it selects -- `INSERT ... SELECT`, `CREATE [TEMP]
+    TABLE ... AS SELECT` -- whatever it writes into: a temp table filled later is a copy too.
+    """
+    statements = statements_in(code)
+    copied_changed: set[str] = set()
+    for position, statement in enumerate(statements):
+        writes_rows = re.match(
+            r"(?:insert\s+into|create\s+(?:temp(?:orary)?\s+)?table)\b", statement, re.I
         )
-        for match in LOCK_STATEMENT.finditer(sql)
-    ]
+        if writes_rows is None or not re.search(r"\bselect\b", statement, re.I):
+            continue
+        changed_later = set().union(*(tables_changed_by(s) for s in statements[position + 1 :]))
+        copied_changed |= tables_read_by(statement) & changed_later
+    return copied_changed
 
 
-def reads_unlocked(sql: str, reads: list[tuple[int, set[str]]]) -> set[str]:
-    """The tables in `reads` that no writer-blocking lock taken earlier in `sql` covers."""
-    locks = locks_taken(sql)
-    unlocked: set[str] = set()
-    for position, tables in reads:
-        held = {
-            table
-            for taken_at, mode, named in locks
-            if taken_at < position and mode in WRITER_BLOCKING_MODES
-            for table in named
-        }
-        unlocked |= tables - held
-    return unlocked
+def unlocked_refusal_reads(sql: str) -> set[str]:
+    code = code_of(sql)
+    return read_by_a_refusal(code) - locked_first(code)
 
 
-def counts_in(sql: str) -> list[tuple[int, set[str]]]:
-    """Every `count(*)` statement, and the tables it reads: the evidence a refusal decides on."""
-    return [
-        (match.start(), tables_read_by(match.group(0)))
-        for match in re.finditer(r"\bcount\s*\(\s*\*\s*\)[^;]*;", sql, re.I)
-    ]
-
-
-def lifts_in(sql: str) -> list[tuple[int, set[str]]]:
-    """Every temp table filled from a real one, and the tables it is filled from."""
-    lifts = [
-        (match.start(), tables_read_by(match.group(0)))
-        for match in re.finditer(r"\bcreate\s+temp(?:orary)?\s+table\b[^;]*;", sql, re.I)
-    ]
-    return [(position, tables) for position, tables in lifts if tables]
+def unlocked_copies(sql: str) -> set[str]:
+    code = code_of(sql)
+    return copied_then_changed(code) - locked_first(code)
 
 
 def rollbacks_that_refuse() -> list[Path]:
     return sorted(
-        p
-        for p in MIGRATIONS.glob("*.rollback.sql")
-        if re.search(r"\braise\s+exception\b", without_comments(p.read_text()), re.I)
+        p for p in MIGRATIONS.glob("*.rollback.sql") if read_by_a_refusal(code_of(p.read_text()))
     )
 
 
-def migrations_that_lift_rows() -> list[Path]:
-    return sorted(p for p in MIGRATIONS.glob("*.sql") if lifts_in(without_comments(p.read_text())))
+def migrations_that_copy_then_change() -> list[Path]:
+    return sorted(
+        p for p in MIGRATIONS.glob("*.sql") if copied_then_changed(code_of(p.read_text()))
+    )
 
 
-def test_there_are_rollbacks_that_refuse_and_migrations_that_lift() -> None:
+def test_there_are_rollbacks_that_refuse_and_migrations_that_copy() -> None:
     """Guards the two tests below, which a glob that matched nothing would pass silently."""
     assert len(rollbacks_that_refuse()) >= 4
-    assert len(migrations_that_lift_rows()) >= 6
+    assert len(migrations_that_copy_then_change()) >= 13
 
 
 @pytest.mark.parametrize(
     "rollback", rollbacks_that_refuse(), ids=lambda p: p.name.removesuffix(".rollback.sql")
 )
-def test_a_refusing_rollback_locks_what_it_counts_before_counting(rollback: Path) -> None:
-    """**A refusal decided on a count is only as good as the count** (BE-A1).
+def test_a_refusing_rollback_locks_what_its_refusal_reads(rollback: Path) -> None:
+    """**A refusal is only as good as the read it decides on** (BE-A1).
 
     A rollback that refuses over recorded history -- a billed call, a hand-entered answer, a
-    stored figure -- counts it first and acts on the count. `count(*)` takes ACCESS SHARE, which
-    stops no writer: a row committed between the count and the act is one the refusal never saw.
+    stored figure -- reads it first and acts on what it read. A read takes ACCESS SHARE, which
+    stops no writer: a row committed between the read and the act is one the refusal never saw.
     `0503` dropped its table over such a row, and the others met a raw foreign-key error instead
-    of their own refusal. Locking every counted table in a mode that conflicts with ROW EXCLUSIVE,
-    *before* the count, makes the count final: a write in flight lands first and is counted, and
-    none can land after until the rollback commits.
+    of their own refusal. Every table the refusal reads is locked, in a mode that holds off
+    writers, before anything else: a write in flight lands first and is counted, and none can
+    land after until the rollback commits.
 
-    `test_rollback_races` shows each lock doing this against a real write; this holds every
+    `test_rollback_races` shows the locks doing this against real writes; this holds every
     rollback that refuses, including any written later, to the same rule.
     """
-    sql = without_comments(rollback.read_text())
-    counted = counts_in(sql)
-    assert counted, f"{rollback.name} refuses on something other than a count; read it by hand"
-
-    unlocked = reads_unlocked(sql, counted)
+    unlocked = unlocked_refusal_reads(rollback.read_text())
 
     assert unlocked == set(), (
-        f"{rollback.name} counts {sorted(unlocked)} without first locking "
+        f"{rollback.name} refuses on what it reads of {sorted(unlocked)} without first locking "
         f"{'them' if len(unlocked) > 1 else 'it'} in one of {sorted(WRITER_BLOCKING_MODES)}, so "
-        "a row committed between the count and the act escapes the refusal"
+        "a row committed between the read and the act escapes the refusal"
     )
 
 
-@pytest.mark.parametrize("migration", migrations_that_lift_rows(), ids=lambda p: p.stem)
-def test_a_migration_locks_a_table_before_lifting_its_rows(migration: Path) -> None:
-    """**A copy taken to be put back must be the last word on what it copied** (BE-A1).
+@pytest.mark.parametrize("migration", migrations_that_copy_then_change(), ids=lambda p: p.stem)
+def test_a_migration_locks_what_it_copies_and_then_changes(migration: Path) -> None:
+    """**A copy taken to replace what it was copied from must be the last word on it** (BE-A1,
+    RE-2).
 
-    A retype lifts a criterion's rows into a temp table, deletes them, and inserts the copy back
-    once the attribute has moved. A set edit committed between the copy and the delete is
-    deleted with the rest and replaced by the copy taken before it: the edit is lost, and its
-    pillar's weights may no longer sum to 100. Locking the table first, in a mode that conflicts
-    with ROW EXCLUSIVE, makes the copy final -- an edit in flight lands first and is copied, and
-    none can land after until the migration commits.
+    A retype lifts a criterion's rows into a temp table, deletes them, and inserts the copy back;
+    a replacement copies one attribute's criteria onto its successor and deletes the old ones. A
+    set edit committed between the copy and the delete is deleted with the rest, and the copy
+    taken before it stands in its place: the edit is lost, and its pillar's weights may no longer
+    sum to 100. Every table copied from and then changed is locked first, in a mode that holds off
+    writers -- an edit in flight lands first and is copied, and none lands after until the
+    migration commits.
 
     Forward migrations are held to it as well as rollbacks: `make migrate` runs while the backend
     may be serving edits, exactly as `make rollback` does.
     """
-    sql = without_comments(migration.read_text())
-
-    unlocked = reads_unlocked(sql, lifts_in(sql))
+    unlocked = unlocked_copies(migration.read_text())
 
     assert unlocked == set(), (
-        f"{migration.name} copies rows of {sorted(unlocked)} to put back later without first "
-        f"locking {'them' if len(unlocked) > 1 else 'it'} in one of "
-        f"{sorted(WRITER_BLOCKING_MODES)}, so a write committed after the copy is lost"
+        f"{migration.name} copies rows of {sorted(unlocked)} and then changes "
+        f"{'them' if len(unlocked) > 1 else 'it'} without first locking "
+        f"{'them' if len(unlocked) > 1 else 'it'} in one of {sorted(WRITER_BLOCKING_MODES)}, so "
+        "an edit committed after the copy is lost"
     )
+
+
+LOCKED = "LOCK TABLE criterion IN SHARE ROW EXCLUSIVE MODE;\n"
+LIFT_AND_RESTORE = (
+    "CREATE TEMP TABLE kept AS SELECT * FROM criterion WHERE attribute = 'a';\n"
+    "DELETE FROM criterion WHERE attribute = 'a';\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("sql", "unlocked"),
+    [
+        (LIFT_AND_RESTORE, {"criterion"}),
+        (LOCKED + LIFT_AND_RESTORE, set()),
+        (
+            "INSERT INTO criterion (attribute) SELECT 'b' FROM criterion WHERE attribute = 'a';\n"
+            "DELETE FROM criterion WHERE attribute = 'a';\n",
+            {"criterion"},
+        ),
+        (
+            "CREATE TEMP TABLE kept (attribute text);\n"
+            "INSERT INTO kept SELECT attribute FROM criterion;\n"
+            "UPDATE criterion SET weight = 0;\n",
+            {"criterion"},
+        ),
+        (
+            "CREATE TABLE kept AS SELECT * FROM /* the old rows */ criterion;\n"
+            "DELETE FROM criterion;\n",
+            {"criterion"},
+        ),
+        ("INSERT INTO unit (id) VALUES ('x');\n" + LOCKED + LIFT_AND_RESTORE, {"criterion"}),
+        (
+            "LOCK TABLE criterion IN ROW SHARE MODE;\n" + LIFT_AND_RESTORE,
+            {"criterion"},
+        ),
+        ("LOCK TABLE ONLY criterion IN SHARE MODE NOWAIT;\n" + LIFT_AND_RESTORE, set()),
+        ("LOCK criterion;\n" + LIFT_AND_RESTORE, set()),
+        ("INSERT INTO criterion SELECT * FROM criterion WHERE criteria_set = 'a';\n", set()),
+        ("-- copies FROM criterion, then DELETE FROM criterion\nSELECT 1;\n", set()),
+    ],
+    ids=[
+        "a temp-table copy",
+        "locked first",
+        "insert-select",
+        "a temp table filled later",
+        "create table as, behind a comment",
+        "locked, but not first",
+        "a mode that admits writers",
+        "only and nowait",
+        "no mode: access exclusive",
+        "a copy nothing then changes",
+        "prose",
+    ],
+)
+def test_the_copy_rule_reads_sql_as_a_migration_writes_it(sql: str, unlocked: set[str]) -> None:
+    """The rule is only as good as its reading, so the reading is tested on the shapes a
+    migration could plausibly take -- including the ones the first version missed (RE-2)."""
+    assert unlocked_copies(sql) == unlocked
+
+
+@pytest.mark.parametrize(
+    ("sql", "unlocked"),
+    [
+        (
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM value) OR (SELECT count(1) FROM evaluation) > 0 "
+            "THEN RAISE EXCEPTION 'restore from the backup'; END IF; END $$;\n",
+            {"value", "evaluation"},
+        ),
+        (
+            "LOCK TABLE value, evaluation IN SHARE ROW EXCLUSIVE MODE;\n"
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM value JOIN evaluation ON true) "
+            "THEN RAISE EXCEPTION 'from the backup'; END IF; END $$;\n",
+            set(),
+        ),
+        ("DO $$ BEGIN PERFORM 1 FROM value; END $$;\n", set()),
+    ],
+    ids=["exists and count(1)", "locked first", "a block that never refuses"],
+)
+def test_the_refusal_rule_reads_sql_as_a_migration_writes_it(sql: str, unlocked: set[str]) -> None:
+    assert unlocked_refusal_reads(sql) == unlocked

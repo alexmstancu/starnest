@@ -1,6 +1,6 @@
--- **Locked before the copy** (BE-A1): a set edit committed between the copy below and its
--- delete was replaced by the older copy. SHARE ROW EXCLUSIVE waits for an edit in flight and
--- holds off new ones until this commits, while reads go on.
+-- **Locked first** (BE-A1): a set edit committed between the copy below and its delete was
+-- replaced by the older copy. SHARE ROW EXCLUSIVE waits for an edit in flight and holds off
+-- new ones until this commits, while reads go on.
 LOCK TABLE criterion IN SHARE ROW EXCLUSIVE MODE;
 
 CREATE TEMPORARY TABLE held_criterion ON COMMIT DROP AS
@@ -15,10 +15,14 @@ WHERE id = 'country.house_price_to_income_ratio';
 INSERT INTO attribute_ratio_parameter (attribute, value_type, basis)
 VALUES ('country.house_price_to_income_ratio', 'Ratio', 'annual_income');
 
+-- Every rule a person put on the criterion comes back with it (RE-3), and it blocks again.
 INSERT INTO criterion (
-    criteria_set, attribute, pillar, value_type, is_scored, weight, goal, normalisation_method,
-    blocks_if_missing)
-SELECT criteria_set, attribute, pillar, 'Ratio', is_scored, weight, goal, normalisation_method, true
+    criteria_set, attribute, pillar, value_type, breakdown_option, is_scored, weight,
+    weight_locked, goal, target_range_min, target_range_max, zero_score_below,
+    zero_score_above, normalisation_method, reducer_mode, blocks_if_missing)
+SELECT criteria_set, attribute, pillar, 'Ratio', breakdown_option, is_scored, weight,
+       weight_locked, goal, target_range_min, target_range_max, zero_score_below,
+       zero_score_above, normalisation_method, reducer_mode, true
 FROM   held_criterion;
 -- The vocabulary row this added, removed. `ON CONFLICT DO NOTHING` on the way in means the
 -- insert is idempotent and an existing row was left alone, so this deletes only what nothing

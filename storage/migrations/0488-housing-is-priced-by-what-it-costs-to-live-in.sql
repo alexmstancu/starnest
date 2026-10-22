@@ -36,6 +36,12 @@
 -- different vintage five years stale would be a second quantity wearing this one's name.
 -- depends: 0487-career-is-measured-by-the-workforce-that-exists
 
+-- **Locked first** (RE-2): the criteria copied below are then deleted, so a set edit
+-- committed between the copy and the delete would be lost to the older copy. SHARE ROW
+-- EXCLUSIVE waits for an edit in flight and holds off new ones until this commits, while
+-- reads go on.
+LOCK TABLE criterion IN SHARE ROW EXCLUSIVE MODE;
+
 INSERT INTO attribute (id, name, level, pillar, value_type, description, max_age,
                        lifecycle_status, manual_entry)
 VALUES ('country.housing_price_level', 'Housing price level', 'country', 'housing', 'Quantity',

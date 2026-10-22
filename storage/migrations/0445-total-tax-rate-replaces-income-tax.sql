@@ -31,6 +31,12 @@
 -- same treatment `0442` gave `crime_safety_index`.
 -- depends: 0444-house-price-ratio-stops-blocking
 
+-- **Locked first** (RE-2): the criteria copied below are then deleted, so a set edit
+-- committed between the copy and the delete would be lost to the older copy. SHARE ROW
+-- EXCLUSIVE waits for an edit in flight and holds off new ones until this commits, while
+-- reads go on.
+LOCK TABLE criterion IN SHARE ROW EXCLUSIVE MODE;
+
 INSERT INTO attribute (id, pillar, level, value_type, name, description, max_age, manual_entry)
 VALUES (
     'country.total_tax_rate_effective', 'economics', 'country', 'Ratio',

@@ -20,7 +20,11 @@ from typing import Any
 import psycopg
 import pytest
 from psycopg import errors
+from psycopg.rows import namedtuple_row
+from psycopg_pool import AsyncConnectionPool
 from yoyo.migrations import read_sql_migration
+
+from starnest.storage.criteria_store import PostgresCriteriaStore, _criteria_set_from
 
 pytestmark = pytest.mark.storage
 
@@ -226,5 +230,70 @@ async def test_an_edit_committed_while_a_rollback_waits_is_carried_through_it(
 
     assert outcome == [(not stored[0],)], (
         f"{migration} should have carried the edit committed while it waited, "
+        f"and came to {outcome!r}"
+    )
+
+
+@pytest.mark.parametrize(("migration", "attribute"), LIFTS, ids=[lift[0][:4] for lift in LIFTS])
+async def test_an_edit_written_as_the_application_writes_it_is_carried_through_it(
+    migration: str, attribute: str, database_url: str, pool: AsyncConnectionPool
+) -> None:
+    """**The real writer, not a stand-in.** The application writes a set by locking its row,
+    deleting its criteria and inserting them again (`edit_criteria_set`, ST-02), so the rows the
+    rollback meets are new ones. That edit, held open until the rollback waits for it, is what the
+    rollback's copy reads, and it comes through. Unlocked, the rollback missed the new rows,
+    deleted around them, and failed on the foreign key they still held.
+
+    The store's own queries do the writing, in the order `edit_criteria_set` runs them, on a
+    connection this test holds open: the store commits as soon as it is done.
+    """
+    store = PostgresCriteriaStore(pool)
+    where = "WHERE criteria_set = %s AND attribute = %s"
+    # The row shape the store's own `acquire` gives every connection it uses.
+    async with await psycopg.AsyncConnection.connect(
+        database_url, row_factory=namedtuple_row
+    ) as writer:
+        stored = await (
+            await writer.execute(
+                f"SELECT weight_locked FROM criterion {where}", (EDITED_SET, attribute)
+            )
+        ).fetchone()
+        assert stored is not None, f"{EDITED_SET} has no criterion on {attribute} to edit"
+        await writer.commit()
+        try:
+            await store._queries.lock_criteria_set(writer, criteria_set=EDITED_SET)
+            current = _criteria_set_from(
+                await store._queries.select_criteria_set(
+                    writer, criteria_set=EDITED_SET, level=None
+                )
+            )
+            edited = current.model_copy(
+                update={
+                    "criteria": tuple(
+                        criterion.model_copy(update={"weight_locked": not stored[0]})
+                        if str(criterion.attribute) == attribute
+                        else criterion
+                        for criterion in current.criteria
+                    )
+                }
+            )
+            await store._queries.delete_criteria_set_contents(writer, criteria_set=EDITED_SET)
+            await store._write_contents(writer, edited)
+            outcome = await race(
+                database_url,
+                migration,
+                writer,
+                probe=(f"SELECT weight_locked FROM criterion {where}", (EDITED_SET, attribute)),
+            )
+        finally:
+            await writer.rollback()
+            await writer.execute(
+                f"UPDATE criterion SET weight_locked = %s {where}",
+                (stored[0], EDITED_SET, attribute),
+            )
+            await writer.commit()
+
+    assert outcome == [(not stored[0],)], (
+        f"{migration} should have carried the edit the application committed while it waited, "
         f"and came to {outcome!r}"
     )

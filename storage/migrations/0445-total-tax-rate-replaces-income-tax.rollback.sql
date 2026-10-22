@@ -1,3 +1,9 @@
+-- **Locked first** (RE-2): the criteria copied below are then deleted, so a set edit
+-- committed between the copy and the delete would be lost to the older copy. SHARE ROW
+-- EXCLUSIVE waits for an edit in flight and holds off new ones until this commits, while
+-- reads go on.
+LOCK TABLE criterion IN SHARE ROW EXCLUSIVE MODE;
+
 UPDATE attribute SET lifecycle_status = 'active' WHERE id = 'country.income_tax_effective';
 
 INSERT INTO criterion (

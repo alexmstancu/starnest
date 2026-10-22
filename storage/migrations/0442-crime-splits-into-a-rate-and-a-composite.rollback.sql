@@ -1,3 +1,9 @@
+-- **Locked first** (RE-2): the criterion copied below is then deleted, and the attribute
+-- read beside it is then changed, so a write committed between the copy and the change would
+-- be lost to the older copy. SHARE ROW EXCLUSIVE waits for a write in flight and holds off
+-- new ones until this commits, while reads go on.
+LOCK TABLE attribute, criterion IN SHARE ROW EXCLUSIVE MODE;
+
 UPDATE attribute SET lifecycle_status = 'active' WHERE id = 'country.crime_safety_index';
 
 INSERT INTO criterion (

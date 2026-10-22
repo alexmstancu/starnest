@@ -27,6 +27,12 @@
 -- is gone, and a retired attribute keeps the account of why it existed.
 -- depends: 0413-economics-joins-the-minimal-set
 
+-- **Locked first** (RE-2): the criterion copied below is then deleted, and the attribute
+-- read beside it is then changed, so a write committed between the copy and the change would
+-- be lost to the older copy. SHARE ROW EXCLUSIVE waits for a write in flight and holds off
+-- new ones until this commits, while reads go on.
+LOCK TABLE attribute, criterion IN SHARE ROW EXCLUSIVE MODE;
+
 INSERT INTO unit (id, name) VALUES
     ('per_100000_population', 'Per 100,000 population')
 ON CONFLICT (id) DO NOTHING;

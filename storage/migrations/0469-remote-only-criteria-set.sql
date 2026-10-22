@@ -23,6 +23,11 @@
 -- the scenario, and the arithmetic is asserted at the end.
 -- depends: 0468-a-band-needs-the-method-that-can-draw-it
 
+-- **Locked first** (RE-2), by the rule for any migration that copies rows and then changes
+-- the table it copied from. The update below touches only the new set's rows, so nothing
+-- could be lost here; the lock costs nothing and keeps the rule one a test can check.
+LOCK TABLE criterion IN SHARE ROW EXCLUSIVE MODE;
+
 INSERT INTO criteria_set (id, name) VALUES
     ('remote_only', 'Remote only')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
