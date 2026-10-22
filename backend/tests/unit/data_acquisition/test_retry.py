@@ -50,8 +50,9 @@ from starnest.data_acquisition.execution import _AskedOnlyAbout, _FailedOn
 
 
 def _only_about(attributes, candidates=("country.portugal",)) -> _FailedOn:
-    """A `_FailedOn` for the wrapper tests, which care about one dimension at a time."""
-    return _FailedOn(attributes=frozenset(attributes), candidates=frozenset(candidates))
+    """A `_FailedOn` for the wrapper tests, which care about one dimension at a time -- so the
+    pairs are the product of the attributes and candidates given."""
+    return _FailedOn(pairs=frozenset((a, c) for a in attributes for c in candidates))
 
 
 COUNTRY = {"id": "country", "depth_order": 1}
@@ -118,6 +119,7 @@ class PaidPerCandidate(SourceAdapter):
         self._eur_per_call = Decimal(eur_per_call)
         self.meter: RunningSpend | None = None
         self.asked_about: list[str] = []
+        self.asked_pairs: list[tuple[str, str]] = []
 
     @property
     def data_source(self) -> DataSourceId:
@@ -151,6 +153,7 @@ class PaidPerCandidate(SourceAdapter):
                 )
                 continue
             self.asked_about.append(str(candidate.id))
+            self.asked_pairs.append((str(attribute.id), str(candidate.id)))
             cost, calls = cost + self._eur_per_call, calls + 1
             if self.meter is not None:
                 self.meter.spent(cost_eur=self._eur_per_call, calls=1)
@@ -465,6 +468,85 @@ class TestARetryAsksEachSourceOnlyAboutItsOwnFailures:
 
         assert paid.asked_about == [str(SPAIN.id)]
 
+    async def test_a_paid_source_is_asked_only_the_exact_pairs_it_failed_on(self) -> None:
+        """BE-11. The scope was the rectangle of every failed attribute by every failed candidate,
+        so a source that failed on (overburden, Portugal) and (overcrowding, Spain) was re-asked
+        all four corners -- paying again for the two pairs it had answered. It is asked the two
+        pairs it actually failed, and no more."""
+        paid = PaidPerCandidate((OVERBURDEN, OVERCROWDING))
+        failed = Run(
+            id=22,
+            status=RunStatus.COMPLETED,
+            started_at=datetime.now(UTC),
+            triggered_by="user",
+            scope=RunScope(
+                level="country",
+                candidates=(str(PORTUGAL.id), str(SPAIN.id)),
+                attributes=(OVERBURDEN, OVERCROWDING),
+            ),
+            failures=(
+                AcquisitionFailure(
+                    attribute=OVERBURDEN,
+                    reason="the model could not be reached",
+                    candidate=str(PORTUGAL.id),
+                    data_source=DataSourceId("llm"),
+                ),
+                AcquisitionFailure(
+                    attribute=OVERCROWDING,
+                    reason="the model could not be reached",
+                    candidate=str(SPAIN.id),
+                    data_source=DataSourceId("llm"),
+                ),
+            ),
+        )
+
+        await retry_run(
+            failed=failed,
+            adapters=[paid],
+            attributes=[an_attribute(OVERBURDEN), an_attribute(OVERCROWDING)],
+            candidates=[PORTUGAL, SPAIN],
+            values=RecordingValueStore(),
+            runs=RecordingRunStore(answers_with=failed),
+            spend_cap_eur=Decimal(10),
+        )
+
+        assert sorted(paid.asked_pairs) == [
+            (OVERBURDEN, str(PORTUGAL.id)),
+            (OVERCROWDING, str(SPAIN.id)),
+        ]
+
+    async def test_a_whole_source_outage_is_recorded_against_only_the_candidates_it_was_asked(
+        self,
+    ) -> None:
+        """BE-11 (Astra). A source reached in a retry can fail wholesale, for no candidate in
+        particular. Spread over every candidate the retry covers, it blamed a source for countries
+        drawn from another source's failures and never asked of it. It is itemised over only the
+        candidates this source was asked."""
+
+        class FailsWholesale(SourceAdapter):
+            @property
+            def data_source(self) -> DataSourceId:
+                return DataSourceId("eurostat")
+
+            @property
+            def attributes(self) -> tuple:
+                return (OVERBURDEN,)
+
+            async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]):
+                return Acquired(
+                    failures=(
+                        AcquisitionFailure(attribute=attribute.id, candidate=None, reason="503"),
+                    )
+                )
+
+        wrapped = _AskedOnlyAbout(FailsWholesale(), _only_about({OVERBURDEN}, (str(PORTUGAL.id),)))
+
+        produced = await wrapped.fetch(an_attribute(OVERBURDEN), [PORTUGAL, SPAIN])
+
+        assert [(f.attribute, f.candidate) for f in produced.failures] == [
+            (OVERBURDEN, str(PORTUGAL.id))
+        ]
+
 
 class TestWhatARetryMaySpend:
     async def test_a_retry_of_a_paid_source_with_no_cap_is_refused(self) -> None:
@@ -628,3 +710,63 @@ class TestRetryingWhatOnlyTheStandInStepFailed:
             if str(value.candidate) == "country.liechtenstein"  # type: ignore[attr-defined]
         ]
         assert len(borrowed) == 1
+
+    async def test_a_retry_that_mixes_a_source_failure_and_a_borrow_keeps_the_borrow(self) -> None:
+        """BE-11. `answerable or borrowable` kept the borrow only when no source had failed, so a
+        retry of a source failure *and* a borrow failure dropped the borrow -- the one the
+        household went back for. Both belong to the retry, and the borrow is still attempted."""
+        switzerlands_figure = Value(
+            candidate="country.switzerland",
+            attribute=OVERBURDEN,
+            value_type=ValueType.RATIO,
+            data_source="eurostat",
+            reference_period=ReferencePeriod(
+                start=datetime(2025, 1, 1).date(), end=datetime(2025, 12, 31).date()
+            ),
+            retrieval_date=datetime.now(UTC),
+            confidence_level=ConfidenceLevel.HIGH,
+            payload=Ratio(value=Decimal("11.4"), basis="households"),
+        )
+        store = RecordingValueStore(holds=(switzerlands_figure,))
+        mixed = Run(
+            id=23,
+            status=RunStatus.COMPLETED,
+            started_at=datetime.now(UTC),
+            triggered_by="user",
+            scope=RunScope(
+                level="country",
+                candidates=("country.spain", "country.liechtenstein"),
+                attributes=(OVERCROWDING, OVERBURDEN),
+            ),
+            failures=(
+                AcquisitionFailure(
+                    attribute=OVERCROWDING,
+                    reason="503",
+                    candidate="country.spain",
+                    data_source=DataSourceId("eurostat"),
+                ),
+                AcquisitionFailure(
+                    attribute=OVERBURDEN,
+                    reason="Switzerland had no figure of its own to lend",
+                    candidate="country.liechtenstein",
+                    data_source=DataSourceId("stand_in"),
+                ),
+            ),
+        )
+
+        await retry_run(
+            failed=mixed,
+            adapters=[StubSource("eurostat", (OVERCROWDING,))],
+            attributes=[an_attribute(OVERCROWDING), an_attribute(OVERBURDEN)],
+            candidates=[SPAIN, LIECHTENSTEIN],
+            values=store,
+            runs=RecordingRunStore(answers_with=mixed),
+            stand_ins=[BORROWS_FROM_SWITZERLAND],
+        )
+
+        borrowed = [
+            value
+            for value in store.appended
+            if str(value.candidate) == "country.liechtenstein"  # type: ignore[attr-defined]
+        ]
+        assert len(borrowed) == 1, "the borrow was dropped because a source also failed"

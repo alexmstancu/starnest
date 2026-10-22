@@ -281,6 +281,55 @@ class TestWhatNobodyAnswered:
         assert run.items_completed == 1
 
 
+class TestARunScopedToExactPairs:
+    """BE-11. A retry asks about specific (candidate, attribute) pairs, not the rectangle its two
+    scope lists span. When the run names its pairs, the item counts are those pairs -- so a corner
+    no source was asked about is never a phantom `unanswered` item that asking again can never
+    close."""
+
+    @pytest.fixture
+    async def a_retry_of_two_pairs(self, pool: AsyncConnectionPool) -> int:
+        # The two lists span four corners; the run asks about only two of them.
+        return await PostgresRunStore(pool).start_run(
+            RunScope(
+                level="country",
+                candidates=("country.liechtenstein", "country.portugal"),
+                attributes=(OVERBURDEN, OVERCROWDING),
+                pairs=(
+                    ("country.portugal", OVERBURDEN),
+                    ("country.liechtenstein", OVERCROWDING),
+                ),
+            ),
+            triggered_by="test",
+        )
+
+    async def test_the_total_is_the_pairs_not_the_rectangle(
+        self, pool: AsyncConnectionPool, a_retry_of_two_pairs: int
+    ) -> None:
+        run = await PostgresRunStore(pool).read_run(a_retry_of_two_pairs)
+
+        assert run.items_total == 2
+
+    async def test_only_the_pairs_it_asked_are_counted_or_listed_unanswered(
+        self, pool: AsyncConnectionPool, a_retry_of_two_pairs: int
+    ) -> None:
+        """One of the two pairs is answered; the other is unanswered. The two off-corners --
+        (Portugal, overcrowding) and (Liechtenstein, overburden) -- are neither, because no source
+        was asked about them."""
+        await PostgresValueStore(pool).append(
+            [a_figure(a_retry_of_two_pairs, "country.portugal", OVERBURDEN)]
+        )
+
+        run = await PostgresRunStore(pool).read_run(a_retry_of_two_pairs)
+
+        assert run.items_completed == 1
+        assert run.items_unanswered == 1
+        assert [(item.candidate, item.attribute) for item in run.unanswered] == [
+            ("country.liechtenstein", OVERCROWDING)
+        ]
+        assert run.items_completed + run.items_failed + run.items_unanswered == run.items_total
+
+
 def a_figure(run: int, candidate: str, attribute: str, source: str = "eurostat") -> Value:
     """One stored figure, with the provenance every value carries and nothing incidental."""
     return Value(

@@ -9,6 +9,7 @@ One read serves a poll (`arch.md` 8.4): status, progress and counts arrive toget
 screen polling a live run should not cost four queries a second.
 """
 
+import json
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -77,6 +78,20 @@ class PostgresRunStore(RunStore):
             await self._queries.insert_run_attributes(
                 connection, data_acquisition_run=row.id, attributes=list(scope.attributes)
             )
+            # The exact pairs the run asks about, the uniform truth its item counts read (BE-11).
+            # A sweep names no pairs and gets the rectangle its two lists span; a retry names only
+            # the pairs it is going back to, so a corner no source is asked about is never a phantom
+            # unanswered item. Both are written in this same transaction as the scope lists.
+            if scope.pairs is None:
+                await self._queries.insert_run_items_as_rectangle(
+                    connection, data_acquisition_run=row.id
+                )
+            else:
+                await self._queries.insert_run_items(
+                    connection,
+                    data_acquisition_run=row.id,
+                    pairs=json.dumps([{"candidate": c, "attribute": a} for c, a in scope.pairs]),
+                )
         return int(row.id)
 
     async def finish_run(self, run: int, *, status: RunStatus, finished_at: datetime) -> None:

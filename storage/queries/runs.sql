@@ -40,6 +40,27 @@ SELECT :data_acquisition_run, attribute
 FROM   unnest(:attributes::text[]) AS attribute
 ON CONFLICT DO NOTHING;
 
+-- name: insert_run_items_as_rectangle(data_acquisition_run)!
+-- A sweep asks about every candidate crossed with every attribute, so its items are that
+-- rectangle (BE-11). Run after the two scope lists are written, from which it reads -- so the
+-- caller resolves the scope once and this derives the pairs rather than being handed them.
+INSERT INTO data_acquisition_run_item (data_acquisition_run, candidate, attribute)
+SELECT c.data_acquisition_run, c.candidate, a.attribute
+FROM   data_acquisition_run_candidate AS c
+JOIN   data_acquisition_run_attribute AS a
+       ON a.data_acquisition_run = c.data_acquisition_run
+WHERE  c.data_acquisition_run = :data_acquisition_run
+ON CONFLICT DO NOTHING;
+
+-- name: insert_run_items(data_acquisition_run, pairs)!
+-- The exact (candidate, attribute) pairs a retry asks about -- a subset of the rectangle its two
+-- scope lists would span, so the corners no source is asked about are never recorded and so never
+-- counted unanswered (BE-11). Idempotent on the pair, like the scope lists above.
+INSERT INTO data_acquisition_run_item (data_acquisition_run, candidate, attribute)
+SELECT :data_acquisition_run, pair.candidate, pair.attribute
+FROM   jsonb_to_recordset(:pairs::jsonb) AS pair(candidate text, attribute text)
+ON CONFLICT DO NOTHING;
+
 -- name: update_run_status(data_acquisition_run, run_status, finished_at)!
 -- Close a run, or move it to halted_on_spend_cap. finished_at is the caller's clock rather than
 -- now(), so a run's duration is testable without waiting (arch.md 6.3, Clock).
@@ -132,10 +153,8 @@ SELECT r.id,
         WHERE  scope.data_acquisition_run = r.id) AS scope_candidates,
        (SELECT count(*) FROM data_acquisition_run_attribute AS scope
         WHERE  scope.data_acquisition_run = r.id) AS scope_attributes,
-       (SELECT count(*) FROM data_acquisition_run_candidate AS scope
-        WHERE  scope.data_acquisition_run = r.id)
-       * (SELECT count(*) FROM data_acquisition_run_attribute AS scope
-          WHERE  scope.data_acquisition_run = r.id) AS items_total,
+       (SELECT count(*) FROM data_acquisition_run_item AS item
+        WHERE  item.data_acquisition_run = r.id) AS items_total,
        (SELECT count(*)
         FROM   (SELECT v.candidate, v.attribute
                 FROM   value AS v
@@ -196,10 +215,8 @@ SELECT r.id,
             FROM   data_acquisition_run_attribute AS scope
             WHERE  scope.data_acquisition_run = r.id),
            '[]'::jsonb) AS scope_attributes,
-       (SELECT count(*) FROM data_acquisition_run_candidate AS scope
-        WHERE  scope.data_acquisition_run = r.id)
-       * (SELECT count(*) FROM data_acquisition_run_attribute AS scope
-          WHERE  scope.data_acquisition_run = r.id) AS items_total,
+       (SELECT count(*) FROM data_acquisition_run_item AS item
+        WHERE  item.data_acquisition_run = r.id) AS items_total,
        (SELECT count(*)
         FROM   (SELECT v.candidate, v.attribute
                 FROM   value AS v
@@ -227,22 +244,20 @@ SELECT r.id,
        -- Derived, not stored. It is the absence of two rows, and a table recording that absence
        -- could disagree with the rows themselves.
        (SELECT count(*)
-        FROM   data_acquisition_run_candidate AS scope_c
-        JOIN   data_acquisition_run_attribute AS scope_a
-               ON scope_a.data_acquisition_run = scope_c.data_acquisition_run
-        WHERE  scope_c.data_acquisition_run = r.id
+        FROM   data_acquisition_run_item AS item
+        WHERE  item.data_acquisition_run = r.id
           AND  NOT EXISTS (SELECT 1 FROM value AS v
                            WHERE  v.data_acquisition_run = r.id
-                             AND  v.candidate = scope_c.candidate
-                             AND  v.attribute = scope_a.attribute)
+                             AND  v.candidate = item.candidate
+                             AND  v.attribute = item.attribute)
           AND  NOT EXISTS (SELECT 1 FROM data_acquisition_failure AS f
                            WHERE  f.data_acquisition_run = r.id
-                             AND  f.candidate = scope_c.candidate
-                             AND  f.attribute = scope_a.attribute)
+                             AND  f.candidate = item.candidate
+                             AND  f.attribute = item.attribute)
           AND  NOT EXISTS (SELECT 1 FROM data_acquisition_run_reuse AS reuse
                            WHERE  reuse.data_acquisition_run = r.id
-                             AND  reuse.candidate = scope_c.candidate
-                             AND  reuse.attribute = scope_a.attribute)) AS items_unanswered
+                             AND  reuse.candidate = item.candidate
+                             AND  reuse.attribute = item.attribute)) AS items_unanswered
 FROM   data_acquisition_run AS r
 WHERE  r.id = :data_acquisition_run;
 
@@ -265,25 +280,23 @@ ORDER  BY f.candidate, f.attribute, f.data_source;
 -- source failed -- each one asked answered, with nothing for that candidate -- so asking again
 -- means asking whoever can answer the attribute, which the adapters declare and the database
 -- does not.
-SELECT scope_c.candidate,
-       scope_a.attribute
-FROM   data_acquisition_run_candidate AS scope_c
-JOIN   data_acquisition_run_attribute AS scope_a
-       ON scope_a.data_acquisition_run = scope_c.data_acquisition_run
-WHERE  scope_c.data_acquisition_run = :data_acquisition_run
+SELECT item.candidate,
+       item.attribute
+FROM   data_acquisition_run_item AS item
+WHERE  item.data_acquisition_run = :data_acquisition_run
   AND  NOT EXISTS (SELECT 1 FROM value AS v
                    WHERE  v.data_acquisition_run = :data_acquisition_run
-                     AND  v.candidate = scope_c.candidate
-                     AND  v.attribute = scope_a.attribute)
+                     AND  v.candidate = item.candidate
+                     AND  v.attribute = item.attribute)
   AND  NOT EXISTS (SELECT 1 FROM data_acquisition_failure AS f
                    WHERE  f.data_acquisition_run = :data_acquisition_run
-                     AND  f.candidate = scope_c.candidate
-                     AND  f.attribute = scope_a.attribute)
+                     AND  f.candidate = item.candidate
+                     AND  f.attribute = item.attribute)
   AND  NOT EXISTS (SELECT 1 FROM data_acquisition_run_reuse AS reuse
                    WHERE  reuse.data_acquisition_run = :data_acquisition_run
-                     AND  reuse.candidate = scope_c.candidate
-                     AND  reuse.attribute = scope_a.attribute)
-ORDER  BY scope_c.candidate, scope_a.attribute;
+                     AND  reuse.candidate = item.candidate
+                     AND  reuse.attribute = item.attribute)
+ORDER  BY item.candidate, item.attribute;
 
 -- name: select_run_values(data_acquisition_run)
 -- What a run produced, as ids and their pairs. The full values are read through values.sql;

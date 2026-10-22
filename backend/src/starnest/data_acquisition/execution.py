@@ -85,6 +85,7 @@ async def open_run(
     spend_cap_eur: Decimal | None = None,
     uncapped_is_accepted: bool = False,
     may_borrow_alone: bool = False,
+    pairs: tuple[tuple[str, str], ...] | None = None,
     refetch_older_than: timedelta | None = None,
     now: datetime | None = None,
 ) -> "OpenedRun":
@@ -154,13 +155,46 @@ async def open_run(
     )
     answerable = [attribute for attribute in answerable if str(attribute.id) not in fresh]
 
-    in_scope = answerable or (borrowable if may_borrow_alone else [])
+    # **A mixed retry keeps the borrow too** (BE-11). `answerable or borrowable` added the
+    # borrowable attributes only when `answerable` was empty, so a retry of a source failure *and*
+    # a borrow failure kept the source attributes and silently dropped the borrow -- the one the
+    # household went back for. The borrows join the scope alongside the answerable ones, deduped,
+    # whenever a borrow is being retried (`may_borrow_alone`); an ordinary run sets neither.
+    in_scope = list(answerable)
+    if may_borrow_alone:
+        in_scope += [attribute for attribute in borrowable if attribute not in in_scope]
+
+    # **The exact pairs, when the caller named them** (BE-11). A retry asks about specific
+    # (candidate, attribute) pairs, not the rectangle its two lists span. Kept to the pairs whose
+    # attribute survived the freshness filter and whose candidate is in scope, so a pair now fresh
+    # is dropped like any other. The scope's candidate and attribute lists are then just the
+    # distinct members of those pairs -- what the run actually asked about.
+    scope_pairs: tuple[tuple[str, str], ...] | None = None
+    if pairs is not None:
+        in_scope_ids = {str(attribute.id) for attribute in in_scope}
+        candidate_ids = {str(candidate.id) for candidate in candidates}
+        scope_pairs = tuple(
+            (candidate, attribute)
+            for candidate, attribute in pairs
+            if attribute in in_scope_ids and candidate in candidate_ids
+        )
+
     scope = RunScope(
         level=level,
-        candidates=tuple(str(candidate.id) for candidate in candidates),
-        attributes=tuple(str(attribute.id) for attribute in in_scope),
+        candidates=(
+            tuple(str(candidate.id) for candidate in candidates)
+            if scope_pairs is None
+            else tuple(dict.fromkeys(candidate for candidate, _ in scope_pairs))
+        ),
+        attributes=(
+            tuple(str(attribute.id) for attribute in in_scope)
+            if scope_pairs is None
+            else tuple(dict.fromkeys(attribute for _, attribute in scope_pairs))
+        ),
+        pairs=scope_pairs,
     )
-    if not in_scope or not candidates:
+    scope_is_empty = (not scope_pairs) if scope_pairs is not None else (not in_scope)
+    if scope_is_empty or not candidates:
         # Named separately, because it is the one cause with an obvious remedy: there is
         # nothing to ask rather than nothing worth asking about.
         if fresh:
@@ -316,6 +350,14 @@ async def continue_run(opened: OpenedRun) -> Run:
                 # (BE-33, closing P36): a death mid-sweep then keeps the record of what it had
                 # already cost, as BE-19 keeps the figures. The sum is the source's total.
                 record_spend=lambda calls, cost: runs.add_spend(run, calls=calls, cost_eur=cost),
+                # **Failures made durable per batch too** (BE-19 remainder). The values and the
+                # spend already survive a hard kill; without this the failures did not, so a
+                # swept run reported failing on nothing and a retry found nothing to reach. The
+                # writer is keyed on (run, source, item), so this and the end-of-run write below
+                # confirm the same rows rather than doubling them.
+                record_failures=lambda batch: runs.record_failures(
+                    run, _item_by_item(batch, candidates)
+                ),
             )
             _log.info(
                 "run %d: %s answered %d figure(s) and failed on %d",
@@ -593,6 +635,10 @@ async def retry_run(
         ],
         attributes=[attribute for attribute in attributes if attribute.id in wanted_attributes],
         candidates=[candidate for candidate in candidates if candidate.id in wanted_candidates],
+        # The exact pairs, so the run's items are the failures themselves rather than the rectangle
+        # the two lists above span -- no corner no source is asked about is counted unanswered
+        # (BE-11).
+        pairs=_pairs_of(failed.failures),
         values=values,
         runs=runs,
         level=failed.scope.level,
@@ -612,25 +658,56 @@ async def retry_run(
 
 @dataclass(frozen=True)
 class _FailedOn:
-    """What one source failed on in the run being retried, and so all it is asked about again."""
+    """The exact (attribute, candidate) pairs one source failed on, and so all it is asked about
+    again (BE-11).
 
-    attributes: frozenset[AttributeId]
-    candidates: frozenset[str | None]
+    **Pairs, not a rectangle.** An earlier version held the failed attributes and the failed
+    candidates as two sets and re-asked their product: a source that failed on (tax, Portugal) and
+    (press freedom, Spain) was re-asked all four corners, so the two that had succeeded were
+    fetched again -- and a per-candidate paid source was billed for them. The pairs are the unit a
+    retry addresses, so they are what this holds.
+    """
+
+    pairs: frozenset[tuple[AttributeId, str]]
+
+    @property
+    def attributes(self) -> frozenset[AttributeId]:
+        return frozenset(attribute for attribute, _ in self.pairs)
+
+    def candidates_for(self, attribute: AttributeId) -> frozenset[str]:
+        return frozenset(
+            candidate for an_attribute, candidate in self.pairs if an_attribute == attribute
+        )
 
 
 def _what_each_source_failed_on(
     failures: Sequence[AcquisitionFailure],
 ) -> dict[DataSourceId | None, _FailedOn]:
-    by_source: dict[DataSourceId | None, list[AcquisitionFailure]] = {}
+    by_source: dict[DataSourceId | None, set[tuple[AttributeId, str]]] = {}
     for failure in failures:
-        by_source.setdefault(failure.data_source, []).append(failure)
-    return {
-        source: _FailedOn(
-            attributes=frozenset(failure.attribute for failure in its_failures),
-            candidates=frozenset(failure.candidate for failure in its_failures),
+        # A stored failure always names its candidate (`record_failures` refuses one that does
+        # not, and a whole-source outage is itemised before it is written), so a pair here is
+        # concrete -- which is what lets a retry ask about exactly it.
+        if failure.candidate is not None:
+            by_source.setdefault(failure.data_source, set()).add(
+                (failure.attribute, failure.candidate)
+            )
+    return {source: _FailedOn(pairs=frozenset(pairs)) for source, pairs in by_source.items()}
+
+
+def _pairs_of(failures: Sequence[AcquisitionFailure]) -> tuple[tuple[str, str], ...]:
+    """The distinct (candidate, attribute) pairs a set of failures covers, for the run's scope.
+
+    The order `data_acquisition_run_item` is written in; `RunScope.pairs` names the candidate
+    first because that is the order the scope's candidate list and the run screen read in.
+    """
+    return tuple(
+        dict.fromkeys(
+            (failure.candidate, str(failure.attribute))
+            for failure in failures
+            if failure.candidate is not None
         )
-        for source, its_failures in by_source.items()
-    }
+    )
 
 
 class _AskedOnlyAbout(SourceAdapter):
@@ -660,8 +737,34 @@ class _AskedOnlyAbout(SourceAdapter):
         self._adapter = adapter
         self._failed_on = failed_on
 
-    def _only_the_candidates_it_failed_on(self, candidates: Sequence[Candidate]) -> list[Candidate]:
-        return [c for c in candidates if c.id in self._failed_on.candidates]
+    def _candidates_it_failed_on(
+        self, attribute: Attribute, candidates: Sequence[Candidate]
+    ) -> list[Candidate]:
+        # **Per attribute, not across all of them** (BE-11). The candidates this source is asked
+        # about again depend on the attribute: it failed on Portugal for the tax rate and on Spain
+        # for press freedom, so asking it about Portugal for press freedom -- a pair it answered --
+        # would re-fetch a success and, if it charges per candidate, pay for it twice.
+        wanted = self._failed_on.candidates_for(attribute.id)
+        return [candidate for candidate in candidates if str(candidate.id) in wanted]
+
+    def _own_candidates(self, acquired: Acquired, failed_for: Sequence[Candidate]) -> Acquired:
+        # **A whole-source outage is itemised over only the candidates this source was asked**
+        # (BE-11). A source reached in a retry can still fail wholesale, for no candidate in
+        # particular; left so, `continue_run` spreads it over every candidate the retry covers --
+        # including ones this source was never asked about, drawn from another source's failures.
+        # Itemised here, where the candidates it *was* asked are known, it is recorded against
+        # exactly them.
+        if all(failure.candidate is not None for failure in acquired.failures):
+            return acquired
+        itemised: list[AcquisitionFailure] = []
+        for failure in acquired.failures:
+            if failure.candidate is not None:
+                itemised.append(failure)
+            else:
+                itemised.extend(
+                    replace(failure, candidate=str(candidate.id)) for candidate in failed_for
+                )
+        return replace(acquired, failures=tuple(itemised))
 
     @property
     def data_source(self) -> DataSourceId:
@@ -682,25 +785,25 @@ class _AskedOnlyAbout(SourceAdapter):
         return tuple(a for a in self._adapter.attributes if a in self._failed_on.attributes)
 
     async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
-        failed_for = self._only_the_candidates_it_failed_on(candidates)
+        failed_for = self._candidates_it_failed_on(attribute, candidates)
         # Nothing left to ask is not a question, and a source charging per request would still
         # bill one about nobody.
         if not failed_for:
             return Acquired()
-        return await self._adapter.fetch(attribute, failed_for)
+        return self._own_candidates(await self._adapter.fetch(attribute, failed_for), failed_for)
 
     async def fetch_in_batches(
         self, attribute: Attribute, candidates: Sequence[Candidate]
     ) -> AsyncIterator[Acquired]:
-        # Narrowed to this source's own failed candidates (NEW-48) and forwarded like the rest
-        # (P41): a run fetches through here (BE-19), so leaving it unfiltered would send a paid
-        # source back to a candidate another source failed on -- and buffer the whole attribute,
-        # losing the per-candidate durability the run relies on.
-        failed_for = self._only_the_candidates_it_failed_on(candidates)
+        # Narrowed to this source's own failed (attribute, candidate) pairs (NEW-48, BE-11) and
+        # forwarded like the rest (P41): a run fetches through here (BE-19), so leaving it
+        # unfiltered would send a paid source back to a pair another source failed on -- and buffer
+        # the whole attribute, losing the per-candidate durability the run relies on.
+        failed_for = self._candidates_it_failed_on(attribute, candidates)
         if not failed_for:
             return
         async for batch in self._adapter.fetch_in_batches(attribute, failed_for):
-            yield batch
+            yield self._own_candidates(batch, failed_for)
 
 
 class NothingToAskAgainError(ValueError):
@@ -743,10 +846,19 @@ async def ask_again(
 
     wanted_candidates = {item.candidate for item in run.unanswered}
     wanted_attributes = {item.attribute for item in run.unanswered}
+    # **Every source, but only about the unanswered pairs** (BE-11). No source *failed*, so none is
+    # narrowed away; but a pair that was answered is not unanswered, and asking a source about it
+    # again -- a paid source most of all -- pays a second time for an answer already in hand. The
+    # unanswered items are exact pairs, so each source is wrapped to just them, the same mechanism a
+    # retry uses for a source's own failures.
+    unanswered = _FailedOn(
+        pairs=frozenset((item.attribute, item.candidate) for item in run.unanswered)
+    )
     return await execute(
-        adapters=adapters,
+        adapters=[_AskedOnlyAbout(adapter, unanswered) for adapter in adapters],
         attributes=[a for a in attributes if str(a.id) in wanted_attributes],
         candidates=[c for c in candidates if str(c.id) in wanted_candidates],
+        pairs=tuple(dict.fromkeys((item.candidate, item.attribute) for item in run.unanswered)),
         values=values,
         runs=runs,
         level=run.scope.level,

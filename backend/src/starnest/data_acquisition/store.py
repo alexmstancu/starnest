@@ -54,6 +54,11 @@ class RunScope:
     level: str
     candidates: tuple[str, ...] | None = None
     attributes: tuple[str, ...] | None = None
+    pairs: tuple[tuple[str, str], ...] | None = None
+    """The exact (candidate, attribute) pairs this run asks about, when it is not the full
+    rectangle of `candidates` x `attributes`. `None` means the rectangle -- a sweep asks about
+    every pair. A retry sets this to only the pairs it is going back to, so the corners no source
+    is asked about are never recorded and never counted `unanswered` (BE-11)."""
 
 
 @dataclass(frozen=True)

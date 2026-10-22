@@ -78,6 +78,7 @@ OBJECTIVE = {
     "data_acquisition_run_reuse",
     "data_acquisition_run_attribute",
     "data_acquisition_run_candidate",
+    "data_acquisition_run_item",
     "external_score",
     "fx_rate",
     # A gate's ANSWER is objective -- whether a visa route exists is a fact. Whether the gate
