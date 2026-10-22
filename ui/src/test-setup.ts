@@ -5,6 +5,7 @@ import { forgetAttributeNames } from "./api/useAttributeNames";
 import { forgetCandidateNames } from "./api/useCandidateNames";
 import { forgetPillarNames } from "./api/usePillarNames";
 import { forgetSourceNames } from "./api/useSourceNames";
+import { forgetAnsweredWrites } from "./api/setWrites";
 import { resetMockData } from "./mocks/handlers";
 import { mockServer } from "./mocks/server";
 
@@ -46,6 +47,7 @@ afterEach(() => {
   forgetAttributeNames();
   forgetCandidateNames();
   forgetSourceNames();
+  forgetAnsweredWrites();
   // Last, so the resets above happen whether or not this throws.
   failOnAnythingWrittenToConsoleError();
 });

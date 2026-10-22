@@ -14,6 +14,7 @@
 
 import { ApiError, CLIENT_ERROR_CODES, apiErrorFromResponse } from "./ApiError";
 import type { paths } from "./schema";
+import { noteAnsweredWrite } from "./setWrites";
 
 /** Matches the `/v1` prefix that nginx and the Vite dev server both proxy. */
 export const API_PREFIX = "/v1";
@@ -232,9 +233,9 @@ export async function postJson<Path extends PostPath>(
   // Path parameters are filled here as they are for GET and PATCH. Until the Run tab needed
   // `/data-acquisition-runs/{runId}/retry`, no POST took one, and the placeholder went to the
   // server verbatim -- which fails as a request that was merely built wrong.
-  return request(
+  const answer = await request<PostResult<Path>>(
     buildUrl(
-      path as string,
+      path,
       undefined,
       options.pathParams as PathValues | undefined,
     ),
@@ -245,6 +246,8 @@ export async function postJson<Path extends PostPath>(
       signal: options.signal,
     },
   );
+  noteTheSetWrittenTo(options.pathParams as PathValues | undefined);
+  return answer;
 }
 
 /**
@@ -257,9 +260,9 @@ export async function patchJson<Path extends PatchPath>(
   body: PatchBody<Path>,
   options: CallOptions<PathValuesOf<PatchOperation<Path>>> = {},
 ): Promise<PatchResult<Path>> {
-  return request(
+  const answer = await request<PatchResult<Path>>(
     buildUrl(
-      path as string,
+      path,
       undefined,
       options.pathParams as PathValues | undefined,
     ),
@@ -270,6 +273,8 @@ export async function patchJson<Path extends PatchPath>(
       signal: options.signal,
     },
   );
+  noteTheSetWrittenTo(options.pathParams as PathValues | undefined);
+  return answer;
 }
 
 /**
@@ -305,6 +310,17 @@ function isAbort(cause: unknown): boolean {
     cause !== null &&
     (cause as { name?: unknown }).name === "AbortError"
   );
+}
+
+/**
+ * **A write under a criteria set is noted once it is answered** (UIC-A3, RD-2): see `setWrites`.
+ * Here, beside every write the client sends, rather than at each endpoint -- every write
+ * addressed under a set changes what a read of it returns, and one added later must not be able
+ * to forget. A refused write changed nothing, and throws before it gets here.
+ */
+function noteTheSetWrittenTo(pathParams: PathValues | undefined): void {
+  const criteriaSetId = pathParams?.["criteriaSetId"];
+  if (criteriaSetId !== undefined) noteAnsweredWrite(String(criteriaSetId));
 }
 
 async function request<Result>(
@@ -359,9 +375,9 @@ export async function putJson<Path extends PutPath>(
   body: PutBody<Path>,
   options: CallOptions<PathValuesOf<PutOperation<Path>>> = {},
 ): Promise<PutResult<Path>> {
-  return request(
+  const answer = await request<PutResult<Path>>(
     buildUrl(
-      path as string,
+      path,
       undefined,
       options.pathParams as PathValues | undefined,
     ),
@@ -372,6 +388,8 @@ export async function putJson<Path extends PutPath>(
       signal: options.signal,
     },
   );
+  noteTheSetWrittenTo(options.pathParams as PathValues | undefined);
+  return answer;
 }
 
 /** A discard. Answers 204, so there is nothing to parse and nothing to return. */
@@ -387,4 +405,5 @@ export async function deleteResource<Path extends DeletePath>(
     ),
     { method: "DELETE", signal: options.signal },
   );
+  noteTheSetWrittenTo(options.pathParams as PathValues | undefined);
 }

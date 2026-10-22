@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { fetchCriteriaSet, fetchLevels } from "../../api/endpoints";
+import { answeredWrites } from "../../api/setWrites";
 import { mockServer } from "../../mocks/server";
 import {
   expectHeld,
@@ -231,6 +232,29 @@ function holdCriterionWrites(): { sent: string[]; release: () => void } {
         await held;
       },
     ),
+  );
+  return { sent, release: () => release() };
+}
+
+/**
+ * Holds every write of one kind under a criteria set until released, then lets the mock's own
+ * handler answer it -- so the mock's set changes only once the write is let go.
+ */
+function holdSetWrites(
+  method: "put" | "patch",
+  path: string,
+): { sent: string[]; release: () => void } {
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const sent: string[] = [];
+  const on = method === "put" ? http.put : http.patch;
+  mockServer.use(
+    on(path, async ({ params }) => {
+      sent.push(String(params["criteriaSetId"]));
+      await held;
+    }),
   );
   return { sent, release: () => release() };
 }
@@ -953,6 +977,97 @@ describe("while a change is being saved", () => {
     await weightSlider(COST_OF_LIVING);
     expect(readingOf(COST_OF_LIVING)).toBe("40.0%");
     expect(reads).toBe(2);
+  });
+
+  /**
+   * RD-2. **Every writer of a set, not only the criteria list.** A pillar's weight or lock, a
+   * gate or a compound rule written while its set was being read again ended the screen on the
+   * read: the panels start from the set the screen reads, and only the criteria list's own writes
+   * marked that read as older than what they had just changed.
+   */
+  it.each([
+    {
+      what: "a pillar's weight",
+      path: "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId",
+      write: (): Promise<void> => {
+        const slider = screen.getByRole("slider", { name: "Economy weight" });
+        fireEvent.change(slider, { target: { value: "50" } });
+        fireEvent.pointerUp(slider);
+        return Promise.resolve();
+      },
+      shows: (): void => {
+        expect(screen.getByRole("slider", { name: "Economy weight" })).toHaveValue("50");
+      },
+    },
+    {
+      what: "a pillar's lock",
+      path: "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId",
+      write: () => userEvent.click(screen.getByRole("button", { name: "Lock Economy" })),
+      shows: (): void => {
+        expect(screen.getByRole("button", { name: "Lock Economy" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+      },
+    },
+    {
+      what: "a gate",
+      path: "/v1/criteria-sets/:criteriaSetId/match-rules/:matchRuleId",
+      write: () =>
+        userEvent.click(screen.getByRole("switch", { name: "Enforce Free movement applies" })),
+      shows: (): void => {
+        expect(screen.getByRole("switch", { name: "Enforce Free movement applies" })).toBeChecked();
+      },
+    },
+    {
+      what: "a compound rule",
+      path: "/v1/criteria-sets/:criteriaSetId/compound-rules/:compoundRuleId",
+      write: () =>
+        userEvent.click(screen.getByRole("switch", { name: "Apply Rent fits the target spend" })),
+      shows: (): void => {
+        expect(
+          screen.getByRole("switch", { name: "Apply Rent fits the target spend" }),
+        ).toBeChecked();
+      },
+    },
+  ])("reads a set again when a write to $what was answered while it was being read", async ({
+    path,
+    write,
+    shows,
+  }) => {
+    renderShell("/configure");
+    await settled();
+    await duplicateDefault();
+    const writes = holdSetWrites("put", path);
+    await write();
+    await waitFor(() => expect(writes.sent).toEqual(["default_copy"]));
+    // The copy as a read taken before the write committed would see it.
+    const beforeTheWrite = await fetchCriteriaSet("default_copy");
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reads = 0;
+    mockServer.use(
+      http.get("/v1/criteria-sets/default_copy", async () => {
+        reads += 1;
+        if (reads > 1) return;
+        await held;
+        return HttpResponse.json(beforeTheWrite);
+      }),
+    );
+    await chooseSet("default");
+
+    // Not `chooseSet`, which waits for the read this test is holding.
+    await userEvent.selectOptions(activeSet(), "default_copy");
+    await waitFor(() => expect(reads).toBe(1));
+    writes.release();
+    await waitFor(() => expect(answeredWrites("default_copy")).toBe(1));
+    release();
+
+    await waitFor(() => expect(reads).toBe(2));
+    await settled();
+    shows();
   });
 
   it("does not report a refusal against a set it was not sent for", async () => {

@@ -8,6 +8,7 @@ import {
   type Criterion,
   type CriterionRule,
 } from "../../api/endpoints";
+import { answeredWrites } from "../../api/setWrites";
 import { useResource, type Resource } from "../../api/useResource";
 import {
   UNDO_CANNOT_RESTORE_THE_PILLAR,
@@ -72,38 +73,27 @@ export interface CriteriaEditor {
   reload: () => void;
 }
 
-/** A set as read, with the set it is and how many of its writes had been answered when asked. */
-interface SetRead {
-  set: CriteriaSet;
-  id: string;
-  begunAfter: number;
-}
-
 export function useCriteriaEditor(
   criteriaSetId: string | null,
   history?: ChangeHistory,
   /** For what a change is called in the history: the catalog's name, never the id. */
   catalog?: AttributeCatalog,
 ): CriteriaEditor {
-  // **How many writes to each set have been answered** (UIC-A3). A read carries the count it
-  // began at: one that lands after another write to its set was answered may have been taken
-  // before that write committed, so it is read again rather than shown. Shown, it ended the
-  // screen on weights older than a save it had just confirmed.
-  const answered = useRef(new Map<string, number>());
-
   const fetcher = useCallback(
-    async (signal: AbortSignal): Promise<SetRead> => {
+    async (signal: AbortSignal): Promise<CriteriaSet> => {
       // Not reachable while disabled; the guard is here so the type is honest.
       if (!criteriaSetId) throw new Error("no criteria set selected");
-      const begunAfter = answered.current.get(criteriaSetId) ?? 0;
-      const set = await fetchCriteriaSet(criteriaSetId, { signal });
-      return { set, id: criteriaSetId, begunAfter };
+      // Read again while any writer's write to this set was answered mid-read (UIC-A3, RD-2).
+      for (;;) {
+        const begunAfter = answeredWrites(criteriaSetId);
+        const set = await fetchCriteriaSet(criteriaSetId, { signal });
+        if (answeredWrites(criteriaSetId) === begunAfter) return set;
+      }
     },
     [criteriaSetId],
   );
 
   const { resource, reload } = useResource(fetcher, criteriaSetId !== null);
-  const loaded = resource.data?.set ?? null;
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [savingAttribute, setSavingAttribute] = useState<string | null>(null);
   const [savingRuleFor, setSavingRuleFor] = useState<string | null>(null);
@@ -112,14 +102,9 @@ export function useCriteriaEditor(
   // A newly fetched set replaces everything, including a stale refusal: the error belonged to
   // weights that are no longer on screen.
   useEffect(() => {
-    const read = resource.data;
-    if (read !== null && (answered.current.get(read.id) ?? 0) !== read.begunAfter) {
-      reload();
-      return;
-    }
-    setCriteria(read?.set.criteria ?? []);
+    setCriteria(resource.data?.criteria ?? []);
     setSaveError(null);
-  }, [resource.data, reload]);
+  }, [resource.data]);
 
   // **Which set is on screen when an answer lands**, not when it was asked for (UI-04). A set
   // chosen meanwhile holds the same attributes when it is a copy, so an answer matched on
@@ -133,11 +118,10 @@ export function useCriteriaEditor(
   // check on state that has not re-rendered yet.
   const inFlight = useRef(false);
   const undoing = history?.undoing === true;
-  const setName = loaded?.name;
+  const setName = resource.data?.name;
 
   /** An answer for one set, applied only while that set is the one on screen. */
   const mergeInto = useCallback((sentFor: string, answer: Criterion[]) => {
-    answered.current.set(sentFor, (answered.current.get(sentFor) ?? 0) + 1);
     if (shownSet.current === sentFor) {
       setCriteria((current) => applyRebalance(current, answer));
     }
@@ -280,7 +264,7 @@ export function useCriteriaEditor(
 
   return {
     status: resource.status,
-    criteriaSet: loaded,
+    criteriaSet: resource.data,
     error: resource.error,
     criteria,
     savingAttribute,

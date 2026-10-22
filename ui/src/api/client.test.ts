@@ -12,6 +12,7 @@ import {
 } from "./client";
 import { fetchCandidates, fetchLevels, fetchRanking, fetchRuns } from "./endpoints";
 import { mockServer } from "../mocks/server";
+import { answeredWrites } from "./setWrites";
 
 describe("buildUrl", () => {
   it("keeps every path relative and under /v1, so requests are same-origin", () => {
@@ -356,5 +357,79 @@ describe("a body holding a number JSON cannot carry", () => {
     expect(answer).toEqual({
       echoed: { min_coverage: null, comparator_limit: 0 },
     });
+  });
+});
+
+/**
+ * UIC-A3, RD-2. **A write under a criteria set is noted once it is answered**, so the screen that
+ * reads the whole set can tell a read begun before it from one begun after. In the client rather
+ * than at each endpoint: every write addressed under a set changes what a read of it returns, and
+ * one added later must not be able to forget.
+ */
+describe("a write addressed under a criteria set", () => {
+  it("is noted once it is answered, against the set it was addressed to", async () => {
+    mockServer.use(
+      http.put(
+        "/v1/criteria-sets/:criteriaSetId/match-rules/:matchRuleId",
+        () => new HttpResponse(null, { status: 204 }),
+      ),
+    );
+
+    await putJson(
+      "/criteria-sets/{criteriaSetId}/match-rules/{matchRuleId}",
+      { is_enforced: true },
+      { pathParams: { criteriaSetId: "default", matchRuleId: "country.visa_route_exists" } },
+    );
+
+    expect(answeredWrites("default")).toBe(1);
+    expect(answeredWrites("remote-only")).toBe(0);
+  });
+
+  it("is noted for every kind of write: a patch, a post and a delete as well", async () => {
+    mockServer.use(
+      http.patch("/v1/criteria-sets/:criteriaSetId", () => HttpResponse.json({})),
+      http.post("/v1/criteria-sets/:criteriaSetId/duplicate", () => HttpResponse.json({})),
+      http.delete("/v1/criteria-sets/:criteriaSetId", () => new HttpResponse(null, { status: 204 })),
+    );
+
+    await patchJson(
+      "/criteria-sets/{criteriaSetId}",
+      { name: "Renamed" },
+      { pathParams: { criteriaSetId: "a" } },
+    );
+    await postJson(
+      "/criteria-sets/{criteriaSetId}/duplicate",
+      { id: "b_copy", name: "Copy" },
+      { pathParams: { criteriaSetId: "b" } },
+    );
+    await deleteResource("/criteria-sets/{criteriaSetId}", { pathParams: { criteriaSetId: "c" } });
+
+    expect([answeredWrites("a"), answeredWrites("b"), answeredWrites("c")]).toEqual([1, 1, 1]);
+  });
+
+  it("is not noted when it is refused, which changed nothing", async () => {
+    mockServer.use(
+      http.patch("/v1/criteria-sets/:criteriaSetId", () =>
+        HttpResponse.json({ code: "conflict", message: "no" }, { status: 409 }),
+      ),
+    );
+
+    await expect(
+      patchJson(
+        "/criteria-sets/{criteriaSetId}",
+        { name: "Renamed" },
+        { pathParams: { criteriaSetId: "default" } },
+      ),
+    ).rejects.toBeInstanceOf(ApiError);
+
+    expect(answeredWrites("default")).toBe(0);
+  });
+
+  it("is not noted for a read of the set", async () => {
+    await getJson("/criteria-sets/{criteriaSetId}", { level: undefined }, {
+      pathParams: { criteriaSetId: "default" },
+    });
+
+    expect(answeredWrites("default")).toBe(0);
   });
 });
