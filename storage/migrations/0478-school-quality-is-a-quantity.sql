@@ -29,6 +29,11 @@
 --
 -- depends: 0477-career-weights-sum-exactly
 
+-- **Locked before the copy** (BE-A1): a set edit committed between the copy below and its
+-- delete was replaced by the older copy. SHARE ROW EXCLUSIVE waits for an edit in flight and
+-- holds off new ones until this commits, while reads go on.
+LOCK TABLE criterion IN SHARE ROW EXCLUSIVE MODE;
+
 -- **The criteria are lifted out and put back.** `criterion_matches_attribute_type` is a
 -- composite foreign key on `(attribute, value_type)` and is not deferrable, so neither side can
 -- change first: updating the attribute orphans the criteria, and updating the criteria points

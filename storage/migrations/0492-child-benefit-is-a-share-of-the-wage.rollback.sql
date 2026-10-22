@@ -10,6 +10,12 @@
 -- On a database that has acquired nothing -- every fresh one, the test database included --
 -- there are no such values, so the retype below runs and the path stays exercised.
 
+-- **Locked before it counts or copies** (BE-A1). A figure stored between the count and
+-- the retype met a raw foreign-key error rather than this refusal, and a set edit committed
+-- between the copy below and its delete was replaced by the older copy. SHARE ROW EXCLUSIVE
+-- waits for writes in flight and holds off new ones until this commits, while reads go on.
+LOCK TABLE value, criterion IN SHARE ROW EXCLUSIVE MODE;
+
 DO $$
 DECLARE
     stored integer;

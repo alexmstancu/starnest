@@ -7,6 +7,11 @@
 -- answered nothing -- every fresh one, the test database included -- there are no such rows and
 -- the delete runs, keeping the path exercised.
 
+-- **Locked before it counts** (BE-A1): an answer recorded between the count and the delete
+-- met a raw foreign-key error rather than this refusal. SHARE ROW EXCLUSIVE waits for a write
+-- in flight and holds off new ones until this commits, while reads go on.
+LOCK TABLE match_rule_result IN SHARE ROW EXCLUSIVE MODE;
+
 DO $$
 DECLARE
     answered integer;

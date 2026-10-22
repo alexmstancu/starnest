@@ -207,3 +207,144 @@ def test_a_rollback_clears_a_figures_own_rows_before_the_figure(
         "every stored figure has exactly one magnitude row, so this fails on that table's "
         "foreign key as soon as a figure exists"
     )
+
+
+#: The modes that conflict with ROW EXCLUSIVE, the lock every INSERT, UPDATE and DELETE takes. Held,
+#: one waits for any write already in flight and holds off any new one until the transaction ends.
+WRITER_BLOCKING_MODES = frozenset({"share", "share row exclusive", "exclusive", "access exclusive"})
+
+
+def without_comments(sql: str) -> str:
+    return re.sub(r"^\s*--.*$", "", sql, flags=re.M)
+
+
+def tables_read_by(statement: str) -> set[str]:
+    named = re.findall(r"\b(?:from|join)\s+\"?([a-z_]+)\"?", statement, re.I)
+    return {name.lower() for name in named}
+
+
+LOCK_STATEMENT = re.compile(
+    r"^\s*lock\s+(?:table\s+)?(?:only\s+)?(.+?)"
+    r"(?:\s+in\s+([a-z ]+?)\s+mode)?(?:\s+nowait)?\s*;",
+    re.I | re.M | re.S,
+)
+
+
+def locks_taken(sql: str) -> list[tuple[int, str, set[str]]]:
+    """Every `LOCK` statement: where it starts, the mode it takes, and the tables it names.
+
+    A `LOCK` that names no mode takes ACCESS EXCLUSIVE, PostgreSQL's default.
+    """
+    return [
+        (
+            match.start(),
+            " ".join((match.group(2) or "access exclusive").lower().split()),
+            {name.strip().strip('"').lower() for name in match.group(1).split(",")},
+        )
+        for match in LOCK_STATEMENT.finditer(sql)
+    ]
+
+
+def reads_unlocked(sql: str, reads: list[tuple[int, set[str]]]) -> set[str]:
+    """The tables in `reads` that no writer-blocking lock taken earlier in `sql` covers."""
+    locks = locks_taken(sql)
+    unlocked: set[str] = set()
+    for position, tables in reads:
+        held = {
+            table
+            for taken_at, mode, named in locks
+            if taken_at < position and mode in WRITER_BLOCKING_MODES
+            for table in named
+        }
+        unlocked |= tables - held
+    return unlocked
+
+
+def counts_in(sql: str) -> list[tuple[int, set[str]]]:
+    """Every `count(*)` statement, and the tables it reads: the evidence a refusal decides on."""
+    return [
+        (match.start(), tables_read_by(match.group(0)))
+        for match in re.finditer(r"\bcount\s*\(\s*\*\s*\)[^;]*;", sql, re.I)
+    ]
+
+
+def lifts_in(sql: str) -> list[tuple[int, set[str]]]:
+    """Every temp table filled from a real one, and the tables it is filled from."""
+    lifts = [
+        (match.start(), tables_read_by(match.group(0)))
+        for match in re.finditer(r"\bcreate\s+temp(?:orary)?\s+table\b[^;]*;", sql, re.I)
+    ]
+    return [(position, tables) for position, tables in lifts if tables]
+
+
+def rollbacks_that_refuse() -> list[Path]:
+    return sorted(
+        p
+        for p in MIGRATIONS.glob("*.rollback.sql")
+        if re.search(r"\braise\s+exception\b", without_comments(p.read_text()), re.I)
+    )
+
+
+def migrations_that_lift_rows() -> list[Path]:
+    return sorted(p for p in MIGRATIONS.glob("*.sql") if lifts_in(without_comments(p.read_text())))
+
+
+def test_there_are_rollbacks_that_refuse_and_migrations_that_lift() -> None:
+    """Guards the two tests below, which a glob that matched nothing would pass silently."""
+    assert len(rollbacks_that_refuse()) >= 4
+    assert len(migrations_that_lift_rows()) >= 6
+
+
+@pytest.mark.parametrize(
+    "rollback", rollbacks_that_refuse(), ids=lambda p: p.name.removesuffix(".rollback.sql")
+)
+def test_a_refusing_rollback_locks_what_it_counts_before_counting(rollback: Path) -> None:
+    """**A refusal decided on a count is only as good as the count** (BE-A1).
+
+    A rollback that refuses over recorded history -- a billed call, a hand-entered answer, a
+    stored figure -- counts it first and acts on the count. `count(*)` takes ACCESS SHARE, which
+    stops no writer: a row committed between the count and the act is one the refusal never saw.
+    `0503` dropped its table over such a row, and the others met a raw foreign-key error instead
+    of their own refusal. Locking every counted table in a mode that conflicts with ROW EXCLUSIVE,
+    *before* the count, makes the count final: a write in flight lands first and is counted, and
+    none can land after until the rollback commits.
+
+    `test_rollback_races` shows each lock doing this against a real write; this holds every
+    rollback that refuses, including any written later, to the same rule.
+    """
+    sql = without_comments(rollback.read_text())
+    counted = counts_in(sql)
+    assert counted, f"{rollback.name} refuses on something other than a count; read it by hand"
+
+    unlocked = reads_unlocked(sql, counted)
+
+    assert unlocked == set(), (
+        f"{rollback.name} counts {sorted(unlocked)} without first locking "
+        f"{'them' if len(unlocked) > 1 else 'it'} in one of {sorted(WRITER_BLOCKING_MODES)}, so "
+        "a row committed between the count and the act escapes the refusal"
+    )
+
+
+@pytest.mark.parametrize("migration", migrations_that_lift_rows(), ids=lambda p: p.stem)
+def test_a_migration_locks_a_table_before_lifting_its_rows(migration: Path) -> None:
+    """**A copy taken to be put back must be the last word on what it copied** (BE-A1).
+
+    A retype lifts a criterion's rows into a temp table, deletes them, and inserts the copy back
+    once the attribute has moved. A set edit committed between the copy and the delete is
+    deleted with the rest and replaced by the copy taken before it: the edit is lost, and its
+    pillar's weights may no longer sum to 100. Locking the table first, in a mode that conflicts
+    with ROW EXCLUSIVE, makes the copy final -- an edit in flight lands first and is copied, and
+    none can land after until the migration commits.
+
+    Forward migrations are held to it as well as rollbacks: `make migrate` runs while the backend
+    may be serving edits, exactly as `make rollback` does.
+    """
+    sql = without_comments(migration.read_text())
+
+    unlocked = reads_unlocked(sql, lifts_in(sql))
+
+    assert unlocked == set(), (
+        f"{migration.name} copies rows of {sorted(unlocked)} to put back later without first "
+        f"locking {'them' if len(unlocked) > 1 else 'it'} in one of "
+        f"{sorted(WRITER_BLOCKING_MODES)}, so a write committed after the copy is lost"
+    )

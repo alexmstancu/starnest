@@ -5,6 +5,12 @@
 -- re-fetched at any price. On a database that has researched nothing -- every fresh one, the test
 -- database included -- there are no rows and the drop runs, keeping the path exercised.
 
+-- **Locked before it counts** (BE-A1). A count holds off no writer, so a call billed between
+-- the count and the drop went with the table, unrecorded. ACCESS EXCLUSIVE because the drop
+-- takes it anyway: waiting for it here lets a ledger write in flight land first, where it is
+-- counted.
+LOCK TABLE match_rule_research_spend IN ACCESS EXCLUSIVE MODE;
+
 DO $$
 DECLARE
     ledgered integer;

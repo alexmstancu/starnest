@@ -23,6 +23,11 @@
 --
 -- depends: 0491-forest-cover-can-finally-be-scored
 
+-- **Locked before the copy** (BE-A1): a set edit committed between the copy below and its
+-- delete was replaced by the older copy. SHARE ROW EXCLUSIVE waits for an edit in flight and
+-- holds off new ones until this commits, while reads go on.
+LOCK TABLE criterion IN SHARE ROW EXCLUSIVE MODE;
+
 CREATE TEMP TABLE lifted AS
 SELECT criteria_set, attribute, pillar, is_scored, weight, weight_locked, goal,
        target_range_min, target_range_max, zero_score_below, zero_score_above,

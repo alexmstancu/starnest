@@ -1,3 +1,8 @@
+-- **Locked before the copy** (BE-A1): a set edit committed between the copy below and its
+-- delete was replaced by the older copy. SHARE ROW EXCLUSIVE waits for an edit in flight and
+-- holds off new ones until this commits, while reads go on.
+LOCK TABLE criterion IN SHARE ROW EXCLUSIVE MODE;
+
 CREATE TEMPORARY TABLE held_criterion ON COMMIT DROP AS
 SELECT * FROM criterion WHERE attribute = 'country.house_price_to_income_ratio';
 
