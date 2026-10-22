@@ -158,29 +158,46 @@ describe("attributes a person may answer", () => {
    * them, which is this very form, and `company_website`, a catalog row no adapter stands
    * behind -- so printing it offered typing by hand as the alternative to typing by hand.
    */
+  const NAMES = new Map([
+    ["llm", "LLM with web search"],
+    ["world_bank", "World Bank"],
+  ]);
+
   it("names what can fetch it, not the whole priority order", () => {
-    expect(handEnterable([employers])[0]?.otherwise).toBe("Otherwise: llm");
+    expect(handEnterable([employers], NAMES)[0]?.otherwise).toBe(
+      "Otherwise: LLM with web search",
+    );
+  });
+
+  /** UIR-G3. A source's id is never the words: unnamed, it is said to exist, not spelled out. */
+  it("says another source would answer it, rather than print an id, before the names arrive", () => {
+    expect(handEnterable([employers], new Map())[0]?.otherwise).toBe(
+      "Another source would answer it",
+    );
   });
 
   it("says plainly when nothing else would answer it", () => {
-    expect(handEnterable([residency])[0]?.otherwise).toBe(
+    expect(handEnterable([residency], NAMES)[0]?.otherwise).toBe(
       "Nothing else would answer it",
     );
   });
 
   it("claims nothing about other sources when the catalog does not say", () => {
     const { answerable_by: _unsaid, ...unsaid } = residency;
-    expect(handEnterable([unsaid])[0]?.otherwise).toBe("");
+    expect(handEnterable([unsaid], NAMES)[0]?.otherwise).toBe("");
   });
 
   /** Only where a form can open: permitted by the catalog, and an editor built for the type. */
   it("offers only what a form exists for, by name", () => {
-    const listed = handEnterable([
-      residency,
-      employers,
-      { ...employers, id: "barred", manual_entry: false },
-      { ...employers, id: "no_editor", value_type: "Quantity" },
-    ]).map((each) => each.id);
+    const listed = handEnterable(
+      [
+        residency,
+        employers,
+        { ...employers, id: "barred", manual_entry: false },
+        { ...employers, id: "no_editor", value_type: "Quantity" },
+      ],
+      NAMES,
+    ).map((each) => each.id);
 
     expect(listed).toEqual([
       "country.international_employers",

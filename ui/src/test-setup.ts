@@ -4,6 +4,7 @@ import { cleanup, configure } from "@testing-library/react";
 import { forgetAttributeNames } from "./api/useAttributeNames";
 import { forgetCandidateNames } from "./api/useCandidateNames";
 import { forgetPillarNames } from "./api/usePillarNames";
+import { forgetSourceNames } from "./api/useSourceNames";
 import { resetMockData } from "./mocks/handlers";
 import { mockServer } from "./mocks/server";
 
@@ -44,6 +45,7 @@ afterEach(() => {
   forgetPillarNames();
   forgetAttributeNames();
   forgetCandidateNames();
+  forgetSourceNames();
   // Last, so the resets above happen whether or not this throws.
   failOnAnythingWrittenToConsoleError();
 });

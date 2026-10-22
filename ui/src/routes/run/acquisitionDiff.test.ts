@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { diffAcquisitions, runIdFrom, type ProducedValue } from "./acquisitionDiff";
+import {
+  diffAcquisitions,
+  progressOf,
+  runIdFrom,
+  type ProducedValue,
+} from "./acquisitionDiff";
 
 const value = (
   candidate: string,
@@ -466,5 +471,35 @@ describe("what decides that a figure did not move", () => {
 
     expect(diff.unchanged).toBe(1);
     expect(diff.refreshed).toBe(1);
+  });
+});
+
+/** UIR-A1: the key the diff reads its runs again on. */
+describe("where the compared runs stand", () => {
+  const going = { id: 7, run_status: "running", items_completed: 1, items_failed: 0 };
+  const done = { id: 5, run_status: "completed", items_completed: 9, items_failed: 1 };
+
+  it("changes when a compared run completes another item", () => {
+    expect(progressOf([going, done], [5, 7])).not.toBe(
+      progressOf([{ ...going, items_completed: 2 }, done], [5, 7]),
+    );
+  });
+
+  it("changes when a compared run finishes", () => {
+    expect(progressOf([going, done], [5, 7])).not.toBe(
+      progressOf([{ ...going, run_status: "completed" }, done], [5, 7]),
+    );
+  });
+
+  it("does not change for a run that is not being compared", () => {
+    const other = { id: 9, run_status: "running", items_completed: 1 };
+    expect(progressOf([going, done, other], [5, 7])).toBe(
+      progressOf([going, done, { ...other, items_completed: 5 }], [5, 7]),
+    );
+  });
+
+  it("stays put for a run the history no longer lists, and for no choice at all", () => {
+    expect(progressOf([done], [5, 7])).toBe(progressOf([done], [5, 7]));
+    expect(progressOf([], [null, null])).toBe("null:?|null:?");
   });
 });

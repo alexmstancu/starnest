@@ -10,7 +10,8 @@ import {
   formatDateTime,
 } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
-import { diffAcquisitions, runIdFrom } from "./acquisitionDiff";
+import { diffAcquisitions, progressOf, runIdFrom } from "./acquisitionDiff";
+import { useVersionOf } from "./useVersionOf";
 
 /**
  * What changed between two acquisitions.
@@ -30,6 +31,9 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
   const attributes = useAttributeNames();
   const candidates = useCandidateNames();
 
+  // Read again when either run has moved on, which a refresh of the history reveals (UIR-A1).
+  const freshness = useVersionOf(progressOf(runs, [earlier, later]));
+
   const values = useResource(
     useCallback(
       async (signal: AbortSignal) => {
@@ -45,6 +49,7 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
       [earlier, later],
     ),
     earlier !== null && later !== null,
+    freshness,
   );
 
   return (

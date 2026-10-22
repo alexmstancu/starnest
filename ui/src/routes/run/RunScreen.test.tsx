@@ -1445,6 +1445,93 @@ describe("the two acquisitions chosen in the diff", () => {
       ).getByRole("option", { name: /^acquisition 9 —/i }),
     ).toBeInTheDocument();
   });
+
+  /**
+   * Run 7 still going: the history reports how far it has got, and `/values` what it has
+   * stored so far. `moveOn` is the server getting one item further and storing one more figure.
+   */
+  function runSevenStillGoing(): { moveOn: () => void; valueReads: () => number } {
+    let completed = 1;
+    let valueReads = 0;
+    const stored = {
+      ...STORED_VALUES[0]!,
+      id: 9001,
+      attribute: "country.nobody_measures_this",
+      value_type: "Quantity" as const,
+      payload: { magnitude: 4, unit: "km" },
+      data_acquisition_run: 7,
+    };
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        if (query.get("limit") === "1") return;
+        const runs: Run[] = RUNS.map((run) =>
+          run.id === 7
+            ? { ...run, run_status: "running", finished_at: null, items_completed: completed }
+            : run,
+        );
+        return HttpResponse.json({ items: runs, total: runs.length });
+      }),
+      http.get(`${BASE}/values`, ({ request }) => {
+        const fromRun = new URL(request.url).searchParams.get("data_acquisition_run");
+        if (fromRun === null) return;
+        valueReads += 1;
+        const items = [...STORED_VALUES, ...(completed > 1 ? [stored] : [])].filter(
+          (value) => String(value.data_acquisition_run ?? "") === fromRun,
+        );
+        return HttpResponse.json({ items, total: items.length });
+      }),
+    );
+    return {
+      moveOn: () => {
+        completed += 1;
+      },
+      valueReads: () => valueReads,
+    };
+  }
+
+  function refreshTheCard(): Promise<void> {
+    return userEvent.click(
+      within(screen.getByRole("region", { name: /acquisition 7/i })).getByRole("button", {
+        name: "Refresh",
+      }),
+    );
+  }
+
+  /**
+   * UIR-A1. **The comparison follows the runs it compares.** Kept on screen through a re-read
+   * (NEW-11), the diff stopped reading its runs again at all, so comparing a run still going
+   * froze its figures at the moment it was chosen.
+   */
+  it("reads the compared runs again once one of them has moved on", async () => {
+    const run = runSevenStillGoing();
+    renderShell("/acquire");
+    await fiveAgainstSeven();
+    expect(
+      theDiff().queryByRole("row", { name: /nobody measures this/i }),
+    ).not.toBeInTheDocument();
+
+    run.moveOn();
+    await refreshTheCard();
+
+    expect(
+      await theDiff().findByRole("row", { name: /nobody measures this/i }),
+    ).toBeInTheDocument();
+    expectFiveAgainstSeven();
+  });
+
+  it("does not read them again on a refresh that moved neither of them", async () => {
+    const run = runSevenStillGoing();
+    renderShell("/acquire");
+    await fiveAgainstSeven();
+    const reads = run.valueReads();
+
+    await refreshTheCard();
+    await everyActHasEnded();
+
+    expect(run.valueReads()).toBe(reads);
+    expectFiveAgainstSeven();
+  });
 });
 
 describe("the acquisition card", () => {
@@ -2929,7 +3016,7 @@ describe("a figure typed by hand", () => {
       name: /international employers/i,
     });
     expect(
-      within(employers).getByRole("cell", { name: "Otherwise: llm" }),
+      within(employers).getByRole("cell", { name: "Otherwise: LLM with web search" }),
     ).toBeInTheDocument();
     expect(employers).not.toHaveTextContent(/manual|company_website/);
 

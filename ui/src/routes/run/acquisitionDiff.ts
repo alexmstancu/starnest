@@ -225,3 +225,33 @@ export function runIdFrom(chosen: string): number | null {
   const run = Number(chosen);
   return Number.isInteger(run) ? run : null;
 }
+
+/** What `progressOf` reads of a run: where it stands, never what it stored. */
+interface RunProgress {
+  id: number;
+  run_status: string;
+  items_completed?: number;
+  items_failed?: number;
+}
+
+/**
+ * Where the compared runs stand, as a key that changes only when one of them has moved on.
+ *
+ * **A run still going keeps storing figures; one that has finished never will again** (UIR-A1).
+ * The diff stays on screen through every re-read of the history (NEW-11), so it reads its two
+ * runs again when this changes -- a status, or a count of items done or failed -- and not on
+ * every refresh, which would blank a finished comparison for nothing.
+ */
+export function progressOf(
+  runs: readonly RunProgress[],
+  ids: readonly (number | null)[],
+): string {
+  return ids
+    .map((id) => {
+      const run = runs.find((each) => each.id === id);
+      return run === undefined
+        ? `${String(id)}:?`
+        : `${String(id)}:${run.run_status}:${String(run.items_completed ?? "")}:${String(run.items_failed ?? "")}`;
+    })
+    .join("|");
+}

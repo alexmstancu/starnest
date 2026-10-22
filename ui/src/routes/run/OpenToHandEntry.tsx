@@ -2,6 +2,7 @@ import { useCallback, useId, useState } from "react";
 import { fetchAttributes } from "../../api/endpoints";
 import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
 import { useResource } from "../../api/useResource";
+import { useSourceNames } from "../../api/useSourceNames";
 import { pillarName } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { ManualEntryPanel } from "./ManualEntryPanel";
@@ -28,6 +29,7 @@ export function OpenToHandEntry({ level }: { level: string }) {
   // nothing saying which belonged to which attribute.
   const [open, setOpen] = useState<string | null>(null);
   const pillars = usePillarNames();
+  const sourceNames = useSourceNames();
 
   const attributes = useResource(
     useCallback(
@@ -43,7 +45,7 @@ export function OpenToHandEntry({ level }: { level: string }) {
   }
   if (attributes.resource.status !== "ready") return null;
 
-  const open_to = handEnterable(attributes.resource.data.items);
+  const open_to = handEnterable(attributes.resource.data.items, sourceNames);
   if (open_to.length === 0) return null;
 
   return (

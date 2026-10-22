@@ -150,6 +150,7 @@ export interface HandEnterable {
  */
 export function handEnterable(
   attributes: readonly CatalogAttribute[],
+  sourceNames: ReadonlyMap<string, string>,
 ): HandEnterable[] {
   const open: HandEnterable[] = [];
   for (const attribute of attributes) {
@@ -160,7 +161,7 @@ export function handEnterable(
       name: attribute.name,
       pillar: attribute.pillar ?? NO_PILLAR,
       kind,
-      otherwise: otherwiseFor(attribute),
+      otherwise: otherwiseFor(attribute, sourceNames),
     });
   }
   return open.sort((left, right) => left.name.localeCompare(right.name));
@@ -170,12 +171,21 @@ export function handEnterable(
  * What would answer it besides a person, in words.
  *
  * Empty where the catalog has not said: silence is not "nothing", and this column is no place
- * to guess at a source.
+ * to guess at a source. **Named by the catalog, never by id** (UIR-G3): until the names are in,
+ * or if they cannot be read, the column says only that another source would answer it.
  */
-function otherwiseFor(attribute: CatalogAttribute): string {
+function otherwiseFor(
+  attribute: CatalogAttribute,
+  sourceNames: ReadonlyMap<string, string>,
+): string {
   const able = attribute.answerable_by;
   if (able === undefined) return "";
-  return able.length === 0
-    ? "Nothing else would answer it"
-    : `Otherwise: ${able.join(", ")}`;
+  if (able.length === 0) return "Nothing else would answer it";
+  const named = able.flatMap((id) => {
+    const name = sourceNames.get(id);
+    return name === undefined ? [] : [name];
+  });
+  return named.length === 0
+    ? "Another source would answer it"
+    : `Otherwise: ${named.join(", ")}`;
 }
