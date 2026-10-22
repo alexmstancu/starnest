@@ -58,6 +58,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
       <RunReport
         run={run.current}
         busy={run.busy === "opening"}
+        starting={run.starting}
         stopping={run.isStopping(run.current.id)}
         onRefresh={run.refresh}
         onDismiss={run.close}
@@ -266,7 +267,11 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
         <ErrorNotice error={run.history.error} onRetry={run.reloadHistory} />
       )}
       {run.history.status === "ready" && (
-        <RunHistory runs={run.history.data.items} onOpen={run.open} />
+        <RunHistory
+          runs={run.history.data.items}
+          held={run.starting}
+          onOpen={run.open}
+        />
       )}
     </section>
   );
@@ -501,6 +506,7 @@ function RunProgress({ progress }: { progress?: Progress | null }) {
 function RunReport({
   run,
   busy,
+  starting,
   stopping,
   onRefresh,
   onDismiss,
@@ -508,6 +514,8 @@ function RunReport({
 }: {
   run: RunDetail;
   busy: boolean;
+  /** A start is in flight: Refresh and Dismiss would claim the card from it (UIR-G1). */
+  starting: boolean;
   stopping: boolean;
   onRefresh: () => void;
   onDismiss: () => void;
@@ -562,7 +570,7 @@ function RunReport({
               that re-read it every second would spend the reader's backend on nothing. Held
               while it reads, and Stop once it has been asked for, never disabled (NEW-44,
               NEW-52). */}
-          <HeldButton className="button" held={busy} onClick={onRefresh}>
+          <HeldButton className="button" held={busy || starting} onClick={onRefresh}>
             {busy ? "Reading…" : "Refresh"}
           </HeldButton>
           {canStop && (
@@ -581,9 +589,9 @@ function RunReport({
           {/* Dismiss only once there is nothing left to watch, as the design has it: putting a
               run away while it is still writing values would look like cancelling it. */}
           {!going && (
-            <button type="button" className="button" onClick={onDismiss}>
+            <HeldButton className="button" held={starting} onClick={onDismiss}>
               Dismiss
-            </button>
+            </HeldButton>
           )}
         </div>
       </footer>
@@ -614,11 +622,17 @@ function headingFor(state: string): string {
   }
 }
 
+/**
+ * **Held while a start is in flight** (UIR-G1). Opening a past run claims the card, and a start
+ * that succeeded meanwhile would then never reach it -- the next Start refused as in flight.
+ */
 function RunHistory({
   runs,
+  held,
   onOpen,
 }: {
   runs: Run[];
+  held: boolean;
   onOpen: (run: Run) => void;
 }) {
   if (runs.length === 0)
@@ -651,13 +665,13 @@ function RunHistory({
                   reader is already looking at, and it is unique, which is what a link needs
                   to be. Sequential, never hexadecimal -- an acquisition is counted. */}
               <th scope="row">
-                <button
-                  type="button"
+                <HeldButton
                   className="link-button"
+                  held={held}
                   onClick={() => onOpen(run)}
                 >
                   {run.id}
-                </button>
+                </HeldButton>
               </th>
               <td>{formatDateTime(run.started_at)}</td>
               {/* Its size, not its contents: the scope is stored expanded, so a row carries

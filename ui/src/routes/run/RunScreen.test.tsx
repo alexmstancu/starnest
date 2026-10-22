@@ -2379,7 +2379,12 @@ describe("whose failure the screen reports", () => {
     );
   });
 
-  it("still reports a start the server refused, though the reader opened another run meanwhile", async () => {
+  /**
+   * A refused start is reported, and the card keeps the run it had. Opening a past run while the
+   * start was in flight used to take the card first; that is held now (UIR-G1), so the press
+   * does nothing and the refusal lands on the run the reader was looking at.
+   */
+  it("reports a start the server refused, and keeps the run that was on the card", async () => {
     const refusal = heldAnswer();
     mockServer.use(
       http.post(`${BASE}/data-acquisition-runs`, async () => {
@@ -2401,15 +2406,17 @@ describe("whose failure the screen reports", () => {
       await screen.findByRole("button", { name: /start this acquisition/i }),
     );
     await openFromHistory("6");
-    await screen.findByRole("region", { name: /acquisition 6/i });
     refusal.release();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "run_already_in_flight",
     );
     expect(
-      screen.getByRole("region", { name: /acquisition 6/i }),
+      screen.getByRole("region", { name: /acquisition 7/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: /acquisition 6/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("still reports a stop the server refused, though the reader opened another run meanwhile", async () => {
@@ -3488,32 +3495,22 @@ describe("acting from the keyboard", () => {
   });
 
   /**
-   * NEW-57. **Every way to start stays held for as long as a start is in flight, whatever act
-   * is newest.** They were held only while `busy` said "running", and a Refresh sent meanwhile
-   * took the label -- so a second start could be sent. The database refuses it, but its claim
-   * took the card from the run that did start, and put the old one back under the refusal.
+   * NEW-57 and UIR-G1. **Nothing takes the card from a start in flight.** Every way to start
+   * stays held while one is in flight (NEW-57). So do Refresh, Dismiss and opening a past run
+   * (UIR-G1): each claimed the card, so a start that succeeded meanwhile never reached it, and
+   * the next Start was refused as already in flight.
    */
-  async function aRefreshReadingWhileAStartIsSent(
+  async function aStartInFlight(
     user: ReturnType<typeof userEvent.setup>,
     startBy: HTMLElement,
   ): Promise<{ starts: { requests: { sent: number } }; release: () => void }> {
-    const card = within(screen.getByRole("region", { name: /acquisition 7/i }));
     const starts = holdEach("post", "/data-acquisition-runs");
     await user.click(startBy);
     await waitFor(() => expect(starts.requests.sent).toBe(1));
-    const reads = holdEach("get", "/data-acquisition-runs/7");
-    await user.click(card.getByRole("button", { name: "Refresh" }));
-    await waitFor(() => expect(reads.requests.sent).toBe(1));
-    return {
-      starts,
-      release: () => {
-        reads.release();
-        starts.release();
-      },
-    };
+    return { starts, release: starts.release };
   }
 
-  it("keeps Start held while the run is started, though a refresh is read meanwhile", async () => {
+  it("keeps Start held while the run is started", async () => {
     const user = userEvent.setup();
     renderShell("/acquire");
     await screen.findByRole("region", { name: /acquisition 7/i });
@@ -3521,10 +3518,7 @@ describe("acting from the keyboard", () => {
     const startIt = await screen.findByRole("button", {
       name: /start this acquisition/i,
     });
-    const { starts, release } = await aRefreshReadingWhileAStartIsSent(
-      user,
-      startIt,
-    );
+    const { starts, release } = await aStartInFlight(user, startIt);
 
     expectHeld(startIt);
     expect(startIt).toHaveTextContent("Running…");
@@ -3535,13 +3529,10 @@ describe("acting from the keyboard", () => {
     expect(starts.requests.sent).toBe(1);
   });
 
-  it("keeps Yes and Not yet held while the run is started, though a refresh is read meanwhile", async () => {
+  it("keeps Yes and Not yet held while the run is started", async () => {
     const user = userEvent.setup();
     const { yes, notYet } = await aRetryArmed();
-    const { starts, release } = await aRefreshReadingWhileAStartIsSent(
-      user,
-      yes,
-    );
+    const { starts, release } = await aStartInFlight(user, yes);
 
     expectHeld(yes);
     expect(yes).toHaveTextContent("Starting…");
@@ -3553,5 +3544,38 @@ describe("acting from the keyboard", () => {
     release();
     await everyActHasEnded();
     expect(starts.requests.sent).toBe(1);
+  });
+
+  it("holds Refresh, Dismiss and the history while a start is in flight, so the run it started reaches the card", async () => {
+    const user = userEvent.setup();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    await estimate();
+    const startIt = await screen.findByRole("button", {
+      name: /start this acquisition/i,
+    });
+    const { release } = await aStartInFlight(user, startIt);
+    const reads = holdEach("get", "/data-acquisition-runs/:runId");
+    const pastRun = within(
+      screen.getByRole("rowheader", { name: "7" }),
+    ).getByRole("button", { name: "7" });
+
+    for (const control of [
+      card.getByRole("button", { name: "Refresh" }),
+      card.getByRole("button", { name: "Dismiss" }),
+      pastRun,
+    ]) {
+      expectHeld(control);
+      await user.click(control);
+    }
+    expect(reads.requests.sent).toBe(0);
+
+    release();
+    reads.release();
+    expect(
+      await screen.findByRole("region", { name: /acquisition 8/i }),
+    ).toBeInTheDocument();
   });
 });
