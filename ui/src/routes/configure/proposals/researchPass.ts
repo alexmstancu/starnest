@@ -153,12 +153,16 @@ export function couldNotStart(ceilingEur: number, failure: unknown): PassEnd {
 }
 
 /**
- * Whether the answers need reading again once the pass is over. **Once, at the end**, and only
- * when a proposal may have been written: an answer listed one, or a request failed after a write
- * its response never got to report. A pass that proposed nothing changed nothing.
+ * Whether the screen should read the answers again once a pass has ended (UIC-A2).
+ *
+ * **After any pass that asked something**, not only one that stored a proposal: the server
+ * declines a model's proposal when a person answered the gate while the pass ran, so the answers
+ * can move under a pass that stored nothing, and the list on screen would be out of date. Also
+ * after a failure, which may come after a write the response never got to report. Not when
+ * nothing was asked: then nothing on the server moved because of this pass.
  */
-export function mayHaveStored(end: PassEnd): boolean {
-  return end.pass.tally.proposed > 0 || end.kind === "failed";
+export function shouldReadAnswersAgain(end: PassEnd): boolean {
+  return end.pass.tally.asked > 0 || end.kind === "failed";
 }
 
 /** Said while the pass reads its cap and its gates, before the first question. */

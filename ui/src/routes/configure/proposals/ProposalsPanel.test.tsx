@@ -661,6 +661,45 @@ describe("a research pass, one gate at a time", () => {
     expect(statusLine()).not.toHaveClass("notice--warning");
   });
 
+  /**
+   * UIC-A2. **A pass that stored nothing still reads the answers again.** A person who answered
+   * a gate while the pass ran displaces the model's proposal, so the answers moved under a pass
+   * that proposed nothing -- and an outdated proposal on screen was confirmable once it ended.
+   */
+  it("reads the answers again after a pass that only met a person's answer", async () => {
+    const order: string[] = [];
+    const log = ({ request }: { request: Request }) => {
+      const path = new URL(request.url).pathname;
+      if (path === `${BASE}/match-rule-research` || path === `${BASE}/match-rule-results`) {
+        order.push(`${request.method} ${path}`);
+      }
+    };
+    mockServer.events.on("request:start", log);
+    onTestFinished(() => mockServer.events.removeListener("request:start", log));
+    watchResearch({
+      answer: ({ match_rules }) =>
+        answered({
+          cost_eur: 0.04,
+          calls: 1,
+          refusals:
+            match_rules?.[0] === "country.uk_skilled_worker"
+              ? ["a person answered this gate while the pass ran, so the proposal was not stored"]
+              : [],
+        }),
+    });
+    renderShell("/configure");
+    await settled();
+
+    await researched();
+    await passSays(/asked every gate/);
+
+    await waitFor(() =>
+      expect(order.slice(order.lastIndexOf(`POST ${BASE}/match-rule-research`) + 1)).toContain(
+        `GET ${BASE}/match-rule-results`,
+      ),
+    );
+  });
+
   it("reads the answers again once, at the end of the pass, not after every question", async () => {
     const order: string[] = [];
     const log = ({ request }: { request: Request }) => {

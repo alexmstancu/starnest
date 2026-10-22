@@ -8,7 +8,7 @@ import {
   describeProgress,
   endIsWarning,
   failedOn,
-  mayHaveStored,
+  shouldReadAnswersAgain,
   nextStep,
   reachedCap,
   spendIsKnown,
@@ -275,16 +275,32 @@ describe("stopping and failing", () => {
     expect(end.pass.ceilingEur).toBe(0.12);
   });
 
-  it("reads the answers again only when something may have been stored", () => {
+  /**
+   * UIC-A2. **Read again after any pass that asked something**, not only one that stored: the
+   * server declines a model's proposal when a person answered meanwhile, so the answers can move
+   * under a pass that stored nothing -- and an outdated proposal stayed confirmable after it.
+   */
+  it("reads the answers again after any pass that asked something", () => {
     const proposedOne = after(aPass(), answer(0.04, { proposals: [{}] }));
     const proposedNothing = after(aPass(), answer(0.04));
+    const metAPerson = after(
+      aPass(),
+      answer(0.04, { refusals: ["a person answered this gate while the pass ran"] }),
+    );
 
-    expect(mayHaveStored(endOf(proposedOne, true))).toBe(true);
-    expect(mayHaveStored(endOf(proposedNothing, true))).toBe(false);
-    expect(mayHaveStored(failedOn(proposedNothing, REFUSED))).toBe(false);
-    // A failure may come after a write the response never got to report.
-    expect(mayHaveStored(failedOn(proposedNothing, UNREACHABLE))).toBe(true);
-    expect(mayHaveStored(couldNotStart(0.12, UNREACHABLE))).toBe(false);
+    expect(shouldReadAnswersAgain(endOf(proposedOne, true))).toBe(true);
+    expect(shouldReadAnswersAgain(endOf(proposedNothing, true))).toBe(true);
+    expect(shouldReadAnswersAgain(endOf(metAPerson, true))).toBe(true);
+    expect(shouldReadAnswersAgain(failedOn(proposedNothing, REFUSED))).toBe(true);
+  });
+
+  it("does not read them again when nothing was asked", () => {
+    expect(shouldReadAnswersAgain(failedOn(aPass(), REFUSED))).toBe(false);
+    expect(shouldReadAnswersAgain(couldNotStart(0.12, UNREACHABLE))).toBe(false);
+  });
+
+  it("reads them again after a failure, which may follow a write it never reported", () => {
+    expect(shouldReadAnswersAgain(failedOn(aPass(), UNREACHABLE))).toBe(true);
   });
 });
 

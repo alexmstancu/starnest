@@ -12,7 +12,7 @@ import {
   describeProgress,
   endIsWarning,
   failedOn,
-  mayHaveStored,
+  shouldReadAnswersAgain,
   nextStep,
   withAnswer,
   type Asking,
@@ -103,7 +103,7 @@ export function useResearchPass(
         inFlight.current = false;
         setPhase(IDLE);
         setEnd(ended);
-        if (mayHaveStored(ended)) onAnswered();
+        if (shouldReadAnswersAgain(ended)) onAnswered();
       },
       () => {
         // Abandoned: the screen that held the pass has gone, and there is nobody left to tell.
