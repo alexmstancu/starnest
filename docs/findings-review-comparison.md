@@ -29,6 +29,8 @@ The table preserves the original IDs, order, severity labels, and both independe
 
 **The browser suite's own database (2026-10-20):** UI-03 moves from PARTIAL to FIXED. The column now reads **67 FIXED, 2 PARTIAL, 16 NOT_FIXED, 5 CLOSED, 1 N/A**. Details in [The browser suite's own database](#the-browser-suites-own-database-2026-10-20).
 
+**The other agent's fixes, verified (2026-10-21 and 2026-10-22):** two non-Claude reviewers checked `bf47645` to `a7a2fa8`, then GPT-6 Astra checked the follow-up `b53b2e0` to `a912a6a`. BE-07, BE-31 and BE-33 move to FIXED. BE-11 moves from NOT_FIXED to PARTIAL. ST-07 stays PARTIAL. BE-19 stays FIXED, but only since `946db36`; the FIXED written on 2026-10-18 was premature. The column now reads **70 FIXED, 2 PARTIAL, 13 NOT_FIXED, 5 CLOSED, 1 N/A**. Details in [The other agent's fixes, verified](#the-other-agents-fixes-verified-2026-10-21-and-2026-10-22).
+
 | nr | finding_id | finding_summary | severity | gpt-6-astra | claude-opus-5 | action | decision | fix_status |
 |---:|---|---|---|---|---|---|---|---|
 | 1 | UI-01 | nginx's 60-second read timeout can interrupt synchronous paid gate research before its result and actual cost reach the browser. Continued work after disconnection was not runtime-verified. | High | REAL | REAL | no-op | REAL | FIXED |
@@ -70,11 +72,11 @@ The table preserves the original IDs, order, severity labels, and both independe
 | 37 | BE-04 | Legal exclusions can leave zero scoring mass and cause an unmapped ranking error. An empty zero-weight pillar is also refused despite zero weight being a suggested remedy. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 38 | BE-05 | Criterion validation permits normalisation methods prohibited for the attribute's semantic value type, leading to arbitrary scores or unscoreable columns. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 39 | BE-06 | Quantity validation does not check the declared unit/dimension, allowing a magnitude in one unit to be interpreted in another. | Medium | REAL | REAL | no-op | REAL | FIXED |
-| 40 | BE-07 | Confidence derivation is disconnected from production reads, so stale observations can retain their original HIGH grade in confidence summaries. | Medium | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 40 | BE-07 | Confidence derivation is disconnected from production reads, so stale observations can retain their original HIGH grade in confidence summaries. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 41 | BE-08 | Rejected returned measurements are stored without corresponding acquisition failures, preventing selective failed-item retry from reaching them. | Medium | REAL | REAL | no-op | REAL | FIXED |
 | 42 | BE-09 | WHO constructs observations without common attribute-explicit validation. The credible-range bypass is latent under the current catalog. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 43 | BE-10 | Retry wrappers do not forward the active cost meter, allowing absent or stale underlying meters to undermine cap enforcement or reject valid retries. | High | REAL | REAL | no-op | REAL | FIXED |
-| 44 | BE-11 | Selective retry expands exact failed/unanswered pairs into broader candidate-attribute rectangles, allegedly re-fetching unrelated work. The models differ on whether the explicit retry contract permits this. | Medium | UNREAL | REAL | third-review | REAL | NOT_FIXED |
+| 44 | BE-11 | Selective retry expands exact failed/unanswered pairs into broader candidate-attribute rectangles, allegedly re-fetching unrelated work. The models differ on whether the explicit retry contract permits this. | Medium | UNREAL | REAL | third-review | REAL | PARTIAL |
 | 45 | BE-12 | Retry awaits completion despite returning 202 and omits the in-flight guard used by ordinary start, enabling blocking or overlapping passes. | High | REAL | REAL | no-op | REAL | FIXED |
 | 46 | BE-13 | Unanswered retry reintroduces paid-source eligibility rather than preserving an initial free-sweep decision. Current cap refusal overlaps BE-14; unexpected billing requires a different registry. | Medium | UNREAL | REAL | third-review | UNREAL | N/A |
 | 47 | BE-14 | A free explicit scope can require a spend cap solely because an unrelated enabled paid adapter is registered. | Medium | REAL | REAL | no-op | REAL | FIXED |
@@ -94,9 +96,9 @@ The table preserves the original IDs, order, severity labels, and both independe
 | 61 | BE-28 | AssignedScore fallback uses an invalid constructor and cannot store an otherwise eligible paid answer. Current manual AssignedScores are excluded, making the branch latent. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 62 | BE-29 | Source JSON is decoded through binary floats before Decimal conversion, losing publisher precision for long numeric tokens. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 63 | BE-30 | Employer-response elements are stringified instead of validated as firm-name strings, allowing nulls, numbers, or objects to become labels. | Low | REAL | REAL | no-op | REAL | FIXED |
-| 64 | BE-31 | Comparison directly imports criteria despite the exhaustive dependency table, and the configured layer guard permits this forbidden edge. | Low | REAL | REAL | no-op | REAL | PARTIAL |
+| 64 | BE-31 | Comparison directly imports criteria despite the exhaustive dependency table, and the configured layer guard permits this forbidden edge. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 65 | BE-32 | Bare pytest excludes paid live tests but still selects ordinary live-publisher tests, making the default invocation network-dependent. | Low | REAL | REAL | no-op | REAL | FIXED |
-| 66 | BE-33 | Known/deferred spending durability remains per source, so death before the current source returns loses its billed totals. | Low | REAL | REAL | no-op | REAL | NOT_FIXED |
+| 66 | BE-33 | Known/deferred spending durability remains per source, so death before the current source returns loses its billed totals. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 67 | BE-34 | Known/deferred gate research returns/logs spending but creates no durable billing record, leaving lost responses or process death unledgered. | Low | REAL | REAL | no-op | REAL | FIXED |
 | 68 | BE-36 | Finite-period confirmed gates keep applying and are skipped by research. Whether expiry should invalidate manual decisions remains a policy question. | Medium | UNCERTAIN | REAL | verify | REAL | NOT_FIXED |
 | 69 | BE-37 | Fallback eligibility excludes an entire attribute whenever any structured adapter declares it, rather than considering candidate-specific gaps or failed sources. | Low | REAL | REAL | no-op | REAL | CLOSED |
@@ -174,7 +176,16 @@ The fresh adjudicator's conclusion is adopted unchanged: **UNREAL as a distinct 
 - **BE-01:** `thresholds_that_rule_out` judges all four threshold shapes, but `ranking.py:444` passes only scored criteria. Excluded criteria never gate, including every LabelSet criterion (`0122` forbids scoring them), although `d6-scale-anchors.md:77-78` says an excluded criterion "still matches, still gates".
 - **BE-21:** Request validation now uses the single error shape, and money and score-scale fields are bounded. These cases still return 500 because the domain error arrives wrapped in a pydantic `ValidationError` that `refusal_for` cannot map: malformed household candidate IDs and impossible place combinations, inverted range thresholds (`criteria.py:211`), and inverted periods on manual values (`values.py:132`) and gate answers (`rules.py:393`).
 - **BE-23:** `extra="forbid"` now covers settings, household, set-name, and pillar-weight bodies. Run, retry, research, and gate-answer bodies still drop unknown fields. Unknown query parameters are still ignored. `scale_anchors: null` still clears anchors (`criteria.py:176`), and `required_value: null` still becomes `false` (`criteria.py:213`).
-- **ST-07:** Locks, typed thresholds, reducers, and breakdowns are now frozen and read back (`0500`). Rule-input Value IDs are still not frozen, so a warning's source/date chain still cannot be reopened. Rows saved before `0500` read back as unlocked and without a threshold.
+- **ST-07:** Since `0500`, locks, typed thresholds, reducers and breakdowns are frozen and read back. Since `0504`, `0505` and `0507`, more is frozen and read back in condition order:
+  - the value rows behind a warning and behind a compound rule's refusal;
+  - the pillar locks;
+  - the enforced and applied rule lists.
+
+  Two things are still missing:
+  - the figure behind a threshold refusal on an excluded or unscored criterion (FU-A3);
+  - the gate answer behind a gate refusal (FU-A4). A later answer overwrites that answer in place and deletes its citations.
+
+  Rows saved before each migration read back without what it added.
 - **ST-08:** New snapshots freeze `value_type`, but `0500` backfills old rows from today's attribute type. Snapshots saved before `0478`/`0492` still report the retyped type.
 
 ### FIXED: caveats
@@ -217,7 +228,7 @@ The round was scoped by the household to real bugs whose fix is a few lines in a
 | BE-28 | 268292f |
 | BE-29 | 268292f |
 | BE-30 | 268292f |
-| BE-31 | 986cdd8 (PARTIAL) |
+| BE-31 | 986cdd8 (PARTIAL), then a9d7929 (FIXED) |
 | BE-32 | c222046 |
 | BE-38 | c222046, dd2af3e |
 | ST-20 | fb53d42 |
@@ -298,7 +309,7 @@ The reviews also found side effects of the round itself. Each was confirmed in t
 | NEW-43: tabbing onto a weight slider, or clicking its thumb without dragging, sent a weight nobody chose. Chromium holds a slider's value snapped to its 0.5 step, so a stored 6.8 read back as 7 and was sent, rebalancing the pillar. This predates round 2; the focus work found it. | f230c3a |
 | Text left behind: the `start_run` comment (NEW-15) and the `make coverage` help line (BE-38) | dd2af3e |
 
-Recorded for later, in the plan's section 7: NEW-36 to NEW-42 and NEW-44 to NEW-47. One of them needs your attention: **NEW-47**. The builder's commit `2c04381` (2026-10-02, before this review) deleted 929 lines of `styles.css` without saying so, and 56 classes the screens still use have had no styles since. They include the criterion rows, the confirmation strip, the tiles and the danger button. It is a look, not a behaviour, but it is a lost write, and it needs a visual check and a restore.
+Recorded for later, in the plan's section 7: NEW-36 to NEW-42 and NEW-44 to NEW-47. One of them needs your attention: **NEW-47**. The builder's commit `2c04381` (2026-10-02, before this review) deleted 923 lines of `styles.css` without saying so, and 56 classes the screens still use have had no styles since. They include the criterion rows, the confirmation strip, the tiles and the danger button. It is a look, not a behaviour, but it is a lost write, and it needs a visual check and a restore.
 
 ## Checkpoint (2026-10-18)
 
@@ -308,7 +319,7 @@ Everything above, tested and reviewed again at `cfabd6c`:
 - **Browser suite** (Playwright), against the containers rebuilt at `cfabd6c`: 25 passed, 4 failed, 3 did not run.
   - The four failures are specs left stale on 2026-10-04, when the builder's `2a13d73` named the weight sliders after their attributes' catalog names and `ddbf555` gave the Compare matrix a "Pillar" column instead of "Attribute". Neither changed since `acb56e5`, so none of the four comes from this review's commits (NEW-51).
   - The three that did not run follow a failure in the same serial spec.
-  - Your live data came back as it was. Weights, rules, sources, settings and the gate answer are identical to before the run. The run added one `[e2e]` saved ranking, which the next boot discards, and run 123: one free Eurostat figure for Portugal.
+  - Your live data came back as it was. Weights, rules, sources and settings are identical to before the run. The gate answer has the same verdict and reason, but a new retrieval date, because the restore re-sends only those two fields (corrected 2026-10-22, DOC-A2). The run added one `[e2e]` saved ranking, which the next boot discards, and run 123: one free Eurostat figure for Portugal.
 - **Five independent reviews** of `acb56e5..cfabd6c`, by area (acquisition and storage, API and evaluation, Configure, Acquire/Rank/Compare, and test integrity). The API and Configure reviews found nothing significant. The others found three defects in this review's own work, each confirmed in the code:
 
 | Defect | Severity | Status |
@@ -340,7 +351,7 @@ While the decisions above were open, the other agent committed three fixes to `m
 | Finding | Commit | Checked |
 |---|---|---|
 | ST-02 | `5358c3c` | Each set edit reads, mutates and writes in one transaction, under a `FOR UPDATE` row lock (`pool.connection()` commits at the end of the block), so overlapping edits serialise and both land. The mutations are plain functions on the same connection, so the single-connection pool cannot deadlock. FIXED |
-| BE-19 | `d7a1263` | The two AI adapters yield each candidate as it lands, and `acquire` stores each batch before asking for the next. BE-08's failure for a rejected figure is kept in the new loop. FIXED. Its cost is still saved only when the whole source ends, so BE-33 stays open |
+| BE-19 | `d7a1263` | The two AI adapters yield each candidate as it lands, and `acquire` stores each batch before asking for the next. BE-08's failure for a rejected figure is kept in the new loop. FIXED. Its cost is still saved only when the whole source ends, so BE-33 stays open. **Corrected 2026-10-21 (DOC-A1):** this FIXED was premature. Failures were still held in memory until the run ended, so a hard kill lost them. BE-19 was PARTIAL until `946db36` saved each batch's failures before the next fetch |
 | ST-09 | `608919f`, then `b673fde` | A re-read transcribed figure counts as answered, not unanswered. Its new table recorded no source, so the source-by-source bars could not show it (NEW-54); `b673fde` amended `0501` before it was applied anywhere, and the bars now credit the source. FIXED |
 
 Consequences for the plan: the next migration is `0502`; the held NEW-48 commit no longer works as written, since a run now asks through `fetch_in_batches`; and keeping one database connection (NEW-21) no longer rests on ST-02.
@@ -418,13 +429,13 @@ You approved the plan for UI-03 and chose to delete the Greece answer the suite 
 
 | Finding | Commit | What changed |
 |---|---|---|
-| UI-03 | 05f17bd, 854d78a | `make e2e` restores your newest backup into a throwaway `<db>_e2e` database, migrates it (so a pending migration is rehearsed on real data first), runs the suite on a backend and a Vite it starts itself on ports 8100 and 5180, and drops the copy whatever the outcome. The config refuses to run without that database, refuses any database whose name does not end in `_e2e`, never reuses a running server, and has no AI key, so the suite cannot spend. R-2 goes with it: the suite can no longer turn an answer into a manual one in your data |
+| UI-03 | 05f17bd, 854d78a | `make e2e` restores your newest backup into a throwaway `<db>_e2e` database, migrates it (so a pending migration is rehearsed on real data first), runs the suite on a backend and a Vite it starts itself on ports 8100 and 5180, and drops the copy when the suite passes or fails and when the restore or migration fails. Ctrl-C leaves the copy until the next run or `make e2e-drop` (corrected 2026-10-22, DOC-A5). The config refuses to run without that database, refuses any database whose name does not end in `_e2e`, never reuses a running server, and has no AI key, so the suite cannot spend. R-2 goes with it: the suite can no longer turn an answer into a manual one in your data |
 
 It was written test-first: five architecture guards failed first, then passed. One choice differs from the plan. Gate C still puts Greece's answer back after each test, because a later spec ranks with `local_employment`, which enforces that gate; on the copy, that reset can no longer touch your data.
 
 **Checked:**
 
-- `make ui-check` is green: 1,558 tests, eslint without errors.
+- `make ui-check` is green: 1,558 tests at `05f17bd`, eslint without errors. The review fix `854d78a` added five, so UI-03 ended at 1,563 (corrected 2026-10-22, DOC-A3).
 - A real `make e2e`: 32 of 32 passed in 37 s, **your live database identical before and after**, and no `_e2e` database left behind.
 - Refused as intended: no backup ("run make backup"), a bare `playwright test` ("run the browser suite with `make e2e`"), a URL pointing at the live database (refused by name, without printing the password), and a busy backend port (the backend cannot bind, and the copy is still dropped).
 - The Greece answer: `make backup` took `backups/20261020-165241.dump`, then one transaction deleted the suite's `not_manually_excluded` answer for Greece. It refused unless exactly that one row matched (manual, `matching`, no reason, no override); it had no citations. Your ranking is unchanged: Greece 46, matching.
@@ -452,3 +463,27 @@ You approved the plan and chose where focus lands. `d4df1ad` and `746e8a4`, test
 **Independent review:** one real gap in `d4df1ad`, fixed test-first in `746e8a4`. The list kept on screen during a re-read was not held, so a row just confirmed could be confirmed twice, and at the end of a research pass a row the pass had replaced could have been confirmed from its outdated content. Every Confirm is now held from the moment the answers are written until the new list lands. The review confirmed the rest, including that React gives focus back to an element it moves, in a browser as in jsdom. A second review of `746e8a4` found nothing: both windows are closed with no render in between, and the hold cannot stick.
 
 **Noticed, recorded for later:** NEW-66, the Proposals table prints raw gate and candidate ids rather than their names.
+
+## The other agent's fixes, verified (2026-10-21 and 2026-10-22)
+
+The other agent fixed its remaining larger findings in two passes, and non-Claude reviewers checked both against the code:
+- **First pass** (`bf47645` to `a7a2fa8`), checked by GPT-6 Astra and Grok 4.7.
+- **Follow-up** (`b53b2e0` to `a912a6a`), checked by GPT-6 Astra at max effort, reading git objects only.
+
+| Finding | Commits | Verdict |
+|---|---|---|
+| BE-19 | `d7a1263`, `946db36` | FIXED. Each batch's failures are saved before the next fetch. One gap remains: a value or reuse row commits a moment before its failure does, so a kill in between loses that failure (BEA-1 / FU-A7, Low). You accepted it on 2026-10-22, recorded in `known-issues.md` |
+| BE-07 | `4188571`, `babfbe5` | FIXED, in the scope you approved (the confidence split only). The API and `make rank` both downgrade a figure aged past its `max_age`. No test covers the CLI, because scripts are outside coverage. Month-end precision (KT-A4) is deferred as Low. The deferral's stated reason is unsound: SQL can compute the expiry behind a port, the way active-value freshness does |
+| BE-31 | `a9d7929` | FIXED. The exact import table of `arch.md` 6.1 is enforced on direct imports |
+| BE-33 | `a7a2fa8` | FIXED. A run's spend is written per batch |
+| NEW-48 | `27add01`, `6c38f51` | FIXED. A retried source is asked only about its own failed pairs, in both fetch paths |
+| BE-11 | `27add01`, `6c38f51` | PARTIAL. Adapters and ask-again now get exact pairs, and the run records them (`0506`). Two gaps remain. Stand-in borrowing still crosses the two lists, and the counts are not limited to the recorded pairs, so a retry can report 3 completed out of 2 (FU-A1, a new regression). And a switched-off source's failure becomes an unanswered item that nobody asks (FU-A2) |
+| ST-07 | `c943761`, `bf47645`, `b53b2e0`, `a912a6a` | PARTIAL. See [PARTIAL: what remains](#partial-what-remains). The threshold figure (FU-A3) and the gate answer (FU-A4) are still not frozen. You decided on 2026-10-22 that both are finished, as the approved plan says |
+
+**New in the follow-up:**
+- **FU-A5:** the `0506` and `0507` rollbacks drop recorded history without refusing. You decided on 2026-10-22 that a rollback which would delete recorded history refuses, and takes `LOCK TABLE` before it counts.
+- **FU-A6:** `openapi.yaml:1721` still defines `items_total` as candidates × attributes.
+
+These are in the other agent's lane. Its notes claim more than this (`findings-remediation.md` says "BE-11 fully" and "only open item"). This tracker follows the review.
+
+**The 109 commits of this remediation, reviewed (2026-10-21):** GPT-6 Astra and Grok 4.7 checked every commit twice and found 22 problems. They are listed with their status and the plan to close them in [copilot-cross-model-review.md](copilot-cross-model-review.md). DOC-A1, DOC-A2, DOC-A3, DOC-A5 and DOC-A6 are corrected above in this file.

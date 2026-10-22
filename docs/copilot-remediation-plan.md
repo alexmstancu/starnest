@@ -1,5 +1,9 @@
 # Copilot remediation plan
 
+**Status (2026-10-22):**
+- The other agent's remaining larger findings are verified. The tracker now reads 70 FIXED, 2 PARTIAL, 13 NOT_FIXED, 5 CLOSED and 1 N/A.
+- GPT-6 Astra and Grok 4.7 reviewed the 109 commits of this remediation and found 22 problems. One is fixed. The other 21, with their causal analysis and the order of work, are in [copilot-cross-model-review.md](copilot-cross-model-review.md).
+
 **Status (2026-10-20):** round 2, Phase B, gate research, UI-03 and NEW-45 are done. Round 2 fixed 37 findings and the 18 small defects found while planning, test-first (section 2). Phase B fixed the five in section 3, UI-11, UI-15 and UI-26 the small way and UI-32 and BE-23 in full, together with NEW-04, NEW-11, NEW-18 and ten of the defects recorded since round 2. Gate research (UI-01, NEW-01, BE-34), as you approved it on 2026-10-18, now asks 3 paid questions instead of 160, one per request, held to the spend cap, with every billed call ledgered (migrations `0502` and `0503`). Since round 2, 41 more defects were found (NEW-26 to NEW-66, section 7): 30 are fixed and 11 are recorded for later, NEW-48 among them, held for BE-11 by your choice. BE-31 stays partial, as planned. The other agent fixed ST-02, BE-19 and ST-09 on 2026-10-18, checked against the code. Since 2026-10-20 the browser suite runs on its own throwaway database (UI-03), so it no longer touches your live data. Per finding, the tracker reads **67 FIXED, 2 PARTIAL, 16 NOT_FIXED, 5 CLOSED, 1 N/A** ([findings-review-comparison.md](findings-review-comparison.md)).
 
 This plan was written on 2026-10-15 against `c943761`, where `make check` was green: 2,863 backend tests, 96.92% coverage, 1,116 UI tests.
@@ -270,6 +274,25 @@ No migration, contract change or browser run happens this round.
 - Delete the Greece answer the browser suite wrote into your live database, after a backup (done: `backups/20261020-165241.dump`, then one checked transaction).
 - NEW-45 next (done, `d4df1ad`, `746e8a4`): after an undo or a reset, focus goes to the "Recent changes" heading button; after a confirm, to the next proposal's Confirm, or to Estimate once none is left.
 
+**Given to me, 2026-10-22:**
+
+- **One protocol for both agents.** It is written out in [copilot-cross-model-review.md](copilot-cross-model-review.md):
+  - name the rule being protected;
+  - before coding, map every path to the bad state and everything that reads the change, and signal the undesired consequences;
+  - write tests that cover every path by running the real thing, and confirm they fail when the fix is undone;
+  - run the full gate on every commit;
+  - work one cluster at a time.
+
+  The work stops when no High or Medium finding is open and a final review finds none caused by the fixes.
+- **The 21 open cross-model findings**, in this order: docs, then the e2e isolation, then Compare, Acquire, Configure and the rollbacks.
+- **The e2e isolation:** patch the Makefile, and test its behaviour rather than its text.
+- **UIR-G1:** hold Refresh, Dismiss and history Open while a start is pending.
+- **UIC-A3:** fix it, last.
+- **Rollbacks:** a rollback that would delete recorded history refuses, and takes `LOCK TABLE` before it counts. This covers `0503`, `0478`, `0492` and `0493` (mine) and `0506` and `0507` (the other agent's), with a guard test. ST-19 stays closed: this closes the count-then-drop race, not ST-19.
+- **ST-07:** the other agent finishes FU-A3 (the threshold figure) and FU-A4 (the gate answer), as the approved plan says.
+- **BEA-1 / FU-A7:** the gap between a value's commit and its failure's commit is accepted and recorded, not fixed.
+- **Read-only:** lifted.
+
 **Closed without code:**
 
 | Finding | Why |
@@ -330,7 +353,7 @@ No migration, contract change or browser run happens this round.
 | NEW-44 | Older controls still disable themselves during a write and drop keyboard focus, as NEW-34 did | Fixed (45f2c25 on Proposals; 46d84d1 on Acquire, through a shared `HeldButton`) | `ProposalsPanel.tsx`, `ManualEntryPanel.tsx`, `RunScreen.tsx`, `ItemGroups.tsx` |
 | NEW-45 | Focus is still lost when a source is moved down or dragged (the row is re-mounted), when a successful undo or reset removes the button pressed, when confirming a proposal removes its button, and when the re-read at the end of a research pass blanks the list | Fixed (d4df1ad, 746e8a4). The "moved down or dragged" part did not reproduce: React gives focus back to an element it moves; the real case was an arrow disabled at an end of the list | `DataSourcesPanel.tsx`, `RecentChanges.tsx`, `ProposalsPanel.tsx` |
 | NEW-46 | A held slider, lock or "blocks scoring" box looks unchanged, because no `:disabled` style ever covered them | Later (looks) | `styles.css` |
-| NEW-47 | The builder's `2c04381` (2026-10-02) deleted 929 lines of `styles.css` unannounced; 60 classes still used on screen had no styles, including the criterion rows, confirmation strip, tiles, status pills and danger button | Fixed (54ef14f), restored from `2c04381^` and checked with before-and-after screenshots | `ui/src/styles.css` |
+| NEW-47 | The builder's `2c04381` (2026-10-02) deleted 923 lines of `styles.css` unannounced; 60 classes still used on screen had no styles, including the criterion rows, confirmation strip, tiles, status pills and danger button | Fixed (54ef14f), restored from `2c04381^` and checked with before-and-after screenshots | `ui/src/styles.css` |
 | NEW-48 | A retry can bill a paid source again for a country it answered: since BE-08 a free source's rejected figure puts that country in the retry, and every retried source is asked about every retried country (BE-11) | Held, Low: only a direct call to `/retry` reaches it, since the app's Retry button starts a scoped run (UI-02). Fixed with BE-11 (your choice) | `S/data_acquisition/execution.py:566-574` |
 | NEW-49 | A Refresh, or a start the server refuses, while a Stop is being sent outranks the stop's own read, so the card can show no stop and offer Stop again | Fixed (8e5ece9, f9e432c) | `ui/src/routes/run/useRunScreen.ts:250-266` |
 | NEW-50 | Two UI-06 tests decide on a fixed one-second wait; one assertion has checked nothing since NEW-34 | Fixed (d3182d4) | `HouseholdPanel.test.tsx:366-373`, `SettingsPanel.test.tsx:357-367` |

@@ -39,10 +39,9 @@ three attempts at the selection rule, P51 three at the run scope, and both P43's
 tests had to be rewritten because they asserted the defect. What remains open from this review is
 the low-severity list at the end of that section.
 
-The standing mediums from before it: `POST /v1/data-acquisition-runs` answers 202 and then
-blocks, so a client timeout is indistinguishable from a failure and a retry starts a duplicate
-run (P35, which cost 2.70 EUR to discover); the LLM fallback mislabels publishers' editions
-(P38); and a spend-accounting gap (P36 -- P28's closed with the research ledger).
+The standing mediums from before it: the LLM fallback mislabels publishers' editions (P38),
+and a spend-accounting gap (P36 -- P28's closed with the research ledger). P35, the start that
+answered 202 and then blocked (it cost 2.70 EUR to discover), closed 2026-09-19.
 
 | Closed | When | Where |
 |---|---|---|
@@ -588,3 +587,10 @@ dark mode included. The class-selector check missed `querySelectorAll`. The mono
 would have failed on a comment explaining itself. Six mock/server divergences, including a mock
 that accepted the pillar lock the server refuses — which is why no unit test could see it.
 
+## Accepted from the cross-model review — 2026-10-22
+
+GPT-6 Astra and Grok 4.7 reviewed the 109 commits of the October remediation, and their findings, with the plan to close them, are in `copilot-cross-model-review.md`. You accepted one of them on 2026-10-22 instead of having it fixed. It is recorded here so that it stays visible.
+
+| # | Finding | State |
+|---|---|---|
+| **P93** | **A value or reuse row commits a moment before its rejection failure does.** `acquire` stores a batch's values and reuse rows, then writes that batch's failures in a separate transaction (`run.py`, `value_store.py`, `run_store.py`). These include the failure for a figure stored and rejected (BE-08). A process killed between the two commits keeps the rejected figure, or its reuse row, but loses the failure. No retry then reaches that pair, and a re-read rejected figure counts as stored, with 0 failed, in the source breakdown. Found as BEA-1, and narrowed to this window by `946db36` (FU-A7). | **Open by decision, low.** The window is one batch's two commits. Only a kill lands in it: an error is caught by the run, which writes the failures it collected. Closing it means one transaction across the value store and the run store, which changes two storage ports and every fake |
