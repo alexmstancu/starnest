@@ -277,23 +277,23 @@ export function CriterionRuleFields({
         </ul>
       )}
 
-      {/* **Disabled only when there is nothing to save.** While a write is in flight -- this
-          rule's, or another that would race it (UI-04) -- they are held instead: the draft
-          stays, and only sending or dropping it waits. */}
+      {/* **Unavailable, never disabled** (UIC-G1). With nothing to save, or while a write is in
+          flight -- this rule's, or another that would race it (UI-04) -- they say so and take
+          no press. Disabled, the focused Save went dead the moment its answer made the draft
+          the stored rule again, and Chromium put a keyboard user back on the page. The form
+          refuses an unchanged draft itself, since Enter in a field submits it too. */}
       <div className="rule-form__actions">
         <button
           type="submit"
           className="button"
-          disabled={!form.changed}
-          aria-disabled={form.held || undefined}
+          aria-disabled={form.held || !form.changed || undefined}
         >
           {form.saving ? "Saving…" : "Save rule"}
         </button>
         <button
           type="button"
           className="button"
-          disabled={!form.changed}
-          aria-disabled={form.held || undefined}
+          aria-disabled={form.held || !form.changed || undefined}
           onClick={form.revert}
         >
           Discard changes

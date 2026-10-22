@@ -88,6 +88,17 @@ function goalSelect(): HTMLSelectElement {
   return screen.getByRole<HTMLSelectElement>("combobox", { name: "Goal" });
 }
 
+/** Focusable, saying it is unavailable, and taking no press: nothing to send or drop (UIC-G1). */
+function expectUnavailable(control: HTMLElement): void {
+  expect(control).toBeEnabled();
+  expect(control).toHaveAttribute("aria-disabled", "true");
+}
+
+/** Long enough for a request the press might have sent to reach the mock server. */
+function aMomentLater(): Promise<void> {
+  return act(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
+}
+
 describe("reading the rule a criterion already has", () => {
   it("is closed until asked for, because forty-one open scales is unreadable", async () => {
     renderShell("/configure");
@@ -190,10 +201,34 @@ describe("changing the rule", () => {
     );
   });
 
+  /**
+   * UIC-G1. **Unavailable, not disabled**, so a keyboard user standing on Save or Discard is not
+   * thrown onto the page when the draft becomes the stored rule again. A press then does nothing.
+   */
   it("cannot be saved until something has changed", async () => {
+    const user = userEvent.setup();
     await openTheRuleFor(ANCHORED);
+    const writes = holdCriterionWrites();
+    const save = screen.getByRole("button", { name: "Save rule" });
 
-    expect(screen.getByRole("button", { name: "Save rule" })).toBeDisabled();
+    expectUnavailable(save);
+    expectUnavailable(screen.getByRole("button", { name: "Discard changes" }));
+    await user.click(save);
+    await aMomentLater();
+
+    expect(writes.sent).toEqual([]);
+  });
+
+  it("sends nothing when Enter is pressed in a field with nothing changed", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(ANCHORED);
+    const writes = holdCriterionWrites();
+    act(() => screen.getByRole("spinbutton", { name: "Threshold maximum" }).focus());
+
+    await user.keyboard("{Enter}");
+    await aMomentLater();
+
+    expect(writes.sent).toEqual([]);
   });
 
   it("adds and removes an anchor row without saving anything", async () => {
@@ -300,7 +335,7 @@ describe("changing the rule", () => {
     await user.click(screen.getByRole("button", { name: "Discard changes" }));
 
     expect(goalSelect().value).toBe("minimise");
-    expect(screen.getByRole("button", { name: "Save rule" })).toBeDisabled();
+    expectUnavailable(screen.getByRole("button", { name: "Save rule" }));
   });
 
   it("keeps an unsent draft when the weight on the same row is saved", async () => {
@@ -485,15 +520,30 @@ describe("a rule while it is being saved", () => {
 
       writes.release();
 
-      await waitFor(() => expectNotHeld(save));
-      // Nothing is left to save once it has: the one reason Save is ever disabled outright.
-      expect(save).toBeDisabled();
+      // Nothing is left to save once it has, and focus stays where Enter put it (UIC-G1).
+      await waitFor(() => expect(save).toHaveTextContent("Save rule"));
+      expect(save).toHaveFocus();
+      expectUnavailable(save);
       expect(writes.sent).toEqual([
         {
           attribute: "country.overcrowding_rate",
           body: expect.objectContaining({ goal: "maximise" }),
         },
       ]);
+    });
+
+    it("keeps focus on Discard once it has thrown the draft away", async () => {
+      const user = userEvent.setup();
+      await openTheRuleFor(ANCHORED);
+      await user.selectOptions(goalSelect(), "maximise");
+      const discard = screen.getByRole("button", { name: "Discard changes" });
+      act(() => discard.focus());
+
+      await user.keyboard("{Enter}");
+
+      expect(goalSelect().value).toBe("minimise");
+      expect(discard).toHaveFocus();
+      expectUnavailable(discard);
     });
 
     it("keeps focus in a field that Enter saved from, and takes no typing until the answer", async () => {
@@ -586,10 +636,15 @@ describe("a rule while it is being saved", () => {
       await waitFor(() => expect(threshold).not.toHaveAttribute("readonly"));
       expectNotHeld(threshold);
       expectNotHeld(screen.getByRole("group", { name: "Matching threshold" }));
-      expectNotHeld(screen.getByRole("button", { name: "Save rule" }));
       expect(threshold).toHaveFocus();
-      // The stored rule is back on screen, as it is after any refusal.
+      // The stored rule is back on screen, as it is after any refusal: nothing to save until the
+      // next edit (UIC-G1), and the next edit can be saved -- Save was let go, not held.
       await waitFor(() => expect(threshold).toHaveValue(15));
+      const save = screen.getByRole("button", { name: "Save rule" });
+      expectUnavailable(save);
+      await user.clear(threshold);
+      await user.type(threshold, "13");
+      expectNotHeld(save);
     });
   });
 });

@@ -43,9 +43,9 @@ export interface RuleForm {
   setAnchor: (index: number, field: keyof AnchorDraft, value: string) => void;
   addAnchor: () => void;
   removeAnchor: (index: number) => void;
-  /** Parse and send, or report every problem and send nothing. Refuses while held. */
+  /** Parse and send, or report every problem and send nothing. Refuses while held or unchanged. */
   submit: () => void;
-  /** Throw the draft away and go back to what is stored. Refuses while held. */
+  /** Throw the draft away and go back to what is stored. Refuses while held or unchanged. */
   revert: () => void;
 }
 
@@ -98,10 +98,12 @@ export function useCriterionRule(
     if (!saving) setDraft(change);
   };
 
+  const changed = JSON.stringify(draft) !== asJson;
+
   return {
     draft,
     problems,
-    changed: JSON.stringify(draft) !== asJson,
+    changed,
     saving,
     held,
     set: (field, value) => edit((current) => ({ ...current, [field]: value })),
@@ -123,13 +125,15 @@ export function useCriterionRule(
         anchors: current.anchors.filter((_, at) => at !== index),
       })),
     submit: () => {
-      if (held) return;
+      // Unchanged is refused here, not by a disabled button: Enter in a field submits the form
+      // whatever the button says, and an unchanged rule is nothing to send (UIC-G1).
+      if (held || !changed) return;
       const parsed = ruleFrom(draft);
       setProblems(parsed.problems);
       if (parsed.rule !== null) onSave(criterion.attribute, parsed.rule);
     },
     revert: () => {
-      if (held) return;
+      if (held || !changed) return;
       setDraft(JSON.parse(asJson) as RuleDraft);
       setProblems([]);
     },
