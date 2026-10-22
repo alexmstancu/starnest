@@ -30,6 +30,8 @@ LIVE_URL = f"postgresql://appuser:{SECRET}@127.0.0.1:5432/{LIVE}"
 COPY_URL = f"postgresql://appuser:{SECRET}@127.0.0.1:5432/{COPY}"
 DROP_ONLY = f"dropdb --if-exists --force {COPY}"
 
+DATABASE_TOOLS = ("dropdb", "createdb", "pg_restore")
+
 # One line per call: the tool, its arguments (unit separator) and the database the browser
 # suite would be pointed at (record separator).
 FAKE_TOOL = r"""#!/bin/sh
@@ -42,7 +44,8 @@ case "${0##*/}" in
   docker)
     for argument in "$@"; do last=$argument; done
     [ "$last" = "${FAKE_DOCKER_FAIL_SCRIPT-}" ] && exit 1
-    case "$last" in *"${FAKE_DOCKER_FAIL_CONTAINS:-@never@}"*) exit 1 ;; esac ;;
+    case "$last" in *"${FAKE_DOCKER_FAIL_CONTAINS:-@never@}"*) exit 1 ;; esac
+    [ -n "${FAKE_DOCKER_RUNS_SCRIPT-}" ] && exec sh -c "$last" ;;
   npm) exit "${FAKE_NPM_EXIT:-0}" ;;
 esac
 exit 0
@@ -75,7 +78,9 @@ class Sandbox:
         for directory in ("backend", "ui", "storage/migrations", "backups", "bin"):
             (root / directory).mkdir(parents=True)
         (root / "backups" / "20990101-000000.dump").touch()
-        for tool in ("docker", "uv", "npm"):
+        # The database tools are faked too, for the tests that let `docker` run the tools
+        # container's script: what they record is what the database would have been handed.
+        for tool in ("docker", "uv", "npm", *DATABASE_TOOLS):
             fake = root / "bin" / tool
             fake.write_text(FAKE_TOOL)
             fake.chmod(0o755)
@@ -210,7 +215,7 @@ def with_database_name(sandbox: Sandbox, name: str) -> None:
 
 
 @pytest.mark.parametrize("target", ["e2e", "e2e-drop"])
-@pytest.mark.parametrize("name", ["d" * 60, "d" * 63, "é" * 30], ids=["60", "63", "60 in 30 é"])
+@pytest.mark.parametrize("name", ["d" * 60, "d" * 63], ids=["60", "63"])
 def test_a_name_whose_copy_postgresql_would_truncate_is_refused(
     sandbox: Sandbox, target: str, name: str
 ) -> None:
@@ -225,14 +230,18 @@ def test_a_name_whose_copy_postgresql_would_truncate_is_refused(
     assert sandbox.calls() == []
 
 
-def test_a_quoted_name_is_measured_as_the_database_will_be_named(sandbox: Sandbox) -> None:
-    """dotenv lets a value be double-quoted. Make keeps the quotes and the tools container's shell
-    drops them, so the name to measure is the one the shell will hand `dropdb` (RA-4): 59 bytes
-    plus `_e2e` fits, and the quotes are not counted against it."""
-    with_database_name(sandbox, '"' + "d" * 59 + '"')
+@pytest.mark.parametrize("quote", ['"', "'"], ids=["double", "single"])
+def test_a_quoted_name_is_measured_as_the_database_will_be_named(
+    sandbox: Sandbox, quote: str
+) -> None:
+    """dotenv lets a value be quoted. Make keeps the quotes and compose takes them off, so the
+    name measured is the one without them (RA-4): 59 bytes plus `_e2e` fits, and the quotes are
+    not counted against it."""
+    with_database_name(sandbox, quote + "d" * 59 + quote)
 
-    assert sandbox.make("e2e-drop").returncode == 0
-    assert sandbox.calls_to("docker")
+    assert sandbox.make("e2e-drop", FAKE_DOCKER_RUNS_SCRIPT="1").returncode == 0
+    [drop] = sandbox.calls_to("dropdb")
+    assert drop.arguments[-1] == "d" * 59 + "_e2e"
 
 
 def test_a_quoted_name_whose_copy_would_not_fit_is_still_refused(sandbox: Sandbox) -> None:
@@ -242,6 +251,70 @@ def test_a_quoted_name_whose_copy_would_not_fit_is_still_refused(sandbox: Sandbo
 
     assert result.returncode != 0
     assert sandbox.calls() == []
+
+
+#: Names whose copy two shells could read differently, or that make and compose read differently.
+NOT_PLAIN = {
+    "spaces inside quotes (RE-1)": '"' + "x" * 55 + ' a b c d"',
+    "spaces": "app db",
+    "accents": "é" * 30,
+    "a dollar": "app$db",
+    "a backtick": "app`db",
+    "an inner quote": "app'db",
+    "unmatched quotes": "\"appdb'",
+    "two layers of quotes": "'\"appdb\"'",
+}
+
+
+@pytest.mark.parametrize("target", ["e2e", "e2e-drop"])
+@pytest.mark.parametrize("name", NOT_PLAIN.values(), ids=NOT_PLAIN.keys())
+def test_a_name_that_is_not_plain_is_refused_before_anything_runs(
+    sandbox: Sandbox, target: str, name: str
+) -> None:
+    """**A measurement is only as good as its agreement with what is used.** The guard measures
+    the copy's name in make's shell, and the database is handed it by the tools container's, so
+    a character the two can read differently lets them disagree. A double-quoted 63-byte name
+    with spaces measured 63 bytes and reached `dropdb --force` as 67, which PostgreSQL cuts back
+    to the live name (RE-1). So only a plain name -- letters, digits, `_` and `-`, which every
+    reader reads alike -- is used, and anything else is refused before any command runs."""
+    with_database_name(sandbox, name)
+
+    result = sandbox.make(target, FAKE_DOCKER_RUNS_SCRIPT="1")
+
+    assert result.returncode != 0
+    # The phrase, not the word: the sandbox's own path is named after this test.
+    assert "not a plain name" in output(result)
+    assert sandbox.calls() == []
+
+
+@pytest.mark.parametrize(
+    "written", [LIVE, f'"{LIVE}"', f"'{LIVE}'"], ids=["bare", "double-quoted", "single-quoted"]
+)
+def test_every_command_and_url_reaches_the_copy_by_the_name_that_was_measured(
+    sandbox: Sandbox, written: str
+) -> None:
+    """The database tools, yoyo and the browser suite all get the copy by one name, its dotenv
+    quotes taken off once, as compose takes them off. A quoted name used to keep its quotes in the
+    copy's URL, which names no database."""
+    with_database_name(sandbox, written)
+
+    result = sandbox.make("e2e", FAKE_DOCKER_RUNS_SCRIPT="1")
+
+    assert result.returncode == 0, output(result)
+    handed = [
+        argument.removeprefix("--dbname=")
+        for call in sandbox.calls()
+        if call.tool in DATABASE_TOOLS
+        for argument in call.arguments
+        if argument == COPY or argument.startswith("--dbname=")
+    ]
+    assert handed == [COPY] * 4  # dropped, created, restored into, and dropped after the suite
+    [migration] = sandbox.calls_to("uv")
+    assert migration.arguments[migration.arguments.index("--database") + 1] == COPY_URL.replace(
+        "postgresql://", "postgresql+psycopg://"
+    )
+    [suite] = sandbox.calls_to("npm")
+    assert suite.suite_database == COPY_URL
 
 
 def test_a_name_whose_copy_fits_is_used(sandbox: Sandbox) -> None:
@@ -373,3 +446,39 @@ def test_a_failed_restore_whose_drop_fails_too_says_how_to_finish(sandbox: Sandb
     assert result.returncode != 0
     assert "make e2e-drop" in output(result)
     assert "so it was dropped" not in output(result)
+
+
+# --- The live database's own targets (S1, S2) ---------------------------------------------------
+
+
+@pytest.mark.parametrize("target", ["migrate", "rollback"])
+@pytest.mark.parametrize("preview", [(), ("-n",)], ids=["run", "make -n"])
+def test_a_migration_never_prints_the_password(
+    sandbox: Sandbox, target: str, preview: tuple[str, ...]
+) -> None:
+    """`make migrate` and `make rollback` printed the live database's URL, password included,
+    as make echoes a recipe line before running it (S1). The URL reaches yoyo through the
+    recipe's environment instead, as it does for the browser suite's copy, so neither a run nor
+    a preview shows it -- and yoyo is still handed it."""
+    result = sandbox.make(*preview, target)
+
+    assert result.returncode == 0, output(result)
+    assert SECRET not in output(result)
+    if not preview:
+        [migration] = sandbox.calls_to("uv")
+        assert migration.arguments[migration.arguments.index("--database") + 1] == (
+            LIVE_URL.replace("postgresql://", "postgresql+psycopg://")
+        )
+
+
+def test_help_lists_every_target_that_documents_itself(sandbox: Sandbox) -> None:
+    """A target with a `##` line is one `make help` promises to list, and the four whose names
+    hold a digit -- `e2e` and its kin -- were missing from it (S2)."""
+    documented = set(
+        re.findall(r"^([A-Za-z0-9_-]+):[^=\n]*## ", (ROOT / "Makefile").read_text(), re.MULTILINE)
+    )
+    listed = sandbox.make("help").stdout
+    shown = set(re.findall(r"^\s+([A-Za-z0-9_-]+)\s", re.sub(r"\x1b\[[0-9;]*m", "", listed), re.M))
+
+    assert {"e2e", "e2e-database", "e2e-drop", "migrate"} <= documented
+    assert documented - shown == set()

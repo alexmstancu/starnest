@@ -54,7 +54,7 @@ COV     := --cov=starnest --cov-branch \
            --cov-report=term-missing --cov-report=html --cov-report=xml --cov-report=json
 
 help:  ## Show this list
-	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
+	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
 # --- Local development ---------------------------------------------------------
@@ -85,13 +85,19 @@ logs:  ## Follow the database statement log (arch.md 10.7 — this IS the audit)
 # Migrations run by an explicit command, never at startup (arch.md 7.4). Back up first:
 # manually entered values cannot be re-fetched at any price (arch.md 9.5).
 
+# The URL carries the password, so it reaches yoyo through the recipe's environment: make echoes a
+# recipe line before running it, and `make -n` prints one, with the variable's name in place of
+# its value (S1).
+migrate: export MIGRATION_DATABASE := $(MIGRATION_URL)
+rollback: export MIGRATION_DATABASE := $(MIGRATION_URL)
+
 migrate: backup  ## Back up, then apply pending migrations
-	cd $(BACKEND) && uv run yoyo apply --batch --database "$(MIGRATION_URL)" ../$(STORAGE)/migrations
+	cd $(BACKEND) && uv run yoyo apply --batch --database "$$MIGRATION_DATABASE" ../$(STORAGE)/migrations
 
 # A rollback changes the schema as surely as a migration does, and several rollback scripts
 # delete stored figures, so it backs up first for the same reason.
 rollback: backup  ## Back up, then roll back the most recent migration
-	cd $(BACKEND) && uv run yoyo rollback --batch --database "$(MIGRATION_URL)" ../$(STORAGE)/migrations
+	cd $(BACKEND) && uv run yoyo rollback --batch --database "$$MIGRATION_DATABASE" ../$(STORAGE)/migrations
 
 # `--no-deps`: the dump is taken from the running database, and compose never starts or recreates
 # it to match whatever configuration reached it (RA-2). So `make up` first; a stopped database
@@ -196,6 +202,8 @@ ui-check: ui-lint ui-typecheck ui-coverage  ## The interface gate
 # running make, not by reading this file (backend/tests/unit/test_make_isolation.py):
 # - The copy's name and URL are derived from .env and refused from the command line: the recipes
 #   drop, restore and migrate before Playwright's own `_e2e` refusal can run.
+# - The name must be plain -- letters, digits, `_` and `-` -- because only then is the name that
+#   was measured the one every command is handed.
 # - The tools container runs `--no-deps`, so it never starts, stops or recreates the database,
 #   even after .env has changed under a running stack.
 # - No recipe line names $(MAKE), which GNU make runs even under `make -n`: a dry run only prints.
@@ -209,12 +217,25 @@ ui-check: ui-lint ui-typecheck ui-coverage  ## The interface gate
 E2E_PASSED := $(strip $(foreach v,E2E_DB E2E_DATABASE_URL E2E_YOYO_URL E2E_SUITE_URL,$(if $(filter undefined,$(origin $(v))),,$(v))))
 E2E_GUARD   = $(if $(E2E_PASSED),$(error $(firstword $(E2E_PASSED)) cannot be set from outside the Makefile: it is derived from .env so that make e2e can only reach its own copy))
 # PostgreSQL keeps 63 bytes of a name and silently drops the rest, so the copy of a 63-byte name
-# would *be* the live name, and `dropdb --force` would drop it (RA-3). Counted in bytes, and as
-# the tools container's shell will read the name: a dotenv value may be double-quoted, which make
-# keeps and that shell drops, so the quotes must not count against it (RA-4).
-E2E_NAME_FITS = test "$$(printf %s "$(E2E_DB)" | wc -c | tr -d ' ')" -le 63 || { echo "e2e: $(E2E_DB) is longer than the 63 bytes PostgreSQL keeps of a name, so its copy could not be told from the live database -- refusing"; exit 1; }
+# would *be* the live name, and `dropdb --force` would drop it (RA-3). The name is measured in
+# make's shell and used by the tools container's, by a URL and by compose, so a measurement holds
+# only for a name all of them read alike: a plain one, of letters, digits, `_` and `-`. A quoted
+# name with spaces measured 63 bytes and reached `dropdb` as 67, the live name once cut (RE-1).
+# One pair of matching dotenv quotes comes off first, as compose takes it off (RA-4), and `value`
+# reads the line as written, before make could expand a `$` in it. All of it is decided here, in
+# make, before any shell is handed the name.
+override E2E_NAME_CHARS := a b c d e f g h i j k l m n o p q r s t u v w x y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 0 1 2 3 4 5 6 7 8 9 _ -
+override e2e_unquoted    = $(if $(filter "%",$(1)),$(patsubst "%",%,$(1)),$(patsubst '%',%,$(1)))
+override e2e_leftover    = $(if $(2),$(call e2e_leftover,$(subst $(firstword $(2)),,$(1)),$(wordlist 2,$(words $(2)),$(2))),$(1))
+override E2E_WRITTEN    := $(value POSTGRES_DB)
+override E2E_BASE       := $(call e2e_unquoted,$(E2E_WRITTEN))
+override E2E_PLAIN      := $(if $(filter 1,$(words $(E2E_WRITTEN))),$(if $(strip $(E2E_BASE)),$(if $(strip $(call e2e_leftover,$(E2E_BASE),$(E2E_NAME_CHARS))),,plain)))
+E2E_NAME_FITS = $(if $(strip $(E2E_WRITTEN)),$(if $(E2E_PLAIN),$(E2E_FITS_63),$(E2E_NOT_PLAIN)),$(E2E_NO_ENV))
+E2E_NO_ENV    = echo "e2e: no .env -- run make env"; exit 1
+E2E_NOT_PLAIN = echo "e2e: POSTGRES_DB is not a plain name of letters and digits and _ or -, the only kind whose copy is named as it is measured -- refusing"; exit 1
+E2E_FITS_63   = test "$$(printf %s '$(E2E_DB)' | wc -c | tr -d ' ')" -le 63 || { echo "e2e: $(E2E_DB) is longer than the 63 bytes PostgreSQL keeps of a name, so its copy could not be told from the live database -- refusing"; exit 1; }
 
-override E2E_DB  := $(POSTGRES_DB)_e2e
+override E2E_DB  := $(E2E_BASE)_e2e
 E2E_BACKEND_PORT ?= 8100
 E2E_UI_PORT      ?= 5180
 override E2E_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@127.0.0.1:$(or $(DATABASE_PORT),5432)/$(E2E_DB)
@@ -227,14 +248,16 @@ e2e-database: export E2E_YOYO_URL := $(subst postgresql://,postgresql+psycopg://
 e2e: export E2E_SUITE_URL := $(E2E_DATABASE_URL)
 
 e2e-database:  ## A throwaway copy of the newest backup, migrated to this checkout
-	@$(E2E_GUARD)test -n "$(POSTGRES_DB)" || { echo "e2e: no .env -- run make env"; exit 1; }
-	@$(E2E_NAME_FITS)
+	@$(E2E_GUARD)$(E2E_NAME_FITS)
 	@test -n "$(NEWEST_BACKUP)" || { echo "e2e: no backup in ./backups -- run make backup"; exit 1; }
 	@echo "e2e: $(notdir $(NEWEST_BACKUP)) -> $(E2E_DB)"
 	@{ $(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB) && createdb $(E2E_DB) && pg_restore --no-owner --no-privileges --single-transaction --dbname=$(E2E_DB) /backups/$(notdir $(NEWEST_BACKUP))' && cd $(BACKEND) && uv run yoyo apply --batch --database "$$E2E_YOYO_URL" ../$(STORAGE)/migrations; } || { cd "$(CURDIR)"; if $(E2E_DROP); then echo "e2e: the copy could not be restored or migrated, so it was dropped"; else echo "e2e: the copy could not be restored or migrated, and dropping it failed too -- run make e2e-drop"; fi; exit 1; }
 
+# Two lines, not one: a shell reads a whole line before running any of it, so a name the guard
+# refuses must never share a line with a command that names it.
 e2e-drop:  ## Drop the browser suite's throwaway database
-	@$(E2E_GUARD)$(E2E_NAME_FITS); $(E2E_DROP)
+	@$(E2E_GUARD)$(E2E_NAME_FITS)
+	@$(E2E_DROP)
 
 e2e: e2e-database  ## Playwright on its own throwaway database, never the live one (E2E_ARGS= to narrow)
 	@$(E2E_GUARD)(cd $(UI) && E2E_DATABASE_URL="$$E2E_SUITE_URL" E2E_BACKEND_PORT=$(E2E_BACKEND_PORT) E2E_UI_PORT=$(E2E_UI_PORT) npm run e2e -- $(E2E_ARGS)); status=$$?; if ! $(E2E_DROP); then echo "e2e: the copy $(E2E_DB) could not be dropped -- run make e2e-drop"; [ $$status -ne 0 ] || status=1; fi; exit $$status
