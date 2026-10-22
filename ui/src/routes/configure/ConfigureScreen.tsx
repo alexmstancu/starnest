@@ -49,6 +49,8 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   // remounts the rules and the proposals inside them, and a pass held there would end with
   // them; leaving Configure is what ends one.
   const pass = useResearchPass(noteAnswered);
+  const proposalsBesideRules =
+    editor.status === "ready" && editor.criteriaSet !== null && levelId !== null;
 
   return (
     <section className="screen screen--configure" aria-labelledby="screen-heading">
@@ -126,6 +128,21 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                 </RulesPanel>
               )}
             </>
+          )}
+
+          {/* **A pass keeps its Stop, whatever the set's read does** (UIC-A4). Gate research is
+              level-wide and needs no criteria set, but its panel is drawn beside a loaded set's
+              rules; a read that failed, or one still loading, hid Stop, the progress and the
+              spend while the pass went on asking -- and paying. Drawn here only when it cannot be
+              drawn there, so there is never a second Stop. */}
+          {!proposalsBesideRules && levelId !== null && (pass.running || pass.end !== null) && (
+            <ProposalsPanel
+              key={`proposals-${levelId}`}
+              levelId={levelId}
+              onAnswered={noteAnswered}
+              answersFreshness={answersVersion}
+              pass={pass}
+            />
           )}
 
           <DataSourcesPanel />

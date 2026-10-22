@@ -1768,6 +1768,43 @@ describe("a research pass while the screen changes around it", () => {
     expect(gatesAsked(research)).toEqual(COUNTRY_GATES.map((gate) => [gate]));
   });
 
+  /**
+   * UIC-A4. **Stop stays on screen whatever the criteria set's read does.** The proposals were
+   * drawn only beside a loaded set, so a set that could not be read took Stop, the progress and
+   * the spend away while the pass went on asking -- and paying -- with no way to stop it short of
+   * leaving the screen.
+   */
+  it("keeps Stop on screen when the set switched to cannot be read, and stops the pass", async () => {
+    const research = watchResearch({ holdAt: 2 });
+    renderShell("/configure");
+    await settled();
+    await startAPass();
+    await waitFor(() => expect(research.sent).toHaveLength(2));
+    mockServer.use(
+      http.get("/v1/criteria-sets/:id", () =>
+        HttpResponse.json(
+          { code: "unavailable", message: "the criteria set could not be read" },
+          { status: 503 },
+        ),
+      ),
+    );
+
+    await chooseSet("remote-only");
+    expect(await screen.findByText(/the criteria set could not be read/i)).toBeInTheDocument();
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Stop after this question" }),
+    );
+    research.release();
+
+    await waitFor(() =>
+      expect(theProposals().getByRole("status")).toHaveTextContent(
+        /You stopped the last pass after 2 of 5 gates/,
+      ),
+    );
+    expect(research.sent).toHaveLength(2);
+    expect(screen.getAllByRole("region", { name: "Gate proposals" })).toHaveLength(1);
+  });
+
   it("asks nothing more once Configure is left mid-pass", async () => {
     const research = watchResearch({ holdAt: 1 });
     renderShell("/configure");
