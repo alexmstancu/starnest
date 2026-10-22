@@ -12,6 +12,7 @@ what the migration does to the schema it was written for. So this builds a priva
 to the migration before, puts rules on the criterion, and applies and rolls back `0444` for real.
 """
 
+import hashlib
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
@@ -74,7 +75,8 @@ def yoyo(*arguments: str, database: str) -> None:
 
 @pytest.fixture
 def database_before_the_retype(database_url: str) -> Iterator[str]:
-    name = f"{urlparse(database_url).path.lstrip('/')}_before_0444"
+    # Its own namespace and a bounded length: never another workstream's database (RE-8).
+    name = "starnest_retype_" + hashlib.sha256(database_url.encode()).hexdigest()[:16]
     with psycopg.connect(on(database_url, "postgres"), autocommit=True) as admin:
         admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
         admin.execute(f'CREATE DATABASE "{name}"')
