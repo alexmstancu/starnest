@@ -353,7 +353,19 @@ Each cluster's fixes were reviewed by GPT-6 Astra against their consequence maps
 | RB-3 | Medium | `faf8085` (M4) | The diff's freshness key missed a figure added for a pair already counted | A run still going is read again on every read of the history (`3075c76`) |
 | RB-4 | Medium | `faf8085` (L9) | Source ids were still printed in eight more places | The catalog's names everywhere (`96f00a8`) |
 
-`3075c76`, `96f00a8`, `0693baf` and cluster D are under review now. `96a2166` and `cba634b` go to the final review.
+| RD-1 | Low | `eaf20a1` (M5) | A capped first answer that stored a proposal did not re-read the answers | Re-read after any answer (this round) |
+| RD-2 | Low | sibling of UIC-A3 | Pillar, lock, gate and compound writes had UIC-A3's stale read; UIC-A3's own fix depended on render timing | One page-level write count in `api/`, noted by the client; the read loops until fresh (this round) |
+| RD-3 | Low | sibling of `1f5b922` | An IME Enter or Escape acted on the place picker | Composition keys ignored (this round) |
+| RE-1 | High | `96a2166` | A quoted name with spaces was measured short, so `dropdb --force` could hit the live database | Plain names only (`f82fcaa`). CLOSED |
+| RE-2 | Medium | sibling of BE-A1 | Copies by `INSERT ... SELECT` were unlocked | Locked, guard generalized (`e847892`). CLOSED |
+| RE-3 | Low | pre-existing | 0444 dropped a criterion's rule columns | Kept (`e847892`). CLOSED |
+| RE-4 | High | `f82fcaa` | `make -i` could get past the refusal | Refusal is a make error inside `PG_TOOLS` (`47bd7de`). CLOSED |
+| RE-5 | Medium | `f82fcaa` | A quoted `DATABASE_URL` reached yoyo with its quotes | Unquoted (`47bd7de`) |
+| RE-7 | Medium | `47bd7de` | Unquoting collapsed spaces inside the URL | Unquoted in the shell, whole (this round) |
+| RE-8 | Medium | `e847892` | The retype test's database name could collide with another workstream's | Own namespace, bounded length (this round) |
+| RE-6, RE-9 | Low | | See `known-issues.md` P96, P98 | Recorded by decision |
+
+Per your lean plan, the last round was not reviewed again.
 
 ## What the reviewers found sound
 
