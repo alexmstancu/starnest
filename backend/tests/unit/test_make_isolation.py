@@ -516,26 +516,32 @@ def test_a_migration_never_prints_the_password(
         )
 
 
-@pytest.mark.parametrize("quote", ['"', "'"], ids=["double", "single"])
+SPACED_URL = LIVE_URL.replace(SECRET, "two  words")
+
+
+@pytest.mark.parametrize(
+    ("written", "handed"),
+    [
+        (f'"{LIVE_URL}"', LIVE_URL),
+        (f"'{LIVE_URL}'", LIVE_URL),
+        (SPACED_URL, SPACED_URL),
+        (f'"{SPACED_URL}"', SPACED_URL),
+    ],
+    ids=["double-quoted", "single-quoted", "two spaces", "quoted, with spaces"],
+)
 @pytest.mark.parametrize("target", ["migrate", "rollback"])
-def test_a_quoted_url_reaches_yoyo_as_compose_and_the_backend_read_it(
-    sandbox: Sandbox, quote: str, target: str
+def test_yoyo_is_handed_the_url_the_backend_reads(
+    sandbox: Sandbox, written: str, handed: str, target: str
 ) -> None:
-    """dotenv lets the URL be quoted, which the backend's settings take off and make keeps. Made
-    an environment variable for S1, the quotes stopped being shell syntax and became part of the
-    URL yoyo was handed (RE-5); they come off in make now, as compose takes them off."""
+    """One pair of dotenv quotes comes off and nothing else changes (RE-5, RE-7)."""
     env = sandbox.root / ".env"
-    env.write_text(
-        env.read_text().replace(
-            f"DATABASE_URL={LIVE_URL}", f"DATABASE_URL={quote}{LIVE_URL}{quote}"
-        )
-    )
+    env.write_text(env.read_text().replace(f"DATABASE_URL={LIVE_URL}", f"DATABASE_URL={written}"))
 
     result = sandbox.make(target)
 
     assert result.returncode == 0, output(result)
     [migration] = sandbox.calls_to("uv")
-    assert migration.arguments[migration.arguments.index("--database") + 1] == LIVE_URL.replace(
+    assert migration.arguments[migration.arguments.index("--database") + 1] == handed.replace(
         "postgresql://", "postgresql+psycopg://"
     )
 

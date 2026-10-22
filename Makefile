@@ -24,16 +24,16 @@ STORAGE := storage
 # `make env` still works before it exists.
 -include .env
 
-# dotenv lets a value be quoted. Compose and the backend's settings take one pair of matching
-# quotes off and make keeps them, so a value make hands on comes off the same way first: as data
-# in a recipe's environment, a quote is no longer shell syntax that the shell would drop (RE-5).
+# One pair of matching dotenv quotes off, as compose takes it off. Word-wise: one-word values only.
 override unquoted = $(if $(filter "%",$(1)),$(patsubst "%",%,$(1)),$(patsubst '%',%,$(1)))
 
 # yoyo names its driver in the URL scheme and psycopg3 does not: a plain postgresql://
 # resolves to yoyo's psycopg2 backend, which is not installed and never will be. The
 # application keeps the standard form, so the translation happens here rather than in a
 # second variable that could drift out of step.
-MIGRATION_URL := $(subst postgresql://,postgresql+psycopg://,$(call unquoted,$(DATABASE_URL)))
+MIGRATION_URL := $(subst postgresql://,postgresql+psycopg://,$(DATABASE_URL))
+# The URL with one pair of matching dotenv quotes off and nothing else changed (RE-5, RE-7).
+MIGRATION_DECODED = url=$$MIGRATION_DATABASE; case $$url in \"*\") url=$${url\#\"}; url=$${url%\"};; \'*\') url=$${url\#\'}; url=$${url%\'};; esac
 
 # **Compose reads .env, never the command line** (INF-G2). GNU make exports a command-line
 # variable to every recipe, and `docker compose` prefers its environment to .env -- so
@@ -97,12 +97,12 @@ migrate: export MIGRATION_DATABASE := $(MIGRATION_URL)
 rollback: export MIGRATION_DATABASE := $(MIGRATION_URL)
 
 migrate: backup  ## Back up, then apply pending migrations
-	cd $(BACKEND) && uv run yoyo apply --batch --database "$$MIGRATION_DATABASE" ../$(STORAGE)/migrations
+	$(MIGRATION_DECODED); cd $(BACKEND) && uv run yoyo apply --batch --database "$$url" ../$(STORAGE)/migrations
 
 # A rollback changes the schema as surely as a migration does, and several rollback scripts
 # delete stored figures, so it backs up first for the same reason.
 rollback: backup  ## Back up, then roll back the most recent migration
-	cd $(BACKEND) && uv run yoyo rollback --batch --database "$$MIGRATION_DATABASE" ../$(STORAGE)/migrations
+	$(MIGRATION_DECODED); cd $(BACKEND) && uv run yoyo rollback --batch --database "$$url" ../$(STORAGE)/migrations
 
 # `--no-deps`: the dump is taken from the running database, and compose never starts or recreates
 # it to match whatever configuration reached it (RA-2). So `make up` first; a stopped database
