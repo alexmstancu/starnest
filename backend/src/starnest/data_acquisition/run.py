@@ -47,6 +47,7 @@ async def acquire(
     meter: CostMeter | None = None,
     collecting: list[AcquisitionFailure] | None = None,
     record_spend: Callable[[int, Decimal], Awaitable[None]] | None = None,
+    record_failures: Callable[[Sequence[AcquisitionFailure]], Awaitable[None]] | None = None,
 ) -> RunOutcome:
     """Fetch every attribute this source can answer, and append what it found.
 
@@ -178,6 +179,15 @@ async def acquire(
             failures.extend(stamped)
             if collecting is not None:
                 collecting.extend(stamped)
+            # **Made durable per batch, before the next fetch** (BE-19 remainder). `collecting` is
+            # the caller's in-memory list and the run writes failures at its halts and its end, so
+            # a *hard kill* -- which raises nothing the caller can catch -- lost every failure the
+            # run had collected, and the swept run reported failing on nothing with nothing for a
+            # retry to reach. Persisted here as each batch is stamped, the failures of what was
+            # asked before a death survive it. The writer is keyed on (run, source, item), so the
+            # end-of-run write re-confirms these rather than duplicating them.
+            if record_failures is not None and stamped:
+                await record_failures(stamped)
 
         # After this attribute is stored, never before it: the cap stops the *next* call, and
         # what has already been paid for is kept. The run one level up sees the exhausted meter

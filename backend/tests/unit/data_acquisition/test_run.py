@@ -250,6 +250,55 @@ class TestWhatARunKeeps:
 
         assert persisted == [(1, Decimal("0.05"))]
 
+    async def test_failures_collected_before_a_mid_sweep_death_are_already_recorded(self) -> None:
+        """BE-19 remainder. Failures were held only in the run's in-memory list and written at the
+        halts and the end, so a *hard kill* -- which raises nothing Python can catch -- lost them:
+        the swept run reported failing on nothing, and a retry found nothing to reach. Recorded per
+        batch, the failures of what was asked before the death survive the kill."""
+        persisted: list[AcquisitionFailure] = []
+
+        class DiesAfterFailingOneCandidate(SourceAdapter):
+            @property
+            def data_source(self) -> DataSourceId:
+                return DataSourceId("llm")
+
+            @property
+            def attributes(self) -> tuple:
+                return (OVERBURDEN,)
+
+            async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]):
+                acquired = Acquired()
+                async for batch in self.fetch_in_batches(attribute, candidates):
+                    acquired += batch
+                return acquired
+
+            async def fetch_in_batches(self, attribute: Attribute, candidates: Sequence[Candidate]):
+                yield Acquired(
+                    failures=(
+                        AcquisitionFailure(
+                            attribute=OVERBURDEN, candidate="country.portugal", reason="timed out"
+                        ),
+                    )
+                )
+                raise RuntimeError("the process died mid-sweep")
+
+        async def record(batch: Sequence[AcquisitionFailure]) -> None:
+            persisted.extend(batch)
+
+        with pytest.raises(RuntimeError, match="died mid-sweep"):
+            await acquire(
+                adapter=DiesAfterFailingOneCandidate(),
+                attributes=[an_attribute()],
+                candidates=[PORTUGAL],
+                values=RecordingValueStore(),
+                run=11,
+                record_failures=record,
+            )
+
+        assert [(f.attribute, f.candidate, f.data_source) for f in persisted] == [
+            (OVERBURDEN, "country.portugal", DataSourceId("llm"))
+        ]
+
     async def test_a_source_re_confirming_a_stored_pair_records_a_reuse_not_a_gap(self) -> None:
         """ST-09. The source answered, but the figure was already on record so the append is a
         no-op -- a transcribed table re-read as the same observation. The run records the pair as
