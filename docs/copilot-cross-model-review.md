@@ -34,26 +34,26 @@ No vertical broke an architecture rule. They found **22 distinct problems**; thr
 | # | ID | Severity | Area | Status | Problem |
 |---|---|---|---|---|---|
 | H1 | INF-G1 / BEB-1 | High | Tooling | FIXED (`bf47645`, other agent) | `make check` was red: the migration-tooling guard did not know `e2e-database` |
-| H2 | UIC-A1 | High | e2e isolation | OPEN | A command-line `E2E_DATABASE_URL` lets the e2e migration reach the live database |
-| H3 | INF-G2 | High | e2e isolation | OPEN | `make e2e DATABASE_PORT=…` recreates the live database container |
-| M1 | UIR-G1 | Medium | UI Acquire | OPEN (decided 2026-10-22: hold the controls) | Refresh, Dismiss or history Open during a start keeps the started run off the card |
-| M2 | INF-M1 | Medium | Tooling | OPEN | `make -n e2e` runs the workflow and prints the database password |
-| M3 | UIR-A2 / UIR-G2 | Medium | UI Compare | OPEN | A euro gap is divided by the original-currency amount, and the gap has no unit label |
-| M4 | UIR-A1 | Medium | UI Acquire | OPEN | Refresh leaves the acquisition diff showing stale figures |
-| M5 | UIC-A2 | Medium | UI Configure | OPEN | A research pass that stored nothing can leave an outdated proposal confirmable |
-| M6 | UIC-A4 | Medium | UI Configure | OPEN | A failed criteria-set switch hides Stop while paid research continues |
-| M7 | UIC-G1 | Medium | UI Configure | OPEN | Saving or discarding a rule from the keyboard drops focus to the page |
-| M8 | UIC-G2 | Medium | UI Configure | OPEN | Enter in the place picker saves the household when several countries match |
+| H2 | UIC-A1 | High | e2e isolation | FIXED (`cc02071`, follow-ups `d10a605`, `96a2166`) | A command-line `E2E_DATABASE_URL` lets the e2e migration reach the live database |
+| H3 | INF-G2 | High | e2e isolation | FIXED (`cc02071`, `d10a605`); residual accepted: `docker-migrate` and `up` | `make e2e DATABASE_PORT=…` recreates the live database container |
+| M1 | UIR-G1 | Medium | UI Acquire | FIXED (`e7a3a19`, `3075c76`); RB-2 accepted (P94) | Refresh, Dismiss or history Open during a start keeps the started run off the card |
+| M2 | INF-M1 | Medium | Tooling | FIXED (`cc02071`) | `make -n e2e` runs the workflow and prints the database password |
+| M3 | UIR-A2 / UIR-G2 | Medium | UI Compare | FIXED (`599c826`, `9261802`) | A euro gap is divided by the original-currency amount, and the gap has no unit label |
+| M4 | UIR-A1 | Medium | UI Acquire | FIXED (`faf8085`, `3075c76`) | Refresh leaves the acquisition diff showing stale figures |
+| M5 | UIC-A2 | Medium | UI Configure | FIXED (`eaf20a1`) | A research pass that stored nothing can leave an outdated proposal confirmable |
+| M6 | UIC-A4 | Medium | UI Configure | FIXED (`df62171`) | A failed criteria-set switch hides Stop while paid research continues |
+| M7 | UIC-G1 | Medium | UI Configure | FIXED (`372a40b`) | Saving or discarding a rule from the keyboard drops focus to the page |
+| M8 | UIC-G2 | Medium | UI Configure | FIXED (`1f5b922`) | Enter in the place picker saves the household when several countries match |
 | M9 | DOC-A1 | Medium | Docs | FIXED (tracker corrected 2026-10-22; code fixed by `946db36`) | The tracker marks BE-19 FIXED, but failures were still lost on a hard kill |
 | L1 | BEA-1 | Low | Backend | ACCEPTED (2026-10-22): `known-issues.md` P93 | A hard kill loses a rejected figure's failure; a re-read rejected figure counts as stored |
-| L2 | UIC-A3 | Low | UI Configure | OPEN | A set read racing a weight save can end on the old weights |
-| L3 | BE-A1 | Low | Storage | OPEN (decided 2026-10-22: one rollback rule) | The 0503 rollback counts, then drops, without locking first |
-| L4 | INF-M2 | Low | Tooling | OPEN | A failed e2e cleanup still reports success |
+| L2 | UIC-A3 | Low | UI Configure | FIXED (`0693baf`) | A set read racing a weight save can end on the old weights |
+| L3 | BE-A1 | Low | Storage | FIXED (`cba634b`) | The 0503 rollback counts, then drops, without locking first |
+| L4 | INF-M2 | Low | Tooling | FIXED (`cc02071`) | A failed e2e cleanup still reports success |
 | L5 | INF-G3 / DOC-A4 | Low | Docs | FIXED (2026-10-22) | `known-issues.md` still lists the closed P35 as a standing risk |
 | L6 | DOC-A2 | Low | Docs | FIXED (2026-10-22) | A checkpoint calls the restored gate answer "identical" |
 | L7 | DOC-A3 | Low | Docs | FIXED (2026-10-22) | UI-03's test count predates its review fix |
 | L8 | DOC-A5 | Low | Docs | FIXED (2026-10-22) | "Drops the copy whatever the outcome" is not true for Ctrl-C |
-| L9 | UIR-G3 | Low | UI Acquire | OPEN | "What else would answer it" prints source ids instead of names |
+| L9 | UIR-G3 | Low | UI Acquire | FIXED (`faf8085`, `96f00a8`) | "What else would answer it" prints source ids instead of names |
 | N1 | DOC-A6 | Nit | Docs | FIXED (2026-10-22) | "929 lines deleted" should be 923 |
 
 **Totals by severity:** 3 High, 9 Medium, 9 Low, 1 Nit.
@@ -86,7 +86,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
 - **Where:** `Makefile:183-192`. Playwright's `_e2e` refusal comes later, in `ui/playwright.config.ts:30-37`.
 - **Problem:** only `E2E_DB` is `override`. `E2E_DATABASE_URL := …` is an ordinary assignment, and a command-line assignment beats it. So `make e2e E2E_DATABASE_URL=<live URL>` makes `e2e-database` run `yoyo apply` against the live database, with no backup, before Playwright refuses the database name.
 - **Suggested fix:** make the derived URL `override` too. Before calling yoyo, check that the migration target is the copy that was just created.
-- **Status:** OPEN.
+- **Status:** FIXED in `cc02071`: every compose call goes through a guard that refuses compose variables from outside the Makefile, and the copy's URLs are set by the Makefile alone. The review of the fix found RA-1, RA-3 and RA-4, closed in `d10a605` and `96a2166`. See [Findings from the reviews of the fixes](#findings-from-the-reviews-of-the-fixes).
 
 ### H3. INF-G2: `make e2e DATABASE_PORT=…` recreates the live database container
 
@@ -96,7 +96,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
 - **Where:** `Makefile:183-198`, where `PG_TOOLS` runs `docker compose`. `compose.yaml:39` publishes `127.0.0.1:${DATABASE_PORT:-5432}:5432`.
 - **Problem:** GNU make exports command-line variables into recipe environments. Compose then reads the new `DATABASE_PORT` and recreates the live `database` container on that port. The same applies to `POSTGRES_DB`, `POSTGRES_USER` and `POSTGRES_PASSWORD`. This happened once, with `DATABASE_PORT=1` on 2026-10-20. The tracker recorded it, but nothing yet prevents it.
 - **Suggested fix:** run the compose client with those variables unset (`env -u …`) and/or with `--no-deps`, so compose reads only `.env`. Keep `$(DATABASE_PORT)` for the host URL that yoyo and Playwright use.
-- **Status:** OPEN.
+- **Status:** FIXED in `cc02071` and `d10a605`: compose variables from the command line or an environment override are refused, and the e2e tools, `backup` and `schema-diagram` run `--no-deps`. Accepted residual (RA-2): `docker-migrate` and `up` keep their compose dependency, because `docker-migrate`'s compose-level backup is what makes it safe.
 
 ## Medium
 
@@ -117,7 +117,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
   - A later Start is then refused with `run_already_in_flight`.
   - `RunScreen.test.tsx:3496-3534` builds this interleaving, but only asserts that no second POST is sent.
 - **Suggested fix (Grok):** either hold Refresh, Dismiss and history Open while `starting` is true, or let a start outrank a refresh of the run already on the card.
-- **Status:** OPEN. You decided on 2026-10-22 to hold Refresh, Dismiss and history Open while a start is pending. Needs your decision: keep UI-04's "last act decides", or let a start outrank a refresh.
+- **Status:** FIXED in `e7a3a19`, as you decided: Refresh, Dismiss and history Open are held while a start is pending. Its review found RB-1, Stop taking the card the same way, fixed in `3075c76`, and RB-2, leaving Acquire mid-start, which you accepted (`known-issues.md` P94).
 
 ### M2. INF-M1: `make -n e2e` runs the workflow and prints the database password
 
@@ -130,7 +130,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
   - So a "dry run" drops, restores and migrates the copy, then launches the browser suite.
   - `-n` also prints the expanded database URL, password included.
 - **Suggested fix:** move the orchestration into a helper script called from a non-recursive recipe, and read credentials inside the helper.
-- **Status:** OPEN.
+- **Status:** FIXED in `cc02071`: no recipe names `$(MAKE)`, so `make -n e2e` only prints, and the recipes read the copy's URLs as shell variables, so the password is never printed.
 
 ### M3. UIR-A2 / UIR-G2: Compare divides a euro gap by the original-currency amount
 
@@ -147,7 +147,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
   - Example: 150,000 HUF (€380) against 200,000 HUF (€510). The gap is −130 EUR, but the tint computes 130 / 150,000, which falls below the 5% `NOTICEABLE` threshold. So a real gap is drawn as noise.
   - The gap is also printed without a unit next to the HUF figures, under a note saying it is in "its own unit".
 - **Suggested fix:** use `amount_eur` for monetary geometry and label monetary gaps as EUR. Add a test with a non-euro focus.
-- **Status:** OPEN.
+- **Status:** FIXED in `599c826`: the gap is computed from the euro amounts and labelled EUR. Its review found RC-1, that no screen showed the euro equivalent at all; fixed in `9261802`.
 
 ### M4. UIR-A1: Refresh leaves the acquisition diff showing stale figures
 
@@ -160,7 +160,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
   - A diff against a run that is still going keeps its first figures. It can report "Went missing" for figures the run has since stored, even after the run finishes.
   - The tests keep the compared values static, so they miss this.
 - **Suggested fix:** pass a refresh generation into the diff's resource. Add a test that changes the values, refreshes, and checks both the new contents and the kept selection.
-- **Status:** OPEN.
+- **Status:** FIXED in `faf8085`: the diff reads again when either run's progress moves. Its review found RB-3, a figure added for a pair already counted; fixed in `3075c76`, where a run still going is read again on every read of the history.
 
 ### M5. UIC-A2: a research pass that stored nothing can leave an outdated proposal confirmable
 
@@ -173,7 +173,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
   - `mayHaveStored` is false when no proposals came back. So Configure is not told to re-read, the freshness counter does not move, and NEW-45's stale-list hold never engages.
   - After the pass ends, the old Confirm button works again and can overwrite the person's answer.
 - **Suggested fix:** re-read answers after every successful research request, or at least when a refusal reports a displaced proposal.
-- **Status:** OPEN.
+- **Status:** FIXED in `eaf20a1`: a pass reads its answers again whenever it asked anything or failed.
 
 ### M6. UIC-A4: a failed criteria-set switch hides Stop while paid research continues
 
@@ -185,7 +185,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
   - Configure owns the research pass (line 51), but the panel with Stop, progress and spend renders only when `editor.status === "ready"`.
   - If the new set's read fails, those controls stay hidden while the loop keeps sending paid requests. The only way to stop it is to leave Configure.
 - **Suggested fix:** mount the research controls independently of the criteria-set read state. Gate research is level-scoped and does not need a loaded set.
-- **Status:** OPEN.
+- **Status:** FIXED in `df62171`: a running or ended research pass keeps its panel, Stop included, when the rules panel is not shown.
 
 ### M7. UIC-G1: saving or discarding a rule from the keyboard drops focus to the page
 
@@ -199,7 +199,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
   - Discard does the same immediately.
   - The keyboard test asserts focus only while the button is held.
 - **Suggested fix:** keep Save and Discard focusable (`aria-disabled`, ignoring the press), or move focus to a control that stays, as NEW-45 does.
-- **Status:** OPEN.
+- **Status:** FIXED in `372a40b`: Save and Discard are held (`aria-disabled`) and never natively disabled, so focus stays on them. The hook now refuses an unchanged draft, which native `disabled` used to do for Enter in a field.
 
 ### M8. UIC-G2: Enter in the place picker saves the household when several countries match
 
@@ -212,7 +212,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
   - With several matches, Enter submits `<form onSubmit={form.save}>`. If the household is already complete, it is saved with the previous choice, not the typed filter.
   - The same happens in the home-country and citizenship pickers.
 - **Suggested fix:** while the list is open, prevent Enter's default action. Choose only when one option remains or one is highlighted.
-- **Status:** OPEN.
+- **Status:** FIXED in `1f5b922`: Enter chooses only when exactly one place matches, and does nothing while several are listed.
 
 ### M9. DOC-A1: the tracker marks BE-19 FIXED, but failures were still lost on a hard kill
 
@@ -252,7 +252,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
   - If the returning GET read A before the write committed, but arrives after the PATCH's answer, the screen ends on the old weights. The PATCH's answer was merged into an empty list.
   - The undo baseline can also be wrong.
 - **Suggested fix:** invalidate reads taken before a write and re-read after it, or version the results.
-- **Status:** OPEN.
+- **Status:** FIXED in `0693baf`: each read carries how many writes to its set had been answered when it began, and a read that lands after another was answered is read again instead of shown. Its first test acted on a half-loaded screen and failed once under load; it now waits for the second read and `settled()`, the file's P13 convention.
 
 ### L3. BE-A1: the 0503 rollback counts, then drops, without locking first (disputed)
 
@@ -262,7 +262,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
 - **Where:** `storage/migrations/0503-gate-research-spend-is-ledgered.rollback.sql:12-21`.
 - **Problem:** the `SELECT count(*)` takes only an `ACCESS SHARE` lock. A research insert can commit between the count and the `DROP TABLE`, so the rollback deletes a billed-call record it promised to refuse over.
 - **Suggested fix:** take `LOCK TABLE match_rule_research_spend IN ACCESS EXCLUSIVE MODE` before counting. Add a two-connection test.
-- **Status:** OPEN. You decided on 2026-10-22 that every rollback which would delete recorded history refuses, and takes `LOCK TABLE` before it counts. That covers this one, the same pattern in `0478`, `0492` and `0493`, and the other agent's `0506` and `0507` (FU-A5). A guard test keeps the rule.
+- **Status:** FIXED in `cba634b`, as you decided. The four refusing rollbacks (`0503`, `0493`, `0492`, `0478`) lock what they count before counting: ACCESS EXCLUSIVE in `0503`, whose drop takes it anyway, and SHARE ROW EXCLUSIVE elsewhere, so reads go on. Mapping the change found a sibling: `0444`, `0478` and `0492` copy `criterion` rows to put them back, and an edit committed between the copy and the delete was lost. They now lock `criterion` first, in both directions. (I told you only two migrations did this; the guard's own parse found `0444`.) Two guards in `test_migration_hygiene.py` hold every refusing rollback and every copying migration to the rule. `test_rollback_races.py` races a real write against each real rollback: before the fix `0503` dropped the billed row, the other three met raw foreign-key errors, and both copies lost the edit. Thirteen mutants (a lock removed, narrowed, weakened or moved) all fail. A real `yoyo rollback` through `0444` and back passed on a scratch database. The other agent's `0506` and `0507` do not refuse yet (FU-A5); the guard holds them once they do. The safe but raw foreign-key failures the mapping found are recorded as `known-issues.md` P95.
 
 ### L4. INF-M2: a failed e2e cleanup still reports success
 
@@ -274,7 +274,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
   - Line 198 keeps only the suite's exit status. If the suite passes and `dropdb` fails, `make e2e` still succeeds and the copy stays.
   - Line 192 prints "it was dropped" without checking that it was.
 - **Suggested fix:** propagate a cleanup failure when the suite passed, and announce the drop only after it succeeded.
-- **Status:** OPEN.
+- **Status:** FIXED in `cc02071`: a failed drop fails the run, and the drop is announced only after it succeeded.
 
 ### L5. INF-G3 / DOC-A4: `known-issues.md` still lists the closed P35 as a standing risk
 
@@ -324,7 +324,7 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
 - **Where:** `ui/src/routes/run/unsourced.ts:175-180`. The rule it breaks is at `ui/src/format/display.ts:178-181`.
 - **Problem:** `answerable_by` is printed as stored ids, such as `world_bank` and `llm`. The catalog already has display names (`storage/migrations/0100-catalog-reference-data.sql:61-65`), and pillars on the same screen already go through `pillarName`.
 - **Suggested fix:** resolve each id through the source catalog's name.
-- **Status:** OPEN.
+- **Status:** FIXED in `faf8085`: the hint names the sources. Its review found RB-4, source ids in eight more places, fixed in `96f00a8`.
 
 ## Nit
 
@@ -336,6 +336,24 @@ You settled the two disputed items, UIR-G1 and BE-A1, on 2026-10-22. See [Decisi
 - **Problem:** `2c04381` made 6 insertions and 923 deletions in `styles.css`. 929 is the sum of the two.
 - **Suggested fix:** say 923.
 - **Status:** FIXED on 2026-10-22, in both documents.
+
+## Findings from the reviews of the fixes
+
+Each cluster's fixes were reviewed by GPT-6 Astra against their consequence maps, the protocol's fifth step. These are what those reviews found, with each reviewer's severity.
+
+| ID | Severity | Found in | Problem | Outcome |
+|---|---|---|---|---|
+| RA-1 | High | `cc02071` (H2) | Under `make -e`, an environment `E2E_YOYO_URL` might beat the target-specific one and migrate the live database | Not reproduced on GNU make 3.81, and withdrawn by the reviewer. Guarded anyway in `d10a605`: the copy's four names are refused from outside the Makefile. CLOSED |
+| RA-2 | High | `cc02071` (H3) | `make -e`, or `e` in `MAKEFLAGS`, let the environment beat `.env`, and the guard checked only the command line; `backup` could recreate the database container | Both origins refused, and `backup` and `schema-diagram` run `--no-deps` (`d10a605`). PARTIAL, residual accepted: `docker-migrate` and `up` keep their dependency |
+| RA-3 | High | `cc02071` (H2) | PostgreSQL keeps 63 bytes of a name, so the copy of a 63-byte database name was the live name, and `dropdb --force` would drop it | A name whose copy does not fit is refused, counted in bytes (`d10a605`). CLOSED |
+| RA-4 | Medium | `d10a605` | The length guard counted a dotenv value's quotes, so a quoted name that fits was refused and `make e2e-drop` stopped working | Measured as the container's shell reads it (`96a2166`). Not yet re-reviewed |
+| RC-1 | Medium | `599c826` (M3) | No screen showed a converted amount's euro equivalent, though `reqs.md` 5.5 requires it, and the commit message said Compare did | Shown beside every converted amount (`9261802`). CLOSED |
+| RB-1 | Medium | `e7a3a19` (M1) | Stop could take the card from a pending start, as Refresh had | Stop held during a start (`3075c76`) |
+| RB-2 | Medium | `e7a3a19` (M1) | Leaving Acquire and returning during a start loses the start's ownership | Accepted by you: `known-issues.md` P94 |
+| RB-3 | Medium | `faf8085` (M4) | The diff's freshness key missed a figure added for a pair already counted | A run still going is read again on every read of the history (`3075c76`) |
+| RB-4 | Medium | `faf8085` (L9) | Source ids were still printed in eight more places | The catalog's names everywhere (`96f00a8`) |
+
+`3075c76`, `96f00a8`, `0693baf` and cluster D are under review now. `96a2166` and `cba634b` go to the final review.
 
 ## What the reviewers found sound
 
