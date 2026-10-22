@@ -472,6 +472,19 @@ describe("the household panel's confirmation", () => {
  * UI-26. **The citizenship picker adds rather than replaces**, so it is the one used most from
  * the keyboard: tab into its list, choose, and go on to the next passport.
  */
+/**
+ * The home picker, once the roster has arrived. **Before it, the box can only show the stored id
+ * and there is no list to open**, so typing into it tests nothing -- and a loaded `make check`
+ * types before the roster lands (P13). The stored home's name is what only the roster can give.
+ */
+async function homePickerWithItsRoster(): Promise<HTMLInputElement> {
+  const home = screen.getByRole<HTMLInputElement>("combobox", {
+    name: "Home country candidate",
+  });
+  await waitFor(() => expect(home).toHaveValue("Romania"));
+  return home;
+}
+
 /** Counts the household writes and lets the mock's own handler answer them. */
 function countingHouseholdSaves(): { saved: number } {
   const seen = { saved: 0 };
@@ -497,7 +510,7 @@ describe("the household panel from the keyboard", () => {
     const writes = countingHouseholdSaves();
     renderShell("/configure");
     await panel();
-    const home = screen.getByRole("combobox", { name: "Home country candidate" });
+    const home = await homePickerWithItsRoster();
     await user.clear(home);
     await user.type(home, typed);
     expect(
@@ -518,7 +531,7 @@ describe("the household panel from the keyboard", () => {
     const writes = countingHouseholdSaves();
     renderShell("/configure");
     await panel();
-    const home = screen.getByRole("combobox", { name: "Home country candidate" });
+    const home = await homePickerWithItsRoster();
     await user.clear(home);
     await user.type(home, "Portu{Enter}");
     expect(
@@ -528,6 +541,34 @@ describe("the household panel from the keyboard", () => {
     await user.keyboard("{Enter}");
 
     await waitFor(() => expect(writes.saved).toBe(1));
+  });
+
+  /**
+   * RD-3. **A key that ends an IME composition belongs to the input method.** Typing a place
+   * through one ends each word with Enter, and Escape abandons it; taken by the picker, the Enter
+   * chose a place before its name was finished, and the Escape threw the list away with it.
+   */
+  it.each([
+    ["Enter, composing", { key: "Enter", isComposing: true }],
+    ["Enter, as Safari reports a composing key", { key: "Enter", keyCode: 229 }],
+    ["Escape, composing", { key: "Escape", isComposing: true }],
+  ])("leaves a key that ends a composition to the input method: %s", async (_, key) => {
+    const user = userEvent.setup();
+    const writes = countingHouseholdSaves();
+    renderShell("/configure");
+    await panel();
+    const home = await homePickerWithItsRoster();
+    await user.clear(home);
+    await user.type(home, "Portu");
+
+    fireEvent.keyDown(home, key);
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
+
+    expect(home).toHaveValue("Portu");
+    expect(
+      screen.getByRole("listbox", { name: "Home country candidate" }),
+    ).toBeInTheDocument();
+    expect(writes.saved).toBe(0);
   });
 
   it("adds a passport chosen from the list, and leaves the keyboard in the picker", async () => {

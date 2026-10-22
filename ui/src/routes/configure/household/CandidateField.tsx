@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type KeyboardEvent } from "react";
 import {
   type CandidateOption,
   chosenName,
@@ -82,7 +82,7 @@ export function CandidateField({
         }}
         onKeyDown={(event) => {
           // From the box or from an option, and either way focus ends in the box.
-          if (event.key !== "Escape") return;
+          if (event.key !== "Escape" || composing(event)) return;
           box.current?.focus();
           close();
         }}
@@ -111,7 +111,7 @@ export function CandidateField({
             // **While the list is shown, Enter belongs to it** (UIC-G2): it picks the one match
             // or does nothing, and never reaches the form around the picker -- which saved the
             // household, with the previous choice still in it, whenever several or none matched.
-            if (event.key !== "Enter" || !listShown) return;
+            if (event.key !== "Enter" || !listShown || composing(event)) return;
             event.preventDefault();
             if (offered.length === 1 && offered[0]) choose(offered[0]);
           }}
@@ -158,4 +158,13 @@ export function CandidateField({
       )}
     </div>
   );
+}
+
+/**
+ * **A key that ends an IME composition is the input method's** (RD-3): Enter confirms the word
+ * and Escape abandons it, and neither is meant for the picker. Safari reports that keystroke as
+ * not composing, with the key code 229 every browser gives a key an input method is handling.
+ */
+function composing(event: KeyboardEvent<HTMLElement>): boolean {
+  return event.nativeEvent.isComposing || event.keyCode === 229;
 }
