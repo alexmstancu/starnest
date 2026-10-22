@@ -294,6 +294,22 @@ describe("stopping and failing", () => {
     expect(shouldReadAnswersAgain(failedOn(proposedNothing, REFUSED))).toBe(true);
   });
 
+  /**
+   * RD-1. **An answer the cap cut short still moved the answers.** A request about more than one
+   * candidate can store a proposal and then meet the cap: the gate is not counted as asked, but
+   * a proposal is on the server that the list on screen has never seen.
+   */
+  it("reads them again after an answer the cap cut short, whatever it stored", () => {
+    const proposedThenCapped = after(
+      aPass(),
+      answer(0.04, { halted_on_spend_cap: true, proposals: [{}] }),
+    );
+    const cappedAtOnce = after(aPass(), answer(0, { halted_on_spend_cap: true }));
+
+    expect(shouldReadAnswersAgain(endOf(proposedThenCapped, false))).toBe(true);
+    expect(shouldReadAnswersAgain(endOf(cappedAtOnce, false))).toBe(true);
+  });
+
   it("does not read them again when nothing was asked", () => {
     expect(shouldReadAnswersAgain(failedOn(aPass(), REFUSED))).toBe(false);
     expect(shouldReadAnswersAgain(couldNotStart(0.12, UNREACHABLE))).toBe(false);

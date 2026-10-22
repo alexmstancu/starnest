@@ -153,16 +153,18 @@ export function couldNotStart(ceilingEur: number, failure: unknown): PassEnd {
 }
 
 /**
- * Whether the screen should read the answers again once a pass has ended (UIC-A2).
+ * Whether the screen should read the answers again once a pass has ended (UIC-A2, RD-1).
  *
- * **After any pass that asked something**, not only one that stored a proposal: the server
- * declines a model's proposal when a person answered the gate while the pass ran, so the answers
- * can move under a pass that stored nothing, and the list on screen would be out of date. Also
- * after a failure, which may come after a write the response never got to report. Not when
- * nothing was asked: then nothing on the server moved because of this pass.
+ * **After any answer the server sent**, not only one that stored a proposal: the server declines
+ * a model's proposal when a person answered the gate while the pass ran, so the answers can move
+ * under a pass that stored nothing; and an answer the cap cut short is not counted as asked, yet
+ * may have stored a proposal before the meter stopped it. Also after a failure, which may come
+ * after a write the response never got to report. Not when no request was answered or failed:
+ * then nothing on the server moved because of this pass.
  */
 export function shouldReadAnswersAgain(end: PassEnd): boolean {
-  return end.pass.tally.asked > 0 || end.kind === "failed";
+  const { tally } = end.pass;
+  return tally.asked > 0 || tally.haltedOnSpendCap || end.kind === "failed";
 }
 
 /** Said while the pass reads its cap and its gates, before the first question. */

@@ -95,6 +95,7 @@ function answered(outcome: {
   calls: number;
   halted_on_spend_cap?: boolean;
   refusals?: string[];
+  proposals?: unknown[];
 }): Response {
   return HttpResponse.json({
     proposals: [],
@@ -693,6 +694,41 @@ describe("a research pass, one gate at a time", () => {
     await researched();
     await passSays(/asked every gate/);
 
+    await waitFor(() =>
+      expect(order.slice(order.lastIndexOf(`POST ${BASE}/match-rule-research`) + 1)).toContain(
+        `GET ${BASE}/match-rule-results`,
+      ),
+    );
+  });
+
+  /**
+   * RD-1. **The cap can stop an answer after it has stored a proposal.** The gate is not counted
+   * as asked, so a pass ended by its very first answer read nothing again, and the proposal it
+   * paid for was missing from the list -- or an older one stayed confirmable in its place.
+   */
+  it("reads the answers again when the first answer proposed and then met the cap", async () => {
+    const order: string[] = [];
+    const log = ({ request }: { request: Request }) => {
+      const path = new URL(request.url).pathname;
+      if (path === `${BASE}/match-rule-research` || path === `${BASE}/match-rule-results`) {
+        order.push(`${request.method} ${path}`);
+      }
+    };
+    mockServer.events.on("request:start", log);
+    onTestFinished(() => mockServer.events.removeListener("request:start", log));
+    const research = watchResearch({
+      answer: (_body, index) =>
+        index === 1
+          ? answered({ cost_eur: 0.04, calls: 1, halted_on_spend_cap: true, proposals: [{}] })
+          : undefined,
+    });
+    renderShell("/configure");
+    await settled();
+
+    await researched();
+    await passSays(/stopped at the spend cap/);
+
+    expect(research.sent).toHaveLength(1);
     await waitFor(() =>
       expect(order.slice(order.lastIndexOf(`POST ${BASE}/match-rule-research`) + 1)).toContain(
         `GET ${BASE}/match-rule-results`,
