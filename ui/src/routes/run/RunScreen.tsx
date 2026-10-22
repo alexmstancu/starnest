@@ -514,7 +514,7 @@ function RunReport({
 }: {
   run: RunDetail;
   busy: boolean;
-  /** A start is in flight: Refresh and Dismiss would claim the card from it (UIR-G1). */
+  /** A start is in flight: Refresh, Dismiss and Stop would claim the card from it (UIR-G1, RB-1). */
   starting: boolean;
   stopping: boolean;
   onRefresh: () => void;
@@ -580,7 +580,7 @@ function RunReport({
                everything already written stays written. */
             <HeldButton
               className="button button--danger"
-              held={stopping}
+              held={stopping || starting}
               onClick={onStop}
             >
               {stopping ? "Stopping…" : "Stop — keep what completed"}

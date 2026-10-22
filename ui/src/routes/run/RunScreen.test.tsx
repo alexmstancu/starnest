@@ -1450,8 +1450,13 @@ describe("the two acquisitions chosen in the diff", () => {
    * Run 7 still going: the history reports how far it has got, and `/values` what it has
    * stored so far. `moveOn` is the server getting one item further and storing one more figure.
    */
-  function runSevenStillGoing(): { moveOn: () => void; valueReads: () => number } {
+  function runSevenStillGoing(status: Run["run_status"] = "running"): {
+    moveOn: () => void;
+    storeWithoutCounting: () => void;
+    valueReads: () => number;
+  } {
     let completed = 1;
+    let stored_more = false;
     let valueReads = 0;
     const stored = {
       ...STORED_VALUES[0]!,
@@ -1467,7 +1472,7 @@ describe("the two acquisitions chosen in the diff", () => {
         if (query.get("limit") === "1") return;
         const runs: Run[] = RUNS.map((run) =>
           run.id === 7
-            ? { ...run, run_status: "running", finished_at: null, items_completed: completed }
+            ? { ...run, run_status: status, finished_at: null, items_completed: completed }
             : run,
         );
         return HttpResponse.json({ items: runs, total: runs.length });
@@ -1476,7 +1481,7 @@ describe("the two acquisitions chosen in the diff", () => {
         const fromRun = new URL(request.url).searchParams.get("data_acquisition_run");
         if (fromRun === null) return;
         valueReads += 1;
-        const items = [...STORED_VALUES, ...(completed > 1 ? [stored] : [])].filter(
+        const items = [...STORED_VALUES, ...(completed > 1 || stored_more ? [stored] : [])].filter(
           (value) => String(value.data_acquisition_run ?? "") === fromRun,
         );
         return HttpResponse.json({ items, total: items.length });
@@ -1485,6 +1490,11 @@ describe("the two acquisitions chosen in the diff", () => {
     return {
       moveOn: () => {
         completed += 1;
+      },
+      // A figure for a pair the run already counts, by another source or after a reuse: stored,
+      // and no counter moves (RB-3).
+      storeWithoutCounting: () => {
+        stored_more = true;
       },
       valueReads: () => valueReads,
     };
@@ -1520,8 +1530,21 @@ describe("the two acquisitions chosen in the diff", () => {
     expectFiveAgainstSeven();
   });
 
-  it("does not read them again on a refresh that moved neither of them", async () => {
+  it("reads a run still going again on a refresh, though none of its counts moved", async () => {
     const run = runSevenStillGoing();
+    renderShell("/acquire");
+    await fiveAgainstSeven();
+
+    run.storeWithoutCounting();
+    await refreshTheCard();
+
+    expect(
+      await theDiff().findByRole("row", { name: /nobody measures this/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not read finished runs again on a refresh that moved neither of them", async () => {
+    const run = runSevenStillGoing("completed");
     renderShell("/acquire");
     await fiveAgainstSeven();
     const reads = run.valueReads();
@@ -3631,6 +3654,45 @@ describe("acting from the keyboard", () => {
     release();
     await everyActHasEnded();
     expect(starts.requests.sent).toBe(1);
+  });
+
+  /**
+   * RB-1. **Stop is held during a start too.** The card does not poll, so a run that finished on
+   * the server can still read as going, Stop beside it, while a new one is started -- and Stop
+   * claimed the card from the start as Refresh did.
+   */
+  it("holds Stop on a card still reading as going while a start is in flight", async () => {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          run_status: "running",
+          finished_at: null,
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    await estimate();
+    const startIt = await screen.findByRole("button", {
+      name: /start this acquisition/i,
+    });
+    const { release } = await aStartInFlight(user, startIt);
+    const stops = holdEach("post", "/data-acquisition-runs/:runId/stop");
+    const stop = card.getByRole("button", { name: /stop — keep what completed/i });
+
+    expectHeld(stop);
+    await user.click(stop);
+    expect(stops.requests.sent).toBe(0);
+
+    release();
+    expect(
+      await screen.findByRole("region", { name: /acquisition 8/i }),
+    ).toBeInTheDocument();
   });
 
   it("holds Refresh, Dismiss and the history while a start is in flight, so the run it started reaches the card", async () => {

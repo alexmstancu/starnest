@@ -31,8 +31,10 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
   const attributes = useAttributeNames();
   const candidates = useCandidateNames();
 
-  // Read again when either run has moved on, which a refresh of the history reveals (UIR-A1).
-  const freshness = useVersionOf(progressOf(runs, [earlier, later]));
+  // Read again when either run may have moved on, which a refresh of the history reveals
+  // (UIR-A1, RB-3). `runs` is a new list only when the history has been read again.
+  const historyReads = useVersionOf(runs);
+  const freshness = useVersionOf(progressOf(runs, [earlier, later], historyReads));
 
   const values = useResource(
     useCallback(

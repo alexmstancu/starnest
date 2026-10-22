@@ -498,6 +498,20 @@ describe("where the compared runs stand", () => {
     );
   });
 
+  /**
+   * RB-3. **A run still going is read again on every read of the history.** Its counts cover
+   * distinct pairs, reused ones included, so another source's figure for a pair already counted
+   * moves no counter; only a finished run is known to have stopped storing figures.
+   */
+  it("changes with every read of the history while a compared run is still going", () => {
+    expect(progressOf([going, done], [5, 7], 1)).not.toBe(progressOf([going, done], [5, 7], 2));
+  });
+
+  it("does not change with a read of the history when both runs have finished", () => {
+    const finished = { ...going, run_status: "completed" };
+    expect(progressOf([finished, done], [5, 7], 1)).toBe(progressOf([finished, done], [5, 7], 2));
+  });
+
   it("stays put for a run the history no longer lists, and for no choice at all", () => {
     expect(progressOf([done], [5, 7])).toBe(progressOf([done], [5, 7]));
     expect(progressOf([], [null, null])).toBe("null:?|null:?");

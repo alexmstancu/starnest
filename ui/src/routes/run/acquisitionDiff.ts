@@ -235,23 +235,27 @@ interface RunProgress {
 }
 
 /**
- * Where the compared runs stand, as a key that changes only when one of them has moved on.
+ * Where the compared runs stand, as a key that changes only when one of them may have moved on.
  *
  * **A run still going keeps storing figures; one that has finished never will again** (UIR-A1).
  * The diff stays on screen through every re-read of the history (NEW-11), so it reads its two
- * runs again when this changes -- a status, or a count of items done or failed -- and not on
- * every refresh, which would blank a finished comparison for nothing.
+ * runs again when this changes -- a status, a count of items done or failed, and, for a run still
+ * going, every read of the history (`historyReads`). Its counts cover distinct pairs, reused
+ * ones included, so another source's figure for a pair already counted moves no counter (RB-3).
+ * A finished comparison is never read again for nothing.
  */
 export function progressOf(
   runs: readonly RunProgress[],
   ids: readonly (number | null)[],
+  historyReads = 0,
 ): string {
   return ids
     .map((id) => {
       const run = runs.find((each) => each.id === id);
-      return run === undefined
-        ? `${String(id)}:?`
-        : `${String(id)}:${run.run_status}:${String(run.items_completed ?? "")}:${String(run.items_failed ?? "")}`;
+      if (run === undefined) return `${String(id)}:?`;
+      const counts = `${String(run.items_completed ?? "")}:${String(run.items_failed ?? "")}`;
+      const going = run.run_status === "running" ? `:read${String(historyReads)}` : "";
+      return `${String(id)}:${run.run_status}:${counts}${going}`;
     })
     .join("|");
 }
