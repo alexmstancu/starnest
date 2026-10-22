@@ -267,26 +267,37 @@ describe("what decides that a figure did not move", () => {
     expect(row?.later).toBe("1000 CHF (1063.5 EUR)");
   });
 
-  it("calls the same converted amount unchanged, and shows it as it always has", () => {
+  it("calls the same converted amount unchanged, and shows both its amounts", () => {
     const rent = { ...pair, attribute: "country.rent_one_bedroom_centre" };
     const payload = { amount: 1000, currency: "CHF", amount_eur: 1061.2 };
     const diff = diffAcquisitions([{ ...rent, payload }], [{ ...rent, payload }]);
     const [row] = diff.rows;
 
     expect(diff.unchanged).toBe(1);
-    expect(row?.earlier).toBe("1000 CHF");
-    expect(row?.later).toBe("1000 CHF");
+    expect(row?.earlier).toBe("1000 CHF (1061.2 EUR)");
+    expect(row?.later).toBe("1000 CHF (1061.2 EUR)");
   });
 
-  it("keeps the amounts alone where they already tell the two apart", () => {
+  it("stays at readable precision where the amounts already tell the two apart", () => {
     const rent = { ...pair, attribute: "country.rent_one_bedroom_centre" };
     const [row] = diffAcquisitions(
       [{ ...rent, payload: { amount: 1000, currency: "CHF", amount_eur: 1061.2 } }],
-      [{ ...rent, payload: { amount: 1100, currency: "CHF", amount_eur: 1167.32 } }],
+      [{ ...rent, payload: { amount: 1100, currency: "CHF", amount_eur: 1167.324 } }],
     ).rows;
 
-    expect(row?.earlier).toBe("1000 CHF");
-    expect(row?.later).toBe("1100 CHF");
+    expect(row?.earlier).toBe("1000 CHF (1061.2 EUR)");
+    expect(row?.later).toBe("1100 CHF (1167.32 EUR)");
+  });
+
+  it("shows every digit where two converted amounts read the same at readable precision", () => {
+    const rent = { ...pair, attribute: "country.rent_one_bedroom_centre" };
+    const [row] = diffAcquisitions(
+      [{ ...rent, payload: { amount: 1000, currency: "CHF", amount_eur: 1061.2341 } }],
+      [{ ...rent, payload: { amount: 1000, currency: "CHF", amount_eur: 1061.2349 } }],
+    ).rows;
+
+    expect(row?.earlier).toBe("1000 CHF (1061.2341 EUR)");
+    expect(row?.later).toBe("1000 CHF (1061.2349 EUR)");
   });
 
   /**

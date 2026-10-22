@@ -412,6 +412,9 @@ describe("the attribute figures inside a pillar", () => {
     const row = screen.getByRole("row", { name: /median rent/i });
     expect(row).toHaveTextContent("gaps in EUR");
     expect(within(row).getByText("-100.0 EUR")).not.toHaveClass("matrix__delta--faint");
+    // Both operands are on screen in euros, so the gap can be checked (RC-1, `reqs.md` 5.5).
+    expect(row).toHaveTextContent("2500 RON (500 EUR)");
+    expect(row).toHaveTextContent("600 EUR");
   });
 
   it("says there is no figure where the focus has neither a figure nor a score", async () => {

@@ -71,8 +71,7 @@ export const EURO = "EUR";
 export interface FigureOptions {
   /**
    * The figure exactly as stored: every digit the wire carries, instead of the two decimals a
-   * person reads, a converted amount's euro equivalent beside it, and the reason an assigned
-   * score was given. **Only where the usual line would hide a difference**: two figures that
+   * person reads, and the reason an assigned score was given. **Only where the usual line would hide a difference**: two figures that
    * moved by less than the displayed precision, in euros alone, or in their reason alone, read
    * the same, and a screen calling them different has to show why.
    */
@@ -95,13 +94,15 @@ export function describeFigure(
   const payload = value.payload as Record<string, unknown>;
   if ("magnitude" in payload)
     return `${digits(payload["magnitude"])} ${readableUnit(payload["unit"])}`;
-  // **Shown exactly, a converted amount carries its euro equivalent** (UI-22): converted again
-  // at a fresher ECB rate, the same 1000 CHF has a new euro figure and reads the same without
-  // it. A euro amount is its own equivalent -- the server refuses one that is not.
+  // **A converted amount carries its euro equivalent** (`reqs.md` 5.5: "both are displayed").
+  // Scoring and every comparison read the euro figure, so a reader shown only "1000 CHF" could
+  // check neither (RC-1). Exactly where exactness is asked for (UI-22): converted again at a
+  // fresher ECB rate, the same 1000 CHF can move in euros by less than two decimals. A euro
+  // amount is its own equivalent -- the server refuses one that is not.
   if ("amount_eur" in payload) {
     const currency = String(payload["currency"]);
     const amount = `${digits(payload["amount"])} ${currency}`;
-    return options.exact === true && currency !== EURO
+    return currency !== EURO
       ? `${amount} (${digits(payload["amount_eur"])} ${EURO})`
       : amount;
   }

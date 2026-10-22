@@ -227,12 +227,17 @@ describe("a figure exactly as stored", () => {
     ).toBe("1250.125 EUR");
   });
 
-  it("leaves the euro equivalent out when exactness is not asked for", () => {
+  /**
+   * RC-1. **Both amounts are displayed** (`reqs.md` 5.5): scoring and every gap use the euro
+   * figure, so a reader shown only "1000 CHF" cannot check them. At readable precision here; the
+   * exact form above is for when two figures would otherwise read the same.
+   */
+  it("shows a converted amount's euro equivalent at readable precision", () => {
     expect(
       describeFigure({
         payload: { amount: 1000.125, currency: "CHF", amount_eur: 1061.234567 },
       }),
-    ).toBe("1000.13 CHF");
+    ).toBe("1000.13 CHF (1061.23 EUR)");
   });
 
   /**
