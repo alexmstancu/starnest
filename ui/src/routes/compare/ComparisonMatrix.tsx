@@ -5,7 +5,6 @@ import {
   attributeName,
   formatPercentage,
   formatScore,
-  formatSigned,
   pillarName,
 } from "../../format/display";
 import { describeFigure } from "../../format/figure";
@@ -17,6 +16,8 @@ import { pillarMatrix, pillarPriority, type MatrixCell } from "./pillarMatrix";
 import {
   attributeGroups,
   payloadMagnitude,
+  rawGapText,
+  rawGapUnit,
   type AttributeRow,
 } from "./attributeRows";
 import type { Measure } from "./pillarMatrix";
@@ -70,6 +71,7 @@ export function ComparisonMatrix({
       focusScore: row.focus?.normalised_score ?? null,
       focusRaw: payloadMagnitude(row.focus?.value),
       focusFigure: row.focus?.value ? describeFigure(row.focus.value) : ABSENT,
+      gapUnit: rawGapUnit(row.focus?.value),
       comparators: (row.comparators ?? []).map((cell) => ({
         candidate: cell.candidate ?? "",
         score: cell.normalised_score ?? null,
@@ -251,11 +253,7 @@ function AttributeRowView({
   const raw = shownAs === "raw";
   // The raw gap is the server's focus minus comparator, printed as sent, so the row says which
   // way round it reads; the bar beneath it is coloured by the scores (UI-19).
-  const note = raw
-    ? row.focusRaw === null && row.focusScore === null
-      ? "no figure"
-      : "its own unit; gaps read focus minus comparator"
-    : "normalised 0–100";
+  const note = raw ? rawNote(row) : "normalised 0–100";
 
   return (
     <tr className="matrix__row matrix__row--attr">
@@ -279,13 +277,24 @@ function AttributeRowView({
             compact
             scoreText={raw ? cell.figure || ABSENT : formatScore(cell.score)}
             deltaText={
-              raw ? formatSigned(cell.rawDelta) : formatDelta(cell.scoreDelta)
+              raw ? rawGapText(cell.rawDelta, row.gapUnit) : formatDelta(cell.scoreDelta)
             }
           />
         );
       })}
     </tr>
   );
+}
+
+/**
+ * What a raw row says about its gaps. A monetary figure is shown in its own currency, but its
+ * gap is the server's euro gap, so the row says so rather than calling it the figure's unit.
+ */
+function rawNote(row: AttributeRow): string {
+  if (row.focusRaw === null && row.focusScore === null) return "no figure";
+  return row.gapUnit === null
+    ? "its own unit; gaps read focus minus comparator"
+    : `its own currency; gaps in ${row.gapUnit}, focus minus comparator`;
 }
 
 /** The baseline column: the line everything else is measured from, so it carries no bar. */

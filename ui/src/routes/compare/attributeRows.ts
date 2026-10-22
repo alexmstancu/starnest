@@ -14,6 +14,8 @@
  * `routes/` may not call `Number`, which is why even that subtraction lives in a module.
  */
 
+import { formatSigned } from "../../format/display";
+import { EURO } from "../../format/figure";
 import { maxAbsDelta } from "./divergingBar";
 
 /**
@@ -34,6 +36,9 @@ export interface AttributeSource {
   focusRaw: number | null;
   /** The focus's figure in words, already formatted. */
   focusFigure: string;
+  /** The unit the server's raw gaps are in when it is not the figure's own: EUR for money,
+   *  since the comparison subtracts euro equivalents. Null for every other type. */
+  gapUnit: string | null;
   comparators: readonly {
     candidate: string;
     score: number | null;
@@ -69,6 +74,7 @@ export interface AttributeRow {
   focusScore: number | null;
   focusRaw: number | null;
   focusFigure: string;
+  gapUnit: string | null;
   cells: AttributeCell[];
   /** The ruler the score-view bars are drawn against, shared across the whole pillar. */
   scoreScale: number;
@@ -83,18 +89,41 @@ export interface AttributeRow {
  * cost index near 100 is small, on a coastline of 20km it is not. The non-numeric types (a
  * label set, a boolean, free text) have no magnitude to divide by and answer null, which leaves
  * their cells untinted rather than wrongly coloured.
+ *
+ * **The same number the server subtracts** (`evaluation/magnitudes.py`), or the gap is divided
+ * by a figure in another unit. For money that is `amount_eur`, never `amount`: the server's
+ * gap is euros, and sizing it against 150,000 forint drew a 130-euro gap on a 380-euro rent as
+ * noise (UIR-A2). A payload with no euro amount answers null -- untinted, not wrongly tinted.
  */
 export function payloadMagnitude(
   value: { payload?: unknown } | null | undefined,
 ): number | null {
-  const payload = value?.payload;
-  if (typeof payload !== "object" || payload === null) return null;
-  const record = payload as Record<string, unknown>;
-  for (const key of ["magnitude", "amount", "value", "count"]) {
+  const record = payloadOf(value);
+  if (record === null) return null;
+  for (const key of ["magnitude", "amount_eur", "value", "count"]) {
     const found = record[key];
     if (typeof found === "number" && Number.isFinite(found)) return found;
   }
   return null;
+}
+
+/** EUR for a monetary figure, whose raw gap is in euros whatever its own currency; else null. */
+export function rawGapUnit(value: { payload?: unknown } | null | undefined): string | null {
+  const euros = payloadOf(value)?.["amount_eur"];
+  return typeof euros === "number" && Number.isFinite(euros) ? EURO : null;
+}
+
+/** A raw gap as printed: signed, with its unit where it has one, and absent as absent. */
+export function rawGapText(delta: number | null, unit: string | null): string {
+  const text = formatSigned(delta);
+  return unit === null || delta === null || !Number.isFinite(delta) ? text : `${text} ${unit}`;
+}
+
+function payloadOf(value: { payload?: unknown } | null | undefined): Record<string, unknown> | null {
+  const payload = value?.payload;
+  return typeof payload === "object" && payload !== null
+    ? (payload as Record<string, unknown>)
+    : null;
 }
 
 function scoreDeltaOf(
@@ -151,6 +180,7 @@ export function attributeGroups(
       focusScore: source.focusScore,
       focusRaw: source.focusRaw,
       focusFigure: source.focusFigure,
+      gapUnit: source.gapUnit,
       cells,
       // Filled once the pillar's rows are all in, since the score ruler is shared across them.
       scoreScale: 0,

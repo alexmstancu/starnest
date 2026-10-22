@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { ABSENT } from "../../format/display";
 import {
   attributeGroups,
   payloadMagnitude,
+  rawGapText,
+  rawGapUnit,
   type AttributeCell,
   type AttributeSource,
 } from "./attributeRows";
@@ -10,7 +13,9 @@ import { divergingBar } from "./divergingBar";
 describe("a figure's bare magnitude", () => {
   it("reads whichever key the value type buried the number under", () => {
     expect(payloadMagnitude({ payload: { magnitude: 92.1 } })).toBe(92.1);
-    expect(payloadMagnitude({ payload: { amount: 1800 } })).toBe(1800);
+    expect(payloadMagnitude({ payload: { amount: 1800, currency: "EUR", amount_eur: 1800 } })).toBe(
+      1800,
+    );
     expect(payloadMagnitude({ payload: { value: 1.07 } })).toBe(1.07);
     expect(payloadMagnitude({ payload: { count: 412 } })).toBe(412);
   });
@@ -25,12 +30,64 @@ describe("a figure's bare magnitude", () => {
   });
 });
 
+/**
+ * UIR-A2. **A monetary gap is the server's euro gap, so it is judged and labelled in euros.**
+ * The comparison subtracts `amount_eur` from `amount_eur`; a magnitude read from `amount` sized
+ * that gap against the figure in its own currency, so 130 EUR on a rent of 150,000 HUF (380 EUR)
+ * read as 0.09% and was drawn as noise.
+ */
+const order = ["country.spain", "country.netherlands"];
+
+describe("a monetary gap", () => {
+  const forint = { payload: { amount: 150000, currency: "HUF", amount_eur: 380 } };
+
+  it("is sized against the figure's euro amount", () => {
+    expect(payloadMagnitude(forint)).toBe(380);
+  });
+
+  it("is drawn as a real gap when it is a large share of the euro amount", () => {
+    expect(divergingBar(-130, 130, payloadMagnitude(forint)).faint).toBe(false);
+  });
+
+  it("is left untinted, not sized in its own currency, when the figure has no euro amount", () => {
+    expect(payloadMagnitude({ payload: { amount: 1800, currency: "SEK" } })).toBeNull();
+  });
+
+  it("is labelled in euros, and no other type's gap is given a unit", () => {
+    expect(rawGapUnit(forint)).toBe("EUR");
+    expect(rawGapUnit({ payload: { magnitude: 92.1, unit: "index_eu27_100" } })).toBeNull();
+    expect(rawGapUnit({ payload: { amount: 1800, currency: "SEK" } })).toBeNull();
+    expect(rawGapUnit(null)).toBeNull();
+  });
+
+  it("prints its unit beside the number, and nothing beside an absent gap", () => {
+    expect(rawGapText(-130, "EUR")).toBe("-130.0 EUR");
+    expect(rawGapText(null, "EUR")).toBe(ABSENT);
+    expect(rawGapText(-13.4, null)).toBe("-13.4");
+  });
+
+  it("travels with its row", () => {
+    const rent: AttributeSource = {
+      attribute: "country.median_rent",
+      pillar: "housing",
+      focusScore: 70,
+      focusRaw: 380,
+      focusFigure: "150,000 HUF (380 EUR)",
+      gapUnit: "EUR",
+      comparators: [{ candidate: "country.spain", score: 40, rawDelta: -130, figure: "510 EUR" }],
+    };
+
+    expect(attributeGroups([rent], order).get("housing")?.[0]?.gapUnit).toBe("EUR");
+  });
+});
+
 const economicsA: AttributeSource = {
   attribute: "country.cost_of_living_index",
   pillar: "economics",
   focusScore: 82,
   focusRaw: 92.1,
   focusFigure: "92.1 EU27 = 100",
+  gapUnit: null,
   comparators: [
     { candidate: "country.spain", score: 41, rawDelta: -13.4, figure: "105.5 EU27 = 100" },
     { candidate: "country.netherlands", score: 70, rawDelta: -4, figure: "96.1 EU27 = 100" },
@@ -43,6 +100,7 @@ const economicsB: AttributeSource = {
   focusScore: 50,
   focusRaw: 35,
   focusFigure: "35%",
+  gapUnit: null,
   comparators: [
     { candidate: "country.spain", score: 60, rawDelta: -2, figure: "37%" },
     { candidate: "country.netherlands", score: 55, rawDelta: -1, figure: "36%" },
@@ -55,13 +113,13 @@ const nature: AttributeSource = {
   focusScore: 70,
   focusRaw: 1793,
   focusFigure: "1793 km",
+  gapUnit: null,
   comparators: [
     { candidate: "country.spain", score: 64, rawDelta: 1341, figure: "452 km" },
     // Netherlands has no figure for this attribute at all.
   ],
 };
 
-const order = ["country.spain", "country.netherlands"];
 
 describe("grouping the attributes under their pillar", () => {
   it("keeps each pillar's attributes together", () => {
@@ -139,6 +197,7 @@ describe("which way a raw gap is drawn", () => {
           focusScore,
           focusRaw: 100,
           focusFigure: "100",
+          gapUnit: null,
           comparators: [
             { candidate: "country.spain", score: spainScore, rawDelta, figure: "" },
           ],

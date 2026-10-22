@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { replaceSettings } from "../../api/endpoints";
-import { SETTINGS } from "../../mocks/fixtures";
+import type { components } from "../../api/schema";
+import { ATTRIBUTES, SETTINGS } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -387,6 +388,49 @@ describe("the attribute figures inside a pillar", () => {
     const row = screen.getByRole("row", { name: /cost of living index/i });
     expect(row).toHaveTextContent("82");
     expect(row).not.toHaveTextContent("92.1");
+  });
+
+  /**
+   * UIR-A2. The server's monetary gap is euros minus euros, so the row sizes it against the
+   * focus's euro amount and says EUR. Sized against 2,500 RON, a 100-euro gap on a 500-euro
+   * rent read as 4% and was drawn as noise.
+   */
+  it("judges and labels a monetary gap in euros, the unit the server subtracted it in", async () => {
+    mockServer.use(
+      http.get(`${BASE}/attributes`, () =>
+        HttpResponse.json({ items: [...ATTRIBUTES, MEDIAN_RENT] }),
+      ),
+      http.get(`${BASE}/comparisons`, () => HttpResponse.json(rentComparison())),
+    );
+    renderShell("/compare");
+    await compare("Romania", "Spain");
+    await openPillar("Economy");
+    await screen.findByRole("row", { name: /median rent/i });
+
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+
+    const row = screen.getByRole("row", { name: /median rent/i });
+    expect(row).toHaveTextContent("gaps in EUR");
+    expect(within(row).getByText("-100.0 EUR")).not.toHaveClass("matrix__delta--faint");
+  });
+
+  it("says there is no figure where the focus has neither a figure nor a score", async () => {
+    mockServer.use(
+      http.get(`${BASE}/attributes`, () =>
+        HttpResponse.json({ items: [...ATTRIBUTES, MEDIAN_RENT] }),
+      ),
+      http.get(`${BASE}/comparisons`, () =>
+        HttpResponse.json(rentComparison({ normalised_score: null })),
+      ),
+    );
+    renderShell("/compare");
+    await compare("Romania", "Spain");
+    await openPillar("Economy");
+    await screen.findByRole("row", { name: /median rent/i });
+
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+
+    expect(screen.getByRole("row", { name: /median rent/i })).toHaveTextContent("no figure");
   });
 
   it("says nothing rather than zero where a figure is missing", async () => {
@@ -785,6 +829,80 @@ function missingFigureComparison() {
             normalised_score: null,
             delta: null,
             // No `value`: a comparator with no figure must read as absent, not as a zero.
+          },
+        ],
+      },
+    ],
+    synthesis: [],
+  };
+}
+
+const MEDIAN_RENT: components["schemas"]["Attribute"] = {
+  id: "country.median_rent",
+  name: "Median rent",
+  pillar: "economics",
+  level: "country",
+  value_type: "Monetary",
+  unit: "currency_per_month",
+  description: "A month's rent, in the country's own currency",
+  manual_entry: false,
+  max_age_months: 24,
+  breakdown_scheme: null,
+  breakdown_options: [],
+  allowed_range: null,
+  allowed_labels: [],
+  effective_source_priority: ["eurostat"],
+  answerable_by: ["eurostat"],
+};
+
+/** Romania's rent in lei: 2,500 RON, worth 500 EUR. */
+const ROMANIAN_RENT = {
+  normalised_score: 75,
+  value: {
+    data_source: "eurostat",
+    payload: { amount: 2500, currency: "RON", amount_eur: 500 },
+    retrieval_date: "2026-01-01",
+  },
+};
+
+/** Romania's rent in lei, Spain's in euros: the gap the server sends is in euros. */
+function rentComparison(focus: object = ROMANIAN_RENT) {
+  return {
+    criteria_set: "default",
+    level: "country",
+    focus: {
+      candidate: "country.romania",
+      name: "Romania",
+      score: 74,
+      coverage: 90,
+      match_status: "matching",
+      pillar_scores: [{ pillar: "economics", score: 80, weight: 25, contribution: 20 }],
+    },
+    comparators: [
+      {
+        candidate: "country.spain",
+        name: "Spain",
+        score: 70,
+        coverage: 90,
+        match_status: "matching",
+        pillar_scores: [{ pillar: "economics", score: 60, weight: 25, contribution: 15 }],
+      },
+    ],
+    attributes: [
+      {
+        attribute: "country.median_rent",
+        pillar: "economics",
+        focus,
+        comparators: [
+          {
+            candidate: "country.spain",
+            normalised_score: 40,
+            delta: -100,
+            value: {
+              data_source: "eurostat",
+              payload: { amount: 600, currency: "EUR", amount_eur: 600 },
+              retrieval_date: "2026-01-01",
+            },
           },
         ],
       },

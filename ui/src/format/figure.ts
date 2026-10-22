@@ -66,7 +66,7 @@ function exactNumber(raw: unknown): string {
 }
 
 /** The currency every amount is converted into, and so the one that needs no conversion. */
-const EURO = "EUR";
+export const EURO = "EUR";
 
 export interface FigureOptions {
   /**
