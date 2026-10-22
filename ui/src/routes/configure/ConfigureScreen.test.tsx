@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { fetchLevels } from "../../api/endpoints";
+import { fetchCriteriaSet, fetchLevels } from "../../api/endpoints";
 import { mockServer } from "../../mocks/server";
 import {
   expectHeld,
@@ -904,6 +904,55 @@ describe("while a change is being saved", () => {
     await (await historyPanel()).findByText("1 in this session");
     expect(readingOf(COST_OF_LIVING)).toBe("50.0%");
     expect(readingOf(TAX)).toBe("30.0%");
+  });
+
+  /**
+   * UIC-A3. **A read older than an acknowledged save is never the one left on screen.** Coming
+   * back to a set while its weight was being saved reads it again; a read taken before the save
+   * committed but answered after it ended the screen on the old weights, though the save had been
+   * confirmed -- and the next change's undo would have started from them.
+   */
+  it("reads a set again when a save to it was answered while it was being read", async () => {
+    renderShell("/configure");
+    await settled();
+    await duplicateDefault();
+    const writes = holdCriterionWrites();
+    await saveWeight(COST_OF_LIVING, "40");
+    await waitFor(() =>
+      expect(writes.sent).toEqual(["default_copy/country.cost_of_living_index"]),
+    );
+    // The copy as a read taken before the save committed would see it.
+    const beforeTheSave = await fetchCriteriaSet("default_copy");
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reads = 0;
+    mockServer.use(
+      http.get("/v1/criteria-sets/default_copy", async () => {
+        reads += 1;
+        if (reads > 1) return;
+        await held;
+        return HttpResponse.json(beforeTheSave);
+      }),
+    );
+    await chooseSet("default");
+    await weightSlider(COST_OF_LIVING);
+
+    // Not `chooseSet`, which waits for the read this test is holding.
+    await userEvent.selectOptions(activeSet(), "default_copy");
+    await waitFor(() => expect(reads).toBe(1));
+    writes.release();
+    await (await historyPanel()).findByText("1 in this session");
+    release();
+
+    // The stale read is answered by reading again; only the second read's answer is shown, and
+    // opening a pillar before it lands would act on a screen still loading (P13).
+    await waitFor(() => expect(reads).toBe(2));
+    await settled();
+    await weightSlider(COST_OF_LIVING);
+    expect(readingOf(COST_OF_LIVING)).toBe("40.0%");
+    expect(reads).toBe(2);
   });
 
   it("does not report a refusal against a set it was not sent for", async () => {
