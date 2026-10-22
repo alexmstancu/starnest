@@ -1511,10 +1511,12 @@ describe("the two acquisitions chosen in the diff", () => {
   function runSevenStillGoing(status: Run["run_status"] = "running"): {
     moveOn: () => void;
     storeWithoutCounting: () => void;
+    storeAnotherSourceForACountedPair: () => void;
     valueReads: () => number;
   } {
     let completed = 1;
     let stored_more = false;
+    let another_source = false;
     let valueReads = 0;
     const stored = {
       ...STORED_VALUES[0]!,
@@ -1522,6 +1524,14 @@ describe("the two acquisitions chosen in the diff", () => {
       attribute: "country.nobody_measures_this",
       value_type: "Quantity" as const,
       payload: { magnitude: 4, unit: "km" },
+      data_acquisition_run: 7,
+    };
+    // Portugal's air connectivity, which run 7 has already counted, from a second source.
+    const secondOpinion = {
+      ...STORED_VALUES[0]!,
+      id: 9002,
+      data_source: "manual",
+      payload: { count: 35 },
       data_acquisition_run: 7,
     };
     mockServer.use(
@@ -1539,9 +1549,11 @@ describe("the two acquisitions chosen in the diff", () => {
         const fromRun = new URL(request.url).searchParams.get("data_acquisition_run");
         if (fromRun === null) return;
         valueReads += 1;
-        const items = [...STORED_VALUES, ...(completed > 1 || stored_more ? [stored] : [])].filter(
-          (value) => String(value.data_acquisition_run ?? "") === fromRun,
-        );
+        const items = [
+          ...STORED_VALUES,
+          ...(completed > 1 || stored_more ? [stored] : []),
+          ...(another_source ? [secondOpinion] : []),
+        ].filter((value) => String(value.data_acquisition_run ?? "") === fromRun);
         return HttpResponse.json({ items, total: items.length });
       }),
     );
@@ -1553,6 +1565,9 @@ describe("the two acquisitions chosen in the diff", () => {
       // and no counter moves (RB-3).
       storeWithoutCounting: () => {
         stored_more = true;
+      },
+      storeAnotherSourceForACountedPair: () => {
+        another_source = true;
       },
       valueReads: () => valueReads,
     };
@@ -1599,6 +1614,29 @@ describe("the two acquisitions chosen in the diff", () => {
     expect(
       await theDiff().findByRole("row", { name: /nobody measures this/i }),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * RB-3, in the shape the finding named: **another source's figure for a pair the run has
+   * already counted**. A run's counts are of distinct pairs, so the second figure moves none of
+   * them, and only a read of the run itself can show the pair changed.
+   */
+  it("reads a run still going again when another source answered a pair it had counted", async () => {
+    const run = runSevenStillGoing();
+    renderShell("/acquire");
+    await fiveAgainstSeven();
+    expect(
+      theDiff().getByRole("row", { name: /Portugal.*air connectivity/i }),
+    ).not.toHaveTextContent("35");
+
+    run.storeAnotherSourceForACountedPair();
+    await refreshTheCard();
+
+    await waitFor(() =>
+      expect(
+        theDiff().getByRole("row", { name: /Portugal.*air connectivity/i }),
+      ).toHaveTextContent("35"),
+    );
   });
 
   it("does not read finished runs again on a refresh that moved neither of them", async () => {
