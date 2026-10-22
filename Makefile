@@ -29,6 +29,17 @@ STORAGE := storage
 # application keeps the standard form, so the translation happens here rather than in a
 # second variable that could drift out of step.
 MIGRATION_URL := $(subst postgresql://,postgresql+psycopg://,$(DATABASE_URL))
+
+# **Compose reads .env, never the command line** (INF-G2). GNU make exports a command-line
+# variable to every recipe, and `docker compose` prefers its environment to .env -- so
+# `make e2e DATABASE_PORT=1` recreated the live database container on port 1 (2026-10-20). Every
+# compose call goes through $(COMPOSE), which refuses the variables compose.yaml interpolates
+# when they come from the command line; set them in .env, where compose and the stack agree. A
+# value from the shell's environment is not refused: .env overrides it before any recipe runs.
+COMPOSE_VARS := POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD DATABASE_PORT BACKEND_PORT UI_PORT \
+                SCHEMA_DIAGRAM_PORT
+refuse_from_command_line = $(foreach v,$(1),$(if $(filter command line,$(origin $(v))),$(error $(v) cannot be set on the command line: $(2))))
+COMPOSE = $(call refuse_from_command_line,$(COMPOSE_VARS),docker compose would read it instead of .env and could recreate the live containers -- set it in .env)docker compose
 # Pinned rather than @latest: a diagram that changes because a tool released overnight
 # is a diff nobody asked for, and this is documentation about a schema that did not move.
 LIAM    := @liam-hq/cli@0.7.24
@@ -48,7 +59,7 @@ env:  ## Create .env from the example, if it does not exist yet
 	  || (cp .env.example .env && echo "created .env — fill in the password and the API key")
 
 up:  ## Start PostgreSQL only. The backend and UI run from the command line
-	docker compose up -d database
+	$(COMPOSE) up -d database
 
 serve:  ## Run the API from the command line, against the database in Docker
 	cd $(BACKEND) && uv run python -c "from starnest.main import run; run()"
@@ -60,10 +71,10 @@ rank:  ## Print the ranking from what is stored. SET=local_employment for anothe
 	cd $(BACKEND) && uv run python scripts/rank.py $(SET)
 
 down:  ## Stop everything, keeping the data volume
-	docker compose down
+	$(COMPOSE) down
 
 logs:  ## Follow the database statement log (arch.md 10.7 — this IS the audit)
-	docker compose logs -f database
+	$(COMPOSE) logs -f database
 
 # --- Schema --------------------------------------------------------------------
 # Migrations run by an explicit command, never at startup (arch.md 7.4). Back up first:
@@ -79,7 +90,7 @@ rollback: backup  ## Back up, then roll back the most recent migration
 
 backup:  ## pg_dump to ./backups
 	@mkdir -p backups
-	docker compose --profile tools run --rm backup
+	$(COMPOSE) --profile tools run --rm backup
 
 # --- Backend tests -------------------------------------------------------------
 
@@ -169,33 +180,48 @@ ui-check: ui-lint ui-typecheck ui-coverage  ## The interface gate
 # acquisition -- and it used to do so through the containers, to the live database. Now it runs
 # on a throwaway copy of the newest backup, migrated to this checkout (so a pending migration is
 # rehearsed on real data first), served by a backend and a Vite that Playwright starts on ports
-# Docker does not publish, and dropped afterwards whatever the suite found. The recipes are
-# silent because the database URL carries the password. A restore or a migration that fails
-# drops the copy at once; Ctrl-C leaves it behind, and the next run drops it before restoring.
+# Docker does not publish, and dropped afterwards whether the suite passed or failed. A restore or
+# a migration that fails drops the copy at once. A drop that fails fails the run and says how to
+# finish it. Ctrl-C leaves the copy behind, and the next run drops it before restoring.
 #
-# **The name is derived and cannot be passed** (`override`): the recipes drop and restore over it
-# before Playwright's own `_e2e` refusal runs, so `make e2e E2E_DB=<live>` must not be able to
-# point them at the live database.
+# **Nothing here can reach the live database** (UIC-A1, INF-G2, INF-M1). Each rule is proved by
+# running make, not by reading this file (backend/tests/unit/test_make_isolation.py):
+# - The copy's name and URL are derived from .env and refused from the command line: the recipes
+#   drop, restore and migrate before Playwright's own `_e2e` refusal can run.
+# - The tools container runs `--no-deps`, so it never starts, stops or recreates the database,
+#   even after .env has changed under a running stack.
+# - No recipe line names $(MAKE), which GNU make runs even under `make -n`: a dry run only prints.
+# - The URL carries the password, so it reaches the recipes through their environment, and
+#   `make -n` prints a variable's name rather than its value.
+
+# Captured before the overrides below, which would otherwise report their own origin: passing one
+# of these is refused out loud rather than silently ignored.
+E2E_PASSED := $(strip $(foreach v,E2E_DB E2E_DATABASE_URL E2E_YOYO_URL E2E_SUITE_URL,$(if $(filter command line,$(origin $(v))),$(v))))
+E2E_GUARD   = $(if $(E2E_PASSED),$(error $(firstword $(E2E_PASSED)) cannot be set on the command line: it is derived from .env so that make e2e can only reach its own copy))
 
 override E2E_DB  := $(POSTGRES_DB)_e2e
 E2E_BACKEND_PORT ?= 8100
 E2E_UI_PORT      ?= 5180
-E2E_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@127.0.0.1:$(or $(DATABASE_PORT),5432)/$(E2E_DB)
+override E2E_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@127.0.0.1:$(or $(DATABASE_PORT),5432)/$(E2E_DB)
 NEWEST_BACKUP    := $(lastword $(sort $(wildcard backups/*.dump)))
 # The backup service has the PostgreSQL client tools, which the host does not.
-PG_TOOLS         := docker compose --profile tools run --rm -T --entrypoint sh backup -c
+PG_TOOLS          = $(COMPOSE) --profile tools run --rm -T --no-deps --entrypoint sh backup -c
+E2E_DROP          = $(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB)'
+
+e2e-database: export E2E_YOYO_URL := $(subst postgresql://,postgresql+psycopg://,$(E2E_DATABASE_URL))
+e2e: export E2E_SUITE_URL := $(E2E_DATABASE_URL)
 
 e2e-database:  ## A throwaway copy of the newest backup, migrated to this checkout
-	@test -n "$(POSTGRES_DB)" || { echo "e2e: no .env -- run make env"; exit 1; }
+	@$(E2E_GUARD)test -n "$(POSTGRES_DB)" || { echo "e2e: no .env -- run make env"; exit 1; }
 	@test -n "$(NEWEST_BACKUP)" || { echo "e2e: no backup in ./backups -- run make backup"; exit 1; }
 	@echo "e2e: $(notdir $(NEWEST_BACKUP)) -> $(E2E_DB)"
-	@{ $(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB) && createdb $(E2E_DB) && pg_restore --no-owner --no-privileges --single-transaction --dbname=$(E2E_DB) /backups/$(notdir $(NEWEST_BACKUP))' && cd $(BACKEND) && uv run yoyo apply --batch --database '$(subst postgresql://,postgresql+psycopg://,$(E2E_DATABASE_URL))' ../$(STORAGE)/migrations; } || { $(MAKE) -C $(CURDIR) --no-print-directory e2e-drop; echo "e2e: the copy could not be restored or migrated, so it was dropped"; exit 1; }
+	@{ $(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB) && createdb $(E2E_DB) && pg_restore --no-owner --no-privileges --single-transaction --dbname=$(E2E_DB) /backups/$(notdir $(NEWEST_BACKUP))' && cd $(BACKEND) && uv run yoyo apply --batch --database "$$E2E_YOYO_URL" ../$(STORAGE)/migrations; } || { cd "$(CURDIR)"; if $(E2E_DROP); then echo "e2e: the copy could not be restored or migrated, so it was dropped"; else echo "e2e: the copy could not be restored or migrated, and dropping it failed too -- run make e2e-drop"; fi; exit 1; }
 
 e2e-drop:  ## Drop the browser suite's throwaway database
-	@$(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB)'
+	@$(E2E_GUARD)$(E2E_DROP)
 
 e2e: e2e-database  ## Playwright on its own throwaway database, never the live one (E2E_ARGS= to narrow)
-	@cd $(UI) && E2E_DATABASE_URL='$(E2E_DATABASE_URL)' E2E_BACKEND_PORT=$(E2E_BACKEND_PORT) E2E_UI_PORT=$(E2E_UI_PORT) npm run e2e -- $(E2E_ARGS); status=$$?; $(MAKE) -C $(CURDIR) --no-print-directory e2e-drop; exit $$status
+	@$(E2E_GUARD)(cd $(UI) && E2E_DATABASE_URL="$$E2E_SUITE_URL" E2E_BACKEND_PORT=$(E2E_BACKEND_PORT) E2E_UI_PORT=$(E2E_UI_PORT) npm run e2e -- $(E2E_ARGS)); status=$$?; if ! $(E2E_DROP); then echo "e2e: the copy $(E2E_DB) could not be dropped -- run make e2e-drop"; [ $$status -ne 0 ] || status=1; fi; exit $$status
 
 e2e-report:  ## Open the last Playwright report
 	cd $(UI) && npm run e2e:report
@@ -203,19 +229,19 @@ e2e-report:  ## Open the last Playwright report
 # --- Containers ----------------------------------------------------------------
 
 docker-build:  ## Build the backend and ui images
-	docker compose build
+	$(COMPOSE) build
 
 docker-up: ## Start the app (127.0.0.1:5173) and the schema diagram (127.0.0.1:4174). Migrate first
-	docker compose up -d
+	$(COMPOSE) up -d
 
 # The backup is compose's: `migrate` depends on the `backup` service, so listing `backup` here as
 # well would dump twice. The directory is made first for the reason `backup` makes it.
 docker-migrate:  ## Back up, then apply migrations inside the compose network
 	@mkdir -p backups
-	docker compose --profile tools run --rm migrate
+	$(COMPOSE) --profile tools run --rm migrate
 
 docker-down:  ## Stop all containers
-	docker compose down
+	$(COMPOSE) down
 
 # --- Schema diagram ------------------------------------------------------------
 # An interactive ER diagram of what the database actually is, generated by Liam ERD
@@ -235,7 +261,7 @@ docker-down:  ## Stop all containers
 
 schema-diagram:  ## Generate the ER diagram from the live database
 	@mkdir -p $(SCHEMA_DOCS)
-	docker compose --profile tools run --rm -T --entrypoint sh backup \
+	$(COMPOSE) --profile tools run --rm -T --entrypoint sh backup \
 	  -c 'pg_dump --schema-only --no-owner --no-privileges \
 	      --exclude-table=_yoyo_log --exclude-table=_yoyo_migration \
 	      --exclude-table=_yoyo_version --exclude-table=yoyo_lock' \

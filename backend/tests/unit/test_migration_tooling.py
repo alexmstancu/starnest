@@ -18,21 +18,30 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 
+TARGET_SPECIFIC_VARIABLE = re.compile(
+    r"^[A-Za-z0-9_ -]+:\s*(?:(?:export|override|private)\s+)*[A-Za-z_][A-Za-z0-9_]*\s*[:+?]?="
+)
+
 
 def compose_services() -> dict[str, Any]:
     return yaml.safe_load((ROOT / "compose.yaml").read_text())["services"]
 
 
-def make_targets() -> dict[str, tuple[list[str], list[str]]]:
+def make_targets(makefile: str | None = None) -> dict[str, tuple[list[str], list[str]]]:
     """Each Makefile target, as its prerequisites and its recipe lines.
 
     Enough of make for the shape this Makefile uses: a target line is a name, a colon and an
     optional `## help`; its recipe is the tab-indented lines that follow it. `:=` assignments
-    are variables, not targets.
+    are variables, not targets, and so is a target-specific one (`e2e: export X := ...`), which
+    names a target without declaring its rule.
     """
     targets: dict[str, tuple[list[str], list[str]]] = {}
     current: str | None = None
-    for line in (ROOT / "Makefile").read_text().splitlines():
+    text = (ROOT / "Makefile").read_text() if makefile is None else makefile
+    for line in text.splitlines():
+        if TARGET_SPECIFIC_VARIABLE.match(line):
+            current = None
+            continue
         declared = re.match(r"^([A-Za-z0-9_-]+):(?!=)([^#]*)", line)
         if declared:
             current = declared.group(1)
@@ -105,3 +114,27 @@ def test_the_backup_still_writes_a_custom_format_dump() -> None:
 
     assert "pg_dump --format=custom --file=/backups/" in backup["command"]
     assert "./backups:/backups" in backup["volumes"]
+
+
+def test_a_target_specific_variable_is_not_read_as_a_rule() -> None:
+    """`e2e-database: export E2E_YOYO_URL := ...` names a target without declaring its rule. Read
+    as one, a line after the rule would have replaced its prerequisites and recipe, and the yoyo
+    the recipe runs would have dropped out of the backup check above without failing it."""
+    rule_then_variable = (
+        "e2e-database:  ## A copy\n"
+        "\tuv run yoyo apply --batch\n"
+        "\n"
+        "e2e-database: export E2E_YOYO_URL := postgresql+psycopg://u@h/db_e2e\n"
+    )
+
+    prerequisites, recipe = make_targets(rule_then_variable)["e2e-database"]
+
+    assert prerequisites == []
+    assert recipe == ["uv run yoyo apply --batch"]
+
+
+def test_the_real_makefile_keeps_its_e2e_rules_whole() -> None:
+    targets = make_targets()
+
+    assert targets["e2e"][0] == ["e2e-database"]
+    assert any(re.search(r"\byoyo apply\b", line) for line in targets["e2e-database"][1])

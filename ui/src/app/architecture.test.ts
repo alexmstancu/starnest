@@ -328,11 +328,14 @@ describe("the reverse proxy", () => {
  * ports Docker publishes, which is the live database. `make e2e` now restores a throwaway copy
  * and the config starts a backend and a Vite on it. These guard the config and the specs as
  * text, as the proxy guard above does, because no unit test can start Playwright.
+ *
+ * **The Makefile's half is proved by running make**, in
+ * `backend/tests/unit/test_make_isolation.py`. Matching its recipes as text stayed green while
+ * a command-line URL migrated the live database and `make -n` ran the suite (UIC-A1, INF-M1).
  */
 describe("the browser suite's own stack", () => {
   const UI_ROOT = join(SOURCE, "..");
   const config = readFileSync(join(UI_ROOT, "playwright.config.ts"), "utf8");
-  const makefile = readFileSync(join(UI_ROOT, "..", "Makefile"), "utf8");
   const specs = readdirSync(join(UI_ROOT, "e2e"))
     .filter((name) => name.endsWith(".ts"))
     .map((name) => ({
@@ -353,13 +356,6 @@ describe("the browser suite's own stack", () => {
     .slice(1);
   const backend = servers.find((server) => server.includes("starnest.main")) ?? "";
   const vite = servers.find((server) => server.includes("npm run dev")) ?? "";
-  /** Every `make` recipe line of `target`, up to the blank line that ends it. */
-  function recipeOf(target: string): string {
-    const start = makefile.indexOf(`\n${target}:`);
-    expect(start, `no ${target} target in the Makefile`).toBeGreaterThan(-1);
-    const rest = makefile.slice(start + 1);
-    return rest.slice(0, rest.indexOf("\n\n"));
-  }
 
   it("starts exactly two servers, a backend and a Vite", () => {
     expect(servers).toHaveLength(2);
@@ -402,25 +398,5 @@ describe("the browser suite's own stack", () => {
       .filter(({ text }) => text.includes("UI_ORIGIN"))
       .map(({ name }) => name);
     expect(choosing).toEqual([]);
-  });
-
-  it("is restored before the suite runs and dropped whatever it finds", () => {
-    const recipe = recipeOf("e2e");
-    expect(recipe).toMatch(/^e2e:\s+e2e-database\b/);
-    expect(recipe).toMatch(/status=\$\$\?.*e2e-drop.*exit \$\$status/s);
-  });
-
-  it("drops the copy when it cannot be restored or migrated", () => {
-    expect(recipeOf("e2e-database")).toMatch(/\|\|\s*\{[^}]*e2e-drop[^}]*exit 1;\s*\}/);
-  });
-
-  /**
-   * **The one name it may drop is its own.** `dropdb --force` and a restore run before the
-   * config's `_e2e` refusal can, so a command-line `E2E_DB=` naming the live database would
-   * have overwritten it with the backup and then dropped it. `override` makes the name derived,
-   * whatever is passed.
-   */
-  it("derives the name of the database it drops, and lets nobody pass another", () => {
-    expect(makefile).toMatch(/^override E2E_DB\s*:=\s*\$\(POSTGRES_DB\)_e2e$/m);
   });
 });
