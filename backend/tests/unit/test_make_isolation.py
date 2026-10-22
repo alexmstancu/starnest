@@ -190,6 +190,49 @@ def test_the_copy_cannot_be_named_from_the_command_line(
     assert sandbox.calls() == []
 
 
+@pytest.mark.parametrize("variable", ["E2E_DB", "E2E_YOYO_URL", "E2E_SUITE_URL"])
+@pytest.mark.parametrize("precedence", [(), ("-e",)], ids=["exported", "make -e"])
+def test_the_copy_cannot_be_named_from_the_environment_either(
+    sandbox: Sandbox, variable: str, precedence: tuple[str, ...]
+) -> None:
+    """Under some makes `-e` puts the environment above a target-specific assignment, and the
+    URL yoyo migrates is one (RA-1). So the copy's names are refused from anywhere outside."""
+    result = sandbox.make(*precedence, "e2e", **{variable: LIVE_URL})
+
+    assert result.returncode != 0
+    assert variable in output(result)
+    assert sandbox.calls() == []
+
+
+def with_database_name(sandbox: Sandbox, name: str) -> None:
+    env = sandbox.root / ".env"
+    env.write_text(env.read_text().replace(f"POSTGRES_DB={LIVE}", f"POSTGRES_DB={name}"))
+
+
+@pytest.mark.parametrize("target", ["e2e", "e2e-drop"])
+@pytest.mark.parametrize("name", ["d" * 60, "d" * 63, "é" * 30], ids=["60", "63", "60 in 30 é"])
+def test_a_name_whose_copy_postgresql_would_truncate_is_refused(
+    sandbox: Sandbox, target: str, name: str
+) -> None:
+    """PostgreSQL keeps 63 bytes of an identifier and drops the rest, so the copy of a 63-byte
+    name *is* the live name, and `dropdb --force` would drop it (RA-3). Bytes, not letters."""
+    with_database_name(sandbox, name)
+
+    result = sandbox.make(target)
+
+    assert result.returncode != 0
+    assert "63" in output(result)
+    assert sandbox.calls() == []
+
+
+def test_a_name_whose_copy_fits_is_used(sandbox: Sandbox) -> None:
+    with_database_name(sandbox, "d" * 59)
+
+    assert sandbox.make("e2e-drop").returncode == 0
+    [drop] = sandbox.calls_to("docker")
+    assert drop.script == f"dropdb --if-exists --force {'d' * 59}_e2e"
+
+
 # --- Compose reads .env, never the command line (INF-G2) --------------------------------------
 
 
@@ -217,6 +260,20 @@ def test_no_variable_compose_interpolates_is_taken_from_the_command_line(
     assert variable in output(result)
 
 
+@pytest.mark.parametrize("precedence", [("-e",), ()], ids=["make -e", "MAKEFLAGS=e"])
+def test_an_environment_that_make_lets_win_is_refused_too(
+    sandbox: Sandbox, precedence: tuple[str, ...]
+) -> None:
+    """Under `-e` the environment beats .env, so `DATABASE_PORT=1 make -e backup` reached compose
+    as surely as the command line did (RA-2)."""
+    flags = {} if precedence else {"MAKEFLAGS": "e"}
+
+    result = sandbox.make("-n", *precedence, "backup", DATABASE_PORT="1", **flags)
+
+    assert result.returncode != 0
+    assert "DATABASE_PORT" in output(result)
+
+
 def test_a_target_that_never_calls_compose_still_takes_command_line_values(
     sandbox: Sandbox,
 ) -> None:
@@ -236,6 +293,30 @@ def test_the_suites_tools_never_start_or_recreate_the_database(sandbox: Sandbox)
         assert "run" in call.arguments
         assert "--no-deps" in call.arguments
         assert "up" not in call.arguments
+
+
+def test_no_tools_container_touches_the_database_but_the_migration(sandbox: Sandbox) -> None:
+    """A one-off tools container that names the database as a dependency makes compose reconcile
+    it -- start it, or recreate it to match whatever configuration reached compose. Only
+    `docker-migrate` keeps its dependency, because its compose-level backup is what makes the
+    migration safe (ST-20); starting the stack is `up`'s whole purpose."""
+    reconciling = {
+        name: line
+        for name in compose_targets(sandbox)
+        if name != "docker-migrate"
+        for line in sandbox.make("-n", name).stdout.splitlines()
+        if "docker compose" in line and " run " in line and "--no-deps" not in line
+    }
+
+    assert reconciling == {}
+
+
+def test_the_backup_is_taken_without_touching_the_database_container(sandbox: Sandbox) -> None:
+    assert sandbox.make("backup").returncode == 0
+
+    [backup] = sandbox.calls_to("docker")
+    assert "--no-deps" in backup.arguments
+    assert backup.arguments[-1] == "backup"
 
 
 # --- A cleanup that fails says so (INF-M2) ----------------------------------------------------

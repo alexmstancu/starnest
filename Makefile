@@ -34,12 +34,17 @@ MIGRATION_URL := $(subst postgresql://,postgresql+psycopg://,$(DATABASE_URL))
 # variable to every recipe, and `docker compose` prefers its environment to .env -- so
 # `make e2e DATABASE_PORT=1` recreated the live database container on port 1 (2026-10-20). Every
 # compose call goes through $(COMPOSE), which refuses the variables compose.yaml interpolates
-# when they come from the command line; set them in .env, where compose and the stack agree. A
-# value from the shell's environment is not refused: .env overrides it before any recipe runs.
+# when they come from the command line or win through `make -e`; set them in .env, where compose
+# and the stack agree. A value from the shell's environment is not refused: .env overrides it
+# before any recipe runs. `$(origin)` answers in two words, so they are joined before matching:
+# a filter on the words alone would refuse a plain "environment" too.
 COMPOSE_VARS := POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD DATABASE_PORT BACKEND_PORT UI_PORT \
                 SCHEMA_DIAGRAM_PORT
-refuse_from_command_line = $(foreach v,$(1),$(if $(filter command line,$(origin $(v))),$(error $(v) cannot be set on the command line: $(2))))
-COMPOSE = $(call refuse_from_command_line,$(COMPOSE_VARS),docker compose would read it instead of .env and could recreate the live containers -- set it in .env)docker compose
+empty :=
+space := $(empty) $(empty)
+origin_of = $(subst $(space),_,$(origin $(1)))
+refuse_from_outside = $(foreach v,$(1),$(if $(filter command_line environment_override,$(call origin_of,$(v))),$(error $(v) cannot be set on the command line or through make -e: $(2))))
+COMPOSE = $(call refuse_from_outside,$(COMPOSE_VARS),docker compose would read it instead of .env and could recreate the live containers -- set it in .env)docker compose
 # Pinned rather than @latest: a diagram that changes because a tool released overnight
 # is a diff nobody asked for, and this is documentation about a schema that did not move.
 LIAM    := @liam-hq/cli@0.7.24
@@ -88,9 +93,12 @@ migrate: backup  ## Back up, then apply pending migrations
 rollback: backup  ## Back up, then roll back the most recent migration
 	cd $(BACKEND) && uv run yoyo rollback --batch --database "$(MIGRATION_URL)" ../$(STORAGE)/migrations
 
+# `--no-deps`: the dump is taken from the running database, and compose never starts or recreates
+# it to match whatever configuration reached it (RA-2). So `make up` first; a stopped database
+# fails the backup, and with it `migrate` and `rollback`, rather than being started behind them.
 backup:  ## pg_dump to ./backups
 	@mkdir -p backups
-	$(COMPOSE) --profile tools run --rm backup
+	$(COMPOSE) --profile tools run --rm --no-deps backup
 
 # --- Backend tests -------------------------------------------------------------
 
@@ -194,10 +202,15 @@ ui-check: ui-lint ui-typecheck ui-coverage  ## The interface gate
 # - The URL carries the password, so it reaches the recipes through their environment, and
 #   `make -n` prints a variable's name rather than its value.
 
-# Captured before the overrides below, which would otherwise report their own origin: passing one
-# of these is refused out loud rather than silently ignored.
-E2E_PASSED := $(strip $(foreach v,E2E_DB E2E_DATABASE_URL E2E_YOYO_URL E2E_SUITE_URL,$(if $(filter command line,$(origin $(v))),$(v))))
-E2E_GUARD   = $(if $(E2E_PASSED),$(error $(firstword $(E2E_PASSED)) cannot be set on the command line: it is derived from .env so that make e2e can only reach its own copy))
+# Captured before the overrides below, which would otherwise report their own origin: one of these
+# set from anywhere outside -- the command line, the shell, `make -e` -- is refused out loud rather
+# than silently ignored. Under some makes `-e` lets the environment beat a target-specific
+# assignment, and E2E_YOYO_URL, the URL yoyo migrates, is one (RA-1).
+E2E_PASSED := $(strip $(foreach v,E2E_DB E2E_DATABASE_URL E2E_YOYO_URL E2E_SUITE_URL,$(if $(filter undefined,$(origin $(v))),,$(v))))
+E2E_GUARD   = $(if $(E2E_PASSED),$(error $(firstword $(E2E_PASSED)) cannot be set from outside the Makefile: it is derived from .env so that make e2e can only reach its own copy))
+# PostgreSQL keeps 63 bytes of a name and silently drops the rest, so the copy of a 63-byte name
+# would *be* the live name, and `dropdb --force` would drop it (RA-3). Counted in bytes.
+E2E_NAME_FITS = test "$$(printf %s '$(E2E_DB)' | wc -c | tr -d ' ')" -le 63 || { echo "e2e: $(E2E_DB) is longer than the 63 bytes PostgreSQL keeps of a name, so its copy could not be told from the live database -- refusing"; exit 1; }
 
 override E2E_DB  := $(POSTGRES_DB)_e2e
 E2E_BACKEND_PORT ?= 8100
@@ -213,12 +226,13 @@ e2e: export E2E_SUITE_URL := $(E2E_DATABASE_URL)
 
 e2e-database:  ## A throwaway copy of the newest backup, migrated to this checkout
 	@$(E2E_GUARD)test -n "$(POSTGRES_DB)" || { echo "e2e: no .env -- run make env"; exit 1; }
+	@$(E2E_NAME_FITS)
 	@test -n "$(NEWEST_BACKUP)" || { echo "e2e: no backup in ./backups -- run make backup"; exit 1; }
 	@echo "e2e: $(notdir $(NEWEST_BACKUP)) -> $(E2E_DB)"
 	@{ $(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB) && createdb $(E2E_DB) && pg_restore --no-owner --no-privileges --single-transaction --dbname=$(E2E_DB) /backups/$(notdir $(NEWEST_BACKUP))' && cd $(BACKEND) && uv run yoyo apply --batch --database "$$E2E_YOYO_URL" ../$(STORAGE)/migrations; } || { cd "$(CURDIR)"; if $(E2E_DROP); then echo "e2e: the copy could not be restored or migrated, so it was dropped"; else echo "e2e: the copy could not be restored or migrated, and dropping it failed too -- run make e2e-drop"; fi; exit 1; }
 
 e2e-drop:  ## Drop the browser suite's throwaway database
-	@$(E2E_GUARD)$(E2E_DROP)
+	@$(E2E_GUARD)$(E2E_NAME_FITS); $(E2E_DROP)
 
 e2e: e2e-database  ## Playwright on its own throwaway database, never the live one (E2E_ARGS= to narrow)
 	@$(E2E_GUARD)(cd $(UI) && E2E_DATABASE_URL="$$E2E_SUITE_URL" E2E_BACKEND_PORT=$(E2E_BACKEND_PORT) E2E_UI_PORT=$(E2E_UI_PORT) npm run e2e -- $(E2E_ARGS)); status=$$?; if ! $(E2E_DROP); then echo "e2e: the copy $(E2E_DB) could not be dropped -- run make e2e-drop"; [ $$status -ne 0 ] || status=1; fi; exit $$status
@@ -261,7 +275,7 @@ docker-down:  ## Stop all containers
 
 schema-diagram:  ## Generate the ER diagram from the live database
 	@mkdir -p $(SCHEMA_DOCS)
-	$(COMPOSE) --profile tools run --rm -T --entrypoint sh backup \
+	$(COMPOSE) --profile tools run --rm -T --no-deps --entrypoint sh backup \
 	  -c 'pg_dump --schema-only --no-owner --no-privileges \
 	      --exclude-table=_yoyo_log --exclude-table=_yoyo_migration \
 	      --exclude-table=_yoyo_version --exclude-table=yoyo_lock' \
