@@ -317,6 +317,51 @@ def test_every_command_and_url_reaches_the_copy_by_the_name_that_was_measured(
     assert suite.suite_database == COPY_URL
 
 
+@pytest.mark.parametrize("ignoring", ["make -i", "MAKEFLAGS=i"])
+@pytest.mark.parametrize("target", ["e2e", "e2e-database", "e2e-drop"])
+@pytest.mark.parametrize(
+    "name", ["d" * 63, NOT_PLAIN["spaces inside quotes (RE-1)"]], ids=["too long", "not plain"]
+)
+def test_an_ignored_error_cannot_get_past_the_refusal(
+    sandbox: Sandbox, ignoring: str, target: str, name: str
+) -> None:
+    """**A refusal that is a failing recipe line can be ignored** (RE-4). `make -i`, or an `i`
+    inherited through MAKEFLAGS, ignores every line's failure, and a refusal on a line of its own
+    let the next line drop a name PostgreSQL cuts back to the live one. The refusal is make's own
+    error instead, part of the very command that would drop, and no flag ignores it."""
+    with_database_name(sandbox, name)
+    arguments, environment = (["-i"], {}) if ignoring == "make -i" else ([], {"MAKEFLAGS": "i"})
+
+    result = sandbox.make(*arguments, target, FAKE_DOCKER_RUNS_SCRIPT="1", **environment)
+
+    assert result.returncode != 0
+    assert "refusing" in output(result)
+    assert sandbox.calls() == []
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "name"),
+    [
+        ("E2E_FIT", "", "d" * 63),
+        ("E2E_PLAIN", "plain", NOT_PLAIN["spaces inside quotes (RE-1)"]),
+        ("PG_TOOLS", "docker -c", "d" * 63),
+        ("E2E_DROP", f"docker -c 'dropdb --if-exists --force {'d' * 63}_e2e'", "d" * 63),
+    ],
+    ids=["the guard blanked", "a name called plain", "unguarded tools", "a drop of one's own"],
+)
+def test_the_refusal_cannot_be_named_away_from_the_command_line(
+    sandbox: Sandbox, variable: str, value: str, name: str
+) -> None:
+    """A command-line value beats a makefile's own, so every piece of the refusal is `override`:
+    a value that would have dropped, had it won, changes nothing, and the name is still refused."""
+    with_database_name(sandbox, name)
+
+    result = sandbox.make("e2e-drop", f"{variable}={value}", FAKE_DOCKER_RUNS_SCRIPT="1")
+
+    assert result.returncode != 0
+    assert sandbox.calls_to("dropdb") == []
+
+
 def test_a_name_whose_copy_fits_is_used(sandbox: Sandbox) -> None:
     with_database_name(sandbox, "d" * 59)
 
@@ -469,6 +514,30 @@ def test_a_migration_never_prints_the_password(
         assert migration.arguments[migration.arguments.index("--database") + 1] == (
             LIVE_URL.replace("postgresql://", "postgresql+psycopg://")
         )
+
+
+@pytest.mark.parametrize("quote", ['"', "'"], ids=["double", "single"])
+@pytest.mark.parametrize("target", ["migrate", "rollback"])
+def test_a_quoted_url_reaches_yoyo_as_compose_and_the_backend_read_it(
+    sandbox: Sandbox, quote: str, target: str
+) -> None:
+    """dotenv lets the URL be quoted, which the backend's settings take off and make keeps. Made
+    an environment variable for S1, the quotes stopped being shell syntax and became part of the
+    URL yoyo was handed (RE-5); they come off in make now, as compose takes them off."""
+    env = sandbox.root / ".env"
+    env.write_text(
+        env.read_text().replace(
+            f"DATABASE_URL={LIVE_URL}", f"DATABASE_URL={quote}{LIVE_URL}{quote}"
+        )
+    )
+
+    result = sandbox.make(target)
+
+    assert result.returncode == 0, output(result)
+    [migration] = sandbox.calls_to("uv")
+    assert migration.arguments[migration.arguments.index("--database") + 1] == LIVE_URL.replace(
+        "postgresql://", "postgresql+psycopg://"
+    )
 
 
 def test_help_lists_every_target_that_documents_itself(sandbox: Sandbox) -> None:
