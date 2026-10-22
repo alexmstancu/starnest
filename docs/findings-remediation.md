@@ -1,8 +1,46 @@
 # Findings remediation — independent verification and fix plan
 
-**Date:** 2026-10-13
+**Date:** 2026-10-13 (verification) · **last updated 2026-10-21** (session close)
 **Baseline:** HEAD `7182d37`
 **Scope:** the 91 findings in [`copilot-review.md`](copilot-review.md) (UI 33, Backend 38, Storage 20).
+
+> **2026-10-21 — my (larger-findings) lane is complete.** This document is authoritative for the
+> findings I own; the `fix_status` column is a point-in-time snapshot and is **stale for the other
+> agent's UI/NEW lane** — many rows still reading `wave-N` below have since landed in commits (see
+> `git log`), and [`findings-review-comparison.md`](findings-review-comparison.md) (owned by the
+> other agent) is the live cross-cutting status. I did not re-flip those rows here, to avoid
+> intersecting the other agent's bookkeeping.
+>
+> Shipped by me this session (all TDD, `make check` green, pushed): **ST-02** `5358c3c`, **BE-19**
+> `d7a1263`, **ST-09** `608919f`, **ST-07 remainder** `bf47645`, **BE-07** `4188571`, **BE-11 +
+> NEW-48** `27add01`, **BE-31** `a9d7929`, **BE-33** `a7a2fa8`. Earlier clusters: validation,
+> weather, presenter, ST-07/08 (`bf2145e`, `25c83b9`, `f30c661`, `c943761`).
+>
+> **2026-10-21 — cross-review (GPT-6 Astra + Grok 4.7) of `a7a2fa8`.** FIXED confirmed: **BE-31,
+> BE-33, NEW-48**. **Downgraded to PARTIAL: ST-07, BE-07, BE-11, BE-19** — my "done/all green"
+> claim was premature; `make check` passed on a throwaway DB that masked a boot regression. Gaps
+> below; my `0504` FK is a shipped **boot-breaker** (no `ON DELETE CASCADE`, violates the `0482`
+> rule — the boot sweep of test rankings now fails). Reopened for a follow-up pass.
+>
+> **2026-10-22 — follow-up pass (uncommitted, full `make check` green: 3237 backend / 1577 UI /
+> 97.23%).** Closed in response to the cross-review: **the `0504` boot-breaker** (migration `0505`
+> adds `ON DELETE CASCADE`, with a boot-sweep test that inserts a real warning-input and so has
+> teeth); **BE-19** (failures now written per batch, so a hard kill leaves a retry something to
+> reach); **BE-11 fully** (exact `(attribute, candidate)` pairs in both fetch paths, in `ask_again`,
+> and a whole-source outage itemised over only the candidates a source was asked; the mixed-retry
+> borrow is no longer dropped; migration `0506` `data_acquisition_run_item` makes item accounting
+> exact pairs, not the rectangle); **BE-07 `make rank`** (now passes `max_age`, so the script
+> downgrades like the screen). **Still open:** ST-07 freeze remainder (3 more frozen-snapshot
+> schema changes — pillar-lock, a `non_match_input` table, a warning-input ordinal) and BE-07's
+> month-end calendar precision (a Low deferral — unfixable Python-side without carrying calendar
+> units through psycopg's `interval`→`timedelta` mapping).
+>
+> Four High/Medium rows below still read `wave-1/2` but are in fact **fixed outside my commits**
+> (verified in code 2026-10-21, landed by the other agent's waves): **BE-02** (scores stay
+> unrounded until display — `normalisation.py:55-57`), **BE-12** (`run_in_flight()` guard +
+> background 202 — `api/runs.py:283-287,395`), **BE-22** (`min_length=1` on rename/duplicate —
+> `api/criteria.py:416-456`), **ST-03** (forward migration `0499` rebalances the career pillar the
+> `0487` delete unbalanced). Marked `FIXED-ELSEWHERE` in their rows.
 
 ## Method
 
@@ -112,30 +150,30 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 | ID | sev | verdict | evidence (file:line) | note | fix_status |
 |---|---|---|---|---|---|
 | BE-01 | High | REAL | `evaluation/ranking.py:422-441`; `criteria/criterion.py:166,330-337` | matching_threshold parsed/served but never read in evaluation (0 call sites) | wave-1 |
-| BE-02 | High | REAL | `evaluation/normalisation.py:46-97`; `ranking.py:326-365,523` | scores quantized to int before weighting; reqs 5.1 forbids intermediate rounding | wave-1 |
+| BE-02 | High | REAL | `evaluation/normalisation.py:46-97`; `ranking.py:326-365,523` | scores quantized to int before weighting; reqs 5.1 forbids intermediate rounding | FIXED-ELSEWHERE (`normalisation.py:55-57` keeps scores unrounded, caller rounds for display only) |
 | BE-03 | Medium | REAL | `evaluation/ranking.py:407-428` | insufficient_data returned before gate/compound eval, hiding definite non-matches | FIXED (prior session: match_status computed as refusals→NOT_MATCHING / insufficient→INSUFFICIENT_DATA / else MATCHING, before the insufficient short-circuit) |
 | BE-04 | Medium | REAL | `evaluation/weighting.py:131-146`; `ranking.py:84` | WeightingError unmapped → HTTP 500; zero-weight empty pillar still refused | FIXED (prior session: `_refuse_a_pillar_nothing_scores_into` filters zero-weight pillars; WeightingError wrapped as RankingError→422) |
 | BE-05 | Medium | REAL | `criteria/criterion.py:168-177`; `0009-criteria.sql:76-77` | reqs 3.3a legal-scales-per-type unenforced | FIXED (`_reject_a_method_illegal_for_the_value_type` + `_LEGAL_METHODS`; non-normalised types unconstrained) |
 | BE-06 | Medium | REAL (latent) | `data/attribute.py:286-317`; `data/payloads.py:189-200` | Quantity payload unit not checked vs declared unit (manual-entry exposed) | FIXED (unit-match check in `rejection_reason_for`; stored-with-reason, non-destructive; unconstrained when no declared unit) |
-| BE-07 | Medium | REAL | `data/confidence.py:69-100`; `data/measurements.py:49,83` | derive_confidence has no production caller; stale HIGH stays HIGH | FIXED (age-only re-derivation at read: `_readings_by_criterion` downgrades a figure's confidence one grade when its reference period has aged past the attribute's max_age as of now; `rank_candidates` takes max_age+as_of, the ranking endpoint supplies max_age from the catalog; saved evaluations keep their frozen split) |
+| BE-07 | Medium | REAL | `data/confidence.py:69-100`; `data/measurements.py:49,83` | derive_confidence has no production caller; stale HIGH stays HIGH | FIXED (core `4188571`; 2026-10-22 `scripts/rank.py` now builds `max_age` from the catalog and passes it, so `make rank` downgrades like the screen. **Low remainder deferred:** the month-end calendar precision (`ranking.py` compares a `timedelta`) cannot be fixed Python-side without carrying calendar units through psycopg's `interval`->`timedelta` mapping and would then disagree with `active_value`'s SQL unless that changed too -- disproportionate to a "few days at month ends" Low) |
 
 | BE-08 | Medium | REAL | `data/measurements.py:90-102`; `data_acquisition/run.py:114-138` | range-rejected figure stored as Value, not a failure; selective retry can't reach it | wave-2 |
 | BE-09 | Low | REAL (latent) | `data_sources/who/adapter.py:164-195` | WHO builds Value without rejection_reason_for; credible-range bypass (latent) | wave-3 |
 | BE-10 | High | REAL | `execution.py:532-564`; `run.py:84-85,124-125` | retry wrapper never forwarded `meter_with`; fresh/exhausted meter breaks cap on retries | wave-1 |
-| BE-11 | Medium | REAL (scoped) | `execution.py:495-520` | retry candidate union re-bills succeeded candidates on a per-candidate paid adapter | FIXED (NEW-48: `_FailedOn` narrows each retried source to its OWN failed candidates+attributes, filtered in both `fetch` and `fetch_in_batches` so a per-candidate paid source is not re-billed for another source's failed candidate; within-source rectangle kept, cross-source bleed removed. ask_again's expansion left as a documented remainder) |
+| BE-11 | Medium | REAL (scoped) | `execution.py:495-520` | retry candidate union re-bills succeeded candidates on a per-candidate paid adapter | FIXED (NEW-48 `27add01` removed the cross-source bleed; 2026-10-22 closed the rest. `_FailedOn` holds exact (attribute, candidate) pairs, narrowed per-attribute in both `fetch` and `fetch_in_batches`, so a paid source is never re-asked a pair it answered; `ask_again` wraps every source to the exact unanswered pairs the same way; a whole-source outage is itemised over only the candidates that source was asked; the mixed source+stand-in retry keeps the borrow (union, not `answerable or borrowable`). Migration `0506` `data_acquisition_run_item` persists the exact pairs (rectangle backfilled for existing runs) and the item-accounting SQL reads from it, so a retry's items_total/unanswered are the real pairs, not phantom corners. 6 new tests, teeth-checked) |
 
-| BE-12 | High | REAL | `api/runs.py:321-387` | retry awaits inline (blocks) yet returns 202; no in-flight guard → concurrent paid passes | wave-1 |
+| BE-12 | High | REAL | `api/runs.py:321-387` | retry awaits inline (blocks) yet returns 202; no in-flight guard → concurrent paid passes | FIXED-ELSEWHERE (`run_in_flight()` guard refuses `run_already_in_flight`; retry splits to a background 202 — `api/runs.py:283-287,386-395`) |
 | BE-13 | Medium | **UNREAL** | `execution.py:603-604`; `main.py:379-383` | distinct billing defect unreachable (disjoint registry); symptom is BE-14 | no-fix |
 | BE-14 | Medium | REAL | `execution.py:185-189,411-427` | an unrelated enabled paid adapter forces a cap on free named-scope work | FIXED (prior commit 218c56a: `_a_paid_source_would_be_asked(adapters, answerable)` -- costs_money reflects the selected scope, not the registry) |
 | BE-15 | High | REAL | `api/rules.py:292-319`; `scripts/acquire.py:46-72`; `execution.py:319-325` | disabled sources not honored: paid gate research, CLI fetch, stand-in consultation | wave-1 |
 | BE-16 | Medium | REAL | `spend.py:57-59`; `run.py:144-145` | a legal cap=0 is exhausted at zero spend and halts a free sweep after one attribute | FIXED (prior commit 218c56a: `has_spent_to_its_cap` = exhausted AND spent>0; a free sweep under cap=0 is not halted) |
 | BE-17 | High | REAL | `data_sources/llm/gates.py:76-81`; `client.py:164-167` | billed empty gate answers lose cost/calls → research cap ineffective on that path | wave-1 |
 | BE-18 | Medium | REAL | `data_sources/llm/pricing.py:65-90`; `main.py:436` | negative/NaN/Infinity prices/token estimates pass; cap model compromised | FIXED (`configured()` rejects non-finite/negative prices + non-finite rate, zero allowed; `_the_model` treats non-positive call size as unset) |
-| BE-19 | High | REAL (latent) | `llm/employers.py:126-176`; `fallback.py:145-206`; `run.py:87-122` | LLM buffers per-candidate; death mid-candidate loses earlier paid answers | FIXED (per-candidate streaming: `SourceAdapter.fetch_in_batches` (default = one batch), LLM adapters yield per candidate, `acquire` commits each batch before the next; retry wrapper forwards it. A mid-sweep death keeps paid answers already handed over) |
+| BE-19 | High | REAL (latent) | `llm/employers.py:126-176`; `fallback.py:145-206`; `run.py:87-122` | LLM buffers per-candidate; death mid-candidate loses earlier paid answers | FIXED (per-candidate streaming `d7a1263` made paid answers AND spend survive a mid-sweep death; 2026-10-22 closed the remainder: `acquire` takes a `record_failures` callback and writes each batch's failures durably before the next fetch (`continue_run` passes `runs.record_failures`, keyed on (run,source,item) so the end-of-run write re-confirms rather than duplicates) -- a hard kill now leaves the retry endpoint something to reach) |
 
 | BE-20 | Medium | REAL | `open_meteo/response.py:26`; `execution.py:327-346` | Decimal(str) InvalidOperation escapes source handling → run aborts, item unrecorded | FIXED (`_a_reading` raises `OpenMeteoError` on a non-numeric reading; caught per-candidate as a failure) |
 | BE-21 | High | REAL | `api/settings.py:24-74`; `household.py:29-68`; `errors.py:110-135` | request DTOs lack domain bounds → ValidationError → 500; 422 body not uniform | wave-1 |
-| BE-22 | High | REAL | `api/criteria.py:387-417`; `criteria/criteria_set.py:94` | rename/duplicate lack min_length; empty name persists then unreadable (500 on read) | wave-1 |
+| BE-22 | High | REAL | `api/criteria.py:387-417`; `criteria/criteria_set.py:94` | rename/duplicate lack min_length; empty name persists then unreadable (500 on read) | FIXED-ELSEWHERE (`min_length=1` on id+name in rename/duplicate bodies — `api/criteria.py:416-456`) |
 | BE-23 | Low | REAL | `api/settings.py:24`; `household.py:29`; various bodies | missing `extra="forbid"` → misspelled field clears a setting; null coercions | wave-3 |
 | BE-24 | Medium | REAL | `api/runs.py:451-469`; `rules.py:247-256` | unknown scope IDs silently intersected; paid research spends while concealing the drop | FIXED (shared `unknown_scope_refusal`/`absent` in errors.py; `_scope_targets` (runs) + `_research_targets` (rules) refuse all unknowns across both dimensions, 422 `unknown_scope`) |
 | BE-25 | Medium | REAL | `api/runs.py:161-203`; `execution.py:142-155,281-287` | plan omits freshness filter execution applies; overstated items/cost or NothingToFetch | wave-2 |
@@ -161,11 +199,11 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 |---|---|---|---|---|---|
 | ST-01 | High | REAL | `api/runs.py:250-255`; `run_store.py:41-67`; `0004:5-23` | concurrency: check-then-insert, no partial-unique/advisory lock → two running runs | wave-1 |
 | ST-02 | Medium | REAL | `criteria_store.py:90-112`; `criteria.sql` | concurrency: no version token on replace → silent last-writer-wins | FIXED (server-side transactional lock, not a client token: `edit_criteria_set` reads+mutates+writes in one tx under `lock_criteria_set` (SELECT…FOR UPDATE); the 5 edit endpoints use it; overlapping edits serialise and both land. No migration/contract/UI change) |
-| ST-03 | High | REAL | `0487:33-43` | populated upgrade: unscoped `DELETE criterion` breaks custom sets' pillar-sum | wave-1 |
+| ST-03 | High | REAL | `0487:33-43` | populated upgrade: unscoped `DELETE criterion` breaks custom sets' pillar-sum | FIXED-ELSEWHERE (forward migration `0499` rebalances the career pillar the `0487` delete unbalanced) |
 | ST-04 | Medium | REAL | `0489:59-60`;`0490:54-55`;`0491:22-23`; CHECK `0468:21-22` | populated upgrade: unconditional percentile UPDATE blocks on target_range set | wave-2 |
 | ST-05 | Medium | REAL | `0478:38-44`;`0492:26-32`; FKs `0009:110,131,147,159,173` | populated upgrade: delete+reinsert blocks on RESTRICT child FKs; loses children | wave-2 |
 | ST-06 | Medium | REAL | `0488:64-71` | populated upgrade: replacement hardcodes is_scored/lock/blocks, resetting user choices | wave-2 |
-| ST-07 | Medium | REAL | `0010:34-80`; `evaluation_store.py:359-382`; `evaluation.sql:236-266` | snapshot omits weight_locked + typed thresholds; drops reducer/breakdown on read | FIXED (0500 froze value_type/weight_locked/matching_threshold + reducer/breakdown; remainder 0504: `candidate_warning_input` freezes the value rows behind each warning -- `RuleWarning.input_values` threaded through `judgements_of`/`ranking`, written and read in `evaluation_store`, retain-only) |
+| ST-07 | Medium | REAL | `0010:34-80`; `evaluation_store.py:359-382`; `evaluation.sql:236-266` | snapshot omits weight_locked + typed thresholds; drops reducer/breakdown on read | PARTIAL (0500 froze value_type/weight_locked/matching_threshold + reducer/breakdown; 0504 froze warning inputs; **2026-10-22 `0505` fixed the 0504 boot-breaker** with `ON DELETE CASCADE` + a real-insert boot-sweep test. **Still open (the freeze remainder):** a reopened ranking does not freeze the pillar-level lock or the enforced/applied rule lists (`evaluation_store.read_criteria`), a `not_matching` compound rule keeps none of its input ids (needs a `non_match_input` table), and warning inputs have no ordinal so their order is not preserved (`evaluation.sql`). Each is a new frozen-snapshot schema change. 2026-10-21 review: **0504 was a boot-breaker** -- its `candidate_warning_input -> candidate_warning` FK lacks `ON DELETE CASCADE` (violates the `0482` rule), so the boot sweep's `DELETE FROM candidate_warning` fails and the backend won't start; masked by TRUNCATE CASCADE in tests and the throwaway e2e DB. Also still unfrozen: pillar locks and the enforced/applied rule lists (`evaluation_store.py:229-238`), and a `not_matching` compound rule keeps none of its input ids (`rules.py:103-106`); warning input order not preserved (`evaluation.sql:240,329`). Fixes `bf2145e`/`bf47645`) |
 | ST-08 | Medium | REAL | `evaluation.sql:236-239`; `0478:46-49`;`0492:34-37` | snapshot joins live value_type; in-place retyping drifts historical type label | FIXED (0500: snapshot carries its own value_type; read query selects ec.value_type, drops the live attribute join -- safe against 0478/0492 in-place retypes) |
 | ST-09 | Medium | REAL | `published_tables/adapter.py:76`; `values.sql:252,271`; `0005:55-58` | re-run of a transcribed item → identical natural key → reported unanswered | FIXED (0501 `data_acquisition_run_reuse`; `acquire` records a pair the source answered but append skipped (transcribed re-read), `ValueStore.record_reuse` writes it, accounting counts reuse as completed not unanswered across select_run/select_runs/select_run_unanswered) |
 
