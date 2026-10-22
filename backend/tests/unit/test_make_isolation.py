@@ -225,6 +225,25 @@ def test_a_name_whose_copy_postgresql_would_truncate_is_refused(
     assert sandbox.calls() == []
 
 
+def test_a_quoted_name_is_measured_as_the_database_will_be_named(sandbox: Sandbox) -> None:
+    """dotenv lets a value be double-quoted. Make keeps the quotes and the tools container's shell
+    drops them, so the name to measure is the one the shell will hand `dropdb` (RA-4): 59 bytes
+    plus `_e2e` fits, and the quotes are not counted against it."""
+    with_database_name(sandbox, '"' + "d" * 59 + '"')
+
+    assert sandbox.make("e2e-drop").returncode == 0
+    assert sandbox.calls_to("docker")
+
+
+def test_a_quoted_name_whose_copy_would_not_fit_is_still_refused(sandbox: Sandbox) -> None:
+    with_database_name(sandbox, '"' + "d" * 60 + '"')
+
+    result = sandbox.make("e2e-drop")
+
+    assert result.returncode != 0
+    assert sandbox.calls() == []
+
+
 def test_a_name_whose_copy_fits_is_used(sandbox: Sandbox) -> None:
     with_database_name(sandbox, "d" * 59)
 

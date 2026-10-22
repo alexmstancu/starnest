@@ -209,8 +209,10 @@ ui-check: ui-lint ui-typecheck ui-coverage  ## The interface gate
 E2E_PASSED := $(strip $(foreach v,E2E_DB E2E_DATABASE_URL E2E_YOYO_URL E2E_SUITE_URL,$(if $(filter undefined,$(origin $(v))),,$(v))))
 E2E_GUARD   = $(if $(E2E_PASSED),$(error $(firstword $(E2E_PASSED)) cannot be set from outside the Makefile: it is derived from .env so that make e2e can only reach its own copy))
 # PostgreSQL keeps 63 bytes of a name and silently drops the rest, so the copy of a 63-byte name
-# would *be* the live name, and `dropdb --force` would drop it (RA-3). Counted in bytes.
-E2E_NAME_FITS = test "$$(printf %s '$(E2E_DB)' | wc -c | tr -d ' ')" -le 63 || { echo "e2e: $(E2E_DB) is longer than the 63 bytes PostgreSQL keeps of a name, so its copy could not be told from the live database -- refusing"; exit 1; }
+# would *be* the live name, and `dropdb --force` would drop it (RA-3). Counted in bytes, and as
+# the tools container's shell will read the name: a dotenv value may be double-quoted, which make
+# keeps and that shell drops, so the quotes must not count against it (RA-4).
+E2E_NAME_FITS = test "$$(printf %s "$(E2E_DB)" | wc -c | tr -d ' ')" -le 63 || { echo "e2e: $(E2E_DB) is longer than the 63 bytes PostgreSQL keeps of a name, so its copy could not be told from the live database -- refusing"; exit 1; }
 
 override E2E_DB  := $(POSTGRES_DB)_e2e
 E2E_BACKEND_PORT ?= 8100
