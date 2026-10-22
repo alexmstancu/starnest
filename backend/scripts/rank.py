@@ -56,7 +56,15 @@ async def main(criteria_set: str) -> int:
             str(candidate.id): await values.read_active_values(candidates=[str(candidate.id)])
             for candidate in candidates
         }
-        compound_rules = await PostgresCatalogStore(pool).read_compound_rules(level=COUNTRY)
+        catalog = PostgresCatalogStore(pool)
+        compound_rules = await catalog.read_compound_rules(level=COUNTRY)
+        # The age past which a figure drops a confidence grade at read (BE-07). Built from the
+        # catalog exactly as the ranking endpoint builds it (`api/rankings.py`), so `make rank`
+        # grades a stale figure the same way the screen does rather than never downgrading at all.
+        max_age = {
+            str(attribute.id): attribute.max_age
+            for attribute in await catalog.read_attributes(level=COUNTRY)
+        }
         answers: dict[str, list] = {}
         for answer in await PostgresMatchRuleResultStore(pool).read_results(level=COUNTRY):
             answers.setdefault(str(answer.candidate), []).append(answer)
@@ -69,6 +77,7 @@ async def main(criteria_set: str) -> int:
         min_coverage=settings.min_coverage,
         compound_rules=compound_rules,
         gate_answers=answers,
+        max_age=max_age,
     )
 
     floor = "none" if settings.min_coverage is None else f"{settings.min_coverage:.0f}%"
