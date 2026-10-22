@@ -52,6 +52,7 @@ export function CandidateField({
   const shown = typed ?? chosenName(options, value);
   const offered = matching(options, typed ?? "");
   const stranger = isAStranger(options, value);
+  const listShown = open && options.length > 0;
 
   function close(): void {
     setTyped(null);
@@ -107,13 +108,15 @@ export function CandidateField({
           // A choice leaves focus in the box, so a click on it is what opens the list again.
           onClick={() => setOpen(true)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && offered.length === 1 && offered[0]) {
-              event.preventDefault();
-              choose(offered[0]);
-            }
+            // **While the list is shown, Enter belongs to it** (UIC-G2): it picks the one match
+            // or does nothing, and never reaches the form around the picker -- which saved the
+            // household, with the previous choice still in it, whenever several or none matched.
+            if (event.key !== "Enter" || !listShown) return;
+            event.preventDefault();
+            if (offered.length === 1 && offered[0]) choose(offered[0]);
           }}
         />
-        {open && options.length > 0 && (
+        {listShown && (
           <ul className="combo__list" id={listId} role="listbox" aria-label={label}>
             {offered.length === 0 ? (
               <li className="combo__empty">Nothing here matches that.</li>

@@ -472,7 +472,64 @@ describe("the household panel's confirmation", () => {
  * UI-26. **The citizenship picker adds rather than replaces**, so it is the one used most from
  * the keyboard: tab into its list, choose, and go on to the next passport.
  */
+/** Counts the household writes and lets the mock's own handler answer them. */
+function countingHouseholdSaves(): { saved: number } {
+  const seen = { saved: 0 };
+  mockServer.use(
+    http.put("/v1/household", () => {
+      seen.saved += 1;
+    }),
+  );
+  return seen;
+}
+
 describe("the household panel from the keyboard", () => {
+  /**
+   * UIC-G2. **Enter in a picker whose list is open picks or does nothing; it never saves.** With
+   * several places matching, Enter fell through to the household form and wrote the record --
+   * with the previous choice still in it, not what was being typed.
+   */
+  it.each([
+    ["several matches", "a"],
+    ["no match", "zzz"],
+  ])("does not save the household when Enter is pressed in a picker with %s", async (_, typed) => {
+    const user = userEvent.setup();
+    const writes = countingHouseholdSaves();
+    renderShell("/configure");
+    await panel();
+    const home = screen.getByRole("combobox", { name: "Home country candidate" });
+    await user.clear(home);
+    await user.type(home, typed);
+    expect(
+      screen.getByRole("listbox", { name: "Home country candidate" }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Enter}");
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
+
+    expect(writes.saved).toBe(0);
+    expect(
+      screen.getByRole("listbox", { name: "Home country candidate" }),
+    ).toBeInTheDocument();
+  });
+
+  it("still saves with Enter once the place is chosen and the list has closed", async () => {
+    const user = userEvent.setup();
+    const writes = countingHouseholdSaves();
+    renderShell("/configure");
+    await panel();
+    const home = screen.getByRole("combobox", { name: "Home country candidate" });
+    await user.clear(home);
+    await user.type(home, "Portu{Enter}");
+    expect(
+      screen.queryByRole("listbox", { name: "Home country candidate" }),
+    ).toBeNull();
+
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => expect(writes.saved).toBe(1));
+  });
+
   it("adds a passport chosen from the list, and leaves the keyboard in the picker", async () => {
     const user = userEvent.setup();
     renderShell("/configure");
