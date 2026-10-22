@@ -361,6 +361,108 @@ class TestTheRulesTravelWithTheResult:
         assert [str(r.match_rule) for r in read.non_match_reasons] == ["uk_skilled_worker"]
         assert read.non_match_reasons[0].reason_detail == "no sponsor"
 
+
+class TestTheRestOfTheReadingIsFrozen:
+    """ST-07 freeze remainder. A reopened ranking also keeps the pillar-level lock, the gates it
+    enforced and the compound rules it applied, and the input figures behind a not_matching rule
+    -- in the order the rule's conditions read them, not the order the ids happen to sort in."""
+
+    async def _two_value_ids(self, pool: AsyncConnectionPool) -> tuple[int, int]:
+        def a_ratio(period_start: int) -> Value:
+            return Value(
+                candidate=PORTUGAL,
+                attribute="country.housing_cost_overburden_rate",
+                value_type=ValueType.RATIO,
+                data_source="eurostat",
+                reference_period=ReferencePeriod(
+                    start=datetime(period_start, 1, 1).date(),
+                    end=datetime(period_start, 12, 31).date(),
+                ),
+                retrieval_date=datetime(2026, 9, 1, tzinfo=UTC),
+                confidence_level=ConfidenceLevel.HIGH,
+                payload=Ratio(value=Decimal("6.3"), basis="households"),
+            )
+
+        first, second = await PostgresValueStore(pool).append([a_ratio(2024), a_ratio(2025)])
+        return first.id, second.id
+
+    async def test_the_lock_rules_and_input_order_all_survive_a_save(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        earlier, later = await self._two_value_ids(pool)
+        assert later > earlier, "the later value has the higher id, so a sort would reorder them"
+
+        async with pool.connection() as connection:
+            (match_rule,) = await (
+                await connection.execute("SELECT id FROM match_rule LIMIT 1")
+            ).fetchone()
+
+        reading = _an_interpreted_set("evaluation_freeze_rest_scratch").model_copy(
+            update={
+                "pillar_weights": (
+                    PillarWeight(
+                        pillar="culture", level=COUNTRY, weight=Decimal(100), weight_locked=True
+                    ),
+                ),
+                "enforced_match_rules": frozenset({match_rule}),
+                "applied_compound_rules": frozenset({"cheap_but_taxed"}),
+            }
+        )
+        criteria = PostgresCriteriaStore(pool)
+        store = PostgresEvaluationStore(pool)
+        await criteria.create_criteria_set(reading)
+        try:
+            # The inputs are passed later-id-first, so a read that sorted by value_id would put
+            # them earlier-id-first -- the teeth on the ordinal.
+            flagged = a_result(
+                PORTUGAL,
+                60,
+                None,
+                match_status=MatchStatus.NOT_MATCHING,
+                attribute_scores=(),
+                warnings=(
+                    RuleWarning(
+                        compound_rule="mild_now_brutal_later",
+                        detail="hot later",
+                        input_values=(later, earlier),
+                    ),
+                ),
+                non_match_reasons=(
+                    NonMatch(
+                        compound_rule="cheap_but_taxed",
+                        reason_detail="cheap and taxed",
+                        input_values=(later, earlier),
+                    ),
+                ),
+            )
+            saved = await store.save(
+                criteria=reading,
+                level=COUNTRY,
+                results=[flagged],
+                score_scale_max=100,
+                computed_at=COMPUTED_AT,
+                note=f"{TEST_EVALUATION_MARKER}freeze the rest",
+            )
+
+            frozen = await store.read_criteria(saved.id)
+            culture = next(w for w in frozen.pillar_weights if str(w.pillar) == "culture")
+            assert culture.weight_locked is True
+            assert {str(r) for r in frozen.enforced_match_rules} == {match_rule}
+            assert {str(r) for r in frozen.applied_compound_rules} == {"cheap_but_taxed"}
+
+            read = await store.read_candidate(saved.id, PORTUGAL)
+            non_match = next(
+                r for r in read.non_match_reasons if str(r.compound_rule) == "cheap_but_taxed"
+            )
+            assert non_match.input_values == (later, earlier)
+            warning = next(
+                w for w in read.warnings if str(w.compound_rule) == "mild_now_brutal_later"
+            )
+            assert warning.input_values == (later, earlier)
+        finally:
+            await store.sweep_test_evaluations()
+            await criteria.delete_criteria_set("evaluation_freeze_rest_scratch")
+
     async def test_a_warning_keeps_the_value_rows_behind_it(
         self, pool: AsyncConnectionPool
     ) -> None:

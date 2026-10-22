@@ -65,6 +65,11 @@ class NonMatch:
     criterion: AttributeId | None = None
     match_rule: MatchRuleId | None = None
     compound_rule: CompoundRuleId | None = None
+    input_values: tuple[int, ...] = ()
+    """The ids of the value rows a *compound* rule read to rule a candidate out -- the mirror of
+    `RuleWarning.input_values` (ST-07), so a saved non-match can be reopened to the figures that
+    produced it. Empty for a gate (`match_rule`) or a criterion threshold, which read no stored
+    value rows, and when the caller passed figures without their value ids."""
 
 
 def judgements_of(
@@ -101,7 +106,11 @@ def judgements_of(
             if rule.outcome is RuleOutcome.WARNING
         ),
         tuple(
-            NonMatch(compound_rule=rule.id, reason_detail=_detail(rule, figures))
+            NonMatch(
+                compound_rule=rule.id,
+                reason_detail=_detail(rule, figures),
+                input_values=_inputs_read(rule, sources),
+            )
             for rule in fired
             if rule.outcome is RuleOutcome.NOT_MATCHING
         ),

@@ -37,12 +37,13 @@ INSERT INTO evaluation_criterion (
     evaluation, attribute, pillar, value_type, is_scored, weight, pillar_weight, goal,
     target_range_min, target_range_max, zero_score_below, zero_score_above,
     normalisation_method, breakdown_option, reducer_mode, blocks_if_missing,
-    weight_locked, matching_threshold)
+    weight_locked, pillar_weight_locked, matching_threshold)
 SELECT :evaluation, frozen.attribute, frozen.pillar, frozen.value_type, frozen.is_scored,
        frozen.weight, frozen.pillar_weight, frozen.goal, frozen.target_range_min,
        frozen.target_range_max, frozen.zero_score_below, frozen.zero_score_above,
        frozen.normalisation_method, frozen.breakdown_option, frozen.reducer_mode,
-       frozen.blocks_if_missing, frozen.weight_locked, frozen.matching_threshold
+       frozen.blocks_if_missing, frozen.weight_locked, frozen.pillar_weight_locked,
+       frozen.matching_threshold
 FROM   jsonb_to_recordset(:criteria::jsonb) AS frozen(
            attribute            text,
            pillar               text,
@@ -50,6 +51,7 @@ FROM   jsonb_to_recordset(:criteria::jsonb) AS frozen(
            is_scored            boolean,
            weight               numeric,
            pillar_weight        numeric,
+           pillar_weight_locked boolean,
            goal                 text,
            target_range_min     numeric,
            target_range_max     numeric,
@@ -164,12 +166,38 @@ FROM   jsonb_to_recordset(:warnings::jsonb) AS warning(
 -- The value rows each warning read to fire -- its frozen source/date chain (ST-07). Written
 -- after the warnings so the foreign key to candidate_warning holds. A warning that read a figure
 -- with no stored row contributes no input, so a warning may have none.
-INSERT INTO candidate_warning_input (candidate_result, compound_rule, value_id)
-SELECT input.candidate_result, input.compound_rule, input.value_id
+INSERT INTO candidate_warning_input (candidate_result, compound_rule, value_id, ordinal)
+SELECT input.candidate_result, input.compound_rule, input.value_id, input.ordinal
 FROM   jsonb_to_recordset(:inputs::jsonb) AS input(
            candidate_result bigint,
            compound_rule    text,
-           value_id         bigint);
+           value_id         bigint,
+           ordinal          integer);
+
+-- name: insert_non_match_inputs(inputs)!
+-- The value rows a not_matching compound rule read to rule a candidate out -- its frozen
+-- source/date chain, the mirror of insert_candidate_warning_inputs (ST-07). The ordinal keeps
+-- the figures in the order the rule's conditions name them.
+INSERT INTO non_match_input (candidate_result, compound_rule, value_id, ordinal)
+SELECT input.candidate_result, input.compound_rule, input.value_id, input.ordinal
+FROM   jsonb_to_recordset(:inputs::jsonb) AS input(
+           candidate_result bigint,
+           compound_rule    text,
+           value_id         bigint,
+           ordinal          integer);
+
+-- name: insert_evaluation_match_rules(evaluation, match_rules)!
+-- The gates this reading enforced, frozen so a reopened set says what it screened on rather than
+-- what the live set screens on now (ST-07). A row means enforced; off is the absence of a row.
+INSERT INTO evaluation_match_rule (evaluation, match_rule)
+SELECT :evaluation, match_rule
+FROM   unnest(:match_rules::text[]) AS match_rule;
+
+-- name: insert_evaluation_compound_rules(evaluation, compound_rules)!
+-- The compound rules this reading applied, frozen for the same reason (ST-07).
+INSERT INTO evaluation_compound_rule (evaluation, compound_rule)
+SELECT :evaluation, compound_rule
+FROM   unnest(:compound_rules::text[]) AS compound_rule;
 
 -- Reading a saved evaluation back.
 
@@ -227,7 +255,15 @@ SELECT r.id,
                        'attribute',     reason.attribute,
                        'match_rule',    reason.match_rule,
                        'compound_rule', reason.compound_rule,
-                       'detail',        reason.reason_detail)
+                       'detail',        reason.reason_detail,
+                       -- The value rows behind a not_matching compound rule, in condition order
+                       -- (ST-07). Empty for a gate or a criterion threshold, which read none.
+                       'input_values',  COALESCE(
+                           (SELECT jsonb_agg(nmi.value_id ORDER BY nmi.ordinal)
+                            FROM   non_match_input AS nmi
+                            WHERE  nmi.candidate_result = reason.candidate_result
+                              AND  nmi.compound_rule = reason.compound_rule),
+                           '[]'::jsonb))
                      ORDER BY reason.id)
             FROM   non_match_reason AS reason
             WHERE  reason.candidate_result = r.id),
@@ -237,7 +273,7 @@ SELECT r.id,
                        'compound_rule', warning.compound_rule,
                        'detail',        warning.detail,
                        'input_values',  COALESCE(
-                           (SELECT jsonb_agg(input.value_id ORDER BY input.value_id)
+                           (SELECT jsonb_agg(input.value_id ORDER BY input.ordinal)
                             FROM   candidate_warning_input AS input
                             WHERE  input.candidate_result = warning.candidate_result
                               AND  input.compound_rule = warning.compound_rule),
@@ -264,6 +300,7 @@ SELECT ec.attribute,
        ec.weight,
        ec.weight_locked,
        ec.pillar_weight,
+       ec.pillar_weight_locked,
        ec.goal,
        ec.target_range_min,
        ec.target_range_max,
@@ -287,6 +324,21 @@ SELECT ec.attribute,
 FROM   evaluation_criterion AS ec
 WHERE  ec.evaluation = :evaluation
 ORDER  BY ec.pillar, ec.attribute;
+
+-- name: select_evaluation_match_rules(evaluation)
+-- The gates this reading enforced, frozen (ST-07). A reopened set needs these to say what it
+-- screened on, not what the live set screens on now.
+SELECT match_rule
+FROM   evaluation_match_rule
+WHERE  evaluation = :evaluation
+ORDER  BY match_rule;
+
+-- name: select_evaluation_compound_rules(evaluation)
+-- The compound rules this reading applied, frozen (ST-07).
+SELECT compound_rule
+FROM   evaluation_compound_rule
+WHERE  evaluation = :evaluation
+ORDER  BY compound_rule;
 
 -- name: select_candidate_result(evaluation, candidate)^
 -- One candidate's outcome, for the head of the drill-down.
@@ -316,7 +368,15 @@ SELECT r.id,
                        'attribute',     reason.attribute,
                        'match_rule',    reason.match_rule,
                        'compound_rule', reason.compound_rule,
-                       'detail',        reason.reason_detail)
+                       'detail',        reason.reason_detail,
+                       -- The value rows behind a not_matching compound rule, in condition order
+                       -- (ST-07). Empty for a gate or a criterion threshold, which read none.
+                       'input_values',  COALESCE(
+                           (SELECT jsonb_agg(nmi.value_id ORDER BY nmi.ordinal)
+                            FROM   non_match_input AS nmi
+                            WHERE  nmi.candidate_result = reason.candidate_result
+                              AND  nmi.compound_rule = reason.compound_rule),
+                           '[]'::jsonb))
                      ORDER BY reason.id)
             FROM   non_match_reason AS reason
             WHERE  reason.candidate_result = r.id),
@@ -326,7 +386,7 @@ SELECT r.id,
                        'compound_rule', warning.compound_rule,
                        'detail',        warning.detail,
                        'input_values',  COALESCE(
-                           (SELECT jsonb_agg(input.value_id ORDER BY input.value_id)
+                           (SELECT jsonb_agg(input.value_id ORDER BY input.ordinal)
                             FROM   candidate_warning_input AS input
                             WHERE  input.candidate_result = warning.candidate_result
                               AND  input.compound_rule = warning.compound_rule),

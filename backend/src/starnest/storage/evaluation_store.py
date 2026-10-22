@@ -83,6 +83,9 @@ class PostgresEvaluationStore(EvaluationStore):
         pillar_weights = {
             str(w.pillar): w.weight for w in criteria.pillar_weights if w.level == level
         }
+        pillar_locks = {
+            str(w.pillar): w.weight_locked for w in criteria.pillar_weights if w.level == level
+        }
         async with acquire(self._pool) as connection:
             row = await self._queries.insert_evaluation(
                 connection,
@@ -97,9 +100,27 @@ class PostgresEvaluationStore(EvaluationStore):
                 connection,
                 evaluation=evaluation,
                 criteria=json.dumps(
-                    [_frozen(criterion, pillar_weights) for criterion in criteria.criteria]
+                    [
+                        _frozen(criterion, pillar_weights, pillar_locks)
+                        for criterion in criteria.criteria
+                    ]
                 ),
             )
+            # Which gates this reading enforced and which compound rules it applied, frozen so a
+            # reopened set says what it screened on rather than what the live set screens on now
+            # (ST-07). A row means on; off is the absence of a row, as for a live set.
+            if criteria.enforced_match_rules:
+                await self._queries.insert_evaluation_match_rules(
+                    connection,
+                    evaluation=evaluation,
+                    match_rules=[str(rule) for rule in sorted(criteria.enforced_match_rules)],
+                )
+            if criteria.applied_compound_rules:
+                await self._queries.insert_evaluation_compound_rules(
+                    connection,
+                    evaluation=evaluation,
+                    compound_rules=[str(rule) for rule in sorted(criteria.applied_compound_rules)],
+                )
             anchors = [
                 {
                     "attribute": str(criterion.attribute),
@@ -170,20 +191,41 @@ class PostgresEvaluationStore(EvaluationStore):
                     connection, warnings=json.dumps(warnings)
                 )
             # The value rows behind each warning, written after the warnings so the foreign key
-            # holds (ST-07). A warning with no input ids contributes none.
+            # holds (ST-07). A warning with no input ids contributes none. The ordinal is the
+            # condition index, so the figures read back in the order the rule names them.
             warning_inputs = [
                 {
                     "candidate_result": identifiers[str(result.candidate)],
                     "compound_rule": str(flag.compound_rule),
                     "value_id": value_id,
+                    "ordinal": ordinal,
                 }
                 for result in results
                 for flag in result.warnings
-                for value_id in flag.input_values
+                for ordinal, value_id in enumerate(flag.input_values)
             ]
             if warning_inputs:
                 await self._queries.insert_candidate_warning_inputs(
                     connection, inputs=json.dumps(warning_inputs)
+                )
+            # The value rows behind each not_matching compound rule -- the mirror of the warning
+            # inputs, so a saved non-match keeps the source/date chain that produced it (ST-07).
+            # Only a compound rule reads stored figures; a gate or a criterion threshold has none.
+            non_match_inputs = [
+                {
+                    "candidate_result": identifiers[str(result.candidate)],
+                    "compound_rule": str(reason.compound_rule),
+                    "value_id": value_id,
+                    "ordinal": ordinal,
+                }
+                for result in results
+                for reason in result.non_match_reasons
+                if reason.compound_rule is not None
+                for ordinal, value_id in enumerate(reason.input_values)
+            ]
+            if non_match_inputs:
+                await self._queries.insert_non_match_inputs(
+                    connection, inputs=json.dumps(non_match_inputs)
                 )
         return SavedEvaluation(
             id=evaluation,
@@ -226,15 +268,38 @@ class PostgresEvaluationStore(EvaluationStore):
                     connection, evaluation=evaluation
                 )
             ]
+            enforced = [
+                row.match_rule
+                async for row in self._queries.select_evaluation_match_rules(
+                    connection, evaluation=evaluation
+                )
+            ]
+            applied = [
+                row.compound_rule
+                async for row in self._queries.select_evaluation_compound_rules(
+                    connection, evaluation=evaluation
+                )
+            ]
+        # The pillar weight and its lock are copied onto every criterion row of that pillar, so
+        # either is read once per pillar (ST-07): a reopened set shows the pillar locked as it
+        # was, and the gates and compound rules it screened on rather than the live set's.
         weights = {row.pillar: Decimal(row.pillar_weight) for row in rows}
+        locks = {row.pillar: row.pillar_weight_locked for row in rows}
         return CriteriaSet(
             id=saved.criteria_set,
             name=saved.criteria_set,
             criteria=tuple(_criterion_from(row, saved) for row in rows),
             pillar_weights=tuple(
-                PillarWeight(pillar=PillarId(pillar), level=saved.level, weight=weight)
+                PillarWeight(
+                    pillar=PillarId(pillar),
+                    level=saved.level,
+                    weight=weight,
+                    weight_locked=locks.get(pillar, False),
+                )
                 for pillar, weight in sorted(weights.items())
             ),
+            enforced_match_rules=frozenset(MatchRuleId(rule) for rule in enforced),
+            applied_compound_rules=frozenset(CompoundRuleId(rule) for rule in applied),
         )
 
     async def read_candidate(self, evaluation: int, candidate: str) -> CandidateResult:
@@ -266,8 +331,14 @@ class PostgresEvaluationStore(EvaluationStore):
         return int(row.discarded)
 
 
-def _frozen(criterion: Criterion, pillar_weights: dict[str, Decimal]) -> dict[str, Any]:
-    """One criterion as the snapshot stores it, with its pillar's weight copied in beside it."""
+def _frozen(
+    criterion: Criterion,
+    pillar_weights: dict[str, Decimal],
+    pillar_locks: dict[str, bool],
+) -> dict[str, Any]:
+    """One criterion as the snapshot stores it, with its pillar's weight and lock copied in
+    beside it (ST-07/08) -- the pillar lock frozen here so a reopened set shows the pillar
+    locked as it was, not unlocked as a live default."""
     return {
         "attribute": str(criterion.attribute),
         "pillar": str(criterion.pillar),
@@ -278,6 +349,7 @@ def _frozen(criterion: Criterion, pillar_weights: dict[str, Decimal]) -> dict[st
         "weight": str(criterion.weight),
         "weight_locked": criterion.weight_locked,
         "pillar_weight": str(pillar_weights.get(str(criterion.pillar), Decimal(0))),
+        "pillar_weight_locked": pillar_locks.get(str(criterion.pillar), False),
         "goal": str(criterion.goal),
         "target_range_min": _number(criterion.target_range_min),
         "target_range_max": _number(criterion.target_range_max),
@@ -398,6 +470,7 @@ def _result_from(row: Any, attribute_scores: tuple[AttributeScore, ...] = ()) ->
                     if reason["compound_rule"] is None
                     else CompoundRuleId(reason["compound_rule"])
                 ),
+                input_values=tuple(reason.get("input_values", [])),
             )
             for reason in getattr(row, "non_match_reasons", []) or []
         ),

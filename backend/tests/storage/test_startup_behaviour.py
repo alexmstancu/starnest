@@ -251,6 +251,46 @@ class TestSweepingWhatATestSaved:
 
         assert booted.test_evaluations_swept == 1
 
+    async def test_the_boot_discards_the_rest_of_a_frozen_ranking(
+        self, pool: AsyncConnectionPool, database_url: str
+    ) -> None:
+        """ST-07 `0507`: the three tables that freeze the rest of a ranking -- the enforced and
+        applied rule lists and a not_matching rule's input figures -- each hang off a row the
+        sweep deletes, so each needs `ON DELETE CASCADE` (the one `0504` forgot). A row in every
+        one of them, and the sweep must still succeed."""
+        a_value = await self._a_real_value_id(pool)
+        evaluation = await self._save(pool, f"{TEST_EVALUATION_MARKER}sanity suite frozen whole")
+
+        async with pool.connection() as connection:
+            (match_rule,) = await (
+                await connection.execute("SELECT id FROM match_rule LIMIT 1")
+            ).fetchone()
+            (compound_rule,) = await (
+                await connection.execute("SELECT id FROM compound_rule LIMIT 1")
+            ).fetchone()
+            (candidate_result,) = await (
+                await connection.execute(
+                    "SELECT id FROM candidate_result WHERE evaluation = %s", (evaluation,)
+                )
+            ).fetchone()
+            await connection.execute(
+                "INSERT INTO evaluation_match_rule (evaluation, match_rule) VALUES (%s, %s)",
+                (evaluation, match_rule),
+            )
+            await connection.execute(
+                "INSERT INTO evaluation_compound_rule (evaluation, compound_rule) VALUES (%s, %s)",
+                (evaluation, compound_rule),
+            )
+            await connection.execute(
+                "INSERT INTO non_match_input (candidate_result, compound_rule, value_id, ordinal) "
+                "VALUES (%s, %s, %s, 0)",
+                (candidate_result, compound_rule, a_value),
+            )
+
+        booted = await boot(pool, database_url)
+
+        assert booted.test_evaluations_swept == 1
+
     async def test_the_boot_discards_what_the_browser_suite_saved(
         self, pool: AsyncConnectionPool, database_url: str
     ) -> None:
