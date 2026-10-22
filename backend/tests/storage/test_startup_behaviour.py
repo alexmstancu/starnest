@@ -20,6 +20,7 @@ from psycopg_pool import AsyncConnectionPool
 from starnest.candidates import Candidate
 from starnest.data import Attribute, DataSourceId
 from starnest.data_acquisition import Acquired, RunScope, SourceAdapter
+from starnest.evaluation import RuleWarning
 from starnest.main import AdapterDeclarationError, start_up
 from starnest.storage import (
     PostgresCatalogStore,
@@ -165,7 +166,12 @@ class TestSweepingWhatATestSaved:
     nothing, so the boot sequence discards the ones it marked.
     """
 
-    async def _save(self, pool: AsyncConnectionPool, note: str) -> int:
+    async def _save(
+        self,
+        pool: AsyncConnectionPool,
+        note: str,
+        warnings: tuple[RuleWarning, ...] = (),
+    ) -> int:
         from datetime import UTC, datetime
 
         from starnest.evaluation import CandidateResult, MatchStatus
@@ -181,6 +187,7 @@ class TestSweepingWhatATestSaved:
                     rank=1,
                     coverage=Decimal("100"),
                     match_status=MatchStatus.MATCHING,
+                    warnings=warnings,
                 )
             ],
             score_scale_max=100,
@@ -188,6 +195,61 @@ class TestSweepingWhatATestSaved:
             note=note,
         )
         return saved.id
+
+    async def _a_real_value_id(self, pool: AsyncConnectionPool) -> int:
+        """A value row to hang a warning's input on. The warning-input FK is to `value (id)`, so
+        the id must be a real one -- stored here because the storage database is schema-only."""
+        from datetime import UTC, datetime
+
+        from starnest.data import ConfidenceLevel, Ratio, ReferencePeriod, Value, ValueType
+        from starnest.storage import PostgresValueStore
+
+        (figure,) = await PostgresValueStore(pool).append(
+            [
+                Value(
+                    candidate="country.portugal",
+                    attribute=OVERBURDEN,
+                    value_type=ValueType.RATIO,
+                    data_source="eurostat",
+                    reference_period=ReferencePeriod(
+                        start=datetime(2025, 1, 1).date(), end=datetime(2025, 12, 31).date()
+                    ),
+                    retrieval_date=datetime(2026, 9, 1, tzinfo=UTC),
+                    confidence_level=ConfidenceLevel.HIGH,
+                    payload=Ratio(value=Decimal("6.3"), basis="households"),
+                )
+            ]
+        )
+        return figure.id
+
+    async def test_the_boot_discards_a_saved_warning_and_the_figures_behind_it(
+        self, pool: AsyncConnectionPool, database_url: str
+    ) -> None:
+        """A saved warning's frozen input rows (ST-07, `0504`) must die with the evaluation.
+
+        The boot sweep deletes a test ranking's `candidate_warning` rows; a
+        `candidate_warning_input` child with no `ON DELETE CASCADE` blocks that delete, so the
+        sweep raises and the backend refuses to start. `_save`'s warning-less result could not
+        reach this row, and `TRUNCATE CASCADE` in the other storage tests hides it -- which is
+        why `make check` stayed green over a shipped boot regression (`0482` is the rule: an
+        evaluation's children die with it in the schema, not by a hand-ordered delete).
+        """
+        a_value = await self._a_real_value_id(pool)
+        await self._save(
+            pool,
+            f"{TEST_EVALUATION_MARKER}sanity suite with a warning",
+            warnings=(
+                RuleWarning(
+                    compound_rule="cheap_but_taxed",
+                    detail="a flag that rules nothing out",
+                    input_values=(a_value,),
+                ),
+            ),
+        )
+
+        booted = await boot(pool, database_url)
+
+        assert booted.test_evaluations_swept == 1
 
     async def test_the_boot_discards_what_the_browser_suite_saved(
         self, pool: AsyncConnectionPool, database_url: str
