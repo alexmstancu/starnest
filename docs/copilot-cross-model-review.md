@@ -365,7 +365,9 @@ Each cluster's fixes were reviewed by GPT-6 Astra against their consequence maps
 | RE-8 | Medium | `e847892` | The retype test's database name could collide with another workstream's | Own namespace, bounded length (this round) |
 | RE-6, RE-9 | Low | | See `known-issues.md` P96, P98 | Recorded by decision |
 
-Per your lean plan, the last round was not reviewed again.
+| RF-1 | Medium | `1e94f8a` | A quoted `DATABASE_URL` followed by a comment reached yoyo with its quotes | Not patched, by your rule: `migrate` and `rollback` now go through `tools/migrate.py`, which reads `.env` with the backend's parser |
+
+The final review of the last round found only RF-1; every other commit was CLOSED or CLEAN.
 
 ## What the reviewers found sound
 
