@@ -369,7 +369,7 @@ Each cluster's fixes were reviewed by GPT-6 Astra against their consequence maps
 
 | RF-2 | High | `f10f379` | The script read `.env` only, so `make rollback DATABASE_URL=<scratch>` silently rolled back the live database | A `DATABASE_URL` passed to `make migrate` or `make rollback` is refused before anything runs |
 
-The final review of the last round found only RF-1; every other commit was CLOSED or CLEAN. Its replacement brought RF-2.
+The final review of the last round found only RF-1; every other commit was CLOSED or CLEAN. Its replacement brought RF-2. The last review (of `65ea5e1`) closed RF-2 and found nothing new: **the stopping rule is met** (2026-10-23). What stays open is recorded in `known-issues.md` P93–P100.
 
 ## What the reviewers found sound
 
