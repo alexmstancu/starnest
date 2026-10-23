@@ -27,14 +27,6 @@ STORAGE := storage
 # One pair of matching dotenv quotes off, as compose takes it off. Word-wise: one-word values only.
 override unquoted = $(if $(filter "%",$(1)),$(patsubst "%",%,$(1)),$(patsubst '%',%,$(1)))
 
-# yoyo names its driver in the URL scheme and psycopg3 does not: a plain postgresql://
-# resolves to yoyo's psycopg2 backend, which is not installed and never will be. The
-# application keeps the standard form, so the translation happens here rather than in a
-# second variable that could drift out of step.
-MIGRATION_URL := $(subst postgresql://,postgresql+psycopg://,$(DATABASE_URL))
-# The URL with one pair of matching dotenv quotes off and nothing else changed (RE-5, RE-7).
-MIGRATION_DECODED = url=$$MIGRATION_DATABASE; case $$url in \"*\") url=$${url\#\"}; url=$${url%\"};; \'*\') url=$${url\#\'}; url=$${url%\'};; esac
-
 # **Compose reads .env, never the command line** (INF-G2). GNU make exports a command-line
 # variable to every recipe, and `docker compose` prefers its environment to .env -- so
 # `make e2e DATABASE_PORT=1` recreated the live database container on port 1 (2026-10-20). Every
@@ -90,19 +82,15 @@ logs:  ## Follow the database statement log (arch.md 10.7 — this IS the audit)
 # Migrations run by an explicit command, never at startup (arch.md 7.4). Back up first:
 # manually entered values cannot be re-fetched at any price (arch.md 9.5).
 
-# The URL carries the password, so it reaches yoyo through the recipe's environment: make echoes a
-# recipe line before running it, and `make -n` prints one, with the variable's name in place of
-# its value (S1).
-migrate: export MIGRATION_DATABASE := $(MIGRATION_URL)
-rollback: export MIGRATION_DATABASE := $(MIGRATION_URL)
-
+# `tools/migrate.py` reads the URL from .env as the backend does and hands it to yoyo, so make
+# never holds it: no quoting to get wrong (RF-1), and no password to print (S1).
 migrate: backup  ## Back up, then apply pending migrations
-	$(MIGRATION_DECODED); cd $(BACKEND) && uv run yoyo apply --batch --database "$$url" ../$(STORAGE)/migrations
+	cd $(BACKEND) && uv run python ../tools/migrate.py apply
 
 # A rollback changes the schema as surely as a migration does, and several rollback scripts
 # delete stored figures, so it backs up first for the same reason.
 rollback: backup  ## Back up, then roll back the most recent migration
-	$(MIGRATION_DECODED); cd $(BACKEND) && uv run yoyo rollback --batch --database "$$url" ../$(STORAGE)/migrations
+	cd $(BACKEND) && uv run python ../tools/migrate.py rollback
 
 # `--no-deps`: the dump is taken from the running database, and compose never starts or recreates
 # it to match whatever configuration reached it (RA-2). So `make up` first; a stopped database

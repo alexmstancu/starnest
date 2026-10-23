@@ -82,7 +82,10 @@ def test_every_make_target_that_runs_yoyo_backs_up_first() -> None:
     running_yoyo = {
         name: prerequisites
         for name, (prerequisites, recipe) in make_targets().items()
-        if any(re.search(r"\byoyo (apply|rollback)\b", line) for line in recipe)
+        if any(
+            re.search(r"\byoyo (apply|rollback)\b|\btools/migrate\.py (apply|rollback)\b", line)
+            for line in recipe
+        )
     }
     against_the_live_database = {
         name: prerequisites

@@ -498,52 +498,20 @@ def test_a_failed_restore_whose_drop_fails_too_says_how_to_finish(sandbox: Sandb
 
 @pytest.mark.parametrize("target", ["migrate", "rollback"])
 @pytest.mark.parametrize("preview", [(), ("-n",)], ids=["run", "make -n"])
-def test_a_migration_never_prints_the_password(
+def test_a_migration_is_left_to_the_script_and_never_prints_the_password(
     sandbox: Sandbox, target: str, preview: tuple[str, ...]
 ) -> None:
-    """`make migrate` and `make rollback` printed the live database's URL, password included,
-    as make echoes a recipe line before running it (S1). The URL reaches yoyo through the
-    recipe's environment instead, as it does for the browser suite's copy, so neither a run nor
-    a preview shows it -- and yoyo is still handed it."""
+    """The URL is read and handed to yoyo by `tools/migrate.py` (RF-1), so make never holds it:
+    neither a run nor a preview shows the password (S1), and it is on no command line."""
+    command = "apply" if target == "migrate" else "rollback"
+
     result = sandbox.make(*preview, target)
 
     assert result.returncode == 0, output(result)
     assert SECRET not in output(result)
     if not preview:
         [migration] = sandbox.calls_to("uv")
-        assert migration.arguments[migration.arguments.index("--database") + 1] == (
-            LIVE_URL.replace("postgresql://", "postgresql+psycopg://")
-        )
-
-
-SPACED_URL = LIVE_URL.replace(SECRET, "two  words")
-
-
-@pytest.mark.parametrize(
-    ("written", "handed"),
-    [
-        (f'"{LIVE_URL}"', LIVE_URL),
-        (f"'{LIVE_URL}'", LIVE_URL),
-        (SPACED_URL, SPACED_URL),
-        (f'"{SPACED_URL}"', SPACED_URL),
-    ],
-    ids=["double-quoted", "single-quoted", "two spaces", "quoted, with spaces"],
-)
-@pytest.mark.parametrize("target", ["migrate", "rollback"])
-def test_yoyo_is_handed_the_url_the_backend_reads(
-    sandbox: Sandbox, written: str, handed: str, target: str
-) -> None:
-    """One pair of dotenv quotes comes off and nothing else changes (RE-5, RE-7)."""
-    env = sandbox.root / ".env"
-    env.write_text(env.read_text().replace(f"DATABASE_URL={LIVE_URL}", f"DATABASE_URL={written}"))
-
-    result = sandbox.make(target)
-
-    assert result.returncode == 0, output(result)
-    [migration] = sandbox.calls_to("uv")
-    assert migration.arguments[migration.arguments.index("--database") + 1] == handed.replace(
-        "postgresql://", "postgresql+psycopg://"
-    )
+        assert migration.arguments == ("run", "python", "../tools/migrate.py", command)
 
 
 def test_help_lists_every_target_that_documents_itself(sandbox: Sandbox) -> None:
