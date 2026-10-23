@@ -367,7 +367,9 @@ Each cluster's fixes were reviewed by GPT-6 Astra against their consequence maps
 
 | RF-1 | Medium | `1e94f8a` | A quoted `DATABASE_URL` followed by a comment reached yoyo with its quotes | Not patched, by your rule: `migrate` and `rollback` now go through `tools/migrate.py`, which reads `.env` with the backend's parser |
 
-The final review of the last round found only RF-1; every other commit was CLOSED or CLEAN.
+| RF-2 | High | `f10f379` | The script read `.env` only, so `make rollback DATABASE_URL=<scratch>` silently rolled back the live database | A `DATABASE_URL` passed to `make migrate` or `make rollback` is refused before anything runs |
+
+The final review of the last round found only RF-1; every other commit was CLOSED or CLEAN. Its replacement brought RF-2.
 
 ## What the reviewers found sound
 
