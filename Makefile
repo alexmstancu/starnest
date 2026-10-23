@@ -83,7 +83,11 @@ logs:  ## Follow the database statement log (arch.md 10.7 — this IS the audit)
 # manually entered values cannot be re-fetched at any price (arch.md 9.5).
 
 # `tools/migrate.py` reads the URL from .env as the backend does and hands it to yoyo, so make
-# never holds it: no quoting to get wrong (RF-1), and no password to print (S1).
+# never holds it: no quoting to get wrong (RF-1), and no password to print (S1). A URL passed to
+# make would be ignored, and the live database migrated instead, so it is refused (RF-2).
+ifneq ($(filter migrate rollback,$(MAKECMDGOALS)),)
+$(call refuse_from_outside,DATABASE_URL,migrate and rollback take the database from .env -- edit it there)
+endif
 migrate: backup  ## Back up, then apply pending migrations
 	cd $(BACKEND) && uv run python ../tools/migrate.py apply
 

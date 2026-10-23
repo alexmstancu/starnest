@@ -514,6 +514,43 @@ def test_a_migration_is_left_to_the_script_and_never_prints_the_password(
         assert migration.arguments == ("run", "python", "../tools/migrate.py", command)
 
 
+ELSEWHERE_URL = LIVE_URL.replace(f"/{LIVE}", "/scratch")
+
+
+@pytest.mark.parametrize("target", ["migrate", "rollback"])
+@pytest.mark.parametrize("given", ["command line", "make -e"])
+def test_a_database_url_passed_to_make_is_refused_before_anything_runs(
+    sandbox: Sandbox, target: str, given: str
+) -> None:
+    """The script reads the database from .env alone, so a URL passed to make is refused, not
+    ignored: ignored, `make rollback DATABASE_URL=<scratch>` hit the live database (RF-2)."""
+    if given == "command line":
+        result = sandbox.make(target, f"DATABASE_URL={ELSEWHERE_URL}")
+    else:
+        result = sandbox.make("-e", target, DATABASE_URL=ELSEWHERE_URL)
+
+    assert result.returncode != 0
+    assert "DATABASE_URL" in output(result)
+    assert sandbox.calls() == []
+
+
+@pytest.mark.parametrize("target", ["migrate", "rollback"])
+def test_a_url_exported_in_the_shell_leaves_env_in_charge(sandbox: Sandbox, target: str) -> None:
+    """Without -e, .env beats the shell in make and in the script alike: nothing is refused."""
+    result = sandbox.make(target, DATABASE_URL=ELSEWHERE_URL)
+
+    assert result.returncode == 0, output(result)
+    [migration] = sandbox.calls_to("uv")
+    assert migration.arguments[-1] == ("apply" if target == "migrate" else "rollback")
+
+
+def test_other_targets_still_take_a_database_url_from_the_command_line(sandbox: Sandbox) -> None:
+    """The refusal is only for the two targets whose script ignores it."""
+    result = sandbox.make("serve", f"DATABASE_URL={ELSEWHERE_URL}")
+
+    assert result.returncode == 0, output(result)
+
+
 def test_help_lists_every_target_that_documents_itself(sandbox: Sandbox) -> None:
     """A target with a `##` line is one `make help` promises to list, and the four whose names
     hold a digit -- `e2e` and its kin -- were missing from it (S2)."""
