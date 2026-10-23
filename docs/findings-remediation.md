@@ -227,3 +227,32 @@ Historical data, provenance, user configuration and the `arch.md` 6.1/6.2 module
 boundaries are preserved. Several storage findings (ST-03/04/05/06) touch *already-shipped*
 migrations — fixes are forward migrations or guards, never edits to a migration that may already
 have run on the user's DB. No change expands into city/v2.0 scope.
+
+## 2026-10-23 — cross-review tail (my lane)
+
+The documented remainder after the 2026-10-22 PARTIAL round, cleared in one pass. No
+newly-discovered defects: these were the items the other agent's handoff and the cross-model
+review had already written down for my lane.
+
+- **FU-A5 (the `0506`/`0507` rollbacks drop recorded history without refusing).** Both rollbacks
+  now refuse-and-lock on the 0478/0503 idiom. `0507` refuses when any saved evaluation has frozen
+  a rule list or a not_matching input (`evaluation_match_rule` / `evaluation_compound_rule` /
+  `non_match_input`) -- dropping them would empty a frozen ranking's provenance (0107). `0506`
+  refuses when a run recorded exact pairs that are a strict subset of its rectangle (a retry /
+  ask-again), which cannot be rebuilt from the surviving candidate/attribute lists; a pure-sweep
+  DB rolls back cleanly. Each takes `LOCK TABLE ... IN SHARE ROW EXCLUSIVE MODE` before it counts,
+  so a row committed mid-rollback is seen. Held by `test_migration_hygiene`'s refusal-lock guard
+  (which now covers both) and proved firing against a concurrent write by two new entries in
+  `test_rollback_races.py::REFUSALS`. Teeth checked: weakening `0507`'s lock trips the text guard
+  and makes the race stop waiting; making `0506`'s refusal unreachable drops the table silently.
+- **`openapi.yaml:1941` `delta` "own unit" wrong for money (FU "For your lane").** `magnitude_of`
+  reads a `Monetary` value as `amount_eur` (`magnitudes.py`), so a Monetary delta is in EUR, not
+  the attribute's own currency -- candidates may hold different ones. Corrected the contract
+  description and the three code docstrings carrying the same phrase (`comparison.py` ×2,
+  `api/comparisons.py`). Doc-only; no behaviour change.
+- **`known-issues.md` P36 marked open but closed by BE-33 (`a7a2fa8`).** Verified in the commit
+  and code (`acquire` takes `record_spend` → `runs.add_spend`, per-batch spend write). Flipped the
+  P36 row to Fixed and corrected both intro mentions (count 66 closed / 3 open).
+- **`CLAUDE.md` commands/layout stale for the other agent's Makefile changes.** `make migrate` /
+  `make rollback` now run `tools/migrate.py` (reads `DATABASE_URL` from `.env` only, refuses a CLI
+  URL, RF-1); layout notes `migrate.py` beside the three audits.

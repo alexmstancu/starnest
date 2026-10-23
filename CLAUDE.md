@@ -279,7 +279,7 @@ ui/           TypeScript. A client of the contract, over HTTP only
   src/  e2e/      React; Playwright specs owned by the master agent
 docs/         reqs.md, arch.md, datasources.md, devplan.md, known-issues.md
                 openapi.yaml (target) + openapi.implemented.yaml (generated)
-tools/        the three structural audits
+tools/        the three structural audits, and migrate.py (migrate/rollback runner)
 compose.yaml  four containers: database, backend, ui, schema diagram
 Makefile      every command the project has
 ```
@@ -316,7 +316,7 @@ Makefile      every command the project has
 | `make openapi` | Regenerate `docs/openapi.implemented.yaml`. **Run after changing any endpoint** — a test fails when it is stale |
 | `make serve` / `make acquire` / `make rank` | Run the API; fetch real figures from every source, then the stand-ins; print the ranking from what is stored (`make rank SET=local_employment` for the shipped set) |
 | **`make check`** | **Backend lint + boundaries + coverage + audits, then `ui-check`. Both sides. This is the gate** |
-| `make migrate` | Backs up first, then applies migrations. **Never automatic** (`arch.md` 7.4) |
+| `make migrate` / `make rollback` | Backs up first, then applies pending migrations (or rolls back the most recent). Both run `tools/migrate.py`, which reads `DATABASE_URL` from `.env` via python-dotenv and hands it to yoyo in-process — a URL exported in the shell or passed on the command line is **refused**, never used (RF-1). The database must be up. **Never automatic** (`arch.md` 7.4) |
 | `make ui-check` | The interface gate: `ui-lint` (eslint, type-aware) + `ui-typecheck` + `ui-coverage` (85% bar) |
 | `make ui-coverage` / `make e2e` | Interface coverage (85% bar); Playwright **on its own throwaway database** -- the newest backup restored and migrated, its own backend and Vite on ports 8100/5180, dropped afterwards (or at once, if it cannot be restored or migrated). It never touches the live database, and the copy's name cannot be overridden (UI-03). `E2E_ARGS=e2e/sanity.spec.ts` narrows it |
 | `make docker-build` / `docker-up` / `docker-migrate` / `docker-down` | The four containers: database, backend, the interface on `127.0.0.1:5173`, and the live schema diagram on `127.0.0.1:4174` (`docker compose restart schema-diagram` after a migration) |
