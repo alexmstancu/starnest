@@ -148,6 +148,47 @@ REFUSALS = (
         undo="DELETE FROM value WHERE attribute = 'country.school_system_quality'",
         says="cannot roll back 0478: 1 figures are stored",
     ),
+    # A saved ranking's frozen rule list is recorded history 0507's rollback would drop (FU-A5).
+    # Built in a `DO` block so the evaluation parent exists before its `evaluation_match_rule`
+    # child -- a foreign key a sibling wCTE would not reliably see.
+    Refusal(
+        migration="0507-freeze-the-rest-of-what-a-ranking-was-computed-with",
+        write="DO $$ DECLARE ev_id bigint; BEGIN "
+        "INSERT INTO evaluation (criteria_set, level, computed_at, score_scale_max, note) "
+        "VALUES ('minimal', 'country', now(), 100, 'FU-A5 race row') RETURNING id INTO ev_id; "
+        "INSERT INTO evaluation_match_rule (evaluation, match_rule) "
+        "VALUES (ev_id, 'li_eea_quota'); END $$",
+        undo="DELETE FROM evaluation WHERE note = 'FU-A5 race row'",
+        says="cannot roll back 0507: 1 saved-evaluation",
+    ),
+    # A retry's exact pairs are recorded history 0506's rollback would drop (FU-A5). This run is
+    # two candidates and two attributes but only its diagonal two pairs -- a strict subset of its
+    # 2x2 rectangle -- so the refusal counts it as one run scoped to pairs. The whole chain goes
+    # in a `DO` block so each table's parent exists before its child, and the undo clears the
+    # children before the run (the run's references do not cascade).
+    Refusal(
+        migration="0506-a-run-records-the-exact-pairs-it-asked-about",
+        write="DO $$ DECLARE run_id bigint; BEGIN "
+        "INSERT INTO data_acquisition_run (started_at, triggered_by, run_status, level) "
+        "VALUES (now(), 'FU-A5 race row', 'completed', 'country') RETURNING id INTO run_id; "
+        "INSERT INTO data_acquisition_run_candidate (data_acquisition_run, candidate) "
+        "VALUES (run_id, 'country.romania'), (run_id, 'country.portugal'); "
+        "INSERT INTO data_acquisition_run_attribute (data_acquisition_run, attribute) "
+        "VALUES (run_id, 'country.homicide_rate'), "
+        "(run_id, 'country.housing_cost_overburden_rate'); "
+        "INSERT INTO data_acquisition_run_item (data_acquisition_run, candidate, attribute) "
+        "VALUES (run_id, 'country.romania', 'country.homicide_rate'), "
+        "(run_id, 'country.portugal', 'country.housing_cost_overburden_rate'); END $$",
+        undo="DO $$ BEGIN "
+        "DELETE FROM data_acquisition_run_item WHERE data_acquisition_run IN "
+        "(SELECT id FROM data_acquisition_run WHERE triggered_by = 'FU-A5 race row'); "
+        "DELETE FROM data_acquisition_run_candidate WHERE data_acquisition_run IN "
+        "(SELECT id FROM data_acquisition_run WHERE triggered_by = 'FU-A5 race row'); "
+        "DELETE FROM data_acquisition_run_attribute WHERE data_acquisition_run IN "
+        "(SELECT id FROM data_acquisition_run WHERE triggered_by = 'FU-A5 race row'); "
+        "DELETE FROM data_acquisition_run WHERE triggered_by = 'FU-A5 race row'; END $$",
+        says="cannot roll back 0506: 1 run",
+    ),
 )
 
 
