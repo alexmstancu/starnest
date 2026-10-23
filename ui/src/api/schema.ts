@@ -1327,7 +1327,7 @@ export interface components {
                 candidate?: string;
                 value?: components["schemas"]["Value"];
                 normalised_score?: number | null;
-                /** @description Focus minus comparator, in the attribute's own unit. */
+                /** @description Focus minus comparator. In the attribute's own unit, except a Monetary attribute, whose delta is in EUR -- the only figure comparable across candidates that may hold different currencies (reqs.md 5.5). */
                 delta?: number | null;
                 /** @description What the delta is worth. Drives the synthesis. */
                 weighted_contribution?: number | null;

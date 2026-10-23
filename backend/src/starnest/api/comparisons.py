@@ -142,7 +142,8 @@ async def get_comparison(
 
 
 def _magnitudes(values: Mapping[str, Sequence[Value]]) -> dict[str, dict[str, Decimal]]:
-    """Each candidate's comparable figure per attribute, in the attribute's own unit."""
+    """Each candidate's comparable figure per attribute, in the attribute's own unit -- in EUR for
+    a Monetary attribute, the figure both sides are read as (`magnitudes.py`, `reqs.md` 5.5)."""
     figures: dict[str, dict[str, Decimal]] = {}
     for candidate, stored in values.items():
         for value in stored:

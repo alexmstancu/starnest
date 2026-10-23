@@ -27,7 +27,9 @@ from starnest.data import AttributeId, PillarId
 from starnest.evaluation import AttributeScore, CandidateResult, contribution_of
 
 Magnitudes = Mapping[str, Mapping[str, Decimal]]
-"""The figure each candidate holds for each attribute, in the attribute's own unit."""
+"""The figure each candidate holds for each attribute, in the attribute's own unit -- except a
+Monetary attribute, whose figure is its EUR equivalent, the only one comparable across candidates
+that may hold different currencies (`magnitudes.py`, `reqs.md` 5.5)."""
 
 
 class ComparisonError(ValueError):
@@ -42,7 +44,8 @@ class ComparatorCell:
     normalised_score: int | None
     magnitude: Decimal | None
     delta: Decimal | None
-    """Focus minus comparator, in the attribute's own unit. None unless both have a figure."""
+    """Focus minus comparator, in the attribute's own unit -- in EUR for a Monetary attribute, the
+    figure both sides are read as (`magnitudes.py`). None unless both have a figure."""
     weighted_contribution: Decimal | None
     """What that gap is worth to the total: the score difference times the effective weight."""
 

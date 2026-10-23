@@ -1938,7 +1938,7 @@ components:
               candidate: { type: string }
               value: { $ref: "#/components/schemas/Value" }
               normalised_score: { type: [integer, "null"] }
-              delta: { type: [number, "null"], description: "Focus minus comparator, in the attribute's own unit." }
+              delta: { type: [number, "null"], description: "Focus minus comparator. In the attribute's own unit, except a Monetary attribute, whose delta is in EUR -- the only figure comparable across candidates that may hold different currencies (reqs.md 5.5)." }
               weighted_contribution: { type: [number, "null"], description: What the delta is worth. Drives the synthesis. }
 
     Comparison:
