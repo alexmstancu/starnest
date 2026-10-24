@@ -9,9 +9,9 @@ from datetime import datetime
 from fastapi import APIRouter
 from pydantic import AwareDatetime, BaseModel
 
-from starnest.api.dependencies import Adapters, Catalog, Households, Runs
+from starnest.api.dependencies import Adapters, Catalog, Runs
 from starnest.api.errors import unknown_scope_refusal
-from starnest.data_acquisition import Gap, Holdings, stand_ins_if_enabled, switched_on
+from starnest.data_acquisition import Gap, Holdings
 
 router = APIRouter(tags=["acquisition"])
 
@@ -70,27 +70,24 @@ async def get_holdings(
     adapters: Adapters,
     catalog: Catalog,
     runs: Runs,
-    households: Households,
 ) -> HoldingsBody:
     """The database at a level, read in one statement so its figures add up.
 
     **`since` must carry its zone**: it is the reader's month start (C04-N10), and a time
     without one would be read on the database's clock, the decision this parameter keeps off the
-    server. The askable attributes are what the switched-on adapters declare -- the facts
-    `answerable_by` serves (Q235) -- because the database does not hold them.
+    server. What each adapter declares -- the facts `answerable_by` serves (Q235) -- is passed
+    whole, because the database does not hold it; **which sources are switched on is left to
+    the statement**, with the stand-ins and the refetch age, so a switch flipped mid-read is
+    seen everywhere or nowhere.
     """
     if level not in await catalog.read_levels():
         raise unknown_scope_refusal(level, unknown_levels=[level])
-    sources = await catalog.read_data_sources()
-    askable = {str(a) for adapter in switched_on(adapters, sources) for a in adapter.attributes}
-    lent = stand_ins_if_enabled(await catalog.read_stand_ins(level=level), sources)
-    holdings = await runs.read_holdings(
-        level=level,
-        askable_attributes=sorted(askable),
-        stand_in_pairs=[(str(each.candidate), str(each.attribute)) for each in lent],
-        since=since,
-        refetch_older_than_days=(await households.get_settings()).refetch_older_than_days,
-    )
+    declared = {
+        (str(adapter.data_source), str(attribute))
+        for adapter in adapters
+        for attribute in adapter.attributes
+    }
+    holdings = await runs.read_holdings(level=level, declared=sorted(declared), since=since)
     return _holdings_body(holdings)
 
 

@@ -5,8 +5,30 @@ client's view -- the shape the design promises, populated with every kind of gap
 refusals the parameters can earn.
 """
 
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+from typing import Any
+
 import httpx
 import pytest
+from psycopg_pool import AsyncConnectionPool
+
+from starnest.data import (
+    ConfidenceLevel,
+    DataSourceId,
+    Ratio,
+    ReferencePeriod,
+    Value,
+    ValueType,
+)
+from starnest.storage import (
+    PostgresCatalogStore,
+    PostgresHouseholdStore,
+    PostgresRunStore,
+    PostgresValueStore,
+)
 
 from .conftest import a_stub_source, an_api
 from .contract import undeclared_fields, validate
@@ -88,3 +110,179 @@ async def test_a_switched_off_source_s_attributes_are_not_counted_as_fetchable(
     lent = {gap["candidate"] for gap in after["gaps"]["not_reached"]}
     assert after["pairs_total"] > 0
     assert lent == {BORROWS_A_NEIGHBOURS_FIGURES}
+
+
+SPAIN = "country.spain"
+OVERBURDEN = "country.housing_cost_overburden_rate"
+OVERCROWDING = "country.overcrowding_rate"
+TAX = "country.total_tax_rate_effective"
+"""One of the four figures Liechtenstein borrows from Switzerland (`0460`)."""
+
+
+def a_figure(
+    candidate: str, attribute: str, *, source: str = "eurostat", days_ago: int = 0
+) -> Value:
+    basis = "labour_cost" if attribute == TAX else "households"
+    return Value(
+        candidate=candidate,
+        attribute=attribute,
+        value_type=ValueType.RATIO,
+        data_source=source,
+        reference_period=ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 12, 31)),
+        retrieval_date=datetime.now(UTC) - timedelta(days=days_ago),
+        confidence_level=ConfidenceLevel.LOW if source == "stand_in" else ConfidenceLevel.HIGH,
+        payload=Ratio(value=Decimal("30"), basis=basis),
+    )
+
+
+@asynccontextmanager
+async def a_pool(database_url: str) -> AsyncIterator[AsyncConnectionPool]:
+    async with AsyncConnectionPool(database_url, min_size=1, max_size=2, open=False) as pool:
+        await pool.open(wait=True)
+        yield pool
+
+
+@asynccontextmanager
+async def put_back_afterwards(pool: AsyncConnectionPool, source: str) -> AsyncIterator[None]:
+    """The catalog is not test data, so a switch is restored to exactly what it was."""
+    catalog = PostgresCatalogStore(pool)
+    (before,) = [each for each in await catalog.read_data_sources() if each.id == source]
+    try:
+        yield
+    finally:
+        await catalog.set_data_source(DataSourceId(source), is_enabled=before.is_enabled)
+
+
+def landing_mid_read(
+    monkeypatch: pytest.MonkeyPatch,
+    read: tuple[type, str],
+    change: Callable[[], Awaitable[None]],
+) -> None:
+    """`change` commits once while the endpoint answers: the moment `read` returns, or -- if the
+    endpoint never makes that read -- just before the holdings are read. Those are the two
+    places the old endpoint and a one-statement endpoint each leave open."""
+    landed = False
+
+    async def land() -> None:
+        nonlocal landed
+        if not landed:
+            landed = True
+            await change()
+
+    store, name = read
+    original_read = getattr(store, name)
+    original_holdings = PostgresRunStore.read_holdings
+
+    async def read_then_land(self: object, *args: object, **kwargs: object) -> object:
+        result = await original_read(self, *args, **kwargs)
+        await land()
+        return result
+
+    async def land_then_read_holdings(self: PostgresRunStore, **kwargs: Any) -> object:
+        await land()
+        return await original_holdings(self, **kwargs)
+
+    monkeypatch.setattr(store, name, read_then_land)
+    monkeypatch.setattr(PostgresRunStore, "read_holdings", land_then_read_holdings)
+
+
+async def read_across(
+    api: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    read: tuple[type, str],
+    change: Callable[[], Awaitable[None]],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """The holdings before the change, while it lands, and after it."""
+    params = {"level": COUNTRY, "since": MONTH_START}
+    before = (await api.get("/v1/holdings", params=params)).json()
+    with monkeypatch.context() as patched:
+        landing_mid_read(patched, read, change)
+        during = (await api.get("/v1/holdings", params=params)).json()
+    after = (await api.get("/v1/holdings", params=params)).json()
+    return before, during, after
+
+
+def figures(body: dict[str, Any]) -> tuple[object, ...]:
+    return (body["pairs_total"], body["values_stored"], body["values_older_than_refetch_age"])
+
+
+class TestOneCommittedState:
+    """What the database holds describes one committed state, whatever commits while it is read.
+
+    The review paused after the source switches were read, switched Eurostat off and resumed:
+    `(pairs_total, values_stored)` was (68, 1) before, (68, 0) during and (4, 0) afterwards --
+    a state the database was never in, with 67 fetchable gaps it did not have.
+    """
+
+    async def test_a_source_switched_off_mid_read_is_seen_everywhere_or_nowhere(
+        self, database_url: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async with a_pool(database_url) as pool, put_back_afterwards(pool, "eurostat"):
+            await PostgresValueStore(pool).append([a_figure(SPAIN, OVERBURDEN)])
+
+            async def switch_eurostat_off() -> None:
+                await PostgresCatalogStore(pool).set_data_source(
+                    DataSourceId("eurostat"), is_enabled=False
+                )
+
+            async with an_api(database_url, (a_stub_source(),)) as api:
+                before, during, after = await read_across(
+                    api,
+                    monkeypatch,
+                    (PostgresCatalogStore, "read_data_sources"),
+                    switch_eurostat_off,
+                )
+
+        assert figures(before) != figures(after)
+        assert during in (before, after), (figures(before), figures(during), figures(after))
+
+    async def test_the_stand_in_source_switched_off_mid_read_is_seen_everywhere_or_nowhere(
+        self, database_url: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async with a_pool(database_url) as pool, put_back_afterwards(pool, "stand_in"):
+            await PostgresValueStore(pool).append(
+                [a_figure(BORROWS_A_NEIGHBOURS_FIGURES, TAX, source="stand_in")]
+            )
+
+            async def switch_stand_ins_off() -> None:
+                await PostgresCatalogStore(pool).set_data_source(
+                    DataSourceId("stand_in"), is_enabled=False
+                )
+
+            async with an_api(database_url, (a_stub_source(),)) as api:
+                before, during, after = await read_across(
+                    api,
+                    monkeypatch,
+                    (PostgresCatalogStore, "read_data_sources"),
+                    switch_stand_ins_off,
+                )
+
+        assert figures(before) != figures(after)
+        assert during in (before, after), (figures(before), figures(during), figures(after))
+
+    async def test_a_refetch_age_set_mid_read_is_read_with_the_values_it_ages(
+        self, database_url: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Set, then a figure stored: neither moment had an unset age beside two figures."""
+        async with a_pool(database_url) as pool:
+            await PostgresValueStore(pool).append([a_figure(SPAIN, OVERBURDEN, days_ago=10)])
+
+            async def set_the_age_then_store_a_figure() -> None:
+                async with pool.connection() as connection:
+                    await connection.execute(
+                        "INSERT INTO settings (id, refetch_older_than_days) VALUES (1, 5)"
+                        " ON CONFLICT (id) DO UPDATE SET refetch_older_than_days = 5"
+                    )
+                await PostgresValueStore(pool).append([a_figure(SPAIN, OVERCROWDING, days_ago=10)])
+
+            async with an_api(database_url, (a_stub_source(),)) as api:
+                before, during, after = await read_across(
+                    api,
+                    monkeypatch,
+                    (PostgresHouseholdStore, "get_settings"),
+                    set_the_age_then_store_a_figure,
+                )
+
+        assert figures(before) == (68, 1, None)
+        assert figures(after) == (68, 2, 2)
+        assert during in (before, after), (figures(before), figures(during), figures(after))

@@ -37,26 +37,40 @@ PORTUGAL = "country.portugal"
 SPAIN = "country.spain"
 GREECE = "country.greece"
 LIECHTENSTEIN = "country.liechtenstein"
-BOTH = (OVERBURDEN, OVERCROWDING)
+EUROSTAT_DECLARES_BOTH = (("eurostat", OVERBURDEN), ("eurostat", OVERCROWDING))
 COUNTRIES_IN_THE_CATALOG = 32
+LENT_BY_THE_CATALOG = {
+    (LIECHTENSTEIN, attribute)
+    for attribute in (
+        "country.cost_of_living_index",
+        "country.total_tax_rate_effective",
+        "country.healthcare_system_quality",
+        "country.housing_price_level",
+    )
+}
+"""What Liechtenstein borrows from Switzerland (`0460`, `0488`), read from `stand_in` itself."""
 MONTH_START = datetime(2026, 10, 1, tzinfo=UTC)
 
 
 async def holdings(
     pool: AsyncConnectionPool,
     *,
-    askable: Sequence[str] = BOTH,
-    lent: Sequence[tuple[str, str]] = (),
+    declared: Sequence[tuple[str, str]] = EUROSTAT_DECLARES_BOTH,
     since: datetime = MONTH_START,
-    refetch_days: int | None = None,
 ) -> Holdings:
     return await PostgresRunStore(pool).read_holdings(
-        level="country",
-        askable_attributes=askable,
-        stand_in_pairs=lent,
-        since=since,
-        refetch_older_than_days=refetch_days,
+        level="country", declared=declared, since=since
     )
+
+
+async def refetch_after(pool: AsyncConnectionPool, days: int) -> None:
+    async with pool.connection() as connection:
+        await connection.execute(
+            "INSERT INTO settings (id, refetch_older_than_days) VALUES (1, %s)"
+            " ON CONFLICT (id) DO UPDATE"
+            " SET refetch_older_than_days = EXCLUDED.refetch_older_than_days",
+            (days,),
+        )
 
 
 async def a_finished_run(
@@ -120,7 +134,7 @@ class TestWhatIsStored:
         found = await holdings(pool)
 
         assert found.values_stored == 2
-        assert found.pairs_total == COUNTRIES_IN_THE_CATALOG * 2
+        assert found.pairs_total == COUNTRIES_IN_THE_CATALOG * 2 + len(LENT_BY_THE_CATALOG)
 
     async def test_a_rejected_or_switched_off_figure_is_not_stored(
         self, pool: AsyncConnectionPool
@@ -146,17 +160,39 @@ class TestWhatIsStored:
         """Pairs already holding a figure are in the total, so stored never exceeds it."""
         await PostgresValueStore(pool).append([a_figure(None, PORTUGAL, OVERBURDEN)])
 
-        found = await holdings(pool, askable=())
+        async with switched_off(pool, "stand_in"):
+            found = await holdings(pool, declared=())
 
         assert (found.pairs_total, found.values_stored) == (1, 1)
 
     async def test_a_pair_a_stand_in_can_lend_counts_though_no_source_fetches_it(
         self, pool: AsyncConnectionPool
     ) -> None:
-        found = await holdings(pool, askable=(), lent=[(LIECHTENSTEIN, OVERBURDEN)])
+        found = await holdings(pool, declared=())
 
-        assert found.pairs_total == 1
-        assert kinds_of(found) == {(LIECHTENSTEIN, OVERBURDEN): ("not_reached", None)}
+        assert found.pairs_total == len(LENT_BY_THE_CATALOG)
+        assert kinds_of(found) == dict.fromkeys(LENT_BY_THE_CATALOG, ("not_reached", None))
+
+    async def test_nothing_is_lent_while_the_stand_in_source_is_switched_off(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        async with switched_off(pool, "stand_in"):
+            found = await holdings(pool, declared=())
+
+        assert found.pairs_total == 0
+
+    async def test_a_declaration_counts_unless_its_source_is_switched_off(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """A source the catalog does not know is kept, as `switched_on` keeps it: the boot
+        check names that fault, and hiding it here would only make the database look smaller."""
+        declared = [("oecd", OVERBURDEN), ("not_in_the_catalog", OVERCROWDING)]
+
+        async with switched_off(pool, "stand_in"), switched_off(pool, "oecd"):
+            found = await holdings(pool, declared=declared)
+
+        assert found.pairs_total == COUNTRIES_IN_THE_CATALOG
+        assert {attribute for _, attribute in kinds_of(found)} == {OVERCROWDING}
 
 
 async def _the_age_boundary(pool: AsyncConnectionPool) -> tuple[date, date]:
@@ -197,7 +233,7 @@ class TestHowOldItIs:
     ) -> None:
         await PostgresValueStore(pool).append([a_figure(None, PORTUGAL, OVERBURDEN)])
 
-        assert (await holdings(pool, refetch_days=None)).values_older_than_refetch_age is None
+        assert (await holdings(pool)).values_older_than_refetch_age is None
 
     async def test_the_refetch_figure_counts_pairs_last_answered_before_the_setting(
         self, pool: AsyncConnectionPool
@@ -215,7 +251,9 @@ class TestHowOldItIs:
             ]
         )
 
-        assert (await holdings(pool, refetch_days=30)).values_older_than_refetch_age == 1
+        await refetch_after(pool, 30)
+
+        assert (await holdings(pool)).values_older_than_refetch_age == 1
 
 
 async def _started_at(pool: AsyncConnectionPool, run: int, moment: datetime) -> None:
@@ -398,11 +436,12 @@ class TestTheFiguresAddUp:
         halted = await a_finished_run(pool, [(GREECE, OVERBURDEN)], status=RunStatus.HALTED_BY_USER)
         await a_finished_run(pool, [(GREECE, OVERCROWDING)])
 
-        found = await holdings(pool, lent=[(LIECHTENSTEIN, OVERBURDEN)])
+        found = await holdings(pool)
         gaps = [*found.failed, *found.unanswered, *found.not_reached]
         pairs = [(gap.candidate, gap.attribute) for gap in gaps]
 
-        assert found.values_stored + len(gaps) == found.pairs_total == COUNTRIES_IN_THE_CATALOG * 2
+        assert found.values_stored + len(gaps) == found.pairs_total
+        assert found.pairs_total == COUNTRIES_IN_THE_CATALOG * 2 + len(LENT_BY_THE_CATALOG)
         assert len(pairs) == len(set(pairs))
         assert {(PORTUGAL, OVERCROWDING), (SPAIN, OVERBURDEN)}.isdisjoint(pairs)
         assert (len(found.failed), len(found.unanswered)) == (1, 1)

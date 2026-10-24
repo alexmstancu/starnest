@@ -185,17 +185,18 @@ class RunStore(ABC):
         self,
         *,
         level: str,
-        askable_attributes: Sequence[str],
-        stand_in_pairs: Sequence[tuple[str, str]],
+        declared: Sequence[tuple[str, str]],
         since: datetime,
-        refetch_older_than_days: int | None,
     ) -> Holdings:
         """What the database holds at `level`, in one statement so its figures add up.
 
-        The pairs are every candidate at the level against `askable_attributes`, the
-        `stand_in_pairs` a declared stand-in can lend, and any pair already holding a value in
-        use. Which attributes a switched-on source can fetch is the adapters' declaration, which
-        the database does not hold, so the caller passes it (Q235). Spend counts runs started and
+        The pairs are every candidate at the level against the attributes a switched-on source
+        can fetch, the pairs a stand-in can lend while the stand-in source is on, and any pair
+        already holding a value in use. What each source can fetch is the adapters' declaration,
+        which the database does not hold, so the caller passes every (source, attribute) pair
+        (Q235) **and the store filters it by the switches**: the switches, the stand-ins and the
+        refetch age are read in the same snapshot as the values, so a switch flipped mid-read
+        cannot pair one state's pairs with another's values. Spend counts runs started and
         research ledgered at or after `since`.
         """
 

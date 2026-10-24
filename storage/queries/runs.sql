@@ -392,13 +392,18 @@ WHERE  v.rejection_reason IS NULL
 GROUP  BY v.candidate, v.attribute
 ORDER  BY v.candidate, v.attribute;
 
--- name: select_holdings(level, askable_attributes, stand_in_pairs, since, refetch_days)^
+-- name: select_holdings(level, declared, stand_in_source, since)^
 -- What the database holds at a level, not what one run did (PL-051, PL-054). **One statement**,
 -- so values stored plus the three gap lists is the pairs total in every snapshot (map-C04 2.3).
+-- **Everything it filters on is read here too** -- the source switches, the stand-ins and the
+-- refetch age: read beforehand, a switch flipped in between paired the old pairs with the new
+-- values, a state the database was never in.
 --
 -- The pairs are the level's candidates against the attributes a switched-on source declares
--- (the caller passes them: adapters declare, the database does not), the pairs a stand-in can
--- lend, and any pair already holding a value in use. Retired attributes are not counted.
+-- (the caller passes every (source, attribute) its adapters declare, which the database does
+-- not hold, Q235; a source missing from the catalog is kept, as `switched_on` keeps it), the
+-- pairs a stand-in can lend while the stand-in source is on, and any pair already holding a
+-- value in use. Retired attributes are not counted.
 --
 -- A gap is a pair with no value in use, classified by the LATEST run whose items include it,
 -- never by the newest run overall. `failed`: that run has a failure row for it, or stored a
@@ -415,6 +420,14 @@ WITH attribute_here AS (
     WHERE  a.level = :level
       AND  a.lifecycle_status = 'active'
 ),
+switched_off AS (
+    SELECT s.id FROM data_source AS s WHERE NOT s.is_enabled
+),
+askable AS (
+    SELECT d.attribute
+    FROM   jsonb_to_recordset(:declared::jsonb) AS d(data_source text, attribute text)
+    WHERE  d.data_source NOT IN (SELECT id FROM switched_off)
+),
 in_use AS (
     SELECT av.candidate, av.attribute, bool_or(NOT av.is_fresh) AS is_past_allowed_age
     FROM   active_value AS av
@@ -427,12 +440,13 @@ pair AS (
     FROM   candidate AS c
     CROSS  JOIN attribute_here AS a
     WHERE  c.level = :level
-      AND  a.id = ANY(:askable_attributes::text[])
+      AND  a.id IN (SELECT attribute FROM askable)
     UNION
     SELECT lent.candidate, lent.attribute
-    FROM   jsonb_to_recordset(:stand_in_pairs::jsonb) AS lent(candidate text, attribute text)
+    FROM   stand_in AS lent
     JOIN   candidate AS c ON c.id = lent.candidate AND c.level = :level
     JOIN   attribute_here AS a ON a.id = lent.attribute
+    WHERE  :stand_in_source::text NOT IN (SELECT id FROM switched_off)
     UNION
     SELECT candidate, attribute FROM in_use
 ),
@@ -494,20 +508,23 @@ classified AS (
                                   ORDER BY data_source) AS listed
                  FROM   cause
                  GROUP  BY candidate, attribute) AS failures USING (candidate, attribute)
+),
+refetch AS (
+    SELECT (SELECT s.refetch_older_than_days FROM settings AS s WHERE s.id = 1) AS days
 )
 SELECT (SELECT count(*) FROM pair)                                       AS pairs_total,
        (SELECT count(*) FROM in_use)                                     AS values_stored,
        (SELECT count(*) FROM in_use WHERE is_past_allowed_age)           AS values_past_allowed_age,
-       CASE WHEN :refetch_days::integer IS NOT NULL THEN
+       CASE WHEN (SELECT days FROM refetch) IS NOT NULL THEN
            (SELECT count(*)
-            FROM   in_use
+            FROM   in_use, refetch
             WHERE  (SELECT max(v.retrieval_date)
                     FROM   value AS v
                     JOIN   data_source AS s ON s.id = v.data_source
                     WHERE  (v.candidate, v.attribute) = (in_use.candidate, in_use.attribute)
                       AND  v.rejection_reason IS NULL
                       AND  s.is_enabled)
-                   <= now() - make_interval(days => :refetch_days::integer))
+                   <= now() - make_interval(days => refetch.days))
        END                                                               AS values_older_than_refetch_age,
        (SELECT COALESCE(sum(r.cost_eur), 0)
         FROM   data_acquisition_run AS r

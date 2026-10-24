@@ -21,6 +21,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from starnest.data import DataSourceId
 from starnest.data_acquisition import (
+    STAND_IN,
     AcquisitionFailure,
     Gap,
     Holdings,
@@ -177,21 +178,16 @@ class PostgresRunStore(RunStore):
         self,
         *,
         level: str,
-        askable_attributes: Sequence[str],
-        stand_in_pairs: Sequence[tuple[str, str]],
+        declared: Sequence[tuple[str, str]],
         since: datetime,
-        refetch_older_than_days: int | None,
     ) -> Holdings:
         async with acquire(self._pool) as connection:
             row = await self._queries.select_holdings(
                 connection,
                 level=level,
-                askable_attributes=list(askable_attributes),
-                stand_in_pairs=json.dumps(
-                    [{"candidate": c, "attribute": a} for c, a in stand_in_pairs]
-                ),
+                declared=json.dumps([{"data_source": s, "attribute": a} for s, a in declared]),
+                stand_in_source=str(STAND_IN),
                 since=since,
-                refetch_days=refetch_older_than_days,
             )
         gaps: dict[str, list[Gap]] = {"failed": [], "unanswered": [], "not_reached": []}
         for gap in row.gaps:
