@@ -96,7 +96,7 @@ describe("the settings panel", () => {
     await user.click(settings.getByRole("button", { name: "Save settings" }));
 
     expect(
-      await settings.findByText(/score scale maximum must be at least 1/i),
+      await settings.findByText(/does not match what this operation accepts/i),
     ).toBeInTheDocument();
     expect(settings.queryByText("Saved.")).not.toBeInTheDocument();
   });
@@ -112,7 +112,9 @@ describe("the settings panel", () => {
     );
     renderShell("/configure");
 
-    expect(await screen.findByText(/no settings/)).toBeInTheDocument();
+    expect(
+      await screen.findByText("The acquisition limits could not be loaded"),
+    ).toBeInTheDocument();
   });
 });
 
@@ -499,7 +501,7 @@ describe("the settings panel's confirmation", () => {
     await user.click(settings.getByRole("button", { name: "Save settings" }));
 
     expect(
-      await settings.findByText(/score scale maximum must be at least 1/i),
+      await settings.findByText(/does not match what this operation accepts/i),
     ).toBeInTheDocument();
     expect(settings.getByRole("status")).toBeEmptyDOMElement();
   });

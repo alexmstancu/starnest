@@ -1,6 +1,8 @@
 import { useCallback, useState } from "react";
 import type { RouteDefinition } from "../../navigation/routes";
-import { ErrorNotice } from "../../shell/ErrorNotice";
+import type { Idle, Read } from "../../api/read";
+import type { CriteriaSet } from "../../api/endpoints";
+import { LoadedRegion } from "../../shell/LoadedRegion";
 import { useSelection } from "../../shell/SelectionContext";
 import { CriteriaPanel } from "./criteria/CriteriaPanel";
 import { CriteriaSetsPanel } from "./sets/CriteriaSetsPanel";
@@ -12,6 +14,7 @@ import { useResearchPass } from "./proposals/useResearchPass";
 import { RulesPanel } from "./rules/RulesPanel";
 import { SettingsPanel } from "./settings/SettingsPanel";
 import { RecentChanges } from "./RecentChanges";
+import { Stage } from "./Stage";
 import { useAttributeCatalog } from "./useAttributeCatalog";
 import { useChangeHistory } from "./useChangeHistory";
 import { useCriteriaEditor } from "./useCriteriaEditor";
@@ -39,7 +42,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   // same copy of what the attributes are, and the panel inside a pillar is mounted and
   // unmounted each time one is opened. The history names its changes from it too.
   const catalog = useAttributeCatalog(levelId);
-  const editor = useCriteriaEditor(criteriaSetId, history, catalog);
+  const editor = useCriteriaEditor(criteriaSetId, history, catalog.catalog);
   // **One signal that the gate answers have moved** (UI-12). The rules and the proposals read
   // the answers separately, so a confirm or a research pass re-read only the proposals, and a
   // gate went on describing answers that had since changed until the screen was remounted.
@@ -52,8 +55,19 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   // remounts the rules and the proposals inside them, and a pass held there would end with
   // them; leaving Configure is what ends one.
   const pass = useResearchPass(noteAnswered);
-  const proposalsBesideRules =
-    editor.status === "ready" && editor.criteriaSet !== null && levelId !== null;
+  // **A pass keeps its Stop, whatever the set's read does** (UIC-A4). Gate research is
+  // level-wide and needs no criteria set, but its panel is drawn beside a loaded set's rules; a
+  // read that failed, or one still loading, hid Stop, the progress and the spend while the pass
+  // went on asking -- and paying. Drawn in stage 4 even then, so there is never a second Stop.
+  const passPanel = levelId !== null && (pass.running || pass.end !== null) && (
+    <ProposalsPanel
+      key={`proposals-${levelId}`}
+      levelId={levelId}
+      onAnswered={noteAnswered}
+      answersFreshness={answersVersion}
+      pass={pass}
+    />
+  );
 
   return (
     <section className="screen screen--configure" aria-labelledby="screen-heading">
@@ -77,78 +91,74 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
           <CriteriaSetsPanel />
           <HouseholdPanel />
 
-          {editor.status === "idle" && (
-            <p className="screen__note">
-              Choose a criteria set to see its criteria.
-            </p>
-          )}
-          {editor.status === "loading" && <p className="screen__note">Loading…</p>}
-          {editor.status === "error" && (
-            <ErrorNotice error={editor.error} onRetry={editor.reload} />
-          )}
-
-          {editor.status === "ready" && editor.criteriaSet !== null && (
-            <>
-              {/* Keyed by the set, because both panels hold what the set says -- its pillar
-                  weights, the rules it enforces -- as state they then edit. Switching sets
-                  has to start that state again from the new set rather than carry the old
-                  set's answers into it. */}
-              {/* **Inside the weights, not beside them.** A criterion's weight is a share
-                  of its pillar's, so the two are one decision at two depths -- which is how
-                  the design draws it, and why opening a pillar is what reveals the
-                  attributes under it. */}
+          {/* **Six cards, whatever each read is doing** (PL-013). Stages 3 and 4 show the set,
+              so their cards are drawn here and stay the same elements while it is read: what
+              is inside says why the set is not there yet, or shows it. */}
+          <Stage {...PILLAR_WEIGHTS_STAGE}>
+            {editor.criteriaSet === null ? (
+              <SetNotRead
+                read={editor.read}
+                onRetry={editor.reload}
+                idleNote="Choose a criteria set to see its criteria."
+                prominence="screen"
+              />
+            ) : (
+              // Keyed by the set, because the panel holds the set's pillar weights as state
+              // it then edits: switching sets starts that state again from the new set.
+              // **Criteria inside the weights, not beside them**: a criterion's weight is a
+              // share of its pillar's, so opening a pillar reveals the attributes under it.
               <PillarWeightsPanel
                 key={editor.criteriaSet.id}
                 criteriaSet={editor.criteriaSet}
                 criteriaCounts={countByPillar(editor.criteria)}
                 history={history}
                 onSaving={setPillarSaving}
+                catalog={catalog}
                 criteriaFor={(pillar) => (
                   <CriteriaPanel
                     editor={editor}
                     pillar={pillar}
-                    catalog={catalog}
+                    catalog={catalog.catalog}
                   />
                 )}
               />
+            )}
+          </Stage>
 
-              {levelId !== null && (
-                <RulesPanel
-                  key={`${editor.criteriaSet.id}-${levelId}`}
-                  criteriaSet={editor.criteriaSet}
+          <Stage {...RULES_STAGE}>
+            {editor.criteriaSet === null && (
+              <>
+                <SetNotRead
+                  read={editor.read}
+                  onRetry={editor.reload}
+                  idleNote="Once a criteria set is chosen, the rules it lets act are listed here."
+                  prominence="region"
+                />
+                {passPanel}
+              </>
+            )}
+            {editor.criteriaSet !== null && levelId === null && (
+              <p className="screen__note">The rules are read once the level is known.</p>
+            )}
+            {editor.criteriaSet !== null && levelId !== null && (
+              <RulesPanel
+                key={`${editor.criteriaSet.id}-${levelId}`}
+                criteriaSet={editor.criteriaSet}
+                levelId={levelId}
+                answersFreshness={answersVersion}
+              >
+                {/* Beside the gates, because that is where a gate is enforced and released:
+                    a proposal is an answer to one of the rules listed above it. */}
+                <ProposalsPanel
+                  key={`proposals-${levelId}`}
                   levelId={levelId}
+                  onAnswered={noteAnswered}
                   answersFreshness={answersVersion}
-                >
-                  {/* Beside the gates, because that is where a gate is enforced and
-                      released: a proposal is an answer to one of the rules listed above
-                      it. Its own stage would give a feature that produces a handful of
-                      rows the same weight as the household. */}
-                  <ProposalsPanel
-                    key={`proposals-${levelId}`}
-                    levelId={levelId}
-                    onAnswered={noteAnswered}
-                    answersFreshness={answersVersion}
-                    pass={pass}
-                  />
-                </RulesPanel>
-              )}
-            </>
-          )}
-
-          {/* **A pass keeps its Stop, whatever the set's read does** (UIC-A4). Gate research is
-              level-wide and needs no criteria set, but its panel is drawn beside a loaded set's
-              rules; a read that failed, or one still loading, hid Stop, the progress and the
-              spend while the pass went on asking -- and paying. Drawn here only when it cannot be
-              drawn there, so there is never a second Stop. */}
-          {!proposalsBesideRules && levelId !== null && (pass.running || pass.end !== null) && (
-            <ProposalsPanel
-              key={`proposals-${levelId}`}
-              levelId={levelId}
-              onAnswered={noteAnswered}
-              answersFreshness={answersVersion}
-              pass={pass}
-            />
-          )}
+                  pass={pass}
+                />
+              </RulesPanel>
+            )}
+          </Stage>
 
           <DataSourcesPanel />
           <SettingsPanel />
@@ -162,5 +172,49 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
         </aside>
       </div>
     </section>
+  );
+}
+
+const PILLAR_WEIGHTS_STAGE = {
+  id: "pillar-weights",
+  title: "Pillar weights",
+  lead:
+    "What matters, and how much. Moving one weight rebalances the unlocked others in " +
+    "proportion — locks hold, the total is always 100. Open a pillar to see the attributes " +
+    "inside it.",
+};
+
+const RULES_STAGE = {
+  id: "rules",
+  title: "Match rules & gates",
+  lead:
+    "A gate can make a candidate not matching, which costs it its rank and leaves its score " +
+    "intact. A compound rule mostly warns. A rule nobody has answered never fires either way.",
+};
+
+/** Stages 3 and 4 while the set they show is not on screen: none chosen, pending or failed. */
+function SetNotRead({
+  read,
+  onRetry,
+  idleNote,
+  prominence,
+}: {
+  read: Read<CriteriaSet> | Idle;
+  onRetry: () => Promise<void>;
+  idleNote: string;
+  /** The full card once, in stage 3; stage 4 says the same in a line (N4). */
+  prominence: "screen" | "region";
+}) {
+  if (read.state === "idle") return <p className="screen__note">{idleNote}</p>;
+  return (
+    <LoadedRegion
+      read={read}
+      what="The criteria set"
+      skeleton="configure-stage"
+      onRetry={onRetry}
+      prominence={prominence}
+    >
+      {() => null}
+    </LoadedRegion>
   );
 }

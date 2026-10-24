@@ -238,9 +238,10 @@ describe("when every set has been discarded", () => {
     expect(
       await screen.findByText("Choose a criteria set to see its criteria."),
     ).toBeInTheDocument();
+    // The stage stays drawn (PL-013); it holds no pillar of a set that is gone.
     expect(
-      screen.queryByRole("region", { name: "Pillar weights" }),
-    ).toBeNull();
+      within(screen.getByRole("region", { name: "Pillar weights" })).queryAllByRole("slider"),
+    ).toEqual([]);
   });
 
   it("selects a set created once the last one has gone", async () => {

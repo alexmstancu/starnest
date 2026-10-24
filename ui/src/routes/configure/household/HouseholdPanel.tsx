@@ -1,13 +1,16 @@
 import { useCallback } from "react";
 import { isApiError } from "../../../api/ApiError";
 import { fetchHousehold, type Household } from "../../../api/endpoints";
-import { useResource } from "../../../api/useResource";
+import { useRead } from "../../../api/useRead";
+import type { Read } from "../../../api/read";
 import { CandidateField } from "./CandidateField";
 import { CitizenshipField } from "./CitizenshipField";
 import { candidateOptions } from "./candidateOptions";
 import { CountField } from "./CountField";
 import { useCandidateRosterState } from "../../../api/useCandidateRoster";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { LoadedRegion } from "../../../shell/LoadedRegion";
+import { Stage } from "../Stage";
 import {
   NOTHING_RECORDED,
   onlyMoneyCharacters,
@@ -29,20 +32,37 @@ import { useHouseholdForm } from "./useHouseholdForm";
  * `useHouseholdForm.ts` and `householdForm.ts`; this file renders and nothing else.
  */
 export function HouseholdPanel() {
-  const { resource, reload } = useResource(
+  const { read, reload } = useRead(
     useCallback((signal: AbortSignal) => fetchHousehold({ signal }), []),
   );
 
-  if (resource.status === "loading" || resource.status === "idle") {
-    return <p className="screen__note">Loading the household…</p>;
-  }
+  return (
+    <Stage
+      id="household"
+      title="Household"
+      lead={
+        <>
+          Who is moving, and what they can spend. Every attribute default, warning and gate
+          reads these.
+        </>
+      }
+    >
+      {read.state !== "idle" && <HouseholdBody read={read} reload={reload} />}
+    </Stage>
+  );
+}
+
+function HouseholdBody({
+  read,
+  reload,
+}: {
+  read: Read<Household>;
+  reload: () => Promise<void>;
+}) {
   // **Nothing recorded yet is the opening state, not a failure.** This is the screen where the
-  // household is first written (`reqs.md` 3.9), so a 404 here means "start here" -- and an
-  // error notice with a Try again button would be a dead end on the first thing anyone does.
-  if (resource.status === "error") {
-    if (!isNotConfigured(resource.error)) {
-      return <ErrorNotice error={resource.error} onRetry={reload} />;
-    }
+  // household is first written (`reqs.md` 3.9), so a 404 here means "start here" -- and a
+  // failure card with a Try again button would be a dead end on the first thing anyone does.
+  if (read.state === "failed" && isNotConfigured(read.error)) {
     return (
       <HouseholdFields
         household={NOTHING_RECORDED}
@@ -50,7 +70,17 @@ export function HouseholdPanel() {
       />
     );
   }
-  return <HouseholdFields household={resource.data} />;
+  return (
+    <LoadedRegion
+      read={read}
+      what="The household"
+      skeleton="configure-stage"
+      onRetry={reload}
+      prominence="region"
+    >
+      {(household) => <HouseholdFields household={household} />}
+    </LoadedRegion>
+  );
 }
 
 const HOUSEHOLD_NOT_CONFIGURED = "household_not_configured";
@@ -74,21 +104,7 @@ function HouseholdFields({
   const cities = candidateOptions(roster.roster, "city");
 
   return (
-    <section className="stage" aria-labelledby="household-heading">
-      <header className="stage__head">
-        {/* The numeral is a CSS counter on `.stage__number`, so a stage cannot claim a
-            position it does not hold -- nothing fails when a hard-coded 4 sits fifth. */}
-        <span className="stage__number" aria-hidden="true" />
-        <div className="stage__titles">
-          <h3 id="household-heading" className="stage__title">
-            Household
-          </h3>
-          <p className="stage__lead">
-            Who is moving, and what they can spend. Every attribute default, warning and gate
-            reads these.
-          </p>
-        </div>
-      </header>
+    <>
       {note !== undefined && <p className="screen__note">{note}</p>}
 
       {/* **Why the pickers below are empty** (UI-27). Two of them are required, and a list
@@ -206,7 +222,7 @@ function HouseholdFields({
           </p>
         )}
       </form>
-    </section>
+    </>
   );
 }
 

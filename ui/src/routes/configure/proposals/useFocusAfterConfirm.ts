@@ -33,14 +33,16 @@ export function useFocusAfterConfirm(
     }
     const listed = proposals.proposals;
     const stillListed = listed.some((proposal) => proposalKey(proposal) === done.key);
-    if (proposals.status === "ready" && stillListed) return;
+    // Still listed, and no read has failed: the read that drops it is on its way.
+    const read = proposals.read;
+    if (read.state === "ready" && typeof read.refresh !== "object" && stillListed) return;
     confirmed.current = null;
     const next = listed[Math.min(done.index, listed.length - 1)];
     refocusIfLost(
       next === undefined ? null : buttons.current.get(proposalKey(next)),
       fallback.current,
     );
-  }, [proposals.proposals, proposals.status, proposals.failure, fallback]);
+  }, [proposals.proposals, proposals.read, proposals.failure, fallback]);
 
   return {
     /** A ref for one proposal's Confirm button. */

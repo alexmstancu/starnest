@@ -165,7 +165,8 @@ describe("the rules panel", () => {
     renderShell("/configure");
     const rules = await panel();
 
-    expect(await rules.findByText(/no rules/)).toBeInTheDocument();
+    expect(await rules.findByText("The gates could not be loaded")).toBeInTheDocument();
+    expect(rules.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 
   it("says so when a level defines no compound rule", async () => {

@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   fetchDataSources,
   updateDataSource,
-  type DataSource,
 } from "../../../api/endpoints";
-import { useResource } from "../../../api/useResource";
+import { useRead } from "../../../api/useRead";
 import { priorityForMove, reorderForDrop } from "./sourceOrder";
 
 /**
@@ -15,7 +14,7 @@ import { priorityForMove, reorderForDrop } from "./sourceOrder";
  * of the switch is that it changes what scores, which nothing here may guess at.
  */
 export function useDataSources() {
-  const { resource, reload } = useResource(
+  const { read, reload } = useRead(
     useCallback((signal: AbortSignal) => fetchDataSources({ signal }), []),
   );
   const [saving, setSaving] = useState<string | null>(null);
@@ -24,23 +23,11 @@ export function useDataSources() {
   // started meanwhile would be computed from a list that is partly the old one. A ref, because
   // two gestures in one tick would both pass a check on state that has not re-rendered yet.
   const inFlight = useRef(false);
-  // **The list stays on screen while a change is read back** (NEW-34). Reading it again shows
-  // "Loading…" in its place, which took the switch or arrow a keyboard had just pressed off the
-  // page and dropped focus there after every change. So the list as it stood when the change
-  // began stands in until the read lands -- held, because its order is the one from before.
-  const [standing, setStanding] = useState<DataSource[] | null>(null);
-  // Settled by the effect below once the read a change asked for has landed, however it went.
-  const readBack = useRef<(() => void) | null>(null);
-  useEffect(() => {
-    if (resource.status === "loading") return;
-    readBack.current?.();
-    readBack.current = null;
-  }, [resource]);
-
-  const rereading = resource.status === "loading" && standing !== null;
+  // **The list stays on screen while a change is read back** (NEW-34, PL-010): a re-read of the
+  // same list keeps it, marked busy, so the switch or arrow a keyboard just pressed keeps focus.
   const sources = useMemo(
-    () => (resource.status === "ready" ? resource.data.items : (standing ?? [])),
-    [resource, standing],
+    () => (read.state === "ready" ? read.data.items : []),
+    [read],
   );
 
   const change = useCallback(
@@ -55,7 +42,6 @@ export function useDataSources() {
       if (inFlight.current) return;
       inFlight.current = true;
       setSaving(id);
-      setStanding(sources);
       setFailure(null);
       try {
         await updateDataSource(id, patch);
@@ -70,21 +56,18 @@ export function useDataSources() {
       // **Re-read even after a failure.** The writes before it are stored, so the order on
       // screen would otherwise be one the database no longer holds; the refusal stays shown.
       // **And wait for it**: until it lands, the order on screen is the one from before.
-      await new Promise<void>((landed) => {
-        readBack.current = landed;
-        reload();
-      });
+      await reload();
       inFlight.current = false;
       setSaving(null);
-      setStanding(null);
     },
-    [reload, sources],
+    [reload],
   );
 
   return {
-    status: rereading ? "ready" : resource.status,
-    error: resource.status === "error" ? resource.error : failure,
+    read,
     reload,
+    /** The last change's refusal. The list's own read failing is the read's to say. */
+    failure,
     sources,
     /** The source a change is being made to, until the list has been read back after it. */
     saving,

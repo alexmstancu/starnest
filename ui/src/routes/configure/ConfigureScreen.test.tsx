@@ -69,8 +69,7 @@ async function openThePillarOf(attribute: string): Promise<void> {
   // the attributes were named by their keys. A pillar's slider is "Economy weight" and a
   // criterion's is "Weight for Economic outlook", and that distinction is about what the
   // control is rather than about what it happens to be called.
-  const pillars = within(weights)
-    .getAllByRole("slider")
+  const pillars = (await within(weights).findAllByRole("slider"))
     .map((slider) => slider.getAttribute("aria-label") ?? "")
     .filter((label) => label.endsWith(" weight"))
     .map((label) => label.slice(0, -" weight".length));
@@ -473,28 +472,32 @@ describe("changing a weight", () => {
 });
 
 describe("when the criteria set cannot be shown", () => {
-  it("reports the failure with its code, and retries when asked", async () => {
+  it("says inside stage 3 why the set is not there, and reads it again when asked", async () => {
+    let reads = 0;
     mockServer.use(
-      http.get("/v1/criteria-sets/:id", () =>
-        HttpResponse.json(
+      http.get("/v1/criteria-sets/:id", () => {
+        reads += 1;
+        return HttpResponse.json(
           { code: "not_found", message: "No such criteria set." },
           { status: 404 },
-        ),
-      ),
+        );
+      }),
     );
     renderShell("/configure");
 
-    const configure = within(
-      await screen.findByRole("region", { name: "Configure" }),
+    const weights = within(
+      await screen.findByRole("region", { name: "Pillar weights" }),
     );
-    expect(await configure.findByText("not_found")).toBeInTheDocument();
-    expect(configure.getByText("No such criteria set.")).toBeInTheDocument();
-
-    mockServer.resetHandlers();
-    // A 404 is not retryable, so there is no button; reloading happens through the sidebar.
     expect(
-      configure.queryByRole("button", { name: /try again/i }),
-    ).not.toBeInTheDocument();
+      await weights.findByText("The criteria set could not be loaded"),
+    ).toBeInTheDocument();
+    expect(weights.getByText("No such criteria set.")).toBeInTheDocument();
+    // The code is for branching on and is never printed (M3).
+    expect(screen.queryByText("not_found")).not.toBeInTheDocument();
+
+    const before = reads;
+    await userEvent.click(weights.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(reads).toBe(before + 1));
   });
 
   it("says so plainly when the set has no criteria", async () => {
@@ -2149,5 +2152,161 @@ describe("a research pass while the screen changes around it", () => {
     // next one would have been asked.
     await fetchLevels();
     expect(research.sent).toHaveLength(1);
+  });
+});
+
+/**
+ * PL-013. **Six stage cards, whatever state each read is in.** The numeral is a CSS counter on
+ * the header, so a stage that returned early without its card took its number with it and the
+ * stages after it renumbered: source priority moved from 5 to 3 and back.
+ */
+describe("the six stages", () => {
+  const STAGES = [
+    /^Criteria set/,
+    /^Household$/,
+    /^Pillar weights$/,
+    /^Match rules/,
+    /^Source priority$/,
+    /^Acquisition limits$/,
+  ];
+
+  /** The stage headings, in document order; the gate proposals' heading is not a stage. */
+  function stageTitles(): string[] {
+    return screen
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.textContent ?? "")
+      .filter((title) => STAGES.some((stage) => stage.test(title)));
+  }
+
+  /** A read that never answers until the test is over. */
+  function heldForever(path: string) {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    onTestFinished(() => release());
+    return http.get(path, async () => {
+      await held;
+      return HttpResponse.json({}, { status: 500 });
+    });
+  }
+
+  function failing(path: string) {
+    return http.get(path, () =>
+      HttpResponse.json({ code: "internal_error", message: "broken" }, { status: 500 }),
+    );
+  }
+
+  it.each([
+    ["the set is still being read", () => heldForever("/v1/criteria-sets/:id")],
+    ["the set could not be read", () => failing("/v1/criteria-sets/:id")],
+    ["the household could not be read", () => failing("/v1/household")],
+    ["the settings could not be read", () => failing("/v1/settings")],
+  ])("draws all six, numbered in order, while %s", async (_case, handler) => {
+    mockServer.use(handler());
+    renderShell("/configure");
+
+    await screen.findByRole("region", { name: "Configure" });
+    await waitFor(() => {
+      const titles = stageTitles();
+      expect(titles).toHaveLength(STAGES.length);
+      STAGES.forEach((stage, index) => expect(titles[index]).toMatch(stage));
+    });
+  });
+
+  it("marks a stage busy, inside its card, while its read is pending", async () => {
+    mockServer.use(heldForever("/v1/criteria-sets/:id"));
+    renderShell("/configure");
+
+    const weights = await screen.findByRole("region", { name: "Pillar weights" });
+    await waitFor(() =>
+      expect(weights.querySelector('[aria-busy="true"]')).not.toBeNull(),
+    );
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+  });
+
+  it("never shows the old set's weights while the newly chosen set is read", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await weightSlider(COST_OF_LIVING);
+    mockServer.use(heldForever("/v1/criteria-sets/remote-only"));
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: /active criteria set/i }),
+      "remote-only",
+    );
+
+    const weights = await screen.findByRole("region", { name: "Pillar weights" });
+    await waitFor(() =>
+      expect(weights.querySelector('[aria-busy="true"]')).not.toBeNull(),
+    );
+    expect(within(weights).queryAllByRole("slider")).toEqual([]);
+  });
+
+  it("says inside its card that a stage could not be read, and reads it again on request", async () => {
+    let reads = 0;
+    mockServer.use(
+      http.get("/v1/settings", () => {
+        reads += 1;
+        return HttpResponse.json(
+          { code: "internal_error", message: "broken" },
+          { status: 500 },
+        );
+      }),
+    );
+    renderShell("/configure");
+
+    const limits = within(
+      await screen.findByRole("region", { name: "Acquisition limits" }),
+    );
+    expect(
+      await limits.findByText("The acquisition limits could not be loaded"),
+    ).toBeInTheDocument();
+    await userEvent.click(limits.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(reads).toBe(2));
+  });
+});
+
+/**
+ * PL-014. **A failed catalog read is said, not silent.** The absence of a "No source yet" chip is
+ * itself a claim that the attribute has a source, so the stage says it could not tell.
+ */
+describe("when the attribute catalog cannot be read", () => {
+  it("says so in stage 3 with Try again, and draws no attribute as sourced or unsourced", async () => {
+    let reads = 0;
+    mockServer.use(
+      http.get("/v1/attributes", () => {
+        reads += 1;
+        return HttpResponse.json(
+          { code: "internal_error", message: "broken" },
+          { status: 500 },
+        );
+      }),
+    );
+    renderShell("/configure");
+
+    const weights = within(
+      await screen.findByRole("region", { name: "Pillar weights" }),
+    );
+    expect(
+      await weights.findByText("The attribute catalog could not be loaded"),
+    ).toBeInTheDocument();
+    await weightSlider(COST_OF_LIVING);
+    expect(screen.queryByText(/No source yet/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Measured in/)).not.toBeInTheDocument();
+
+    const before = reads;
+    await userEvent.click(weights.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(reads).toBe(before + 1));
+  });
+
+  it("says nothing about the catalog once it has been read", async () => {
+    renderShell("/configure");
+    await weightSlider(COST_OF_LIVING);
+    await settled();
+
+    expect(
+      screen.queryByText("The attribute catalog could not be loaded"),
+    ).not.toBeInTheDocument();
   });
 });

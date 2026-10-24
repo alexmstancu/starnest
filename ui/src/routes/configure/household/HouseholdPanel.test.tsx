@@ -18,8 +18,11 @@ import { renderShell } from "../../../testing/renderShell";
  * which is a kinder answer than a 400 about a field name.
  */
 
+/** The household stage, once its read has settled: the card is drawn before it lands. */
 async function panel() {
-  return within(await screen.findByRole("region", { name: "Household" }));
+  const region = await screen.findByRole("region", { name: "Household" });
+  await waitFor(() => expect(region.querySelector('[aria-busy="true"]')).toBeNull());
+  return within(region);
 }
 
 function field(name: string): HTMLInputElement {
@@ -154,7 +157,11 @@ describe("the household panel", () => {
     );
     renderShell("/configure");
 
-    expect(await screen.findByText(/no household/)).toBeInTheDocument();
+    const household = await panel();
+    expect(
+      await household.findByText("The household could not be loaded"),
+    ).toBeInTheDocument();
+    expect(household.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 });
 
@@ -247,7 +254,9 @@ describe("a household nobody has recorded yet", () => {
     );
     renderShell("/configure");
 
-    expect(await screen.findByText(/the database is down/)).toBeInTheDocument();
+    expect(
+      await screen.findByText("The household could not be loaded"),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Save household" }),
     ).not.toBeInTheDocument();
@@ -486,7 +495,7 @@ describe("the household panel's confirmation", () => {
  * types before the roster lands (P13). The stored home's name is what only the roster can give.
  */
 async function homePickerWithItsRoster(): Promise<HTMLInputElement> {
-  const home = screen.getByRole<HTMLInputElement>("combobox", {
+  const home = await screen.findByRole<HTMLInputElement>("combobox", {
     name: "Moving from",
   });
   await waitFor(() => expect(home).toHaveValue("Romania"));

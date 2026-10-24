@@ -6,7 +6,8 @@ import {
   type MatchRuleResult,
   type ResearchPlan,
 } from "../../../api/endpoints";
-import { useResource, type Resource } from "../../../api/useResource";
+import type { Read } from "../../../api/read";
+import { useRead } from "../../../api/useRead";
 
 /**
  * The gate answers a model proposed, and what confirming one does.
@@ -28,8 +29,8 @@ import { useResource, type Resource } from "../../../api/useResource";
  */
 
 export interface Proposals {
-  status: Resource<{ items: MatchRuleResult[] }>["status"];
-  error: unknown;
+  /** The answers' read: the list region draws it, kept on screen while it is read again. */
+  read: Read<{ items: MatchRuleResult[] }>;
   /** The unconfirmed answers, which are the only ones this panel acts on. */
   proposals: MatchRuleResult[];
   /** How many answers a person has already settled, for context beside the proposals. */
@@ -50,7 +51,7 @@ export interface Proposals {
   /** The pass the estimate allowed has started, so it allows no other (UI-14). */
   forgetPlan: () => void;
   confirm: (proposal: MatchRuleResult) => void;
-  reload: () => void;
+  reload: () => Promise<void>;
 }
 
 export function useProposals(
@@ -66,7 +67,10 @@ export function useProposals(
     async (signal: AbortSignal) => fetchMatchRuleResults({ signal }),
     [],
   );
-  const { resource, reload } = useResource(fetcher, true, answersFreshness);
+  const answersRead = useRead(fetcher, { freshness: answersFreshness });
+  // Always enabled, so never idle; this says so to the type.
+  const read = answersRead.read.state === "idle" ? PENDING : answersRead.read;
+  const reload = answersRead.reload;
 
   const [plan, setPlan] = useState<ResearchPlan | null>(null);
   const [busy, setBusy] = useState<Proposals["busy"]>(null);
@@ -76,24 +80,12 @@ export function useProposals(
   // re-rendered yet.
   const inFlight = useRef(false);
 
-  // **The answers as last read, kept while they are read again** (NEW-45). A re-read has no list
-  // until it answers, so the table left the screen for each one -- after a confirm, and at the
-  // end of a research pass -- and took the Confirm a keyboard user was on with it. The list read
-  // last stays on screen until the next lands, as the run history's does (NEW-11), **with the
-  // write it was read after**: from the moment the answers are written again it is outdated, so
-  // `stale` says so in that same render, before the re-read has even been sent.
-  const read = resource.status === "ready" ? resource.data.items : null;
-  const [lastRead, setLastRead] = useState<{
-    items: MatchRuleResult[];
-    after: number;
-  } | null>(null);
-  if (read !== null && read !== lastRead?.items) {
-    setLastRead({ items: read, after: answersFreshness });
-  }
-  const answers = read ?? lastRead?.items ?? [];
-  const rereading = resource.status === "loading" && lastRead !== null;
-  const stale =
-    rereading || (lastRead !== null && lastRead.after !== answersFreshness);
+  // **The answers as last read stay on screen while they are read again** (NEW-45, PL-010), and
+  // from the moment the answers are written again they are outdated: `useRead` marks the read
+  // `refresh: "running"` in the same render the freshness moves, before the re-read is even
+  // sent. A re-read that failed leaves them outdated too.
+  const answers = read.state === "ready" ? read.data.items : [];
+  const stale = read.state === "ready" && read.refresh !== "idle";
 
   function attempt(act: Proposals["busy"], work: () => Promise<unknown>): void {
     if (inFlight.current) return;
@@ -109,8 +101,7 @@ export function useProposals(
   }
 
   return {
-    status: rereading ? "ready" : resource.status,
-    error: resource.error,
+    read,
     proposals: answers.filter((answer) => answer.is_proposal === true),
     confirmedCount: answers.filter((answer) => answer.is_proposal !== true)
       .length,
@@ -146,3 +137,5 @@ export function useProposals(
     reload,
   };
 }
+
+const PENDING: Read<never> = { state: "pending" };

@@ -20,20 +20,21 @@ import {
   type MatchRule,
   type MatchRuleResult,
 } from "../../../api/endpoints";
-import { useResource, type Resource } from "../../../api/useResource";
+import type { Idle, Read } from "../../../api/read";
+import { useRead } from "../../../api/useRead";
 
 export interface RuleToggles {
-  matchRules: Resource<{ items: MatchRule[] }>;
+  matchRules: Read<{ items: MatchRule[] }>;
   /** Every recorded gate answer, so a rule can say what it is actually costing. */
   matchRuleResults: MatchRuleResult[];
   /**
    * Whether the answers have been read. Until they have, what a gate costs is unknown -- and an
    * empty list read as "never fires" while they were still on their way (UI-12).
    */
-  matchRuleResultsStatus: Resource<{ items: MatchRuleResult[] }>["status"];
-  compoundRules: Resource<{ items: CompoundRule[] }>;
-  reloadMatchRules: () => void;
-  reloadCompoundRules: () => void;
+  matchRuleResultsStatus: "loading" | "ready" | "error";
+  compoundRules: Read<{ items: CompoundRule[] }>;
+  reloadMatchRules: () => Promise<void>;
+  reloadCompoundRules: () => Promise<void>;
   failure: unknown;
   isEnforced: (matchRuleId: string) => boolean;
   isApplied: (compoundRuleId: string) => boolean;
@@ -50,7 +51,7 @@ export function useRuleToggles(
    */
   answersFreshness: number,
 ): RuleToggles {
-  const matchRules = useResource(
+  const matchRules = useRead(
     useCallback(
       (signal: AbortSignal) => fetchMatchRules(levelId, { signal }),
       [levelId],
@@ -58,16 +59,17 @@ export function useRuleToggles(
   );
   // What each gate has actually decided. Read here rather than in the panel so the markup
   // stays markup, and because it is the same question the switches are about.
-  const results = useResource(
+  // Re-read when the answers move, keeping the last answers on screen until the new ones land
+  // (PL-010): a gate describes what it was last known to cost rather than going blank.
+  const results = useRead(
     useCallback(
       (signal: AbortSignal) => fetchMatchRuleResults({ signal }),
       [],
     ),
-    true,
-    answersFreshness,
+    { freshness: answersFreshness },
   );
 
-  const compoundRules = useResource(
+  const compoundRules = useRead(
     useCallback(
       (signal: AbortSignal) => fetchCompoundRules(levelId, { signal }),
       [levelId],
@@ -109,11 +111,10 @@ export function useRuleToggles(
   );
 
   return {
-    matchRules: matchRules.resource,
-    matchRuleResults:
-      results.resource.status === "ready" ? results.resource.data.items : [],
-    matchRuleResultsStatus: results.resource.status,
-    compoundRules: compoundRules.resource,
+    matchRules: settled(matchRules.read),
+    matchRuleResults: results.read.state === "ready" ? results.read.data.items : [],
+    matchRuleResultsStatus: statusOf(results.read),
+    compoundRules: settled(compoundRules.read),
     reloadMatchRules: matchRules.reload,
     reloadCompoundRules: compoundRules.reload,
     failure,
@@ -135,4 +136,14 @@ export function useRuleToggles(
         setApplied,
       ),
   };
+}
+
+/** These reads are always enabled, so never idle; this says so to the type. */
+function settled<T>(read: Read<T> | Idle): Read<T> {
+  return read.state === "idle" ? { state: "pending" } : read;
+}
+
+function statusOf(read: Read<unknown> | Idle): RuleToggles["matchRuleResultsStatus"] {
+  if (read.state === "ready") return "ready";
+  return read.state === "failed" ? "error" : "loading";
 }

@@ -9,7 +9,8 @@ import {
   type CriterionRule,
 } from "../../api/endpoints";
 import { answeredWrites } from "../../api/setWrites";
-import { useResource, type Resource } from "../../api/useResource";
+import type { Idle, Read } from "../../api/read";
+import { useRead } from "../../api/useRead";
 import {
   UNDO_CANNOT_RESTORE_THE_PILLAR,
   undoCanRestore,
@@ -28,14 +29,13 @@ import type { ChangeHistory } from "./useChangeHistory";
  */
 
 export interface CriteriaEditor {
-  status: Resource<CriteriaSet>["status"];
+  /** The set's read: idle while none is chosen, then pending, failed or ready. */
+  read: Read<CriteriaSet> | Idle;
   /**
    * The set as fetched, for the panels that read what is on it rather than editing criteria:
    * the pillar weights and which rules it lets act. Null until it has arrived.
    */
   criteriaSet: CriteriaSet | null;
-  /** The failure of the fetch, if it failed. */
-  error: unknown;
   criteria: Criterion[];
   /** The attribute whose weight is being saved right now, so its row can say so. */
   savingAttribute: string | null;
@@ -70,7 +70,7 @@ export interface CriteriaEditor {
    * weight is refused by locks, a rule by the ontology (`reqs.md` 3.4).
    */
   setRule: (attribute: string, rule: CriterionRule) => void;
-  reload: () => void;
+  reload: () => Promise<void>;
 }
 
 export function useCriteriaEditor(
@@ -93,18 +93,20 @@ export function useCriteriaEditor(
     [criteriaSetId],
   );
 
-  const { resource, reload } = useResource(fetcher, criteriaSetId !== null);
+  const { read, reload } = useRead(fetcher, { enabled: criteriaSetId !== null });
+  const criteriaSet = read.state === "ready" ? read.data : null;
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [savingAttribute, setSavingAttribute] = useState<string | null>(null);
   const [savingRuleFor, setSavingRuleFor] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
 
   // A newly fetched set replaces everything, including a stale refusal: the error belonged to
-  // weights that are no longer on screen.
+  // weights that are no longer on screen. A re-read of the same set keeps its data until the
+  // answer lands (PL-010), so this runs when that answer does and not in between.
   useEffect(() => {
-    setCriteria(resource.data?.criteria ?? []);
+    setCriteria(criteriaSet?.criteria ?? []);
     setSaveError(null);
-  }, [resource.data]);
+  }, [criteriaSet]);
 
   // **Which set is on screen when an answer lands**, not when it was asked for (UI-04). A set
   // chosen meanwhile holds the same attributes when it is a copy, so an answer matched on
@@ -118,7 +120,7 @@ export function useCriteriaEditor(
   // check on state that has not re-rendered yet.
   const inFlight = useRef(false);
   const undoing = history?.undoing === true;
-  const setName = resource.data?.name;
+  const setName = criteriaSet?.name;
 
   /** An answer for one set, applied only while that set is the one on screen. */
   const mergeInto = useCallback((sentFor: string, answer: Criterion[]) => {
@@ -263,9 +265,8 @@ export function useCriteriaEditor(
   );
 
   return {
-    status: resource.status,
-    criteriaSet: resource.data,
-    error: resource.error,
+    read,
+    criteriaSet,
     criteria,
     savingAttribute,
     savingRuleFor,

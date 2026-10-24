@@ -98,7 +98,7 @@ const ARRANGEMENTS: Record<ScreenState, () => Promise<void>> = {
   "Configure, a pillar and a rule editor open": async () => {
     renderShell("/configure");
     const weights = await screen.findByRole("region", { name: "Pillar weights" });
-    await userEvent.click(within(weights).getByRole("button", { name: /^Housing/ }));
+    await userEvent.click(await within(weights).findByRole("button", { name: /^Housing/ }));
     await userEvent.click(
       await screen.findByRole("button", { name: "Edit the rule for Overcrowding rate" }),
     );
@@ -108,7 +108,7 @@ const ARRANGEMENTS: Record<ScreenState, () => Promise<void>> = {
   "Configure, a weight change refused": async () => {
     renderShell("/configure");
     const weights = await screen.findByRole("region", { name: "Pillar weights" });
-    await userEvent.click(within(weights).getByRole("button", { name: /^Safety/ }));
+    await userEvent.click(await within(weights).findByRole("button", { name: /^Safety/ }));
     const slider = await screen.findByRole("slider", { name: "Weight for Homicide rate" });
     await quiet();
     fireEvent.change(slider, { target: { value: "80" } });

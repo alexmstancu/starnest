@@ -1,7 +1,9 @@
 import { useCallback } from "react";
 import { fetchSettings, type Settings } from "../../../api/endpoints";
-import { useResource } from "../../../api/useResource";
+import { useRead } from "../../../api/useRead";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { LoadedRegion } from "../../../shell/LoadedRegion";
+import { Stage } from "../Stage";
 import { NOT_A_NUMBER, onlyNumberCharacters } from "../numericInput";
 import { SETTING_FIELDS, isBlocked, unsetFields } from "./settingsForm";
 import { useSettingsForm } from "./useSettingsForm";
@@ -16,17 +18,36 @@ import { useSettingsForm } from "./useSettingsForm";
  * `useSettingsForm.ts`.
  */
 export function SettingsPanel() {
-  const { resource, reload } = useResource(
+  const { read, reload } = useRead(
     useCallback((signal: AbortSignal) => fetchSettings({ signal }), []),
   );
 
-  if (resource.status === "loading" || resource.status === "idle") {
-    return <p className="screen__note">Loading settings…</p>;
-  }
-  if (resource.status === "error") {
-    return <ErrorNotice error={resource.error} onRetry={reload} />;
-  }
-  return <SettingsFields settings={resource.data} />;
+  return (
+    <Stage
+      id="settings"
+      title="Acquisition limits"
+      lead={
+        <>
+          The floor and the ceilings an acquisition respects. Below the coverage floor a
+          candidate shows no score rather than a wrong one. All five are provisional by
+          design: leave one empty and it stays undecided.
+        </>
+      }
+    >
+      {/* `useRead` with no `enabled` is never idle; the guard keeps the type honest. */}
+      {read.state !== "idle" && (
+        <LoadedRegion
+          read={read}
+          what="The acquisition limits"
+          skeleton="configure-stage"
+          onRetry={reload}
+          prominence="region"
+        >
+          {(settings) => <SettingsFields settings={settings} />}
+        </LoadedRegion>
+      )}
+    </Stage>
+  );
 }
 
 function SettingsFields({ settings }: { settings: Settings }) {
@@ -37,22 +58,7 @@ function SettingsFields({ settings }: { settings: Settings }) {
   const blocked = isBlocked(form.draft);
 
   return (
-    <section className="stage" aria-labelledby="settings-heading">
-      <header className="stage__head">
-        {/* The numeral is a CSS counter on `.stage__number`, so a stage cannot claim a
-            position it does not hold -- nothing fails when a hard-coded 4 sits fifth. */}
-        <span className="stage__number" aria-hidden="true" />
-        <div className="stage__titles">
-          <h3 id="settings-heading" className="stage__title">
-            Acquisition limits
-          </h3>
-          <p className="stage__lead">
-            The floor and the ceilings an acquisition respects. Below the coverage floor a
-            candidate shows no score rather than a wrong one. All five are provisional by
-            design: leave one empty and it stays undecided.
-          </p>
-        </div>
-      </header>
+    <>
       {/* No "try again" button: the way to retry a save is the save button, which is still
           there. */}
       {form.failure !== null && <ErrorNotice error={form.failure} />}
@@ -168,6 +174,6 @@ function SettingsFields({ settings }: { settings: Settings }) {
           {form.saving ? "Saving…" : "Save settings"}
         </button>
       </form>
-    </section>
+    </>
   );
 }

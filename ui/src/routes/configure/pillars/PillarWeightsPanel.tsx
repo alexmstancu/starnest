@@ -23,6 +23,8 @@ import {
   lockTitle,
 } from "../weights";
 import { LockIcon } from "../LockIcon";
+import { ReadFailureCard } from "../../../shell/ReadFailureCard";
+import type { AttributeCatalogRead } from "../useAttributeCatalog";
 
 type PillarWeight = components["schemas"]["PillarWeight"];
 
@@ -45,8 +47,14 @@ export function PillarWeightsPanel({
   criteriaFor,
   history,
   onSaving,
+  catalog,
 }: {
   criteriaSet: CriteriaSet;
+  /**
+   * The attribute catalog the rows inside each pillar read. When it could not be read the
+   * stage says so (PL-014): no chip can then tell a sourced attribute from an unsourced one.
+   */
+  catalog?: AttributeCatalogRead;
   /** Where each answered change is noted with the request that reverses it (PL-138a). */
   history?: ChangeHistory;
   /** Told when a write starts and settles, so an undo waits for it (D41). */
@@ -134,22 +142,15 @@ export function PillarWeightsPanel({
   const [open, setOpen] = useState<string | null>(null);
 
   return (
-    <section className="stage" aria-labelledby="pillar-weights-heading">
-      <header className="stage__head">
-        {/* The numeral is a CSS counter on `.stage__number`, so a stage cannot claim a
-            position it does not hold -- nothing fails when a hard-coded 4 sits fifth. */}
-        <span className="stage__number" aria-hidden="true" />
-        <div className="stage__titles">
-          <h3 id="pillar-weights-heading" className="stage__title">
-            Pillar weights
-          </h3>
-          <p className="stage__lead">
-            What matters, and how much. Moving one weight rebalances the
-            unlocked others in proportion — locks hold, the total is always 100.
-            Open a pillar to see the attributes inside it.
-          </p>
-        </div>
-      </header>
+    <>
+      {catalog?.read.state === "failed" && (
+        <ReadFailureCard
+          what="The attribute catalog"
+          error={catalog.read.error}
+          onRetry={catalog.reload}
+          prominence="region"
+        />
+      )}
       {/* No "try again" button: the way to retry a save is the save button, which is still
           there. A second control that only cleared the message would offer a retry it does not
           perform. */}
@@ -202,7 +203,7 @@ export function PillarWeightsPanel({
           ))}
         </div>
       )}
-    </section>
+    </>
   );
 }
 

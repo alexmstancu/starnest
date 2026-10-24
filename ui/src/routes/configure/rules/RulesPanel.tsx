@@ -5,9 +5,10 @@ import {
   type MatchRule,
 } from "../../../api/endpoints";
 import { useCandidateNames } from "../../../api/useCandidateNames";
-import { type Resource } from "../../../api/useResource";
+import type { Read } from "../../../api/read";
 import { candidateName } from "../../../format/display";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { LoadedRegion } from "../../../shell/LoadedRegion";
 import {
   describeCompoundEffect,
   describeEffect,
@@ -44,22 +45,7 @@ export function RulesPanel({
   const answers = rules.matchRuleResultsStatus;
 
   return (
-    <section className="stage" aria-labelledby="rules-heading">
-      <header className="stage__head">
-        {/* The numeral is a CSS counter on `.stage__number`, so a stage cannot claim a
-            position it does not hold -- nothing fails when a hard-coded 4 sits fifth. */}
-        <span className="stage__number" aria-hidden="true" />
-        <div className="stage__titles">
-          <h3 id="rules-heading" className="stage__title">
-            Match rules &amp; gates
-          </h3>
-    <p className="stage__lead">
-            A gate can make a candidate not matching, which costs it its rank and
-            leaves its score intact. A compound rule mostly warns. A rule nobody has
-            answered never fires either way.
-          </p>
-        </div>
-      </header>
+    <>
       {rules.failure !== null && <ErrorNotice error={rules.failure} />}
 
       {/* Said once, at the top, because the difference between the two kinds is the thing a
@@ -80,7 +66,8 @@ export function RulesPanel({
 
       <h4 className="panel__heading">Gates</h4>
       <RuleList
-        resource={rules.matchRules}
+        read={rules.matchRules}
+        what="The gates"
         onRetry={rules.reloadMatchRules}
         empty="No gate is defined at this level."
         caption="Gates. Enforcing one lets it rule a candidate out."
@@ -113,7 +100,8 @@ export function RulesPanel({
 
       <h4 className="panel__heading">Compound rules</h4>
       <RuleList
-        resource={rules.compoundRules}
+        read={rules.compoundRules}
+        what="The compound rules"
         onRetry={rules.reloadCompoundRules}
         empty="No compound rule is defined at this level."
         caption="Compound rules, with what each one does when it fires."
@@ -134,7 +122,7 @@ export function RulesPanel({
         }
       />
       {children}
-    </section>
+    </>
   );
 }
 
@@ -156,27 +144,52 @@ interface RuleRow {
  * table is the same; what differs is only what the switch means, which the labels carry.
  */
 function RuleList<Rule>({
-  resource,
+  read,
+  what,
   onRetry,
   empty,
   caption,
   columnLabel,
   rows,
 }: {
-  resource: Resource<{ items: Rule[] }>;
-  onRetry: () => void;
+  read: Read<{ items: Rule[] }>;
+  /** What is being read, as the subject of a sentence. */
+  what: string;
+  onRetry: () => Promise<void>;
   empty: string;
   caption: string;
   columnLabel: string;
   rows: (items: Rule[]) => RuleRow[];
 }) {
-  if (resource.status === "error")
-    return <ErrorNotice error={resource.error} onRetry={onRetry} />;
-  if (resource.data === null) return <p className="screen__note">Loading…</p>;
+  return (
+    <LoadedRegion
+      read={read}
+      what={what}
+      skeleton="lines"
+      onRetry={onRetry}
+      prominence="region"
+    >
+      {(data) => {
+        const listed = rows(data.items);
+        return listed.length === 0 ? (
+          <p className="screen__note">{empty}</p>
+        ) : (
+          <RuleRows caption={caption} columnLabel={columnLabel} listed={listed} />
+        );
+      }}
+    </LoadedRegion>
+  );
+}
 
-  const listed = rows(resource.data.items);
-  if (listed.length === 0) return <p className="screen__note">{empty}</p>;
-
+function RuleRows({
+  caption,
+  columnLabel,
+  listed,
+}: {
+  caption: string;
+  columnLabel: string;
+  listed: RuleRow[];
+}) {
   return (
     <ul className="rule-list" aria-label={caption}>
       {listed.map((row) => (

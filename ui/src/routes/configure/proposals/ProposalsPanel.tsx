@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
 import { formatMoney } from "../../../format/display";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { describePeriod } from "./proposalReading";
 import { proposalKey, useFocusAfterConfirm } from "./useFocusAfterConfirm";
 import { useFocusAfterPass } from "./useFocusAfterPass";
@@ -182,14 +183,14 @@ export function ProposalsPanel({
         </>
       )}
 
-      {proposals.status === "loading" && (
-        <p className="screen__note">Loading…</p>
-      )}
-      {proposals.status === "error" && (
-        <ErrorNotice error={proposals.error} onRetry={proposals.reload} />
-      )}
-
-      {proposals.status === "ready" && (
+      <LoadedRegion
+        read={proposals.read}
+        what="The gate proposals"
+        skeleton="lines"
+        onRetry={proposals.reload}
+        prominence="region"
+      >
+        {() => (
         <>
           {proposals.proposals.length === 0 ? (
             <p className="screen__note">
@@ -231,7 +232,8 @@ export function ProposalsPanel({
             </table>
           )}
         </>
-      )}
+        )}
+      </LoadedRegion>
     </section>
   );
 }

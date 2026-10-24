@@ -193,7 +193,10 @@ describe("the source priority panel", () => {
     renderShell("/configure");
     const sources = await panel();
 
-    expect(await sources.findByText(/no sources/)).toBeInTheDocument();
+    expect(
+      await sources.findByText("The source priority could not be loaded"),
+    ).toBeInTheDocument();
+    expect(sources.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 });
 

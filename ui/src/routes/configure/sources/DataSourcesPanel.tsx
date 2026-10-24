@@ -1,4 +1,6 @@
 import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { LoadedRegion } from "../../../shell/LoadedRegion";
+import { Stage } from "../Stage";
 import { inPriorityOrder, positionsOf } from "./sourceOrder";
 import { howItAnswers } from "./sourceReading";
 import { useDataSources } from "./useDataSources";
@@ -39,32 +41,30 @@ export function DataSourcesPanel() {
   const arrows = useArrowFocus(sources.sources, !held);
 
   return (
-    <section className="stage" aria-labelledby="data-sources-heading">
-      <header className="stage__head">
-        {/* The numeral is a CSS counter on `.stage__number`, so a stage cannot claim a
-            position it does not hold -- nothing fails when a hard-coded 4 sits fifth. */}
-        <span className="stage__number" aria-hidden="true" />
-        <div className="stage__titles">
-          <h3 id="data-sources-heading" className="stage__title">
-            Source priority
-          </h3>
-    <p className="stage__lead">
-            Which source wins when two answer the same attribute. A lower number
-            wins. Drag a row to reorder, or use the arrows. Switching one off
-            stops its figures being scored and stops a run asking it — every
-            figure it has already produced is kept, and comes back if you switch
-            it on again.
-          </p>
-        </div>
-      </header>
-      {sources.error != null && (
-        <ErrorNotice error={sources.error} onRetry={sources.reload} />
-      )}
-      {sources.status === "loading" && (
-        <p className="screen__note">Loading…</p>
-      )}
+    <Stage
+      id="data-sources"
+      title="Source priority"
+      lead={
+        <>
+          Which source wins when two answer the same attribute. A lower number wins. Drag a
+          row to reorder, or use the arrows. Switching one off stops its figures being scored
+          and stops a run asking it — every figure it has already produced is kept, and comes
+          back if you switch it on again.
+        </>
+      }
+    >
+      {/* No "try again" here: a change is retried by making it again. */}
+      {sources.failure !== null && <ErrorNotice error={sources.failure} />}
 
-      {sources.status === "ready" && (
+      {sources.read.state !== "idle" && (
+        <LoadedRegion
+          read={sources.read}
+          what="The source priority"
+          skeleton="lines"
+          onRetry={sources.reload}
+          prominence="region"
+        >
+          {() => (
         <ul className="source-list" aria-label="Every configured source, in priority order">
           {inPriorityOrder(sources.sources).map((source) => {
             const position = positions.get(source.id) ?? null;
@@ -187,7 +187,9 @@ export function DataSourcesPanel() {
             );
           })}
         </ul>
+          )}
+        </LoadedRegion>
       )}
-    </section>
+    </Stage>
   );
 }

@@ -400,11 +400,11 @@ export const handlers = [
     const body = (await request.json()) as Household;
     if ((body.citizenships ?? []).length === 0) {
       return HttpResponse.json(
-        {
-          code: "invalid_request",
-          message: "A household needs at least one citizenship.",
-          details: { field: "citizenships" },
-        },
+        invalidRequest({
+          location: ["body", "citizenships"],
+          problem: "Tuple should have at least 1 item after validation, not 0",
+          kind: "too_short",
+        }),
         { status: 422 },
       );
     }
@@ -422,11 +422,12 @@ export const handlers = [
       body.score_scale_max < 1
     ) {
       return HttpResponse.json(
-        {
-          code: "invalid_request",
-          message: "The score scale maximum must be at least 1.",
-          details: { field: "score_scale_max" },
-        },
+        invalidRequest({
+          location: ["body", "score_scale_max"],
+          problem: "Input should be greater than or equal to 1",
+          kind: "greater_than_equal",
+          limit: 1,
+        }),
         { status: 422 },
       );
     }
@@ -564,11 +565,12 @@ export const handlers = [
 
       if (typeof body.weight !== "number" || !Number.isFinite(body.weight)) {
         return HttpResponse.json(
-          {
-            code: "invalid_request",
-            message: "weight must be a number between 0 and 100.",
-            details: { field: "weight" },
-          },
+          invalidRequest({
+            location: ["body", "weight"],
+            problem:
+              "Null is not a value this field takes; leave it out to keep what is stored.",
+            kind: "null_not_allowed",
+          }),
           { status: 422 },
         );
       }
@@ -889,6 +891,18 @@ function missingFrom(query: URLSearchParams, required: readonly string[]) {
  */
 function scaleInForce(): number {
   return settings.score_scale_max ?? MOCK_SCORE_SCALE;
+}
+
+/**
+ * A body field refused at the boundary, as `errors.py` renders it: the one sentence for every
+ * malformed request, and each offending field as a `FieldProblem` in `details.errors` (a list).
+ */
+function invalidRequest(...errors: components["schemas"]["FieldProblem"][]) {
+  return {
+    code: "invalid_request",
+    message: "The request does not match what this operation accepts.",
+    details: { errors },
+  };
 }
 
 function notFound(id: string) {
