@@ -68,8 +68,13 @@ test.beforeAll(async ({ playwright }, testInfo) => {
     const made = await api.post(`/v1/criteria-sets/${SHIPPED_SOURCE}/duplicate`, {
       data: { id: LAYOUT_SET, name: LAYOUT_SET },
     });
-    const already = made.status() === 409 && (await made.text()).includes("criteria_set_exists");
-    expect(made.ok() || already, await made.text()).toBe(true);
+    if (made.status() === 409 && (await made.text()).includes("criteria_set_exists")) {
+      // A deleted set keeps its id, so the copy an earlier run deleted still holds this one.
+      const restored = await api.post(`/v1/criteria-sets/${LAYOUT_SET}/restore`);
+      expect(restored.ok(), await restored.text()).toBe(true);
+    } else {
+      expect(made.ok(), await made.text()).toBe(true);
+    }
 
     const excludedId = await ruleOutTheHighest(api);
     const live = await rankingOf(api, `/v1/rankings?criteria_set=${LAYOUT_SET}&level=${LEVEL}`);
@@ -152,10 +157,10 @@ test("a saved row opens nothing, so it takes no hover tint", async ({ page }) =>
     .getByRole("table", { name: "Ranked candidates" });
   await expect(savedTable).toBeVisible();
 
+  // By its row header, not by text: a row's text runs its cells together ("1Netherlands71").
   const row = savedTable
     .getByRole("row")
-    .filter({ hasText: new RegExp(`\\b${savedMatching}\\b`) })
-    .first();
+    .filter({ has: page.getByRole("rowheader", { name: savedMatching, exact: true }) });
   await expect(row).not.toContainText("Not matching");
   await page.mouse.move(0, 0);
   await expect(row).toHaveCSS("background-color", PLAIN_GROUND);
