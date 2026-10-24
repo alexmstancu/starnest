@@ -765,7 +765,7 @@ describe("the attribute figures inside a pillar", () => {
     const note = screen.getByRole("row", { name: /median rent/i }).querySelector(".matrix__attr-note");
     expect(note).toHaveTextContent(/^no value for Romania$/);
 
-    await userEvent.click(screen.getByRole("radio", { name: /score 0/i }));
+    await userEvent.click(screen.getByRole("radio", { name: /^scores$/i }));
 
     expect(note).toHaveTextContent(/^no value for Romania$/);
   });
