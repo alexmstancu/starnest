@@ -1243,3 +1243,39 @@ def a_boundary_figure(candidate: str, attribute: str, start: date, end: date) ->
             else Ratio(value=Decimal("10"), basis="households")
         ),
     )
+
+
+class TestWhatAListedValueSaysAboutItself:
+    """PL-069, PL-071: each value says whether it is fresh and whether its source is on."""
+
+    async def test_a_value_aged_past_its_max_age_says_so_and_the_rest_do_not(
+        self, api: httpx.AsyncClient, stored_figures: None, overburden_ages_in_a_month: str
+    ) -> None:
+        body = (await api.get("/v1/values", params={"candidate": "country.portugal"})).json()
+
+        freshness = {value["attribute"]: value["is_fresh"] for value in body["items"]}
+        assert freshness[overburden_ages_in_a_month] is False
+        assert {a for a, fresh in freshness.items() if not fresh} == {overburden_ages_in_a_month}
+        assert all(value["source_is_enabled"] for value in body["items"])
+
+    async def test_a_value_from_a_switched_off_source_says_so(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        """Kept and listed, not active, and not "superseded": its source is off (Q232)."""
+        switched = await api.patch("/v1/data-sources/eurostat", json={"is_enabled": False})
+        assert switched.status_code == 200
+        try:
+            body = (
+                await api.get(
+                    "/v1/values",
+                    params={"candidate": "country.portugal", "include_superseded": True},
+                )
+            ).json()
+        finally:
+            restored = await api.patch("/v1/data-sources/eurostat", json={"is_enabled": True})
+            assert restored.status_code == 200
+
+        assert body["items"]
+        assert all(
+            not value["source_is_enabled"] and not value["is_active"] for value in body["items"]
+        )

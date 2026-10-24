@@ -348,3 +348,30 @@ def _worth(line: str) -> float:
 def _pillars(result: dict) -> dict[str, dict]:
     """A candidate's pillars by name, in the order the ranking lists them."""
     return {pillar["pillar"]: pillar for pillar in result["pillar_scores"]}
+
+
+class TestWhatEachSideSaysAboutItsFigure:
+    """PL-069: a comparison's values carry the same flags `/values` serves, from the ranking's
+    own read, so the two cannot disagree about which figure has aged."""
+
+    async def test_each_side_says_whether_its_figure_is_fresh_and_its_source_on(
+        self,
+        api: httpx.AsyncClient,
+        database_url: str,
+        stored_figures: None,
+        overburden_ages_in_a_month: str,
+    ) -> None:
+        await _settings(database_url, comparator_limit=5)
+
+        body = (await _compare(api, comparators=[GREECE])).json()
+
+        sides = [
+            (row["attribute"], side["value"])
+            for row in body["attributes"]
+            for side in (row["focus"], *row["comparators"])
+            if side.get("value")
+        ]
+        assert sides
+        stale = {attribute for attribute, value in sides if not value["is_fresh"]}
+        assert stale == {overburden_ages_in_a_month}
+        assert all(value["source_is_enabled"] for _, value in sides)

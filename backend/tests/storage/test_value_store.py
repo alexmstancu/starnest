@@ -745,3 +745,59 @@ async def test_the_values_alone_are_the_same_rows(values: PostgresValueStore) ->
 
 async def test_nothing_stored_reads_no_pairs(values: PostgresValueStore) -> None:
     assert await values.read_active_values_with_freshness(level="country") == ()
+
+
+# --- what the drill-down says about each figure (PL-069, PL-071) ----------------------------
+
+
+async def test_the_drill_down_carries_the_view_s_freshness_on_either_side_of_the_boundary(
+    values: PostgresValueStore, pool: AsyncConnectionPool, sixty_months: str
+) -> None:
+    """`read_values` serves the same `is_fresh` the ranking grades by, from the same view.
+
+    *Mutation:* compute it in Python from the `timedelta`, and the boundary moves.
+    """
+    last_fresh = await earliest_fresh_end(pool)
+    await values.append(
+        [
+            ending_on(last_fresh, candidate=A_CANDIDATE),
+            ending_on(last_fresh - timedelta(days=1), candidate=ANOTHER_CANDIDATE),
+        ]
+    )
+
+    listed = await values.read_values(attribute=sixty_months)
+
+    assert {str(each.value.candidate): each.is_fresh for each in listed} == {
+        A_CANDIDATE: True,
+        ANOTHER_CANDIDATE: False,
+    }
+
+
+async def test_a_figure_from_a_switched_off_source_says_so(
+    values: PostgresValueStore, pool: AsyncConnectionPool
+) -> None:
+    """Kept, listed, never active, and marked as from a switched-off source -- not superseded."""
+    await values.append(
+        [
+            a_value(attribute=A_COUNT_ATTRIBUTE, payload=Count(count=1)),
+            a_value(
+                attribute=A_COUNT_ATTRIBUTE, payload=Count(count=2), data_source=A_WORSE_SOURCE
+            ),
+        ]
+    )
+    async with pool.connection() as connection:
+        await connection.execute(
+            "UPDATE data_source SET is_enabled = false WHERE id = %s", (A_BETTER_SOURCE,)
+        )
+    try:
+        listed = await values.read_values(attribute=A_COUNT_ATTRIBUTE)
+    finally:
+        async with pool.connection() as connection:
+            await connection.execute(
+                "UPDATE data_source SET is_enabled = true WHERE id = %s", (A_BETTER_SOURCE,)
+            )
+
+    flags = {
+        str(each.value.data_source): (each.is_active, each.source_is_enabled) for each in listed
+    }
+    assert flags == {A_BETTER_SOURCE: (False, False), A_WORSE_SOURCE: (True, True)}

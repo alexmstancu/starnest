@@ -1474,7 +1474,7 @@ components:
       type: object
       description: |
         One measurement, with its provenance. `value_type` selects which variant `payload` holds.
-      required: [id, candidate, attribute, value_type, payload, data_source, reference_period, retrieval_date, confidence_level, is_active]
+      required: [id, candidate, attribute, value_type, payload, data_source, reference_period, retrieval_date, confidence_level, is_active, is_fresh, source_is_enabled]
       properties:
         id: { type: integer }
         candidate: { type: string }
@@ -1498,6 +1498,19 @@ components:
         retrieval_date: { type: string, format: date-time }
         confidence_level: { type: string, enum: [absolute, high, medium, low] }
         is_active: { type: boolean, description: "Derived, not stored — the value scoring would use." }
+        is_fresh:
+          type: boolean
+          description: >-
+            Derived, not stored: whether the period this figure describes ended within its
+            attribute's max_age of today, by the calendar arithmetic the active-value rule uses
+            (reqs.md 3.6, 7.1). A figure that is not fresh counts one confidence grade lower in a
+            ranking's coverage_by_confidence (reqs.md 5.7); confidence_level stays the grade it
+            was stored with.
+        source_is_enabled:
+          type: boolean
+          description: >-
+            Derived, not stored: whether this figure's source is switched on. A figure from a
+            switched-off source is never active, and is kept and shown (reqs.md Q232).
         rejection_reason: { type: [string, "null"], description: "Why this figure was rejected, in words: the attribute named as the catalog names it, never its identifier. A reason stored before reasons were worded is named at read time." }
         quote: { type: [string, "null"] }
         citations: { type: array, items: { type: string, format: uri } }

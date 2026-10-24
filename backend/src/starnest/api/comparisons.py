@@ -141,6 +141,7 @@ async def get_comparison(
     )
     names = {str(candidate.id): candidate.name for candidate in ranking.roster}
     active = _active_values(ranking.values)
+    stale = ranking.stale_values
     return ComparisonBody(
         criteria_set=criteria_set,
         level=level,
@@ -148,7 +149,7 @@ async def get_comparison(
         focus=_result_body(drawn.focus, names),
         comparators=tuple(_result_body(result, names) for result in drawn.comparators),
         attributes=tuple(
-            _row_body(row, str(drawn.focus.candidate), active) for row in drawn.attributes
+            _row_body(row, str(drawn.focus.candidate), active, stale) for row in drawn.attributes
         ),
         synthesis=tuple(_synthesis_body(pair) for pair in drawn.synthesis),
     )
@@ -177,26 +178,34 @@ def _active_values(values: Mapping[str, Sequence[Value]]) -> dict[str, dict[str,
 
 
 def _row_body(
-    row: AttributeComparison, focus: str, active: dict[str, dict[str, Value]]
+    row: AttributeComparison,
+    focus: str,
+    active: dict[str, dict[str, Value]],
+    stale: frozenset[int],
 ) -> ComparisonAttributeRowBody:
     return ComparisonAttributeRowBody(
         attribute=str(row.attribute),
         pillar=str(row.pillar),
         effective_weight=float(row.focus_effective_weight),
         focus=ComparisonSideBody(
-            value=_side_value(active, focus, str(row.attribute)),
+            value=_side_value(active, focus, str(row.attribute), stale),
             normalised_score=row.focus_score,
         ),
-        comparators=tuple(_cell_body(cell, str(row.attribute), active) for cell in row.comparators),
+        comparators=tuple(
+            _cell_body(cell, str(row.attribute), active, stale) for cell in row.comparators
+        ),
     )
 
 
 def _cell_body(
-    cell: ComparatorCell, attribute: str, active: dict[str, dict[str, Value]]
+    cell: ComparatorCell,
+    attribute: str,
+    active: dict[str, dict[str, Value]],
+    stale: frozenset[int],
 ) -> ComparatorCellBody:
     return ComparatorCellBody(
         candidate=str(cell.candidate),
-        value=_side_value(active, str(cell.candidate), attribute),
+        value=_side_value(active, str(cell.candidate), attribute, stale),
         normalised_score=cell.normalised_score,
         delta=None if cell.delta is None else float(cell.delta),
         weighted_contribution=(
@@ -206,11 +215,24 @@ def _cell_body(
 
 
 def _side_value(
-    active: dict[str, dict[str, Value]], candidate: str, attribute: str
+    active: dict[str, dict[str, Value]], candidate: str, attribute: str, stale: frozenset[int]
 ) -> ValueBody | None:
-    """The figure this side holds, with its provenance -- the active one, hence `is_active`."""
+    """The figure this side holds, with its provenance -- the active one, hence `is_active`.
+
+    Its freshness is the one the ranking graded it by, from the same read (PL-069). Its source is
+    on, because the active-value view never chooses a figure from a switched-off source.
+    """
     value = active.get(candidate, {}).get(attribute)
-    return None if value is None else _value_body(ValueListing(value=value, is_active=True))
+    if value is None:
+        return None
+    return _value_body(
+        ValueListing(
+            value=value,
+            is_active=True,
+            is_fresh=value.id not in stale,
+            source_is_enabled=True,
+        )
+    )
 
 
 def _synthesis_body(pair: Synthesis) -> SynthesisBody:

@@ -212,12 +212,19 @@ class ValueListing(BaseModel):
     therefore answer the question honestly. `openapi.yaml` requires `is_active` on every value
     it returns; the SQL computed it and the mapper then dropped it, leaving `api/` unable to
     populate a field the contract marks required (known-issues D6).
+
+    `is_fresh` and `source_is_enabled` are the same kind of fact, from the same view (PL-069,
+    PL-071): whether the figure has aged past its attribute's `max_age` today, and whether its
+    source is switched on. **Required, with no default**: a forgotten default would claim a
+    figure fresh, or its source on, without anyone having asked.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     value: Value
     is_active: bool
+    is_fresh: bool
+    source_is_enabled: bool
 
 
 class ActiveValue(BaseModel):

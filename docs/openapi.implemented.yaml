@@ -2520,6 +2520,9 @@ components:
         is_active:
           title: Is Active
           type: boolean
+        is_fresh:
+          title: Is Fresh
+          type: boolean
         payload:
           additionalProperties: true
           title: Payload
@@ -2540,6 +2543,9 @@ components:
           format: date-time
           title: Retrieval Date
           type: string
+        source_is_enabled:
+          title: Source Is Enabled
+          type: boolean
         value_type:
           title: Value Type
           type: string
@@ -2554,6 +2560,8 @@ components:
       - retrieval_date
       - confidence_level
       - is_active
+      - is_fresh
+      - source_is_enabled
       title: ValueBody
       type: object
     ValuesBody:

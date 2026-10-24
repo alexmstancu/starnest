@@ -99,6 +99,9 @@ ORDER  BY v.candidate, v.attribute, v.breakdown_option NULLS FIRST;
 -- is discarded and the point of the screen is to show that (reqs.md 3.6).
 --
 -- `is_active` is derived, never stored (arch.md 3.4): a row is active when the view picked it.
+-- `is_fresh` and `source_is_enabled` come from `value_with_rank`, the view the active choice is
+-- made from, so the chip's "older than its allowed age" is the flag that lowers the figure a
+-- grade in the confidence split, and nothing here recounts it (PL-069, PL-071).
 -- Payloads are not joined here -- pass the returned ids to select_value_payloads.
 SELECT v.id,
        v.candidate,
@@ -114,12 +117,15 @@ SELECT v.id,
        v.rejection_reason,
        v.quote,
        (active.id IS NOT NULL) AS is_active,
+       ranked.is_fresh,
+       ranked.source_is_enabled,
        COALESCE(
            (SELECT jsonb_agg(citation.url ORDER BY citation.url)
             FROM   value_citation AS citation
             WHERE  citation.value = v.id),
            '[]'::jsonb) AS citations
 FROM   value AS v
+JOIN   value_with_rank AS ranked ON ranked.id = v.id
 LEFT   JOIN active_value AS active ON active.id = v.id
 WHERE  (:candidate::text IS NULL OR v.candidate = :candidate)
   AND  (:attribute::text IS NULL OR v.attribute = :attribute)

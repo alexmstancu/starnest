@@ -523,3 +523,33 @@ def a_stub_source(
             return Acquired(values=tuple(values), failures=tuple(failures))
 
     return StubSource()
+
+
+@pytest.fixture
+async def overburden_ages_in_a_month(database_url: str) -> AsyncIterator[str]:
+    """Housing overburden goes stale a month after its period ends, for one test (PL-069).
+
+    `stored_figures` describes last year, so its overburden figures are stale under this and
+    every other attribute's are not: one test can see both answers. Restored to exactly what it
+    was, `NULL` included.
+    """
+    attribute = "country.housing_cost_overburden_rate"
+    async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+        await pool.open(wait=True)
+        async with pool.connection() as connection:
+            row = await (
+                await connection.execute(
+                    "SELECT max_age FROM attribute WHERE id = %s", (attribute,)
+                )
+            ).fetchone()
+            assert row is not None
+            await connection.execute(
+                "UPDATE attribute SET max_age = interval '1 month' WHERE id = %s", (attribute,)
+            )
+        try:
+            yield attribute
+        finally:
+            async with pool.connection() as connection:
+                await connection.execute(
+                    "UPDATE attribute SET max_age = %s WHERE id = %s", (row[0], attribute)
+                )

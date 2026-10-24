@@ -56,6 +56,8 @@ class ValueBody(BaseModel):
     retrieval_date: datetime
     confidence_level: str
     is_active: bool
+    is_fresh: bool
+    source_is_enabled: bool
     rejection_reason: str | None = None
     quote: str | None = None
     citations: tuple[str, ...] = ()
@@ -245,6 +247,8 @@ def _value_body(listing: ValueListing, attribute_names: Mapping[str, str] = {}) 
         retrieval_date=value.retrieval_date,
         confidence_level=value.confidence_level.value,
         is_active=listing.is_active,
+        is_fresh=listing.is_fresh,
+        source_is_enabled=listing.source_is_enabled,
         rejection_reason=(
             stored_text_in_words(value.rejection_reason, attribute_names)
             if value.rejection_reason

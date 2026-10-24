@@ -151,6 +151,8 @@ class PostgresValueStore(ValueStore):
                 # Computed by the view, never by this method: which value wins depends on every
                 # other value for the same attribute, and this row knows nothing about them.
                 is_active=row.is_active,
+                is_fresh=row.is_fresh,
+                source_is_enabled=row.source_is_enabled,
             )
             for row in rows
         )
