@@ -222,13 +222,25 @@ LOCK_STATEMENT = re.compile(
 )
 
 
+#: What opens a dollar-quoted string: `$$`, or a tag spelled like a name between two dollars.
+DOLLAR_QUOTE = re.compile(r"\$(?:[^\W\d]\w*)?\$")
+
+#: What carries a string on to its next quote: a newline, with only spaces and comments about it.
+CONTINUATION = re.compile(r"(?:[ \t\f]|--[^\n\r]*)*[\n\r](?:\s|--[^\n\r]*[\n\r])*'")
+
+
 def code_of(sql: str) -> str:
-    """The SQL with its comments removed and its string literals emptied.
+    """The SQL with its comments removed and its literals emptied.
 
     **A table named in prose is not a table read.** Comments run to whole paragraphs here, and a
     refusal's message says "restore from the backup", which a reader of `FROM <name>` takes for a
-    table called `the`. A dollar-quoted body stays: a `DO` block is code, and it is the code a
-    refusal decides with.
+    table called `the`. A `DO $$` block's body stays: it is code, and it is the code a refusal
+    decides with. Every other dollar quote is a string, and is emptied like one -- a block opened
+    any other way is refused below, whatever its body holds.
+
+    **A literal ends where PostgreSQL ends it** (P98). A quote inside `$$...$$` ends nothing, nor
+    does a backslashed one in `E'...'`, nor one in a quoted name: taken for an end, each turned
+    the statements after it into the inside of a string, which every check here passed unread.
     """
     kept: list[str] = []
     at = 0
@@ -240,16 +252,62 @@ def code_of(sql: str) -> str:
             end = sql.find("*/", at + 2)
             at = len(sql) if end < 0 else end + 2
             kept.append(" ")
-        elif sql[at] == "'":
-            end = at + 1
-            while end < len(sql) and not (sql[end] == "'" and not sql.startswith("''", end)):
-                end += 2 if sql.startswith("''", end) else 1
+        elif sql[at] == '"':
+            end = past_closing_quote(sql, at)
+            kept.append(sql[at:end])
+            at = end
+        elif sql[at] == "'" or opens_an_escape_string(sql, at):
+            escapes = sql[at] != "'"
+            at = past_closing_quote(sql, at + 1 if escapes else at, escapes=escapes)
             kept.append("''")
-            at = end + 1
+        elif (dollars := dollar_quote_at(sql, at)) is not None:
+            closing = sql.find(dollars, at + len(dollars))
+            closing = len(sql) if closing < 0 else closing
+            if dollars == "$$" and re.search(r"\bdo\s+\Z", "".join(kept), re.I):
+                kept.append(f"$${code_of(sql[at + 2 : closing])}$$")
+            else:
+                kept.append("''")
+            at = closing + len(dollars)
         else:
             kept.append(sql[at])
             at += 1
     return "".join(kept)
+
+
+def continues_a_name(sql: str, at: int) -> bool:
+    """Whether `sql[at]` carries on the name before it, as `$` and `E` can: then neither opens a
+    literal -- `price$$` is a name, and `ELSE'...'` no escape string."""
+    return at > 0 and (sql[at - 1].isalnum() or sql[at - 1] in "_$")
+
+
+def opens_an_escape_string(sql: str, at: int) -> bool:
+    return sql[at] in "eE" and sql.startswith("'", at + 1) and not continues_a_name(sql, at)
+
+
+def dollar_quote_at(sql: str, at: int) -> str | None:
+    """The `$tag$` that opens a dollar-quoted string at `at`, if one does."""
+    opening = DOLLAR_QUOTE.match(sql, at)
+    return opening.group(0) if opening and not continues_a_name(sql, at) else None
+
+
+def past_closing_quote(sql: str, opening: int, *, escapes: bool = False) -> int:
+    """Just past the quote that closes the one at `opening`.
+
+    A doubled quote closes nothing. With `escapes`, as in `E'...'`, neither does a backslashed
+    one, and a string closed at the end of a line and opened again on the next is one string.
+    """
+    quote = sql[opening]
+    at = opening + 1
+    while at < len(sql):
+        if (escapes and sql[at] == "\\") or sql.startswith(quote * 2, at):
+            at += 2
+        elif sql[at] != quote:
+            at += 1
+        elif escapes and (carried := CONTINUATION.match(sql, at + 1)):
+            at = carried.end()
+        else:
+            return at + 1
+    return len(sql)
 
 
 def statements_in(code: str) -> list[str]:
@@ -435,6 +493,7 @@ LIFT_AND_RESTORE = (
         ("LOCK criterion;\n" + LIFT_AND_RESTORE, set()),
         ("INSERT INTO criterion SELECT * FROM criterion WHERE criteria_set = 'a';\n", set()),
         ("-- copies FROM criterion, then DELETE FROM criterion\nSELECT 1;\n", set()),
+        ("SELECT E'can\\'t';\n" + LIFT_AND_RESTORE, {"criterion"}),
     ],
     ids=[
         "a temp-table copy",
@@ -448,6 +507,7 @@ LIFT_AND_RESTORE = (
         "no mode: access exclusive",
         "a copy nothing then changes",
         "prose",
+        "behind an escaped quote",
     ],
 )
 def test_the_copy_rule_reads_sql_as_a_migration_writes_it(sql: str, unlocked: set[str]) -> None:
@@ -471,8 +531,19 @@ def test_the_copy_rule_reads_sql_as_a_migration_writes_it(sql: str, unlocked: se
             set(),
         ),
         ("DO $$ BEGIN PERFORM 1 FROM value; END $$;\n", set()),
+        (
+            "SELECT $$'$$;\n"
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM value) "
+            "THEN RAISE EXCEPTION 'from the backup'; END IF; END $$;\n",
+            {"value"},
+        ),
     ],
-    ids=["exists and count(1)", "locked first", "a block that never refuses"],
+    ids=[
+        "exists and count(1)",
+        "locked first",
+        "a block that never refuses",
+        "behind a quote in dollar quotes",
+    ],
 )
 def test_the_refusal_rule_reads_sql_as_a_migration_writes_it(sql: str, unlocked: set[str]) -> None:
     assert unlocked_refusal_reads(sql) == unlocked
@@ -554,10 +625,11 @@ UNREADABLE: tuple[Unreadable, ...] = (
         instead="write `CREATE TEMP TABLE ... AS SELECT`, or `CREATE TABLE`",
     ),
     Unreadable(
-        name="a write inside a DO block",
-        pattern=r"\b(?:insert|update|delete|merge|truncate|create)\b",
+        name="a write, DDL or dynamic SQL inside a DO block",
+        pattern=r"\b(?:insert|update|delete|merge|truncate|create|alter|drop|execute)\b",
         searched_in=inside_do_blocks,
-        instead="write it as a statement of its own, outside the block: a DO block only checks",
+        instead="write it as a statement of its own, outside the block and never through "
+        "EXECUTE: a DO block only checks",
     ),
 )
 
@@ -594,6 +666,14 @@ RAISES = "RAISE EXCEPTION 'restore from the backup'"
 def refusal(raising: str, opened: str = "DO $$", closed: str = "$$") -> str:
     """A refusal as the shipped rollbacks write one, opened, raised and closed as given."""
     return f"{opened} BEGIN IF EXISTS (SELECT 1 FROM value) THEN {raising}; END IF; END {closed};\n"
+
+
+#: A copy the copy check cannot read, so the fail-closed list refuses it wherever it stands.
+WITH_COPY = (
+    "WITH kept AS (SELECT * FROM criterion WHERE attribute = 'a')\n"
+    "INSERT INTO criterion (attribute) SELECT 'b' FROM kept;\n"
+    "DELETE FROM criterion WHERE attribute = 'a';\n"
+)
 
 
 @pytest.mark.parametrize(
@@ -636,19 +716,16 @@ def refusal(raising: str, opened: str = "DO $$", closed: str = "$$") -> str:
         ),
         pytest.param(refusal(RAISES + " USING ERRCODE = 'P0001'"), [], id="RAISE EXCEPTION '...'"),
         pytest.param(refusal("RAISE NOTICE 'nothing to restore'"), [], id="RAISE NOTICE"),
+        pytest.param(refusal("RAISE NOTICE E'nothing to restore'"), [], id="RAISE NOTICE E'...'"),
         pytest.param(
             "DO $$ BEGIN ASSERT NOT EXISTS (SELECT 1 FROM value), 'restore from the backup'; "
             "END $$;\n",
             ["ASSERT"],
             id="ASSERT",
         ),
-        pytest.param(
-            "WITH kept AS (SELECT * FROM criterion WHERE attribute = 'a')\n"
-            "INSERT INTO criterion (attribute) SELECT 'b' FROM kept;\n"
-            "DELETE FROM criterion WHERE attribute = 'a';\n",
-            ["a statement starting with WITH"],
-            id="a copy starting with WITH",
-        ),
+        pytest.param("SELECT $$ASSERT$$;\n", [], id="ASSERT inside $$...$$"),
+        pytest.param("SELECT E'can\\'t ASSERT';\n", [], id="ASSERT inside E'...'"),
+        pytest.param(WITH_COPY, ["a statement starting with WITH"], id="a copy starting with WITH"),
         pytest.param(
             "CREATE TEMP TABLE kept AS SELECT * FROM criterion WHERE attribute = 'a';\n"
             "INSERT INTO criterion (attribute) SELECT 'b' FROM kept;\n"
@@ -687,7 +764,7 @@ def refusal(raising: str, opened: str = "DO $$", closed: str = "$$") -> str:
         pytest.param(
             "DO $$ BEGIN INSERT INTO kept SELECT * FROM criterion WHERE attribute = 'a';\n"
             "DELETE FROM criterion WHERE attribute = 'a'; END $$;\n",
-            ["a write inside a DO block"],
+            ["a write, DDL or dynamic SQL inside a DO block"],
             id="a copy inside DO",
         ),
         pytest.param(
@@ -696,12 +773,54 @@ def refusal(raising: str, opened: str = "DO $$", closed: str = "$$") -> str:
             [],
             id="the copy as statements of its own",
         ),
+        pytest.param(
+            "DO $$ BEGIN EXECUTE 'DELETE FROM criterion'; END $$;\n",
+            ["a write, DDL or dynamic SQL inside a DO block"],
+            id="EXECUTE inside DO",
+        ),
+        pytest.param(
+            "DO $$ BEGIN ALTER TABLE criterion ADD COLUMN note text; END $$;\n",
+            ["a write, DDL or dynamic SQL inside a DO block"],
+            id="ALTER inside DO",
+        ),
+        pytest.param(
+            "DO $$ BEGIN DROP TABLE kept; END $$;\n",
+            ["a write, DDL or dynamic SQL inside a DO block"],
+            id="DROP inside DO",
+        ),
+        pytest.param(
+            "ALTER TABLE criterion ADD COLUMN note text;\nDROP TABLE kept;\n",
+            [],
+            id="DDL as statements of its own",
+        ),
     ],
 )
 def test_the_fail_closed_rule_reads_sql_as_a_migration_writes_it(
     sql: str, refused_as: list[str]
 ) -> None:
-    """Each shape is refused, and the form its message names instead is not -- nor are the
-    three that only look like one: an upsert's `DO`, `RAISE NOTICE`, and a `SELECT ... INTO`
-    a variable."""
+    """Each shape is refused, and the form its message names instead is not -- nor is what only
+    looks like one: an upsert's `DO`, `RAISE NOTICE`, a `SELECT ... INTO` a variable, or a
+    keyword inside a literal."""
     assert [shape.name for shape in unreadable_in(sql)] == refused_as
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        pytest.param("$$'$$", id="a quote in $$...$$"),
+        pytest.param("$q$'$q$", id="a quote in $tag$...$tag$"),
+        pytest.param("E'can\\'t'", id="a backslashed quote in E'...'"),
+        pytest.param("E'can'\n'\\'t'", id="a backslashed quote where E'...' carries on"),
+        pytest.param('1 AS "it\'s"', id="a quote in a quoted name"),
+        pytest.param("'C:\\'", id="a backslash ending a plain string"),
+        pytest.param("CASE WHEN true THEN 'yes' ELSE'C:\\' END", id="ELSE'...', no E'...'"),
+        pytest.param("1 AS price$$", id="$$ ending a name"),
+    ],
+)
+def test_no_literal_hides_the_statement_after_it(literal: str) -> None:
+    """**A literal ends where PostgreSQL ends it** (P98). Read to any other end, it turns the
+    statements after it into the inside of a string, and all three checks pass them unread --
+    here, a copy that starts with `WITH`."""
+    refused = [shape.name for shape in unreadable_in(f"SELECT {literal};\n" + WITH_COPY)]
+
+    assert refused == ["a statement starting with WITH"]
