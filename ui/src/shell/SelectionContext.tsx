@@ -26,7 +26,9 @@ export interface Selection {
   /**
    * The two lists as one read (PL-009): what a screen draws first, so a list still coming or
    * one that failed never reads as "there are none". `levels` and `criteriaSets` above are its
-   * data once it is ready, and empty until then.
+   * data once it is ready, and empty until then. **Pending until the opening choice is made**
+   * too: lists that have landed with nothing yet adopted from them are not a selection, and a
+   * screen reading "no set" in that render drew a fact from it (PL-001).
    */
   read: Read<SelectionLists>;
   /** Reads both lists again, keeping them on screen meanwhile. */
@@ -166,13 +168,18 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
   // object was the last thing making every consumer re-render on every render of the shell --
   // and the only thing standing between a consumer that reads `selection` in a dependency
   // array and an endless effect.
+  const adopting =
+    (levelId === null && orderedLevels.length > 0) ||
+    (criteriaSetId === null && availableCriteriaSets.length > 0);
   const read = useMemo(
     () =>
-      map(combine(levelsRead, setsRead), ([, sets]) => ({
-        levels: orderedLevels,
-        criteriaSets: sets.items,
-      })),
-    [levelsRead, setsRead, orderedLevels],
+      adopting
+        ? PENDING
+        : map(combine(levelsRead, setsRead), ([, sets]) => ({
+            levels: orderedLevels,
+            criteriaSets: sets.items,
+          })),
+    [adopting, levelsRead, setsRead, orderedLevels],
   );
   const value: Selection = useMemo(
     () => ({

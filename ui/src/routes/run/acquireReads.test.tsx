@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
+import { makeCriteriaSetDetails } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -282,5 +283,68 @@ describe("the comparison of two acquisitions while their values are read", () =>
     expect(await within(diff).findByText(/could not be loaded/i)).toBeInTheDocument();
     expect(within(diff).getByRole("button", { name: "Try again" })).toBeInTheDocument();
     expect(diff).not.toHaveTextContent(/newly acquired/i);
+  });
+});
+
+/**
+ * PL-001 at the seam with the selection. **The criteria-set list answering is not a set being
+ * chosen**: the first set is adopted a render later, and in that render the unsourced card read
+ * "no set" as "nothing is weighed" and drew every row "not scored here" -- a fact from a
+ * selection that had not settled. Watched as the DOM changes, because it lasts one render.
+ */
+describe("the unsourced card while the first criteria set is adopted", () => {
+  it("never calls an attribute the set weighs unscored", async () => {
+    const sets = heldAnswer();
+    let catalogRead = false;
+    mockServer.use(
+      http.get(`${BASE}/criteria-sets`, async () => {
+        await sets.held;
+      }),
+      http.get(`${BASE}/attributes`, () => {
+        catalogRead = true;
+      }),
+      // The active set weighs residency, so "not scored here" on its row is never true.
+      http.get(`${BASE}/criteria-sets/:criteriaSetId`, ({ params }) => {
+        const set = makeCriteriaSetDetails()[String(params["criteriaSetId"])]!;
+        const first = set.criteria![0]!;
+        return HttpResponse.json({
+          ...set,
+          criteria: [
+            ...set.criteria!,
+            { ...first, attribute: "country.residency_admin_ease", weight: 5 },
+          ],
+        });
+      }),
+    );
+    // Every row as it was drawn, kept even if a later render replaced it.
+    const rowsDrawn: string[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        const touched = [...record.addedNodes, record.target];
+        for (const node of touched) {
+          if (!(node instanceof Element)) continue;
+          const rows = [node.closest("tr"), ...node.querySelectorAll("tr")];
+          for (const row of rows) if (row) rowsDrawn.push(row.textContent ?? "");
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    try {
+      renderShell("/acquire");
+      await waitFor(() => expect(catalogRead).toBe(true));
+      await findRegion(UNSOURCED);
+
+      sets.release();
+      const residency = await within(region(UNSOURCED)).findByRole("row", {
+        name: /residency admin ease/i,
+      });
+      expect(residency).not.toHaveTextContent(/not scored here/i);
+    } finally {
+      observer.disconnect();
+      sets.release();
+    }
+    expect(rowsDrawn.filter((row) => /residency admin ease.*not scored here/i.test(row))).toEqual(
+      [],
+    );
   });
 });
