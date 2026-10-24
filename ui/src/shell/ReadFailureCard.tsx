@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import { CLIENT_ERROR_CODES } from "../api/ApiError";
 import { presentError } from "../api/errorPresentation";
 import { useAppConfig } from "../config/AppConfigContext";
@@ -16,19 +17,22 @@ export function ReadFailureCard({
   what,
   error,
   onRetry,
+  retryRef,
   prominence,
 }: {
   /** What was being read, as the subject of a sentence: "The ranking". */
   what: string;
   error: unknown;
   onRetry: () => void | Promise<void>;
+  /** Lets the region put focus back on Try again after a retry that failed too. */
+  retryRef?: Ref<HTMLButtonElement>;
   prominence: "screen" | "region";
 }) {
   const { displayName } = useAppConfig();
   const presented = presentError(error);
   const title = <p className="failure-card__title">{what} could not be loaded</p>;
   const tryAgain = (
-    <button type="button" className="button" onClick={() => void onRetry()}>
+    <button ref={retryRef} type="button" className="button" onClick={() => void onRetry()}>
       Try again
     </button>
   );

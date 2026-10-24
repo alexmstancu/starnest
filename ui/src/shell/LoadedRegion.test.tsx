@@ -95,3 +95,104 @@ describe("a region whose read is ready", () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * Try again takes its own button away -- the read goes pending, or the stale line goes -- and a
+ * browser answers by putting focus on the page. A keyboard user must not start again at the top
+ * on every retry, nor be pulled back if they have tabbed somewhere else meanwhile.
+ */
+describe("focus across a retry", () => {
+  function renderRetryable(initial: Read<string>) {
+    const tree = (read: Read<string>) => (
+      <AppConfigProvider config={{ displayName: "Test Nest" }}>
+        <LoadedRegion read={read} what="The ranking" skeleton="rank-table" onRetry={vi.fn()}>
+          {(figures) => <p>{figures}</p>}
+        </LoadedRegion>
+        <button type="button">Elsewhere</button>
+      </AppConfigProvider>
+    );
+    const { rerender } = render(tree(initial));
+    return { settle: (read: Read<string>) => rerender(tree(read)) };
+  }
+
+  async function pressTryAgain() {
+    screen.getByRole("button", { name: "Try again" }).focus();
+    await userEvent.keyboard("{Enter}");
+  }
+
+  const stale: Read<string> = {
+    state: "ready",
+    data: "figures",
+    readAt: READ_AT,
+    refresh: { failed: BOOM },
+  };
+
+  it("puts focus on the new Try again when the read fails again", async () => {
+    const { settle } = renderRetryable({ state: "failed", error: BOOM });
+
+    await pressTryAgain();
+    settle({ state: "pending" });
+    expect(document.activeElement).not.toBe(document.body);
+    settle({ state: "failed", error: BOOM });
+
+    expect(screen.getByRole("button", { name: "Try again" })).toHaveFocus();
+  });
+
+  it("puts focus on the new Try again when a refresh fails again, keeping the data", async () => {
+    const { settle } = renderRetryable(stale);
+
+    await pressTryAgain();
+    settle({ ...stale, refresh: "running" });
+    expect(document.activeElement).not.toBe(document.body);
+    settle(stale);
+
+    expect(screen.getByText("figures")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toHaveFocus();
+  });
+
+  it("leaves focus in the region when the retry succeeds", async () => {
+    const { settle } = renderRetryable({ state: "failed", error: BOOM });
+
+    await pressTryAgain();
+    settle({ state: "pending" });
+    settle({
+      state: "ready",
+      data: "figures",
+      readAt: READ_AT,
+      refresh: "idle",
+    });
+
+    expect(document.activeElement).not.toBe(document.body);
+    expect(screen.getByText("figures").closest("[tabindex]")).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+  });
+
+  it("leaves focus alone when the reader moved it elsewhere before the retry settled", async () => {
+    const { settle } = renderRetryable({ state: "failed", error: BOOM });
+
+    await pressTryAgain();
+    settle({ state: "pending" });
+    screen.getByRole("button", { name: "Elsewhere" }).focus();
+    settle({ state: "failed", error: BOOM });
+
+    expect(screen.getByRole("button", { name: "Elsewhere" })).toHaveFocus();
+  });
+
+  it("stops holding focus once the retry has settled", async () => {
+    const { settle } = renderRetryable({ state: "failed", error: BOOM });
+    const ready: Read<string> = {
+      state: "ready",
+      data: "figures",
+      readAt: READ_AT,
+      refresh: "idle",
+    };
+
+    await pressTryAgain();
+    settle(ready);
+    (document.activeElement as HTMLElement).blur();
+    settle({ ...ready, refresh: "running" });
+
+    expect(document.body).toHaveFocus();
+  });
+});
