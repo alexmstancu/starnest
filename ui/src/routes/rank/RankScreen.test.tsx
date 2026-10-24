@@ -129,6 +129,23 @@ describe("the row the household lives in", () => {
   });
 });
 
+/**
+ * PL-079. **The two letters stand in for a flag, and the title says so in the design's own
+ * words.** It used to repeat the name and the code the reader was already looking at, which
+ * says nothing about why there is a code where a flag belongs.
+ */
+describe("the country chip", () => {
+  it("names the country and says a flag will replace the code", async () => {
+    renderShell("/rank");
+
+    const chip = await screen.findByTitle(
+      "Portugal. A flag replaces this code once the catalog carries flag images",
+    );
+
+    expect(chip).toHaveTextContent(/^PT$/);
+  });
+});
+
 describe("what the table cannot say inside itself", () => {
   it("explains the rows with no rank and the ones with no score", async () => {
     renderShell("/rank");

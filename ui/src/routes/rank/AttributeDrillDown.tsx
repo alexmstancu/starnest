@@ -2,6 +2,7 @@ import { useCandidateNames } from "../../api/useCandidateNames";
 import { useCallback, useState } from "react";
 import {
   fetchAttributes,
+  fetchCriteriaSet,
   fetchValuesForAttribute,
   type StoredValue,
 } from "../../api/endpoints";
@@ -15,6 +16,8 @@ import {
 } from "../../format/display";
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { describeFigure } from "../../format/figure";
+import { describeFigureCount } from "./figureCount";
+import { judgementsByAttribute } from "./pillarFilter";
 
 /**
  * One attribute, every candidate (`reqs.md` 8.4).
@@ -30,7 +33,16 @@ import { describeFigure } from "../../format/figure";
  * drill-down, where the question is what happened to a figure; here the question is coverage,
  * and one row per candidate is what answers it.
  */
-export function AttributeDrillDown({ levelId }: { levelId: string | null }) {
+export function AttributeDrillDown({
+  levelId,
+  criteriaSetId,
+  rosterSize,
+}: {
+  levelId: string | null;
+  criteriaSetId: string | null;
+  /** How many candidates the level has, once its roster has arrived. */
+  rosterSize?: number;
+}) {
   const [attribute, setAttribute] = useState<string | null>(null);
 
   const attributes = useResource(
@@ -48,6 +60,20 @@ export function AttributeDrillDown({ levelId }: { levelId: string | null }) {
     ),
     attribute !== null,
   );
+  // **Whether the active set scores it**, which only the set can say: a descriptive attribute
+  // or an excluded one has no weight to spread. A silent read -- the figures stand without it,
+  // and saying nothing about weight is true until it arrives.
+  const set = useResource(
+    useCallback(
+      (signal: AbortSignal) => fetchCriteriaSet(criteriaSetId ?? "", { signal }),
+      [criteriaSetId],
+    ),
+    criteriaSetId !== null,
+  );
+  const scored =
+    attribute !== null &&
+    set.resource.status === "ready" &&
+    judgementsByAttribute(set.resource.data.criteria).get(attribute)?.scored === true;
 
   return (
     <section className="panel" aria-labelledby="attribute-drill-heading">
@@ -93,32 +119,44 @@ export function AttributeDrillDown({ levelId }: { levelId: string | null }) {
       ) : values.resource.status === "error" ? (
         <ErrorNotice error={values.resource.error} onRetry={values.reload} />
       ) : values.resource.status === "ready" ? (
-        <AcrossCandidates values={values.resource.data.items} />
+        <AcrossCandidates
+          values={values.resource.data.items}
+          rosterSize={rosterSize}
+          scored={scored}
+        />
       ) : null}
     </section>
   );
 }
 
-function AcrossCandidates({ values }: { values: StoredValue[] }) {
+function AcrossCandidates({
+  values,
+  rosterSize,
+  scored,
+}: {
+  values: StoredValue[];
+  rosterSize?: number;
+  scored: boolean;
+}) {
   const candidateNames = useCandidateNames();
   const sourceNames = useSourceNames();
   if (values.length === 0) {
     return (
       <p className="screen__note">
-        {/* The whole point of this view: an attribute nobody has a figure for is a hole in
-            the score, and it says so rather than rendering an empty table. */}
-        No candidate has a figure for this attribute. Its weight redistributes
-        across the rest of its pillar.
+        {/* The whole point of this view: an attribute nobody has a figure for is said to be
+            one, rather than rendered as an empty table. Its weight goes to every attribute
+            that has a figure, not to its pillar's (`reqs.md` 5.3) -- and only a scored
+            attribute has any. */}
+        No candidate has a figure for this attribute.
+        {scored &&
+          " Its weight is spread over the attributes that have a figure."}
       </p>
     );
   }
 
   return (
     <>
-      <p className="panel__hint">
-        {values.length} of the level&apos;s candidates have a figure for this
-        attribute.
-      </p>
+      <p className="panel__hint">{describeFigureCount(values, rosterSize)}</p>
       <div className="table-card">
         <table className="table">
           <thead>

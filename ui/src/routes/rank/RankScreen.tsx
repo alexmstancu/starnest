@@ -85,7 +85,8 @@ function TheRanking({
     criteriaSetId !== null && levelId !== null,
   );
 
-  // The roster, for the flag beside each name. One read, and only once a level is chosen.
+  // The roster, for the flag beside each name and the total the attribute panel counts
+  // against. One read, and only once a level is chosen.
   const roster = useResource(
     useCallback(
       (signal: AbortSignal) =>
@@ -188,7 +189,15 @@ function TheRanking({
       {/* The other axis (`reqs.md` 8.4). A candidate's detail says what we know about one
           country; this says who has a figure for one attribute at all -- the question behind a
           pillar that scores badly for want of data rather than for want of merit. */}
-      <AttributeDrillDown levelId={levelId} />
+      <AttributeDrillDown
+        levelId={levelId}
+        criteriaSetId={criteriaSetId}
+        rosterSize={
+          roster.resource.status === "ready"
+            ? roster.resource.data.items.length
+            : undefined
+        }
+      />
 
     </>
   );

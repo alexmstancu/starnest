@@ -1,9 +1,13 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import userEvent from "@testing-library/user-event";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import type { StoredValue } from "../../api/endpoints";
 import { renderShell } from "../../testing/renderShell";
 import { serveSourceNames } from "../../testing/sourceNames";
+import { STORED_VALUES } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 
 /**
@@ -25,6 +29,31 @@ async function theDrillDown(): Promise<HTMLElement> {
   await screen.findByRole("table");
   return screen.getByRole("region", { name: /one attribute, every candidate/i });
 }
+
+/**
+ * Chooses an attribute by its name. The catalog arrives after the first render, so the option
+ * is waited for -- the select exists immediately and holds only its placeholder.
+ */
+async function chooseAttribute(panel: HTMLElement, name: string): Promise<void> {
+  const option = await within(panel).findByRole("option", { name });
+  await userEvent
+    .setup()
+    .selectOptions(within(panel).getByRole("combobox", { name: "Attribute" }), option);
+}
+
+/** Portugal's active cost of living figure, which every served figure below varies. */
+const A_FIGURE = STORED_VALUES.find((each) => each.id === 501)!;
+
+/** Answers every question about an attribute's figures with these, and only these. */
+function serveFigures(figures: Partial<StoredValue>[]): void {
+  const items = figures.map((each, index) => ({ ...A_FIGURE, id: 9000 + index, ...each }));
+  mockServer.use(
+    http.get("/v1/values", () => HttpResponse.json({ items, total: items.length })),
+  );
+}
+
+/** The sentence for an attribute the active set scores and nobody has a figure for. */
+const SPREAD = /its weight is spread over the attributes that have a figure/i;
 
 describe("the attribute drill-down", () => {
   it("asks for an attribute before fetching anything", async () => {
@@ -99,7 +128,7 @@ describe("the attribute drill-down", () => {
     expect(table).not.toHaveTextContent(/eurostat_estimate/);
   });
 
-  it("says an attribute nobody measures is a hole in the score, not an empty table", async () => {
+  it("says nobody has a figure rather than showing an empty table", async () => {
     const user = userEvent.setup();
     renderShell("/rank");
     const panel = await theDrillDown();
@@ -113,7 +142,7 @@ describe("the attribute drill-down", () => {
     );
 
     // **The case this view exists for.** An empty table would read as a failure to render;
-    // this says what the absence costs -- the weight goes to the rest of the pillar.
+    // a sentence says the absence is the answer.
     expect(
       await within(panel).findByText(/no candidate has a figure for this attribute/i),
     ).toBeInTheDocument();
@@ -137,5 +166,143 @@ describe("the attribute drill-down", () => {
     );
 
     expect(await within(panel).findByRole("button", { name: /try again/i })).toBeInTheDocument();
+  });
+});
+
+/**
+ * PL-077. **Candidates, counted against the level's roster.** An attribute with breakdown
+ * options has one active figure per option, so the rows outnumber the candidates -- and a
+ * count of rows read as more of the level being measured than is.
+ */
+describe("how many candidates have a figure", () => {
+  it("counts candidates, not rows: two options for one candidate count once, out of the roster", async () => {
+    serveFigures([
+      { candidate: "country.portugal", breakdown_option: "single" },
+      { candidate: "country.portugal", breakdown_option: "couple" },
+      { candidate: "country.united_kingdom" },
+    ]);
+    renderShell("/rank");
+    const panel = await theDrillDown();
+
+    await chooseAttribute(panel, "Cost of living index");
+
+    // Six: the fixture level's roster, not the four candidates the ranking happens to list.
+    expect(
+      await within(panel).findByText(
+        "2 of 6 candidates have a figure for this attribute.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("gives no total while the level's roster cannot be read", async () => {
+    mockServer.use(
+      http.get("/v1/candidates", ({ request }) =>
+        // Only the level's roster: the names every screen shares are read without a level.
+        new URL(request.url).searchParams.has("level") ? HttpResponse.error() : undefined,
+      ),
+    );
+    renderShell("/rank");
+    const panel = await theDrillDown();
+
+    await chooseAttribute(panel, "Cost of living index");
+
+    expect(
+      await within(panel).findByText(
+        "2 candidates have a figure for this attribute.",
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * PL-077. **Redistribution is level-wide, and only a scored attribute has weight to spread.**
+ * The sentence used to say the weight "redistributes across the rest of its pillar" for any
+ * attribute at all -- false for a descriptive one, which has no weight, and false for a scored
+ * one too, because a missing figure's weight goes to every attribute that has one.
+ */
+describe("what an attribute nobody has a figure for costs", () => {
+  it("says a scored attribute's weight is spread over the attributes that have a figure", async () => {
+    serveFigures([]);
+    renderShell("/rank");
+    const panel = await theDrillDown();
+
+    // The default set scores it.
+    await chooseAttribute(panel, "Cost of living index");
+
+    expect(await within(panel).findByText(SPREAD)).toBeInTheDocument();
+    expect(panel).not.toHaveTextContent(/pillar/i);
+  });
+
+  it("says nothing about redistribution for an attribute the set does not score", async () => {
+    serveFigures([]);
+    renderShell("/rank");
+    const panel = await theDrillDown();
+    // **A scored one first, so the set is known to have arrived.** Without it, the absence
+    // below could be read before the set was, and would pass for the wrong reason.
+    await chooseAttribute(panel, "Cost of living index");
+    await within(panel).findByText(SPREAD);
+
+    // No criterion of the default set judges it.
+    await chooseAttribute(panel, "Nobody measures this");
+
+    await waitFor(() => {
+      expect(panel).toHaveTextContent(/no candidate has a figure for this attribute/i);
+      // Any word about weight: it has none here to spread, under any wording.
+      expect(panel).not.toHaveTextContent(/weight/i);
+    });
+  });
+});
+
+/**
+ * The tint the stylesheet gives an element: the background, ink and border of every rule that
+ * names one of its classes alone, a later rule winning as it does in the cascade.
+ *
+ * **Read from `styles.css`, because jsdom draws nothing** -- and the tint is the claim.
+ */
+function tintOf(element: HTMLElement): Record<string, string> {
+  const sheet = readFileSync(join(__dirname, "../../styles.css"), "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+  const tint: Record<string, string> = {};
+  for (const [, selectors = "", body = ""] of sheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const classes = selectors
+      .split(",")
+      .map((selector) => /^\.([\w-]+)$/.exec(selector.trim())?.[1]);
+    if (!classes.some((name) => name && element.classList.contains(name))) continue;
+    for (const declaration of body.split(";")) {
+      const [property = "", value = ""] = declaration.split(":").map((part) => part.trim());
+      if (["background", "color", "border-color"].includes(property)) tint[property] = value;
+    }
+  }
+  return tint;
+}
+
+/**
+ * PL-079. **Medium is not a warning.** The design draws a medium figure's chip neutral and only
+ * a low one amber; one rule tinted both, so half the figures on the screen read as a caution.
+ */
+describe("the confidence chips", () => {
+  it("draws a medium figure's chip neutral and a low one's amber, as the design does", async () => {
+    serveFigures([
+      { candidate: "country.portugal", confidence_level: "medium" },
+      { candidate: "country.united_kingdom", confidence_level: "low" },
+    ]);
+    renderShell("/rank");
+    const panel = await theDrillDown();
+
+    await chooseAttribute(panel, "Cost of living index");
+    const table = within(await within(panel).findByRole("table"));
+
+    expect(tintOf(table.getByText("medium"))).toEqual({
+      background: "var(--colour-surface-sunken)",
+      color: "var(--colour-text-label)",
+      "border-color": "var(--colour-border)",
+    });
+    expect(tintOf(table.getByText("low"))).toEqual({
+      background: "var(--colour-warning-surface)",
+      color: "var(--colour-warning)",
+      "border-color": "var(--colour-warning-border)",
+    });
   });
 });

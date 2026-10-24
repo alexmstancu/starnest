@@ -4,6 +4,7 @@ import {
   codesByCandidate,
   confidenceBands,
   confidenceLabel,
+  confidenceReadings,
   coverageBar,
   excludedBand,
   formatDelta,
@@ -82,6 +83,38 @@ describe("the confidence label", () => {
 
   it("says nothing rather than `0h / 0m / 0l` when there is no split", () => {
     expect(confidenceLabel(undefined)).toBe("—");
+  });
+});
+
+/**
+ * PL-078. **The words beside the bar read high, medium and low always, and absolute only when
+ * it carries a share** -- the same test the bar applies. Reading all four always printed
+ * "absolute 0%" on every row of the shipped ranking (UF-122).
+ */
+describe("the confidence readings", () => {
+  const readingsOf = (split: Parameters<typeof confidenceReadings>[0]) =>
+    confidenceReadings(split).map((each) => each.reading);
+
+  it("leaves absolute out when it carries nothing", () => {
+    expect(readingsOf({ absolute: 0, high: 82, medium: 11, low: 7 })).toEqual([
+      "high 82%",
+      "medium 11%",
+      "low 7%",
+    ]);
+    expect(readingsOf({ high: 90, medium: 10 })).toEqual([
+      "high 90%",
+      "medium 10%",
+      "low 0%",
+    ]);
+  });
+
+  it("reads absolute first when it carries a share, as the bar draws it", () => {
+    expect(readingsOf({ absolute: 40, high: 60, medium: 0, low: 0 })).toEqual([
+      "absolute 40%",
+      "high 60%",
+      "medium 0%",
+      "low 0%",
+    ]);
   });
 });
 

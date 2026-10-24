@@ -232,31 +232,34 @@ export function pillarBars(
 }
 
 /**
- * The confidence split as three readings rather than one.
+ * The confidence split read grade by grade, rather than as one share.
  *
- * **All four, always.** The column used to print the low share alone, which answered half of
- * the question it raised: a candidate that is 5% low-confidence and one that is 5% low and 60%
- * medium are not the same candidate, and only showing both makes that visible.
+ * **High, medium and low always.** The column used to print the low share alone, which answered
+ * half of the question it raised: a candidate that is 5% low-confidence and one that is 5% low
+ * and 60% medium are not the same candidate, and only showing both makes that visible.
  *
- * **Including `absolute`, which it used to omit** (P80). The domain defines four grades, the
+ * **`absolute` only when it carries a share** (P80, PL-078). The domain defines four grades, the
  * contract sends four, `confidenceBands` above draws four, and the hand-entry form offers
  * `absolute` as a choice -- so a candidate resting on hand-entered figures drew a full-width
  * band over the words "high 0% medium 0% low 0%". The bar and the sentence beside it have to
- * be reading the same split.
+ * be reading the same split, so the words keep `absolute` by the test the bar uses -- and drop
+ * it by the same test, or every row reads "absolute 0%".
  */
 export function confidenceReadings(
   split: ConfidenceSplit | null | undefined,
 ): { grade: string; reading: string; loud: boolean }[] {
   if (!split) return [];
-  return (["absolute", "high", "medium", "low"] as const).map((grade) => {
-    const share = split[grade] ?? 0;
-    return {
-      grade,
-      reading: `${grade} ${round(share)}%`,
-      // The share that carries most of the weight is the one worth reading first.
-      loud: share >= 50,
-    };
-  });
+  return (["absolute", "high", "medium", "low"] as const)
+    .filter((grade) => grade !== "absolute" || clampPercentage(split[grade]) > 0)
+    .map((grade) => {
+      const share = split[grade] ?? 0;
+      return {
+        grade,
+        reading: `${grade} ${round(share)}%`,
+        // The share that carries most of the weight is the one worth reading first.
+        loud: share >= 50,
+      };
+    });
 }
 
 /** The difference from home, signed, or a dash when there is nothing to compare against. */

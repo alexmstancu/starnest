@@ -3385,8 +3385,8 @@ select.field__control {
   color: var(--colour-warning);
 }
 
-/* The four confidence grades `reqs.md` 5.7 defines, tinted the way the meter bands are so a
-   chip and a bar say the same thing about the same figure. */
+/* The four confidence grades `reqs.md` 5.7 defines, tinted as the design tints them: only low
+   is a warning, so medium is neutral rather than sharing low's amber. */
 .chip--absolute {
   background: var(--colour-accent-surface);
   border-color: var(--colour-accent-border);
@@ -3399,7 +3399,12 @@ select.field__control {
   color: var(--colour-success);
 }
 
-.chip--medium,
+.chip--medium {
+  background: var(--colour-surface-sunken);
+  border-color: var(--colour-border);
+  color: var(--colour-text-label);
+}
+
 .chip--low {
   background: var(--colour-warning-surface);
   border-color: var(--colour-warning-border);

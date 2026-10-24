@@ -309,10 +309,14 @@ function CandidateRow({
       </td>
       {/* **The code, not a flag image.** There is no flag asset here and inventing one for 32
           countries would be 32 files to keep in step with a catalog that already carries the
-          code. Two letters in a bordered box is what the design's own placeholder is. */}
+          code. Two letters in a bordered box is what the design's own placeholder is, and its
+          title is the design's too: it says why a code stands where a flag belongs. */}
       <td className="flag-cell">
         {code !== undefined && (
-          <span className="flag" title={`${result.name} — ${code}`}>
+          <span
+            className="flag"
+            title={`${result.name}. A flag replaces this code once the catalog carries flag images`}
+          >
             {code}
           </span>
         )}
