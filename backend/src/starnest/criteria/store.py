@@ -56,6 +56,7 @@ class CriteriaSetNameTakenError(CriteriaSetExistsError):
             "and surrounding spaces"
         )
         self.name = name
+        self.details = {"name": name}
 
 
 class UnknownCriteriaSetError(LookupError):
@@ -63,6 +64,13 @@ class UnknownCriteriaSetError(LookupError):
 
     A `LookupError` rather than a `ValueError`: the identifier is well formed, there is simply
     no such set. The distinction is what lets the API map one to 404 and the other to 400.
+    """
+
+
+class NoDefaultCriteriaSetError(LookupError):
+    """No set is the default, so a new set has nothing to copy (P1-29).
+
+    Refused rather than made empty: an empty set scores nothing, and nothing can fill it.
     """
 
 
@@ -75,8 +83,7 @@ class CriteriaSetInUseError(ValueError):
     somebody's kept rankings as a side effect of tidying up a criteria set is not a tidy-up.
     Deleting such a set in place is not refused: the row the evaluation names stays.
 
-    A state conflict, so the API answers 409 -- the request was well formed and is refused by
-    what exists, which is exactly the distinction `LookupError` above draws for 404.
+    Only the purge raises it, and no route purges, so no response carries it (PL-035).
     """
 
 
@@ -114,6 +121,13 @@ class CriteriaStore(ABC):
         Pass `None` for the set entire, which is what the criteria screen shows.
 
         Raises `UnknownCriteriaSetError` when there is no such set, or it has been deleted.
+        """
+
+    @abstractmethod
+    async def read_default_criteria_set(self) -> CriteriaSet:
+        """The set a new one copies (P1-29), whole -- even once it has been deleted.
+
+        Raises `NoDefaultCriteriaSetError` when no set is the default.
         """
 
     @abstractmethod
@@ -209,11 +223,6 @@ class CriteriaStore(ABC):
         Raises `UnknownCriteriaSetError` when there is no such set, and `CriteriaSetInUseError`
         while a saved evaluation names it.
         """
-
-    async def delete_criteria_set(self, criteria_set: CriteriaSetId | str) -> None:
-        """What `DELETE /criteria-sets/{id}` still calls: the purge, until that route deletes in
-        place instead (map-C03 B3), which removes this."""
-        await self.purge_criteria_set(criteria_set)
 
 
 class MatchRuleResultStore(ABC):

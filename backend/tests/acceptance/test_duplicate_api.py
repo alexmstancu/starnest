@@ -8,6 +8,8 @@ This is also what makes leaving `local_employment` exactly as seeded safe: nobod
 the shipped set to try something.
 """
 
+from collections.abc import Awaitable, Callable
+
 import httpx
 import pytest
 
@@ -18,7 +20,7 @@ MINIMAL = "minimal"
 
 class TestDuplicating:
     async def test_the_copy_carries_every_criterion_of_the_original(
-        self, api: httpx.AsyncClient
+        self, api: httpx.AsyncClient, purge_criteria_set: Callable[[str], Awaitable[None]]
     ) -> None:
         """A copy with fewer criteria is a copy that will score differently."""
         original = (await api.get(f"/v1/criteria-sets/{MINIMAL}")).json()
@@ -34,9 +36,11 @@ class TestDuplicating:
                 c["attribute"] for c in original["criteria"]
             }
         finally:
-            await api.delete("/v1/criteria-sets/a_copy")
+            await purge_criteria_set("a_copy")
 
-    async def test_the_copy_carries_the_pillar_weights_too(self, api: httpx.AsyncClient) -> None:
+    async def test_the_copy_carries_the_pillar_weights_too(
+        self, api: httpx.AsyncClient, purge_criteria_set: Callable[[str], Awaitable[None]]
+    ) -> None:
         """Criteria without their pillar weights is a set that cannot add up."""
         await api.post(
             f"/v1/criteria-sets/{MINIMAL}/duplicate",
@@ -55,10 +59,10 @@ class TestDuplicating:
             }
             assert copy["pillar_weights"], "a copy with no pillar weights cannot add up"
         finally:
-            await api.delete("/v1/criteria-sets/a_weighted_copy")
+            await purge_criteria_set("a_weighted_copy")
 
     async def test_changing_the_copy_leaves_the_original_alone(
-        self, api: httpx.AsyncClient
+        self, api: httpx.AsyncClient, purge_criteria_set: Callable[[str], Awaitable[None]]
     ) -> None:
         """The whole point. A user tries something without touching what ships."""
         await api.post(
@@ -79,7 +83,7 @@ class TestDuplicating:
             )
             assert overburden["weight"] == 50
         finally:
-            await api.delete("/v1/criteria-sets/an_edited_copy")
+            await purge_criteria_set("an_edited_copy")
 
     async def test_duplicating_onto_an_identifier_already_taken_is_refused(
         self, api: httpx.AsyncClient

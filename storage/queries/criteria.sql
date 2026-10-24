@@ -205,6 +205,23 @@ WHERE  id = :criteria_set
   AND  deleted_at IS NULL
 FOR    UPDATE;
 
+-- name: lock_criteria_set_live_or_deleted(criteria_set)^
+-- The same row lock, taken whether or not the set is deleted, for the two things a deleted set is
+-- still for: the restore, which then reads the set no edit can be halfway through, and the purge,
+-- which then clears every row the set owns rather than those it saw before an edit wrote more.
+-- The name travels back because a restore refused over it must say which one.
+SELECT id,
+       name
+FROM   criteria_set
+WHERE  id = :criteria_set
+FOR    UPDATE;
+
+-- name: select_default_criteria_set_id()^
+-- The set a new one copies (P1-29), deleted or not: the flag stays on a deleted default.
+SELECT id
+FROM   criteria_set
+WHERE  is_default;
+
 -- name: update_criteria_set_name(criteria_set, name)!
 -- A set is renamed, never re-identified: the id is assigned once (arch.md 3.2a). A name another
 -- live set has, ignoring case and surrounding spaces, fails on `criteria_set_name_is_unique`.

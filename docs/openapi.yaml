@@ -1245,7 +1245,8 @@ components:
         - household_not_configured
         - weights_all_locked
         - criteria_set_exists
-        - criteria_set_in_use
+        - criteria_set_name_taken
+        - no_default_criteria_set
         - nothing_to_retry
         - nothing_to_ask_again
         - spend_cap_not_set

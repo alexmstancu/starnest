@@ -94,7 +94,8 @@ these thresholds yet. They stay in the snapshot: the day one can, it is covered.
 REWRITES_WITHOUT_THE_LOCK = {
     "create_criteria_set": "a new set: inserting its row is refused for an id any set holds, "
     "live or deleted, so there is no deleted set for it to write into",
-    "_purge": "tests and tooling only, and it destroys the set, deleted or not",
+    "_purge": "tests and tooling only: it destroys the set, deleted or not, so it takes the "
+    "lock that reaches a deleted set, `lock_criteria_set_live_or_deleted`",
 }
 """Store methods that clear or write a set's rows without taking the live set's lock first."""
 
@@ -379,6 +380,57 @@ class TestADeletionRacingAnEdit:
             await asyncio.wait_for(replacement, PATIENCE_SECONDS)
         await criteria.restore_criteria_set(RACED)
         assert await _rows_owned_by(pool, RACED) == before
+
+    async def test_a_restore_waiting_on_an_edit_answers_with_the_set_the_edit_left(
+        self,
+        criteria: PostgresCriteriaStore,
+        make: Callable[[CriteriaSet], Awaitable[None]],
+        pool: AsyncConnectionPool,
+    ) -> None:
+        """**A restore locks the set before it reads it** (review of f6d1f01).
+
+        Restoring a live set is idempotent, so it can meet an edit in flight. Read before the
+        lock, it answered with the set as it stood before the edit committed: a body no read
+        gives once the request returns.
+        """
+        await make(_a_set(RACED))
+        async with pool.connection() as editor:
+            await criteria._queries.lock_criteria_set(editor, criteria_set=RACED)
+            await criteria._queries.update_criteria_set_name(
+                editor, criteria_set=RACED, name="Renamed meanwhile"
+            )
+            restore = asyncio.create_task(criteria.restore_criteria_set(RACED))
+            assert await _a_lock_is_awaited(pool), "the restore never waited for the edit"
+
+        restored = await asyncio.wait_for(restore, PATIENCE_SECONDS)
+        assert restored.name == "Renamed meanwhile"
+        assert restored == await criteria.read_criteria_set(RACED)
+
+    async def test_a_purge_waiting_on_an_edit_destroys_the_set_with_the_edit(
+        self,
+        criteria: PostgresCriteriaStore,
+        make: Callable[[CriteriaSet], Awaitable[None]],
+        pool: AsyncConnectionPool,
+    ) -> None:
+        """**A purge locks the set before it clears it** (review of f6d1f01).
+
+        Unlocked, it cleared the rows it could see and then waited on the set row, so a row the
+        edit wrote meanwhile was left behind -- and the purge was refused as though a saved
+        evaluation held the set, which none did.
+        """
+        await make(_a_set(RACED))
+        async with pool.connection() as editor:
+            await criteria._queries.lock_criteria_set(editor, criteria_set=RACED)
+            purge = asyncio.create_task(criteria.purge_criteria_set(RACED))
+            assert await _a_lock_is_awaited(pool), "the purge never waited for the edit"
+            await editor.execute(
+                "INSERT INTO pillar_weight (criteria_set, pillar, level, weight)"
+                " VALUES (%s, 'housing', %s, 0)",
+                (RACED, COUNTRY),
+            )
+
+        await asyncio.wait_for(purge, PATIENCE_SECONDS)
+        assert await _rows_owned_by(pool, RACED) == {table: [] for table in ROWS_A_SET_OWNS}
 
     def test_every_rewrite_of_a_sets_rows_locks_the_live_set_first(self) -> None:
         """The races above as a rule over the store's own code, so a write path added later

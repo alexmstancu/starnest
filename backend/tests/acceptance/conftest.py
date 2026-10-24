@@ -11,7 +11,7 @@ afterwards, exactly as the storage suite does.
 """
 
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 
 import httpx
@@ -19,6 +19,7 @@ import pytest
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.api import build_app
+from starnest.criteria import UnknownCriteriaSetError
 from starnest.data_acquisition import SourceAdapter
 from starnest.storage import (
     PostgresCandidateStore,
@@ -139,6 +140,25 @@ async def _held_to_the_designed_error(response: httpx.Response) -> None:
     body = response.json()
     if isinstance(body, dict) and "code" in body:
         validate_refusal(body)
+
+
+@pytest.fixture
+async def purge_criteria_set(database_url: str) -> AsyncIterator[Callable[[str], Awaitable[None]]]:
+    """Destroys a set a test made, live, deleted or never made, through the storage purge.
+
+    **Not `DELETE /criteria-sets/{id}`**: that deletes in place (PL-033), so the set keeps every
+    row and its id for ever (P1-28) -- and a deleted set left behind holds the 0508 rollback off,
+    which `test_rollback_races.py` proves on this same database.
+    """
+    async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+        await pool.open(wait=True)
+        criteria = PostgresCriteriaStore(pool)
+
+        async def purge(criteria_set: str) -> None:
+            with suppress(UnknownCriteriaSetError):
+                await criteria.purge_criteria_set(criteria_set)
+
+        yield purge
 
 
 @pytest.fixture

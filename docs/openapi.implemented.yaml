@@ -1001,7 +1001,8 @@ components:
       - household_not_configured
       - weights_all_locked
       - criteria_set_exists
-      - criteria_set_in_use
+      - criteria_set_name_taken
+      - no_default_criteria_set
       - nothing_to_retry
       - nothing_to_ask_again
       - spend_cap_not_set
@@ -2863,19 +2864,18 @@ paths:
       tags:
       - catalog
     post:
-      description: 'A new, empty set of priorities.
+      description: 'A new set: a full copy of the default (`reqs.md` 3.4, P1-29),
+        deleted or not.
 
 
-        **Empty, not copied.** The design gives this an identifier and a name and
-        nothing else, and
+        **Copied, not empty** (PL-034). An empty set scores nothing and no operation
+        can add a
 
-        choosing a set to copy from would be this endpoint deciding whose priorities
-        a new set
+        pillar to it, so it was a set nothing could ever rank. Copied the way a duplicate
+        is, so what
 
-        starts from. A set with no criteria scores nothing, and `GET /rankings` says
-        exactly that
-
-        rather than producing a ranking out of an empty opinion.
+        a copy holds is decided in one place. No default is a 409, and nothing is
+        written.
 
 
         Refused with 409 when the identifier is taken: silently replacing a set somebody
@@ -2909,16 +2909,17 @@ paths:
       - criteria
   /v1/criteria-sets/{criteria_set_id}:
     delete:
-      description: 'Discard a set of priorities.
+      description: 'Delete a set in place, so it can be restored exactly (PL-033,
+        P1-27).
 
 
-        **A saved evaluation froze its own copy** (`reqs.md` Q193), so deleting the
-        set it was
+        Every row it owns stays and every read and edit stops seeing it. A saved evaluation
+        keeps
 
-        computed from leaves it readable -- which is why this store has a delete and
-        `ValueStore`
+        naming the row, so a set some ranking used can be deleted too, and the ranking
+        stays
 
-        deliberately does not: an opinion may be withdrawn, a measurement may not.'
+        readable (PL-035).'
       operationId: deleteCriteriaSet
       parameters:
       - in: path
@@ -3301,6 +3302,42 @@ paths:
             not accept; `code` says which. `invalid_request` is a malformed request,
             with each offending location in `details.errors`.
       summary: Update Pillar Weight
+      tags:
+      - criteria
+  /v1/criteria-sets/{criteria_set_id}/restore:
+    post:
+      description: 'The way back from a deletion: idempotent, 404 for an id no set
+        ever held, and 409 when a
+
+        live set took the name meanwhile (P1-35).
+
+
+        Not named after the query it runs, so the dead-SQL guard cannot take it for
+        a call (S2).'
+      operationId: restoreCriteriaSet
+      parameters:
+      - in: path
+        name: criteria_set_id
+        required: true
+        schema:
+          title: Criteria Set Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CriteriaSetBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+          description: The request is malformed, or names something the domain will
+            not accept; `code` says which. `invalid_request` is a malformed request,
+            with each offending location in `details.errors`.
+      summary: Restore Set
       tags:
       - criteria
   /v1/data-acquisition-runs:

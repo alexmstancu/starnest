@@ -10,7 +10,7 @@ and the difference is invisible until it happens to somebody.
 """
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 import httpx
 import pytest
@@ -665,11 +665,13 @@ starting with a letter (`candidates/identifiers.py`, reached through `CatalogId`
 
 
 @pytest.fixture
-async def a_set_to_discard(api: httpx.AsyncClient) -> AsyncIterator[str]:
-    """A well-formed id for a set the test creates, discarded afterwards: the criteria tables
+async def a_set_to_discard(
+    purge_criteria_set: Callable[[str], Awaitable[None]],
+) -> AsyncIterator[str]:
+    """A well-formed id for a set the test creates, purged afterwards: the criteria tables
     are not among those the `api` fixture empties."""
     yield "my_set"
-    await api.delete("/v1/criteria-sets/my_set")
+    await purge_criteria_set("my_set")
 
 
 class TestADomainRefusalIsNot500:

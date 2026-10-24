@@ -29,12 +29,14 @@ from starnest.criteria import (
     CriteriaSetExistsError,
     CriteriaSetId,
     CriteriaSetInUseError,
+    CriteriaSetNameTakenError,
     CriteriaStore,
     Criterion,
     Goal,
     HighestAnchor,
     LabelThreshold,
     MatchingThreshold,
+    NoDefaultCriteriaSetError,
     NormalisationMethod,
     PillarWeight,
     RangeThreshold,
@@ -43,7 +45,6 @@ from starnest.criteria import (
     ShareThreshold,
     UnknownCriteriaSetError,
 )
-from starnest.criteria.store import CriteriaSetNameTakenError
 from starnest.data import AttributeId, UnknownAttributeError, ValueType
 from starnest.household import Settings
 from starnest.storage.connections import acquire
@@ -218,25 +219,43 @@ class PostgresCriteriaStore(CriteriaStore):
             )
 
     async def restore_criteria_set(self, criteria_set: CriteriaSetId | str) -> CriteriaSet:
-        """Clear the one column the deletion set. Read first, deleted or not, because a refusal
-        over the name must say which name, and the driver's message gives it folded to lower case.
+        """Clear the one column the deletion set, under the set's lock, and read what came back.
+
+        **Locked before it reads** (review of f6d1f01). Restoring a live set is idempotent, so it
+        can meet an edit in flight; read first, it answered with the set as it stood before that
+        edit committed. The lock's row carries the name, because a refusal over the name must say
+        which name and the driver's message gives it folded to lower case.
         """
         async with acquire(self._pool) as connection:
-            held = await self._queries.select_criteria_set(
-                connection, criteria_set=str(criteria_set), level=None, include_deleted=True
+            held = await self._queries.lock_criteria_set_live_or_deleted(
+                connection, criteria_set=str(criteria_set)
             )
             if held is None:
                 raise UnknownCriteriaSetError(
                     f"there is no criteria set called {criteria_set!r} to restore"
                 )
-            restored = _criteria_set_from(held)
             try:
                 await self._queries.restore_criteria_set(connection, criteria_set=str(criteria_set))
             except UniqueViolation as taken:
                 raise CriteriaSetNameTakenError(
-                    restored.name, f"the criteria set {str(criteria_set)!r} cannot be restored"
+                    held.name, f"the criteria set {str(criteria_set)!r} cannot be restored"
                 ) from taken
-        return restored
+            restored = await self._queries.select_criteria_set(
+                connection, criteria_set=str(criteria_set), level=None, include_deleted=False
+            )
+        return _criteria_set_from(restored)
+
+    async def read_default_criteria_set(self) -> CriteriaSet:
+        async with acquire(self._pool) as connection:
+            default = await self._queries.select_default_criteria_set_id(connection)
+            if default is None:
+                raise NoDefaultCriteriaSetError(
+                    "no criteria set is the default, so a new set has nothing to copy"
+                )
+            row = await self._queries.select_criteria_set(
+                connection, criteria_set=default.id, level=None, include_deleted=True
+            )
+        return _criteria_set_from(row)
 
     async def purge_criteria_set(self, criteria_set: CriteriaSetId | str) -> None:
         """Destroy a set, live or deleted, unless a saved evaluation is holding it in place.
@@ -256,11 +275,13 @@ class PostgresCriteriaStore(CriteriaStore):
             ) from held
 
     async def _purge(self, criteria_set: CriteriaSetId | str) -> None:
+        """Locked first, so an edit in flight finishes before anything is cleared: unlocked, a
+        row it wrote meanwhile outlived the clearing and the purge was refused as "in use"."""
         async with acquire(self._pool) as connection:
-            existing = await self._queries.select_criteria_set(
-                connection, criteria_set=str(criteria_set), level=None, include_deleted=True
+            locked = await self._queries.lock_criteria_set_live_or_deleted(
+                connection, criteria_set=str(criteria_set)
             )
-            if existing is None:
+            if locked is None:
                 raise UnknownCriteriaSetError(
                     f"there is no criteria set called {criteria_set!r} to purge"
                 )

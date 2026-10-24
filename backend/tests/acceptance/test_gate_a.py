@@ -12,6 +12,8 @@ shipped set could not have scored with perfect data (`docs/d6-scale-anchors.md`)
 that cannot fail is not a gate.
 """
 
+from collections.abc import Awaitable, Callable
+
 import httpx
 import pytest
 from psycopg_pool import AsyncConnectionPool
@@ -56,7 +58,7 @@ class TestGateA:
         assert all(round(total) == 100 for total in by_pillar.values())
 
     async def test_3_a_duplicated_set_rebalances_when_one_weight_moves(
-        self, api: httpx.AsyncClient
+        self, api: httpx.AsyncClient, purge_criteria_set: Callable[[str], Awaitable[None]]
     ) -> None:
         """The interaction the whole product turns on (`arch.md` 8.3), done the way a user does
         it: copy the shipped set so nothing shipped is touched, then move a weight."""
@@ -75,7 +77,7 @@ class TestGateA:
             assert weights["country.housing_cost_overburden_rate"] == 70
             assert sum(weights.values()) == 100
         finally:
-            await api.delete("/v1/criteria-sets/gate_a_copy")
+            await purge_criteria_set("gate_a_copy")
 
     async def test_4_a_run_is_planned_before_anything_is_fetched(
         self, api: httpx.AsyncClient

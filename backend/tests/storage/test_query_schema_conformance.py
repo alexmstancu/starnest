@@ -235,6 +235,9 @@ def test_every_query_is_either_called_or_accounted_for() -> None:
 READS_EVERY_SET = {
     "delete_criteria_set": "the purge, for tests and tooling only: it must reach a deleted set",
     "restore_criteria_set": "brings a deleted set back, so it is the one write that must see one",
+    "lock_criteria_set_live_or_deleted": "locks a set before it is restored or purged, the two "
+    "things a deleted set is still for",
+    "select_default_criteria_set_id": "the default is copied even once it is deleted (P1-29)",
 }
 """Queries that read `criteria_set` rows and may meet a deleted one, each with its reason.
 
@@ -243,9 +246,12 @@ is that every read and every edit sees live sets only. Forgetting the filter onc
 edit or rank a set somebody deleted, so every query reading the table carries it or is here.
 """
 
-MAY_ASK_FOR_A_DELETED_SET = {"_purge", "restore_criteria_set"}
-"""The only store methods that pass `include_deleted=True` to `select_criteria_set`: the purge
-(through its helper) and the restore, the two things a deleted set is still for."""
+MAY_ASK_FOR_A_DELETED_SET = {"_purge", "restore_criteria_set", "read_default_criteria_set"}
+"""The only store methods that reach a deleted set -- by locking it whatever its state, or by
+passing `include_deleted=True` to `select_criteria_set`: the purge (through its helper), the
+restore, and the read of the default a new set copies."""
+
+REACHES_A_DELETED_SET = "lock_criteria_set_live_or_deleted"
 
 READS_THE_SET_TABLE = re.compile(r"\b(?:from|join|update)\s+criteria_set\b", re.I)
 
@@ -272,8 +278,9 @@ def test_every_query_that_reads_a_set_sees_live_sets_only() -> None:
     assert not stale, f"{stale} no longer read criteria_set; remove them from READS_EVERY_SET"
 
 
-def test_only_the_purge_and_the_restore_ask_to_see_a_deleted_set() -> None:
-    """`select_criteria_set` filters unless asked not to, so who asks is held here instead."""
+def test_only_the_purge_the_restore_and_the_default_read_reach_a_deleted_set() -> None:
+    """`select_criteria_set` filters unless asked not to, and one lock does not filter at all,
+    so who asks is held here instead."""
     asking = set()
     for path in SOURCE.rglob("*.py"):
         for function in ast.walk(ast.parse(path.read_text())):
@@ -286,5 +293,8 @@ def test_only_the_purge_and_the_restore_ask_to_see_a_deleted_set() -> None:
                     )
                     if keyword.arg == "include_deleted" and not passes_false:
                         asking.add(function.name)
+                called = getattr(getattr(call, "func", None), "attr", None)
+                if called == REACHES_A_DELETED_SET:
+                    asking.add(function.name)
 
     assert asking == MAY_ASK_FOR_A_DELETED_SET

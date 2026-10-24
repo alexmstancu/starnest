@@ -530,19 +530,17 @@ class ApplicationBody(BaseModel):
     response_model=CriteriaSetBody,
 )
 async def create_criteria_set(body: NewCriteriaSetBody, criteria: Criteria) -> CriteriaSetBody:
-    """A new, empty set of priorities.
+    """A new set: a full copy of the default (`reqs.md` 3.4, P1-29), deleted or not.
 
-    **Empty, not copied.** The design gives this an identifier and a name and nothing else, and
-    choosing a set to copy from would be this endpoint deciding whose priorities a new set
-    starts from. A set with no criteria scores nothing, and `GET /rankings` says exactly that
-    rather than producing a ranking out of an empty opinion.
+    **Copied, not empty** (PL-034). An empty set scores nothing and no operation can add a
+    pillar to it, so it was a set nothing could ever rank. Copied the way a duplicate is, so what
+    a copy holds is decided in one place. No default is a 409, and nothing is written.
 
     Refused with 409 when the identifier is taken: silently replacing a set somebody built is
     the worst kind of success (`criteria/store.py`).
     """
-    with built_from_the_request():
-        created = CriteriaSet(id=body.id, name=body.name)
-    await criteria.create_criteria_set(created)
+    default = await criteria.read_default_criteria_set()
+    await criteria.create_criteria_set(default.duplicated_as(body.id, body.name))
     return _set_body(await criteria.read_criteria_set(body.id))
 
 
@@ -565,14 +563,28 @@ async def rename_criteria_set(
     "/criteria-sets/{criteria_set_id}", operation_id="deleteCriteriaSet", status_code=204
 )
 async def delete_criteria_set(criteria_set_id: str, criteria: Criteria) -> Response:
-    """Discard a set of priorities.
+    """Delete a set in place, so it can be restored exactly (PL-033, P1-27).
 
-    **A saved evaluation froze its own copy** (`reqs.md` Q193), so deleting the set it was
-    computed from leaves it readable -- which is why this store has a delete and `ValueStore`
-    deliberately does not: an opinion may be withdrawn, a measurement may not.
+    Every row it owns stays and every read and edit stops seeing it. A saved evaluation keeps
+    naming the row, so a set some ranking used can be deleted too, and the ranking stays
+    readable (PL-035).
     """
-    await criteria.delete_criteria_set(criteria_set_id)
+    await criteria.discard_criteria_set(criteria_set_id)
     return Response(status_code=204)
+
+
+@router.post(
+    "/criteria-sets/{criteria_set_id}/restore",
+    operation_id="restoreCriteriaSet",
+    response_model=CriteriaSetBody,
+)
+async def restore_set(criteria_set_id: str, criteria: Criteria) -> CriteriaSetBody:
+    """The way back from a deletion: idempotent, 404 for an id no set ever held, and 409 when a
+    live set took the name meanwhile (P1-35).
+
+    Not named after the query it runs, so the dead-SQL guard cannot take it for a call (S2).
+    """
+    return _set_body(await criteria.restore_criteria_set(criteria_set_id))
 
 
 @router.put(

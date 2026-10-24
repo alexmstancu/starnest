@@ -43,9 +43,11 @@ from starnest.criteria.rebalancing import (
 from starnest.criteria.store import (
     CriteriaSetExistsError,
     CriteriaSetInUseError,
+    CriteriaSetNameTakenError,
     CriteriaStore,
     HighestAnchor,
     MatchRuleResultStore,
+    NoDefaultCriteriaSetError,
     UnknownCriteriaSetError,
 )
 from starnest.criteria.thresholds import (
@@ -67,6 +69,7 @@ __all__ = [
     "CriteriaSetExistsError",
     "CriteriaSetId",
     "CriteriaSetInUseError",
+    "CriteriaSetNameTakenError",
     "CriteriaStore",
     "Criterion",
     "CriterionDeclarationError",
@@ -75,6 +78,7 @@ __all__ = [
     "LabelThreshold",
     "MatchRuleResultStore",
     "MatchingThreshold",
+    "NoDefaultCriteriaSetError",
     "NormalisationMethod",
     "PillarWeight",
     "RangeThreshold",

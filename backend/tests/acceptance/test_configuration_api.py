@@ -14,6 +14,9 @@ import pytest
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
+from starnest.criteria import CriteriaSet
+from starnest.storage import PostgresCriteriaStore
+
 pytestmark = pytest.mark.acceptance
 
 COUNTRY = "country"
@@ -21,33 +24,42 @@ MINIMAL = "minimal"
 NEW_SET = "a_scratch_of_my_own"
 OVERBURDEN = "country.housing_cost_overburden_rate"
 OVERCROWDING = "country.overcrowding_rate"
+DISCARDED = "throwaway"
+EMPTY = "an_empty_legacy_set"
 
 
 @pytest.fixture
-async def a_new_set(api: httpx.AsyncClient):
+async def criteria(database_url: str) -> AsyncIterator[PostgresCriteriaStore]:
+    async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+        await pool.open(wait=True)
+        yield PostgresCriteriaStore(pool)
+
+
+@pytest.fixture
+async def a_new_set(api: httpx.AsyncClient, criteria: PostgresCriteriaStore):
+    """Purged rather than deleted afterwards: a deleted set keeps its id (P1-28), and four tests
+    make this one in turn."""
     created = await api.post("/v1/criteria-sets", json={"id": NEW_SET, "name": "Mine"})
     assert created.status_code == 201
     yield created.json()
-    await api.delete(f"/v1/criteria-sets/{NEW_SET}")
+    await criteria.purge_criteria_set(NEW_SET)
 
 
 class TestCriteriaSets:
-    async def test_a_new_set_starts_empty_rather_than_borrowing_somebody_elses_priorities(
-        self, a_new_set: dict
-    ) -> None:
-        """The design gives it an identifier and a name and nothing else; copying a set would be
-        the endpoint deciding whose priorities a new one starts from."""
-        assert a_new_set["id"] == NEW_SET
-        assert a_new_set["criteria"] == []
-        assert a_new_set["pillar_weights"] == []
-
     async def test_an_empty_set_scores_nothing_and_says_so(
-        self, api: httpx.AsyncClient, a_new_set: dict
+        self, api: httpx.AsyncClient, criteria: PostgresCriteriaStore
     ) -> None:
-        """Rather than producing a ranking out of an empty opinion."""
-        await api.put("/v1/settings", json={"score_scale_max": 100})
+        """Rather than producing a ranking out of an empty opinion. Create copies the default
+        now (PL-034), so such a set is one stored before it did, built through the store."""
+        await criteria.create_criteria_set(CriteriaSet(id=EMPTY, name="Empty"))
+        try:
+            await api.put("/v1/settings", json={"score_scale_max": 100})
 
-        response = await api.get("/v1/rankings", params={"criteria_set": NEW_SET, "level": COUNTRY})
+            response = await api.get(
+                "/v1/rankings", params={"criteria_set": EMPTY, "level": COUNTRY}
+            )
+        finally:
+            await criteria.purge_criteria_set(EMPTY)
 
         body = response.json()
         assert (response.status_code, body["code"]) == (422, "cannot_be_ranked")
@@ -70,13 +82,19 @@ class TestCriteriaSets:
         assert renamed.json()["name"] == "Ours"
         assert renamed.json()["id"] == NEW_SET
 
-    async def test_a_set_can_be_discarded(self, api: httpx.AsyncClient) -> None:
-        await api.post("/v1/criteria-sets", json={"id": "throwaway", "name": "Throwaway"})
+    async def test_a_set_can_be_discarded_and_restored(
+        self, api: httpx.AsyncClient, criteria: PostgresCriteriaStore
+    ) -> None:
+        made = await api.post("/v1/criteria-sets", json={"id": DISCARDED, "name": "Throwaway"})
+        try:
+            deleted = await api.delete(f"/v1/criteria-sets/{DISCARDED}")
+            gone = await api.get(f"/v1/criteria-sets/{DISCARDED}")
+            restored = await api.post(f"/v1/criteria-sets/{DISCARDED}/restore")
+        finally:
+            await criteria.purge_criteria_set(DISCARDED)
 
-        deleted = await api.delete("/v1/criteria-sets/throwaway")
-
-        assert deleted.status_code == 204
-        assert (await api.get("/v1/criteria-sets/throwaway")).status_code == 404
+        assert (deleted.status_code, gone.status_code) == (204, 404)
+        assert restored.json() == made.json()
 
     async def test_renaming_one_that_does_not_exist_is_a_404(self, api: httpx.AsyncClient) -> None:
         assert (

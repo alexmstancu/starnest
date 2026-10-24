@@ -30,8 +30,9 @@ from starnest.comparison import ComparatorLimitExceededError, ComparisonError
 from starnest.criteria import (
     CriteriaSetError,
     CriteriaSetExistsError,
-    CriteriaSetInUseError,
+    CriteriaSetNameTakenError,
     CriterionDeclarationError,
+    NoDefaultCriteriaSetError,
     ThresholdShapeError,
     UnknownCriteriaSetError,
     UnknownCriterionError,
@@ -76,7 +77,8 @@ class ErrorCode(StrEnum):
     HOUSEHOLD_NOT_CONFIGURED = "household_not_configured"
     WEIGHTS_ALL_LOCKED = "weights_all_locked"
     CRITERIA_SET_EXISTS = "criteria_set_exists"
-    CRITERIA_SET_IN_USE = "criteria_set_in_use"
+    CRITERIA_SET_NAME_TAKEN = "criteria_set_name_taken"
+    NO_DEFAULT_CRITERIA_SET = "no_default_criteria_set"
     NOTHING_TO_RETRY = "nothing_to_retry"
     NOTHING_TO_ASK_AGAIN = "nothing_to_ask_again"
     SPEND_CAP_NOT_SET = "spend_cap_not_set"
@@ -133,7 +135,8 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     # 409 -- the request is well formed and the state refuses it.
     WeightsAllLockedError: _refusal(409, "weights_all_locked"),
     CriteriaSetExistsError: _refusal(409, "criteria_set_exists"),
-    CriteriaSetInUseError: _refusal(409, "criteria_set_in_use"),
+    CriteriaSetNameTakenError: _refusal(409, "criteria_set_name_taken"),
+    NoDefaultCriteriaSetError: _refusal(409, "no_default_criteria_set"),
     NothingToRetryError: _refusal(409, "nothing_to_retry"),
     NothingToAskAgainError: _refusal(409, "nothing_to_ask_again"),
     SpendCapNotSetError: _refusal(409, "spend_cap_not_set"),
