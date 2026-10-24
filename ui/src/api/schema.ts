@@ -862,7 +862,7 @@ export interface components {
          * @description Every refusal this API makes, by code. A client words each one and branches on it; `message` is for a person reading the API directly and may change.
          * @enum {string}
          */
-        ErrorCode: "not_found" | "candidate_not_found" | "household_not_configured" | "weights_all_locked" | "criteria_set_exists" | "criteria_set_in_use" | "nothing_to_retry" | "nothing_to_ask_again" | "spend_cap_not_set" | "nothing_to_fetch" | "run_already_in_flight" | "llm_not_configured" | "manual_entry_not_permitted" | "invalid_value" | "answer_recorded_by_a_person" | "score_scale_not_set" | "comparator_limit_not_set" | "invalid_comparison" | "invalid_criteria_set" | "invalid_criterion" | "unknown_place" | "invalid_reference_period" | "invalid_request" | "cannot_be_scored" | "cannot_be_ranked" | "invalid_match_rule_result" | "unknown_data_source" | "unknown_scope";
+        ErrorCode: "not_found" | "candidate_not_found" | "household_not_configured" | "weights_all_locked" | "criteria_set_exists" | "criteria_set_in_use" | "nothing_to_retry" | "nothing_to_ask_again" | "spend_cap_not_set" | "nothing_to_fetch" | "run_already_in_flight" | "llm_not_configured" | "manual_entry_not_permitted" | "invalid_value" | "answer_recorded_by_a_person" | "score_scale_not_set" | "score_scale_below_anchors" | "comparator_limit_not_set" | "comparator_limit_exceeded" | "invalid_comparison" | "invalid_criteria_set" | "invalid_criterion" | "unknown_place" | "invalid_reference_period" | "invalid_request" | "cannot_be_scored" | "cannot_be_ranked" | "invalid_match_rule_result" | "unknown_data_source" | "unknown_scope";
         /** @description The span the data describes. Start equals end for a single day. */
         ReferencePeriod: {
             /** Format: date */
@@ -1329,7 +1329,7 @@ export interface components {
             name: string;
             /** @description Null when the candidate does not match. */
             rank?: number | null;
-            /** @description Null only when insufficient data. */
+            /** @description Null only when insufficient data. On the enclosing response's score_scale_max. */
             score: number | null;
             /** @description Why this candidate could not be scored, in words -- a blocking criterion with no figure, or coverage below the floor. Null whenever there is a score. Separate from non_match_reasons, which say why a candidate that COULD be scored does not match: "we could not measure this" and "we measured it and it fails" are different things to show. */
             insufficient_reason?: string | null;
@@ -1361,6 +1361,8 @@ export interface components {
             level: string;
             /** Format: date-time */
             computed_at: string;
+            /** @description The top of the score range every score in this ranking is on: the setting at the moment a live ranking was computed, the frozen value for a saved one. Draw and label every score, pillar score and difference against this, never against the current setting, which may have changed since. Anchored criteria do not rescale when the range changes: an anchor's score is the number it was given. */
+            score_scale_max: number;
             candidates: components["schemas"]["CandidateResult"][];
         };
         EvaluationSummary: {
@@ -1376,7 +1378,7 @@ export interface components {
         AttributeScore: {
             attribute: string;
             pillar: string;
-            /** @description Null when no value was available. */
+            /** @description 0 to the enclosing response's score_scale_max. Null when no value was available. */
             normalised_score: number | null;
             /** @description Percentage, 0-100. Weight within the pillar as configured. */
             weight?: number;
@@ -1389,7 +1391,7 @@ export interface components {
         };
         PillarScore: {
             pillar: string;
-            /** @description What this pillar scored, as a weighted mean of its criteria. Null when no criterion in it was scored -- zero would read as "measured, and bad". */
+            /** @description What this pillar scored, as a weighted mean of its criteria, from 0 to the enclosing response's score_scale_max. Null when no criterion in it was scored -- zero would read as "measured, and bad". */
             score: number | null;
             /** @description Percentage, 0-100. What this pillar counted for across the level AFTER redistribution, so the eleven sum to the weight that actually scored rather than to the weight that was configured. */
             weight: number;
@@ -1397,6 +1399,8 @@ export interface components {
             contribution: number;
         };
         CandidateScoreDetail: components["schemas"]["CandidateResult"] & {
+            /** @description The top of the score range this candidate's scores are on: the live setting, or the saved evaluation's frozen value. */
+            score_scale_max: number;
             attribute_scores?: components["schemas"]["AttributeScore"][];
         };
         ComparisonAttributeRow: {
@@ -1421,6 +1425,8 @@ export interface components {
         Comparison: {
             criteria_set: string;
             level: string;
+            /** @description The top of the score range the focus's and comparators' scores are on. Always the live setting: a comparison is computed, never stored. */
+            score_scale_max: number;
             focus: components["schemas"]["CandidateResult"];
             comparators: components["schemas"]["CandidateResult"][];
             attributes: components["schemas"]["ComparisonAttributeRow"][];
@@ -1489,7 +1495,7 @@ export interface components {
                 "application/json": components["schemas"]["CriteriaSet"];
             };
         };
-        /** @description The request is malformed, or names something the domain will not accept; `code` says which. `invalid_request` is a malformed request -- a body field or query parameter the operation does not declare, a value of the wrong type or out of range, a null the field refuses, an identifier that cannot be one -- and `details.errors` lists each offending `location` with its `problem`. Any other code is the domain's own refusal, such as `invalid_criterion`, `unknown_place` or `unknown_scope`. */
+        /** @description The request is malformed, or names something the domain will not accept; `code` says which. `invalid_request` is a malformed request -- a body field or query parameter the operation does not declare, a value of the wrong type or out of range, a null the field refuses, an identifier that cannot be one -- and `details.errors` lists each offending `location` with its `problem`. Any other code is the domain's own refusal, such as `invalid_criterion`, `unknown_place` or `unknown_scope`. `cannot_be_ranked` names its cause in `details.reason` where it is one of four: `scores_nothing`, no criterion is scored at the level; `pillar_without_criteria`, pillars carry weight that no criterion scores into; `criteria_without_weight`, the criteria still scored in a pillar carry no weight between them; or `pillars_without_weight`, the pillars still scored carry no weight between them. All but the first list their pillars in `details.pillars`. `invalid_criterion` raised against the score range carries `details.reason: anchor_above_scale`, with the `attribute`, its `anchor_score` and the `score_scale_max` it is above. */
         InvalidRequest: {
             headers: {
                 [name: string]: unknown;
@@ -1592,6 +1598,15 @@ export interface operations {
         };
         responses: {
             200: components["responses"]["Settings"];
+            /** @description `score_scale_below_anchors`: a criterion anchors a figure to a score above the new top of the range. `details.minimum` is the lowest top every live anchor fits under, with the `criteria_set` and `attribute` that need it. A null, or a value equal to the stored one, is never refused. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             422: components["responses"]["InvalidRequest"];
         };
     };
@@ -2803,7 +2818,7 @@ export interface operations {
                     "application/json": components["schemas"]["Comparison"];
                 };
             };
-            /** @description Levels mixed, or more comparators than the configured limit. */
+            /** @description `comparator_limit_not_set`; `comparator_limit_exceeded` (`details.limit`, `details.asked`); `invalid_comparison` (`details.candidates`: the ids it concerns); or `score_scale_not_set`. */
             409: {
                 headers: {
                     [name: string]: unknown;
