@@ -129,6 +129,10 @@
   --font-size-large: 1.1875rem;
   --font-size-title: 1.25rem;
   --line-height-body: 1.5;
+  /* The tab strip's height, which the acquisition bar under it is offset by (PL-133): one
+     number, so the two cannot drift. A tab's padding (13 + 11), its line (20), its 2px
+     underline and the strip's 1px border. */
+  --tabbar-height: 47px;
   --weight-normal: 400;
   --weight-strong: 600;
 
@@ -197,6 +201,7 @@ fieldset {
   position: sticky;
   top: 0;
   z-index: 5;
+  height: var(--tabbar-height);
   display: flex;
   align-items: stretch;
   gap: 4px;
@@ -207,6 +212,7 @@ fieldset {
 
 .tabbar__tab {
   padding: 13px 14px 11px;
+  line-height: 20px;
   border-bottom: 2px solid transparent;
   color: var(--colour-text-muted);
   font-size: 13.5px;
@@ -449,11 +455,11 @@ fieldset {
   border-top: var(--border-width) solid var(--colour-border);
 }
 
-/* The acquisition bar, under the tabs and only while something is running. It sits at 44px
-   because that is the tab strip's own height -- sticky under sticky. */
+/* The acquisition bar, under the tabs and only while something is running. It sits at the tab
+   strip's own height -- sticky under sticky. */
 .acquiring-bar {
   position: sticky;
-  top: 44px;
+  top: var(--tabbar-height);
   z-index: 4;
   display: flex;
   align-items: center;
@@ -479,9 +485,10 @@ fieldset {
   overflow: hidden;
 }
 
+/* `fill`, not `background`: the fill is an SVG rectangle, which has no background and is black
+   without a fill. */
 .acquiring-bar__fill {
-  height: 100%;
-  background: var(--colour-accent);
+  fill: var(--colour-accent);
 }
 
 .acquiring-bar__meta {

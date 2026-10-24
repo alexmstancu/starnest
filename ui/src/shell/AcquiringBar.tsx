@@ -15,8 +15,9 @@ const ACQUIRE = ROUTES.find((route) => route.label === "Acquire")!;
  * only exists on the tab you left is a progress bar nobody sees. It is deliberately absent on
  * Acquire itself, where the run's own report says more than a strip could.
  *
- * Sticky under the tab strip rather than over it: at 44px it sits exactly where the tabs
- * stop, so the two read as one header rather than as two things that happen to overlap.
+ * Sticky under the tab strip rather than over it, offset by the strip's own height
+ * (`--tabbar-height`): it sits exactly where the tabs stop, so the two read as one header
+ * rather than as two things that happen to overlap.
  *
  * **The strip is not a live region** (PL-131): its count moves on every look, and a screen
  * reader read each one out. A separate, always-present status says only that a run started or

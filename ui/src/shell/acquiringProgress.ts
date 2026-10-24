@@ -1,4 +1,5 @@
 import type { Run } from "../api/endpoints";
+import { formatCount } from "../format/display";
 
 /**
  * How far through an acquisition is, in words and as a width.
@@ -16,7 +17,7 @@ export function acquiringProgress(
     return { reading: "starting", portion: 0 };
   }
   const portion = Math.max(0, Math.min(100, (done / total) * 100));
-  return { reading: `${done} of ${total}`, portion };
+  return { reading: `${formatCount(done)} of ${formatCount(total)}`, portion };
 }
 
 /** As much of the newest run as a look needs to say whether it is running. */

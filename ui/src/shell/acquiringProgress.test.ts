@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   acquiringProgress,
@@ -125,5 +127,31 @@ describe("what a look announces (PL-131)", () => {
   it("announces nothing when nothing was running and nothing is", () => {
     expect(announcementFor(null, completed(7))).toBeNull();
     expect(announcementFor(null, undefined)).toBeNull();
+  });
+});
+
+describe("how the strip is drawn (PL-133)", () => {
+  const sheet = readFileSync(join(__dirname, "..", "styles.css"), "utf8");
+
+  /** The declarations of the one rule whose selector is exactly `selector`. */
+  function rule(selector: string): string {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = new RegExp(`(?:^|\\})\\s*${escaped}\\s*\\{([^}]*)\\}`, "m").exec(sheet);
+    if (!match) throw new Error(`no rule for ${selector}`);
+    return match[1]!;
+  }
+
+  it("groups the count as every other count is grouped", () => {
+    expect(acquiringProgress(1200, 4800).reading).toBe("1,200 of 4,800");
+  });
+
+  it("colours the bar with fill, which an SVG rectangle reads, not background", () => {
+    expect(rule(".acquiring-bar__fill")).toMatch(/\bfill:\s*var\(--colour-accent\)/);
+    expect(rule(".acquiring-bar__fill")).not.toMatch(/background/);
+  });
+
+  it("sits exactly where the tab bar ends, both read from one height", () => {
+    expect(rule(".tabbar")).toMatch(/\bheight:\s*var\(--tabbar-height\)/);
+    expect(rule(".acquiring-bar")).toMatch(/\btop:\s*var\(--tabbar-height\)/);
   });
 });
