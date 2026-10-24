@@ -1,4 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 import { mockServer } from "../mocks/server";
@@ -191,5 +192,20 @@ describe("PL-131: what the strip says, and what it announces", () => {
     await screen.findByRole("heading", { name: "Rank" });
 
     expect(screen.getByTestId("acquisition-announcer")).toBeEmptyDOMElement();
+  });
+});
+
+describe("PL-132: the strip looks again when the reader leaves Acquire", () => {
+  it("shows a run started on Acquire at once, not at the next idle look", async () => {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, () => HttpResponse.json({ items: [], total: 0 })),
+    );
+    renderShell("/acquire");
+    await screen.findByRole("heading", { name: "Acquire" });
+
+    acquisitionIsRunning(1, 96);
+    await userEvent.setup().click(screen.getByRole("link", { name: "Rank" }));
+
+    expect(await strip()).toHaveTextContent("1 of 96");
   });
 });

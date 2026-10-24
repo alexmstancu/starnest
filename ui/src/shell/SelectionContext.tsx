@@ -53,6 +53,12 @@ export interface Selection {
    */
   acquisitionsEnded: number;
   noteAcquisitionEnded: () => void;
+  /**
+   * Bumped whenever a screen starts an acquisition (PL-132), so the shell's watch looks at once
+   * and follows it closely, rather than at its idle pace of every thirty seconds.
+   */
+  acquisitionsStarted: number;
+  noteAcquisitionStarted: () => void;
 }
 
 export interface SelectionLists {
@@ -89,6 +95,11 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
   const [acquisitionsEnded, setAcquisitionsEnded] = useState(0);
   const noteAcquisitionEnded = useCallback(
     () => setAcquisitionsEnded((ended) => ended + 1),
+    [],
+  );
+  const [acquisitionsStarted, setAcquisitionsStarted] = useState(0);
+  const noteAcquisitionStarted = useCallback(
+    () => setAcquisitionsStarted((started) => started + 1),
     [],
   );
 
@@ -175,6 +186,8 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
       noteSavedRanking,
       acquisitionsEnded,
       noteAcquisitionEnded,
+      acquisitionsStarted,
+      noteAcquisitionStarted,
       read,
       reload,
       reloadAndWait,
@@ -188,6 +201,8 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
       noteSavedRanking,
       acquisitionsEnded,
       noteAcquisitionEnded,
+      acquisitionsStarted,
+      noteAcquisitionStarted,
       read,
       reload,
       reloadAndWait,

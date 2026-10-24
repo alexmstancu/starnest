@@ -3,6 +3,7 @@ import { ROUTES } from "../navigation/routes";
 import { useSelection } from "./SelectionContext";
 import { acquiringProgress } from "./acquiringProgress";
 import { type Acquiring, useAcquiring } from "./useAcquiring";
+import { useScreenChanges } from "./useScreenChanges";
 
 const ACQUIRE = ROUTES.find((route) => route.label === "Acquire")!;
 
@@ -24,8 +25,14 @@ const ACQUIRE = ROUTES.find((route) => route.label === "Acquire")!;
 export function AcquiringBar() {
   // **Watched on every screen, Acquire included**, so the sidebar hears that a run has ended
   // wherever the reader is -- only the strip itself stays off Acquire.
-  const { noteAcquisitionEnded } = useSelection();
-  const { acquiring, announcement } = useAcquiring(noteAcquisitionEnded);
+  const { noteAcquisitionEnded, acquisitionsStarted } = useSelection();
+  // **A screen change is when a run just started on Acquire becomes the strip's to show**, so
+  // it looks at once then too, rather than up to thirty seconds later (PL-132). Both only grow.
+  const screenChanges = useScreenChanges();
+  const { acquiring, announcement } = useAcquiring(
+    noteAcquisitionEnded,
+    acquisitionsStarted + screenChanges,
+  );
   const onAcquire = useLocation().pathname === ACQUIRE.path;
 
   return (

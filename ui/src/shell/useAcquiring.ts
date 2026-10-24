@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { fetchRun, fetchRuns, type RunDetail } from "../api/endpoints";
 import { acquisitionEnded, announcementFor, runningRunOf } from "./acquiringProgress";
 
@@ -6,12 +6,15 @@ import { acquisitionEnded, announcementFor, runningRunOf } from "./acquiringProg
  * Whether an acquisition is in flight, and how far through it is.
  *
  * **It polls, because nothing pushes.** There is no socket and no event stream; a run writes
- * its progress as it goes and the interface asks. Two seconds is often enough to feel live
- * and rare enough that a run lasting an hour costs 1,800 cheap reads rather than a connection
- * held open for it.
+ * its progress as it goes and the interface asks. Two seconds while a run is in flight is often
+ * enough to feel live and rare enough that a run lasting an hour costs 1,800 cheap reads rather
+ * than a connection held open for it.
  *
- * **It stops asking the moment the run stops.** A poll that continues after `completed` is a
- * request per two seconds forever, which is the shape that makes a local app feel heavy.
+ * **Every thirty seconds while nothing runs** (PL-132). Asking every two seconds for as long as
+ * a tab was open is the shape that makes a local app feel heavy. A run started from elsewhere
+ * is still seen within half a minute -- and **`started` makes that at once**: whenever it
+ * changes, the hook looks straight away and keeps the two-second pace for a few looks, so a
+ * run that was just started is followed from its first moments.
  *
  * **And it says when the run it saw running stops** (UI-11), through `onEnded`: this is the
  * one place in the shell that watches a run, and what the sidebar read about the runs and the
@@ -32,14 +35,21 @@ export interface AcquiringState {
   announcement: string;
 }
 
-const EVERY = 2000;
+const WHILE_RUNNING = 2_000;
+const WHILE_IDLE = 30_000;
+/** Looks at the running pace after a start, before settling back: about ten seconds. */
+const QUICK_LOOKS_AFTER_A_START = 5;
 
-export function useAcquiring(onEnded: () => void): AcquiringState {
+/**
+ * @param started Changes whenever a run may just have been started: the shell looks at once.
+ */
+export function useAcquiring(onEnded: () => void, started: number): AcquiringState {
   const [acquiring, setAcquiring] = useState<Acquiring | null>(null);
   const [announcement, setAnnouncement] = useState("");
   // An effect event, so a caller's new callback is used without restarting the poll -- which
   // would forget the run it had seen running, and with it the end it was waiting for.
   const reportEnded = useEffectEvent(onEnded);
+  const lookNow = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -50,8 +60,11 @@ export function useAcquiring(onEnded: () => void): AcquiringState {
     const controller = new AbortController();
     // Kept across a failed look: one that learned nothing has not seen the run stop.
     let seenRunning: number | null = null;
+    let quickLooksLeft = 0;
+    let looking = false;
 
     async function look(): Promise<void> {
+      looking = true;
       try {
         const { items } = await fetchRuns(1, { signal: controller.signal });
         const newest = items[0];
@@ -79,8 +92,23 @@ export function useAcquiring(onEnded: () => void): AcquiringState {
         // one there.
         if (live) setAcquiring(null);
       }
-      if (live) timer = setTimeout(() => void look(), EVERY);
+      looking = false;
+      if (live) scheduleNext();
     }
+
+    function scheduleNext(): void {
+      const quick = seenRunning !== null || quickLooksLeft > 0;
+      if (quickLooksLeft > 0) quickLooksLeft -= 1;
+      timer = setTimeout(() => void look(), quick ? WHILE_RUNNING : WHILE_IDLE);
+    }
+
+    lookNow.current = () => {
+      quickLooksLeft = QUICK_LOOKS_AFTER_A_START;
+      // A look under way schedules the next itself, at the quicker pace now.
+      if (looking) return;
+      if (timer !== undefined) clearTimeout(timer);
+      void look();
+    };
 
     void look();
     return () => {
@@ -89,6 +117,14 @@ export function useAcquiring(onEnded: () => void): AcquiringState {
       if (timer !== undefined) clearTimeout(timer);
     };
   }, []);
+
+  // Not on mount: the poll's own first look is already the "at once".
+  const lastStarted = useRef(started);
+  useEffect(() => {
+    if (lastStarted.current === started) return;
+    lastStarted.current = started;
+    lookNow.current?.();
+  }, [started]);
 
   return { acquiring, announcement };
 }
