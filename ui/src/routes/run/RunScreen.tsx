@@ -97,9 +97,9 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
   return (
     <section className="screen screen--acquire" aria-labelledby="screen-heading">
       <header className="screen__header">
-        <h2 id="screen-heading" className="screen__heading">
+        <h1 id="screen-heading" className="screen__heading">
           {route.label}
-        </h2>
+        </h1>
         <p className="screen__summary">
           Where the values come from. Nothing here is fetched or charged until
           you agree to an estimate.
@@ -131,9 +131,9 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           in a column they read as a sequence of steps, which they are not. */}
       <section className="section" aria-labelledby="gaps">
         <header className="section__head">
-          <h3 id="gaps" ref={gapsHeading} tabIndex={-1} className="section__heading">
+          <h2 id="gaps" ref={gapsHeading} tabIndex={-1} className="section__heading">
             What you can do about the gaps
-          </h3>
+          </h2>
           <p className="section__lead">{describeGaps(run.current)}</p>
         </header>
 
@@ -290,7 +290,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           re-read and came back with nothing chosen. */}
       {run.runs !== null && <AcquisitionDiffPanel runs={run.runs} />}
 
-      <h3 className="panel__heading">Every acquisition so far</h3>
+      <h2 className="panel__heading">Every acquisition so far</h2>
       {run.history.status === "loading" && (
         <p className="screen__note">Loading…</p>
       )}
@@ -338,10 +338,10 @@ function GapCard({
       className={tone ? `gap-card gap-card--${tone}` : "gap-card"}
       aria-labelledby={headingId}
     >
-      <h4 id={headingId} className="gap-card__head">
+      <h3 id={headingId} className="gap-card__head">
         {count !== "" && <span className="gap-card__count">{count}</span>}
         <span className="gap-card__what">{what}</span>
-      </h4>
+      </h3>
       <p className="gap-card__lead">{lead}</p>
       {children}
     </section>
@@ -599,9 +599,9 @@ function RunReport({
       aria-label={`Acquisition ${run.id}`}
     >
       <header className="acquisition__head">
-        <h3 ref={heading} tabIndex={-1} className="acquisition__heading">
+        <h2 ref={heading} tabIndex={-1} className="acquisition__heading">
           {headingFor(state)}
-        </h3>
+        </h2>
         <RunStatusPill status={state} />
       </header>
 
@@ -821,7 +821,7 @@ function SourceBySource({
 
   return (
     <div className="reach">
-      <h4 className="reach__heading">Source by source</h4>
+      <h3 className="reach__heading">Source by source</h3>
       <ul className="reach__list">
         {bars.map((bar) => (
           <li key={bar.source} className="reach__row">

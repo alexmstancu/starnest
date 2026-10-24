@@ -645,7 +645,7 @@ a:hover {
    takes -- so "what this part of the screen is" reads at one size everywhere in the product.
    In the sidebar it stays the small upright label, because there it names a card. */
 .screen .panel__heading,
-.screen > h3.panel__heading {
+.screen > h2.panel__heading {
   font-size: 18px;
   font-weight: var(--weight-strong);
   letter-spacing: -0.01em;
@@ -664,6 +664,13 @@ a:hover {
   font-size: 11.5px;
   font-weight: var(--weight-strong);
   color: var(--colour-text-label);
+}
+
+/* A heading inside a panel's section keeps the space it had as an `h4`: every screen heading
+   moved up a level when the screen's title became the page's `h1` (PL-022), and the reset
+   above clears the margins of `h1`-`h3` only. */
+h3.panel__heading {
+  margin-block: 1.33em;
 }
 
 .panel__hint {
@@ -2192,6 +2199,7 @@ select.field__control {
   align-items: baseline;
   gap: 8px;
   margin: 0;
+  font-size: 1em;
   flex-wrap: wrap;
 }
 

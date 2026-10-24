@@ -50,9 +50,9 @@ export function OpenToHandEntry({ level }: { level: string }) {
 
   return (
     <section className="panel" aria-labelledby={headingId}>
-      <h3 id={headingId} className="panel__heading">
+      <h2 id={headingId} className="panel__heading">
         Figures you can enter by hand
-      </h3>
+      </h2>
       <p className="panel__hint">
         The catalog permits a typed figure for these. It is stored under the{" "}
         <strong>manual</strong> source, which ranks last — a published figure

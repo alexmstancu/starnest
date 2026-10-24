@@ -130,9 +130,9 @@ function TheRanking({
           somebody has already started reading. */}
       <header className="screen__header screen__header--split">
         <div className="screen__titles">
-          <h2 id="screen-heading" className="screen__heading">
+          <h1 id="screen-heading" className="screen__heading">
             {label}
-          </h2>
+          </h1>
           <p className="screen__summary">
             The ranking table, the non-matching rows, and every value behind a
             score.

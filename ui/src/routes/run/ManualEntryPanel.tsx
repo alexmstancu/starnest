@@ -59,9 +59,9 @@ export function ManualEntryPanel({
 
   return (
     <section className="manual-entry" aria-labelledby={headingId}>
-      <h4 id={headingId} className="manual-entry__heading">
+      <h3 id={headingId} className="manual-entry__heading">
         Enter a value for {attributeName} by hand
-      </h4>
+      </h3>
       <p className="panel__hint">
         Stored under the <strong>manual</strong> source, which ranks last, so a
         published figure supersedes it the moment one arrives — and this one

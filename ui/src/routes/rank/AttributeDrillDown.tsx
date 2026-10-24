@@ -77,9 +77,9 @@ export function AttributeDrillDown({
 
   return (
     <section className="panel" aria-labelledby="attribute-drill-heading">
-      <h3 id="attribute-drill-heading" className="panel__heading">
+      <h2 id="attribute-drill-heading" className="panel__heading">
         One attribute, every candidate
-      </h3>
+      </h2>
 
       {attributes.resource.status === "loading" && (
         <p className="screen__note">Loading the catalog…</p>

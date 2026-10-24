@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { usePillarNames, type PillarNames } from "../../../api/usePillarNames";
-import { NavLink } from "react-router-dom";
+import { Link } from "react-router-dom";
 import type { Criterion, CriterionRule } from "../../../api/endpoints";
 import { lockedAttributes } from "../../../api/errorPresentation";
 import { formatPercentage, pillarName } from "../../../format/display";
@@ -109,7 +109,7 @@ export function CriteriaPanel({
 
   return (
     <section className="panel" aria-labelledby={headingId}>
-      <h3 id={headingId} className="panel__heading">
+      <h2 id={headingId} className="panel__heading">
         {pillar === undefined ? "Criteria" : "Attribute weights inside this pillar"}
       </h3>
       <PillarTotals
@@ -443,14 +443,14 @@ function CriterionRow({
         {chipsFor(criterion, attribute).map((chip) => (
           <li key={chip.key} className={CHIP_CLASS[chip.tone]}>
             {/* A chip that names a gap is a link out of it; the rest state the rule and are
-                text. A `NavLink` rather than a click handler, so it can be opened in a new
+                text. A `Link` rather than a click handler, so it can be opened in a new
                 window and copied -- the gap is worth sending to somebody. */}
             {chip.to === undefined ? (
               chip.text
             ) : (
-              <NavLink className="chip__link" to={chip.to}>
+              <Link className="chip__link" to={chip.to}>
                 {chip.text}
-              </NavLink>
+              </Link>
             )}
           </li>
         ))}

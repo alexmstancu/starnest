@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { ROUTES } from "../navigation/routes";
 import { useSelection } from "./SelectionContext";
 import { acquiringProgress } from "./acquiringProgress";
@@ -64,9 +64,9 @@ function Strip({ acquiring }: { acquiring: Acquiring }) {
         <rect className="acquiring-bar__fill" width={portion} height="6" />
       </svg>
       <span className="acquiring-bar__meta">{reading}</span>
-      <NavLink className="acquiring-bar__link" to={ACQUIRE.path}>
+      <Link className="acquiring-bar__link" to={ACQUIRE.path}>
         View
-      </NavLink>
+      </Link>
     </section>
   );
 }

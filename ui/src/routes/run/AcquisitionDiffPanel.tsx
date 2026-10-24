@@ -59,9 +59,9 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
 
   return (
     <section className="panel" aria-labelledby={headingId}>
-      <h3 id={headingId} className="panel__heading">
+      <h2 id={headingId} className="panel__heading">
         What changed between two acquisitions
-      </h3>
+      </h2>
       <p className="panel__hint">
         What each run produced, compared. &ldquo;Went missing&rdquo; means the
         later run did not produce a figure for that pair — the earlier figure is

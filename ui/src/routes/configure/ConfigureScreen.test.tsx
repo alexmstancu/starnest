@@ -2145,7 +2145,7 @@ describe("a research pass while the screen changes around it", () => {
     await waitFor(() => expect(research.sent).toHaveLength(1));
 
     await userEvent.click(screen.getByRole("link", { name: "Rank" }));
-    await screen.findByRole("heading", { name: "Rank", level: 2 });
+    await screen.findByRole("heading", { name: "Rank", level: 1 });
     research.release();
 
     await waitFor(() => expect(research.answered).toBe(1));

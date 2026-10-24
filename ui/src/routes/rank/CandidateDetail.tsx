@@ -155,9 +155,9 @@ export function CandidateDetail({
   return (
     <section className="panel" aria-labelledby={headingId}>
       <div className="panel__head">
-        <h3 id={headingId} className="panel__heading">
+        <h2 id={headingId} className="panel__heading">
           {name}: every value behind the score
-        </h3>
+        </h2>
         {/* Said once, at the top, rather than as a caption on the table: it is a fact about
             how this application treats evidence, not about this table. */}
         <span className="panel__count">
@@ -183,11 +183,11 @@ export function CandidateDetail({
         <ErrorNotice error={values.resource.error} onRetry={values.reload} />
       )}
       {values.resource.status === "ready" && (
-        <h4 className="drill__title">
+        <h3 className="drill__title">
           {chosen === null
             ? "Every stored value"
             : `${pillarName(names, chosen)} — stored values`}
-        </h4>
+        </h3>
       )}
       {values.resource.status === "ready" && (
         <CompletenessNote
@@ -216,7 +216,7 @@ export function CandidateDetail({
         />
       )}
 
-      <h4 className="panel__heading">Outside opinions</h4>
+      <h3 className="panel__heading">Outside opinions</h3>
       <p className="panel__hint">
         Published composites, shown beside the score and never counted in it.
       </p>
@@ -499,9 +499,9 @@ function PillarContributions({
 
   return (
     <section aria-labelledby={headingId}>
-      <h4 id={headingId} className="panel__heading">
+      <h3 id={headingId} className="panel__heading">
         Pillar contributions — select one to filter the values below
-      </h4>
+      </h3>
       <ul className="pillar-cards">
         {(pillars ?? []).map((pillar, at) => (
           <li key={pillar.pillar}>

@@ -64,7 +64,7 @@ export function RulesPanel({
         </span>
       </p>
 
-      <h4 className="panel__heading">Gates</h4>
+      <h3 className="panel__heading">Gates</h3>
       <RuleList
         read={rules.matchRules}
         what="The gates"
@@ -98,7 +98,7 @@ export function RulesPanel({
         }
       />
 
-      <h4 className="panel__heading">Compound rules</h4>
+      <h3 className="panel__heading">Compound rules</h3>
       <RuleList
         read={rules.compoundRules}
         what="The compound rules"

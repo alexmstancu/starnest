@@ -4068,7 +4068,7 @@ describe("opening an acquisition from the history", () => {
     await openFromHistory("6");
 
     const card = await screen.findByRole("region", { name: /acquisition 6/i });
-    const heading = within(card).getByRole("heading", { level: 3 });
+    const heading = within(card).getByRole("heading", { level: 2 });
     await waitFor(() => expect(heading).toHaveFocus());
     expect(scrolled).toContain(card);
   });
@@ -4111,7 +4111,7 @@ describe("where focus goes when the pressed control goes", () => {
   }
 
   function headingOf(card: HTMLElement): HTMLElement {
-    return within(card).getByRole("heading", { level: 3 });
+    return within(card).getByRole("heading", { level: 2 });
   }
 
   it("takes Yes to the new acquisition's heading", async () => {

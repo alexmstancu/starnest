@@ -267,9 +267,9 @@ function OwnOrders({
   if (orders.length === 0) return null;
   return (
     <>
-      <h4 className="panel__heading" id="own-orders-heading">
+      <h3 className="panel__heading" id="own-orders-heading">
         Attributes that name their own order
-      </h4>
+      </h3>
       <ul className="lock-list" aria-label="Attributes that name their own source order">
         {orders.map((order) => (
           <li key={order.id}>

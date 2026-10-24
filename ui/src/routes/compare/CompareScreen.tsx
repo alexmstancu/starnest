@@ -1,5 +1,5 @@
 import { useCallback, useState, type ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { ComparisonMatrix } from "./ComparisonMatrix";
 import { ViewChoices } from "./ViewChoices";
 import type { Measure } from "./pillarMatrix";
@@ -39,9 +39,9 @@ export function CompareScreen({ route }: { route: RouteDefinition }) {
   return (
     <section className="screen" aria-labelledby="screen-heading">
       <header className="screen__header">
-        <h2 id="screen-heading" className="screen__heading">
+        <h1 id="screen-heading" className="screen__heading">
           {route.label}
-        </h2>
+        </h1>
         <p className="screen__summary">
           One focus candidate against the ones you compare it with. Differences
           are per pillar, in score points, never averaged into one verdict.
@@ -234,7 +234,7 @@ function ComparisonPicker({
       {/* The limit sits beside the heading rather than under it: it is a fact about this
           panel's one control, and a reader only needs it when they reach for another chip. */}
       <div className="panel__head">
-        <h3 className="panel__heading">What to compare</h3>
+        <h2 className="panel__heading">What to compare</h2>
         <span className="picker__limit">
           <span className={full ? "picker__limit-note picker__limit-note--full" : "picker__limit-note"}>
             {limit === null
@@ -243,9 +243,9 @@ function ComparisonPicker({
                 ? `You have ${String(comparators.length)} of ${String(limit)} — the limit set in Configure. Remove one to add another, or raise the limit there.`
                 : `Up to ${String(limit)} comparators, the limit set in Configure.`}
           </span>
-          <NavLink className="action" to="/configure">
+          <Link className="action" to="/configure">
             Change it in Configure
-          </NavLink>
+          </Link>
         </span>
       </div>
 
@@ -336,10 +336,10 @@ function ComparisonTable({
   const priority = pillarPriority(pillarWeights);
   return (
     <>
-      <h3 className="panel__heading">
+      <h2 className="panel__heading">
         {comparison.focus.name} against{" "}
         {comparators.map((each) => each.name).join(", ")}
-      </h3>
+      </h2>
 
       {/* **Side by side, one card per comparator.** Five of them stacked is five screens of
           scrolling to answer "which of these is closest"; in a row the totals line up and the
@@ -402,7 +402,7 @@ function SynthesisCard({
   return (
     <section className="panel synthesis__card">
       <div className="panel__head">
-        <h4 className="synthesis__name">{nameOf(comparison, pair.comparator)}</h4>
+        <h3 className="synthesis__name">{nameOf(comparison, pair.comparator)}</h3>
         {theirs && <StatusChip result={theirs} />}
         <span
           // **Three states, because there are three** (P83): a gap nobody can measure is muted,

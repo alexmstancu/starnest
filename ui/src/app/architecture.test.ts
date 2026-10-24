@@ -327,6 +327,25 @@ function againstLedger(found: string[], ledger: Record<string, string>) {
   };
 }
 
+describe("a link claims to be the current page only in the tab bar", () => {
+  /**
+   * PL-021. `NavLink` marks itself `aria-current="page"` by matching the path alone, so a
+   * sidebar row, a remedy or a saved ranking used it and claimed to be where the reader already
+   * was. The tabs are the one place that claim is the point; everything else is a `Link`.
+   */
+  it("imports NavLink in shell/TabBar.tsx and nowhere else", () => {
+    const importing = productFiles()
+      .filter((path) =>
+        /import\s*(type\s*)?\{[^}]*\bNavLink\b[^}]*\}\s*from\s*["']react-router(-dom)?["']/.test(
+          productSource(path),
+        ),
+      )
+      .map((path) => path.replace(`${SOURCE}/`, ""));
+
+    expect(importing).toEqual(["shell/TabBar.tsx"]);
+  });
+});
+
 describe("typed text becomes a number in one place", () => {
   /**
    * PL-024 (UF-026). Four modules called `Number()` on typed text, each with rules of its own,

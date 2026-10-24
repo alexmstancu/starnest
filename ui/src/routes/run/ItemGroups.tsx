@@ -82,9 +82,9 @@ export function ItemGroups({
 
   return (
     <section className="panel panel--nested" aria-labelledby={headingId}>
-      <h4 id={headingId} className="panel__heading">
+      <h3 id={headingId} className="panel__heading">
         {caption}
-      </h4>
+      </h3>
 
       <div className="group__actions">
         <button

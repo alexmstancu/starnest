@@ -23,7 +23,11 @@ test("the shell boots and shows the configured display name", async ({ page }) =
   await expect(page).toHaveURL(/\/configure$/);
 
   const displayName = await readConfiguredDisplayName(page.request);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(displayName);
+  // The name is the sidebar's brand, not a heading: the page's one `h1` is the screen's title.
+  await expect(
+    page.getByRole("complementary").getByText(displayName, { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Configure");
 });
 
 test("all four routes render", async ({ page }) => {
@@ -36,7 +40,7 @@ test("all four routes render", async ({ page }) => {
     // violation only when the sidebar's data won the race to render -- a real selector bug
     // wearing a flake's clothing.
     await expect(
-      page.getByRole("heading", { level: 2, name: tab, exact: true }),
+      page.getByRole("heading", { level: 1, name: tab, exact: true }),
     ).toBeVisible();
   }
 });

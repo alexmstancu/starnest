@@ -46,10 +46,9 @@ describe("the shell", () => {
   it("shows the display name from configuration, never a compiled-in name", async () => {
     renderShell("/rank");
 
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
-      TEST_CONFIG.displayName,
-    );
-    expect(screen.getByRole("heading", { level: 1 })).not.toHaveTextContent("Starnest");
+    const sidebar = within(await screen.findByRole("complementary"));
+    expect(await sidebar.findByText(TEST_CONFIG.displayName)).toBeInTheDocument();
+    expect(sidebar.queryByText("Starnest")).toBeNull();
   });
 
   it("puts the route and the display name in the browser tab title", async () => {
@@ -65,7 +64,7 @@ describe("the shell", () => {
   it("redirects the root path to Configure, which a fresh installation needs first", async () => {
     renderShell("/");
 
-    expect(await screen.findByRole("heading", { level: 2, name: "Configure" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Configure" })).toBeInTheDocument();
   });
 
   it("renders an explanation rather than a blank page for an unknown path", async () => {
@@ -81,7 +80,7 @@ describe("the four routes", () => {
     async (path, label) => {
       renderShell(path);
 
-      expect(await screen.findByRole("heading", { level: 2, name: label })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { level: 1, name: label })).toBeInTheDocument();
     },
   );
 
@@ -92,7 +91,7 @@ describe("the four routes", () => {
 
     await user.click(screen.getByRole("link", { name: "Rank" }));
 
-    expect(await screen.findByRole("heading", { level: 2, name: "Rank" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Rank" })).toBeInTheDocument();
   });
 });
 
@@ -572,5 +571,159 @@ describe("when the API fails", () => {
     const counts = within(await screen.findByRole("region", { name: /candidates/i }));
     expect(counts.getByText(/nothing to count until there is a criteria set/i)).toBeInTheDocument();
     expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * PL-022. The screen's title is the page's one `h1`, and the headings under it in `main` never
+ * skip a level -- so a screen reader's heading list opens on where the reader is, not on the
+ * product's name, and an outline under it reads as one.
+ */
+describe("each screen's heading outline", () => {
+  function outlineOf(main: HTMLElement): number[] {
+    return within(main)
+      .queryAllByRole("heading")
+      .map((heading) => Number(heading.tagName.slice(1)));
+  }
+
+  function skipsIn(levels: readonly number[]): string[] {
+    return levels.flatMap((level, at) => {
+      const deepestSoFar = Math.max(0, ...levels.slice(0, at));
+      return level > deepestSoFar + 1 ? [`h${String(deepestSoFar)} → h${String(level)}`] : [];
+    });
+  }
+
+  async function expectOneTitle(title: string | RegExp) {
+    const main = screen.getByRole("main");
+    const titles = await within(main).findAllByRole("heading", { level: 1 });
+    expect(titles).toHaveLength(1);
+    expect(titles[0]).toHaveAccessibleName(title);
+    await waitFor(() => expect(outlineOf(main).length).toBeGreaterThan(1));
+    expect(outlineOf(main)[0]).toBe(1);
+    expect(skipsIn(outlineOf(main))).toEqual([]);
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  }
+
+  it.each(ROUTES.map((route) => [route.path, route.label] as const))(
+    "has one h1 on %s, the screen's title, and skips no level under it",
+    async (path, label) => {
+      renderShell(path);
+      await sidebarIsLoaded();
+
+      await expectOneTitle(label);
+    },
+  );
+
+  it("keeps the screen's title when the ranking waits on an unset setting", async () => {
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        HttpResponse.json({ code: "score_scale_not_set", message: "not set" }, { status: 409 }),
+      ),
+    );
+    renderShell("/rank");
+    await screen.findByRole("region", { name: "No ranking" });
+
+    await expectOneTitle("Rank");
+  });
+
+  it("keeps the screen's title when the ranking fails", async () => {
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        HttpResponse.json({ code: "internal", message: "boom" }, { status: 500 }),
+      ),
+    );
+    renderShell("/rank");
+    await screen.findByRole("alert");
+
+    await expectOneTitle("Rank");
+  });
+
+  it("titles an unknown address as the page's h1", async () => {
+    renderShell("/nowhere");
+
+    const main = screen.getByRole("main");
+    expect(
+      await within(main).findByRole("heading", { level: 1, name: /no such screen/i }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
+
+  it("does not make the product's name a heading", async () => {
+    renderShell("/rank");
+    await sidebarIsLoaded();
+
+    expect(screen.queryByRole("heading", { name: TEST_CONFIG.displayName })).toBeNull();
+  });
+});
+
+/** PL-021. Only the tab that is shown, and the saved ranking that is open, claim to be current. */
+describe("which link claims to be the current page", () => {
+  function twoSavedRankings() {
+    mockServer.use(
+      http.get("/v1/evaluations", () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 1,
+              criteria_set: "default",
+              level: "country",
+              computed_at: "2026-09-21T09:00:00Z",
+              score_scale_max: 100,
+              note: "Before the gates",
+            },
+            {
+              id: 2,
+              criteria_set: "default",
+              level: "country",
+              computed_at: "2026-09-22T09:00:00Z",
+              score_scale_max: 100,
+              note: "After the gates",
+            },
+          ],
+        }),
+      ),
+      http.get("/v1/evaluations/:evaluationId", () =>
+        HttpResponse.json(rankingFor("default", "country")),
+      ),
+    );
+  }
+
+  function currentLinks(): string[] {
+    return screen
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("aria-current") === "page")
+      .map((link) => link.textContent ?? "");
+  }
+
+  it("is only the tab until a saved ranking is opened, then that ranking too", async () => {
+    twoSavedRankings();
+    const user = userEvent.setup();
+    renderShell("/rank");
+    const before = await screen.findByRole("link", { name: /before the gates/i });
+    await screen.findByRole("link", { name: /after the gates/i });
+
+    expect(currentLinks()).toEqual(["Rank"]);
+
+    await user.click(before);
+    await screen.findByText(/as it was when it was saved/i);
+
+    const current = currentLinks();
+    expect(current).toHaveLength(2);
+    expect(current).toContain("Rank");
+    expect(current).toContainEqual(expect.stringMatching(/before the gates/i));
+  });
+
+  it("is only the tab on Configure, though the sidebar links to Acquire", async () => {
+    renderShell("/configure");
+    await sidebarIsLoaded();
+    await screen.findByRole("link", { name: /acquisition history/i });
+    expect(currentLinks()).toEqual(["Configure"]);
+  });
+
+  it("is only the tab on Acquire, though the sidebar links to its history", async () => {
+    renderShell("/acquire");
+    await sidebarIsLoaded();
+    await screen.findByRole("link", { name: /acquisition history/i });
+    expect(currentLinks()).toEqual(["Acquire"]);
   });
 });

@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { NavLink } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import {
   type EvaluationSummary,
   fetchCandidates,
@@ -21,7 +21,12 @@ import {
   formatMoneyPerMonth,
   formatCountInWords,
 } from "../format/display";
-import { describeSaved, newestFirst, summariseSaved } from "../format/savedRanking";
+import {
+  describeSaved,
+  newestFirst,
+  requestedSavedRanking,
+  summariseSaved,
+} from "../format/savedRanking";
 import { HOUSEHOLD_LABELS } from "../format/vocabulary";
 import { ROUTES } from "../navigation/routes";
 import { LoadedRegion } from "./LoadedRegion";
@@ -82,7 +87,7 @@ export function Sidebar() {
           {displayName.slice(0, 1)}
         </span>
         <span className="sidebar__identity">
-          <h1 className="sidebar__title">{displayName}</h1>
+          <p className="sidebar__title">{displayName}</p>
           <span className="sidebar__subtitle">Local instance</span>
         </span>
       </header>
@@ -237,9 +242,9 @@ function HouseholdCard({ freshness }: { freshness: number }) {
         <h2 id="household-summary-heading" className="panel__heading">
           Household summary
         </h2>
-        <NavLink className="panel__link" to={CONFIGURE.path}>
+        <Link className="panel__link" to={CONFIGURE.path}>
           Edit
-        </NavLink>
+        </Link>
       </div>
       {household.state === "failed" && hasErrorCode(household.error, "household_not_configured") ? (
         <p className="panel__hint">Nothing has been recorded about the household yet.</p>
@@ -416,9 +421,9 @@ function LastAcquisitionCard({ summary }: { summary: ShellSummary }) {
       {/* Found by label rather than by position: `ROUTES[1]` meant "Acquire" only for as long
           as nobody reordered the list, and reordering it is a change nothing would have
           failed on. */}
-      <NavLink className="panel__link" to={ACQUIRE.path}>
+      <Link className="panel__link" to={ACQUIRE.path}>
         Acquisition history
-      </NavLink>
+      </Link>
     </section>
   );
 }
@@ -467,6 +472,11 @@ function SavedRankingsCard() {
 }
 
 function SavedRankingsList({ saved }: { saved: readonly EvaluationSummary[] }) {
+  // **Only the ranking that is open is the current page** (PL-021). A `NavLink` matched the
+  // path alone, so on Rank every saved row claimed to be where the reader already was.
+  const { pathname } = useLocation();
+  const [parameters] = useSearchParams();
+  const open = pathname === RANK.path ? requestedSavedRanking(parameters.get("saved")) : null;
   if (saved.length === 0) {
     return (
       <p className="sidebar__note">
@@ -478,14 +488,15 @@ function SavedRankingsList({ saved }: { saved: readonly EvaluationSummary[] }) {
     <ul className="saved-list">
       {saved.map((entry) => (
         <li key={entry.id} className="saved-list__row">
-          <NavLink
+          <Link
             className="saved-list__open"
             to={`${RANK.path}?saved=${entry.id}`}
             title="Open this saved ranking"
+            aria-current={entry.id === open ? "page" : undefined}
           >
             <span className="saved-list__name">{describeSaved(entry)}</span>
             <span className="saved-list__meta">{summariseSaved(entry)}</span>
-          </NavLink>
+          </Link>
         </li>
       ))}
     </ul>

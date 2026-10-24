@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { presentError } from "../api/errorPresentation";
 import { ErrorNotice } from "./ErrorNotice";
 import { SCORE_SCALE_NOT_SET, remedyFor } from "./refusalRemedy";
@@ -42,9 +42,9 @@ export function UnsetSetting({
         {title}
       </h2>
       <p className="unset__detail">{detail}</p>
-      <NavLink className="button button--primary" to={remedy.path}>
+      <Link className="button button--primary" to={remedy.path}>
         {remedy.label}
-      </NavLink>
+      </Link>
     </section>
   );
 }

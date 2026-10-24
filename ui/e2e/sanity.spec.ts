@@ -44,7 +44,7 @@ test.describe("the shell", () => {
     for (const tab of TABS) {
       await page.getByRole("link", { name: tab, exact: true }).click();
       await expect(
-        page.getByRole("heading", { level: 2, name: tab, exact: true }),
+        page.getByRole("heading", { level: 1, name: tab, exact: true }),
       ).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/${tab.toLowerCase()}$`));
     }

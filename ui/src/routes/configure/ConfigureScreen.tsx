@@ -75,9 +75,9 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   return (
     <section className="screen screen--configure" aria-labelledby="screen-heading">
       <header className="screen__header">
-        <h2 id="screen-heading" className="screen__heading">
+        <h1 id="screen-heading" className="screen__heading">
           {route.label}
-        </h2>
+        </h1>
         <p className="screen__summary">
           Everything that is a judgement rather than a measurement. Nothing on
           this screen computes.

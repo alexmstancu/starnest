@@ -38,9 +38,9 @@ export function SavedRankingsPanel() {
   return (
     <section className="panel" aria-labelledby={headingId}>
       <div className="panel__head">
-        <h3 id={headingId} className="panel__heading">
+        <h2 id={headingId} className="panel__heading">
           A saved ranking
-        </h3>
+        </h2>
         <button type="button" className="action" onClick={close}>
           Close
         </button>

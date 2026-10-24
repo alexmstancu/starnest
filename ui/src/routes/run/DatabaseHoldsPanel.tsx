@@ -31,9 +31,9 @@ export function DatabaseHoldsPanel({ runs }: { runs: readonly Run[] }) {
   return (
     <section className="panel" aria-labelledby="database-holds">
       <div className="panel__head">
-        <h3 id="database-holds" className="panel__heading">
+        <h2 id="database-holds" className="panel__heading">
           What the database holds
-        </h3>
+        </h2>
         <dl className="meta-row">
           <Meta
             label="Last filled by"

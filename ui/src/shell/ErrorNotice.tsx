@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { presentError } from "../api/errorPresentation";
 import { remedyFor } from "./refusalRemedy";
 
@@ -27,9 +27,9 @@ export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () =
         </button>
       )}
       {remedy && (
-        <NavLink className="button" to={remedy.path}>
+        <Link className="button" to={remedy.path}>
           {remedy.label}
-        </NavLink>
+        </Link>
       )}
     </div>
   );

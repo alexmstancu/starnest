@@ -61,9 +61,9 @@ export function ProposalsPanel({
 
   return (
     <section className="panel" aria-labelledby="proposals-heading">
-      <h3 id="proposals-heading" className="panel__heading">
+      <h2 id="proposals-heading" className="panel__heading">
         Gate proposals
-      </h3>
+      </h2>
       <p className="panel__hint">
         A model can read the official pages about each gate and propose an
         answer with the pages it read. A proposal rules nothing out: confirming

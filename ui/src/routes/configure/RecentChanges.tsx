@@ -61,7 +61,7 @@ export function RecentChanges({
         {/* The button is inside the heading rather than instead of it: the region is named by
             this heading, and a card whose title stopped being a heading would disappear from
             the list a screen reader navigates by. */}
-        <h3 id={headingId} className="rail__heading">
+        <h2 id={headingId} className="rail__heading">
           <button
             ref={heading}
             type="button"
@@ -79,7 +79,7 @@ export function RecentChanges({
                 : `${history.changes.length} in this session`}
             </span>
           </button>
-        </h3>
+        </h2>
         {history.changes.length > 0 && (
           <button
             type="button"

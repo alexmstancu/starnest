@@ -32,14 +32,14 @@ export function CriteriaSetsPanel() {
             position it does not hold -- nothing fails when a hard-coded 4 sits fifth. */}
         <span className="stage__number" aria-hidden="true" />
         <div className="stage__titles">
-          <h3 id="criteria-sets-heading" className="stage__title">
+          <h2 id="criteria-sets-heading" className="stage__title">
             Criteria set
             <span className="stage__count">
               {criteriaSets.length === 1
                 ? "1 set"
                 : `${criteriaSets.length} sets`}
             </span>
-          </h3>
+          </h2>
           <p className="stage__lead">
             Which set of judgements you are editing. Changing a weight edits the
             set in place — duplicate it first if you want to keep the original.

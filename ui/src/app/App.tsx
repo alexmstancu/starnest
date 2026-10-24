@@ -100,7 +100,7 @@ function DocumentTitle() {
 function NotFound() {
   return (
     <section className="screen">
-      <h2 className="screen__heading">No such screen</h2>
+      <h1 className="screen__heading">No such screen</h1>
       <p className="screen__summary">
         The address does not match any of the four tabs.
       </p>
