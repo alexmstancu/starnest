@@ -205,9 +205,10 @@ export function useCriteriaSets(options: {
         });
       });
     },
-    // **The set in use falls back to the first other set**, the one `SelectionContext` would
-    // adopt (P44), chosen here so the undo knows where the deletion left the selection. The
-    // name is captured now: a deleted set is in no list to read it from later.
+    // **The set in use falls back to the first other set**, which `SelectionContext` adopts
+    // once the refreshed list lacks it (P44); it is worked out here too, so the undo knows where
+    // the deletion left the selection. The name is captured now: a deleted set is in no list
+    // to read it from later.
     discard: (criteriaSetId) => {
       const name = nameOf(criteriaSetId);
       const wasInUse = selection.criteriaSetId === criteriaSetId;
@@ -216,7 +217,6 @@ export function useCriteriaSets(options: {
         : null;
       return act(async () => {
         await deleteCriteriaSet(criteriaSetId);
-        if (wasInUse) selection.selectCriteriaSet(fallback);
         history.note({
           target: `criteria-set:${criteriaSetId}:deleted`,
           stage: STAGE,

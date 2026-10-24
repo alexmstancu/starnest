@@ -143,10 +143,10 @@ level enables itself.
 **A saved ranking opens rather than restores**, as recorded above, and the list of them lives
 in the sidebar while the act of saving lives on Rank.
 
-**A deleted criteria set is one undo away for the session** (PL-033, D-C03-7). Delete arms a
-strip that names the set, what goes with it and where the selection moves, and offers
-"Duplicate first"; Recent changes then lists "Deleted <name>", and undoing it restores the set
-exactly. The history is session state, as the design's is: leaving Configure or reloading loses
+**A deleted criteria set is one undo away for the session** (PL-033, P1-27, D-C03-7). Delete
+acts at once with no confirmation, as in the design; on the set in use it is titled "Delete and
+fall back to another set" and the selection moves to another set. Recent changes lists "Deleted
+<name>", and undoing it restores the set exactly, back in use if it was. The history is session state, as the design's is: leaving Configure or reloading loses
 the way back in the interface, while the set stays stored and `POST /criteria-sets/{id}/restore`
 still brings it back. The design records "Switched to X"; switching is not a stored change, so
 it is not listed here.

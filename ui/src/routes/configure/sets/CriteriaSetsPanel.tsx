@@ -1,8 +1,6 @@
-import { useState } from "react";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { HeldButton } from "../../../shell/HeldButton";
 import { useSelection } from "../../../shell/SelectionContext";
-import { SetDeletionStrip } from "./SetDeletionStrip";
 import type { CriteriaSetsForm } from "./useCriteriaSets";
 import { useSetFocus } from "./useSetFocus";
 
@@ -21,7 +19,8 @@ import { useSetFocus } from "./useSetFocus";
  * "Create set" once its name is cleared, the last set's Delete -- keeps focus and says so with
  * `aria-disabled`; Chromium throws focus off a disabled one.
  *
- * **Delete asks first** (PL-033): it arms `SetDeletionStrip`, and only the strip sends.
+ * **Delete deletes at once, as the design does** (PL-033, P1-27): the server keeps the set
+ * restorably, and Recent changes lists the deletion with the undo that brings it back exactly.
  *
  * **Markup only.** What each action does is `useCriteriaSets.ts`, called once by the screen so
  * its writes and its history outlive a remount; where focus goes after it is `useSetFocus.ts`.
@@ -29,32 +28,20 @@ import { useSetFocus } from "./useSetFocus";
 export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
   const { criteriaSets, criteriaSetId, selectCriteriaSet } = useSelection();
   const only = criteriaSets.length === 1;
-  const [armed, setArmed] = useState<string | null>(null);
-  const armedSet = criteriaSets.find((set) => set.id === armed);
-  const { renameField, newName, buttonId, returnTo, deleted } = useSetFocus(
+  const { renameField, newName, buttonId, renameClosed, deleted } = useSetFocus(
     criteriaSets,
     form.renaming,
   );
   const saveRename = async (criteriaSetId: string) => {
     await form.saveRename();
-    returnTo(criteriaSetId, "rename");
+    renameClosed(criteriaSetId);
   };
   const cancelRename = (criteriaSetId: string) => {
     form.cancelRename();
-    returnTo(criteriaSetId, "rename");
+    renameClosed(criteriaSetId);
   };
   const discard = async (criteriaSetId: string) => {
-    if (!(await form.discard(criteriaSetId))) return;
-    setArmed(null);
-    deleted(criteriaSetId);
-  };
-  const disarm = (criteriaSetId: string) => {
-    setArmed(null);
-    returnTo(criteriaSetId, "delete");
-  };
-  const duplicateFirst = async (criteriaSetId: string, name: string) => {
-    await form.duplicate(criteriaSetId, name);
-    disarm(criteriaSetId);
+    if (await form.discard(criteriaSetId)) deleted(criteriaSetId);
   };
 
   return (
@@ -183,7 +170,7 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
                             ? "Delete and fall back to another set"
                             : "Delete this set"
                       }
-                      onClick={() => setArmed(set.id)}
+                      onClick={() => void discard(set.id)}
                     >
                       Delete
                     </HeldButton>
@@ -194,22 +181,6 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
           );
         })}
       </ul>
-
-      {armedSet !== undefined && (
-        <SetDeletionStrip
-          key={armedSet.id}
-          name={armedSet.name}
-          fallback={
-            armedSet.id === criteriaSetId
-              ? (criteriaSets.find((set) => set.id !== armedSet.id)?.name ?? null)
-              : null
-          }
-          held={form.deleteHeld(armedSet.id)}
-          onDelete={() => void discard(armedSet.id)}
-          onDuplicate={() => void duplicateFirst(armedSet.id, armedSet.name)}
-          onKeep={() => disarm(armedSet.id)}
-        />
-      )}
 
       <form
         className="set-create"
