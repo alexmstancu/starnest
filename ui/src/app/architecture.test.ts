@@ -468,8 +468,8 @@ describe("a checkbox is drawn with its words in one place", () => {
         end++;
       }
       const tag = text.slice(match.index, end);
-      const classes = /className=(?:"([^"]*)"|\{([^}]*(?:\{[^}]*\}[^}]*)*)\})/.exec(tag);
-      const tokens = (classes?.[1] ?? classes?.[2] ?? "").split(/[\s"'`{}$]+/);
+      const classes = /className=(?:"([^"]*)"|'([^']*)'|\{([^}]*(?:\{[^}]*\}[^}]*)*)\})/.exec(tag);
+      const tokens = (classes?.[1] ?? classes?.[2] ?? classes?.[3] ?? "").split(/[\s"'`{}$]+/);
       const body = text.slice(end, text.indexOf("</label>", end));
       return tokens.includes("field") && /type=\{?["'`]checkbox["'`]/.test(body);
     });
@@ -480,6 +480,10 @@ describe("a checkbox is drawn with its words in one place", () => {
     ['<label className="field field--inline wide" htmlFor="x">\n  <input id="x" type="checkbox" />\n</label>', true],
     ["<label htmlFor={id} className={`field ${open ? \"field--open\" : \"\"}`}><input type='checkbox' /></label>", true],
     ['<label className="field" onClick={() => go()}><input type={"checkbox"} /></label>', true],
+    ["<label className='field field__label'><input type=\"checkbox\" /></label>", true],
+    ['<label className={"field field--inline"}><input type="checkbox" /></label>', true],
+    ["<label className={'field'}><input type=\"checkbox\" /></label>", true],
+    ['<label className={`field wide`}><input type="checkbox" /></label>', true],
     ['<label className="toggle"><input type="checkbox" />Germany</label>', false],
     ['<label className="field"><input type="text" /></label><input type="checkbox" />', false],
     ['<label className="field-grid"><input type="checkbox" /></label>', false],

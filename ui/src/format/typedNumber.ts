@@ -75,8 +75,7 @@ function readDigits(text: string, rule: NumberRule): Reading {
     return refuse({ code: "too_long" });
   }
   if (rule.kind === "money" && fraction.length > 2) {
-    const grouped =
-      fraction.length === 3 ? acceptable(Number(sign + whole + fraction), rule) : undefined;
+    const grouped = fraction.length === 3 ? acceptable(sign + whole + fraction, rule) : undefined;
     return refuse({ code: "too_many_decimals", ...(grouped !== undefined && { grouped }) });
   }
   if (rule.minimum !== undefined && value < rule.minimum) {
@@ -102,7 +101,7 @@ function exactDigits(digits: string): string {
 /** Why text outside the grammar was not read, with the readings it could have meant. */
 function whyNotRead(text: string, rule: NumberRule): Refusal {
   if (EXPONENT.test(text)) {
-    const written = acceptable(Number(text.replace(MINUS, "-")), rule);
+    const written = acceptable(writtenOut(text), rule);
     return { code: "exponent", ...(written !== undefined && { written }) };
   }
   if (text.includes("€")) return { code: "not_a_number", currency: true };
@@ -117,11 +116,11 @@ function separatorRefusal(text: string, mark: string, rule: NumberRule): Refusal
   const escaped = mark.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const groups = new RegExp(`^\\d{1,3}(${escaped}\\d{3})+(\\.\\d*)?$`);
   const grouped = groups.test(digits)
-    ? acceptable(Number(sign + digits.split(mark).join("")), rule)
+    ? acceptable(sign + digits.split(mark).join(""), rule)
     : undefined;
   const decimal =
     mark === "," && /^\d+,\d+$/.test(digits)
-      ? acceptable(Number(sign + digits.replace(",", ".")), rule)
+      ? acceptable(sign + digits.replace(",", "."), rule)
       : undefined;
   return {
     code: "separator",
@@ -131,10 +130,31 @@ function separatorRefusal(text: string, mark: string, rule: NumberRule): Refusal
   };
 }
 
-function acceptable(value: number, rule: NumberRule): number | undefined {
-  if (!Number.isFinite(value)) return undefined;
-  const reading = readNumber(numberAsInput(value, rule), rule);
+/**
+ * A suggestion is read from the digits it spells, never from a float, so it is the number typed
+ * or nothing: a float would offer 5e-324 for "4e-324". Zeros ending a fraction say nothing, so
+ * "72.000" read as a decimal is 72.
+ */
+function acceptable(digits: string | undefined, rule: NumberRule): number | undefined {
+  if (digits === undefined) return undefined;
+  const reading = readNumber(digits.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, ""), rule);
   return reading.kind === "number" ? reading.value : undefined;
+}
+
+/** No float holds a figure past 10^±400, so there is no point writing its zeros out. */
+const LONGEST_EXPONENT = 400;
+
+/** "1.5e3" as "1500", in digits, with no float between. */
+function writtenOut(text: string): string | undefined {
+  const [, sign = "", whole = "", fraction = "", power = "0"] =
+    /^([-\u2212]?)(\d*)\.?(\d*)[eE]([-+]?\d+)$/.exec(text) ?? [];
+  const shift = Number(power);
+  if (Math.abs(shift) > LONGEST_EXPONENT) return undefined;
+  const digits = whole + fraction;
+  const point = whole.length + shift;
+  if (point <= 0) return `${sign}0.${"0".repeat(-point)}${digits}`;
+  if (point >= digits.length) return sign + digits + "0".repeat(point - digits.length);
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
 }
 
 function refuse(refusal: Refusal): Reading {

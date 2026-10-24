@@ -59,6 +59,10 @@ describe("readNumber", () => {
     ["-", DECIMAL, { code: "sign" }],
     ["1e9", DECIMAL, { code: "exponent", written: 1000000000 }],
     ["1e400", DECIMAL, { code: "exponent" }],
+    // A suggestion is the number typed or none: a float would offer 1e-16 and 5e-324.
+    ["1.000000000000000001e-16", DECIMAL, { code: "exponent" }],
+    ["4e-324", DECIMAL, { code: "exponent" }],
+    ["1e-99999999999", DECIMAL, { code: "exponent" }],
     ["abc", DECIMAL, { code: "not_a_number" }],
     ["+5", DECIMAL, { code: "not_a_number" }],
     ["0x10", DECIMAL, { code: "not_a_number" }],
