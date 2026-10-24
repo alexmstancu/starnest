@@ -88,6 +88,9 @@ async def get_comparison(
 ) -> ComparisonBody:
     """The focus against each comparator, attribute by attribute, with the synthesis.
 
+    **Every gap and every worth reads comparator minus focus**: positive where the comparator is
+    ahead, as the matrix draws it, and a pair's advantages are what the comparator leads on.
+
     A candidate at another level is simply not in this level's ranking and is refused by name,
     which is how "comparisons never mix levels" enforces itself rather than being remembered.
     """

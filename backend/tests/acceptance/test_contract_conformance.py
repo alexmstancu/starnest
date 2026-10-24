@@ -331,6 +331,28 @@ async def test_a_comparison_matches_the_designed_shape(
     assert undeclared_fields("getComparison", response.json()) == []
 
 
+async def test_a_comparison_against_a_candidate_with_no_total_matches_the_designed_shape(
+    api: httpx.AsyncClient, database_url: str, stored_figures: None
+) -> None:
+    """Spain has no figures, so it has no total and its pair has no score delta to send. The
+    design typed that delta as a bare integer while the server sent null (IN-D1)."""
+    await _set_the_comparator_limit(database_url, 5)
+
+    response = await api.get(
+        "/v1/comparisons",
+        params={
+            "criteria_set": MINIMAL,
+            "level": COUNTRY,
+            "focus": "country.portugal",
+            "comparators": ["country.spain"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["synthesis"][0]["score_delta"] is None
+    validate("getComparison", response.json())
+
+
 async def _set_the_comparator_limit(database_url: str, limit: int) -> None:
     async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
         await pool.open(wait=True)

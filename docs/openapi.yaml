@@ -1035,7 +1035,10 @@ paths:
     get:
       tags: [evaluation]
       summary: A focus candidate against comparators
-      description: Levels are never mixed. The comparator limit comes from settings.
+      description: >-
+        Levels are never mixed. The comparator limit comes from settings. Every gap and every
+        worth in the answer reads comparator minus focus: positive where the comparator is
+        ahead, as the matrix draws it. Comparators come back in the order they were asked for.
       operationId: getComparison
       parameters:
         - { name: criteria_set, in: query, required: true, schema: { type: string } }
@@ -1982,8 +1985,8 @@ components:
               candidate: { type: string }
               value: { $ref: "#/components/schemas/Value" }
               normalised_score: { type: [integer, "null"] }
-              delta: { type: [number, "null"], description: "Focus minus comparator. In the attribute's own unit, except a Monetary attribute, whose delta is in EUR -- the only figure comparable across candidates that may hold different currencies (reqs.md 5.5)." }
-              weighted_contribution: { type: [number, "null"], description: What the delta is worth. Drives the synthesis. }
+              delta: { type: [number, "null"], description: "Comparator minus focus. In the attribute's own unit, except a Monetary attribute, whose delta is in EUR -- the only figure comparable across candidates that may hold different currencies (reqs.md 5.5). Null unless both sides have a figure." }
+              weighted_contribution: { type: [number, "null"], description: "What the score gap is worth to the focus's total, comparator minus focus: the exact score difference times the focus's effective weight, in score points. Null unless both sides were scored." }
 
     Comparison:
       type: object
@@ -1996,12 +1999,19 @@ components:
         attributes: { type: array, items: { $ref: "#/components/schemas/ComparisonAttributeRow" } }
         synthesis:
           type: array
-          description: Templated from weighted contributions, never model-written. Deterministic.
+          description: >-
+            One entry per comparator, in the order of `comparators`. Templated from weighted
+            contributions, never model-written; deterministic. Read from the comparator's side:
+            `score_delta` is its total minus the focus's, `advantages` are what it leads on and
+            `disadvantages` what it trails on.
           items:
             type: object
+            required: [comparator, score_delta, advantages, disadvantages]
             properties:
               comparator: { type: string }
-              score_delta: { type: integer }
+              score_delta:
+                type: [integer, "null"]
+                description: The comparator's total minus the focus's. Null when either has no total.
               advantages: { type: array, items: { type: string } }
               disadvantages: { type: array, items: { type: string } }
 

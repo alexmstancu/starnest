@@ -91,20 +91,21 @@ def a_comparison(**overrides: object):
 
 class TestTheTable:
     def test_each_row_carries_both_sides_and_the_gap_in_the_attributes_own_unit(self) -> None:
+        """Spain's 47.9% against Portugal's 41.5%: the gap reads comparator minus focus."""
         row = next(r for r in a_comparison().attributes if str(r.attribute) == TAX)
 
         (cell,) = row.comparators
         assert row.focus_magnitude == Decimal("41.5")
         assert cell.magnitude == Decimal("47.9")
-        assert cell.delta == Decimal("-6.4")
+        assert cell.delta == Decimal("6.4")
 
     def test_the_gap_is_worth_the_score_difference_times_the_weight(self) -> None:
-        """Portugal scores 70 on tax against Spain's 50, at an effective weight of 40: eight
-        points of the total."""
+        """Spain scores 50 on tax against Portugal's 70, at an effective weight of 40: eight
+        points of the total, against Spain."""
         row = next(r for r in a_comparison().attributes if str(r.attribute) == TAX)
 
         (cell,) = row.comparators
-        assert cell.weighted_contribution == Decimal(8)
+        assert cell.weighted_contribution == Decimal(-8)
 
     def test_the_weight_is_the_focuss_and_not_the_comparators(self) -> None:
         """**Which side's weight it is decides the number** (`comparison.py` `_cell`): the
@@ -116,8 +117,9 @@ class TestTheTable:
         candidate in `THE_RANKING` holds identical weights, so no test there could tell the two
         apart -- and switching `_cell` to the comparator's weight passed the whole file.
 
-        Portugal scores 70 against Spain's 50 at a focus weight of 40: eight points. Read off
-        Spain's weight of 10 it would be two, and the synthesis would rank the gap fifth of five.
+        Spain scores 50 against Portugal's 70 at a focus weight of 40: eight points behind. Read
+        off Spain's weight of 10 it would be two, and the synthesis would rank the gap fifth of
+        five.
         """
         ranking = (
             a_result(PORTUGAL, 60, a_score(TAX, 70, "40")),
@@ -125,7 +127,7 @@ class TestTheTable:
         )
 
         (cell,) = a_comparison(results=ranking).attributes[0].comparators
-        assert cell.weighted_contribution == Decimal(8)
+        assert cell.weighted_contribution == Decimal(-8)
 
     def test_a_missing_figure_leaves_the_gap_unanswered_rather_than_zero(self) -> None:
         """Zero would say "the same", which is a different claim from "we do not know"."""
@@ -154,21 +156,23 @@ class TestTheSynthesis:
         """
         (synthesis,) = a_comparison().synthesis
 
-        assert synthesis.advantages[0].startswith("country.total_tax_rate_effective")
-        assert "worth +8.0 points" in synthesis.advantages[0]
+        assert synthesis.disadvantages[0].startswith("country.total_tax_rate_effective")
+        assert "worth -8.0 points" in synthesis.disadvantages[0]
         # The coastline gap is 3,171 km and second, because it is worth 0.3 of a point.
-        assert synthesis.advantages[1].startswith("country.coastline_access")
+        assert synthesis.disadvantages[1].startswith("country.coastline_access")
 
     def test_it_reads_in_words_the_reader_can_check_against_the_table(self) -> None:
+        """The comparator's score first, because the pair is read from its side."""
         (synthesis,) = a_comparison(names={TAX: "Total tax rate"}).synthesis
 
-        assert synthesis.advantages[0] == "Total tax rate: 70 against 50, worth +8.0 points"
+        assert synthesis.disadvantages[0] == "Total tax rate: 50 against 70, worth -8.0 points"
 
-    def test_disadvantages_are_the_gaps_the_other_way(self) -> None:
+    def test_advantages_are_the_gaps_the_other_way(self) -> None:
+        """Spain trails on tax and coastline, and leads on prices."""
         (synthesis,) = a_comparison().synthesis
 
-        assert synthesis.disadvantages == (
-            "country.cost_of_living_index: 40 against 60, worth -2.0 points",
+        assert synthesis.advantages == (
+            "country.cost_of_living_index: 60 against 40, worth +2.0 points",
         )
 
     def test_each_pair_quotes_its_own_comparator(self) -> None:
@@ -178,17 +182,18 @@ class TestTheSynthesis:
         spain, greece = a_comparison(comparators=[SPAIN, GREECE]).synthesis
 
         assert (
-            spain.advantages[0]
-            == "country.total_tax_rate_effective: 70 against 50, worth +8.0 points"
+            spain.disadvantages[0]
+            == "country.total_tax_rate_effective: 50 against 70, worth -8.0 points"
         )
-        assert greece.advantages[0] == (
-            "country.total_tax_rate_effective: 70 against 30, worth +16.0 points"
+        assert greece.disadvantages[0] == (
+            "country.total_tax_rate_effective: 30 against 70, worth -16.0 points"
         )
 
     def test_the_score_delta_heads_the_pair(self) -> None:
+        """Spain's 50 against Portugal's 60: the comparator's total minus the focus's."""
         (synthesis,) = a_comparison().synthesis
 
-        assert synthesis.score_delta == 10
+        assert synthesis.score_delta == -10
 
     @pytest.mark.parametrize("top", [2, 3])
     def test_only_the_top_few_are_listed_and_the_caller_says_how_few(self, top: int) -> None:
@@ -262,16 +267,22 @@ class TestTheGapIsWeighedBeforeItIsRounded:
     """
 
     def test_two_near_equal_gaps_are_ordered_by_what_they_are_worth(self) -> None:
+        """Spain trails on both, by -1.4 and -1.1 points; the rounded scores said -1.0 and
+        -1.5, the other way round."""
         (pair,) = a_scored_comparison().synthesis
 
-        assert [sentence.split(":")[0] for sentence in pair.advantages] == [SATISFACTION, BROADBAND]
+        assert [sentence.split(":")[0] for sentence in pair.disadvantages] == [
+            SATISFACTION,
+            BROADBAND,
+        ]
 
     def test_a_gap_is_worth_the_exact_difference_times_the_weight(self) -> None:
-        """2.8 at an effective weight of 50 is 1.4 points; the rounded 7 against 5 said 1.0."""
+        """Spain's 4.6 against Portugal's 7.4 at an effective weight of 50 is -1.4 points; the
+        rounded 5 against 7 said -1.0."""
         row = next(r for r in a_scored_comparison().attributes if str(r.attribute) == SATISFACTION)
 
         (cell,) = row.comparators
-        assert cell.weighted_contribution == Decimal("1.4")
+        assert cell.weighted_contribution == Decimal("-1.4")
 
 
 def a_scored_comparison():

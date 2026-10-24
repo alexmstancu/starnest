@@ -14,6 +14,7 @@ MINIMAL = "minimal"
 COUNTRY = "country"
 PORTUGAL = "country.portugal"
 GREECE = "country.greece"
+SPAIN = "country.spain"
 
 
 async def _settings(database_url: str, *, comparator_limit: int | None) -> None:
@@ -56,8 +57,8 @@ class TestTheTable:
     async def test_the_gap_is_in_the_attributes_own_unit_and_its_worth_beside_it(
         self, api: httpx.AsyncClient, database_url: str, stored_figures: None
     ) -> None:
-        """Portugal's housing overburden is 5% against Greece's 28%: a gap of -23 points of the
-        attribute, and a positive contribution because less is better."""
+        """Greece's housing overburden is 28% against Portugal's 5%: a gap of +23 points of the
+        attribute, comparator minus focus, and a negative worth because less is better."""
         await _settings(database_url, comparator_limit=5)
 
         body = (await _compare(api, comparators=[GREECE])).json()
@@ -68,8 +69,8 @@ class TestTheTable:
             if r["attribute"] == "country.housing_cost_overburden_rate"
         )
         (cell,) = overburden["comparators"]
-        assert cell["delta"] == pytest.approx(-23.0)
-        assert cell["weighted_contribution"] > 0
+        assert cell["delta"] == pytest.approx(23.0)
+        assert cell["weighted_contribution"] < 0
 
     async def test_the_focus_and_comparators_carry_their_scores(
         self, api: httpx.AsyncClient, database_url: str, stored_figures: None
@@ -93,29 +94,60 @@ class TestTheSynthesis:
 
         (pair,) = body["synthesis"]
         assert pair["comparator"] == GREECE
-        assert pair["score_delta"] == body["focus"]["score"] - body["comparators"][0]["score"]
-        # Portugal is ahead of Greece on every MINIMAL criterion, so there is something to read:
+        assert pair["score_delta"] == body["comparators"][0]["score"] - body["focus"]["score"]
+        # Greece trails Portugal on every MINIMAL criterion, so there is something to read:
         # without this the `all(...)` below is vacuously true the moment the synthesis emits no
-        # advantages, which a sign flip on the `ahead` filter does while every assertion passes.
-        assert pair["advantages"], "Portugal beats Greece on every criterion, so it has advantages"
-        assert all("worth " in line for line in pair["advantages"])
+        # disadvantages, which a sign flip on the `behind` filter does while every assertion
+        # passes.
+        assert pair["disadvantages"], "Greece trails Portugal on every criterion"
+        assert all("worth " in line for line in pair["disadvantages"])
 
-    async def test_advantages_are_ordered_by_what_they_are_worth(
+    async def test_disadvantages_are_ordered_by_what_they_are_worth(
         self, api: httpx.AsyncClient, database_url: str, stored_figures: None
     ) -> None:
-        """Each line ends with the points it is worth, so the order is checkable from the text."""
+        """Each line ends with the points it is worth, so the order is checkable from the text:
+        the costliest first, which is the most negative."""
         await _settings(database_url, comparator_limit=5)
 
         body = (await _compare(api, comparators=[GREECE])).json()
 
         worth = [
             float(line.rsplit("worth ", 1)[1].split(" ")[0])
-            for line in body["synthesis"][0]["advantages"]
+            for line in body["synthesis"][0]["disadvantages"]
         ]
         # At least two, or "ordered by worth" is a claim about a list too short to order --
-        # an emptied or single-element advantages list passes `sorted` trivially.
-        assert len(worth) >= 2, "Portugal is ahead on several criteria, so the order is testable"
-        assert worth == sorted(worth, reverse=True)
+        # an emptied or single-element list passes `sorted` trivially.
+        assert len(worth) >= 2, "Greece trails on several criteria, so the order is testable"
+        assert worth == sorted(worth)
+
+
+class TestTheDirection:
+    async def test_every_number_reads_comparator_minus_focus(
+        self, api: httpx.AsyncClient, database_url: str, stored_figures: None
+    ) -> None:
+        """G3: the unit suite's direction properties over HTTP, on stored figures. Greece has a
+        figure for every MINIMAL criterion and Spain has none, so both a full column and an
+        empty one are read from the comparator's side."""
+        await _settings(database_url, comparator_limit=5)
+
+        body = (await _compare(api, comparators=[GREECE, SPAIN])).json()
+
+        focus = body["focus"]
+        for comparator, pair in zip(body["comparators"], body["synthesis"], strict=True):
+            assert pair["comparator"] == comparator["candidate"]
+            assert pair["score_delta"] == _gap(focus["score"], comparator["score"])
+            assert all(_worth(line) > 0 for line in pair["advantages"])
+            assert all(_worth(line) < 0 for line in pair["disadvantages"])
+        assert body["synthesis"][0]["disadvantages"], "Greece trails Portugal on every criterion"
+        for row in body["attributes"]:
+            for cell in row["comparators"]:
+                raw_gap = _gap(_figure(row["focus"]), _figure(cell))
+                assert cell["delta"] == (None if raw_gap is None else pytest.approx(raw_gap))
+                score_gap = _gap(row["focus"]["normalised_score"], cell["normalised_score"])
+                worth = cell["weighted_contribution"]
+                assert (worth is None) == (score_gap is None)
+                # The same sign, or a rounded tie: the worth weighs the exact scores.
+                assert worth is None or worth * score_gap >= 0
 
 
 class TestWhatIsRefused:
@@ -158,3 +190,18 @@ class TestWhatIsRefused:
 
         assert response.status_code == 409
         assert response.json()["code"] == "comparator_limit_not_set"
+
+
+def _gap(focus: float | None, theirs: float | None) -> float | None:
+    return None if focus is None or theirs is None else theirs - focus
+
+
+def _figure(side: dict) -> float | None:
+    """The side's figure as the comparison subtracts it: a ratio's value, a quantity's
+    magnitude."""
+    payload = side.get("value", {}).get("payload", {})
+    return payload.get("magnitude", payload.get("value"))
+
+
+def _worth(line: str) -> float:
+    return float(line.rsplit("worth ", 1)[1].split(" ")[0])

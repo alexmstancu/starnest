@@ -16,6 +16,11 @@ comparison is post-MVP, where freezing is the point.
 
 **Levels are never mixed**, which costs nothing to enforce here: a ranking runs at one level, so
 a candidate from another simply is not in it, and is refused by name rather than silently missed.
+
+**Every gap reads comparator minus focus** (PL-091). The focus is the baseline and each
+comparator is read against it, as the matrix draws it: a positive gap, worth or score delta means
+the comparator is ahead, and its advantages are what it leads on. Every difference here is taken
+by `_against_focus`, so no number can run the other way.
 """
 
 from collections.abc import Mapping, Sequence
@@ -44,10 +49,11 @@ class ComparatorCell:
     normalised_score: int | None
     magnitude: Decimal | None
     delta: Decimal | None
-    """Focus minus comparator, in the attribute's own unit -- in EUR for a Monetary attribute, the
+    """Comparator minus focus, in the attribute's own unit -- in EUR for a Monetary attribute, the
     figure both sides are read as (`magnitudes.py`). None unless both have a figure."""
     weighted_contribution: Decimal | None
-    """What that gap is worth to the total: the score difference times the effective weight."""
+    """What the score gap is worth to the focus's total, comparator minus focus: the exact score
+    difference times the focus's effective weight. None unless both were scored."""
 
 
 @dataclass(frozen=True)
@@ -63,10 +69,12 @@ class AttributeComparison:
 
 @dataclass(frozen=True)
 class Synthesis:
-    """What the numbers say about one pair, in sentences derived from them."""
+    """What the numbers say about one pair, in sentences derived from them, read from the
+    comparator's side: its advantages are what it leads the focus on."""
 
     comparator: CandidateId
     score_delta: int | None
+    """The comparator's total minus the focus's. None when either has no total."""
     advantages: tuple[str, ...]
     disadvantages: tuple[str, ...]
 
@@ -188,6 +196,8 @@ def _cell(
 ) -> ComparatorCell:
     """One comparator's cell. A gap needs both sides; either missing leaves it unanswered.
 
+    **Both gaps read comparator minus focus**, the raw figure's and the score's, so the cell
+    says how far the comparator is from the baseline.
     **The weight is the focus's effective weight**, after redistribution for what the focus was
     missing, because the contribution answers "what is this gap worth to the focus's total?".
     **The scores are the exact ones** (`reqs.md` 5.1, NEW-17): the displayed scores are rounded,
@@ -196,23 +206,23 @@ def _cell(
     their_score = scored.normalised_score if scored is not None else None
     their_exact_score = scored.exact_score if scored is not None else None
     their_magnitude = _magnitude(magnitudes, str(comparator.candidate), attribute)
-    delta = (
-        focus_magnitude - their_magnitude
-        if focus_magnitude is not None and their_magnitude is not None
-        else None
-    )
-    contribution = (
-        contribution_of(focus_exact_score - their_exact_score, effective_weight)
-        if focus_exact_score is not None and their_exact_score is not None
-        else None
-    )
+    score_gap = _against_focus(focus_exact_score, their_exact_score)
     return ComparatorCell(
         candidate=comparator.candidate,
         normalised_score=their_score,
         magnitude=their_magnitude,
-        delta=delta,
-        weighted_contribution=contribution,
+        delta=_against_focus(focus_magnitude, their_magnitude),
+        weighted_contribution=(
+            None if score_gap is None else contribution_of(score_gap, effective_weight)
+        ),
     )
+
+
+def _against_focus[Number: (int, Decimal)](
+    focus: Number | None, theirs: Number | None
+) -> Number | None:
+    """The comparator's number minus the focus's, or None unless both have one."""
+    return None if focus is None or theirs is None else theirs - focus
 
 
 def _magnitude(magnitudes: Magnitudes, candidate: str, attribute: str) -> Decimal | None:
@@ -227,7 +237,8 @@ def _synthesis(
     names: Mapping[str, str],
     top: int,
 ) -> Synthesis:
-    """The pair's top advantages and disadvantages, by what each gap is worth.
+    """The comparator's top advantages and disadvantages against the focus, by what each gap is
+    worth: what it leads on, most worth first, then what it trails on, costliest first.
 
     Ordered by weighted contribution, so a large gap on a criterion that barely counts never
     outranks a small gap on one that decides the score. Ties break on the attribute's name, so
@@ -247,11 +258,7 @@ def _synthesis(
     )
     return Synthesis(
         comparator=comparator.candidate,
-        score_delta=(
-            focus.score - comparator.score
-            if focus.score is not None and comparator.score is not None
-            else None
-        ),
+        score_delta=_against_focus(focus.score, comparator.score),
         advantages=tuple(
             _sentence(row, comparator.candidate, contribution, names)
             for row, contribution in ahead[:top]
@@ -269,7 +276,8 @@ def _sentence(
     contribution: Decimal,
     names: Mapping[str, str],
 ) -> str:
-    """One line of the synthesis, restating the arithmetic of the row it came from.
+    """One line of the synthesis, restating the arithmetic of the row it came from: the
+    comparator's score, against the focus's, and what the gap is worth comparator minus focus.
 
     **The comparator is named rather than assumed.** A first version took the first cell with a
     contribution, which quoted the first comparator's figures in every other comparator's
@@ -280,6 +288,6 @@ def _sentence(
         cell.normalised_score for cell in row.comparators if cell.candidate == comparator
     )
     return (
-        f"{names.get(attribute, attribute)}: {row.focus_score} against {their_score}, "
+        f"{names.get(attribute, attribute)}: {their_score} against {row.focus_score}, "
         f"worth {contribution:+.1f} points"
     )
