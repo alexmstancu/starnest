@@ -83,6 +83,11 @@ export interface RunScreenState {
   plan: RunPlan | null;
   /** Which card the estimate belongs to, so it can be shown inside that one. */
   planOrigin: GapKind | null;
+  /**
+   * Which card's estimate is being read, so only that card says "Estimating…" (PL-130): `busy`
+   * says `planning` for every estimate alike.
+   */
+  estimating: GapKind | null;
   /** The run awaiting a yes, or null when nothing is armed. */
   armed: ArmedRun | null;
   current: RunDetail | null;
@@ -177,6 +182,7 @@ export function useRunScreen(levelId: string | null): RunScreenState {
   // the run that did start.
   const [starting, setStarting] = useState(false);
   const [cardFocus, setCardFocus] = useState<CardFocus | null>(null);
+  const [estimating, setEstimating] = useState<GapKind | null>(null);
   /** Takes the reader to the card, once the act's own read is the one on it. */
   const focusCardOf = useCallback(
     (ticket: number, runId: number) => {
@@ -209,6 +215,20 @@ export function useRunScreen(levelId: string | null): RunScreenState {
       }
     },
     [history],
+  );
+
+  /** Reads an estimate for one card, naming that card for as long as the read lasts. */
+  const estimateFor = useCallback(
+    (origin: GapKind, read: () => Promise<void>) =>
+      act("planning", async () => {
+        setEstimating(origin);
+        try {
+          await read();
+        } finally {
+          setEstimating((now) => (now === origin ? null : now));
+        }
+      }),
+    [act],
   );
 
   /** Runs one start with every way to start held until it has ended, however it ends. */
@@ -297,6 +317,7 @@ export function useRunScreen(levelId: string | null): RunScreenState {
     plan,
     planOrigin,
     armed,
+    estimating,
     cardFocus,
     current,
     busy,
@@ -308,7 +329,7 @@ export function useRunScreen(levelId: string | null): RunScreenState {
     reloadHistory: history.reload,
     dismissFailure: () => setFailure(null),
     estimate: (levelId) =>
-      void act("planning", async () => {
+      void estimateFor("everything", async () => {
         setArmed(null);
         setPlanOrigin("everything");
         setPlan(await planRun({ level: levelId }));
@@ -333,7 +354,7 @@ export function useRunScreen(levelId: string | null): RunScreenState {
     propose: (scope, what, origin) => {
       const version = selectionVersion.current;
       const armedOn = current?.id ?? null;
-      void act("planning", async () => {
+      void estimateFor(origin, async () => {
         setArmed(null);
         setPlan(null);
         setPlanOrigin(null);

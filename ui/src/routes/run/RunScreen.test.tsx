@@ -4197,3 +4197,28 @@ describe("where focus goes when the pressed control goes", () => {
     ).toHaveFocus();
   });
 });
+
+/** PL-130, UF-102. "Estimating…" belongs to the card whose estimate is being read. */
+describe("which card says it is estimating", () => {
+  it("leaves the refresh card's label alone while a retry is estimated", async () => {
+    const plan = heldAnswer();
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, async () => {
+        await plan.held;
+        return HttpResponse.json(RUN_PLAN);
+      }),
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /^Retry 1 failed$/ }),
+    );
+
+    const estimateIt = screen.getByRole("button", { name: "Estimate an acquisition" });
+    expectHeld(estimateIt);
+    expect(screen.queryByText("Estimating…")).toBeNull();
+    plan.release();
+    await screen.findByRole("button", { name: /yes, start it/i });
+  });
+});

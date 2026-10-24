@@ -257,7 +257,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                 held={run.busy !== null}
                 onClick={() => run.estimate(levelId)}
               >
-                {run.busy === "planning"
+                {run.estimating === "everything"
                   ? "Estimating…"
                   : "Estimate an acquisition"}
               </HeldButton>
