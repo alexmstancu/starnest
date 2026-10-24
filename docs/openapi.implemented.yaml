@@ -3052,13 +3052,19 @@ paths:
         naming the locks so the screen can say which ones.
 
 
-        **An anchor above the score range is refused as it is saved** (PL-006), rather
-        than left
+        **An anchor above the score range is refused as it is written** (PL-006),
+        rather than left
 
-        for Rank to meet as a set it cannot score. Checked inside the edit, so the
-        refusal rolls the
+        for Rank to meet as a set it cannot score. **Only the anchors this request
+        writes** (P1-04,
 
-        edit back; an unset range has no top to be above.'
+        N7): one already stored above the range -- by a migration, say -- would otherwise
+        block every
+
+        change to its set, so Rank refuses that set and names the anchor instead.
+        Checked inside the
+
+        edit, so the refusal rolls it back; an unset range has no top to be above.'
       operationId: updateCriterion
       parameters:
       - in: path

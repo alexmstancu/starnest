@@ -296,16 +296,22 @@ async def update_criterion(
     Raises `WeightsAllLockedError` -- a 409 -- when every other weight in the pillar is locked,
     naming the locks so the screen can say which ones.
 
-    **An anchor above the score range is refused as it is saved** (PL-006), rather than left
-    for Rank to meet as a set it cannot score. Checked inside the edit, so the refusal rolls the
-    edit back; an unset range has no top to be above.
+    **An anchor above the score range is refused as it is written** (PL-006), rather than left
+    for Rank to meet as a set it cannot score. **Only the anchors this request writes** (P1-04,
+    N7): one already stored above the range -- by a migration, say -- would otherwise block every
+    change to its set, so Rank refuses that set and names the anchor instead. Checked inside the
+    edit, so the refusal rolls it back; an unset range has no top to be above.
     """
     score_scale_max = (await households.get_settings()).score_scale_max
 
     def mutate(current: CriteriaSet) -> CriteriaSet:
         edited = _applied(current, attribute_id, change)
         if score_scale_max is not None:
-            edited.refuse_unless_its_anchors_fit(score_scale_max)
+            _refuse_written_anchors_above(
+                score_scale_max,
+                before=current.criterion_for(attribute_id),
+                after=edited.criterion_for(attribute_id),
+            )
         return edited
 
     changed = await criteria.edit_criteria_set(criteria_set_id, mutate)
@@ -318,6 +324,19 @@ async def update_criterion(
             _criterion_body(criterion) for criterion in changed.criteria_under(pillar, level)
         ),
     )
+
+
+def _refuse_written_anchors_above(
+    score_scale_max: int, *, before: Criterion, after: Criterion
+) -> None:
+    """Refuse the anchors a change wrote, never the ones it sent back as they were stored.
+
+    The rule form sends every anchor with each save, so anchors equal to the stored ones are not
+    written -- as a range equal to the stored one is not refused. Compared as sets, because the
+    store reads anchors in input order and an order is nothing a range could be above.
+    """
+    if set(after.scale_anchors) != set(before.scale_anchors):
+        after.refuse_unless_its_anchors_fit(score_scale_max)
 
 
 def _applied(current: CriteriaSet, attribute: str, change: CriterionInput) -> CriteriaSet:

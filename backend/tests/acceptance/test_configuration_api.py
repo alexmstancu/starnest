@@ -15,6 +15,7 @@ COUNTRY = "country"
 MINIMAL = "minimal"
 NEW_SET = "a_scratch_of_my_own"
 OVERBURDEN = "country.housing_cost_overburden_rate"
+OVERCROWDING = "country.overcrowding_rate"
 
 
 @pytest.fixture
@@ -236,9 +237,10 @@ class TestAScoreRangeBelowAnAnchor:
     """A criterion anchors a figure to a score, and the score range has to reach it (PL-006).
 
     Refused when either side is saved, so the conflict is named where it is made rather than
-    surfacing later on Rank as ids. **Only a range the request changes is refused** (N7): one
-    already stored below an anchor -- by a migration, or before this check existed -- would
-    otherwise block every settings save, whichever field the household meant to change.
+    surfacing later on Rank as ids. **Only what the request changes is refused** (P1-04, N7): a
+    range or an anchor already stored out of step -- by a migration, or before this check
+    existed -- would otherwise block every save beside it, whatever the household meant to
+    change. Rank refuses that state instead, and names it.
     """
 
     A_RANGE_BELOW_THE_SHIPPED_ANCHORS = 10
@@ -318,6 +320,42 @@ class TestAScoreRangeBelowAnAnchor:
 
         assert await _the_anchors_of_overburden(api, a_scratch_criteria_set) == before
 
+    async def test_an_anchor_stored_above_the_range_does_not_block_an_unrelated_change(
+        self, api: httpx.AsyncClient, database_url: str, a_scratch_criteria_set: str
+    ) -> None:
+        await _an_anchor_stored_above_the_range(api, database_url, a_scratch_criteria_set)
+
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERCROWDING}",
+            json={"weight": 60},
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.parametrize("reordered", [False, True], ids=["as stored", "reordered"])
+    async def test_anchors_sent_back_unchanged_do_not_block_the_rest_of_the_rule(
+        self,
+        api: httpx.AsyncClient,
+        database_url: str,
+        a_scratch_criteria_set: str,
+        reordered: bool,
+    ) -> None:
+        """The rule form sends every anchor with each save, so an anchor it only sends back is
+        not one this request writes -- as a range equal to the stored one is not refused."""
+        await _an_anchor_stored_above_the_range(api, database_url, a_scratch_criteria_set)
+        unchanged = await _the_anchors_of_overburden(api, a_scratch_criteria_set)
+
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
+            json={
+                "normalisation_method": "fixed",
+                "blocks_if_missing": True,
+                "scale_anchors": unchanged[::-1] if reordered else unchanged,
+            },
+        )
+
+        assert response.status_code == 200
+
 
 async def _the_highest_anchor_of(api: httpx.AsyncClient, named: dict) -> int:
     """The highest score the criterion a refusal names anchors a figure to."""
@@ -341,6 +379,18 @@ async def _store_past_the_check(database_url: str, score_scale_max: int) -> None
                 " ON CONFLICT (id) DO UPDATE SET score_scale_max = EXCLUDED.score_scale_max",
                 (score_scale_max,),
             )
+
+
+async def _an_anchor_stored_above_the_range(
+    api: httpx.AsyncClient, database_url: str, criteria_set: str
+) -> None:
+    """Overburden anchored to 150 under a range of 100: the state a migration can leave.
+
+    Anchored while no range is set, which nothing checks, then the range written past the check.
+    """
+    anchored = await _anchor_overburden_up_to(api, criteria_set, 150)
+    assert anchored.status_code == 200, "the arrangement needs the anchor stored"
+    await _store_past_the_check(database_url, 100)
 
 
 async def _anchor_overburden_up_to(
