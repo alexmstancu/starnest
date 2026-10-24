@@ -317,6 +317,7 @@ paths:
     get:
       tags: [criteria]
       operationId: listCriteriaSets
+      description: Live sets only. A deleted set is listed nowhere until it is restored.
       responses:
         "200":
           description: OK
@@ -326,11 +327,21 @@ paths:
                 type: object
                 required: [items]
                 properties:
-                  items: { type: array, items: { $ref: "#/components/schemas/CriteriaSetSummary" } }
+                  items: { type: array, items: { $ref: "#/components/schemas/CriteriaSetListItem" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
     post:
       tags: [criteria]
       operationId: createCriteriaSet
+      description: |
+        A new set is a **full copy of the default set** (`reqs.md` 3.4): every criterion with its
+        weight, lock, rule, anchors and threshold, every pillar weight and lock at every level,
+        and the rules the default turns on -- so it can be ranked wherever the default can. The
+        default is the set the list marks `is_default`, and it is copied even after it has been
+        deleted, when the list no longer shows it.
+        409 `criteria_set_exists` when a set, live or deleted, already holds `id`: identifiers
+        are never reused. 409 `criteria_set_name_taken` when a live set already has this name
+        (`CriteriaSetName`). 409 `no_default_criteria_set` when no set is the default. A refused
+        request writes nothing.
       requestBody:
         required: true
         content:
@@ -340,7 +351,7 @@ paths:
               required: [id, name]
               properties:
                 id: { type: string, examples: ["partner"] }
-                name: { type: string }
+                name: { $ref: "#/components/schemas/CriteriaSetName" }
       responses:
         "201": { $ref: "#/components/responses/CriteriaSet" }
         "409": { $ref: "#/components/responses/Conflict" }
@@ -353,7 +364,8 @@ paths:
       description: |
         `level` narrows the criteria and the pillar weights together, never one without the
         other: weights sum to 100 within a level, so narrowing only the criteria would describe
-        a set whose pillar weights summed to 200.
+        a set whose pillar weights summed to 200. A deleted set answers 404, as an unknown one
+        does.
       parameters:
         - { $ref: "#/components/parameters/CriteriaSetId" }
         - { $ref: "#/components/parameters/LevelFilter" }
@@ -364,6 +376,9 @@ paths:
     patch:
       tags: [criteria]
       operationId: renameCriteriaSet
+      description: |
+        409 `criteria_set_name_taken` when another live set has this name (`CriteriaSetName`);
+        nothing is changed. 404 when no live set has this identifier.
       parameters: [ { $ref: "#/components/parameters/CriteriaSetId" } ]
       requestBody:
         required: true
@@ -372,25 +387,57 @@ paths:
             schema:
               type: object
               required: [name]
-              properties: { name: { type: string } }
+              properties: { name: { $ref: "#/components/schemas/CriteriaSetName" } }
       responses:
         "200": { $ref: "#/components/responses/CriteriaSet" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/InvalidRequest" }
     delete:
       tags: [criteria]
       operationId: deleteCriteriaSet
+      description: |
+        Deletes the set **restorably**. It leaves every list and every read at once, and nothing
+        it holds is removed -- its criteria with their rules, anchors and thresholds, its locks,
+        its pillar weights and the rules it turns on -- so
+        `POST /criteria-sets/{criteriaSetId}/restore` brings it back exactly. Saved rankings
+        computed with it stay readable, so they never stop a deletion. Its identifier stays
+        taken. 404 when no live set has this identifier.
       parameters: [ { $ref: "#/components/parameters/CriteriaSetId" } ]
       responses:
-        "204": { description: Deleted }
-        "409":
-          $ref: "#/components/responses/Conflict"
+        "204": { description: "Deleted, and restorable" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
+
+  /criteria-sets/{criteriaSetId}/restore:
+    post:
+      tags: [criteria]
+      summary: Bring a deleted criteria set back exactly as it was
+      description: |
+        The way back from `DELETE /criteria-sets/{criteriaSetId}`: the set returns to every list
+        and every read holding everything it held when it was deleted. Idempotent: a set that is
+        not deleted is answered unchanged, because an identifier names one set for ever.
+        409 `criteria_set_name_taken` when a live set has taken its name since it was deleted
+        (`CriteriaSetName`); nothing is changed. 404 when no set, live or deleted, has this
+        identifier.
+      operationId: restoreCriteriaSet
+      parameters: [ { $ref: "#/components/parameters/CriteriaSetId" } ]
+      responses:
+        "200": { $ref: "#/components/responses/CriteriaSet" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /criteria-sets/{criteriaSetId}/duplicate:
     post:
       tags: [criteria]
       summary: Copy a criteria set
-      description: The safe way to experiment — a drag edits a set in place (`reqs.md` Q168).
+      description: |
+        The safe way to experiment — a drag edits a set in place (`reqs.md` Q168). 404 when no
+        live set has this identifier: a deleted set cannot be copied until it is restored.
+        409 `criteria_set_exists` when a set, live or deleted, already holds `id`: identifiers
+        are never reused. 409 `criteria_set_name_taken` when a live set already has this name
+        (`CriteriaSetName`). A refused request writes nothing.
       operationId: duplicateCriteriaSet
       parameters: [ { $ref: "#/components/parameters/CriteriaSetId" } ]
       requestBody:
@@ -402,9 +449,10 @@ paths:
               required: [id, name]
               properties:
                 id: { type: string }
-                name: { type: string }
+                name: { $ref: "#/components/schemas/CriteriaSetName" }
       responses:
         "201": { $ref: "#/components/responses/CriteriaSet" }
+        "404": { $ref: "#/components/responses/NotFound" }
         # The identifier is the caller's to choose, so it can already be taken. Refused rather
         # than overwritten: silently replacing a set somebody built loses the weights they
         # chose and says nothing (reqs.md Q191).
@@ -1582,10 +1630,50 @@ components:
         weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. Pillar weights sum to 100 within the evaluation's level." }
         weight_locked: { type: boolean }
 
+    # Requests only. A response's `name` stays a plain string, because a name stored before the
+    # cap existed must still read.
+    CriteriaSetName:
+      type: string
+      minLength: 1
+      maxLength: 60
+      pattern: "\\S"
+      description: |
+        A criteria set's name: not blank, at most 60 characters, and trimmed of surrounding
+        spaces when stored. Unique among live sets, ignoring case and surrounding spaces: a name
+        another live set has is refused with 409 `criteria_set_name_taken`, naming it in
+        `details.name`. A deleted set's name is free: a live set may take it, and the deleted
+        set's restore is then refused.
+
     CriteriaSetSummary:
       type: object
       required: [id, name]
       properties: { id: { type: string }, name: { type: string } }
+
+    CriteriaSetListItem:
+      description: A live set, as the list gives it.
+      allOf:
+        - $ref: "#/components/schemas/CriteriaSetSummary"
+        - type: object
+          # Deliberately not required yet: the server does not send these, and every served list
+          # is validated against this schema (`test_contract_conformance.py`). They become
+          # required in the commit that serves them.
+          properties:
+            is_default:
+              type: boolean
+              description: "The set a new one is copied from (`reqs.md` 3.4). At most one set is the default."
+            heaviest_pillars:
+              type: array
+              description: |
+                One entry per level the set weighs pillars at: the pillar with the largest weight
+                there, a tie going to the lower `display_order`. Empty for a set that weighs no
+                pillar.
+              items:
+                type: object
+                required: [level, pillar, weight]
+                properties:
+                  level: { type: string }
+                  pillar: { type: string }
+                  weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100, as PillarWeight gives it." }
 
     CriteriaSet:
       allOf:
