@@ -388,6 +388,9 @@ components:
             $ref: '#/components/schemas/ComparatorCellBody'
           title: Comparators
           type: array
+        effective_weight:
+          title: Effective Weight
+          type: number
         focus:
           $ref: '#/components/schemas/ComparisonSideBody'
         pillar:
@@ -396,6 +399,7 @@ components:
       required:
       - attribute
       - pillar
+      - effective_weight
       - focus
       - comparators
       title: ComparisonAttributeRowBody
@@ -2309,6 +2313,16 @@ components:
             type: string
           title: Advantages
           type: array
+        ahead:
+          items:
+            $ref: '#/components/schemas/SynthesisLineBody'
+          title: Ahead
+          type: array
+        behind:
+          items:
+            $ref: '#/components/schemas/SynthesisLineBody'
+          title: Behind
+          type: array
         comparator:
           title: Comparator
           type: string
@@ -2318,6 +2332,11 @@ components:
             type: string
           title: Disadvantages
           type: array
+        not_comparable:
+          items:
+            type: string
+          title: Not Comparable
+          type: array
         score_delta:
           anyOf:
           - type: integer
@@ -2325,7 +2344,23 @@ components:
           title: Score Delta
       required:
       - comparator
+      - ahead
+      - behind
+      - not_comparable
       title: SynthesisBody
+      type: object
+    SynthesisLineBody:
+      properties:
+        pillar:
+          title: Pillar
+          type: string
+        worth:
+          title: Worth
+          type: number
+      required:
+      - pillar
+      - worth
+      title: SynthesisLineBody
       type: object
     ThresholdBody:
       additionalProperties: false

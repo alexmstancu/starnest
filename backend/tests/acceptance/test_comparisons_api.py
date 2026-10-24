@@ -83,6 +83,32 @@ class TestTheTable:
         assert body["focus"]["score"] is not None
         assert [c["candidate"] for c in body["comparators"]] == [GREECE]
 
+    async def test_each_row_carries_its_weight(
+        self, api: httpx.AsyncClient, database_url: str, stored_figures: None
+    ) -> None:
+        """What each attribute counted for in the focus's total, as Rank prints it (PL-098,
+        P1-43): a share of the whole level after redistribution, so the rows sum to 100, and
+        zero where the focus has no figure. Spain is asked first because it has no figures, so
+        a row carrying a comparator's weight would read zero throughout."""
+        await _settings(database_url, comparator_limit=5)
+
+        body = (await _compare(api, comparators=[SPAIN, GREECE])).json()
+        detail = (
+            await api.get(
+                f"/v1/rankings/candidates/{PORTUGAL}",
+                params={"criteria_set": MINIMAL, "level": COUNTRY},
+            )
+        ).json()
+
+        weights = {row["attribute"]: row["effective_weight"] for row in body["attributes"]}
+        assert weights == pytest.approx(
+            {row["attribute"]: row["effective_weight"] for row in detail["attribute_scores"]}
+        )
+        assert sum(weights.values()) == pytest.approx(100)
+        unanswered = [row for row in body["attributes"] if "value" not in row["focus"]]
+        assert unanswered, "Portugal has figures for three MINIMAL criteria, not all of them"
+        assert all(row["effective_weight"] == 0 for row in unanswered)
+
 
 class TestTheSynthesis:
     async def test_it_names_the_pair_and_reads_from_the_numbers(
@@ -120,6 +146,21 @@ class TestTheSynthesis:
         assert len(worth) >= 2, "Greece trails on several criteria, so the order is testable"
         assert worth == sorted(worth)
 
+    async def test_its_lines_are_pillars_ordered_by_what_they_are_worth(
+        self, api: httpx.AsyncClient, database_url: str, stored_figures: None
+    ) -> None:
+        """PL-100. Greece trails Portugal on both pillars it has figures for, housing and
+        culture: two lines, the costliest first, and nothing it leads on."""
+        await _settings(database_url, comparator_limit=5)
+
+        body = (await _compare(api, comparators=[GREECE])).json()
+
+        (pair,) = body["synthesis"]
+        assert pair["ahead"] == []
+        assert {line["pillar"] for line in pair["behind"]} == {"housing", "culture"}
+        worth = [line["worth"] for line in pair["behind"]]
+        assert worth == sorted(worth)
+
 
 class TestTheDirection:
     async def test_every_number_reads_comparator_minus_focus(
@@ -148,6 +189,34 @@ class TestTheDirection:
                 assert (worth is None) == (score_gap is None)
                 # The same sign, or a rounded tie: the worth weighs the exact scores.
                 assert worth is None or worth * score_gap >= 0
+
+    async def test_every_line_reads_comparator_minus_focus(
+        self, api: httpx.AsyncClient, database_url: str, stored_figures: None
+    ) -> None:
+        """G3 for the pillar lines (PL-100, PL-099, C07-F): each worth is the comparator's pillar
+        contribution minus the focus's, a pillar either side has no score on is named and in no
+        list, and Spain, with no total, has no lines at all."""
+        await _settings(database_url, comparator_limit=5)
+
+        body = (await _compare(api, comparators=[GREECE, SPAIN])).json()
+
+        focus = _pillars(body["focus"])
+        for comparator, pair in zip(body["comparators"], body["synthesis"], strict=True):
+            theirs = _pillars(comparator)
+            for line in pair["ahead"] + pair["behind"]:
+                gap = theirs[line["pillar"]]["contribution"] - focus[line["pillar"]]["contribution"]
+                assert line["worth"] == pytest.approx(gap)
+            assert all(line["worth"] > 0 for line in pair["ahead"])
+            assert all(line["worth"] < 0 for line in pair["behind"])
+            assert pair["not_comparable"] == [
+                pillar
+                for pillar, ours in focus.items()
+                if ours["score"] is None or theirs[pillar]["score"] is None
+            ]
+        greece, spain = body["synthesis"]
+        assert greece["behind"], "Greece trails Portugal on every MINIMAL criterion"
+        assert greece["not_comparable"], "neither has a figure for most MINIMAL pillars"
+        assert (spain["ahead"], spain["behind"]) == ([], [])
 
 
 class TestWhatIsRefused:
@@ -205,3 +274,8 @@ def _figure(side: dict) -> float | None:
 
 def _worth(line: str) -> float:
     return float(line.rsplit("worth ", 1)[1].split(" ")[0])
+
+
+def _pillars(result: dict) -> dict[str, dict]:
+    """A candidate's pillars by name, in the order the ranking lists them."""
+    return {pillar["pillar"]: pillar for pillar in result["pillar_scores"]}

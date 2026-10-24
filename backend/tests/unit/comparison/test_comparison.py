@@ -1,8 +1,9 @@
 """A focus candidate against comparators, and what each difference is worth (`reqs.md` 8.5).
 
-The test this module exists for is `test_a_big_gap_on_a_small_criterion_does_not_lead`: the
-synthesis is ordered by weighted contribution, and ordering it by the raw difference would
-produce sentences that read plausibly and mislead (`devplan.md` C5).
+The tests this module exists for are `test_a_big_gap_on_a_small_criterion_does_not_lead` and
+its pillar-level restatement, `test_a_big_gap_on_a_light_pillar_does_not_lead`: the synthesis is
+ordered by weighted contribution, and ordering it by the raw difference would produce lines that
+read plausibly and mislead (`devplan.md` C5).
 """
 
 from decimal import Decimal
@@ -14,6 +15,7 @@ from starnest.comparison import ComparisonError, compare
 from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor
 from starnest.data import Count
 from starnest.evaluation import AttributeScore, CandidateResult, MatchStatus, rank_candidates
+from starnest.evaluation.results import PillarScore
 
 from ..evaluation.builders import a_criterion, a_pillar_weight, a_set, a_value
 
@@ -36,13 +38,30 @@ def a_score(attribute: str, score: int | None, weight: str) -> AttributeScore:
     )
 
 
-def a_result(candidate: str, score: int | None, *rows: AttributeScore) -> CandidateResult:
+def a_result(
+    candidate: str,
+    score: int | None,
+    *rows: AttributeScore,
+    pillars: tuple[PillarScore, ...] = (),
+) -> CandidateResult:
     return CandidateResult(
         candidate=candidate,
         score=score,
         coverage=Decimal(100),
         match_status=MatchStatus.MATCHING if score is not None else MatchStatus.INSUFFICIENT_DATA,
         attribute_scores=rows,
+        pillar_scores=pillars,
+    )
+
+
+def a_pillar(pillar: str, score: int | None, weight: str) -> PillarScore:
+    """One pillar's part in a total, rolled up as `pillars_of` rolls it: its score times what it
+    counted for, and nothing at all from a pillar nobody scored."""
+    return PillarScore(
+        pillar=pillar,
+        score=score,
+        weight=Decimal(weight),
+        contribution=Decimal(0) if score is None else Decimal(score) * Decimal(weight) / 100,
     )
 
 
@@ -141,6 +160,19 @@ class TestTheTable:
         (cell,) = row.comparators
         assert (cell.delta, cell.weighted_contribution) == (None, None)
 
+    def test_each_row_carries_the_focuss_effective_weight(self) -> None:
+        """What the attribute counted for in the focus's total, on the basis Rank prints it
+        (PL-098, P1-43): a share of the whole level, after the focus's own redistribution.
+        Spain counts tax at 10 after its own; the row belongs to the focus, so it reads 40."""
+        ranking = (
+            a_result(PORTUGAL, 60, a_score(TAX, 70, "40")),
+            a_result(SPAIN, 50, a_score(TAX, 50, "10")),
+        )
+
+        (row,) = a_comparison(results=ranking).attributes
+
+        assert row.focus_effective_weight == Decimal(40)
+
     def test_every_comparator_gets_a_column(self) -> None:
         comparison = a_comparison(comparators=[SPAIN, GREECE])
 
@@ -221,6 +253,158 @@ class TestTheSynthesis:
         (synthesis,) = a_comparison(results=ranking).synthesis
 
         assert synthesis.score_delta is None
+
+
+BY_PILLAR = (
+    # Spain trails Portugal by 75 points on nature and by 20 on economics, and leads by 20 on
+    # housing. Nature is the largest gap and the first pillar Portugal lists, and it counts for 2%
+    # of the total, so it is worth 1.5 points; economics counts for 40% and is worth 8.
+    a_result(
+        PORTUGAL,
+        60,
+        pillars=(
+            a_pillar("nature", 95, "2"),
+            a_pillar("economics", 70, "40"),
+            a_pillar("housing", 40, "10"),
+        ),
+    ),
+    a_result(
+        SPAIN,
+        50,
+        pillars=(
+            a_pillar("nature", 20, "2"),
+            a_pillar("economics", 50, "40"),
+            a_pillar("housing", 60, "10"),
+        ),
+    ),
+)
+
+
+class TestTheSynthesisByPillar:
+    """A pair's lines are pillars (PL-100, P1-55): each is worth the comparator's pillar
+    contribution minus the focus's, the figure the matrix shows under "Weighted impact"."""
+
+    def test_a_big_gap_on_a_light_pillar_does_not_lead(self) -> None:
+        """`devplan.md` C5, restated at pillar level. Ordered by the score gap, or left in the
+        focus's order, nature would lead Spain's "behind" list on a gap worth 1.5 points, above
+        one worth 8."""
+        (pair,) = a_comparison(results=BY_PILLAR).synthesis
+
+        assert [str(line.pillar) for line in pair.behind] == ["economics", "nature"]
+
+    def test_each_line_names_its_pillar_and_what_it_is_worth(self) -> None:
+        """Spain's 50 on economics at 40% puts 20 into its total, against Portugal's 28: -8."""
+        (pair,) = a_comparison(results=BY_PILLAR).synthesis
+
+        assert _lines(pair.behind) == [("economics", Decimal(-8)), ("nature", Decimal("-1.5"))]
+        assert _lines(pair.ahead) == [("housing", Decimal(2))]
+
+    @pytest.mark.parametrize("unscored", [PORTUGAL, SPAIN], ids=["the focus", "the comparator"])
+    def test_a_pillar_either_side_has_no_score_is_not_comparable_and_in_neither_list(
+        self, unscored: str
+    ) -> None:
+        """PL-099. A pillar nobody scored contributes nothing, and reading that zero as a figure
+        would list a six-point gap on family that no evidence stands behind."""
+
+        def family(candidate: str) -> PillarScore:
+            if candidate == unscored:
+                return a_pillar("family", None, "0")
+            return a_pillar("family", 60, "10")
+
+        ranking = (
+            a_result(PORTUGAL, 60, pillars=(a_pillar("economics", 70, "40"), family(PORTUGAL))),
+            a_result(SPAIN, 50, pillars=(a_pillar("economics", 50, "40"), family(SPAIN))),
+        )
+
+        (pair,) = a_comparison(results=ranking).synthesis
+
+        assert pair.not_comparable == ("family",)
+        assert "family" not in {str(line.pillar) for line in (*pair.ahead, *pair.behind)}
+
+    @pytest.mark.parametrize("without", [PORTUGAL, SPAIN], ids=["the focus", "the comparator"])
+    def test_nothing_is_listed_against_a_missing_total(self, without: str) -> None:
+        """C07-F, on either side. A line is a share of the gap between two totals, so a missing
+        total leaves nothing to be a share of -- even where, as under a coverage floor, every
+        pillar still has a score."""
+        ranking = tuple(
+            a_result(
+                str(result.candidate),
+                None if str(result.candidate) == without else result.score,
+                pillars=result.pillar_scores,
+            )
+            for result in BY_PILLAR
+        )
+
+        (pair,) = a_comparison(results=ranking).synthesis
+
+        assert (pair.ahead, pair.behind) == ((), ())
+
+    def test_a_pillar_worth_nothing_either_way_is_no_line(self) -> None:
+        """A line is never worth zero. Housing puts the same into both totals, so it is neither
+        led nor trailed on -- and it was compared, so it is not "not comparable" either."""
+        ranking = (
+            a_result(
+                PORTUGAL,
+                60,
+                pillars=(a_pillar("housing", 40, "10"), a_pillar("economics", 70, "40")),
+            ),
+            a_result(
+                SPAIN, 50, pillars=(a_pillar("housing", 40, "10"), a_pillar("economics", 50, "40"))
+            ),
+        )
+
+        (pair,) = a_comparison(results=ranking).synthesis
+
+        assert (_lines(pair.ahead), _lines(pair.behind), pair.not_comparable) == (
+            [],
+            [("economics", Decimal(-8))],
+            (),
+        )
+
+    def test_pillars_worth_the_same_keep_the_focuss_order(self) -> None:
+        """Ties break on the focus's pillar order, the order the matrix lists them in, and never
+        on a name: the same comparison reads identically every time it is drawn."""
+        ranking = (
+            a_result(
+                PORTUGAL, 60, pillars=(a_pillar("safety", 50, "10"), a_pillar("culture", 50, "10"))
+            ),
+            a_result(
+                SPAIN, 70, pillars=(a_pillar("safety", 70, "10"), a_pillar("culture", 70, "10"))
+            ),
+        )
+
+        (pair,) = a_comparison(results=ranking).synthesis
+
+        assert [str(line.pillar) for line in pair.ahead] == ["safety", "culture"]
+
+    @pytest.mark.parametrize("top", [2, 3])
+    def test_only_the_top_few_pillars_are_listed_and_the_caller_says_how_few(
+        self, top: int
+    ) -> None:
+        """Four pillars either way come back as `top` and `top`. Two values, because one of them
+        is the default."""
+        leads = ("career", "health", "nature", "safety")
+        trails = ("culture", "economics", "family", "housing")
+        ranking = (
+            a_result(
+                PORTUGAL, 60, pillars=tuple(a_pillar(pillar, 50, "10") for pillar in leads + trails)
+            ),
+            a_result(
+                SPAIN,
+                50,
+                pillars=tuple(a_pillar(pillar, 90, "10") for pillar in leads)
+                + tuple(a_pillar(pillar, 10, "10") for pillar in trails),
+            ),
+        )
+
+        (pair,) = a_comparison(results=ranking, top=top).synthesis
+
+        assert (len(pair.ahead), len(pair.behind)) == (top, top)
+
+
+def _lines(lines) -> list[tuple[str, Decimal]]:
+    """Each line as its pillar and its worth, for an assertion that reads like the card."""
+    return [(str(line.pillar), line.worth) for line in lines]
 
 
 class TestWhatCannotBeCompared:

@@ -327,6 +327,10 @@ async def test_a_comparison_matches_the_designed_shape(
     )
 
     assert response.status_code == 200
+    (pair,) = response.json()["synthesis"]
+    # With entries, because an empty list validates against any item schema: Greece trails on
+    # housing and culture, and neither has a figure for the rest of the MINIMAL pillars.
+    assert pair["behind"] and pair["not_comparable"]
     validate("getComparison", response.json())
     assert undeclared_fields("getComparison", response.json()) == []
 

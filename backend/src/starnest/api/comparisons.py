@@ -26,7 +26,13 @@ from starnest.api.dependencies import (
 )
 from starnest.api.rankings import CandidateResultBody, _result_body, the_ranking
 from starnest.api.values import ValueBody, _value_body
-from starnest.comparison import AttributeComparison, ComparatorCell, compare
+from starnest.comparison import (
+    AttributeComparison,
+    ComparatorCell,
+    Synthesis,
+    SynthesisLine,
+    compare,
+)
 from starnest.data import Value, ValueListing
 from starnest.evaluation.magnitudes import UnscoreableValueError, figure_of
 
@@ -53,8 +59,14 @@ class ComparatorCellBody(ComparisonSideBody):
 class ComparisonAttributeRowBody(BaseModel):
     attribute: str
     pillar: str
+    effective_weight: float
     focus: ComparisonSideBody
     comparators: tuple[ComparatorCellBody, ...]
+
+
+class SynthesisLineBody(BaseModel):
+    pillar: str
+    worth: float
 
 
 class SynthesisBody(BaseModel):
@@ -62,6 +74,9 @@ class SynthesisBody(BaseModel):
     score_delta: int | None = None
     advantages: tuple[str, ...] = ()
     disadvantages: tuple[str, ...] = ()
+    ahead: tuple[SynthesisLineBody, ...]
+    behind: tuple[SynthesisLineBody, ...]
+    not_comparable: tuple[str, ...]
 
 
 class ComparisonBody(BaseModel):
@@ -132,15 +147,7 @@ async def get_comparison(
         attributes=tuple(
             _row_body(row, str(drawn.focus.candidate), active) for row in drawn.attributes
         ),
-        synthesis=tuple(
-            SynthesisBody(
-                comparator=str(pair.comparator),
-                score_delta=pair.score_delta,
-                advantages=pair.advantages,
-                disadvantages=pair.disadvantages,
-            )
-            for pair in drawn.synthesis
-        ),
+        synthesis=tuple(_synthesis_body(pair) for pair in drawn.synthesis),
     )
 
 
@@ -171,6 +178,7 @@ def _row_body(
     return ComparisonAttributeRowBody(
         attribute=str(row.attribute),
         pillar=str(row.pillar),
+        effective_weight=float(row.focus_effective_weight),
         focus=ComparisonSideBody(
             value=_side_value(active, focus, str(row.attribute)),
             normalised_score=row.focus_score,
@@ -199,3 +207,19 @@ def _side_value(
     """The figure this side holds, with its provenance -- the active one, hence `is_active`."""
     value = active.get(candidate, {}).get(attribute)
     return None if value is None else _value_body(ValueListing(value=value, is_active=True))
+
+
+def _synthesis_body(pair: Synthesis) -> SynthesisBody:
+    return SynthesisBody(
+        comparator=str(pair.comparator),
+        score_delta=pair.score_delta,
+        advantages=pair.advantages,
+        disadvantages=pair.disadvantages,
+        ahead=tuple(_line_body(line) for line in pair.ahead),
+        behind=tuple(_line_body(line) for line in pair.behind),
+        not_comparable=tuple(str(pillar) for pillar in pair.not_comparable),
+    )
+
+
+def _line_body(line: SynthesisLine) -> SynthesisLineBody:
+    return SynthesisLineBody(pillar=str(line.pillar), worth=float(line.worth))

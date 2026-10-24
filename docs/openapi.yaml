@@ -2056,10 +2056,17 @@ components:
 
     ComparisonAttributeRow:
       type: object
-      required: [attribute, focus]
+      required: [attribute, focus, effective_weight]
       properties:
         attribute: { type: string }
         pillar: { type: string }
+        effective_weight:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: >-
+            What this attribute counted for in the focus's total after redistribution, on the
+            basis AttributeScore.effective_weight uses. Zero where the focus has no figure.
         focus:
           type: object
           properties:
@@ -2094,14 +2101,38 @@ components:
             `disadvantages` what it trails on.
           items:
             type: object
-            required: [comparator, score_delta, advantages, disadvantages]
+            required: [comparator, score_delta, advantages, disadvantages, ahead, behind, not_comparable]
             properties:
               comparator: { type: string }
               score_delta:
                 type: [integer, "null"]
                 description: The comparator's total minus the focus's. Null when either has no total.
-              advantages: { type: array, items: { type: string } }
-              disadvantages: { type: array, items: { type: string } }
+              advantages: { type: array, items: { type: string }, description: "Deprecated; removed once the interface reads `ahead`." }
+              disadvantages: { type: array, items: { type: string }, description: "Deprecated; removed once the interface reads `behind`." }
+              ahead:
+                type: array
+                description: The pillars the comparator leads on, most worth first, at most three. Empty when either side has no total.
+                items: { $ref: "#/components/schemas/SynthesisLine" }
+              behind:
+                type: array
+                description: The pillars the comparator trails on, most worth first, at most three. Empty when either side has no total.
+                items: { $ref: "#/components/schemas/SynthesisLine" }
+              not_comparable:
+                type: array
+                description: Pillars left out because either side has no score there, in the focus's pillar order.
+                items: { type: string }
+
+    SynthesisLine:
+      type: object
+      required: [pillar, worth]
+      properties:
+        pillar: { type: string }
+        worth:
+          type: number
+          description: >-
+            What this pillar's gap is worth to the total, comparator minus focus, in score
+            points: the comparator's pillar contribution minus the focus's -- the figure the
+            matrix shows for this pillar under "Weighted impact". Never zero.
 
     ExternalScore:
       type: object

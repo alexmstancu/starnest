@@ -10,6 +10,7 @@ from starnest.comparison.comparison import (
     Comparison,
     ComparisonError,
     Synthesis,
+    SynthesisLine,
     compare,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "Comparison",
     "ComparisonError",
     "Synthesis",
+    "SynthesisLine",
     "compare",
 ]

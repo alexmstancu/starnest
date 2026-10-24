@@ -9,7 +9,8 @@ with anything.
 **Asserted as properties over rankings scored for real** (G2): ties, missing figures, a missing
 pillar, weights redistributed on either side, and a total missing on either side. A ranking
 written by hand gives every candidate the same weights, and that is where a subtraction the
-wrong way round goes unnoticed.
+wrong way round goes unnoticed. The pillar lines (PL-100) are held the same way, because a
+pillar's contribution carries its candidate's own redistribution.
 """
 
 from collections.abc import Mapping
@@ -21,6 +22,7 @@ from starnest.comparison import Comparison, compare
 from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor
 from starnest.data import Count
 from starnest.evaluation import AttributeScore, CandidateResult, contribution_of, rank_candidates
+from starnest.evaluation.results import PillarScore
 
 from ..evaluation.builders import A_SMALL_SCALE, a_criterion, a_pillar_weight, a_set, a_value
 
@@ -110,7 +112,8 @@ SHAPES: dict[str, Figures] = {
     },
 }
 """No comparator leads or trails on more than three attributes, the number the synthesis keeps,
-so each of its lists is the whole set rather than the top of it."""
+so each of its lists is the whole set rather than the top of it. There are three pillars, so the
+same holds for the pillar lines."""
 
 
 @pytest.fixture(params=list(SHAPES.values()), ids=list(SHAPES))
@@ -177,7 +180,80 @@ class TestTheDirection:
                 )
 
 
-def _drawn(figures: Figures) -> Comparison:
+class TestThePillarLines:
+    """G2's line cases (PL-100, PL-099, C07-F)."""
+
+    def test_every_line_is_worth_the_comparators_pillar_contribution_minus_the_focuss(
+        self, figures: Figures
+    ) -> None:
+        drawn = _drawn(figures)
+
+        for comparator, pair in zip(drawn.comparators, drawn.synthesis, strict=True):
+            focus, theirs = _pillars(drawn.focus), _pillars(comparator)
+            for line in (*pair.ahead, *pair.behind):
+                pillar = str(line.pillar)
+                assert line.worth == theirs[pillar].contribution - focus[pillar].contribution
+            assert all(line.worth > 0 for line in pair.ahead)
+            assert all(line.worth < 0 for line in pair.behind)
+
+    def test_what_the_comparator_leads_on_is_ahead_and_what_it_trails_on_behind(
+        self, figures: Figures
+    ) -> None:
+        """Every comparable pillar with a gap, on the side the gap is on -- and nothing at all
+        where either side has no total."""
+        drawn = _drawn(figures)
+
+        for comparator, pair in zip(drawn.comparators, drawn.synthesis, strict=True):
+            listed = (
+                {str(line.pillar) for line in pair.ahead},
+                {str(line.pillar) for line in pair.behind},
+            )
+            if drawn.focus.score is None or comparator.score is None:
+                assert listed == (set(), set())
+                continue
+            worth = _pillar_gaps(drawn.focus, comparator)
+            assert listed == (
+                {pillar for pillar, gap in worth.items() if gap > 0},
+                {pillar for pillar, gap in worth.items() if gap < 0},
+            )
+
+    def test_a_pillar_either_side_has_no_score_is_not_comparable(self, figures: Figures) -> None:
+        drawn = _drawn(figures)
+
+        for comparator, pair in zip(drawn.comparators, drawn.synthesis, strict=True):
+            theirs = _pillars(comparator)
+            assert pair.not_comparable == tuple(
+                ours.pillar
+                for ours in drawn.focus.pillar_scores
+                if ours.score is None or theirs[str(ours.pillar)].score is None
+            )
+            lines = {str(line.pillar) for line in (*pair.ahead, *pair.behind)}
+            assert lines.isdisjoint(pair.not_comparable)
+
+    @pytest.mark.parametrize("short", [FOCUS, "country.greece"], ids=["focus", "comparator"])
+    def test_nothing_is_listed_against_a_total_under_the_coverage_floor(self, short: str) -> None:
+        """C07-F where it is a decision rather than an accident: with no culture figure, one
+        side falls short of a 100% floor and has no total, and still has two pillars scored."""
+        figures = {FOCUS: FOCUS_FIGURES, "country.greece": BEHIND}
+        figures[short] = {
+            attribute: held
+            for attribute, held in figures[short].items()
+            if attribute != SATISFACTION
+        }
+
+        drawn = _drawn(figures, min_coverage=Decimal(100))
+
+        (comparator,), (pair,) = drawn.comparators, drawn.synthesis
+        (unscored,) = (side for side in (drawn.focus, comparator) if str(side.candidate) == short)
+        assert unscored.score is None
+        scored = [
+            str(pillar.pillar) for pillar in unscored.pillar_scores if pillar.score is not None
+        ]
+        assert scored == ["economics", "connectivity"]
+        assert (pair.ahead, pair.behind) == ((), ())
+
+
+def _drawn(figures: Figures, *, min_coverage: Decimal | None = None) -> Comparison:
     values = {
         candidate: tuple(
             a_value(candidate=candidate, attribute=attribute, payload=Count(count=figure))
@@ -186,7 +262,11 @@ def _drawn(figures: Figures) -> Comparison:
         for candidate, held in figures.items()
     }
     ranking = rank_candidates(
-        criteria=CRITERIA, level="country", values=values, score_scale_max=A_SMALL_SCALE
+        criteria=CRITERIA,
+        level="country",
+        values=values,
+        score_scale_max=A_SMALL_SCALE,
+        min_coverage=min_coverage,
     )
     comparators = [candidate for candidate in figures if candidate != FOCUS]
     return compare(
@@ -213,6 +293,21 @@ def _figure(figures: Figures, candidate: str, attribute: str) -> Decimal | None:
 
 def _scores(result: CandidateResult) -> dict[str, AttributeScore]:
     return {str(row.attribute): row for row in result.attribute_scores}
+
+
+def _pillars(result: CandidateResult) -> dict[str, PillarScore]:
+    return {str(pillar.pillar): pillar for pillar in result.pillar_scores}
+
+
+def _pillar_gaps(focus: CandidateResult, comparator: CandidateResult) -> dict[str, Decimal]:
+    """Each pillar both sides have a score on, with the comparator's contribution minus the
+    focus's."""
+    theirs = _pillars(comparator)
+    return {
+        pillar: theirs[pillar].contribution - ours.contribution
+        for pillar, ours in _pillars(focus).items()
+        if ours.score is not None and theirs[pillar].score is not None
+    }
 
 
 def _exact_gaps(focus: CandidateResult, comparator: CandidateResult) -> dict[str, Decimal]:
