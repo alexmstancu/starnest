@@ -165,6 +165,21 @@ export function useRunScreen(levelId: string | null): RunScreenState {
   // Bumped by every change of selection, so an estimate read for the selection before it arms
   // nothing.
   const selectionVersion = useRef(0);
+  // **A change of level clears what was estimated and armed for the level left** (PL-116,
+  // PL-130), during the render that shows the new level, so no paint offers the old one's
+  // Start or "Yes"; and the effect drops any estimate still being read for it.
+  const [shownLevel, setShownLevel] = useState(levelId);
+  if (shownLevel !== levelId) {
+    setShownLevel(levelId);
+    setArmed(null);
+    setPlan(null);
+    setPlanOrigin(null);
+  }
+  const levelVersion = useRef(0);
+  useEffect(() => {
+    levelVersion.current += 1;
+    selectionVersion.current += 1;
+  }, [levelId]);
   // Every act still going, oldest first. The label is the newest of them, so the first act to
   // end no longer clears the label of one still going (NEW-10).
   const going = useRef<{ what: RunAct }[]>([]);
@@ -323,12 +338,15 @@ export function useRunScreen(levelId: string | null): RunScreenState {
     history: historyRead,
     reloadHistory,
     dismissFailure: () => setFailure(null),
-    estimate: (levelId) =>
+    estimate: (levelId) => {
+      const version = levelVersion.current;
       void estimateFor("everything", async () => {
         setArmed(null);
         setPlanOrigin("everything");
-        setPlan(await planRun({ level: levelId }));
-      }),
+        const planned = await planRun({ level: levelId });
+        if (version === levelVersion.current) setPlan(planned);
+      });
+    },
     // **Every act that reads a run back claims on the click**, before its first await, so a
     // read already on its way when the reader acts again can never land over the newer choice.
     start: (levelId) => {

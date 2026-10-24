@@ -158,6 +158,8 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
               </p>
               {levelId !== null && (
                 <ItemGroups
+                  // Its picks belong to this run, so another run starts them again.
+                  key={run.current.id}
                   items={run.current.failures ?? []}
                   groupedBy="data_source"
                   caption="Which sources broke"
@@ -204,6 +206,8 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
             >
               {levelId !== null && (
                 <ItemGroups
+                  // Its picks belong to this run, so another run starts them again.
+                  key={run.current.id}
                   items={run.current.unanswered ?? []}
                   groupedBy="attribute"
                   caption="Which values went unanswered"

@@ -4230,3 +4230,107 @@ describe("which card says it is estimating", () => {
     await screen.findByRole("button", { name: /yes, start it/i });
   });
 });
+
+/**
+ * **What the reader picked belongs to the run they picked it from.** The failed and unanswered
+ * lists kept their picks when another acquisition took the card, so "Retry 1 selected" offered
+ * items the new run never failed on.
+ */
+describe("picks across a switch to another acquisition", () => {
+  it("drops the picks in both lists when another acquisition is opened", async () => {
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    const failed = within(
+      await screen.findByRole("region", { name: /which sources broke/i }),
+    );
+    const unanswered = within(
+      screen.getByRole("region", { name: /which values went unanswered/i }),
+    );
+    await userEvent.click(failed.getByRole("button", { name: "Select all" }));
+    await userEvent.click(unanswered.getByRole("button", { name: "Select all" }));
+    expect(screen.getByRole("button", { name: "Retry 1 selected" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry 2 selected" })).toBeInTheDocument();
+
+    await openFromHistory("6");
+    await screen.findByRole("region", { name: /acquisition 6/i });
+
+    expect(screen.getAllByRole("button", { name: "Retry 0 selected" })).toHaveLength(2);
+  });
+});
+
+/**
+ * PL-116, from the review of 47d0ed5. **A change of level clears what was estimated and armed
+ * for the level left**, rather than hiding it until the reader returns -- and an estimate still
+ * being read when the level changes arms and shows nothing, then or later.
+ */
+describe("a change of level", () => {
+  function renderAtLevel() {
+    return renderHook(({ level }: { level: string | null }) => useRunScreen(level), {
+      initialProps: { level: "country" },
+    });
+  }
+
+  function holdThePlan(): { release: () => void } {
+    const answer = heldAnswer();
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, async () => {
+        await answer.held;
+        return HttpResponse.json(RUN_PLAN);
+      }),
+    );
+    return answer;
+  }
+
+  it("puts away the estimate behind Start, and it does not come back", async () => {
+    const { result, rerender } = renderAtLevel();
+    act(() => result.current.estimate("country"));
+    await waitFor(() => expect(result.current.plan).not.toBeNull());
+
+    rerender({ level: "city" });
+    expect(result.current.plan).toBeNull();
+    rerender({ level: "country" });
+
+    expect(result.current.plan).toBeNull();
+  });
+
+  it("shows no estimate that was still being read when the level changed", async () => {
+    const plan = holdThePlan();
+    const { result, rerender } = renderAtLevel();
+    act(() => result.current.estimate("country"));
+    await waitFor(() => expect(result.current.busy).toBe("planning"));
+
+    rerender({ level: "city" });
+    plan.release();
+    await waitFor(() => expect(result.current.busy).toBeNull());
+    rerender({ level: "country" });
+
+    expect(result.current.plan).toBeNull();
+  });
+
+  it("clears an armed start rather than hiding it until the level comes back", async () => {
+    const { result, rerender } = renderAtLevel();
+    await waitFor(() => expect(result.current.current?.id).toBe(7));
+    act(() => result.current.propose({ level: "country" }, "Retry", "failed"));
+    await waitFor(() => expect(result.current.armed).not.toBeNull());
+
+    rerender({ level: "city" });
+    rerender({ level: "country" });
+
+    expect(result.current.armed).toBeNull();
+  });
+
+  it("arms nothing from an estimate still being read when the level changed", async () => {
+    const plan = holdThePlan();
+    const { result, rerender } = renderAtLevel();
+    await waitFor(() => expect(result.current.current?.id).toBe(7));
+    act(() => result.current.propose({ level: "country" }, "Retry", "failed"));
+    await waitFor(() => expect(result.current.busy).toBe("planning"));
+
+    rerender({ level: "city" });
+    plan.release();
+    await waitFor(() => expect(result.current.busy).toBeNull());
+    rerender({ level: "country" });
+
+    expect(result.current.armed).toBeNull();
+  });
+});
