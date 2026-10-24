@@ -1,7 +1,7 @@
-"""What `0511` makes of the gate answers already stored, and when its way back refuses (PL-143).
+"""What `0510` makes of the gate answers already stored, and when its way back refuses (PL-143).
 
 Run inside one transaction that is always rolled back: the rollback's statements take the schema
-back to before `0511`, a live answer is written the old way, and `0511` is applied over it -- so
+back to before `0510`, a live answer is written the old way, and `0510` is applied over it -- so
 the backfill is asserted on a row it really had to copy, not read off the file.
 """
 
@@ -17,7 +17,7 @@ from yoyo.migrations import read_sql_migration
 pytestmark = pytest.mark.storage
 
 MIGRATIONS = Path(__file__).resolve().parents[2].parent / "storage" / "migrations"
-THE_MIGRATION = MIGRATIONS / "0511-a-gate-answer-is-kept-once-written.sql"
+THE_MIGRATION = MIGRATIONS / "0510-a-gate-answer-is-kept-once-written.sql"
 ITS_ROLLBACK = THE_MIGRATION.with_name(f"{THE_MIGRATION.stem}.rollback.sql")
 
 GATE = "uk_skilled_worker"
@@ -102,7 +102,7 @@ def test_its_way_back_refuses_once_an_answer_has_been_corrected(
     )
 
     with (
-        pytest.raises(errors.RaiseException, match="cannot roll back 0511: 1 earlier"),
+        pytest.raises(errors.RaiseException, match="cannot roll back 0510: 1 earlier"),
         connection.transaction(),
     ):
         _run(connection, ITS_ROLLBACK)

@@ -276,7 +276,7 @@ SELECT r.id,
                        END,
                        -- The gate-answer VERSION the refusal read (FU-A4), never the live
                        -- answer, with its pages in the order the live read gives them. Null
-                       -- for any other reason and for refusals saved before 0511. A LEFT
+                       -- for any other reason and for refusals saved before 0510. A LEFT
                        -- join: a reason is never dropped for lacking one.
                        'gate_answer',   (
                            SELECT jsonb_build_object(
@@ -420,7 +420,7 @@ SELECT r.id,
                        END,
                        -- The gate-answer VERSION the refusal read (FU-A4), never the live
                        -- answer, with its pages in the order the live read gives them. Null
-                       -- for any other reason and for refusals saved before 0511. A LEFT
+                       -- for any other reason and for refusals saved before 0510. A LEFT
                        -- join: a reason is never dropped for lacking one.
                        'gate_answer',   (
                            SELECT jsonb_build_object(

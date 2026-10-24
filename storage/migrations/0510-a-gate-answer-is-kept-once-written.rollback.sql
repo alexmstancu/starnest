@@ -1,4 +1,4 @@
--- Undo 0511: back to one mutable gate answer per pair, and saved refusals that cite nothing.
+-- Undo 0510: back to one mutable gate answer per pair, and saved refusals that cite nothing.
 --
 -- **Refuses once any history or saved evidence exists** (FU-A5's rule). History is a version
 -- that is not its pair's live answer -- a correction, or a proposal a person replaced -- and
@@ -27,7 +27,7 @@ BEGIN
 
     IF history > 0 OR evidence > 0 THEN
         RAISE EXCEPTION
-            'cannot roll back 0511: % earlier gate answer(s) and % saved refusal(s) citing their '
+            'cannot roll back 0510: % earlier gate answer(s) and % saved refusal(s) citing their '
             'evidence would be lost, and neither can be re-fetched. Restore from the backup make '
             'migrate took instead of forcing this.', history, evidence;
     END IF;

@@ -34,7 +34,7 @@ def _record_a_gate_answer(
 ) -> None:
     """One researched gate answer, carrying whichever half of a reference period is given.
 
-    The live row must point at a version (0511), which is written whole so that only the live
+    The live row must point at a version (0510), which is written whole so that only the live
     row carries the half-period under test.
     """
     (version,) = connection.execute(

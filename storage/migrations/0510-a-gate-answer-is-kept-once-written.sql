@@ -106,7 +106,7 @@ BEGIN
     SELECT count(*) INTO unversioned FROM match_rule_result WHERE answer IS NULL;
     IF unversioned > 0 THEN
         RAISE EXCEPTION
-            'cannot apply 0511: % gate answer(s) were not given a version, so the live answer '
+            'cannot apply 0510: % gate answer(s) were not given a version, so the live answer '
             'could not point at one. Nothing was changed.', unversioned;
     END IF;
 END $$;
@@ -138,6 +138,6 @@ ALTER TABLE non_match_reason
     CHECK (used_value IS NULL OR attribute IS NOT NULL);
 
 COMMENT ON COLUMN non_match_reason.match_rule_answer IS
-    'The gate-answer version a gate refusal read. Null on reasons saved before 0511.';
+    'The gate-answer version a gate refusal read. Null on reasons saved before 0510.';
 COMMENT ON COLUMN non_match_reason.used_value IS
-    'The value row a threshold refusal judged. Null on reasons saved before 0511, or where the figure had no stored row.';
+    'The value row a threshold refusal judged. Null on reasons saved before 0510, or where the figure had no stored row.';

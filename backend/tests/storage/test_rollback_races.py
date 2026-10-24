@@ -136,7 +136,7 @@ REFUSALS = (
     ),
     Refusal(
         migration="0493-liechtensteins-quota-is-a-gate",
-        # The live answer points at its version (0511), so the version is written first.
+        # The live answer points at its version (0510), so the version is written first.
         write="DO $$ DECLARE version bigint; BEGIN "
         "INSERT INTO match_rule_answer "
         "(match_rule, candidate, match_result, data_source, retrieval_date) "
@@ -149,15 +149,15 @@ REFUSALS = (
         undo=ANSWERS_UNDONE,
         says="cannot roll back 0493: 1 answer",
     ),
-    # A superseded gate answer is history 0511's rollback would drop (PL-143): a version that is
+    # A superseded gate answer is history 0510's rollback would drop (PL-143): a version that is
     # not its pair's live one.
     Refusal(
-        migration="0511-a-gate-answer-is-kept-once-written",
+        migration="0510-a-gate-answer-is-kept-once-written",
         write="INSERT INTO match_rule_answer "
         "(match_rule, candidate, match_result, data_source, retrieval_date) "
         "VALUES ('li_eea_quota', 'country.liechtenstein', 'matching', 'manual', now())",
         undo=ANSWERS_UNDONE,
-        says="cannot roll back 0511: 1 earlier gate answer(s)",
+        says="cannot roll back 0510: 1 earlier gate answer(s)",
     ),
     Refusal(
         migration="0492-child-benefit-is-a-share-of-the-wage",

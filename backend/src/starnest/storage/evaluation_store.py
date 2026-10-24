@@ -352,7 +352,7 @@ class PostgresEvaluationStore(EvaluationStore):
 def _refuse_evidence_that_does_not_fit(candidate: CandidateId, reason: NonMatch) -> None:
     """Hold a non-match's evidence to its mechanism before the first row is written.
 
-    **Here, in the writer, and never on the way back** (C6): a ranking saved before 0511 has no
+    **Here, in the writer, and never on the way back** (C6): a ranking saved before 0510 has no
     evidence at all, and a read-time check would make reopening it a 500.
     """
     if reason.match_rule is not None:
@@ -532,7 +532,7 @@ def _result_from(row: Any, attribute_scores: tuple[AttributeScore, ...] = ()) ->
 
 def _gate_answer_from(frozen: dict[str, Any] | None) -> MatchRuleResult | None:
     """The version a saved gate refusal read, or None for any other reason and for refusals
-    saved before 0511. Built from the version's own columns, never the live answer."""
+    saved before 0510. Built from the version's own columns, never the live answer."""
     if frozen is None:
         return None
     start, end = frozen["reference_period_start"], frozen["reference_period_end"]
