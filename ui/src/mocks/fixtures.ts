@@ -334,6 +334,7 @@ export function rankingFor(criteriaSet: string, level: string): Ranking {
     criteria_set: criteriaSet,
     level,
     computed_at: "2026-08-30T09:15:00Z",
+    // The scale the scores were computed on, which the server freezes beside them (PL-062).
     score_scale_max: MOCK_SCORE_SCALE,
     candidates: level === "city" ? CITY_RESULTS : COUNTRY_RESULTS,
   };
@@ -383,109 +384,104 @@ export const SETTINGS: Settings = {
 };
 
 /**
- * One comparison: Portugal against the Netherlands, with a gap that matters and one that does
- * not. **Every number reads comparator minus focus, as the server's do** (PL-091): a positive
- * gap is the comparator ahead, and its advantages are what it leads the focus on. The synthesis
- * is the server's, never assembled by the interface -- which prints the sentences it is given
- * (`reqs.md` 8.5) -- so its total gap is taken from the two totals and its pillar lines from the
- * two sides' pillars, as the server takes them.
+ * A comparison as the server draws it (`comparison.py`), from the fixtures beside it (PL-091):
+ * one row per attribute in the focus's ranking detail, at the focus's score and weight; each
+ * comparator's own score and figure; and a synthesis whose every sentence restates a row.
+ * **Every number reads comparator minus focus**: a positive gap is the comparator ahead. The
+ * caller has already refused what the server refuses, so every candidate here is ranked.
  */
 export function comparisonFor(
   criteriaSet: string,
   level: string,
-  focus: string,
-  comparators: string[],
+  focus: CandidateResult,
+  comparators: readonly CandidateResult[],
 ): Comparison {
-  const named = (candidate: string): CandidateResult => {
-    const found = COUNTRY_RESULTS.find(
-      (result) => result.candidate === candidate,
-    );
-    // A candidate the mock has no result for still gets a row, named after itself: the screen
-    // under test should render what it is given rather than depend on this fixture's roster.
-    return (
-      found ?? {
+  const scores = new Map(
+    [focus, ...comparators].map((result) => [result.candidate, attributeScoresOf(result.candidate)]),
+  );
+  const attributes = scores.get(focus.candidate)!.map((row) => ({
+    attribute: row.attribute,
+    pillar: row.pillar,
+    effective_weight: row.effective_weight,
+    focus: sideOf(focus.candidate, row.attribute, row.normalised_score ?? null),
+    comparators: comparators.map(({ candidate }) => {
+      const theirs =
+        scores.get(candidate)!.find((each) => each.attribute === row.attribute)
+          ?.normalised_score ?? null;
+      const side = sideOf(candidate, row.attribute, theirs);
+      const ours = row.normalised_score ?? null;
+      return {
         candidate,
-        name: candidate,
-        rank: null,
-        score: null,
-        coverage: 0,
-        match_status: "insufficient_data",
-        parent_not_matching: false,
-      }
-    );
-  };
+        ...side,
+        delta: rawGap(sideOf(focus.candidate, row.attribute, ours).value, side.value),
+        weighted_contribution:
+          ours === null || theirs === null ? null : ((theirs - ours) * row.effective_weight) / 100,
+      };
+    }),
+  }));
   return {
     criteria_set: criteriaSet,
     level,
     score_scale_max: MOCK_SCORE_SCALE,
-    focus: named(focus),
-    comparators: comparators.map(named),
-    attributes: [
-      {
-        attribute: "country.cost_of_living_index",
-        pillar: "economics",
-        // What the attribute counted for in the focus's total, out of 100: each comparator's
-        // `weighted_contribution` is its score gap at this weight, as the server weighs it.
-        effective_weight: 12,
-        // The raw figure beside the score, which is what the Compare toggle switches between
-        // (`ComparisonAttributeRow` carries the whole `Value`, not only its score).
-        focus: {
-          normalised_score: 82,
-          value: comparedValue(
-            "country.cost_of_living_index",
-            focus,
-            { magnitude: 92.1, unit: "index_eu27_100" },
-            "Quantity",
-          ),
-        },
-        comparators: comparators.map((candidate) => ({
-          candidate,
-          normalised_score: 41,
-          delta: 13.4,
-          weighted_contribution: -4.92,
-          value: comparedValue(
-            "country.cost_of_living_index",
-            candidate,
-            { magnitude: 105.5, unit: "index_eu27_100" },
-            "Quantity",
-          ),
-        })),
-      },
-      {
-        attribute: "country.coastline_access",
-        pillar: "nature",
-        effective_weight: 3,
-        focus: {
-          normalised_score: 70,
-          value: comparedValue(
-            "country.coastline_access",
-            focus,
-            { magnitude: 1793, unit: "km" },
-            "Quantity",
-          ),
-        },
-        comparators: comparators.map((candidate) => ({
-          candidate,
-          normalised_score: 64,
-          // No `value` on this one: a comparator with no figure must read as absent rather
-          // than as a zero, which is the whole reason the raw view exists -- and with one side
-          // missing there is no raw gap either.
-          delta: null,
-          weighted_contribution: -0.18,
-        })),
-      },
-    ],
-    synthesis: comparators.map((candidate) => ({
-      comparator: candidate,
-      score_delta: againstFocus(named(focus).score, named(candidate).score),
+    focus,
+    comparators: [...comparators],
+    attributes,
+    synthesis: comparators.map((comparator) => ({
+      comparator: comparator.candidate,
+      score_delta: againstFocus(focus.score ?? null, comparator.score ?? null),
       // Deprecated, and still sent until the cards read the pillar lines (C07 U5).
-      advantages: ["Broadband coverage: 88 against 61, worth +1.8 points"],
-      disadvantages: [
-        "Cost of living: 41 against 82, worth -4.9 points",
-        "Coastline access: 64 against 70, worth -0.2 points",
-      ],
-      ...pillarLines(named(focus), named(candidate)),
+      ...sentences(attributes, comparator.candidate),
+      ...pillarLines(focus, comparator),
     })),
+  };
+}
+
+type ComparisonRow = Comparison["attributes"][number];
+
+/** One side of a row: its score, and its active stored figure -- omitted, never null, if none. */
+function sideOf(candidate: string, attribute: string, score: number | null) {
+  const value = STORED_VALUES.find(
+    (each) => each.candidate === candidate && each.attribute === attribute && each.is_active,
+  );
+  return { normalised_score: score, ...(value === undefined ? {} : { value }) };
+}
+
+/** Comparator minus focus in the figure's own unit, or null unless both share one. */
+function rawGap(focus: StoredValue | undefined, theirs: StoredValue | undefined): number | null {
+  const figure = (value: StoredValue | undefined) => value?.payload as
+    | { magnitude?: number; unit?: string }
+    | undefined;
+  const [ours, their] = [figure(focus), figure(theirs)];
+  if (typeof ours?.magnitude !== "number" || typeof their?.magnitude !== "number") return null;
+  if (ours.unit !== their.unit) return null;
+  // Rounded as the server's decimal subtraction is exact: 107.9 - 94.5 is 13.4, not 13.400000000000006.
+  return Number((their.magnitude - ours.magnitude).toFixed(6));
+}
+
+/**
+ * The comparator's gaps as sentences, by the server's rule: what it leads on, most worth first,
+ * then what it trails on, costliest first, three a side, named as the catalog names them.
+ */
+function sentences(rows: readonly ComparisonRow[], comparator: string) {
+  const names = new Map(ATTRIBUTES.map((attribute) => [attribute.id, attribute.name]));
+  const worth = rows.flatMap((row) => {
+    const cell = (row.comparators ?? []).find((each) => each.candidate === comparator)!;
+    const contribution = cell.weighted_contribution;
+    if (contribution === null || contribution === undefined) return [];
+    const sign = contribution > 0 ? "+" : "";
+    const sentence =
+      `${names.get(row.attribute) ?? row.attribute}: ${cell.normalised_score} against ` +
+      `${row.focus.normalised_score}, worth ${sign}${contribution.toFixed(1)} points`;
+    return [{ contribution, sentence }];
+  });
+  const topThree = (kept: typeof worth) => kept.slice(0, 3).map(({ sentence }) => sentence);
+  return {
+    advantages: topThree(
+      worth.filter(({ contribution }) => contribution > 0).sort((a, b) => b.contribution - a.contribution),
+    ),
+    disadvantages: topThree(
+      worth.filter(({ contribution }) => contribution < 0).sort((a, b) => a.contribution - b.contribution),
+    ),
   };
 }
 
@@ -535,30 +531,6 @@ function scoredContributions(result: CandidateResult): Map<string, number> {
 /** The three lines worth most either way. The sort is stable, so a tie keeps the focus's order. */
 function mostWorthFirst(lines: readonly SynthesisLine[]): SynthesisLine[] {
   return [...lines].sort((one, other) => Math.abs(other.worth) - Math.abs(one.worth)).slice(0, 3);
-}
-
-/** A stored value as a comparison carries it: the figure in its own unit, with provenance. */
-function comparedValue(
-  attribute: string,
-  candidate: string,
-  payload: StoredValue["payload"],
-  valueType: StoredValue["value_type"],
-): StoredValue {
-  return {
-    id: 900,
-    candidate,
-    attribute,
-    value_type: valueType,
-    payload,
-    data_source: "eurostat",
-    reference_period: { start: "2025-01-01", end: "2025-12-31" },
-    retrieval_date: "2026-09-11T08:00:00Z",
-    confidence_level: "high",
-    is_active: true,
-    quote: null,
-    citations: [],
-    data_acquisition_run: 7,
-  };
 }
 
 export const RUN_PLAN: RunPlan = {
@@ -823,6 +795,33 @@ export const ATTRIBUTE_SCORES: AttributeScore[] = [
     contribution: 0,
   },
 ];
+
+/**
+ * What the pass made of each candidate's figures, as `GET /rankings/candidates/{id}` serves it.
+ * Portugal's are `ATTRIBUTE_SCORES`; the two comparators the Compare tests draw differ from it
+ * on purpose, so the comparison has gaps -- each the same weights, rescored, because a
+ * comparison weighs every gap at the focus's weight anyway. Any other candidate reads Portugal's.
+ */
+const RESCORED: Readonly<Record<string, Readonly<Record<string, number>>>> = {
+  "country.netherlands": {
+    "country.cost_of_living_index": 41,
+    "country.total_tax_rate_effective": 56,
+  },
+  "country.spain": {
+    "country.cost_of_living_index": 52,
+    "country.total_tax_rate_effective": 40,
+  },
+};
+
+export function attributeScoresOf(candidate: string): AttributeScore[] {
+  const rescored = RESCORED[candidate] ?? {};
+  return ATTRIBUTE_SCORES.map((row) => {
+    const score = rescored[row.attribute];
+    return score === undefined
+      ? row
+      : { ...row, normalised_score: score, contribution: (score * row.effective_weight) / 100 };
+  });
+}
 
 export const STORED_VALUES: StoredValue[] = [
   /**

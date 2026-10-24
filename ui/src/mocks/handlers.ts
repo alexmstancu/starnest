@@ -15,7 +15,7 @@ import type { components } from "../api/schema";
 import {
   ATTRIBUTES,
   PILLARS,
-  ATTRIBUTE_SCORES,
+  attributeScoresOf,
   COMPOUND_RULES,
   CRITERIA_SETS,
   DATA_SOURCES,
@@ -440,18 +440,10 @@ export const handlers = [
 
   http.get(`${BASE}/rankings`, ({ request }) => {
     const query = new URL(request.url).searchParams;
-    const criteriaSet = query.get("criteria_set");
-    const level = query.get("level");
-
-    if (!criteriaSet || !level) {
-      return HttpResponse.json(
-        {
-          code: "invalid_request",
-          message: "criteria_set and level are both required.",
-        },
-        { status: 422 },
-      );
-    }
+    const missing = missingFrom(query, ["criteria_set", "level"]);
+    if (missing) return missing;
+    const criteriaSet = query.get("criteria_set")!;
+    const level = query.get("level")!;
 
     return HttpResponse.json(rankingFor(criteriaSet, level));
   }),
@@ -465,17 +457,10 @@ export const handlers = [
    */
   http.get(`${BASE}/rankings/candidates/:candidateId`, ({ params, request }) => {
     const query = new URL(request.url).searchParams;
-    const criteriaSet = query.get("criteria_set");
-    const level = query.get("level");
-    if (!criteriaSet || !level) {
-      return HttpResponse.json(
-        {
-          code: "invalid_request",
-          message: "criteria_set and level are both required.",
-        },
-        { status: 422 },
-      );
-    }
+    const missing = missingFrom(query, ["criteria_set", "level"]);
+    if (missing) return missing;
+    const criteriaSet = query.get("criteria_set")!;
+    const level = query.get("level")!;
 
     const candidateId = String(params["candidateId"]);
     const ranked = rankingFor(criteriaSet, level).candidates.find(
@@ -483,7 +468,7 @@ export const handlers = [
     );
     if (!ranked) return notFound(candidateId);
 
-    return HttpResponse.json({ ...ranked, attribute_scores: ATTRIBUTE_SCORES });
+    return HttpResponse.json({ ...ranked, attribute_scores: attributeScoresOf(candidateId) });
   }),
 
   // Saved rankings. The store is module state rather than a fixture, because the thing worth
@@ -595,12 +580,20 @@ export const handlers = [
     });
   }),
 
+  /**
+   * **Refuses what the server refuses, in its order and with its codes** (PL-091): the required
+   * parameters first, then the limit being set (`comparisons.py`), then `compare`'s own checks
+   * -- none, too many, the focus among them, one named twice, and a candidate this level's
+   * ranking does not hold, which is how a mixed-level request is refused.
+   */
   http.get(`${BASE}/comparisons`, ({ request }) => {
     const query = new URL(request.url).searchParams;
-    const focus = query.get("focus");
+    const missing = missingFrom(query, ["criteria_set", "level", "focus"]);
+    if (missing) return missing;
+    const criteriaSet = query.get("criteria_set")!;
+    const level = query.get("level")!;
+    const focus = query.get("focus")!;
     const comparators = query.getAll("comparators");
-    // **First, and in its own words, as the server refuses it** (NEW-05): `comparisons.py`
-    // checks the limit is set before it looks at the focus or counts the comparators.
     if (settings.comparator_limit === null || settings.comparator_limit === undefined) {
       return HttpResponse.json(
         {
@@ -613,42 +606,43 @@ export const handlers = [
         { status: 409 },
       );
     }
-    if (!focus || comparators.length === 0) {
-      return HttpResponse.json(
-        {
-          code: "invalid_comparison",
-          message: "a comparison needs a focus and a comparator",
-        },
-        { status: 409 },
-      );
-    }
-    // **Refused here because the server refuses it** (P81). `comparison.py` answers 409
-    // "cannot be compared with itself", and a mock that accepted it certified a protocol the
-    // backend rejects -- which is how the screen came to build that request at all.
-    if (comparators.includes(focus)) {
-      return HttpResponse.json(
-        {
-          code: "invalid_comparison",
-          message: `${focus} cannot be compared with itself`,
-        },
-        { status: 409 },
-      );
-    }
     if (comparators.length > settings.comparator_limit) {
       return HttpResponse.json(
         {
-          code: "invalid_comparison",
-          message: `${comparators.length} comparators is more than the configured limit`,
+          code: "comparator_limit_exceeded",
+          message: `${comparators.length} comparators is more than the configured limit of ${settings.comparator_limit}`,
+          details: { limit: settings.comparator_limit, asked: comparators.length },
         },
+        { status: 409 },
+      );
+    }
+    const repeated = [...new Set(comparators.filter((each, at) => comparators.indexOf(each) !== at))];
+    const ranked = new Map(
+      rankingFor(criteriaSet, level).candidates.map((result) => [result.candidate, result]),
+    );
+    const unranked = [focus, ...comparators].find((candidate) => !ranked.has(candidate));
+    const refused: [string, string[]] | null =
+      comparators.length === 0
+        ? ["a comparison needs at least one comparator", [focus]]
+        : comparators.includes(focus)
+          ? [`${focus} cannot be compared with itself`, [focus]]
+          : repeated.length > 0
+            ? ["a comparator appears twice, which would draw the same column twice", repeated]
+            : unranked !== undefined
+              ? [`'${unranked}' is not in this ranking, so it cannot be compared within it`, [unranked]]
+              : null;
+    if (refused) {
+      return HttpResponse.json(
+        { code: "invalid_comparison", message: refused[0], details: { candidates: refused[1] } },
         { status: 409 },
       );
     }
     return HttpResponse.json(
       comparisonFor(
-        query.get("criteria_set") ?? "minimal",
-        query.get("level") ?? "country",
-        focus,
-        comparators,
+        criteriaSet,
+        level,
+        ranked.get(focus)!,
+        comparators.map((candidate) => ranked.get(candidate)!),
       ),
     );
   }),
@@ -850,6 +844,25 @@ export const handlers = [
     );
   }),
 ];
+
+/**
+ * A required query parameter left out, refused as FastAPI refuses it and `errors.py` renders
+ * it: 422 `invalid_request`, each missing one located in the query.
+ */
+function missingFrom(query: URLSearchParams, required: readonly string[]) {
+  const missing = required.filter((name) => !query.has(name));
+  if (missing.length === 0) return null;
+  return HttpResponse.json(
+    {
+      code: "invalid_request",
+      message: "The request does not match what this operation accepts.",
+      details: {
+        errors: missing.map((name) => ({ location: ["query", name], problem: "Field required" })),
+      },
+    },
+    { status: 422 },
+  );
+}
 
 function notFound(id: string) {
   return HttpResponse.json(

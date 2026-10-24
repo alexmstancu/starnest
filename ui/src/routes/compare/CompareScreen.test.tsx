@@ -172,13 +172,11 @@ describe("the comparison", () => {
     // The sentence is its own element inside the line, because a line may also carry the
     // place its gap takes across both lists. Matched whole and in place, so a screen that
     // reworded a sentence or reordered a list still fails. Read from the comparator's side:
-    // what the Netherlands leads Portugal on, then what it trails on, costliest first.
+    // what the Netherlands leads Portugal on, then what it trails on, costliest first -- each a
+    // row of the mock's own comparison, which `fixtures.test.ts` holds to that (PL-091).
     const lists = {
-      "Ahead on": ["Broadband coverage: 88 against 61, worth +1.8 points"],
-      "Behind on": [
-        "Cost of living: 41 against 82, worth -4.9 points",
-        "Coastline access: 64 against 70, worth -0.2 points",
-      ],
+      "Ahead on": ["Total effective tax rate: 56 against 48, worth +2.2 points"],
+      "Behind on": ["Cost of living index: 41 against 73, worth -4.0 points"],
     };
     for (const [label, sentences] of Object.entries(lists)) {
       const list = await screen.findByText(label);
@@ -193,8 +191,8 @@ describe("the comparison", () => {
   /**
    * The two lists arrive ordered separately, so neither says whether the largest disadvantage
    * outweighs the best advantage. These tags are the only thing the screen adds to the
-   * synthesis, and they add no number: the fixture's own figures put the advantage worth +1.8
-   * between the disadvantages worth -4.9 and -0.2.
+   * synthesis, and they add no number: the fixture's own figures put the disadvantage worth
+   * -4.0 ahead of the advantage worth +2.2.
    */
   it("marks the three gaps that move the total most, across both lists", async () => {
     renderShell("/compare");
@@ -208,7 +206,6 @@ describe("the comparison", () => {
     const disadvantages = screen.getByText(/behind on/i);
     const behind = within(disadvantages.parentElement!).getAllByRole("listitem");
     expect(behind[0]).toHaveTextContent("#1");
-    expect(behind[1]).toHaveTextContent("#3");
   });
 
   it("reports a refusal from the server rather than showing an empty table", async () => {
@@ -305,7 +302,7 @@ describe("opening a pillar to its attributes", () => {
       name: /cost of living index/i,
     });
     // The focus's score and the comparator's, both as normalised points by default.
-    expect(within(row).getByText("82")).toBeInTheDocument();
+    expect(within(row).getByText("73")).toBeInTheDocument();
     expect(within(row).getByText("41")).toBeInTheDocument();
   });
 
@@ -345,6 +342,7 @@ describe("opening a pillar to its attributes", () => {
 
 describe("the attribute figures inside a pillar", () => {
   it("shows scores until asked for figures", async () => {
+    serveFigures("country.spain", "Spain");
     renderShell("/compare");
     await compare("Portugal", "Spain");
     await openPillar("Economy");
@@ -357,6 +355,7 @@ describe("the attribute figures inside a pillar", () => {
   });
 
   it("switches the attribute rows to the figure in its own unit", async () => {
+    serveFigures("country.spain", "Spain");
     renderShell("/compare");
     await compare("Portugal", "Spain");
     await openPillar("Economy");
@@ -371,6 +370,7 @@ describe("the attribute figures inside a pillar", () => {
 
   /** `delta` is documented as being in the attribute's own unit, so it belongs here. */
   it("shows the gap in the attribute's unit rather than in points", async () => {
+    serveFigures("country.spain", "Spain");
     renderShell("/compare");
     await compare("Portugal", "Spain");
     await openPillar("Economy");
@@ -385,6 +385,7 @@ describe("the attribute figures inside a pillar", () => {
   });
 
   it("goes back to scores when asked", async () => {
+    serveFigures("country.spain", "Spain");
     renderShell("/compare");
     await compare("Portugal", "Spain");
     await openPillar("Economy");
@@ -468,6 +469,7 @@ describe("the attribute figures inside a pillar", () => {
    * sent it -- so the row has to say which way round it reads.
    */
   it("says which way a raw gap is measured", async () => {
+    serveFigures("country.spain", "Spain");
     renderShell("/compare");
     await compare("Portugal", "Spain");
     await openPillar("Economy");
@@ -487,6 +489,7 @@ describe("the attribute figures inside a pillar", () => {
    * drawn ahead.
    */
   it("colours a raw gap by which side scored better, not by which figure is higher", async () => {
+    serveFigures("country.netherlands", "Netherlands");
     renderShell("/compare");
     await compare("Portugal", "Netherlands");
     await openPillar("Economy");
@@ -735,6 +738,28 @@ function twoPillarComparison() {
     ],
     synthesis: [],
   };
+}
+
+/**
+ * A comparison whose one attribute has a figure on both sides, for the raw view: the mock's own
+ * comparators hold no stored figure, as `STORED_VALUES` says, so the raw gap is drawn here.
+ */
+function serveFigures(candidate: string, name: string) {
+  const figure = (magnitude: number) => ({
+    data_source: "eurostat",
+    payload: { magnitude, unit: "index_eu27_100" },
+    retrieval_date: "2026-09-11T08:00:00Z",
+  });
+  const drawn = missingFigureComparison();
+  const comparison = {
+    ...drawn,
+    comparators: drawn.comparators.map((each) => ({ ...each, candidate, name })),
+    attributes: drawn.attributes.map((row) => ({
+      ...row,
+      comparators: [{ candidate, normalised_score: 41, delta: 13.4, value: figure(105.5) }],
+    })),
+  };
+  mockServer.use(http.get(`${BASE}/comparisons`, () => HttpResponse.json(comparison)));
 }
 
 /** A focus whose economics attribute has a figure the comparator does not. */
