@@ -913,6 +913,157 @@ describe("what this session changed", () => {
 });
 
 /**
+ * PL-138a. **A pillar's weight and lock are recorded as a criterion's are**, with the request
+ * that reverses them: they are the decision the user sets most deliberately, and they were the
+ * one weighting Recent changes never listed, so "Back to where I started" left them changed.
+ */
+describe("what this session changed in the pillar weights", () => {
+  const ECONOMY_MOVED = "Pillar weight for Economy: 40.0% to 50.0%, in Default";
+
+  async function movePillar(pillar: string, weight: string): Promise<void> {
+    await settled();
+    const slider = await screen.findByRole("slider", { name: `${pillar} weight` });
+    fireEvent.change(slider, { target: { value: weight } });
+    fireEvent.pointerUp(slider);
+  }
+
+  function recordPillarRequests(): unknown[] {
+    const sent: unknown[] = [];
+    mockServer.events.on("request:start", ({ request }) => {
+      if (request.method === "PUT" && request.url.includes("/pillar-weights/")) {
+        void request
+          .clone()
+          .json()
+          .then((body: unknown) =>
+            sent.push({ pillar: request.url.split("/").pop(), body }),
+          );
+      }
+    });
+    return sent;
+  }
+
+  afterEach(() => mockServer.events.removeAllListeners());
+
+  it("lists a pillar's weight change, in the stage it was made in", async () => {
+    renderShell("/configure");
+    await movePillar("Economy", "50");
+
+    const panel = await historyPanel();
+    expect(await panel.findByText(ECONOMY_MOVED)).toBeInTheDocument();
+    expect(panel.getByText("Pillar weights")).toBeInTheDocument();
+  });
+
+  it("collapses a second move of the same pillar into one entry that undoes to the first value", async () => {
+    renderShell("/configure");
+    await movePillar("Economy", "45");
+    const panel = await historyPanel();
+    await panel.findByText(/Pillar weight for Economy: 40\.0% to 45\.0%/);
+    await waitFor(() =>
+      expect(screen.getByRole("slider", { name: "Economy weight" })).not.toHaveAttribute(
+        "aria-disabled",
+      ),
+    );
+
+    await movePillar("Economy", "50");
+    // The label names the last step only, as a criterion's merged entry does (PL-141).
+    await panel.findByText(/Pillar weight for Economy: 45\.0% to 50\.0%/);
+    expect(panel.getByText("1 in this session")).toBeInTheDocument();
+    const sent = recordPillarRequests();
+
+    await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() => expect(sent).toEqual([{ pillar: "economics", body: { weight: 40 } }]));
+  });
+
+  it("undoes a pillar's weight by sending the weight it had", async () => {
+    renderShell("/configure");
+    await movePillar("Economy", "50");
+    const panel = await historyPanel();
+    await panel.findByText(ECONOMY_MOVED);
+    const sent = recordPillarRequests();
+
+    await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() => expect(panel.queryByText(ECONOMY_MOVED)).toBeNull());
+    expect(sent).toEqual([{ pillar: "economics", body: { weight: 40 } }]);
+    expect(screen.getByRole("slider", { name: "Economy weight" })).toHaveValue("40");
+  });
+
+  it("lists a pillar's lock, and Back to where I started releases it", async () => {
+    renderShell("/configure");
+    await settled();
+    const lock = () => screen.getByRole("button", { name: "Lock Housing" });
+    await userEvent.click(await screen.findByRole("button", { name: "Lock Housing" }));
+    const panel = await historyPanel();
+    await panel.findByText("Locked the Housing pillar, in Default");
+    const sent = recordPillarRequests();
+
+    await userEvent.click(
+      panel.getByRole("button", { name: "Back to where I started" }),
+    );
+
+    await waitFor(() => expect(lock()).toHaveAttribute("aria-pressed", "false"));
+    expect(sent).toEqual([{ pillar: "housing", body: { weight_locked: false } }]);
+    expect(panel.getByText("No changes yet.")).toBeInTheDocument();
+  });
+
+  it("holds the undo while a pillar's weight is being saved, and the pillars while undoing", async () => {
+    renderShell("/configure");
+    await movePillar("Economy", "50");
+    const panel = await historyPanel();
+    await panel.findByText(ECONOMY_MOVED);
+    let answer: () => void = () => undefined;
+    mockServer.use(
+      http.put("/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId", async () => {
+        await new Promise<void>((resolve) => (answer = resolve));
+        return HttpResponse.json({
+          items: [
+            { pillar: "economics", level: "country", weight: 50, weight_locked: false },
+            { pillar: "housing", level: "country", weight: 30, weight_locked: false },
+            { pillar: "safety", level: "country", weight: 20, weight_locked: false },
+          ],
+        });
+      }),
+    );
+
+    await movePillar("Housing", "30");
+
+    await waitFor(() => expectHeld(panel.getByRole("button", { name: "Undo this" })));
+    answer();
+    await waitFor(() =>
+      expectNotHeld(panel.getByRole("button", { name: "Back to where I started" })),
+    );
+    await userEvent.click(panel.getByRole("button", { name: "Back to where I started" }));
+    await waitFor(() =>
+      expectHeld(screen.getByRole("slider", { name: "Economy weight" })),
+    );
+    answer();
+  });
+
+  it("reports a refused undo of a pillar's weight, and keeps it listed", async () => {
+    renderShell("/configure");
+    await movePillar("Economy", "50");
+    const panel = await historyPanel();
+    await panel.findByText(ECONOMY_MOVED);
+    mockServer.use(
+      http.put("/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId", () =>
+        HttpResponse.json(
+          { code: "weights_all_locked", message: "no", details: { locked: [] } },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
+
+    expect(await panel.findByRole("alert")).toHaveTextContent(
+      /nothing to rebalance into/i,
+    );
+    expect(panel.getByText(ECONOMY_MOVED)).toBeInTheDocument();
+  });
+});
+
+/**
  * UI-04. **One write at a time, and its answer belongs to the set it was sent for.** A weight
  * change rebalances its pillar, so two in flight can answer in either order; and a set switched
  * to meanwhile holds the same attributes when it is a copy, so an answer matched on attribute

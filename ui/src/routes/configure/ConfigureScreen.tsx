@@ -32,6 +32,9 @@ import { countByPillar } from "./weights";
 export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   const { criteriaSetId, levelId } = useSelection();
   const history = useChangeHistory();
+  // **An undo waits for a pillar's write as it does for a criterion's** (D41): the pillar panel
+  // keeps its own write, so it says when one is in flight.
+  const [pillarSaving, setPillarSaving] = useState(false);
   // Once for the screen rather than once per opened pillar: every criterion row wants the
   // same copy of what the attributes are, and the panel inside a pillar is mounted and
   // unmounted each time one is opened. The history names its changes from it too.
@@ -98,6 +101,8 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                 key={editor.criteriaSet.id}
                 criteriaSet={editor.criteriaSet}
                 criteriaCounts={countByPillar(editor.criteria)}
+                history={history}
+                onSaving={setPillarSaving}
                 criteriaFor={(pillar) => (
                   <CriteriaPanel
                     editor={editor}
@@ -153,7 +158,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
             is "what have I just done?", and an answer that has to be scrolled back to is an
             answer nobody reads. */}
         <aside className="configure__rail">
-          <RecentChanges history={history} busy={editor.busy} />
+          <RecentChanges history={history} busy={editor.busy || pillarSaving} />
         </aside>
       </div>
     </section>

@@ -7,6 +7,8 @@ import {
 } from "../../../api/endpoints";
 import type { components } from "../../../api/schema";
 import { formatPercentage, pillarName } from "../../../format/display";
+import type { ChangeHistory } from "../useChangeHistory";
+import { useNotePillarChange } from "./useNotePillarChange";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { useWeightDrag } from "../useWeightDrag";
 import {
@@ -41,8 +43,14 @@ export function PillarWeightsPanel({
   criteriaSet,
   criteriaCounts,
   criteriaFor,
+  history,
+  onSaving,
 }: {
   criteriaSet: CriteriaSet;
+  /** Where each answered change is noted with the request that reverses it (PL-138a). */
+  history?: ChangeHistory;
+  /** Told when a write starts and settles, so an undo waits for it (D41). */
+  onSaving?: (saving: boolean) => void;
   /** How many criteria each pillar holds, for the line under its name. */
   criteriaCounts?: ReadonlyMap<string, number>;
   /**
@@ -67,16 +75,21 @@ export function PillarWeightsPanel({
   // Destructured, because `ended` is listed as a dependency below and `react-hooks` reads a
   // name rather than a member expression. `useWeightDrag` keeps it stable for exactly that.
   const { preview, previewFor, moveTo, ended } = useWeightDrag();
+  const undoing = history?.undoing === true;
+  const held = saving || undoing;
+  useEffect(() => onSaving?.(saving), [onSaving, saving]);
+  const note = useNotePillarChange(criteriaSet, names, setWeights, history);
 
   const move = useCallback(
     async (pillar: string, weight: number) => {
-      if (inFlight.current) return;
+      if (inFlight.current || undoing) return;
       inFlight.current = true;
       setSaving(true);
       setFailure(null);
       try {
         const rebalanced = await updatePillarWeight(criteriaSet.id, pillar, weight);
         setWeights(rebalanced.items);
+        note.weight(pillar, weights, rebalanced.items, weight);
       } catch (error) {
         setFailure(error);
       } finally {
@@ -88,20 +101,21 @@ export function PillarWeightsPanel({
         ended();
       }
     },
-    [criteriaSet.id, ended],
+    [criteriaSet.id, ended, undoing, note, weights],
   );
 
   // **Its own request, carrying no weight** (P68). See `updatePillarLock`: a lock sent with a
   // weight can be set and never released, because the move is refused before the flag is read.
   const lock = useCallback(
     async (pillar: string, locked: boolean) => {
-      if (inFlight.current) return;
+      if (inFlight.current || undoing) return;
       inFlight.current = true;
       setSaving(true);
       setFailure(null);
       try {
         const rebalanced = await updatePillarLock(criteriaSet.id, pillar, locked);
         setWeights(rebalanced.items);
+        note.lock(pillar, locked);
       } catch (error) {
         setFailure(error);
       } finally {
@@ -109,7 +123,7 @@ export function PillarWeightsPanel({
         setSaving(false);
       }
     },
-    [criteriaSet.id],
+    [criteriaSet.id, undoing, note],
   );
 
   // The weights as a rebalance sees them: what the drag snapshots, and what the total is read
@@ -170,7 +184,7 @@ export function PillarWeightsPanel({
               weight={weight}
               previewed={previewFor(weight.pillar)}
               ceiling={ceiling}
-              saving={saving}
+              saving={held}
               count={criteriaCounts?.get(weight.pillar)}
               open={open === weight.pillar}
               onOpen={

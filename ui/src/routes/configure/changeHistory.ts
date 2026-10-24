@@ -86,6 +86,11 @@ export const UNDO_CANNOT_RESTORE_THE_PILLAR =
   "Undo cannot restore the rest of this pillar: this change left them all at 0, " +
   "so undoing it shares their weight out evenly.";
 
+/** The same, one level up: a pillar's move that left every other unlocked pillar at 0. */
+export const UNDO_CANNOT_RESTORE_THE_PILLARS =
+  "Undo cannot restore the other pillars: this change left them all at 0, " +
+  "so undoing it shares their weight out evenly.";
+
 /**
  * Whether re-sending a weight's old value would also put the rest of its pillar back.
  *
