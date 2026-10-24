@@ -858,6 +858,24 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description The `Error` a 422 answers with. `details` stays open, because a domain refusal carries its own fields there; a malformed request lists its fields in `details.errors`. */
+        InvalidRequestError: components["schemas"]["Error"] & {
+            details?: {
+                errors?: components["schemas"]["FieldProblem"][];
+            } & {
+                [key: string]: unknown;
+            };
+        };
+        FieldProblem: {
+            /** @description Where the offending value is, e.g. [body, comparator_limit] or [query, level]. */
+            location: string[];
+            /** @description The validator's own sentence, for a developer. A form words the refusal from kind and limit. */
+            problem: string;
+            /** @description Stable. The validator's error type: less_than_equal, greater_than_equal, int_parsing, float_parsing, finite_number, missing, extra_forbidden, and so on. */
+            kind: string;
+            /** @description The bound that refused the value, present only where kind names a numeric bound. */
+            limit?: number;
+        };
         /**
          * @description Every refusal this API makes, by code. A client words each one and branches on it; `message` is for a person reading the API directly and may change.
          * @enum {string}
@@ -1048,6 +1066,7 @@ export interface components {
             /** @description Percentage, 0-100. Below this a candidate is insufficient_data rather than scored. */
             min_coverage?: number | null;
             score_scale_max?: number | null;
+            /** @description How many comparators one comparison may hold, 1 to 20. Twenty is the product's ceiling (design DECISIONS, 2026-09-20), held by the database too. */
             comparator_limit?: number | null;
             run_spend_cap_eur?: number | null;
             /** @description How old a figure must be before a run asks about it again. Null refetches everything, which is the shipped state. Governs re-fetching only -- which stored figure scores is the attribute's own max_age (reqs.md 7.1), because one number cannot sensibly govern staleness for climate and for rent alike. */
@@ -1495,13 +1514,13 @@ export interface components {
                 "application/json": components["schemas"]["CriteriaSet"];
             };
         };
-        /** @description The request is malformed, or names something the domain will not accept; `code` says which. `invalid_request` is a malformed request -- a body field or query parameter the operation does not declare, a value of the wrong type or out of range, a null the field refuses, an identifier that cannot be one -- and `details.errors` lists each offending `location` with its `problem`. Any other code is the domain's own refusal, such as `invalid_criterion`, `unknown_place` or `unknown_scope`. `cannot_be_ranked` names its cause in `details.reason` where it is one of four: `scores_nothing`, no criterion is scored at the level; `pillar_without_criteria`, pillars carry weight that no criterion scores into; `criteria_without_weight`, the criteria still scored in a pillar carry no weight between them; or `pillars_without_weight`, the pillars still scored carry no weight between them. All but the first list their pillars in `details.pillars`. `invalid_criterion` raised against the score range carries `details.reason: anchor_above_scale`, with the `attribute`, its `anchor_score` and the `score_scale_max` it is above. */
+        /** @description The request is malformed, or names something the domain will not accept; `code` says which. `invalid_request` is a malformed request -- a body field or query parameter the operation does not declare, a value of the wrong type or out of range, a null the field refuses, an identifier that cannot be one -- and each entry of `details.errors` says where (`location`), what (`kind`, with `limit` where a bound refused it) and, for a developer, why (`problem`). Any other code is the domain's own refusal, such as `invalid_criterion`, `unknown_place` or `unknown_scope`. `cannot_be_ranked` names its cause in `details.reason` where it is one of four: `scores_nothing`, no criterion is scored at the level; `pillar_without_criteria`, pillars carry weight that no criterion scores into; `criteria_without_weight`, the criteria still scored in a pillar carry no weight between them; or `pillars_without_weight`, the pillars still scored carry no weight between them. All but the first list their pillars in `details.pillars`. `invalid_criterion` raised against the score range carries `details.reason: anchor_above_scale`, with the `attribute`, its `anchor_score` and the `score_scale_max` it is above. */
         InvalidRequest: {
             headers: {
                 [name: string]: unknown;
             };
             content: {
-                "application/json": components["schemas"]["Error"];
+                "application/json": components["schemas"]["InvalidRequestError"];
             };
         };
         /** @description No such resource. */
