@@ -15,6 +15,7 @@ import {
   formatDateTime,
   formatIdentifier,
   formatMoney,
+  formatMoneyPerMonth,
 } from "../format/display";
 import { describeSaved, newestFirst, summariseSaved } from "../format/savedRanking";
 import { HOUSEHOLD_LABELS } from "../format/vocabulary";
@@ -236,7 +237,7 @@ function HouseholdCard({ freshness }: { freshness: number }) {
           />
           <Stat
             label={HOUSEHOLD_LABELS.net_income}
-            value={formatMoney(resource.data.net_income, "EUR")}
+            value={formatMoneyPerMonth(resource.data.net_income, "EUR")}
           />
           <Stat
             label={HOUSEHOLD_LABELS.target_monthly_spend}

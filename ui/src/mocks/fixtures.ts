@@ -976,7 +976,7 @@ type DataSource = components["schemas"]["DataSource"];
  * measured.
  */
 export const HOUSEHOLD: Household = {
-  net_income: 90000,
+  net_income: 7400,
   number_adults: 2,
   number_children: 1,
   target_monthly_spend: 2800,

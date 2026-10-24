@@ -128,7 +128,7 @@ function HouseholdFields({
             form={form}
             numeric
             prefix="€"
-            suffix="per year"
+            suffix="per month"
           />
           {/* One click for almost every household, and the field for the rest. */}
           <CountField

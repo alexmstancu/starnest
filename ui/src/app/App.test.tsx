@@ -217,6 +217,21 @@ describe("the sidebar counts and last run", () => {
     );
   });
 
+  // PL-163. The income is a monthly figure, and the card says so beside it.
+  it("shows the net income per month", async () => {
+    renderShell("/rank");
+
+    const household = within(
+      await screen.findByRole("region", { name: /household summary/i }),
+    );
+
+    await waitFor(() =>
+      expect(household.getByText("Net income").nextSibling).toHaveTextContent(
+        "€7,400 / month",
+      ),
+    );
+  });
+
   it("summarises the most recent run and links to the history", async () => {
     renderShell("/rank");
 

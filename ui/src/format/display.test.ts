@@ -8,6 +8,7 @@ import {
   formatIdentifier,
   formatMatchStatus,
   formatMoney,
+  formatMoneyPerMonth,
   formatPercentage,
   formatScore,
   formatSigned,
@@ -59,6 +60,19 @@ describe("formatCount", () => {
   it("prints the absent marker for no number", () => {
     expect(formatCount(null)).toBe(ABSENT);
     expect(formatCount(Number.NaN)).toBe(ABSENT);
+  });
+});
+
+describe("formatMoneyPerMonth", () => {
+  it("writes whole euros and the period", () => {
+    expect(formatMoneyPerMonth(7400, "EUR")).toBe("€7,400 / month");
+    expect(formatMoneyPerMonth(2799.6, "EUR")).toBe("€2,800 / month");
+  });
+
+  it("shows the absent mark for a missing amount or currency", () => {
+    expect(formatMoneyPerMonth(null, "EUR")).toBe(formatMoneyPerMonth(undefined, "EUR"));
+    expect(formatMoneyPerMonth(7400, null)).not.toContain("month");
+    expect(formatMoneyPerMonth(Number.NaN, "EUR")).not.toContain("month");
   });
 });
 

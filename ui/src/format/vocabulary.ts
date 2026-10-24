@@ -12,7 +12,7 @@
  * the nearest place both can reach.
  */
 export const HOUSEHOLD_LABELS = {
-  net_income: "Net annual income",
+  net_income: "Net income",
   number_adults: "Adults",
   number_children: "Children under 18",
   target_monthly_spend: "Target monthly spend",

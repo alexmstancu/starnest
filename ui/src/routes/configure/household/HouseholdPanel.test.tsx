@@ -31,7 +31,7 @@ describe("the household panel", () => {
     renderShell("/configure");
     await panel();
 
-    expect(field("Net annual income")).toHaveValue("90000");
+    expect(field("Net income")).toHaveValue("7400");
     // Segments, not fields: the stored number shows as the pressed button.
     expect(
       within(screen.getByRole("group", { name: "Adults" })).getByRole("button", {
@@ -50,6 +50,14 @@ describe("the household panel", () => {
         await screen.findByRole("list", { name: /citizenships held/i }),
       ).findByText("Romania"),
     ).toBeInTheDocument();
+  });
+
+  // PL-163. **Monthly**, as the requirements, the domain model and the design all say.
+  it("asks for the net income per month", async () => {
+    renderShell("/configure");
+    await panel();
+
+    expect(field("Net income")).toHaveAccessibleDescription("per month");
   });
 
   it("shows no city rather than an empty one when the household lives in none", async () => {
@@ -125,8 +133,8 @@ describe("the household panel", () => {
     renderShell("/configure");
     const household = await panel();
 
-    await user.clear(field("Net annual income"));
-    await user.type(field("Net annual income"), "-1");
+    await user.clear(field("Net income"));
+    await user.type(field("Net income"), "-1");
     await user.click(household.getByRole("button", { name: "Save household" }));
 
     expect(
@@ -178,7 +186,7 @@ describe("a household nobody has recorded yet", () => {
     expect(
       await household.findByText(/Nothing has been recorded/),
     ).toBeInTheDocument();
-    expect(field("Net annual income")).toHaveValue("");
+    expect(field("Net income")).toHaveValue("");
     expect(
       screen.queryByRole("list", { name: /citizenships held/i }),
     ).not.toBeInTheDocument();
@@ -192,7 +200,7 @@ describe("a household nobody has recorded yet", () => {
     const household = await panel();
     await household.findByText(/Nothing has been recorded/);
 
-    await user.type(field("Net annual income"), "70000");
+    await user.type(field("Net income"), "70000");
     await user.click(
       within(screen.getByRole("group", { name: "Adults" })).getByRole("button", {
         name: "2",
@@ -398,7 +406,7 @@ describe("the household panel while a save is in flight", () => {
     expect(field("Maximum rent")).toHaveAccessibleDescription(
       /not a number that can be saved/i,
     );
-    expect(field("Net annual income")).toHaveAttribute("aria-invalid", "false");
+    expect(field("Net income")).toHaveAttribute("aria-invalid", "false");
     // Disabled outright, which is the one state Save is disabled for: nothing is in flight.
     const save = household.getByRole("button", { name: "Save household" });
     expect(save).toBeDisabled();

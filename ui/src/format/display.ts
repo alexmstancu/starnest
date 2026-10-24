@@ -100,6 +100,23 @@ export function formatMoney(
   }).format(amount);
 }
 
+/**
+ * A household's monthly figure as the design writes it: whole euros and the period, "€7,400 /
+ * month". **No cents**: a budget is a round sum, and ".00" on each line was noise.
+ */
+export function formatMoneyPerMonth(
+  amount: number | null | undefined,
+  currency: string | null | undefined,
+): string {
+  if (!isFiniteNumber(amount) || !currency) return ABSENT;
+  const whole = new Intl.NumberFormat(DISPLAY_LOCALE, {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount);
+  return `${whole} / month`;
+}
+
 /** An ISO date-time, shown to the minute. Seconds are noise in every place this appears. */
 export function formatDateTime(value: string | null | undefined): string {
   const parsed = parseDate(value);
