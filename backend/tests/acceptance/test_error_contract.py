@@ -23,6 +23,7 @@ pytestmark = pytest.mark.acceptance
 COUNTRY = "country"
 MINIMAL = "minimal"
 OVERBURDEN = "country.housing_cost_overburden_rate"
+A_RANKING = {"criteria_set": MINIMAL, "level": COUNTRY}
 
 A_VALID_HOUSEHOLD = {
     "net_income": 5000,
@@ -189,6 +190,39 @@ class TestARefusalTheStopRuleRequires:
         # it was written to distinguish.
         assert response.json()["code"] == "score_scale_not_set"
         assert "score_scale_max" in response.json()["message"]
+
+    @pytest.mark.parametrize(
+        ("operation", "method", "path", "sent"),
+        [
+            ("getRanking", "GET", "/v1/rankings", {"params": A_RANKING}),
+            (
+                "getRankedCandidateDetail",
+                "GET",
+                "/v1/rankings/candidates/country.portugal",
+                {"params": A_RANKING},
+            ),
+            ("saveEvaluation", "POST", "/v1/evaluations", {"json": A_RANKING}),
+        ],
+    )
+    async def test_every_operation_that_scores_declares_the_refusal(
+        self,
+        api: httpx.AsyncClient,
+        database_url: str,
+        operation: str,
+        method: str,
+        path: str,
+        sent: dict,
+    ) -> None:
+        """All three score, so all three answer it -- and the design declared it for none, so
+        `validate` read the 409 as nothing to check (PL-003)."""
+        await _set_the_score_scale(database_url, None)
+
+        response = await api.request(method, path, **sent)
+
+        assert response.status_code == 409
+        assert response_schema(operation, 409) == {"$ref": "#/components/schemas/Error"}
+        validate(operation, response.json(), status=409)
+        assert response.json()["code"] == "score_scale_not_set"
 
 
 class TestBoundaryValidationAndTheErrorShape:

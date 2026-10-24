@@ -12,6 +12,7 @@ REST surface, and this module is the REST surface's opinion.
 
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
+from enum import StrEnum
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -60,10 +61,50 @@ from starnest.evaluation import NormalisationError, RankingError, UnknownEvaluat
 from starnest.household import HouseholdNotConfiguredError, HouseholdPlaceError
 
 
+class ErrorCode(StrEnum):
+    """Every refusal this API makes, by code: the list `docs/openapi.yaml` calls `ErrorCode`.
+
+    A client words each code and branches on it, so a code the server sends and the contract does
+    not list is one no client can word. A new refusal adds its code to both lists, and
+    `tests/unit/api/test_error_codes.py` fails until it does (PL-003).
+    """
+
+    NOT_FOUND = "not_found"
+    CANDIDATE_NOT_FOUND = "candidate_not_found"
+    HOUSEHOLD_NOT_CONFIGURED = "household_not_configured"
+    WEIGHTS_ALL_LOCKED = "weights_all_locked"
+    CRITERIA_SET_EXISTS = "criteria_set_exists"
+    CRITERIA_SET_IN_USE = "criteria_set_in_use"
+    NOTHING_TO_RETRY = "nothing_to_retry"
+    NOTHING_TO_ASK_AGAIN = "nothing_to_ask_again"
+    SPEND_CAP_NOT_SET = "spend_cap_not_set"
+    NOTHING_TO_FETCH = "nothing_to_fetch"
+    RUN_ALREADY_IN_FLIGHT = "run_already_in_flight"
+    LLM_NOT_CONFIGURED = "llm_not_configured"
+    MANUAL_ENTRY_NOT_PERMITTED = "manual_entry_not_permitted"
+    INVALID_VALUE = "invalid_value"
+    ANSWER_RECORDED_BY_A_PERSON = "answer_recorded_by_a_person"
+    SCORE_SCALE_NOT_SET = "score_scale_not_set"
+    COMPARATOR_LIMIT_NOT_SET = "comparator_limit_not_set"
+    INVALID_COMPARISON = "invalid_comparison"
+    INVALID_CRITERIA_SET = "invalid_criteria_set"
+    INVALID_CRITERION = "invalid_criterion"
+    UNKNOWN_PLACE = "unknown_place"
+    INVALID_REFERENCE_PERIOD = "invalid_reference_period"
+    INVALID_REQUEST = "invalid_request"
+    CANNOT_BE_SCORED = "cannot_be_scored"
+    CANNOT_BE_RANKED = "cannot_be_ranked"
+    INVALID_MATCH_RULE_RESULT = "invalid_match_rule_result"
+    UNKNOWN_DATA_SOURCE = "unknown_data_source"
+    UNKNOWN_SCOPE = "unknown_scope"
+
+
 class ErrorBody(BaseModel):
     """The shape every failure takes, whatever went wrong."""
 
-    code: str = Field(description="Stable and machine-readable. Branch on this, never on prose.")
+    code: ErrorCode = Field(
+        description="Stable and machine-readable. Branch on this, never on prose."
+    )
     message: str
     details: dict[str, Any] | None = None
 

@@ -896,6 +896,9 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/Ranking" } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`score_scale_not_set`: there is no top of the score range to score onto."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /rankings/candidates/{candidateId}:
@@ -922,6 +925,9 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/CandidateScoreDetail" } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`score_scale_not_set`: there is no top of the score range to score onto."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /evaluations:
@@ -963,6 +969,9 @@ paths:
           description: Created
           content:
             application/json: { schema: { $ref: "#/components/schemas/EvaluationSummary" } }
+        "409":
+          description: "`score_scale_not_set`: there is no top of the score range to score onto."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /evaluations/{evaluationId}:
@@ -1113,11 +1122,46 @@ components:
       type: object
       required: [code, message]
       properties:
-        code: { type: string, description: "Stable and machine-readable. Branch on this, never on the message." }
+        code: { $ref: "#/components/schemas/ErrorCode", description: "Stable and machine-readable. Branch on this, never on the message." }
         message: { type: string }
         details: { type: object, additionalProperties: true }
       examples:
         - { code: weights_all_locked, message: "Every other weight in this pillar is locked.", details: { locked: ["country.total_tax_rate_effective"] } }
+
+    ErrorCode:
+      type: string
+      description: >-
+        Every refusal this API makes, by code. A client words each one and branches on it;
+        `message` is for a person reading the API directly and may change.
+      enum:
+        - not_found
+        - candidate_not_found
+        - household_not_configured
+        - weights_all_locked
+        - criteria_set_exists
+        - criteria_set_in_use
+        - nothing_to_retry
+        - nothing_to_ask_again
+        - spend_cap_not_set
+        - nothing_to_fetch
+        - run_already_in_flight
+        - llm_not_configured
+        - manual_entry_not_permitted
+        - invalid_value
+        - answer_recorded_by_a_person
+        - score_scale_not_set
+        - comparator_limit_not_set
+        - invalid_comparison
+        - invalid_criteria_set
+        - invalid_criterion
+        - unknown_place
+        - invalid_reference_period
+        - invalid_request
+        - cannot_be_scored
+        - cannot_be_ranked
+        - invalid_match_rule_result
+        - unknown_data_source
+        - unknown_scope
 
     ReferencePeriod:
       type: object

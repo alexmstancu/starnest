@@ -74,6 +74,24 @@ def validate(operation_id: str, body: Any, status: int = 200) -> None:
     schema = response_schema(operation_id, status)
     if schema is None:
         return
+    _raise_on_violations(f"{operation_id} does not match docs/openapi.yaml", schema, body)
+
+
+def validate_refusal(body: Any) -> None:
+    """Hold an error body to the design's one `Error`, whichever operation sent it (PL-003).
+
+    `Error.code` is the design's `ErrorCode` list, so a refusal raised anywhere with a code nobody
+    listed fails the test that provoked it -- not only a test written to look at error bodies.
+    """
+    _raise_on_violations(
+        "a refusal does not match the design's Error; a new code is added to ErrorCode in "
+        "docs/openapi.yaml",
+        {"$ref": "#/components/schemas/Error"},
+        body,
+    )
+
+
+def _raise_on_violations(what: str, schema: dict[str, Any], body: Any) -> None:
     # The design's `$ref`s are document-relative -- `#/components/schemas/Ranking` -- so the
     # fragment is validated with the contract's own components carried alongside it. Registering
     # the whole document under a base URI would work too, and did not: a fragment given an `$id`
@@ -82,7 +100,7 @@ def validate(operation_id: str, body: Any, status: int = 200) -> None:
     errors = sorted(validator.iter_errors(body), key=lambda error: list(error.path))
     if errors:
         raise ContractViolationError(
-            f"{operation_id} does not match docs/openapi.yaml:\n"
+            f"{what}:\n"
             + "\n".join(f"  at {list(error.path) or '<root>'}: {error.message}" for error in errors)
         )
 

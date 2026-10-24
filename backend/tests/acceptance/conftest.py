@@ -31,6 +31,8 @@ from starnest.storage import (
     PostgresValueStore,
 )
 
+from .contract import validate_refusal
+
 WRITABLE_TABLES = (
     "value",
     "household",
@@ -106,7 +108,11 @@ async def an_api(
             researcher=researcher,  # type: ignore[arg-type]
         )
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://api") as client:
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://api",
+            event_hooks={"response": [_held_to_the_designed_error]},
+        ) as client:
             try:
                 yield client
             finally:
@@ -114,6 +120,23 @@ async def an_api(
                     await connection.execute(
                         f"TRUNCATE {', '.join(WRITABLE_TABLES)} RESTART IDENTITY CASCADE"
                     )
+
+
+async def _held_to_the_designed_error(response: httpx.Response) -> None:
+    """Every refusal any acceptance test meets, checked against the design's `Error` (PL-003).
+
+    Here rather than in the tests about errors, so a code nobody added to `ErrorCode` fails
+    whichever test first provokes it, wherever it was raised. A body with no `code` is the
+    framework's own -- a path or a method nothing serves -- and not the one error shape.
+    """
+    if response.status_code < 400:
+        return
+    if not response.headers.get("content-type", "").startswith("application/json"):
+        return
+    await response.aread()
+    body = response.json()
+    if isinstance(body, dict) and "code" in body:
+        validate_refusal(body)
 
 
 @pytest.fixture
