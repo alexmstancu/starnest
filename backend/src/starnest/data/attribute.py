@@ -130,6 +130,13 @@ class QuantityParameters(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     unit: UnitId
+    unit_name: str | None = Field(
+        default=None,
+        description=(
+            "What the catalog calls the unit, for a sentence that prints a figure. Optional "
+            "because parameters can be built without the catalog in hand."
+        ),
+    )
 
 
 class IndexParameters(BaseModel):
@@ -309,7 +316,7 @@ class Attribute(BaseModel):
             # years -- so it is stored with this reason and never made active, rather than
             # silently scored as the unit the attribute expects.
             return (
-                f"unit {payload.unit} is not {self.id}'s declared unit "
+                f"unit {payload.unit} is not {self.name}'s declared unit "
                 f"{self.quantity_parameters.unit}, so the figure measures a different thing"
             )
         if self.allowed_range is not None:
@@ -317,15 +324,16 @@ class Attribute(BaseModel):
             if number is not None and self.allowed_range.excludes(number):
                 return (
                     f"{number} is outside the credible range {self.allowed_range} "
-                    f"declared for {self.id}"
+                    f"declared for {self.name}"
                 )
         if self.allowed_labels and isinstance(payload, LabelSet):
             unknown = [label for label in payload.labels if label not in self.allowed_labels]
             if unknown:
+                labels = ", ".join(f"\u2018{label}\u2019" for label in unknown)
                 return (
-                    f"{unknown} is not in the vocabulary {self.id} draws from"
+                    f"{labels} is not in the vocabulary {self.name} draws from"
                     if len(unknown) == 1
-                    else f"{unknown} are not in the vocabulary {self.id} draws from"
+                    else f"{labels} are not in the vocabulary {self.name} draws from"
                 )
         return None
 

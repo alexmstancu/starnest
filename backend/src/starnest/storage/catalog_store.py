@@ -321,7 +321,9 @@ def _attribute_from(row: Any) -> Attribute:
             BreakdownSchemeId(row.breakdown_scheme) if row.breakdown_scheme else None
         ),
         quantity_parameters=(
-            QuantityParameters(unit=UnitId(row.quantity_unit)) if row.quantity_unit else None
+            QuantityParameters(unit=UnitId(row.quantity_unit), unit_name=row.quantity_unit_name)
+            if row.quantity_unit
+            else None
         ),
         index_parameters=(
             IndexParameters(

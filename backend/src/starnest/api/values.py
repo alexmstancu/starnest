@@ -7,6 +7,7 @@ superseded ones returns everything, because nothing is ever discarded and the dr
 to show that.
 """
 
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -31,6 +32,7 @@ from starnest.data import (
     a_manual_value,
     restates,
 )
+from starnest.evaluation.wording import stored_text_in_words
 
 router = APIRouter(tags=["values"])
 
@@ -84,6 +86,7 @@ class ManualValueBody(BaseModel):
 @router.get("/values", operation_id="listValues", response_model=ValuesBody)
 async def list_values(
     values: Values,
+    catalog: Catalog,
     candidate: str | None = None,
     attribute: str | None = None,
     data_acquisition_run: int | None = None,
@@ -113,7 +116,21 @@ async def list_values(
         data_acquisition_run=data_acquisition_run,
         include_superseded=include_superseded,
     )
-    return ValuesBody(items=tuple(_value_body(listing) for listing in listings), total=total)
+    names = await _attribute_names_for(listings, catalog)
+    return ValuesBody(items=tuple(_value_body(listing, names) for listing in listings), total=total)
+
+
+async def _attribute_names_for(
+    listings: Sequence[ValueListing], catalog: Catalog
+) -> Mapping[str, str]:
+    """Every attribute's name, retired ones too, when a listed value carries a rejection
+    reason to put in words; otherwise nothing is read."""
+    if not any(listing.value.rejection_reason for listing in listings):
+        return {}
+    return {
+        str(attribute.id): attribute.name
+        for attribute in await catalog.read_attributes(include_retired=True)
+    }
 
 
 @router.post(
@@ -173,7 +190,7 @@ async def enter_value_manually(
         )
         if _is_the_same_measurement(found.value, value)
     )
-    return _value_body(listing)
+    return _value_body(listing, await _attribute_names_for([listing], catalog))
 
 
 def _identity_of(stored: Value) -> dict[str, Any]:
@@ -207,7 +224,12 @@ def _is_the_same_measurement(stored: Value, submitted: Value) -> bool:
     )
 
 
-def _value_body(listing: ValueListing) -> ValueBody:
+def _value_body(listing: ValueListing, attribute_names: Mapping[str, str] = {}) -> ValueBody:
+    """A stored value as the contract shapes it.
+
+    **A rejection reason is served in words** (PL-072, N3). Values are append-only, so a reason
+    stored naming an attribute by its id is named by `attribute_names` at read time instead.
+    """
     value: Value = listing.value
     return ValueBody(
         id=value.id or 0,
@@ -223,7 +245,11 @@ def _value_body(listing: ValueListing) -> ValueBody:
         retrieval_date=value.retrieval_date,
         confidence_level=value.confidence_level.value,
         is_active=listing.is_active,
-        rejection_reason=value.rejection_reason,
+        rejection_reason=(
+            stored_text_in_words(value.rejection_reason, attribute_names)
+            if value.rejection_reason
+            else None
+        ),
         quote=value.quote,
         citations=value.citations,
         data_acquisition_run=value.data_acquisition_run,

@@ -30,13 +30,14 @@ from starnest.api.dependencies import (
 )
 from starnest.candidates import Candidate
 from starnest.criteria import CriteriaSet
-from starnest.data import MatchRuleResult, Value
+from starnest.data import Attribute, MatchRule, MatchRuleResult, Value, ValueType
 from starnest.evaluation import (
     AttributeScore,
     CandidateResult,
     declared_weights,
     rank_candidates,
 )
+from starnest.evaluation.wording import Names, readable_identifier, unit_words
 from starnest.household import HouseholdNotConfiguredError
 
 router = APIRouter(tags=["rankings"])
@@ -212,10 +213,8 @@ async def the_ranking(
     # How fast each attribute's data goes stale, so the confidence split can drop a grade for a
     # figure aged past it (BE-07). Objective catalog data, read here and passed in -- the
     # ranking works on criteria and values and does not otherwise know the catalog.
-    max_age = {
-        str(attribute.id): attribute.max_age
-        for attribute in await catalog.read_attributes(level=level)
-    }
+    attributes = await catalog.read_attributes(level=level)
+    max_age = {str(attribute.id): attribute.max_age for attribute in attributes}
     results = rank_candidates(
         criteria=criteria_set_read,
         level=level,
@@ -226,6 +225,7 @@ async def the_ranking(
         gate_answers=answers,
         home_candidate=await _home_country(households),
         max_age=max_age,
+        names=names_in(attributes, await catalog.read_match_rules(level=level)),
     )
     return TheRanking(
         criteria=criteria_set_read,
@@ -337,6 +337,22 @@ def _attribute_score_body(
     )
 
 
+def names_in(attributes: Sequence[Attribute], gates: Sequence[MatchRule]) -> Names:
+    """What the catalog calls each attribute, its unit and each gate, for the sentences a
+    result carries (PL-067). A ratio is a percentage; a quantity reads its unit's name."""
+    units: dict[str, str] = {}
+    for attribute in attributes:
+        if attribute.value_type is ValueType.RATIO:
+            units[str(attribute.id)] = "%"
+        elif attribute.quantity_parameters and attribute.quantity_parameters.unit_name:
+            units[str(attribute.id)] = unit_words(attribute.quantity_parameters.unit_name)
+    return Names(
+        attributes={str(attribute.id): attribute.name for attribute in attributes},
+        units=units,
+        gates={str(gate.id): gate.name for gate in gates},
+    )
+
+
 def _in_rank_order(results: tuple[CandidateResult, ...]) -> tuple[CandidateResult, ...]:
     """Ranked candidates first in rank order, then the unscored.
 
@@ -365,7 +381,7 @@ async def _home_country(households: Households) -> str | None:
 def _result_body(result: CandidateResult, names: dict[str, str]) -> CandidateResultBody:
     return CandidateResultBody(
         candidate=str(result.candidate),
-        name=names.get(str(result.candidate), str(result.candidate)),
+        name=names.get(str(result.candidate)) or readable_identifier(str(result.candidate)),
         rank=result.rank,
         score=result.score,
         coverage=result.coverage,

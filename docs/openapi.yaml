@@ -1498,7 +1498,7 @@ components:
         retrieval_date: { type: string, format: date-time }
         confidence_level: { type: string, enum: [absolute, high, medium, low] }
         is_active: { type: boolean, description: "Derived, not stored — the value scoring would use." }
-        rejection_reason: { type: [string, "null"] }
+        rejection_reason: { type: [string, "null"], description: "Why this figure was rejected, in words: the attribute named as the catalog names it, never its identifier. A reason stored before reasons were worded is named at read time." }
         quote: { type: [string, "null"] }
         citations: { type: array, items: { type: string, format: uri } }
         data_acquisition_run: { type: [integer, "null"] }
@@ -1975,7 +1975,9 @@ components:
     Warning:
       type: object
       required: [compound_rule, detail]
-      properties: { compound_rule: { type: string }, detail: { type: string } }
+      properties:
+        compound_rule: { type: string }
+        detail: { type: string, description: "In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved." }
 
     NonMatchReason:
       type: object
@@ -1985,14 +1987,14 @@ components:
         criterion: { type: [string, "null"], description: The attribute whose matching threshold was crossed. }
         match_rule: { type: [string, "null"] }
         compound_rule: { type: [string, "null"] }
-        reason_detail: { type: string }
+        reason_detail: { type: string, description: "In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved. A gate's own recorded reason is served as it was written." }
 
     CandidateResult:
       type: object
       required: [candidate, name, score, coverage, match_status]
       properties:
         candidate: { type: string }
-        name: { type: string }
+        name: { type: string, description: "The roster's name. A saved ranking's candidate that has since left the roster reads as its identifier made into words, never the identifier itself." }
         rank: { type: [integer, "null"], description: Null when the candidate does not match. }
         # No maximum. The ceiling is the evaluation's own score_scale_max, which is a setting
         # the user edits, so it cannot be stated here as a constant (same reason as the frozen
@@ -2005,7 +2007,7 @@ components:
             figure, or coverage below the floor. Null whenever there is a score. Separate from
             non_match_reasons, which say why a candidate that COULD be scored does not match:
             "we could not measure this" and "we measured it and it fails" are different things
-            to show.
+            to show. In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved.
         coverage: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. The share of active weight actually backed by data." }
         pillar_scores:
           type: array

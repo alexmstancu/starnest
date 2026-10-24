@@ -47,6 +47,7 @@ from starnest.evaluation.weighting import (
     redistribute,
     renormalise,
 )
+from starnest.evaluation.wording import NO_NAMES, Names, attribute_called
 
 ValuesByCandidate = Mapping[str, Sequence[Value]]
 
@@ -76,6 +77,7 @@ def rank_candidates(
     home_candidate: str | None = None,
     max_age: Mapping[str, timedelta | None] = {},
     as_of: date | None = None,
+    names: Names = NO_NAMES,
 ) -> tuple[CandidateResult, ...]:
     """Score every candidate, and put them in order.
 
@@ -92,6 +94,9 @@ def rank_candidates(
     other and additionally anchors the difference column, so "stay put" stays measurable beside
     every alternative. Absent when no household has been recorded, and then no candidate carries
     a difference -- there is nothing to be different from.
+
+    `names` is what the catalog calls each attribute and gate, for the sentences a result
+    carries (PL-067). Without it they name things by their identifiers made readable.
     """
     scored_criteria = _criteria_to_score(criteria, level)
     if not scored_criteria:
@@ -135,6 +140,7 @@ def rank_candidates(
             candidate_values=values.get(candidate, ()),
             gate_answers=gate_answers.get(candidate, ()),
             level=level,
+            names=names,
         )
         for candidate in sorted(values)
     )
@@ -509,6 +515,7 @@ def _result_for(
     candidate_values: Sequence[Value],
     gate_answers: Sequence[MatchRuleResult],
     level: str,
+    names: Names,
 ) -> CandidateResult:
     answered = {
         str(criterion.attribute)
@@ -545,14 +552,22 @@ def _result_for(
         figures=figures,
         level=level,
         value_ids=_figure_sources_of(candidate_values),
+        names=names,
     )
     refusals = (
-        gates_that_rule_out(enforced=criteria.enforced_match_rules, answers=gate_answers)
+        gates_that_rule_out(
+            enforced=criteria.enforced_match_rules, answers=gate_answers, names=names
+        )
         + ruled_out_by_a_rule
-        + thresholds_that_rule_out(_criteria_at(criteria, level), candidate_values)
+        + thresholds_that_rule_out(_criteria_at(criteria, level), candidate_values, names)
     )
     refusal = _why_it_cannot_be_scored(
-        scored_criteria, answered, found=found, coverage=coverage, min_coverage=min_coverage
+        scored_criteria,
+        answered,
+        found=found,
+        coverage=coverage,
+        min_coverage=min_coverage,
+        names=names,
     )
     if refusals:
         match_status = MatchStatus.NOT_MATCHING
@@ -682,6 +697,7 @@ def _why_it_cannot_be_scored(
     found: set[str],
     coverage: Decimal,
     min_coverage: Decimal | None,
+    names: Names,
 ) -> str | None:
     """The sentence a screen shows instead of a score, or None when there is a score.
 
@@ -703,9 +719,13 @@ def _why_it_cannot_be_scored(
         if criterion.blocks_if_missing and str(criterion.attribute) not in answered
     ]
     if unanswered:
-        missing = sorted(str(c.attribute) for c in unanswered if str(c.attribute) not in found)
+        missing = sorted(
+            attribute_called(names, str(c.attribute))
+            for c in unanswered
+            if str(c.attribute) not in found
+        )
         unplaced = sorted(
-            f"{c.attribute} (normalised {c.normalisation_method.value})"
+            attribute_called(names, str(c.attribute))
             for c in unanswered
             if str(c.attribute) in found
         )
@@ -713,7 +733,9 @@ def _why_it_cannot_be_scored(
         if missing:
             problems.append("no figure for " + ", ".join(missing))
         if unplaced:
-            problems.append("figures that could not be scored for " + ", ".join(unplaced))
+            problems.append(
+                "a figure that could not be placed on the score scale for " + ", ".join(unplaced)
+            )
         return (
             "; ".join(problems)
             + ", which this criteria set requires before scoring a candidate at all"
@@ -725,15 +747,16 @@ def _why_it_cannot_be_scored(
         # candidate under `percentile` has no standing to score against. Telling the reader to
         # fetch something they already have is the one wrong answer here.
         unplaceable = sorted(
-            f"{c.attribute} (normalised {c.normalisation_method.value})"
+            attribute_called(names, str(c.attribute))
             for c in scored_criteria
             if str(c.attribute) in found
         )
         if unplaceable:
             return (
-                "figures were found but none could be scored: "
+                "figures were found for "
                 + ", ".join(unplaceable)
-                + ", so there is nothing to compute a total from"
+                + " but none could be placed on the score scale, so there is nothing to compute "
+                "a total from"
             )
         return (
             "no figure was found for any scored criterion, so there is nothing to compute a "

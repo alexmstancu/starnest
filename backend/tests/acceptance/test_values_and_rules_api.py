@@ -6,6 +6,7 @@ served; `reqs.md` 6.5 that a value may be typed only where its attribute says so
 """
 
 import asyncio
+import re
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, ClassVar
@@ -25,6 +26,8 @@ pytestmark = pytest.mark.acceptance
 COUNTRY = "country"
 NATURALISATION = "country.naturalisation_pathway"
 """A Quantity in years that declares manual entry: no dataset publishes it (`reqs.md` 6.9)."""
+
+AN_IDENTIFIER = re.compile(r"(country|city)\.[a-z0-9_]+")
 
 OVERBURDEN = "country.housing_cost_overburden_rate"
 """Declares no manual entry: its values come from Eurostat."""
@@ -145,6 +148,51 @@ class TestReadingValues:
         assert active["total"] == 1
         assert sorted(value["is_active"] for value in everything["items"]) == [False, True]
         assert everything["total"] == 2
+
+    async def test_a_stored_reason_with_an_id_is_served_with_the_name(
+        self, api: httpx.AsyncClient, stored_figures: None, database_url: str
+    ) -> None:
+        """Values are append-only, so a reason stored before reasons were worded is named at
+        read time, and a note to developers is taken out (PL-072, N3)."""
+        from datetime import UTC, date, datetime
+
+        from psycopg_pool import AsyncConnectionPool
+
+        from starnest.data import ConfidenceLevel, ReferencePeriod, Value, ValueType
+        from starnest.storage import PostgresValueStore
+
+        rejected = Value(
+            candidate="country.portugal",
+            attribute=OVERBURDEN,
+            value_type=ValueType.RATIO,
+            data_source="eurostat",
+            reference_period=ReferencePeriod(start=date(2019, 1, 1), end=date(2019, 12, 31)),
+            retrieval_date=datetime.now(UTC),
+            confidence_level=ConfidenceLevel.HIGH,
+            payload=None,
+            rejection_reason=(
+                f"96.3 is outside the credible range 0 to 60 declared for {OVERBURDEN} "
+                "(known-issues.md P37)"
+            ),
+        )
+        async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+            await pool.open(wait=True)
+            await PostgresValueStore(pool).append([rejected])
+
+        body = (
+            await api.get(
+                "/v1/values",
+                params={
+                    "candidate": "country.portugal",
+                    "attribute": OVERBURDEN,
+                    "include_superseded": True,
+                },
+            )
+        ).json()
+        name = (await api.get(f"/v1/attributes/{OVERBURDEN}")).json()["name"]
+
+        (reason,) = [v["rejection_reason"] for v in body["items"] if v["rejection_reason"]]
+        assert reason == f"96.3 is outside the credible range 0 to 60 declared for {name}"
 
     async def test_a_payload_carries_numbers_not_strings(
         self, api: httpx.AsyncClient, stored_figures: None
@@ -751,6 +799,30 @@ class TestTheWarningTheHouseholdDecided:
         # rather than take it (`reqs.md` 3.7a).
         assert "65.1" in romania["warnings"][0]["detail"]
         assert "42.8" in romania["warnings"][0]["detail"]
+
+    async def test_the_warning_reads_in_words_with_units(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """The catalog's names and units, and a band said as a band (PL-067)."""
+        await self.figures_for(database_url, self.THE_ROSTER)
+
+        (warning,) = (await self.ranked(api))["country.romania"]["warnings"]
+
+        assert "42.8%, at least" in warning["detail"]
+        assert not AN_IDENTIFIER.search(warning["detail"])
+        assert "to any" not in warning["detail"]
+
+    async def test_a_blocking_criterion_nobody_answered_is_named_not_keyed(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """Portugal has no figures here, so the shipped set's blocking criteria refuse it, and
+        the sentence names them as the catalog does (PL-067)."""
+        await self.figures_for(database_url, self.THE_ROSTER)
+
+        reason = (await self.ranked(api))["country.portugal"]["insufficient_reason"]
+
+        assert reason.startswith("no figure for ")
+        assert not AN_IDENTIFIER.search(reason)
 
     async def test_it_changes_neither_the_score_nor_the_status(
         self, api: httpx.AsyncClient, database_url: str

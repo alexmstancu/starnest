@@ -153,9 +153,26 @@ class TestGateA:
             await api.get("/v1/rankings", params={"criteria_set": SHIPPED, "level": COUNTRY})
         ).json()
 
+        criteria = (
+            await api.get(f"/v1/criteria-sets/{SHIPPED}", params={"level": COUNTRY})
+        ).json()["criteria"]
+        names = {
+            attribute["id"]: attribute["name"]
+            for attribute in (await api.get("/v1/attributes", params={"level": COUNTRY})).json()[
+                "items"
+            ]
+        }
+        blocking = [
+            names[criterion["attribute"]]
+            for criterion in criteria
+            if criterion["blocks_if_missing"] and criterion["is_scored"]
+        ]
+
+        # Named as the catalog names them, never by id (PL-067).
         reason = body["candidates"][0]["insufficient_reason"]
-        assert "country." in reason
-        assert reason.count("country.") >= 5
+        assert len(blocking) >= 5
+        assert all(name in reason for name in blocking)
+        assert "country." not in reason
 
     async def test_7_a_set_whose_attributes_have_figures_ranks_them(
         self, api: httpx.AsyncClient, database_url: str, stored_figures: None

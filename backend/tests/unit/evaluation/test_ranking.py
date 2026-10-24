@@ -209,7 +209,7 @@ class TestWhenACandidateCannotBeScored:
 
         spain = by_candidate(rank(criteria, {"country.spain": ()}))["country.spain"]
 
-        assert a_criterion().attribute in (spain.insufficient_reason or "")
+        assert (spain.insufficient_reason or "").startswith("no figure for Tech software jobs,")
 
     def test_a_figure_that_could_not_be_placed_is_not_reported_as_missing(self) -> None:
         """**Found 2026-09-11, before it could bite.** The reason sentence was built from which
@@ -228,8 +228,7 @@ class TestWhenACandidateCannotBeScored:
         reason = alone.insufficient_reason or ""
         assert alone.match_status is MatchStatus.INSUFFICIENT_DATA
         assert "no figure for" not in reason
-        assert a_criterion().attribute in reason
-        assert "could not be scored" in reason
+        assert "could not be placed on the score scale for Tech software jobs" in reason
 
     def test_a_criterion_using_a_method_not_yet_built_says_so(self) -> None:
         """The shipped set's real case: 26 of its criteria normalise `fixed`, which no scale
@@ -243,7 +242,8 @@ class TestWhenACandidateCannotBeScored:
 
         reason = found["country.portugal"].insufficient_reason or ""
         assert "no figure for" not in reason
-        assert "fixed" in reason
+        assert "could not be placed on the score scale" in reason
+        assert "fixed" not in reason
 
     def test_a_missing_figure_and_an_unplaceable_one_are_named_separately(self) -> None:
         """Two different problems with two different fixes -- fetch something, or choose
@@ -262,8 +262,8 @@ class TestWhenACandidateCannotBeScored:
         portugal = by_candidate(rank(criteria, values))["country.portugal"]
 
         reason = portugal.insufficient_reason or ""
-        assert f"no figure for {RENT}" in reason
-        assert "could not be scored" in reason
+        assert "no figure for House price to income ratio" in reason
+        assert "could not be placed on the score scale" in reason
 
     def test_coverage_below_the_floor_makes_it_insufficient_data(self) -> None:
         found = by_candidate(
@@ -811,8 +811,8 @@ class TestWhenThereIsNoRankingToProduce:
         found = by_candidate(rank(a_set([a_criterion()]), values_for(portugal=90)))
         reason = found["country.portugal"].insufficient_reason or ""
 
-        assert "none could be scored" in reason
-        assert str(a_criterion().attribute) in reason
+        assert "none could be placed on the score scale" in reason
+        assert "Tech software jobs" in reason
         assert "no figure was found" not in reason
 
     def test_a_candidate_with_nothing_at_all_still_says_no_figure_was_found(self) -> None:

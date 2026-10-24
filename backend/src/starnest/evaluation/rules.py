@@ -18,7 +18,7 @@ household chooses their numbers, and that silence is the intended state rather t
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 from starnest.criteria import Criterion
 from starnest.criteria.thresholds import (
@@ -43,6 +43,17 @@ from starnest.data import (
     Value,
 )
 from starnest.evaluation.magnitudes import UnscoreableValueError, magnitude_of
+from starnest.evaluation.wording import (
+    NO_NAMES,
+    Names,
+    attribute_called,
+    band_words,
+    figure_in_words,
+    gate_called,
+    quoted,
+    readable_figure,
+    yes_or_no,
+)
 
 
 @dataclass(frozen=True)
@@ -82,6 +93,7 @@ def judgements_of(
     figures: Mapping[str, Decimal],
     level: str,
     value_ids: Mapping[str, int] | None = None,
+    names: Names = NO_NAMES,
 ) -> tuple[tuple[RuleWarning, ...], tuple[NonMatch, ...]]:
     """Every compound rule that fires for one candidate, split by what its outcome does.
 
@@ -103,7 +115,7 @@ def judgements_of(
         tuple(
             RuleWarning(
                 compound_rule=rule.id,
-                detail=_detail(rule, figures),
+                detail=_detail(rule, figures, names),
                 input_values=_inputs_read(rule, sources),
             )
             for rule in fired
@@ -112,7 +124,7 @@ def judgements_of(
         tuple(
             NonMatch(
                 compound_rule=rule.id,
-                reason_detail=_detail(rule, figures),
+                reason_detail=_detail(rule, figures, names),
                 input_values=_inputs_read(rule, sources),
             )
             for rule in fired
@@ -159,48 +171,31 @@ def _within(figure: Decimal | None, minimum: Decimal | None, maximum: Decimal | 
     return not (maximum is not None and figure > maximum)
 
 
-def _detail(rule: CompoundRule, figures: Mapping[str, Decimal]) -> str:
-    """Why it fired, in the figures that made it fire, so the reader can check it."""
-    return f"{rule.name}: " + ", ".join(
-        f"{condition.names_the_attribute}"
-        f" {_figure(figures.get(str(condition.attribute)))}"
-        f" within {_bound(condition.threshold_min)} to {_bound(condition.threshold_max)}"
+def _detail(rule: CompoundRule, figures: Mapping[str, Decimal], names: Names) -> str:
+    """Why it fired, in the figures that made it fire, so the reader can check it.
+
+    "Mild now, brutal later: Projected summer heat days 36.91 days per year, at least 25". Each
+    figure is printed at a readable precision with its unit, and its band in words (PL-067).
+    """
+    return f"{rule.name}: " + "; ".join(
+        f"{condition.attribute_name or attribute_called(names, str(condition.attribute))}"
+        f" {_figure(figures.get(str(condition.attribute)), str(condition.attribute), names)},"
+        f" {band_words(condition.threshold_min, condition.threshold_max)}"
         for condition in rule.conditions
     )
 
 
-_READABLE_DECIMALS = 4
-"""Past anything the catalog measures, and short enough to read in a table cell."""
-
-
-def _bound(bound: Decimal | None) -> str:
-    return "any" if bound is None else f"{bound:g}"
-
-
-def _figure(figure: Decimal | None) -> str:
-    """The figure that fired the rule, at a precision a person can read.
-
-    **The bounds were formatted and the figures were not**, which only showed once a derived
-    figure reached a rule: the estimated tax rate is a division, so it arrives as
-    `43.32847052546540994843612212` and the warning printed all 26 digits.
-
-    **It only ever shortens.** A figure already at a sane precision is printed exactly as it
-    arrived -- 52.0 stays "52.0", not "52" -- because how many decimals a publisher printed is
-    itself information. Only a figure carrying more than four is rounded. `normalize()` is
-    deliberately not used to tidy trailing zeros: it renders 60 as `6E+1`.
-    """
-    if figure is None:
-        return "no figure"
-    decimals = -figure.as_tuple().exponent
-    if isinstance(decimals, int) and decimals > _READABLE_DECIMALS:
-        figure = figure.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
-    return f"{figure:f}"
+def _figure(figure: Decimal | None, attribute: str, names: Names) -> str:
+    """The figure that fired the rule. A derived one -- the estimated tax rate is a division,
+    arriving as `43.32847052546540994843612212` -- reads "43.33"."""
+    return "no figure" if figure is None else figure_in_words(names, attribute, figure)
 
 
 def gates_that_rule_out(
     *,
     enforced: Sequence[MatchRuleId],
     answers: Sequence[MatchRuleResult],
+    names: Names = NO_NAMES,
 ) -> tuple[NonMatch, ...]:
     """The enforced gates a candidate fails, in the order the criteria set enforces them.
 
@@ -225,7 +220,8 @@ def gates_that_rule_out(
     return tuple(
         NonMatch(
             match_rule=rule,
-            reason_detail=failed[rule].reason or f"{rule} answers not_matching for this candidate",
+            reason_detail=failed[rule].reason
+            or f"{gate_called(names, str(rule))} answered not matching, with no reason recorded",
             gate_answer=failed[rule],
         )
         for rule in enforced
@@ -236,6 +232,7 @@ def gates_that_rule_out(
 def thresholds_that_rule_out(
     criteria: Sequence[Criterion],
     values: Sequence[Value],
+    names: Names = NO_NAMES,
 ) -> tuple[NonMatch, ...]:
     """The criteria whose matching threshold this candidate's value crosses (`reqs.md` 5.2).
 
@@ -262,7 +259,7 @@ def thresholds_that_rule_out(
         value = by_attribute.get(str(criterion.attribute))
         if value is None:
             continue
-        reason = _crosses(threshold, value)
+        reason = _crosses(threshold, value, names)
         if reason is not None:
             reasons.append(
                 NonMatch(
@@ -274,40 +271,51 @@ def thresholds_that_rule_out(
     return tuple(reasons)
 
 
-def _crosses(threshold: MatchingThreshold, value: Value) -> str | None:
+def _crosses(threshold: MatchingThreshold, value: Value, names: Names) -> str | None:
     """Why the value is on the wrong side of the line, or None when it is admitted or cannot be
     judged -- no figure, a rejected value, or a payload of a shape this threshold does not read.
 
     A payload mismatch cannot normally happen -- a criterion refuses a threshold that does not
     suit its value type, and a value's type matches its criterion -- so the `isinstance` guards
     are a safe default, never a silent rule-out, for a row written past the domain.
+
+    **In words** (PL-067): the attribute as the catalog names it, the figure with its unit and
+    at a readable precision, a label in quotes rather than as a Python repr.
     """
+    attribute = str(value.attribute)
+    called = attribute_called(names, attribute)
     if isinstance(threshold, RangeThreshold):
         try:
             figure = magnitude_of(value)
         except UnscoreableValueError:
             return None
         if threshold.min_value is not None and figure < threshold.min_value:
-            return f"{value.attribute} is {figure:g}, below your minimum of {threshold.min_value:g}"
+            return (
+                f"{called} is {figure_in_words(names, attribute, figure)}, below your minimum of "
+                f"{figure_in_words(names, attribute, threshold.min_value)}"
+            )
         if threshold.max_value is not None and figure > threshold.max_value:
-            return f"{value.attribute} is {figure:g}, above your maximum of {threshold.max_value:g}"
+            return (
+                f"{called} is {figure_in_words(names, attribute, figure)}, above your maximum of "
+                f"{figure_in_words(names, attribute, threshold.max_value)}"
+            )
         return None
     if isinstance(threshold, LabelThreshold):
         if not isinstance(value.payload, LabelSet):
             return None
         present = threshold.label in value.payload.labels
         if threshold.containment_rule == "must_contain" and not present:
-            return f"{value.attribute} does not carry {threshold.label!r}, which you require"
+            return f"{called} does not include {quoted(threshold.label)}, which you require"
         if threshold.containment_rule == "must_not_contain" and present:
-            return f"{value.attribute} carries {threshold.label!r}, which you ruled out"
+            return f"{called} includes {quoted(threshold.label)}, which you ruled out"
         return None
     if isinstance(threshold, BooleanThreshold):
         if not isinstance(value.payload, Boolean):
             return None
         if value.payload.value != threshold.required_value:
             return (
-                f"{value.attribute} is {value.payload.value}, "
-                f"and you require {threshold.required_value}"
+                f"{called} is {yes_or_no(value.payload.value)}, "
+                f"and you require {yes_or_no(threshold.required_value)}"
             )
         return None
     if isinstance(threshold, ShareThreshold):
@@ -317,13 +325,16 @@ def _crosses(threshold: MatchingThreshold, value: Value) -> str | None:
             (slice_.share for slice_ in value.payload.shares if slice_.label == threshold.label),
             Decimal(0),
         )
+        part = f"{quoted(threshold.label)} in {called}"
         if threshold.min_share is not None and share < threshold.min_share:
             return (
-                f"{threshold.label!r} is {share:g}%, below your minimum of {threshold.min_share:g}%"
+                f"{part} is {readable_figure(share)}%, below your minimum of "
+                f"{readable_figure(threshold.min_share)}%"
             )
         if threshold.max_share is not None and share > threshold.max_share:
             return (
-                f"{threshold.label!r} is {share:g}%, above your maximum of {threshold.max_share:g}%"
+                f"{part} is {readable_figure(share)}%, above your maximum of "
+                f"{readable_figure(threshold.max_share)}%"
             )
         return None
     return None

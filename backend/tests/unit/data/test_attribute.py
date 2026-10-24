@@ -186,6 +186,32 @@ class TestRejectingAFigureThatIsNotCredible:
         assert reason is not None
         assert "212" in reason and "-20 to 40" in reason
 
+    def test_a_new_rejection_names_the_attribute_by_name(self) -> None:
+        """The reason is printed under the figure on screen (PL-072, N3), so it names the
+        attribute as the catalog does, never by its identifier."""
+        out_of_range = an_attribute(
+            allowed_range=AllowedRange(min_value=Decimal("-20"), max_value=Decimal("40"))
+        ).rejection_reason_for(Quantity(magnitude=Decimal("212"), unit="celsius"))
+        wrong_unit = an_attribute().rejection_reason_for(
+            Quantity(magnitude=Decimal("5"), unit="years")
+        )
+        unknown_label = an_attribute(
+            id="country.climate_zone",
+            name="Climate zone",
+            value_type=ValueType.LABEL_SET,
+            quantity_parameters=None,
+            allowed_labels=("csa",),
+        ).rejection_reason_for(LabelSet(labels=("tropical",)))
+
+        assert out_of_range == (
+            "212 is outside the credible range -20 to 40 declared for Average annual temperature"
+        )
+        assert wrong_unit is not None and "Average annual temperature's declared unit" in wrong_unit
+        assert unknown_label == (
+            "\u2018tropical\u2019 is not in the vocabulary Climate zone draws from"
+        )
+        assert all("country." not in reason for reason in (out_of_range, wrong_unit, unknown_label))
+
     def test_money_is_bounded_on_its_euro_equivalent(self) -> None:
         """A bound written against euro would otherwise reject every forint figure."""
         attribute = an_attribute(

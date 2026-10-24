@@ -36,6 +36,7 @@ from starnest.evaluation import (
     judgements_of,
     thresholds_that_rule_out,
 )
+from starnest.evaluation.wording import Names
 
 from .builders import a_criterion, a_value
 
@@ -109,8 +110,8 @@ class TestACompoundRule:
     def test_the_detail_shows_the_figures_that_made_it_fire(self) -> None:
         (warning,), _ = judged(a_rule())
 
-        assert "65.1" in warning.detail
-        assert "52.0" in warning.detail
+        assert "65.1, at most 80" in warning.detail
+        assert "52, at least 45" in warning.detail
         assert warning.detail.startswith("Cheap but taxed:")
 
     def test_the_detail_names_the_attribute_rather_than_its_key(self) -> None:
@@ -138,38 +139,55 @@ class TestACompoundRule:
         assert str(PRICES) not in warning.detail
         assert str(TAX) not in warning.detail
 
-    def test_the_detail_falls_back_to_the_key_when_no_name_was_read(self) -> None:
-        """An explanation naming the key is still better than no explanation, and a condition
-        built without the catalog in hand -- in a test, or from an older row -- has no name."""
+    def test_the_detail_falls_back_to_a_readable_name_never_the_key(self) -> None:
+        """A condition built without the catalog in hand -- in a test, or from an older row --
+        has no name, and the sentence is read verbatim on screen (PL-067)."""
         (warning,), _ = judged(a_rule())
 
-        assert str(PRICES) in warning.detail
+        assert "Cost of living index 65.1" in warning.detail
+        assert str(PRICES) not in warning.detail
+
+    def test_the_names_passed_in_are_used_with_their_units(self) -> None:
+        (warning,), _ = judgements_of(
+            rules=[a_rule()],
+            figures=FIGURES,
+            level="country",
+            names=Names(
+                attributes={TAX: "Total tax rate"},
+                units={PRICES: "index where the EU27 average is 100", TAX: "%"},
+            ),
+        )
+
+        assert "index where the EU27 average is 100, at most 80" in warning.detail
+        assert "Total tax rate 52%, at least 45" in warning.detail
 
     def test_a_derived_figure_is_read_at_a_readable_precision(self) -> None:
         """**Found on screen, 2026-09-20.** The estimated tax rate is a division, so it arrives
         as `43.32847052546540994843612212`, and the detail interpolated it whole: a warning that
         is correct and unreadable, sitting in a ranking beside figures printed to one decimal.
-        The bounds were already formatted; the figures were not.
         """
         derived = {PRICES: Decimal("65.1"), TAX: Decimal("52.32847052546540994843612212")}
 
         (warning,), _ = judged(a_rule(), derived)
 
-        assert "52.3285" in warning.detail
-        assert "52.32847052546540994843612212" not in warning.detail
+        assert "52.33" in warning.detail
+        assert "52.328" not in warning.detail
 
-    def test_a_figure_already_readable_is_printed_exactly_as_it_arrived(self) -> None:
-        """**The formatting only ever shortens.** How many decimals a publisher printed is
-        itself information, and `Decimal.normalize()` -- the obvious way to tidy a trailing
-        zero -- renders 60 as `6E+1`, so neither is done.
-        """
-        whole = {PRICES: Decimal("60.00"), TAX: Decimal("52.0")}
+    def test_a_round_figure_never_reads_as_an_exponent(self) -> None:
+        """`Decimal.normalize()`, the obvious way to tidy a trailing zero, renders 60 as
+        `6E+1`."""
+        whole = {PRICES: Decimal("60.00"), TAX: Decimal("6E+1")}
 
         (warning,), _ = judged(a_rule(), whole)
 
-        assert "60.00" in warning.detail
-        assert "52.0" in warning.detail
-        assert "6E+1" not in warning.detail
+        assert "Cost of living index 60," in warning.detail
+        assert "Total tax rate effective 60," in warning.detail
+        assert "E+" not in warning.detail
+
+    def test_a_band_open_on_one_side_never_reads_to_any(self) -> None:
+        (warning,), _ = judged(a_rule())
+
+        assert "to any" not in warning.detail
 
     def test_one_condition_failing_is_enough_to_stay_silent(self) -> None:
         """AND is the only connective, and it is implicit in the shape (`reqs.md` 3.7a)."""
@@ -303,7 +321,21 @@ class TestTheGates:
             answers=[an_answer("uk_skilled_worker", MatchResult.NOT_MATCHING)],
         )
 
-        assert "uk_skilled_worker" in non_match.reason_detail
+        assert (
+            non_match.reason_detail
+            == "Uk skilled worker answered not matching, with no reason recorded"
+        )
+
+    def test_a_gate_with_no_reason_is_named_as_the_catalog_names_it(self) -> None:
+        (non_match,) = gates_that_rule_out(
+            enforced=["uk_skilled_worker"],
+            answers=[an_answer("uk_skilled_worker", MatchResult.NOT_MATCHING)],
+            names=Names(gates={"uk_skilled_worker": "UK skilled worker visa"}),
+        )
+
+        assert non_match.reason_detail == (
+            "UK skilled worker visa answered not matching, with no reason recorded"
+        )
 
     def test_unknown_rules_nothing_out(self) -> None:
         """A gate nobody has researched is a question, not a failure."""
@@ -427,7 +459,7 @@ class TestMatchingThresholds:
             LabelSet(labels=("continental",)),
         )
 
-        assert "does not carry 'temperate'" in out[0].reason_detail
+        assert "does not include \u2018temperate\u2019, which you require" in out[0].reason_detail
 
     def test_must_contain_is_admitted_when_the_label_is_present(self) -> None:
         out = _verdict(
@@ -461,7 +493,7 @@ class TestMatchingThresholds:
             BooleanThreshold(required_value=False), ValueType.BOOLEAN, Boolean(value=True)
         )
 
-        assert "require False" in out[0].reason_detail
+        assert out[0].reason_detail.endswith("is yes, and you require no")
 
     def test_a_boolean_that_matches_is_admitted(self) -> None:
         out = _verdict(
