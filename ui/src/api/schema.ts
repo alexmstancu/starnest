@@ -1412,7 +1412,7 @@ export interface components {
                 candidate?: string;
                 value?: components["schemas"]["Value"];
                 normalised_score?: number | null;
-                /** @description Comparator minus focus. In the attribute's own unit, except a Monetary attribute, whose delta is in EUR -- the only figure comparable across candidates that may hold different currencies (reqs.md 5.5). Null unless both sides have a figure. */
+                /** @description Comparator minus focus. In the attribute's own unit, except a Monetary attribute, whose delta is in EUR -- the only figure comparable across candidates that may hold different currencies (reqs.md 5.5). Null unless both sides have a figure, and null when the two figures declare different scales -- an Index from two publishers, or two assigned scores on different ranges -- because their difference is in no unit (C06-S2); the two figures are still sent, so the interface can say "different scales". */
                 delta?: number | null;
                 /** @description What the score gap is worth to the focus's total, comparator minus focus: the exact score difference times the focus's effective weight, in score points. Null unless both sides were scored. */
                 weighted_contribution?: number | null;
