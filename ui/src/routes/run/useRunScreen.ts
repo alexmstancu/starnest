@@ -326,6 +326,7 @@ export function useRunScreen(levelId: string | null): RunScreenState {
           setPlan(null);
           setPlanOrigin(null);
           await watch(ticket, started.id);
+          focusCardOf(ticket, started.id);
         }),
       );
     },
@@ -370,6 +371,7 @@ export function useRunScreen(levelId: string | null): RunScreenState {
           }).catch((refused: unknown) => giveTheCardBack(ticket, onCard, refused));
           setArmed(null);
           await watch(ticket, started.id);
+          focusCardOf(ticket, started.id);
         }),
       );
     },

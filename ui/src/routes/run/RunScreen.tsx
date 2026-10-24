@@ -56,6 +56,25 @@ import {
 export function RunScreen({ route }: { route: RouteDefinition }) {
   const { levelId } = useSelection();
   const run = useRunScreen(levelId);
+  // **Where Not yet hands focus back** (PL-128): the control that opened the strip, which
+  // stays on screen when the strip goes.
+  const opener = useRef<Element | null>(null);
+  const propose: typeof run.propose = (scope, describedAs, origin) => {
+    opener.current = document.activeElement;
+    run.propose(scope, describedAs, origin);
+  };
+  const cancel = () => {
+    run.cancel();
+    if (opener.current instanceof HTMLElement && opener.current.isConnected) {
+      opener.current.focus();
+    }
+  };
+  const gapsHeading = useRef<HTMLHeadingElement>(null);
+  // Dismiss takes its card with it, so focus goes to what the reader came to act on.
+  const dismiss = () => {
+    run.close();
+    gapsHeading.current?.focus();
+  };
 
   // Built once and placed in one of two slots, because it is one card either way: the top of
   // the screen while the run is in flight, and inside a fold under the remedies once it is not.
@@ -70,7 +89,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           run.cardFocus?.runId === run.current.id ? run.cardFocus.asked : null
         }
         onRefresh={run.refresh}
-        onDismiss={run.close}
+        onDismiss={dismiss}
         onStop={run.stop}
       />
     );
@@ -112,7 +131,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           in a column they read as a sequence of steps, which they are not. */}
       <section className="section" aria-labelledby="gaps">
         <header className="section__head">
-          <h3 id="gaps" className="section__heading">
+          <h3 id="gaps" ref={gapsHeading} tabIndex={-1} className="section__heading">
             What you can do about the gaps
           </h3>
           <p className="section__lead">{describeGaps(run.current)}</p>
@@ -149,7 +168,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                   busy={run.busy === "planning"}
                   onSelectionChange={run.disarm}
                   onPropose={(scope, describedAs) =>
-                    run.propose(scope, describedAs, "failed")
+                    propose(scope, describedAs, "failed")
                   }
                 />
               )}
@@ -164,7 +183,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                 disabled={levelId === null}
                 onClick={() =>
                   levelId !== null &&
-                  run.propose(
+                  propose(
                     scopeFor(levelId, run.current?.failures ?? []),
                     "Retry everything that failed",
                     "failed",
@@ -173,7 +192,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
               >
                 {`Retry ${formatCount(failedItemCount(run.current.failures))} failed`}
               </HeldButton>
-              <GapEstimate kind="failed" run={run} />
+              <GapEstimate kind="failed" run={run} onCancel={cancel} />
             </GapCard>
           )}
 
@@ -195,7 +214,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                   busy={run.busy === "planning"}
                   onSelectionChange={run.disarm}
                   onPropose={(scope, describedAs) =>
-                    run.propose(scope, describedAs, "unanswered")
+                    propose(scope, describedAs, "unanswered")
                   }
                 />
               )}
@@ -210,7 +229,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                 disabled={levelId === null}
                 onClick={() =>
                   levelId !== null &&
-                  run.propose(
+                  propose(
                     scopeFor(levelId, run.current?.unanswered ?? []),
                     "Ask again about everything unanswered",
                     "unanswered",
@@ -219,7 +238,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
               >
                 {`Retry ${formatCount(run.current.progress?.items_unanswered)} unanswered`}
               </HeldButton>
-              <GapEstimate kind="unanswered" run={run} />
+              <GapEstimate kind="unanswered" run={run} onCancel={cancel} />
             </GapCard>
           )}
 
@@ -245,6 +264,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
               <GapEstimate
                 kind="everything"
                 run={run}
+                onCancel={cancel}
                 onStart={() => run.start(levelId)}
               />
             </GapCard>
@@ -342,9 +362,11 @@ function GapEstimate({
   kind,
   run,
   onStart,
+  onCancel,
 }: {
   kind: GapKind;
   run: RunScreenState;
+  onCancel: () => void;
   /** Only the whole-level card starts from a bare plan; the others arm through `propose`. */
   onStart?: () => void;
 }) {
@@ -400,7 +422,7 @@ function GapEstimate({
                 <HeldButton
                   className="button"
                   held={run.starting}
-                  onClick={run.cancel}
+                  onClick={onCancel}
                 >
                   Not yet
                 </HeldButton>
@@ -545,6 +567,15 @@ function RunReport({
   const canStop = run.run_status === "running" && run.stop_requested_at == null;
   const card = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  const refresh = useRef<HTMLButtonElement>(null);
+  // **Stop withdrawn takes focus to Refresh** (PL-128), the act left beside it, and only when
+  // focus was lost as Stop went.
+  const couldStop = useRef(canStop);
+  useEffect(() => {
+    const withdrawn = couldStop.current && !canStop;
+    couldStop.current = canStop;
+    if (withdrawn && document.activeElement === document.body) refresh.current?.focus();
+  }, [canStop]);
   // **The reader is moved, not just the card** (PL-126): opened from the history 2,000 px
   // below, the card changed where nobody was looking. Only when focus is on this screen or
   // lost, so a reader who has gone elsewhere meanwhile is not pulled back.
@@ -599,7 +630,12 @@ function RunReport({
               that re-read it every second would spend the reader's backend on nothing. Held
               while it reads, and Stop once it has been asked for, never disabled (NEW-44,
               NEW-52). */}
-          <HeldButton className="button" held={busy || starting} onClick={onRefresh}>
+          <HeldButton
+            ref={refresh}
+            className="button"
+            held={busy || starting}
+            onClick={onRefresh}
+          >
             {busy ? "Reading…" : "Refresh"}
           </HeldButton>
           {canStop && (

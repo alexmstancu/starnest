@@ -4095,3 +4095,105 @@ describe("opening an acquisition from the history", () => {
     expect(scrolled).toEqual([]);
   });
 });
+
+/**
+ * PL-128, UF-100. **When the pressed control goes, focus goes somewhere meant.** Yes, Not yet,
+ * Start, Stop and Dismiss each unmount the button that was pressed, and focus fell to the page.
+ */
+describe("where focus goes when the pressed control goes", () => {
+  async function armTheFailedRetry(): Promise<HTMLElement> {
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    const retry = await screen.findByRole("button", { name: /^Retry 1 failed$/ });
+    await userEvent.click(retry);
+    await screen.findByRole("button", { name: /yes, start it/i });
+    return retry;
+  }
+
+  function headingOf(card: HTMLElement): HTMLElement {
+    return within(card).getByRole("heading", { level: 3 });
+  }
+
+  it("takes Yes to the new acquisition's heading", async () => {
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs`, () =>
+        HttpResponse.json({ id: 14 }, { status: 202 }),
+      ),
+    );
+    await armTheFailedRetry();
+
+    await userEvent.click(screen.getByRole("button", { name: /yes, start it/i }));
+
+    const card = await screen.findByRole("region", { name: /acquisition 14/i });
+    await waitFor(() => expect(headingOf(card)).toHaveFocus());
+  });
+
+  it("takes Start to the new acquisition's heading", async () => {
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    await estimate();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /start this acquisition/i }),
+    );
+
+    const card = await screen.findByRole("region", { name: /acquisition 8/i });
+    await waitFor(() => expect(headingOf(card)).toHaveFocus());
+  });
+
+  it("takes Not yet back to the control that opened the strip", async () => {
+    const retry = await armTheFailedRetry();
+
+    await userEvent.click(screen.getByRole("button", { name: "Not yet" }));
+
+    expect(screen.queryByRole("button", { name: "Not yet" })).toBeNull();
+    expect(retry).toHaveFocus();
+  });
+
+  it("takes Not yet back to a selection's own Retry", async () => {
+    serveSourceNames({ oecd: "OECD" });
+    renderShell("/acquire");
+    const group = within(
+      await screen.findByRole("region", { name: /which sources broke/i }),
+    );
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
+    const retry = group.getByRole("button", { name: /^Retry 1 selected$/ });
+    await userEvent.click(retry);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Not yet" }));
+
+    expect(retry).toHaveFocus();
+  });
+
+  it("takes Stop to Refresh once Stop is withdrawn", async () => {
+    aRunWhoseStopIsHeld().release();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+
+    await userEvent.click(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+
+    await waitFor(() =>
+      expect(card.queryByRole("button", { name: /stop/i })).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(card.getByRole("button", { name: "Refresh" })).toHaveFocus(),
+    );
+  });
+
+  it("takes Dismiss to the gaps' heading", async () => {
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+
+    await userEvent.click(card.getByRole("button", { name: "Dismiss" }));
+
+    expect(
+      screen.getByRole("heading", { name: "What you can do about the gaps" }),
+    ).toHaveFocus();
+  });
+});

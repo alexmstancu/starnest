@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 /**
  * A button held while an act is in flight, never disabled (NEW-34, NEW-44).
@@ -17,7 +17,9 @@ export function HeldButton({
   className,
   onClick,
   children,
+  ref,
 }: {
+  ref?: Ref<HTMLButtonElement>;
   held: boolean;
   disabled?: boolean;
   className: string;
@@ -26,6 +28,7 @@ export function HeldButton({
 }) {
   return (
     <button
+      ref={ref}
       type="button"
       className={className}
       disabled={disabled}
