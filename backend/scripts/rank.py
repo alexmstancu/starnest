@@ -25,6 +25,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from starnest.api.rankings import TheRanking, the_ranking
 from starnest.data import ConfidenceLevel
+from starnest.evaluation import in_display_order
 from starnest.household import Settings
 from starnest.main import Environment
 from starnest.storage import (
@@ -79,7 +80,7 @@ def lines_of(ranking: TheRanking, settings: Settings) -> Iterator[str]:
     # so this column is the only place the difference shows.
     yield f"{'':4} {'candidate':28} {'score':>5} {'coverage':>9} {'of it, low':>11}  status"
     results = ranking.results
-    for result in sorted(results, key=lambda r: (r.rank is None, r.rank or 0)):
+    for result in in_display_order(results):
         rank = f"{result.rank}." if result.rank else "  "
         score = result.score if result.score is not None else "--"
         split = result.coverage_by_confidence

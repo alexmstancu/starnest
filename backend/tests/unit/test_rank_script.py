@@ -89,3 +89,18 @@ def test_nothing_unscored_prints_no_such_section(rank_script: ModuleType) -> Non
     lines = list(rank_script.lines_of(a_ranking(PORTUGAL), Settings()))
 
     assert not any("without a score" in line for line in lines)
+
+
+def test_it_prints_in_the_order_every_ranking_is_shown(rank_script: ModuleType) -> None:
+    """PL-066: the unranked by score, highest first -- not in the order they arrived."""
+    low = a_result("country.austria", score=3, match_status=MatchStatus.NOT_MATCHING)
+    high = a_result("country.cyprus", score=6, match_status=MatchStatus.NOT_MATCHING)
+
+    lines = list(rank_script.lines_of(a_ranking(GREECE, low, high, PORTUGAL), Settings()))
+
+    rows = [
+        next(token for token in line.split() if token.startswith("country."))
+        for line in lines
+        if "country." in line and ":" not in line
+    ]
+    assert rows == ["country.portugal", "country.cyprus", "country.austria", "country.greece"]

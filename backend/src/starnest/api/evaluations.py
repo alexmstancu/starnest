@@ -27,11 +27,10 @@ from starnest.api.rankings import (
     CandidateScoreDetailBody,
     RankingBody,
     _attribute_score_body,
-    _in_rank_order,
     _result_body,
     the_ranking,
 )
-from starnest.evaluation import SavedEvaluation, declared_weights
+from starnest.evaluation import SavedEvaluation, declared_weights, in_display_order
 
 router = APIRouter(tags=["evaluation"])
 
@@ -127,7 +126,10 @@ async def save_evaluation(
 async def get_evaluation(
     evaluation_id: int, evaluations: Evaluations, candidates: Candidates
 ) -> RankingBody:
-    """A kept ranking, in the order it was kept. Raises a 404 for an evaluation nobody kept."""
+    """A kept ranking, in the order every ranking is shown (`in_display_order`).
+
+    Raises a 404 for an evaluation nobody kept.
+    """
     saved = await evaluations.read_evaluation(evaluation_id)
     results = await evaluations.read_results(evaluation_id)
     names = {
@@ -139,7 +141,7 @@ async def get_evaluation(
         level=saved.level,
         computed_at=saved.computed_at,
         score_scale_max=saved.score_scale_max,
-        candidates=tuple(_result_body(result, names) for result in _in_rank_order(results)),
+        candidates=tuple(_result_body(result, names) for result in in_display_order(results)),
     )
 
 

@@ -23,7 +23,12 @@ from starnest.evaluation.magnitudes import (
     magnitude_of,
 )
 from starnest.evaluation.normalisation import NormalisationError, scores_for
-from starnest.evaluation.ranking import RankingError, declared_weights, rank_candidates
+from starnest.evaluation.ranking import (
+    RankingError,
+    declared_weights,
+    in_display_order,
+    rank_candidates,
+)
 from starnest.evaluation.results import AttributeScore, CandidateResult, MatchStatus
 from starnest.evaluation.rules import (
     NonMatch,
@@ -68,6 +73,7 @@ __all__ = [
     "declared_weights",
     "figure_of",
     "gates_that_rule_out",
+    "in_display_order",
     "is_scoreable",
     "judgements_of",
     "magnitude_of",

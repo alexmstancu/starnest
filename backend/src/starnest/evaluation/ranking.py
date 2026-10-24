@@ -803,3 +803,26 @@ def _ranked(results: Sequence[CandidateResult]) -> tuple[CandidateResult, ...]:
     return tuple(
         result.model_copy(update={"rank": ranks.get(str(result.candidate))}) for result in results
     )
+
+
+def in_display_order(results: Sequence[CandidateResult]) -> tuple[CandidateResult, ...]:
+    """Every ranking's order, live, saved or printed (PL-066).
+
+    The ranked candidates by rank; then every unranked one by score, highest first, those with
+    no score last; ties by candidate id. The same input in any order gives the same output, so a
+    live ranking and the saved one it was kept from read the same way. Unranked rows used to keep
+    whatever order they arrived in -- id order live, name order saved -- which put a non-matching
+    92 below a non-matching 40 for alphabetical reasons.
+    """
+    return tuple(
+        sorted(
+            results,
+            key=lambda result: (
+                result.rank is None,
+                result.rank or 0,
+                result.score is None,
+                -(result.score or 0),
+                str(result.candidate),
+            ),
+        )
+    )

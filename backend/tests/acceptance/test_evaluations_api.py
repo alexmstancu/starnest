@@ -318,3 +318,107 @@ class TestTheDrillDown:
         response = await api.get(f"/v1/evaluations/{kept['id']}/candidates/country.atlantis")
 
         assert response.status_code == 404
+
+
+class TestTheOrderARankingIsShownIn:
+    """PL-066: the unranked follow by score, live and saved alike."""
+
+    async def test_live_and_saved_agree_and_the_unranked_run_by_score(
+        self, api: httpx.AsyncClient, database_url: str, a_scratch_criteria_set: str
+    ) -> None:
+        """A threshold excludes three candidates with different scores, two of them tied.
+
+        *Mutation:* revert the key to `(rank is None, rank or 0)`, and the live order is id
+        order and the saved one name order.
+        """
+        await _store_overcrowding(
+            database_url,
+            {
+                "country.portugal": "5",
+                "country.spain": "6",
+                "country.greece": "20",
+                "country.italy": "25",
+                "country.france": "25",
+            },
+        )
+        threshold = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/country.overcrowding_rate",
+            json={"matching_threshold": {"max_value": 15}},
+        )
+        assert threshold.status_code == 200
+        kept = await api.post(
+            "/v1/evaluations", json={"criteria_set": a_scratch_criteria_set, "level": COUNTRY}
+        )
+        assert kept.status_code == 201
+
+        live = (
+            await api.get(
+                "/v1/rankings", params={"criteria_set": a_scratch_criteria_set, "level": COUNTRY}
+            )
+        ).json()["candidates"]
+        saved = (await api.get(f"/v1/evaluations/{kept.json()['id']}")).json()["candidates"]
+
+        order = [(c["candidate"], c["score"]) for c in live]
+        assert order == [(c["candidate"], c["score"]) for c in saved]
+        unranked = [c for c in live if c["rank"] is None]
+        assert [c["candidate"] for c in unranked[:3]] == [
+            "country.greece",
+            "country.france",
+            "country.italy",
+        ]
+        scored = [c["score"] for c in unranked if c["score"] is not None]
+        assert scored == sorted(scored, reverse=True)
+        assert unranked[0]["score"] > unranked[1]["score"] == unranked[2]["score"]
+        unscored = [c["candidate"] for c in unranked if c["score"] is None]
+        assert unscored == sorted(unscored)
+        assert all(c["score"] is None for c in unranked[len(scored) :])
+
+
+async def _store_overcrowding(database_url: str, figures: dict[str, str]) -> None:
+    """Every minimal attribute for each candidate, varying only overcrowding, scale 100."""
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    from psycopg_pool import AsyncConnectionPool
+
+    from starnest.data import ConfidenceLevel, Quantity, Ratio, ReferencePeriod, Value, ValueType
+    from starnest.storage import PostgresValueStore
+
+    last_year = date.today().year - 1
+    period = ReferencePeriod(start=date(last_year, 1, 1), end=date(last_year, 12, 31))
+
+    def a_figure(candidate: str, attribute: str, figure: str) -> Value:
+        satisfaction = attribute == "country.life_satisfaction"
+        return Value(
+            candidate=candidate,
+            attribute=attribute,
+            value_type=ValueType.QUANTITY if satisfaction else ValueType.RATIO,
+            data_source="eurostat",
+            reference_period=period,
+            retrieval_date=datetime.now(UTC),
+            confidence_level=ConfidenceLevel.HIGH,
+            payload=(
+                Quantity(magnitude=Decimal(figure), unit="ladder_points")
+                if satisfaction
+                else Ratio(value=Decimal(figure), basis="households")
+            ),
+        )
+
+    async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+        await pool.open(wait=True)
+        async with pool.connection() as connection:
+            await connection.execute(
+                "INSERT INTO settings (id, score_scale_max) VALUES (1, 100)"
+                " ON CONFLICT (id) DO UPDATE SET score_scale_max = 100"
+            )
+        await PostgresValueStore(pool).append(
+            [
+                figure
+                for candidate, overcrowding in figures.items()
+                for figure in (
+                    a_figure(candidate, "country.overcrowding_rate", overcrowding),
+                    a_figure(candidate, "country.housing_cost_overburden_rate", "10"),
+                    a_figure(candidate, "country.life_satisfaction", "7"),
+                )
+            ]
+        )

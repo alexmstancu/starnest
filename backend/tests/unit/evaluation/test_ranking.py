@@ -12,6 +12,7 @@ of the result whatever its status.
 weighting doing what it is for, rather than a shape invented for these tests.
 """
 
+import itertools
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -38,7 +39,14 @@ from starnest.data import (
     RuleOutcome,
     ValueType,
 )
-from starnest.evaluation import MatchStatus, RankingError, declared_weights, rank_candidates
+from starnest.evaluation import (
+    CandidateResult,
+    MatchStatus,
+    RankingError,
+    declared_weights,
+    in_display_order,
+    rank_candidates,
+)
 
 from .builders import (
     A_CANDIDATE,
@@ -1383,3 +1391,63 @@ class TestAPillarThatNothingScoresInto:
         found = by_candidate(rank(two_pillars(), three_countries_one_missing_its_rent()))
 
         assert found["country.portugal"].score is not None
+
+
+class TestTheDisplayOrder:
+    """PL-066: one order for every ranking, live, saved or printed."""
+
+    @staticmethod
+    def a_row(candidate: str, *, rank=None, score=None):
+        return CandidateResult(
+            candidate=candidate,
+            rank=rank,
+            score=score,
+            coverage=Decimal(100 if score is not None else 0),
+            match_status=(
+                MatchStatus.MATCHING
+                if rank is not None
+                else MatchStatus.NOT_MATCHING
+                if score is not None
+                else MatchStatus.INSUFFICIENT_DATA
+            ),
+            insufficient_reason=None if score is not None else "nothing stored",
+        )
+
+    def rows(self):
+        return (
+            self.a_row("country.spain", rank=1, score=9),
+            self.a_row("country.portugal", rank=2, score=7),
+            self.a_row("country.italy", rank=2, score=7),
+            self.a_row("country.greece", score=8),
+            self.a_row("country.france", score=4),
+            self.a_row("country.austria", score=4),
+            self.a_row("country.malta"),
+            self.a_row("country.cyprus"),
+        )
+
+    EXPECTED = (
+        "country.spain",
+        "country.italy",
+        "country.portugal",
+        "country.greece",
+        "country.austria",
+        "country.france",
+        "country.cyprus",
+        "country.malta",
+    )
+
+    def test_ranked_by_rank_then_unranked_by_score_none_last_ties_by_id(self) -> None:
+        ordered = in_display_order(self.rows())
+
+        assert tuple(str(row.candidate) for row in ordered) == self.EXPECTED
+
+    def test_every_permutation_gives_the_same_order(self) -> None:
+        orders = {
+            tuple(str(row.candidate) for row in in_display_order(permutation))
+            for permutation in itertools.permutations(self.rows()[2:7])
+        }
+
+        assert len(orders) == 1
+
+    def test_nothing_in_gives_nothing_out(self) -> None:
+        assert in_display_order(()) == ()

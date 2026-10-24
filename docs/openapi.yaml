@@ -2061,7 +2061,13 @@ components:
             every score, pillar score and difference against this, never against the current
             setting, which may have changed since. Anchored criteria do not rescale when the
             range changes: an anchor's score is the number it was given.
-        candidates: { type: array, items: { $ref: "#/components/schemas/CandidateResult" } }
+        candidates:
+          type: array
+          description: >-
+            In display order: the ranked candidates by rank, then every unranked candidate by
+            score, highest first, those with no score last; ties by candidate id. The same order
+            for a live and a saved ranking.
+          items: { $ref: "#/components/schemas/CandidateResult" }
 
     EvaluationSummary:
       type: object

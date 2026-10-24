@@ -35,6 +35,7 @@ from starnest.evaluation import (
     AttributeScore,
     CandidateResult,
     declared_weights,
+    in_display_order,
     rank_candidates,
 )
 from starnest.evaluation.wording import Names, readable_identifier, unit_words
@@ -269,7 +270,9 @@ async def get_ranking(
         level=level,
         computed_at=datetime.now(UTC),
         score_scale_max=ranking.score_scale_max,
-        candidates=tuple(_result_body(result, names) for result in _in_rank_order(ranking.results)),
+        candidates=tuple(
+            _result_body(result, names) for result in in_display_order(ranking.results)
+        ),
     )
 
 
@@ -358,16 +361,6 @@ def names_in(attributes: Sequence[Attribute], gates: Sequence[MatchRule]) -> Nam
         units=units,
         gates={str(gate.id): gate.name for gate in gates},
     )
-
-
-def _in_rank_order(results: tuple[CandidateResult, ...]) -> tuple[CandidateResult, ...]:
-    """Ranked candidates first in rank order, then the unscored.
-
-    So a response read straight through is already the dashboard's order, and the unscoreable
-    ones sit together at the bottom rather than being scattered by an ordering that has no
-    opinion about them.
-    """
-    return tuple(sorted(results, key=lambda result: (result.rank is None, result.rank or 0)))
 
 
 async def _home_country(households: Households) -> str | None:
