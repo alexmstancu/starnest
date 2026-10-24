@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -62,6 +62,36 @@ async function cell(candidate: string, column: string): Promise<HTMLElement> {
     `row for ${candidate} has no cell under "${column}"`,
   ).toBeDefined();
   return found!;
+}
+
+/** A candidate's name, which is the toggle a keyboard reaches for its row. */
+async function toggleOf(name: string): Promise<HTMLElement> {
+  return within(await rankingRow(name)).getByRole("button", { name });
+}
+
+/**
+ * Portugal's bars, left to right as the fixture draws them: Economy and Safety scored, Family
+ * hatched for want of a score. Found by what each says, because the name is a button too.
+ */
+async function portugalBars(): Promise<{
+  economy: HTMLElement;
+  safety: HTMLElement;
+  family: HTMLElement;
+}> {
+  const row = await rankingRow("Portugal");
+  const bar = (name: RegExp) => within(row).findByRole("button", { name });
+  return {
+    economy: await bar(/^Economy:/),
+    safety: await bar(/^Safety:/),
+    family: await bar(/^Family:/),
+  };
+}
+
+/** Puts the keyboard on Portugal's name, the stop just before its chart. */
+async function focusPortugal(): Promise<HTMLElement> {
+  const toggle = await toggleOf("Portugal");
+  act(() => toggle.focus());
+  return toggle;
 }
 
 describe("the ranking table", () => {
@@ -410,6 +440,99 @@ describe("choosing a pillar, from either half", () => {
   });
 });
 
+/**
+ * PL-076 (UF-120). Every bar was its own tab stop, so crossing 32 rows took about 350 presses of
+ * Tab. A chart is one stop now, as a toolbar is: Tab reaches it once and the arrow keys move
+ * along it.
+ */
+describe("a row's pillar chart, from the keyboard", () => {
+  it("is one tab stop, not one per bar", async () => {
+    renderShell("/rank");
+    const { economy } = await portugalBars();
+    await focusPortugal();
+
+    await userEvent.tab();
+    expect(economy).toHaveFocus();
+
+    await userEvent.tab();
+    expect(await toggleOf("Netherlands")).toHaveFocus();
+  });
+
+  it("moves between its bars with the arrow keys", async () => {
+    renderShell("/rank");
+    const { economy, safety, family } = await portugalBars();
+    await focusPortugal();
+    await userEvent.tab();
+
+    await userEvent.keyboard("{ArrowRight}");
+    expect(safety).toHaveFocus();
+    await userEvent.keyboard("{End}");
+    expect(family).toHaveFocus();
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(safety).toHaveFocus();
+    await userEvent.keyboard("{Home}");
+    expect(economy).toHaveFocus();
+  });
+
+  /**
+   * **The bar the keyboard is on is the chart's stop.** Leave the first bar as the stop while
+   * the keyboard stands on the second, and Shift+Tab walks back into the chart rather than out
+   * of it -- the browser looks for the stop before the focused bar, and finds the first one.
+   */
+  it("is left in one step from whichever bar the keyboard is on", async () => {
+    renderShell("/rank");
+    const { safety } = await portugalBars();
+    const toggle = await focusPortugal();
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(safety).toHaveFocus();
+
+    await userEvent.tab({ shift: true });
+
+    expect(toggle).toHaveFocus();
+  });
+
+  /** The chosen bar is the one marked, so it is the one Tab comes back to, as in a radio group. */
+  it("is entered at the chosen pillar", async () => {
+    renderShell("/rank");
+    const { economy, safety } = await portugalBars();
+    await focusPortugal();
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowRight}{Enter}");
+    await waitFor(() => expect(safety).toHaveAttribute("aria-pressed", "true"));
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(economy).toHaveFocus();
+
+    await userEvent.tab({ shift: true });
+    await userEvent.tab();
+
+    expect(safety).toHaveFocus();
+  });
+
+  /**
+   * The ranking card scrolls sideways, and an arrow that moves along the chart must not also
+   * move the card. A key the chart does not use is left alone, so Down still scrolls.
+   */
+  it("claims the arrow keys it uses from the scrolling card, and no others", async () => {
+    renderShell("/rank");
+    const { economy } = await portugalBars();
+
+    // `fireEvent` answers false when a handler prevented the browser's own action.
+    expect(fireEvent.keyDown(economy, { key: "ArrowRight" })).toBe(false);
+    expect(fireEvent.keyDown(economy, { key: "ArrowDown" })).toBe(true);
+  });
+
+  it("is announced as that candidate's pillars", async () => {
+    renderShell("/rank");
+
+    const chart = await screen.findByRole("toolbar", {
+      name: "Pillar scores for Portugal",
+    });
+
+    expect(within(chart).getAllByRole("button")).toHaveLength(3);
+  });
+});
+
 describe("the drill-down", () => {
   it("shows every stored value for a candidate, the superseded ones included", async () => {
     renderShell("/rank");
@@ -581,6 +704,24 @@ describe("the drill-down", () => {
     expect(
       screen.getByRole("heading", { name: /Netherlands: every value/i }),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * PL-076 (UF-120). The name opens and closes the row, and a screen reader heard only "button"
+   * -- nothing said which rows were open, and several can be.
+   */
+  it("says on each name whether its row is open", async () => {
+    renderShell("/rank");
+    expect(await toggleOf("Portugal")).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(await toggleOf("Portugal"));
+    await userEvent.click(await toggleOf("Netherlands"));
+    expect(await toggleOf("Portugal")).toHaveAttribute("aria-expanded", "true");
+    expect(await toggleOf("Netherlands")).toHaveAttribute("aria-expanded", "true");
+
+    await userEvent.click(await toggleOf("Portugal"));
+    expect(await toggleOf("Portugal")).toHaveAttribute("aria-expanded", "false");
+    expect(await toggleOf("Netherlands")).toHaveAttribute("aria-expanded", "true");
   });
 
   /**

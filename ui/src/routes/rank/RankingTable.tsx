@@ -1,4 +1,4 @@
-import { Fragment, useId, type ReactNode } from "react";
+import { Fragment, useId, useRef, useState, type ReactNode } from "react";
 import { type CandidateResult, type Ranking } from "../../api/endpoints";
 import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
 import {
@@ -25,6 +25,7 @@ import {
   pillarBars,
 } from "./rankTable";
 import { type OpenCandidate, type OpenRow, chosenPillarOf, isOpen } from "./openRows";
+import { barReachedBy, tabStopOf } from "./pillarChartFocus";
 
 /**
  * The ranking table, and every cell in it.
@@ -280,6 +281,9 @@ function CandidateRow({
   const toggle = onToggle ? () => onToggle(row) : undefined;
 
   const classes = ["table__row"];
+  // **Only a row that opens is marked as one** (PL-076): a saved ranking's rows open nothing,
+  // so the pointer and the hover tint a row offers belong on this class, not on every row.
+  if (toggle) classes.push("table__row--toggle");
   if (!matching) classes.push("table__row--not-matching");
   if (open) classes.push("table__row--open");
 
@@ -327,7 +331,7 @@ function CandidateRow({
             path are the same path. Giving the button its own handler toggled the row twice
             and left it exactly as it was. */}
         {toggle ? (
-          <button type="button" className="name-cell__toggle">
+          <button type="button" className="name-cell__toggle" aria-expanded={open}>
             {result.name}
           </button>
         ) : (
@@ -349,6 +353,7 @@ function CandidateRow({
       <td className="col--pillars">
         <PillarChart
           names={names}
+          candidate={result.name}
           pillars={result.pillar_scores}
           chosen={chosenPillar}
           onChoose={
@@ -418,14 +423,20 @@ function CandidateRow({
  * `styles.css` is where design lives -- the lint rule says so. An SVG carries a number in a
  * geometry attribute and a colour in `fill`, so nothing here is an inline style, and the
  * reader still gets the figure as well as the shape.
+ *
+ * **Selectable, it is a toolbar** (PL-076): one tab stop for the whole chart, the arrow keys
+ * moving along the bars and Enter or Space choosing one -- `pillarChartFocus.ts` says where.
  */
 function PillarChart({
   names,
+  candidate,
   pillars,
   chosen = null,
   onChoose,
 }: {
   names: PillarNames;
+  /** The candidate's name, which is what a selectable chart is announced as. */
+  candidate: string;
   pillars?: readonly PillarScore[] | null;
   /** The pillar whose values the panel below is filtered to, drawn as the chosen bar. */
   chosen?: string | null;
@@ -439,7 +450,12 @@ function PillarChart({
 }) {
   const bars = pillarBars(pillars, (pillar) => pillarName(names, pillar));
   const hatch = useId();
+  // The bar the keyboard is on while it is inside the chart, and null once it has left.
+  const [focused, setFocused] = useState<string | null>(null);
+  const slots = useRef<(SVGGElement | null)[]>([]);
   if (bars.length === 0) return null;
+
+  const stop = tabStopOf(bars.map((bar) => bar.pillar), focused, chosen);
 
   return (
     <svg
@@ -447,6 +463,16 @@ function PillarChart({
       viewBox={`0 0 ${PILLAR_CHART.width} ${PILLAR_CHART.height}`}
       width={PILLAR_CHART.width}
       height={PILLAR_CHART.height}
+      role={onChoose ? "toolbar" : undefined}
+      aria-label={onChoose ? `Pillar scores for ${candidate}` : undefined}
+      onBlur={
+        onChoose &&
+        ((event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            setFocused(null);
+          }
+        })
+      }
     >
       <defs>
         {/* One hatch for the whole chart, and one ramp per bar. The ids are scoped by
@@ -481,15 +507,20 @@ function PillarChart({
       {bars.map((bar, index) => (
         <g
           key={bar.pillar}
+          ref={(slot) => {
+            slots.current[index] = slot;
+          }}
           className={
             chosen === bar.pillar
               ? "pillar-chart__slot pillar-chart__slot--chosen"
               : "pillar-chart__slot"
           }
           role={onChoose ? "button" : undefined}
-          tabIndex={onChoose ? 0 : undefined}
+          // **One stop per chart** (PL-076): Tab reaches one bar, and the arrows move along.
+          tabIndex={onChoose ? (bar.pillar === stop ? 0 : -1) : undefined}
           aria-pressed={onChoose ? chosen === bar.pillar : undefined}
           aria-label={onChoose ? bar.title : undefined}
+          onFocus={onChoose && (() => setFocused(bar.pillar))}
           onClick={
             onChoose &&
             ((event) => {
@@ -503,6 +534,14 @@ function PillarChart({
           onKeyDown={
             onChoose &&
             ((event) => {
+              const reached = barReachedBy(event.key, index, bars.length);
+              if (reached !== null) {
+                // The ranking card scrolls sideways, and an arrow that moves along the chart
+                // must not move the card as well.
+                event.preventDefault();
+                slots.current[reached]?.focus();
+                return;
+              }
               if (event.key !== "Enter" && event.key !== " ") return;
               // Space scrolls the page otherwise, and a `g` is not a button to the browser.
               event.preventDefault();

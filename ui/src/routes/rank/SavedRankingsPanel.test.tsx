@@ -59,6 +59,15 @@ async function saveOne(note?: string) {
   await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
 }
 
+/** Portugal's row in one ranking table, found by its rowheader. */
+function portugalIn(table: HTMLElement): HTMLElement {
+  const heading = within(table)
+    .getAllByRole("rowheader")
+    .find((cell) => cell.textContent?.trim() === "Portugal");
+  expect(heading, "no row for Portugal").toBeDefined();
+  return heading!.closest("tr")!;
+}
+
 describe("saved rankings", () => {
   it("says nothing is saved yet, and why", async () => {
     renderShell("/rank");
@@ -138,6 +147,31 @@ describe("saved rankings", () => {
       await opened.findByRole("table", { name: /ranked candidates/i }),
     );
     expect(frozen.queryByRole("button")).toBeNull();
+  });
+
+  /**
+   * PL-076 (UF-120). A saved row opens nothing, yet the stylesheet gives every row of the table
+   * the pointer and the hover tint. The class marks a row that opens, so it is what those two
+   * have to be keyed on.
+   */
+  it("marks only a live row as one that opens", async () => {
+    renderShell("/rank");
+    await saveOne();
+    const list = within(await savedList());
+    await list.findByText(/default, country/i);
+    await userEvent.click(list.getAllByRole("link")[0]!);
+
+    const opened = await screen.findByRole("region", { name: /a saved ranking/i });
+    const frozen = await within(opened).findByRole("table", {
+      name: /ranked candidates/i,
+    });
+    const live = screen
+      .getAllByRole("table", { name: /ranked candidates/i })
+      .find((table) => !opened.contains(table))!;
+
+    expect(portugalIn(live)).toHaveClass("table__row--toggle");
+    expect(portugalIn(frozen)).not.toHaveClass("table__row--toggle");
+    expect(within(frozen).queryByRole("toolbar")).toBeNull();
   });
 
   it("closes a saved ranking that was open", async () => {
