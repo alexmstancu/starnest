@@ -525,8 +525,10 @@ a:hover {
 }
 
 /* A row lifts under the pointer. The table is the screen's subject and every row is a link to
-   its own evidence, so it has to look reachable. */
-.table tbody tr:hover {
+   its own evidence, so it has to look reachable. The ranking is left out: its rows decide their
+   own hover, because a saved ranking's rows open nothing, and this rule (two classes deep) would
+   out-rank the row's base and tint them anyway (PL-075). */
+.table:not(.table--ranking) tbody tr:hover {
   background: var(--colour-surface-raised);
 }
 

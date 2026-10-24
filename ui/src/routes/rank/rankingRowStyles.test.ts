@@ -112,4 +112,26 @@ describe("a ranking row's state", () => {
       ),
     ).toBe(true);
   });
+
+  /**
+   * PL-075 follow-up. `.table tbody tr:hover` is two classes and two elements, so it out-ranks
+   * the row's base and tinted every saved row the pointer crossed. A hover tint written for
+   * every table must leave the ranking out, so that only the ranking's own rules decide.
+   */
+  it("leaves the ranking's rows out of every other table's hover tint", () => {
+    const genericHovers = stylesheetRules()
+      .filter(
+        (rule) =>
+          /\btr:hover\b/.test(rule.selector) &&
+          rule.declarations.has("background") &&
+          !rule.selector.startsWith(ROW),
+      )
+      .map((rule) => rule.selector);
+    expect(genericHovers.length).toBeGreaterThan(0);
+
+    const reachingTheRanking = genericHovers.filter(
+      (selector) => !selector.includes(":not(.table--ranking)"),
+    );
+    expect(reachingTheRanking).toEqual([]);
+  });
 });

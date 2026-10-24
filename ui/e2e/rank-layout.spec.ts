@@ -5,135 +5,217 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  *
  * **Only a browser can see this.** The state classes were on the rows and the rules were in the
  * sheet, and the row's own base rule out-ranked them, so an open row and a ruled-out row both
- * drew on plain white. The static guard in `rankingRowStyles.test.ts` reads the cause; this
- * reads the effect, as computed backgrounds, with the pointer away so no hover tint stands in.
+ * drew on plain white -- and the sheet's generic `.table tbody tr:hover` out-ranked the base in
+ * turn, tinting a saved row that opens nothing. The static guard in `rankingRowStyles.test.ts`
+ * reads the causes; this reads the effects, as computed backgrounds.
  *
- * **A non-match is arranged, then put back**, as Gate C does: nothing is `not_matching` until
- * a gate is enforced and answered. The set is this spec's own copy, so the enforcement reaches
- * no other spec.
+ * **What is covered**, at each width: an open row's ground with the pointer away and with the
+ * pointer on it, and a not-matching row's ground. Once, at the design's width: a saved
+ * matching row keeps the plain ground under the pointer. Not covered: a live closed row's hover
+ * tint, which `rankingRowStyles.test.ts` holds as a rule rather than as a pixel.
+ *
+ * **Every spec in one `make e2e` shares one database copy**, so this spec writes nothing another
+ * spec reads. A non-match is arranged by a matching threshold **on this spec's own copy of the
+ * set**, never by a gate answer: an answer is held per candidate for every set at once, and the
+ * contract has no delete for one, so an answer that was absent could never be put back as
+ * absent. The copy is deleted afterwards, in `finally`, and the delete is checked.
+ *
+ * **One thing is left behind, by design**: the saved ranking. The contract has no delete for a
+ * saved evaluation, so it is saved from the shipped set (never this spec's copy, which it would
+ * then hold by foreign key and make undeletable) and carries the marker the boot sweep discards.
  */
 
 const LAYOUT_SET = "e2e_rank_layout";
 const SHIPPED_SOURCE = "minimal";
-const THE_GATE = "not_manually_excluded";
-const THE_EXCLUDED_ONE = { id: "country.greece", name: "Greece" };
-const THE_OPENED_ONE = "Poland";
+const LEVEL = "country";
+/** A `Ratio` every country but a few answers, and one the shipped `minimal` set scores. */
+const THE_THRESHOLD_ATTRIBUTE = "country.housing_cost_overburden_rate";
+/** `TEST_EVALUATION_MARKER` in `backend/src/starnest/storage/evaluation_store.py`. */
+const TEST_EVALUATION_MARKER = "[e2e] ";
 
-/** `--colour-accent-surface` and `--colour-surface-raised`, as the browser computes them. */
+/** `--colour-accent-surface`, `--colour-surface-raised` and `--colour-surface`, computed. */
 const OPEN_GROUND = "rgb(240, 253, 250)";
 const NOT_MATCHING_GROUND = "rgb(252, 252, 253)";
+const PLAIN_GROUND = "rgb(255, 255, 255)";
 
 /** 1280 is the narrowest the interface supports; 1560 is the design's own width. */
 const WIDTHS = [1920, 1560, 1440, 1280] as const;
 
-interface GateAnswer {
-  match_result: "matching" | "not_matching";
-  reason: string | null;
+interface Arranged {
+  /** The candidate the threshold rules out, by name. */
+  excluded: string;
+  /** A candidate that still matches, to open. */
+  opened: string;
+  savedEvaluation: number;
+  /** A candidate that matches in the saved ranking. */
+  savedMatching: string;
 }
 
-// `undefined` until the read succeeds, so a read that failed restores nothing (NEW-32).
-let priorAnswer: GateAnswer | null | undefined;
+interface RankedCandidate {
+  candidate: string;
+  name: string;
+  match_status: "matching" | "not_matching" | "insufficient_data";
+}
+
+let arranged: Arranged | undefined;
 
 test.beforeAll(async ({ playwright }, testInfo) => {
   const api = await playwright.request.newContext({
     baseURL: testInfo.project.use.baseURL,
   });
-  await api.delete(`/v1/criteria-sets/${LAYOUT_SET}`);
-  const made = await api.post(`/v1/criteria-sets/${SHIPPED_SOURCE}/duplicate`, {
-    data: { id: LAYOUT_SET, name: LAYOUT_SET },
-  });
-  const already = made.status() === 409 && (await made.text()).includes("criteria_set_exists");
-  expect(made.ok() || already, await made.text()).toBe(true);
+  try {
+    await api.delete(`/v1/criteria-sets/${LAYOUT_SET}`);
+    const made = await api.post(`/v1/criteria-sets/${SHIPPED_SOURCE}/duplicate`, {
+      data: { id: LAYOUT_SET, name: LAYOUT_SET },
+    });
+    const already = made.status() === 409 && (await made.text()).includes("criteria_set_exists");
+    expect(made.ok() || already, await made.text()).toBe(true);
 
-  priorAnswer = await readTheGateAnswer(api);
-  await answerTheGate(api, "not_matching", "Rank layout: recorded by the browser suite");
-  await enforceTheGate(api, true);
-  await api.dispose();
+    const excludedId = await ruleOutTheHighest(api);
+    const live = await rankingOf(api, `/v1/rankings?criteria_set=${LAYOUT_SET}&level=${LEVEL}`);
+    const excluded = live.find((entry) => entry.candidate === excludedId);
+    expect(excluded?.match_status).toBe("not_matching");
+    const opened = live.find((entry) => entry.match_status === "matching");
+    expect(opened).toBeDefined();
+
+    const saved = await api.post("/v1/evaluations", {
+      data: {
+        criteria_set: SHIPPED_SOURCE,
+        level: LEVEL,
+        note: `${TEST_EVALUATION_MARKER}rank layout ${Date.now()}`,
+      },
+    });
+    expect(saved.status(), await saved.text()).toBe(201);
+    const savedEvaluation = ((await saved.json()) as { id: number }).id;
+    const savedMatching = (await rankingOf(api, `/v1/evaluations/${savedEvaluation}`)).find(
+      (entry) => entry.match_status === "matching",
+    );
+    expect(savedMatching).toBeDefined();
+
+    arranged = {
+      excluded: excluded?.name ?? "",
+      opened: opened?.name ?? "",
+      savedEvaluation,
+      savedMatching: savedMatching?.name ?? "",
+    };
+  } finally {
+    await api.dispose();
+  }
 });
 
 test.afterAll(async ({ playwright }, testInfo) => {
   const api = await playwright.request.newContext({
     baseURL: testInfo.project.use.baseURL,
   });
-  // There is no delete for a gate answer, so one that was absent becomes the benign default.
-  if (priorAnswer !== undefined) {
-    await answerTheGate(
-      api,
-      priorAnswer?.match_result ?? "matching",
-      priorAnswer?.reason ?? null,
-    );
+  try {
+    // The threshold lives in the copy, so deleting the copy takes it too.
+    const deleted = await api.delete(`/v1/criteria-sets/${LAYOUT_SET}`);
+    expect(deleted.ok() || deleted.status() === 404, await deleted.text()).toBe(true);
+  } finally {
+    await api.dispose();
   }
-  await enforceTheGate(api, false);
-  await api.delete(`/v1/criteria-sets/${LAYOUT_SET}`);
-  await api.dispose();
 });
 
 for (const width of WIDTHS) {
   test(`an open row and a not-matching row show their grounds at ${width}px`, async ({
     page,
   }) => {
+    const { opened, excluded } = theArrangement();
     await page.setViewportSize({ width, height: 900 });
-    await openTheRanking(page);
+    await openTheRanking(page, opened);
 
-    await rowOf(page, THE_OPENED_ONE)
-      .getByRole("button", { name: THE_OPENED_ONE, exact: true })
-      .click();
+    const openedRow = liveRowOf(page, opened);
+    await openedRow.getByRole("button", { name: opened, exact: true }).click();
     await expect(
-      rowOf(page, THE_OPENED_ONE).getByRole("button", { name: THE_OPENED_ONE, exact: true }),
+      openedRow.getByRole("button", { name: opened, exact: true }),
     ).toHaveAttribute("aria-expanded", "true");
+
+    // The pointer is on it after the click: the hover tint must not take the ground back.
+    await openedRow.hover();
+    await expect(openedRow).toHaveCSS("background-color", OPEN_GROUND);
+
     // The pointer away, so the ground read is the state's and not the hover tint's.
     await page.mouse.move(0, 0);
-
-    await expect(rowOf(page, THE_OPENED_ONE)).toHaveCSS("background-color", OPEN_GROUND);
-    const excluded = rowOf(page, THE_EXCLUDED_ONE.name);
-    await expect(excluded).toContainText("Not matching");
-    await expect(excluded).toHaveCSS("background-color", NOT_MATCHING_GROUND);
+    await expect(openedRow).toHaveCSS("background-color", OPEN_GROUND);
+    const excludedRow = liveRowOf(page, excluded);
+    await expect(excludedRow).toContainText("Not matching");
+    await expect(excludedRow).toHaveCSS("background-color", NOT_MATCHING_GROUND);
   });
 }
 
-async function openTheRanking(page: Page): Promise<void> {
+test("a saved row opens nothing, so it takes no hover tint", async ({ page }) => {
+  const { savedEvaluation, savedMatching } = theArrangement();
+  await page.setViewportSize({ width: 1560, height: 900 });
+  await page.goto(`/rank?saved=${savedEvaluation}`);
+  const savedTable = page
+    .getByRole("region", { name: "A saved ranking" })
+    .getByRole("table", { name: "Ranked candidates" });
+  await expect(savedTable).toBeVisible();
+
+  const row = savedTable
+    .getByRole("row")
+    .filter({ hasText: new RegExp(`\\b${savedMatching}\\b`) })
+    .first();
+  await expect(row).not.toContainText("Not matching");
+  await page.mouse.move(0, 0);
+  await expect(row).toHaveCSS("background-color", PLAIN_GROUND);
+
+  await row.hover();
+  await expect(row).toHaveCSS("background-color", PLAIN_GROUND);
+});
+
+function theArrangement(): Arranged {
+  if (arranged === undefined) throw new Error("beforeAll arranged nothing");
+  return arranged;
+}
+
+async function openTheRanking(page: Page, aCandidate: string): Promise<void> {
   await page.goto("/rank");
   await page.getByLabel("Active criteria set").selectOption(LAYOUT_SET);
   await expect(page.getByRole("table", { name: "Ranked candidates" })).toBeVisible();
-  await expect(rowOf(page, THE_OPENED_ONE)).toBeVisible();
+  await expect(liveRowOf(page, aCandidate)).toBeVisible();
 }
 
 /** A candidate's own row: the one holding its toggle, not the evidence row under it. */
-function rowOf(page: Page, name: string) {
+function liveRowOf(page: Page, name: string) {
   return page
     .getByRole("table", { name: "Ranked candidates" })
     .getByRole("row")
     .filter({ has: page.getByRole("button", { name, exact: true }) });
 }
 
-async function readTheGateAnswer(request: APIRequestContext): Promise<GateAnswer | null> {
-  const response = await request.get(`/v1/match-rule-results?candidate=${THE_EXCLUDED_ONE.id}`);
-  expect(response.ok()).toBe(true);
+/**
+ * Sets a ceiling on this spec's copy just under the highest figure stored, so the candidate
+ * holding it -- and only candidates level with it -- stop matching. Read from the data rather
+ * than written as a number, because the copy is of whatever backup the run restored.
+ */
+async function ruleOutTheHighest(request: APIRequestContext): Promise<string> {
+  const response = await request.get(
+    `/v1/values?attribute=${THE_THRESHOLD_ATTRIBUTE}&limit=1000`,
+  );
+  expect(response.ok(), await response.text()).toBe(true);
   const body = (await response.json()) as {
-    items: { match_rule: string; match_result: string; reason: string | null }[];
+    items: { candidate: string; is_active: boolean; payload: { value?: unknown } }[];
   };
-  const found = body.items.find((item) => item.match_rule === THE_GATE);
-  return found
-    ? { match_result: found.match_result as GateAnswer["match_result"], reason: found.reason }
-    : null;
+  const figures = body.items
+    .filter((item) => item.is_active && typeof item.payload.value === "number")
+    .map((item) => ({ candidate: item.candidate, value: item.payload.value as number }))
+    .sort((left, right) => right.value - left.value);
+  const [highest] = figures;
+  const below = figures.find((figure) => figure.value < (highest?.value ?? 0));
+  expect(highest && below, "two different figures to put a ceiling between").toBeTruthy();
+  const ceiling = ((highest?.value ?? 0) + (below?.value ?? 0)) / 2;
+
+  const patched = await request.patch(
+    `/v1/criteria-sets/${LAYOUT_SET}/criteria/${THE_THRESHOLD_ATTRIBUTE}`,
+    { data: { matching_threshold: { min_value: null, max_value: ceiling } } },
+  );
+  expect(patched.ok(), await patched.text()).toBe(true);
+  return highest?.candidate ?? "";
 }
 
-async function answerTheGate(
-  request: APIRequestContext,
-  result: GateAnswer["match_result"],
-  reason: string | null,
-): Promise<void> {
-  const response = await request.put(
-    `/v1/match-rule-results/${THE_GATE}/${THE_EXCLUDED_ONE.id}`,
-    { data: { match_result: result, reason } },
-  );
-  expect(response.ok()).toBe(true);
-}
-
-async function enforceTheGate(request: APIRequestContext, enforced: boolean): Promise<void> {
-  const response = await request.put(
-    `/v1/criteria-sets/${LAYOUT_SET}/match-rules/${THE_GATE}`,
-    { data: { is_enforced: enforced } },
-  );
-  expect(response.ok()).toBe(true);
+async function rankingOf(request: APIRequestContext, path: string): Promise<RankedCandidate[]> {
+  const response = await request.get(path);
+  expect(response.ok(), await response.text()).toBe(true);
+  return ((await response.json()) as { candidates: RankedCandidate[] }).candidates;
 }
