@@ -17,6 +17,10 @@ GENERATED_HEADER = """# GENERATED -- do not edit. Run `make openapi`.
 # between the two files is the work remaining.
 """
 
+CONTRACT_TITLE = "Relocation decision-support API"
+"""The generated contract's title, the one `openapi.yaml` carries: a document about the API names
+the API, not the product, so renaming the product changes neither contract (PL-023)."""
+
 
 def served_schema() -> dict:
     """The OpenAPI document FastAPI builds from the routes, with no stores behind it.
@@ -34,6 +38,7 @@ def served_schema() -> dict:
         run_store=None,  # type: ignore[arg-type]
         match_rule_results=None,  # type: ignore[arg-type]
         evaluation_store=None,  # type: ignore[arg-type]
+        display_name=CONTRACT_TITLE,
     ).openapi()
 
 

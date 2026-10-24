@@ -70,12 +70,12 @@ def build_app(
     evaluation_store: EvaluationStore,
     adapters: tuple[SourceAdapter, ...] = (),
     researcher: GateResearcher | None = None,
-    display_name: str = "Starnest",
+    display_name: str,
 ) -> FastAPI:
     """One application, wired to the stores it was given.
 
-    `display_name` is the only place the product name appears as a value, and it is a value
-    rather than an identifier (`CLAUDE.md`): renaming the product is a change to one string.
+    `display_name` is required, with no default: the product name is a value in exactly one
+    place, `APP_DISPLAY_NAME` (`CLAUDE.md`), and a default here would be a second (PL-023).
     """
     app = FastAPI(
         title=display_name,

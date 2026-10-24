@@ -81,7 +81,7 @@ export function App() {
 /**
  * The browser tab carries the configured display name, never a compiled-in one. Setting it
  * here rather than in `index.html` is what makes renaming the product a change to
- * `config.json` alone.
+ * `config.json` alone -- which the containers write from `APP_DISPLAY_NAME` when they start.
  */
 function DocumentTitle() {
   const { displayName } = useAppConfig();

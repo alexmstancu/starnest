@@ -36,7 +36,7 @@ override unquoted = $(if $(filter "%",$(1)),$(patsubst "%",%,$(1)),$(patsubst '%
 # before any recipe runs. `$(origin)` answers in two words, so they are joined before matching:
 # a filter on the words alone would refuse a plain "environment" too.
 COMPOSE_VARS := POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD DATABASE_PORT BACKEND_PORT UI_PORT \
-                SCHEMA_DIAGRAM_PORT
+                SCHEMA_DIAGRAM_PORT APP_DISPLAY_NAME
 empty :=
 space := $(empty) $(empty)
 origin_of = $(subst $(space),_,$(origin $(1)))

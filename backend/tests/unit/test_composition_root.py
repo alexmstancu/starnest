@@ -17,8 +17,10 @@ at all, and is asserted below rather than assumed.
 """
 
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
+import yaml
 from fastapi import FastAPI
 from pydantic import ValidationError
 
@@ -32,6 +34,8 @@ from starnest.main import (
     build,
     create_app,
 )
+
+ROOT = Path(__file__).resolve().parents[3]
 
 UNREACHABLE = "postgresql://nobody:nothing@127.0.0.1:1/no_such_database"
 """Port 1, a database nobody created. Anything that dials this fails loudly and immediately."""
@@ -200,6 +204,17 @@ class TestTheOnePlaceTheProductNameIsAValue:
         _, app = build()
 
         assert app.title == "Somewhere Else"
+
+    def test_the_interface_container_is_given_the_same_name(self) -> None:
+        """PL-023. The interface's container writes its `config.json` from `APP_DISPLAY_NAME` when
+        it starts, so the one variable must reach it too -- or renaming the product would change
+        the API's title and leave the sidebar, the browser tab and the error card on the old one.
+        """
+        compose = yaml.safe_load((ROOT / "compose.yaml").read_text())
+
+        environment = compose["services"]["ui"].get("environment") or {}
+
+        assert environment.get("APP_DISPLAY_NAME") == "${APP_DISPLAY_NAME}"
 
 
 def _routed_paths() -> set[str]:

@@ -75,6 +75,11 @@ services:
   ui:
     build:
       context: ./ui
+    # The product's name, written into the served `config.json` each time the container starts
+    # (`ui/docker-entrypoint.d/40-display-name.sh`), so renaming it in .env and restarting
+    # renames the interface with no rebuild. Empty, the name baked in at build time stands.
+    environment:
+      APP_DISPLAY_NAME: ${APP_DISPLAY_NAME}
     ports:
       - "127.0.0.1:${UI_PORT:-5173}:80"
     depends_on:

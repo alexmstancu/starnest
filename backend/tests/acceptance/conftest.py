@@ -110,6 +110,7 @@ async def an_api(
             evaluation_store=PostgresEvaluationStore(pool),
             adapters=adapters,
             researcher=researcher,  # type: ignore[arg-type]
+            display_name="Acceptance",
         )
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(

@@ -23,6 +23,11 @@ FROM nginx:1.27-alpine AS runtime
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
+# The image runs every executable /docker-entrypoint.d/*.sh before nginx starts. This one writes
+# config.json from APP_DISPLAY_NAME (compose.yaml), so the product's name is the one in .env and
+# not the one baked in above; a container started without the variable keeps the baked file.
+COPY --chmod=0755 docker-entrypoint.d/40-display-name.sh /docker-entrypoint.d/40-display-name.sh
+
 EXPOSE 80
 
 # No API base URL is baked into the image, deliberately. nginx proxies /v1 to the backend,

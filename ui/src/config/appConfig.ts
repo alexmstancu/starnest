@@ -2,10 +2,12 @@
  * Presentation configuration, fetched at runtime.
  *
  * The application display name is the only thing in here, and it is here rather than in the
- * API because renaming the product must be a one-line change to a served file -- not a code
- * change, and not a rebuild of the bundle (CLAUDE.md, "the app is named Starnest, the code is
- * not"). A Vite `import.meta.env` variable would have baked the name into the JavaScript at
- * build time, which is exactly the outcome the rule forbids.
+ * API because renaming the product must not be a code change or a rebuild of the bundle
+ * (CLAUDE.md). In the containers the file is written from `APP_DISPLAY_NAME` each time the
+ * interface starts (`docker-entrypoint.d/40-display-name.sh`), so the name is the one in `.env`;
+ * the Vite dev server and `make e2e` serve the checked-in `public/config.json`. A Vite
+ * `import.meta.env` variable would have baked the name into the JavaScript at build time,
+ * which is exactly the outcome the rule forbids.
  *
  * **Presentation only.** No domain configuration belongs here: the comparator limit, the score
  * scale and `min_coverage` are settings the backend owns and serves from `GET /v1/settings`.
@@ -14,7 +16,7 @@
 const CONFIG_URL = "/config.json";
 
 export interface AppConfig {
-  /** Shown in the sidebar heading and the browser tab. Never a compiled-in constant. */
+  /** Shown in the sidebar's brand and the browser tab. Never a compiled-in constant. */
   displayName: string;
 }
 
