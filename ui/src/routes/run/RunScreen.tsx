@@ -1,4 +1,4 @@
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useEffect, useId, useRef } from "react";
 import {
   type Run,
   type RunDetail,
@@ -66,6 +66,9 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
         busy={run.busy === "opening"}
         starting={run.starting}
         stopping={run.isStopping(run.current.id)}
+        focusAsked={
+          run.cardFocus?.runId === run.current.id ? run.cardFocus.asked : null
+        }
         onRefresh={run.refresh}
         onDismiss={run.close}
         onStop={run.stop}
@@ -520,9 +523,12 @@ function RunReport({
   onRefresh,
   onDismiss,
   onStop,
+  focusAsked,
 }: {
   run: RunDetail;
   busy: boolean;
+  /** Changes each time an act asks to take the reader to this card; null when none has. */
+  focusAsked: number | null;
   /** A start is in flight: Refresh, Dismiss and Stop would claim the card from it (UIR-G1, RB-1). */
   starting: boolean;
   stopping: boolean;
@@ -537,10 +543,22 @@ function RunReport({
   // click would change nothing -- the first request is the one recorded -- and a button that
   // stays live after it has been used invites the reader to think it did not work.
   const canStop = run.run_status === "running" && run.stop_requested_at == null;
+  const card = useRef<HTMLElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  // **The reader is moved, not just the card** (PL-126): opened from the history 2,000 px
+  // below, the card changed where nobody was looking. Only when focus is on this screen or
+  // lost, so a reader who has gone elsewhere meanwhile is not pulled back.
+  useEffect(() => {
+    if (focusAsked === null || !focusIsHereOrLost(card.current)) return;
+    heading.current?.focus();
+    // Not in jsdom; the focus is what moves a keyboard reader, the scroll is for the eye.
+    card.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [focusAsked]);
   return (
     // A labelled region, so "the run report" is something a reader -- or a screen reader --
     // can address, rather than the nearest box that happens to contain the heading.
     <section
+      ref={card}
       className={going ? "acquisition acquisition--going" : "acquisition"}
       // **Labelled by the acquisition, headed by its state.** The design heads the card with
       // the state because its prototype only ever has the run it just started; this screen can
@@ -550,7 +568,9 @@ function RunReport({
       aria-label={`Acquisition ${run.id}`}
     >
       <header className="acquisition__head">
-        <h3 className="acquisition__heading">{headingFor(state)}</h3>
+        <h3 ref={heading} tabIndex={-1} className="acquisition__heading">
+          {headingFor(state)}
+        </h3>
         <RunStatusPill status={state} />
       </header>
 
@@ -606,6 +626,13 @@ function RunReport({
       </footer>
     </section>
   );
+}
+
+/** Whether focus is lost, or still on the screen that holds `element`. */
+function focusIsHereOrLost(element: HTMLElement | null): boolean {
+  const focused = document.activeElement;
+  if (focused === null || focused === document.body) return true;
+  return element?.closest(".screen")?.contains(focused) ?? false;
 }
 
 /**

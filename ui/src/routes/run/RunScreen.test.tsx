@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, delay, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ATTRIBUTES,
   PAID_RUN_PLAN,
@@ -4041,5 +4041,57 @@ describe("an armed start whose scope changes", () => {
     rerender({ level: "city" });
 
     expect(result.current.armed).toBeNull();
+  });
+});
+
+/**
+ * PL-126, UF-098. **Opening an acquisition from the history moves the reader to it.** The card
+ * changed 2,000 px above while the reader stayed at the bottom, so nothing seemed to happen.
+ */
+describe("opening an acquisition from the history", () => {
+  const scrolled: Element[] = [];
+  beforeEach(() => {
+    scrolled.length = 0;
+    Element.prototype.scrollIntoView = vi.fn(function (this: Element) {
+      scrolled.push(this);
+    });
+  });
+  afterEach(() => {
+    // jsdom has none, and the screen treats it as optional.
+    delete (Element.prototype as Partial<Element>).scrollIntoView;
+  });
+
+  it("scrolls to the card and focuses its heading", async () => {
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+
+    await openFromHistory("6");
+
+    const card = await screen.findByRole("region", { name: /acquisition 6/i });
+    const heading = within(card).getByRole("heading", { level: 3 });
+    await waitFor(() => expect(heading).toHaveFocus());
+    expect(scrolled).toContain(card);
+  });
+
+  it("leaves focus on the history when the run cannot be read", async () => {
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    failTheNextReadOf(6).release();
+
+    await openFromHistory("6");
+
+    expect(await screen.findByText("internal_error")).toBeInTheDocument();
+    const number = screen.getByRole("rowheader", { name: "6" });
+    expect(within(number).getByRole("button", { name: "6" })).toHaveFocus();
+    expect(scrolled).toEqual([]);
+  });
+
+  it("does not move the reader for the card the screen opens by itself", async () => {
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    await everyActHasEnded();
+
+    expect(document.body).toHaveFocus();
+    expect(scrolled).toEqual([]);
   });
 });

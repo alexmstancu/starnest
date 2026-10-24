@@ -74,6 +74,11 @@ export interface ArmedRun {
   armedOn: number | null;
 }
 
+export interface CardFocus {
+  runId: number;
+  asked: number;
+}
+
 export interface RunScreenState {
   plan: RunPlan | null;
   /** Which card the estimate belongs to, so it can be shown inside that one. */
@@ -117,6 +122,11 @@ export interface RunScreenState {
    * narrower has to go through `/plan` and then `POST /data-acquisition-runs`.
    */
   propose: (scope: RunScope, act: string, origin: GapKind) => void;
+  /**
+   * The run whose card the reader should be taken to, and how many times that has been asked,
+   * so asking again for the same run moves them again (PL-126). Null until an act asks.
+   */
+  cardFocus: CardFocus | null;
   /** Start the armed run. Only reachable once something has been armed. */
   commit: () => void;
   cancel: () => void;
@@ -166,6 +176,15 @@ export function useRunScreen(levelId: string | null): RunScreenState {
   // a second start could be sent, which the database refuses, and its claim took the card from
   // the run that did start.
   const [starting, setStarting] = useState(false);
+  const [cardFocus, setCardFocus] = useState<CardFocus | null>(null);
+  /** Takes the reader to the card, once the act's own read is the one on it. */
+  const focusCardOf = useCallback(
+    (ticket: number, runId: number) => {
+      if (!isCurrent(ticket)) return;
+      setCardFocus((asked) => ({ runId, asked: (asked?.asked ?? 0) + 1 }));
+    },
+    [isCurrent],
+  );
 
   // Every run, not the newest ten: the history, the diff's choices and the month's spend all
   // read this list as every run there has been (UI-17).
@@ -278,6 +297,7 @@ export function useRunScreen(levelId: string | null): RunScreenState {
     plan,
     planOrigin,
     armed,
+    cardFocus,
     current,
     busy,
     isStopping: (runId) => stopsAsked.has(runId),
@@ -399,7 +419,10 @@ export function useRunScreen(levelId: string | null): RunScreenState {
     open: (run) => {
       const ticket = claim(run.id);
       setArmed(null);
-      void act("opening", () => watch(ticket, run.id));
+      void act("opening", async () => {
+        await watch(ticket, run.id);
+        focusCardOf(ticket, run.id);
+      });
     },
   };
 }
