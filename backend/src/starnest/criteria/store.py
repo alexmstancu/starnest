@@ -11,9 +11,9 @@ wrong rather than absent, which is the worse of the two failures.
 
 **This store has a delete, and `ValueStore` deliberately does not.** Not an inconsistency: a
 value is evidence, and deleting one would destroy a measurement that may be unrepeatable. A
-criteria set is an opinion the user wrote and may withdraw. Nothing depends on an opinion
-having been held -- a saved evaluation froze its own copy for exactly this reason
-(`reqs.md` Q193), so deleting the set it came from leaves the evaluation still readable.
+criteria set is an opinion the user wrote and may withdraw -- and take back: a deleted set keeps
+every row it owns, every read and edit sees live sets only, and only the purge, for tests and
+tooling, destroys one (PL-033). A saved evaluation froze its own copy (`reqs.md` Q193) anyway.
 
 **`MatchRuleResultStore` is here too** (`arch.md` 6.3), because whether a gate's answer counts
 is a criteria set's preference -- and the module that holds the preference is the one that
@@ -30,12 +30,30 @@ from starnest.data import MatchRuleResult
 
 
 class CriteriaSetExistsError(ValueError):
-    """A set is being created under an identifier something already holds.
+    """A set is being created under an identifier something already holds, live or deleted.
 
     Refused rather than overwritten. Silently replacing a set somebody built is the worst kind
     of success: the weights they chose are gone, nothing said so, and the ranking simply reads
     differently the next time they look.
     """
+
+
+class CriteriaSetNameTakenError(CriteriaSetExistsError):
+    """A set would share its name with another live set, ignoring case and surrounding spaces.
+
+    A name is how a person tells two sets apart (PL-036). A deleted set holds no name, so another
+    may take it -- and restoring the first is then refused rather than renaming either, which
+    would be choosing a name nobody picked (P1-35).
+
+    A kind of `CriteriaSetExistsError`: either way a set already holds what this one would.
+    """
+
+    def __init__(self, name: str, refused: str) -> None:
+        super().__init__(
+            f"{refused}: another live criteria set is already called {name!r}, ignoring case "
+            "and surrounding spaces"
+        )
+        self.name = name
 
 
 class UnknownCriteriaSetError(LookupError):
@@ -47,12 +65,13 @@ class UnknownCriteriaSetError(LookupError):
 
 
 class CriteriaSetInUseError(ValueError):
-    """A criteria set cannot be discarded while a saved evaluation names it (P60).
+    """A criteria set cannot be purged while a saved evaluation names it (P60).
 
     **A saved evaluation is a measurement and the set is an opinion**, but the evaluation keeps
-    the set's identifier to say which opinion it was measuring (`reqs.md` Q193), so discarding
-    the set would leave a snapshot naming nothing. Refused rather than cascaded: deleting
+    the set's identifier to say which opinion it was measuring (`reqs.md` Q193), so purging the
+    set would leave a snapshot naming nothing. Refused rather than cascaded: deleting
     somebody's kept rankings as a side effect of tidying up a criteria set is not a tidy-up.
+    Deleting such a set in place is not refused: the row the evaluation names stays.
 
     A state conflict, so the API answers 409 -- the request was well formed and is refused by
     what exists, which is exactly the distinction `LookupError` above draws for 404.
@@ -64,7 +83,7 @@ class CriteriaStore(ABC):
 
     @abstractmethod
     async def read_criteria_set_summaries(self) -> tuple[tuple[CriteriaSetId, str], ...]:
-        """Every set's identifier and name, for the switcher the sidebar shows everywhere.
+        """Every live set's identifier and name, for the switcher the sidebar shows everywhere.
 
         Summaries rather than whole sets. The switcher displays names; reading 41 criteria
         with their anchors and thresholds for each set to populate a dropdown would make the
@@ -84,7 +103,7 @@ class CriteriaStore(ABC):
 
         Pass `None` for the set entire, which is what the criteria screen shows.
 
-        Raises `UnknownCriteriaSetError` when there is no such set.
+        Raises `UnknownCriteriaSetError` when there is no such set, or it has been deleted.
         """
 
     @abstractmethod
@@ -95,11 +114,14 @@ class CriteriaStore(ABC):
         duplication is persisted: `CriteriaSet.duplicated_as` produces the copy and this
         writes it, so there is no separate "duplicate" operation to keep in step with the
         rules about what a copy contains.
+
+        Raises `CriteriaSetExistsError` when the identifier is held by any set, deleted ones
+        included, and `CriteriaSetNameTakenError` when another live set has the name.
         """
 
     @abstractmethod
     async def replace_criteria_set(self, criteria_set: CriteriaSet) -> None:
-        """Overwrite an existing set with this one, criteria and weights together.
+        """Overwrite an existing live set with this one, criteria and weights together.
 
         Raises `UnknownCriteriaSetError` when there is nothing to replace. Creating instead
         would turn a mistyped identifier into a new set nobody asked for, which is the kind
@@ -120,15 +142,40 @@ class CriteriaStore(ABC):
         The implementation holds a lock across the read and the write; `mutate` is the caller's
         own rebalance, rename or toggle, and a refusal it raises rolls the edit back. Returns the
         set as written, which is what the response is built from.
+
+        Live sets only: `UnknownCriteriaSetError` for a deleted one, and for an edit that waited
+        on a deletion. A rename to another live set's name raises `CriteriaSetNameTakenError`.
         """
 
     @abstractmethod
-    async def delete_criteria_set(self, criteria_set: CriteriaSetId | str) -> None:
-        """Remove a set and everything hanging off it.
+    async def discard_criteria_set(self, criteria_set: CriteriaSetId | str) -> None:
+        """Delete a live set in place: every row it owns stays, so it can be restored exactly.
 
-        Raises `UnknownCriteriaSetError` when there is no such set, so a second delete is
-        reported rather than silently succeeding.
+        Raises `UnknownCriteriaSetError` when there is no live set by that identifier, so a
+        second deletion is reported rather than silently succeeding.
         """
+
+    @abstractmethod
+    async def restore_criteria_set(self, criteria_set: CriteriaSetId | str) -> CriteriaSet:
+        """Bring a deleted set back exactly as it was deleted, and return it.
+
+        Idempotent on a live set. Raises `UnknownCriteriaSetError` when no set ever held the
+        identifier, and `CriteriaSetNameTakenError` when another live set took its name while it
+        was deleted (P1-35) -- it then stays deleted.
+        """
+
+    @abstractmethod
+    async def purge_criteria_set(self, criteria_set: CriteriaSetId | str) -> None:
+        """Destroy a set, live or deleted, and every row it owns. For tests and tooling only.
+
+        Raises `UnknownCriteriaSetError` when there is no such set, and `CriteriaSetInUseError`
+        while a saved evaluation names it.
+        """
+
+    async def delete_criteria_set(self, criteria_set: CriteriaSetId | str) -> None:
+        """What `DELETE /criteria-sets/{id}` still calls: the purge, until that route deletes in
+        place instead (map-C03 B3), which removes this."""
+        await self.purge_criteria_set(criteria_set)
 
 
 class MatchRuleResultStore(ABC):

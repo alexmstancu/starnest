@@ -15,12 +15,15 @@
 
 -- name: select_criteria_sets()
 -- The set picker. Header rows only -- reading one whole is a separate, heavier query.
+-- Live sets only: a deleted set keeps every row it owns to be restored exactly (PL-033), so
+-- this filter and its twins below are all that keep it off the screen.
 SELECT s.id,
        s.name
 FROM   criteria_set AS s
+WHERE  s.deleted_at IS NULL
 ORDER  BY s.id;
 
--- name: select_criteria_set(criteria_set, level)^
+-- name: select_criteria_set(criteria_set, level, include_deleted)^
 -- Query one of the two the ranking read path is allowed (arch.md 7.2 step 1): the whole set --
 -- its criteria with their anchors and matching thresholds, its pillar weights, its enforced
 -- match rules and its applied compound rules -- in a single read.
@@ -37,6 +40,8 @@ ORDER  BY s.id;
 -- 3.4), so it comes back as one nullable object per shape rather than as a union the database
 -- would have to discriminate. Exactly one can be non-empty: the composite keys of 0009 refuse
 -- the others.
+--
+-- A deleted set is no set here unless :include_deleted says so, as only the purge and restore do.
 SELECT s.id,
        s.name,
        COALESCE(
@@ -131,7 +136,8 @@ SELECT s.id,
               AND  (:level::text IS NULL OR cr.level = :level)),
            '[]'::jsonb) AS applied_compound_rules
 FROM   criteria_set AS s
-WHERE  s.id = :criteria_set;
+WHERE  s.id = :criteria_set
+  AND  (:include_deleted::boolean OR s.deleted_at IS NULL);
 
 -- name: select_criterion(criteria_set, attribute)^
 -- One criterion by its natural key, for the PATCH that adjusts it. The generated id is what the
@@ -190,18 +196,43 @@ VALUES (:criteria_set, :name);
 --
 -- A plain `SELECT ... FOR UPDATE`, not folded into `select_criteria_set`: that read aggregates
 -- the criteria and rules with `jsonb_agg`, and `FOR UPDATE` is not allowed beside an aggregate.
+--
+-- **A deleted set cannot be locked, so it cannot be edited.** An edit queued behind a deletion
+-- re-checks the row once that commits (READ COMMITTED) and gets nothing back: refused, not lost.
 SELECT id
 FROM   criteria_set
 WHERE  id = :criteria_set
+  AND  deleted_at IS NULL
 FOR    UPDATE;
 
 -- name: update_criteria_set_name(criteria_set, name)!
--- A set is renamed, never re-identified: the id is assigned once (arch.md 3.2a).
+-- A set is renamed, never re-identified: the id is assigned once (arch.md 3.2a). A name another
+-- live set has, ignoring case and surrounding spaces, fails on `criteria_set_name_is_unique`.
 UPDATE criteria_set
 SET    name = :name
+WHERE  id = :criteria_set
+  AND  deleted_at IS NULL;
+
+-- name: discard_criteria_set(criteria_set)<!
+-- Delete a set in place: one column, nothing else touched (PL-033), so a restore is exact and a
+-- saved ranking keeps naming the row. Nothing back means no live set of that id.
+UPDATE criteria_set
+SET    deleted_at = now()
+WHERE  id = :criteria_set
+  AND  deleted_at IS NULL
+RETURNING id;
+
+-- name: restore_criteria_set(criteria_set)!
+-- Bring a deleted set back by clearing the one column its deletion set. Idempotent on a live set.
+-- Fails on `criteria_set_name_is_unique` when another live set has taken the name meanwhile.
+UPDATE criteria_set
+SET    deleted_at = NULL
 WHERE  id = :criteria_set;
 
 -- name: delete_criteria_set(criteria_set)!
+-- **The purge, for tests and tooling only**: the product deletes in place (above). This destroys
+-- a set, live or deleted.
+--
 -- One statement, because the children must go first and a partial delete would leave a set that
 -- half exists. The referential-integrity checks are AFTER-row triggers fired at the end of the
 -- statement, so every CTE below has already run by the time any of them looks.
@@ -298,103 +329,6 @@ cleared_compound_rules AS (
     DELETE FROM criteria_set_compound_rule WHERE criteria_set = :criteria_set
 )
 SELECT 1;
-
--- name: duplicate_criteria_set(criteria_set, new_criteria_set, name)$
--- A criteria set is a full copy, never a sparse overlay on another set (reqs.md 3.4, Q191).
--- Everything the source holds is copied: every criterion with its whole interpretation, its
--- scale anchors, whichever of the four matching thresholds it carries, every pillar weight at
--- every level, and both rule opinions. Copying a subset would make the copy read differently
--- from the original the moment the original changed, which is the exact failure the full copy
--- exists to prevent.
---
--- One statement, because a criterion's id is generated and its children hang off it: `copied`
--- returns the new ids, and `mapping` pairs each with the source criterion it came from through
--- the natural key (criteria_set, attribute), which is unique. The source rows the mapping reads
--- are the pre-statement snapshot, so the new rows cannot match themselves.
---
--- It returns how many criteria were copied, which is the one number worth checking: a copy with
--- fewer criteria than its source is a copy that will score differently.
-WITH copied_set AS (
-    INSERT INTO criteria_set (id, name)
-    VALUES (:new_criteria_set, :name)
-),
-copied_weights AS (
-    INSERT INTO pillar_weight (criteria_set, pillar, level, weight, weight_locked)
-    SELECT :new_criteria_set, w.pillar, w.level, w.weight, w.weight_locked
-    FROM   pillar_weight AS w
-    WHERE  w.criteria_set = :criteria_set
-),
-copied_match_rules AS (
-    INSERT INTO criteria_set_match_rule (criteria_set, match_rule, is_enforced)
-    SELECT :new_criteria_set, m.match_rule, m.is_enforced
-    FROM   criteria_set_match_rule AS m
-    WHERE  m.criteria_set = :criteria_set
-),
-copied_compound_rules AS (
-    INSERT INTO criteria_set_compound_rule (criteria_set, compound_rule, is_applied)
-    SELECT :new_criteria_set, r.compound_rule, r.is_applied
-    FROM   criteria_set_compound_rule AS r
-    WHERE  r.criteria_set = :criteria_set
-),
-copied AS (
-    INSERT INTO criterion (
-        criteria_set, attribute, pillar, value_type, breakdown_option, is_scored, weight,
-        weight_locked, goal, target_range_min, target_range_max, zero_score_below,
-        zero_score_above, normalisation_method, reducer_mode, blocks_if_missing)
-    SELECT :new_criteria_set, c.attribute, c.pillar, c.value_type, c.breakdown_option,
-           c.is_scored, c.weight, c.weight_locked, c.goal, c.target_range_min,
-           c.target_range_max, c.zero_score_below, c.zero_score_above, c.normalisation_method,
-           c.reducer_mode, c.blocks_if_missing
-    FROM   criterion AS c
-    WHERE  c.criteria_set = :criteria_set
-    RETURNING id, attribute, value_type
-),
-mapping AS (
-    SELECT source.id AS source_criterion,
-           copied.id AS copied_criterion,
-           copied.value_type
-    FROM   copied
-    JOIN   criterion AS source
-           ON source.criteria_set = :criteria_set
-          AND source.attribute = copied.attribute
-),
-copied_anchors AS (
-    -- `label` is copied with the pair it belongs to. It is nullable, so omitting it does not
-    -- fail -- it blanks every band label in the copy while the numbers still score identically,
-    -- which is a copy that looks right and reads wrong (migration 0013).
-    INSERT INTO criterion_scale_anchor (criterion, input_value, score, label)
-    SELECT mapping.copied_criterion, anchor.input_value, anchor.score, anchor.label
-    FROM   criterion_scale_anchor AS anchor
-    JOIN   mapping ON mapping.source_criterion = anchor.criterion
-),
-copied_ranges AS (
-    INSERT INTO criterion_threshold_range (criterion, value_type, min_value, max_value)
-    SELECT mapping.copied_criterion, mapping.value_type,
-           range_threshold.min_value, range_threshold.max_value
-    FROM   criterion_threshold_range AS range_threshold
-    JOIN   mapping ON mapping.source_criterion = range_threshold.criterion
-),
-copied_labels AS (
-    INSERT INTO criterion_threshold_label (criterion, value_type, label, containment_rule)
-    SELECT mapping.copied_criterion, mapping.value_type,
-           label_threshold.label, label_threshold.containment_rule
-    FROM   criterion_threshold_label AS label_threshold
-    JOIN   mapping ON mapping.source_criterion = label_threshold.criterion
-),
-copied_booleans AS (
-    INSERT INTO criterion_threshold_boolean (criterion, value_type, required_value)
-    SELECT mapping.copied_criterion, mapping.value_type, boolean_threshold.required_value
-    FROM   criterion_threshold_boolean AS boolean_threshold
-    JOIN   mapping ON mapping.source_criterion = boolean_threshold.criterion
-),
-copied_shares AS (
-    INSERT INTO criterion_threshold_share (criterion, value_type, label, min_share, max_share)
-    SELECT mapping.copied_criterion, mapping.value_type,
-           share_threshold.label, share_threshold.min_share, share_threshold.max_share
-    FROM   criterion_threshold_share AS share_threshold
-    JOIN   mapping ON mapping.source_criterion = share_threshold.criterion
-)
-SELECT count(*) FROM mapping;
 
 -- name: insert_criterion(criteria_set, attribute, value_type, breakdown_option, is_scored, weight, weight_locked, goal, target_range_min, target_range_max, zero_score_below, zero_score_above, normalisation_method, reducer_mode, blocks_if_missing)<!
 -- Attach a criterion to an attribute in a set. The set's own criteria are seeded by migration

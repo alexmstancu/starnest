@@ -14,6 +14,7 @@ This file is the cheap total layer. `test_active_value_behaviour.py` is the expe
 selective one: this proves every query *can* run, that one proves the subtle ones are *right*.
 """
 
+import ast
 import re
 from pathlib import Path
 
@@ -104,6 +105,8 @@ QUERIES_NOTHING_CALLS_YET = {
     "update_criterion_weight": "the store writes a set whole; a slider drag goes through that",
     "update_criterion_weights": "same: rebalancing arrives as a whole set, not a pillar",
     "update_pillar_weights": "same: pillar weights are written with the set that holds them",
+    # Hidden until the guard stopped taking a route function of the same name for a call (S2).
+    "update_criterion": "same: a criterion's PATCH reads the set and writes it back whole",
     "select_criteria_in_pillar": "rebalancing reads the whole set, so the siblings come with it",
     "select_criterion": "the PATCH path reads the set, not one criterion",
     "clear_criterion_thresholds": "`delete_criteria_set_contents` clears them with everything else",
@@ -162,9 +165,13 @@ def _called_from_source(name: str) -> bool:
     passed this guard as live, which is the one thing it exists to prevent. Matching the open
     bracket that follows a call makes a prefix no longer enough, and `select_run` can no longer
     stand in for `select_runs`.
+
+    **The query, not a function of the same name** (map-C03 S2). A route function called
+    `update_criterion` is `update_criterion(` too, so the receiver every query is run through --
+    `self._queries`, or a local `queries` -- is part of what is matched.
     """
-    called = f"{name}("
-    return any(called in path.read_text() for path in SOURCE.rglob("*.py"))
+    called = re.compile(rf"\b_?queries\.{re.escape(name)}\(")
+    return any(called.search(path.read_text()) for path in SOURCE.rglob("*.py"))
 
 
 def test_the_caller_search_does_not_match_a_longer_name() -> None:
@@ -180,6 +187,20 @@ def test_the_caller_search_does_not_match_a_longer_name() -> None:
     assert not _called_from_source("insert_candidate")
     assert _called_from_source("select_candidates")
     assert not _called_from_source("select_candidate")
+
+
+def test_the_caller_search_does_not_take_a_function_of_the_same_name_for_a_call() -> None:
+    """**The guard's own guard, again** (map-C03 S2: P74's class).
+
+    `api/criteria.py` serves `PATCH .../criteria/{attribute}` from a route function called
+    `update_criterion`, and no store runs the query of that name -- yet `update_criterion(`
+    appears in the source, so the query passed as called. A query is only ever run through the
+    object `aiosql` loads them onto, so that receiver is part of what is matched.
+    """
+    assert "def update_criterion(" in (SOURCE / "api" / "criteria.py").read_text()
+    assert not _called_from_source("update_criterion")
+    assert _called_from_source("update_criteria_set_name")
+    assert _called_from_source("insert_text_payload"), "called as `queries.<name>(`, no `self.`"
 
 
 def test_every_query_is_either_called_or_accounted_for() -> None:
@@ -209,3 +230,61 @@ def test_every_query_is_either_called_or_accounted_for() -> None:
         "QUERIES_NOTHING_CALLS_YET -- the list is the record of what is waiting, not a "
         "list of everything that was ever waiting."
     )
+
+
+READS_EVERY_SET = {
+    "delete_criteria_set": "the purge, for tests and tooling only: it must reach a deleted set",
+    "restore_criteria_set": "brings a deleted set back, so it is the one write that must see one",
+}
+"""Queries that read `criteria_set` rows and may meet a deleted one, each with its reason.
+
+**A deleted set keeps every row it owns** (PL-033), so the one thing between it and the screen
+is that every read and every edit sees live sets only. Forgetting the filter once would show,
+edit or rank a set somebody deleted, so every query reading the table carries it or is here.
+"""
+
+MAY_ASK_FOR_A_DELETED_SET = {"_purge", "restore_criteria_set"}
+"""The only store methods that pass `include_deleted=True` to `select_criteria_set`: the purge
+(through its helper) and the restore, the two things a deleted set is still for."""
+
+READS_THE_SET_TABLE = re.compile(r"\b(?:from|join|update)\s+criteria_set\b", re.I)
+
+
+def test_every_query_that_reads_a_set_sees_live_sets_only() -> None:
+    """T33-B6 (map-C03 G1). The filter is in the SQL, so the SQL is what is held to it."""
+    code = {
+        name: re.sub(r"--[^\n]*", "", sql)
+        for name, sql in ALL_QUERIES
+        if not name.endswith("_cursor")
+    }
+    reading = {name: sql for name, sql in code.items() if READS_THE_SET_TABLE.search(sql)}
+
+    unfiltered = sorted(
+        name
+        for name, sql in reading.items()
+        if "deleted_at IS NULL" not in sql and name not in READS_EVERY_SET
+    )
+    assert not unfiltered, (
+        f"{unfiltered} read criteria_set without `deleted_at IS NULL`, so a deleted set would be "
+        "read or edited through them. Filter them, or add them to READS_EVERY_SET with the reason."
+    )
+    stale = sorted(set(READS_EVERY_SET) - set(reading))
+    assert not stale, f"{stale} no longer read criteria_set; remove them from READS_EVERY_SET"
+
+
+def test_only_the_purge_and_the_restore_ask_to_see_a_deleted_set() -> None:
+    """`select_criteria_set` filters unless asked not to, so who asks is held here instead."""
+    asking = set()
+    for path in SOURCE.rglob("*.py"):
+        for function in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            for call in ast.walk(function):
+                for keyword in getattr(call, "keywords", ()):
+                    passes_false = (
+                        isinstance(keyword.value, ast.Constant) and keyword.value.value is False
+                    )
+                    if keyword.arg == "include_deleted" and not passes_false:
+                        asking.add(function.name)
+
+    assert asking == MAY_ASK_FOR_A_DELETED_SET

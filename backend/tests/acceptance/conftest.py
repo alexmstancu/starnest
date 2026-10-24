@@ -145,7 +145,8 @@ async def a_scratch_criteria_set(database_url: str) -> AsyncIterator[str]:
 
     Duplicated rather than built by hand so it has the shape the application actually ships --
     two pillars, three criteria, percentile throughout -- while belonging to the test that uses
-    it. `duplicate_criteria_set` is the same query the product's own duplicate feature uses.
+    it. `duplicated_as` and then `create_criteria_set` is the path the product's own duplicate
+    takes (`api/criteria.py`).
     """
     scratch = "acceptance_scratch"
     async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
@@ -181,7 +182,7 @@ async def a_scratch_criteria_set(database_url: str) -> AsyncIterator[str]:
                 await connection.execute(
                     "DELETE FROM evaluation WHERE criteria_set = %s", (scratch,)
                 )
-            await criteria.delete_criteria_set(scratch)
+            await criteria.purge_criteria_set(scratch)
 
 
 @pytest.fixture

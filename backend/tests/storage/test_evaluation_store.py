@@ -160,7 +160,7 @@ class TestWhatIsKept:
             frozen = await store.read_criteria(saved.id)
             assert len(frozen.criteria) == len(live.criteria)
         finally:
-            await criteria.delete_criteria_set("evaluation_scratch")
+            await criteria.purge_criteria_set("evaluation_scratch")
 
 
 def _an_interpreted_set(identifier: str) -> CriteriaSet:
@@ -229,7 +229,7 @@ class TestTheWholeInterpretationIsFrozen:
             yield next(c for c in frozen.criteria if str(c.attribute) == SATISFACTION)
         finally:
             await store.sweep_test_evaluations()
-            await criteria.delete_criteria_set("evaluation_interpretation_scratch")
+            await criteria.purge_criteria_set("evaluation_interpretation_scratch")
 
     async def test_the_lock_the_reducer_and_the_type_are_kept(self, frozen_criterion) -> None:
         assert frozen_criterion.weight_locked is True
@@ -274,7 +274,7 @@ class TestTheWholeInterpretationIsFrozen:
             assert criterion.value_type is ValueType.COUNT
         finally:
             await store.sweep_test_evaluations()
-            await criteria.delete_criteria_set("evaluation_retype_scratch")
+            await criteria.purge_criteria_set("evaluation_retype_scratch")
 
 
 class TestWhatIsRefused:
@@ -461,7 +461,7 @@ class TestTheRestOfTheReadingIsFrozen:
             assert warning.input_values == (later, earlier)
         finally:
             await store.sweep_test_evaluations()
-            await criteria.delete_criteria_set("evaluation_freeze_rest_scratch")
+            await criteria.purge_criteria_set("evaluation_freeze_rest_scratch")
 
     async def test_a_warning_keeps_the_value_rows_behind_it(
         self, pool: AsyncConnectionPool

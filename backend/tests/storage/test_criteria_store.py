@@ -248,7 +248,7 @@ class TestWritingASet:
             read_back = await criteria.read_criteria_set("created_by_a_test", level=COUNTRY)
             assert read_back.criterion_for("country.life_satisfaction").weight == Decimal(100)
         finally:
-            await criteria.delete_criteria_set("created_by_a_test")
+            await criteria.purge_criteria_set("created_by_a_test")
 
     async def test_replacing_a_set_overwrites_its_criteria(
         self, criteria: PostgresCriteriaStore
@@ -266,7 +266,7 @@ class TestWritingASet:
             assert read_back.criterion_for("country.life_satisfaction").goal is Goal.MINIMISE
             assert len(read_back.criteria) == 1
         finally:
-            await criteria.delete_criteria_set("replaced_by_a_test")
+            await criteria.purge_criteria_set("replaced_by_a_test")
 
     async def test_replacing_a_set_that_does_not_exist_is_refused(
         self, criteria: PostgresCriteriaStore
@@ -293,7 +293,7 @@ class TestWritingASet:
             read_back = await criteria.read_criteria_set("edited_by_a_test", level=COUNTRY)
             assert read_back.name == "renamed"
         finally:
-            await criteria.delete_criteria_set("edited_by_a_test")
+            await criteria.purge_criteria_set("edited_by_a_test")
 
     async def test_two_overlapping_edits_serialise_and_both_land(
         self, criteria: PostgresCriteriaStore
@@ -330,7 +330,7 @@ class TestWritingASet:
             assert read_back.name == "renamed under contention"
             assert read_back.criterion_for("country.life_satisfaction").weight_locked is True
         finally:
-            await criteria.delete_criteria_set("edited_concurrently")
+            await criteria.purge_criteria_set("edited_concurrently")
 
     async def test_the_edit_lock_blocks_a_second_writer_on_the_same_set(
         self, criteria: PostgresCriteriaStore, pool: AsyncConnectionPool
@@ -353,35 +353,46 @@ class TestWritingASet:
                         )
                     await contender.rollback()
         finally:
-            await criteria.delete_criteria_set("locked_by_a_test")
+            await criteria.purge_criteria_set("locked_by_a_test")
 
-    async def test_deleting_a_set_that_does_not_exist_is_refused(
+    async def test_purging_a_set_that_does_not_exist_is_refused(
         self, criteria: PostgresCriteriaStore
     ) -> None:
-        """So a second delete is reported rather than silently succeeding."""
-        with pytest.raises(UnknownCriteriaSetError, match="to delete"):
-            await criteria.delete_criteria_set("never_created")
+        """So a second purge is reported rather than silently succeeding."""
+        with pytest.raises(UnknownCriteriaSetError, match="to purge"):
+            await criteria.purge_criteria_set("never_created")
 
-    async def test_a_deleted_set_is_gone_along_with_its_criteria(
+    async def test_a_purged_set_is_gone_along_with_its_criteria(
         self, criteria: PostgresCriteriaStore
     ) -> None:
-        await criteria.create_criteria_set(_a_set("deleted_by_a_test", weight="100"))
+        await criteria.create_criteria_set(_a_set("purged_by_a_test", weight="100"))
 
-        await criteria.delete_criteria_set("deleted_by_a_test")
+        await criteria.purge_criteria_set("purged_by_a_test")
 
         with pytest.raises(UnknownCriteriaSetError):
-            await criteria.read_criteria_set("deleted_by_a_test")
+            await criteria.read_criteria_set("purged_by_a_test")
 
-    async def test_deleting_a_set_a_saved_evaluation_used_is_refused(
+    async def test_a_deleted_set_can_still_be_purged(self, criteria: PostgresCriteriaStore) -> None:
+        """The purge is how a test or a tool clears a set away for good, deleted or not; a purge
+        that saw live sets only would leave every deleted one behind for ever."""
+        await criteria.create_criteria_set(_a_set("purged_once_deleted", weight="100"))
+        await criteria.discard_criteria_set("purged_once_deleted")
+
+        await criteria.purge_criteria_set("purged_once_deleted")
+
+        with pytest.raises(UnknownCriteriaSetError, match="to restore"):
+            await criteria.restore_criteria_set("purged_once_deleted")
+
+    async def test_purging_a_set_a_saved_evaluation_used_is_refused_in_words_of_its_own(
         self, criteria: PostgresCriteriaStore, pool: AsyncConnectionPool
     ) -> None:
-        """**A saved evaluation holds its criteria set in place** (P60).
+        """**A saved evaluation holds its criteria set in place** (P60), for the purge.
 
-        `evaluation.criteria_set` references the set with no `ON DELETE`, so the delete used to
-        reach the database and come back as a `ForeignKeyViolation` -- a driver type reaching
-        `api/`, where an untranslated one is a 500 for a request that was merely refused. What
-        should happen is a matter of design; a 500 is not one of the options. `household_store`
-        already translates exactly this exception for exactly this reason.
+        `evaluation.criteria_set` references the set with no `ON DELETE`, so the purge reaches
+        the database and comes back as a `ForeignKeyViolation` -- a driver type that, untranslated,
+        reaches `api/` as a 500. Translated, it carried the driver's own text along (PL-035,
+        T35-B2): the constraint's name and the key, printed beside the code on screen.
+        Deleting such a set is no longer refused at all -- it is kept, and its rankings with it.
         """
         held = "held_by_an_evaluation"
         await criteria.create_criteria_set(_a_set(held, weight="100"))
@@ -395,8 +406,10 @@ class TestWritingASet:
         )
 
         try:
-            with pytest.raises(CriteriaSetInUseError, match=held):
-                await criteria.delete_criteria_set(held)
+            with pytest.raises(CriteriaSetInUseError, match=held) as refused:
+                await criteria.purge_criteria_set(held)
+            for driver_text in ("violates", "foreign key", "evaluation_criteria_set", "DETAIL"):
+                assert driver_text not in str(refused.value)
             assert await criteria.read_criteria_set(held, level=COUNTRY) is not None
         finally:
             # The evaluation goes first, the way `conftest` empties it -- an evaluation has
@@ -405,7 +418,7 @@ class TestWritingASet:
             # criteria set with a saved evaluation behind it is not a loose end to tidy.
             async with pool.connection() as connection:
                 await connection.execute("TRUNCATE evaluation RESTART IDENTITY CASCADE")
-            await criteria.delete_criteria_set(held)
+            await criteria.purge_criteria_set(held)
 
     async def test_a_criterion_on_an_attribute_the_catalog_does_not_hold_is_refused(
         self, criteria: PostgresCriteriaStore
@@ -437,13 +450,13 @@ class TestWritingASet:
         with pytest.raises(UnknownCriteriaSetError):
             await criteria.read_criteria_set("names_an_invented_attribute")
 
-    async def test_a_set_no_evaluation_used_still_deletes(
+    async def test_a_set_no_evaluation_used_still_purges(
         self, criteria: PostgresCriteriaStore
     ) -> None:
         """The control: the refusal must protect a set an evaluation names, not every set."""
         await criteria.create_criteria_set(_a_set("held_by_nothing", weight="100"))
 
-        await criteria.delete_criteria_set("held_by_nothing")
+        await criteria.purge_criteria_set("held_by_nothing")
 
         with pytest.raises(UnknownCriteriaSetError):
             await criteria.read_criteria_set("held_by_nothing")
@@ -482,7 +495,7 @@ class TestTheThresholdShapesTheStoreCanWrite:
                 "label_threshold_round_trip", level=COUNTRY
             )
         finally:
-            await criteria.delete_criteria_set("label_threshold_round_trip")
+            await criteria.purge_criteria_set("label_threshold_round_trip")
 
         threshold = read_back.criteria[0].matching_threshold
         assert isinstance(threshold, LabelThreshold)
@@ -498,7 +511,7 @@ class TestTheThresholdShapesTheStoreCanWrite:
         try:
             read_back = await criteria.read_criteria_set("no_threshold_round_trip", level=COUNTRY)
         finally:
-            await criteria.delete_criteria_set("no_threshold_round_trip")
+            await criteria.purge_criteria_set("no_threshold_round_trip")
 
         assert read_back.criteria[0].matching_threshold is None
 
@@ -590,7 +603,7 @@ class TestTheChildrenOfACriterion:
             assert isinstance(threshold, RangeThreshold)
             assert (threshold.min_value, threshold.max_value) == (Decimal(5), Decimal(9))
         finally:
-            await criteria.delete_criteria_set("threshold_round_trip")
+            await criteria.purge_criteria_set("threshold_round_trip")
 
     async def test_scale_anchors_survive_with_their_labels(
         self, criteria: PostgresCriteriaStore
@@ -618,7 +631,7 @@ class TestTheChildrenOfACriterion:
                 (Decimal(8), 100, "good"),
             ]
         finally:
-            await criteria.delete_criteria_set("anchor_round_trip")
+            await criteria.purge_criteria_set("anchor_round_trip")
 
     async def test_an_anchor_keeps_its_label_because_it_travels_whole(
         self, criteria: PostgresCriteriaStore
@@ -659,7 +672,7 @@ class TestTheChildrenOfACriterion:
                 (Decimal(8), 100, None),
             ]
         finally:
-            await criteria.delete_criteria_set("anchors_travel_whole")
+            await criteria.purge_criteria_set("anchors_travel_whole")
 
     async def test_a_city_level_gate_does_not_reach_a_country_read(
         self, criteria: PostgresCriteriaStore, pool: AsyncConnectionPool
@@ -695,7 +708,7 @@ class TestTheChildrenOfACriterion:
             # screen shows and what a copy has to carry.
             assert "city_curfew" in entire.enforced_match_rules
         finally:
-            await criteria.delete_criteria_set(scratch)
+            await criteria.purge_criteria_set(scratch)
             async with pool.connection() as connection:
                 await connection.execute("DELETE FROM match_rule WHERE id = 'city_curfew'")
 
@@ -740,4 +753,4 @@ class TestTheCareerRebalanceRepair:
             career = sum(c.weight for c in healed.criteria if str(c.pillar) == "career")
             assert career == Decimal(100)
         finally:
-            await store.delete_criteria_set("st03_damaged")
+            await store.purge_criteria_set("st03_damaged")

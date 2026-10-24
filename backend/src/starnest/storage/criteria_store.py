@@ -42,9 +42,13 @@ from starnest.criteria import (
     ShareThreshold,
     UnknownCriteriaSetError,
 )
+from starnest.criteria.store import CriteriaSetNameTakenError
 from starnest.data import UnknownAttributeError, ValueType
 from starnest.storage.connections import acquire
 from starnest.storage.queries import load_queries
+
+NAME_IS_UNIQUE = "criteria_set_name_is_unique"
+"""The index refusing a second live set of one name (`0508`), told apart from the primary key."""
 
 
 class PostgresCriteriaStore(CriteriaStore):
@@ -64,18 +68,18 @@ class PostgresCriteriaStore(CriteriaStore):
     ) -> CriteriaSet:
         async with acquire(self._pool) as connection:
             row = await self._queries.select_criteria_set(
-                connection, criteria_set=str(criteria_set), level=level
+                connection, criteria_set=str(criteria_set), level=level, include_deleted=False
             )
         if row is None:
             raise UnknownCriteriaSetError(f"there is no criteria set called {criteria_set!r}")
         return _criteria_set_from(row)
 
     async def create_criteria_set(self, criteria_set: CriteriaSet) -> None:
-        """Write a set whole, refusing an identifier something already holds.
+        """Write a set whole, refusing an identifier something already holds, or a live name.
 
         The conflict arrives as a driver error and is translated here: `psycopg` types belong to
         this module, and one that reached `api/` would become a 500 for a request that was
-        merely asking for something taken.
+        merely asking for something taken. Which of the two was taken is the index's name.
         """
         try:
             async with acquire(self._pool) as connection:
@@ -84,8 +88,13 @@ class PostgresCriteriaStore(CriteriaStore):
                 )
                 await self._write_contents(connection, criteria_set)
         except UniqueViolation as taken:
+            if taken.diag.constraint_name == NAME_IS_UNIQUE:
+                raise CriteriaSetNameTakenError(
+                    criteria_set.name, f"the criteria set {str(criteria_set.id)!r} cannot be made"
+                ) from taken
             raise CriteriaSetExistsError(
-                f"a criteria set called {criteria_set.id!r} already exists"
+                f"a criteria set called {criteria_set.id!r} already exists, or was deleted: an "
+                "identifier is never given to another set"
             ) from taken
 
     async def replace_criteria_set(self, criteria_set: CriteriaSet) -> None:
@@ -98,15 +107,13 @@ class PostgresCriteriaStore(CriteriaStore):
         """
         async with acquire(self._pool) as connection:
             existing = await self._queries.select_criteria_set(
-                connection, criteria_set=str(criteria_set.id), level=None
+                connection, criteria_set=str(criteria_set.id), level=None, include_deleted=False
             )
             if existing is None:
                 raise UnknownCriteriaSetError(
                     f"there is no criteria set called {criteria_set.id!r} to replace"
                 )
-            await self._queries.update_criteria_set_name(
-                connection, criteria_set=str(criteria_set.id), name=criteria_set.name
-            )
+            await self._write_name(connection, criteria_set)
             await self._queries.delete_criteria_set_contents(
                 connection, criteria_set=str(criteria_set.id)
             )
@@ -142,47 +149,90 @@ class PostgresCriteriaStore(CriteriaStore):
                     f"there is no criteria set called {criteria_set!r} to edit"
                 )
             row = await self._queries.select_criteria_set(
-                connection, criteria_set=str(criteria_set), level=None
+                connection, criteria_set=str(criteria_set), level=None, include_deleted=False
             )
             changed = mutate(_criteria_set_from(row))
-            await self._queries.update_criteria_set_name(
-                connection, criteria_set=str(criteria_set), name=changed.name
-            )
+            await self._write_name(connection, changed)
             await self._queries.delete_criteria_set_contents(
                 connection, criteria_set=str(criteria_set)
             )
             await self._write_contents(connection, changed)
             return changed
 
-    async def delete_criteria_set(self, criteria_set: CriteriaSetId | str) -> None:
-        """Discard a set, unless a saved evaluation is holding it in place.
+    async def discard_criteria_set(self, criteria_set: CriteriaSetId | str) -> None:
+        """One column set, nothing else touched (PL-033); waits for an edit holding the lock."""
+        async with acquire(self._pool) as connection:
+            discarded = await self._queries.discard_criteria_set(
+                connection, criteria_set=str(criteria_set)
+            )
+        if discarded is None:
+            raise UnknownCriteriaSetError(
+                f"there is no criteria set called {criteria_set!r} to delete"
+            )
+
+    async def restore_criteria_set(self, criteria_set: CriteriaSetId | str) -> CriteriaSet:
+        """Clear the one column the deletion set. Read first, deleted or not, because a refusal
+        over the name must say which name, and the driver's message gives it folded to lower case.
+        """
+        async with acquire(self._pool) as connection:
+            held = await self._queries.select_criteria_set(
+                connection, criteria_set=str(criteria_set), level=None, include_deleted=True
+            )
+            if held is None:
+                raise UnknownCriteriaSetError(
+                    f"there is no criteria set called {criteria_set!r} to restore"
+                )
+            restored = _criteria_set_from(held)
+            try:
+                await self._queries.restore_criteria_set(connection, criteria_set=str(criteria_set))
+            except UniqueViolation as taken:
+                raise CriteriaSetNameTakenError(
+                    restored.name, f"the criteria set {str(criteria_set)!r} cannot be restored"
+                ) from taken
+        return restored
+
+    async def purge_criteria_set(self, criteria_set: CriteriaSetId | str) -> None:
+        """Destroy a set, live or deleted, unless a saved evaluation is holding it in place.
 
         **A `ForeignKeyViolation` here is a refusal, not a fault** (P60). `evaluation.criteria_set`
         references the set with no `ON DELETE`, so this used to hand `api/` a driver exception and
         a request that was merely refused became a 500. Translated for the same reason
-        `household_store` translates it: `psycopg` types belong to this module.
+        `household_store` translates it: `psycopg` types belong to this module -- and so does
+        their text, which the refusal used to carry along to the screen (PL-035).
         """
         try:
-            await self._delete(criteria_set)
+            await self._purge(criteria_set)
         except ForeignKeyViolation as held:
             raise CriteriaSetInUseError(
-                f"the criteria set {str(criteria_set)!r} cannot be discarded because a saved "
-                f"evaluation was computed from it: {held}"
+                f"the criteria set {str(criteria_set)!r} cannot be purged: a saved evaluation was "
+                "computed from it and still names it"
             ) from held
 
-    async def _delete(self, criteria_set: CriteriaSetId | str) -> None:
+    async def _purge(self, criteria_set: CriteriaSetId | str) -> None:
         async with acquire(self._pool) as connection:
             existing = await self._queries.select_criteria_set(
-                connection, criteria_set=str(criteria_set), level=None
+                connection, criteria_set=str(criteria_set), level=None, include_deleted=True
             )
             if existing is None:
                 raise UnknownCriteriaSetError(
-                    f"there is no criteria set called {criteria_set!r} to delete"
+                    f"there is no criteria set called {criteria_set!r} to purge"
                 )
             await self._queries.delete_criteria_set_contents(
                 connection, criteria_set=str(criteria_set)
             )
             await self._queries.delete_criteria_set(connection, criteria_set=str(criteria_set))
+
+    async def _write_name(self, connection: AsyncConnection, criteria_set: CriteriaSet) -> None:
+        """The name, refused when another live set has it: the only unique thing a rename can
+        break, so any violation here is that one."""
+        try:
+            await self._queries.update_criteria_set_name(
+                connection, criteria_set=str(criteria_set.id), name=criteria_set.name
+            )
+        except UniqueViolation as taken:
+            raise CriteriaSetNameTakenError(
+                criteria_set.name, f"the criteria set {str(criteria_set.id)!r} cannot be renamed"
+            ) from taken
 
     async def _write_contents(self, connection: AsyncConnection, criteria_set: CriteriaSet) -> None:
         """Every criterion with its children, every pillar weight, and the rules the set applies.

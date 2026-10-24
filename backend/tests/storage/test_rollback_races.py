@@ -189,6 +189,14 @@ REFUSALS = (
         "DELETE FROM data_acquisition_run WHERE triggered_by = 'FU-A5 race row'; END $$",
         says="cannot roll back 0506: 1 run",
     ),
+    # A deleted criteria set is a row 0508's rollback would quietly bring back as a live one, by
+    # dropping the column that says it was deleted (PL-033, T33-B7).
+    Refusal(
+        migration="0508-criteria-sets-are-deleted-in-place-and-named-uniquely",
+        write="UPDATE criteria_set SET deleted_at = now() WHERE id = 'minimal'",
+        undo="UPDATE criteria_set SET deleted_at = NULL WHERE id = 'minimal'",
+        says="cannot roll back 0508: 1 criteria set(s) are deleted (minimal)",
+    ),
 )
 
 
@@ -305,7 +313,7 @@ async def test_an_edit_written_as_the_application_writes_it_is_carried_through_i
             await store._queries.lock_criteria_set(writer, criteria_set=EDITED_SET)
             current = _criteria_set_from(
                 await store._queries.select_criteria_set(
-                    writer, criteria_set=EDITED_SET, level=None
+                    writer, criteria_set=EDITED_SET, level=None, include_deleted=False
                 )
             )
             edited = current.model_copy(

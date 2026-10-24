@@ -1,89 +1,93 @@
 """Duplicating a criteria set copies all of it, proven child table by child table.
 
 `reqs.md` Q191: a criteria set is a **full copy**, never a sparse overlay on another set. That
-is what lets `alex` and `partner` diverge without either one changing when the other is edited,
-and it makes `duplicate_criteria_set` the one statement in the system whose correctness is
-measured by what it does *not* leave behind.
+is what lets `alex` and `partner` diverge without either one changing when the other is edited.
+
+**Through the path the product takes** (map-C03 S3). `duplicateCriteriaSet` reads the set
+through the store, copies it with `CriteriaSet.duplicated_as` and writes the copy with
+`create_criteria_set` (`api/criteria.py`), so what a copy contains is decided in one place -- the
+domain. These tests used to prove a SQL statement of their own, which nothing in the product ran.
 
 **A dropped column here fails silently and looks fine.** The copy has the right number of
 criteria, the right weights and the right thresholds; only a word beside a number is missing,
 and a band with no label reads as a band nobody named rather than as a copy that lost it. So
 this asserts the contents of the children, not their count.
-
-The query is loaded through `aiosql` exactly as the application loads it, but against the
-synchronous connection, whose work is rolled back -- the seeded catalog is read-only through
-the store seam (`arch.md` 1.2) and a duplicate is a catalog row like any other.
 """
 
+import contextlib
+from collections.abc import AsyncIterator
 from decimal import Decimal
-from pathlib import Path
+from typing import Any
 
-import aiosql
-import psycopg
 import pytest
+from psycopg_pool import AsyncConnectionPool
+
+from starnest.criteria import UnknownCriteriaSetError
+from starnest.storage import PostgresCriteriaStore
 
 pytestmark = pytest.mark.storage
 
-QUERIES = aiosql.from_path(Path(__file__).resolve().parents[3] / "storage" / "queries", "psycopg")
-
 THE_SEEDED_SET = "local_employment"
+A_LABELLED_SOURCE = "a_labelled_source"
 A_COPY = "a_copy_of_the_seeded_set"
-A_BAND = (Decimal("500"), 100, "affordable")
+LABELLED = "country.life_satisfaction"
+A_BAND = (Decimal(8), 100, "content")
 
 
-def _a_criterion_of_the_seeded_set(connection: psycopg.Connection) -> tuple[int, str]:
-    """Any one that carries no anchors yet, with its attribute. Which one is not under test.
+@pytest.fixture
+async def criteria(pool: AsyncConnectionPool) -> AsyncIterator[PostgresCriteriaStore]:
+    store = PostgresCriteriaStore(pool)
+    yield store
+    for made in (A_COPY, A_LABELLED_SOURCE):
+        with contextlib.suppress(UnknownCriteriaSetError):
+            await store.purge_criteria_set(made)
 
-    **Without anchors of its own** since `0447` shipped the first real ones, on the total tax
-    rate: the assertions below compare one criterion's anchors, and anchoring a criterion that
-    already had some would compare the test's band against the household's.
+
+async def _duplicate(criteria: PostgresCriteriaStore, source: str) -> None:
+    """What `duplicateCriteriaSet` does, without the HTTP around it."""
+    original = await criteria.read_criteria_set(source)
+    await criteria.create_criteria_set(original.duplicated_as(A_COPY, "A copy"))
+
+
+async def _a_labelled_source(criteria: PostgresCriteriaStore, pool: AsyncConnectionPool) -> None:
+    """A copy of the seeded set whose `life_satisfaction` band at 8 carries a label.
+
+    The seeded set is catalog, read-only to a test (`arch.md` 1.2), and the store commits, so the
+    label goes on a set the test owns.
     """
-    return connection.execute(
-        """
-        SELECT c.id, c.attribute FROM criterion AS c
-        WHERE  c.criteria_set = %s
-          AND  NOT EXISTS (SELECT 1 FROM criterion_scale_anchor a WHERE a.criterion = c.id)
-        ORDER  BY c.id LIMIT 1
-        """,
-        (THE_SEEDED_SET,),
-    ).fetchone()
+    seeded = await criteria.read_criteria_set(THE_SEEDED_SET)
+    await criteria.create_criteria_set(seeded.duplicated_as(A_LABELLED_SOURCE, "Labelled"))
+    input_value, _score, label = A_BAND
+    async with pool.connection() as connection:
+        await connection.execute(
+            "UPDATE criterion_scale_anchor SET label = %s WHERE input_value = %s AND criterion ="
+            " (SELECT id FROM criterion WHERE criteria_set = %s AND attribute = %s)",
+            (label, input_value, A_LABELLED_SOURCE, LABELLED),
+        )
 
 
-def _anchor(connection: psycopg.Connection, criterion: int) -> None:
-    input_value, score, label = A_BAND
-    connection.execute(
-        "INSERT INTO criterion_scale_anchor (criterion, input_value, score, label)"
-        " VALUES (%s, %s, %s, %s)",
-        (criterion, input_value, score, label),
-    )
+async def _anchors_of(
+    pool: AsyncConnectionPool, criteria_set: str, attribute: str
+) -> list[tuple[Any, ...]]:
+    """One criterion's anchors, named by set and attribute -- the pair a copy preserves."""
+    async with pool.connection() as connection:
+        rows = await (
+            await connection.execute(
+                """
+                SELECT anchor.input_value, anchor.score, anchor.label
+                FROM   criterion_scale_anchor AS anchor
+                JOIN   criterion AS c ON c.id = anchor.criterion
+                WHERE  c.criteria_set = %s AND c.attribute = %s
+                ORDER  BY anchor.input_value
+                """,
+                (criteria_set, attribute),
+            )
+        ).fetchall()
+    return [tuple(row) for row in rows]
 
 
-def _anchors_of(connection: psycopg.Connection, criteria_set: str, attribute: str) -> list[tuple]:
-    """One criterion's anchors, named by set and attribute -- the pair a copy preserves.
-
-    Scoped to one criterion rather than the whole set: the set as a whole now carries the
-    household's tax anchors too, and these tests are about the one band they wrote.
-    """
-    return connection.execute(
-        """
-        SELECT anchor.input_value, anchor.score, anchor.label
-        FROM   criterion_scale_anchor AS anchor
-        JOIN   criterion AS c ON c.id = anchor.criterion
-        WHERE  c.criteria_set = %s AND c.attribute = %s
-        ORDER  BY anchor.input_value
-        """,
-        (criteria_set, attribute),
-    ).fetchall()
-
-
-def _duplicate(connection: psycopg.Connection) -> int:
-    return QUERIES.duplicate_criteria_set(
-        connection, criteria_set=THE_SEEDED_SET, new_criteria_set=A_COPY, name="A copy"
-    )
-
-
-def test_a_duplicated_set_keeps_the_word_beside_the_number(
-    connection: psycopg.Connection,
+async def test_a_duplicated_set_keeps_the_word_beside_the_number(
+    criteria: PostgresCriteriaStore, pool: AsyncConnectionPool
 ) -> None:
     """A band label is part of the interpretation, so it is part of the copy (`reqs.md` 5.1).
 
@@ -91,49 +95,45 @@ def test_a_duplicated_set_keeps_the_word_beside_the_number(
     as the original does, and only the reading of it goes missing -- which is a difference
     nobody would notice until the drill-down showed a number with nothing beside it.
     """
-    criterion, attribute = _a_criterion_of_the_seeded_set(connection)
-    _anchor(connection, criterion)
+    await _a_labelled_source(criteria, pool)
 
-    _duplicate(connection)
+    await _duplicate(criteria, A_LABELLED_SOURCE)
 
-    assert _anchors_of(connection, A_COPY, attribute) == [A_BAND]
+    copied = await _anchors_of(pool, A_COPY, LABELLED)
+    assert A_BAND in copied
+    assert copied == await _anchors_of(pool, A_LABELLED_SOURCE, LABELLED)
 
 
-def test_a_duplicated_set_carries_every_criterion_of_its_source(
-    connection: psycopg.Connection,
+async def test_a_duplicated_set_carries_every_criterion_of_its_source(
+    criteria: PostgresCriteriaStore, pool: AsyncConnectionPool
 ) -> None:
-    """The count the statement returns is the count that was copied.
+    """A copy with fewer criteria than its source is a copy that scores differently."""
+    await _duplicate(criteria, THE_SEEDED_SET)
 
-    A copy with fewer criteria than its source is a copy that scores differently, so the number
-    is worth reading rather than discarding.
-    """
-    of_the_source = connection.execute(
-        "SELECT count(*) FROM criterion WHERE criteria_set = %s", (THE_SEEDED_SET,)
-    ).fetchone()[0]
-
-    copied = _duplicate(connection)
-
-    assert copied == of_the_source
-    assert (
-        connection.execute(
-            "SELECT count(*) FROM criterion WHERE criteria_set = %s", (A_COPY,)
-        ).fetchone()[0]
-        == of_the_source
-    )
+    async with pool.connection() as connection:
+        counted = await (
+            await connection.execute(
+                "SELECT criteria_set, count(*) FROM criterion WHERE criteria_set IN (%s, %s)"
+                " GROUP BY criteria_set",
+                (THE_SEEDED_SET, A_COPY),
+            )
+        ).fetchall()
+    counts = dict(tuple(row) for row in counted)
+    assert counts[A_COPY] == counts[THE_SEEDED_SET] > 0
 
 
-def test_the_copy_and_its_source_hold_separate_anchors(
-    connection: psycopg.Connection,
+async def test_the_copy_and_its_source_hold_separate_anchors(
+    criteria: PostgresCriteriaStore, pool: AsyncConnectionPool
 ) -> None:
     """A full copy, not an overlay: editing one set may not reach the other (`reqs.md` Q191)."""
-    criterion, attribute = _a_criterion_of_the_seeded_set(connection)
-    _anchor(connection, criterion)
-    _duplicate(connection)
+    await _a_labelled_source(criteria, pool)
+    await _duplicate(criteria, A_LABELLED_SOURCE)
 
-    connection.execute(
-        "UPDATE criterion_scale_anchor SET label = %s"
-        " WHERE criterion IN (SELECT id FROM criterion WHERE criteria_set = %s)",
-        ("renamed", A_COPY),
-    )
+    async with pool.connection() as connection:
+        await connection.execute(
+            "UPDATE criterion_scale_anchor SET label = %s"
+            " WHERE criterion IN (SELECT id FROM criterion WHERE criteria_set = %s)",
+            ("renamed", A_COPY),
+        )
 
-    assert _anchors_of(connection, THE_SEEDED_SET, attribute) == [A_BAND]
+    assert A_BAND in await _anchors_of(pool, A_LABELLED_SOURCE, LABELLED)
