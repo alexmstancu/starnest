@@ -9,6 +9,7 @@ import { CriteriaSetsPanel } from "./sets/CriteriaSetsPanel";
 import { DataSourcesPanel } from "./sources/DataSourcesPanel";
 import { HouseholdPanel } from "./household/HouseholdPanel";
 import { PillarWeightsPanel } from "./pillars/PillarWeightsPanel";
+import { usePillarAnswers } from "./pillars/usePillarAnswers";
 import { ProposalsPanel } from "./proposals/ProposalsPanel";
 import { useResearchPass } from "./proposals/useResearchPass";
 import { RulesPanel } from "./rules/RulesPanel";
@@ -39,6 +40,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   // **An undo waits for a pillar's write as it does for a criterion's** (D41): the pillar panel
   // keeps its own write, so it says when one is in flight.
   const [pillarSaving, setPillarSaving] = useState(false);
+  const pillarAnswers = usePillarAnswers();
   // Once for the screen rather than once per opened pillar: every criterion row wants the
   // same copy of what the attributes are, and the panel inside a pillar is mounted and
   // unmounted each time one is opened. The history names its changes from it too.
@@ -117,6 +119,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                 unsourcedShares={unsourcedShareByPillar(editor.criteria, catalog.catalog)}
                 history={history}
                 onSaving={setPillarSaving}
+                answers={pillarAnswers}
                 catalog={catalog}
                 criteriaFor={(pillar) => (
                   <CriteriaPanel

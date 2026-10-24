@@ -22,7 +22,8 @@ type PillarWeight = components["schemas"]["PillarWeight"];
 export function useNotePillarChange(
   criteriaSet: Pick<CriteriaSet, "id" | "name">,
   names: PillarNames,
-  showAnswer: (weights: PillarWeight[]) => void,
+  /** Shows an answer for a set in whichever panel shows that set now, if any (PL-138a). */
+  showAnswer: (setId: string, weights: PillarWeight[]) => void,
   history: ChangeHistory | undefined,
 ) {
   return useMemo(() => {
@@ -42,7 +43,7 @@ export function useNotePillarChange(
             : UNDO_CANNOT_RESTORE_THE_PILLARS,
           reverse: async (back) => {
             if (typeof back !== "number") return;
-            showAnswer((await updatePillarWeight(sentFor, pillar, back)).items);
+            showAnswer(sentFor, (await updatePillarWeight(sentFor, pillar, back)).items);
           },
         });
       },
@@ -54,7 +55,7 @@ export function useNotePillarChange(
           before: !locked,
           after: locked,
           reverse: async (back) => {
-            showAnswer((await updatePillarLock(sentFor, pillar, back === true)).items);
+            showAnswer(sentFor, (await updatePillarLock(sentFor, pillar, back === true)).items);
           },
         });
       },

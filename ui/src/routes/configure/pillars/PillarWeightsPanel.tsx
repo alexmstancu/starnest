@@ -9,6 +9,7 @@ import type { components } from "../../../api/schema";
 import { formatPercentage, pillarName } from "../../../format/display";
 import type { ChangeHistory } from "../useChangeHistory";
 import { useNotePillarChange } from "./useNotePillarChange";
+import type { PillarAnswers } from "./usePillarAnswers";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { useWeightDrag } from "../useWeightDrag";
 import {
@@ -50,7 +51,10 @@ export function PillarWeightsPanel({
   history,
   onSaving,
   catalog,
+  answers,
 }: {
+  /** Where an undo's answer is shown: the panel on screen then, which may not be this one. */
+  answers?: PillarAnswers;
   criteriaSet: CriteriaSet;
   /**
    * The attribute catalog the rows inside each pillar read. When it could not be read the
@@ -90,7 +94,18 @@ export function PillarWeightsPanel({
   const undoing = history?.undoing === true;
   const held = saving || undoing;
   useEffect(() => onSaving?.(saving), [onSaving, saving]);
-  const note = useNotePillarChange(criteriaSet, names, setWeights, history);
+  // Unmounted mid-write -- a set switched meanwhile -- no answer will reach this panel to say the
+  // write is over, so it says so as it goes, or Recent changes stays held for good.
+  useEffect(() => () => onSaving?.(false), [onSaving]);
+  useEffect(() => answers?.listen(criteriaSet.id, setWeights), [answers, criteriaSet.id]);
+  const showAnswer = useCallback(
+    (setId: string, answer: PillarWeight[]) => {
+      if (answers !== undefined) answers.deliver(setId, answer);
+      else if (setId === criteriaSet.id) setWeights(answer);
+    },
+    [answers, criteriaSet.id],
+  );
+  const note = useNotePillarChange(criteriaSet, names, showAnswer, history);
 
   const move = useCallback(
     async (pillar: string, weight: number) => {

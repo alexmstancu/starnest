@@ -2440,3 +2440,80 @@ describe("the unsourced share of a pillar", () => {
     );
   });
 });
+
+/**
+ * PL-138a, from review. **A pillar's undo answers the panel on screen now**, not the one that
+ * recorded the change: switching sets remounts the pillar weights, and the answer went to a
+ * panel long gone while the screen kept the changed weight.
+ */
+describe("a pillar change undone after the panel remounted", () => {
+  const economy = () => screen.getByRole<HTMLInputElement>("slider", { name: "Economy weight" });
+
+  async function chooseSet(id: string) {
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: /active criteria set/i }),
+      id,
+    );
+  }
+
+  it("shows the restored weights", async () => {
+    renderShell("/configure");
+    await screen.findByRole("slider", { name: "Economy weight" });
+    await settled();
+    fireEvent.change(economy(), { target: { value: "50" } });
+    fireEvent.pointerUp(economy());
+    await waitFor(() => expect(economy()).toHaveValue("50"));
+
+    await chooseSet("remote-only");
+    await screen.findByRole("slider", { name: "Transport weight" });
+    await chooseSet("default");
+    await waitFor(() => expect(economy()).toHaveValue("50"));
+    await settled();
+
+    const panel = await historyPanel();
+    await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
+    await waitFor(() => expect(economy()).toHaveValue("40"));
+  });
+
+  it("releases Recent changes when the panel unmounts with a write in flight", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    onTestFinished(() => release());
+    renderShell("/configure");
+    await screen.findByRole("slider", { name: "Economy weight" });
+    await settled();
+    // One change to undo, made before the write that will hang.
+    await saveWeight(COST_OF_LIVING, "40");
+    const panel = await historyPanel();
+    await panel.findByText(/Weight for Cost of living index: 50 to 40/);
+
+    mockServer.use(
+      http.put("/v1/criteria-sets/:id/pillar-weights/:pillar", async () => {
+        await held;
+        return HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 });
+      }),
+      // No set comes back, so no pillar panel mounts again to say the write is over.
+      http.get("/v1/criteria-sets/remote-only", async () => {
+        await held;
+        return HttpResponse.json({}, { status: 500 });
+      }),
+    );
+    fireEvent.change(economy(), { target: { value: "50" } });
+    fireEvent.pointerUp(economy());
+    await waitFor(() =>
+      expectHeld(panel.getByRole("button", { name: "Undo this" })),
+    );
+
+    await chooseSet("remote-only");
+    await waitFor(() =>
+      expect(screen.queryByRole("slider", { name: "Economy weight" })).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(panel.getByRole("button", { name: "Undo this" })).not.toHaveAttribute(
+        "aria-disabled",
+      ),
+    );
+  });
+});
