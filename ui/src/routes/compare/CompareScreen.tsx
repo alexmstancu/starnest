@@ -323,14 +323,13 @@ function ComparisonTable({
           scrolling to answer "which of these is closest"; in a row the totals line up and the
           answer is the shape of the column.
 
-          Keyed by position as well as by name: `comparator` is optional in the contract, so
-          two pairs without one shared the key "pair" -- and a sentence can legitimately repeat
-          between pairs. A key has to be unique among siblings, not meaningful. */}
+          Keyed by position as well as by comparator: a key has to be unique among siblings,
+          not meaningful. */}
       <div className="synthesis">
       {(comparison.synthesis ?? []).map((pair, at) => (
         <SynthesisCard
-          key={`${pair.comparator ?? "pair"}-${at}`}
-          name={nameOf(comparison, pair.comparator ?? "")}
+          key={`${pair.comparator}-${at}`}
+          name={nameOf(comparison, pair.comparator)}
           pair={pair}
         />
       ))}

@@ -61,9 +61,9 @@ describe("a monetary gap", () => {
   });
 
   it("prints its unit beside the number, and nothing beside an absent gap", () => {
-    expect(rawGapText(-130, "EUR")).toBe("-130.0 EUR");
+    expect(rawGapText(130, "EUR")).toBe("+130.0 EUR");
     expect(rawGapText(null, "EUR")).toBe(ABSENT);
-    expect(rawGapText(-13.4, null)).toBe("-13.4");
+    expect(rawGapText(13.4, null)).toBe("+13.4");
   });
 
   it("travels with its row", () => {
@@ -74,7 +74,7 @@ describe("a monetary gap", () => {
       focusRaw: 380,
       focusFigure: "150,000 HUF (380 EUR)",
       gapUnit: "EUR",
-      comparators: [{ candidate: "country.spain", score: 40, rawDelta: -130, figure: "510 EUR" }],
+      comparators: [{ candidate: "country.spain", score: 40, rawDelta: 130, figure: "510 EUR" }],
     };
 
     expect(attributeGroups([rent], order).get("housing")?.[0]?.gapUnit).toBe("EUR");
@@ -89,8 +89,8 @@ const economicsA: AttributeSource = {
   focusFigure: "92.1 EU27 = 100",
   gapUnit: null,
   comparators: [
-    { candidate: "country.spain", score: 41, rawDelta: -13.4, figure: "105.5 EU27 = 100" },
-    { candidate: "country.netherlands", score: 70, rawDelta: -4, figure: "96.1 EU27 = 100" },
+    { candidate: "country.spain", score: 41, rawDelta: 13.4, figure: "105.5 EU27 = 100" },
+    { candidate: "country.netherlands", score: 70, rawDelta: 4, figure: "96.1 EU27 = 100" },
   ],
 };
 
@@ -102,8 +102,8 @@ const economicsB: AttributeSource = {
   focusFigure: "35%",
   gapUnit: null,
   comparators: [
-    { candidate: "country.spain", score: 60, rawDelta: -2, figure: "37%" },
-    { candidate: "country.netherlands", score: 55, rawDelta: -1, figure: "36%" },
+    { candidate: "country.spain", score: 60, rawDelta: 2, figure: "37%" },
+    { candidate: "country.netherlands", score: 55, rawDelta: 1, figure: "36%" },
   ],
 };
 
@@ -115,7 +115,7 @@ const nature: AttributeSource = {
   focusFigure: "1793 km",
   gapUnit: null,
   comparators: [
-    { candidate: "country.spain", score: 64, rawDelta: 1341, figure: "452 km" },
+    { candidate: "country.spain", score: 64, rawDelta: -1341, figure: "452 km" },
     // Netherlands has no figure for this attribute at all.
   ],
 };
@@ -177,10 +177,10 @@ describe("grouping the attributes under their pillar", () => {
 });
 
 /**
- * UI-19. **A raw gap's sign says which figure is higher, not which is better** -- and the
- * server's raw delta is focus minus comparator, while the score delta is comparator minus focus.
- * One bar was fed from both sides, so a coastline Portugal wins on drew Spain as ahead of it.
- * The bar takes its direction from the scores, which know every goal, and its size from the gap.
+ * UI-19. **A raw gap's sign says which figure is higher, not which is better.** The server's
+ * raw delta and the score delta both read comparator minus focus, yet they can still point
+ * opposite ways: a dearer comparator has the higher cost of living and the lower score. The bar
+ * takes its direction from the scores, which know every goal, and its size from the gap.
  */
 describe("which way a raw gap is drawn", () => {
   /** The one comparator cell of a row with Spain as its only comparator. */
@@ -209,8 +209,8 @@ describe("which way a raw gap is drawn", () => {
   }
 
   it("draws a comparator that scored lower as behind, whichever way its figure moved", () => {
-    // Coastline is maximised: Portugal's 1,793 km against Spain's 452 is a raw gap of +1,341
-    // (focus minus comparator), and Spain, scoring 64 to Portugal's 70, is behind.
+    // Coastline is maximised: Spain's 452 km against Portugal's 1,793 is a raw gap of -1,341
+    // (comparator minus focus), and Spain, scoring 64 to Portugal's 70, is behind.
     const [row] = attributeGroups([nature], order).get("nature")!;
     const spain = row!.cells[0]!;
 
@@ -222,14 +222,14 @@ describe("which way a raw gap is drawn", () => {
 
   it("draws a comparator that scored higher as ahead, whichever way its figure moved", () => {
     // The same coastline the other way round: the focus has less of it and scores lower.
-    const spain = spainIn(64, 70, -1341);
+    const spain = spainIn(64, 70, 1341);
 
     expect(spain.rawBar).toBe(1341);
     expect(divergingBar(spain.rawBar, 1341, 452).direction).toBe("ahead");
   });
 
   it("reads a minimised figure by its scores, so a dearer comparator is behind", () => {
-    // Cost of living is minimised: Spain's 105.5 against Portugal's 92.1 is a raw gap of -13.4,
+    // Cost of living is minimised: Spain's 105.5 against Portugal's 92.1 is a raw gap of +13.4,
     // and Spain, scoring 41 to Portugal's 82, is behind.
     const [row] = attributeGroups([economicsA], order).get("economics")!;
 
@@ -262,6 +262,6 @@ describe("which way a raw gap is drawn", () => {
   it("keeps the server's raw number as the server sent it", () => {
     const [row] = attributeGroups([nature], order).get("nature")!;
 
-    expect(row!.cells[0]!.rawDelta).toBe(1341);
+    expect(row!.cells[0]!.rawDelta).toBe(-1341);
   });
 });

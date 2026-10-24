@@ -157,10 +157,11 @@ describe("the comparison", () => {
     await compare("Portugal", "Netherlands");
 
     // The card names the comparator; the difference sits beside the name rather than inside
-    // it, so the heading reads as a place and the number reads as a number.
+    // it, so the heading reads as a place and the number reads as a number. The Netherlands'
+    // 71 against Portugal's 78 is seven behind, as its column in the matrix reads (PL-091).
     const card = (await screen.findByRole("heading", { name: "Netherlands" }))
       .closest("section")!;
-    expect(within(card).getByText("+7.0")).toBeInTheDocument();
+    expect(within(card).getByText("-7.0")).toBeInTheDocument();
   });
 
   it("prints the synthesis the server templated, in its order", async () => {
@@ -168,26 +169,32 @@ describe("the comparison", () => {
 
     await compare("Portugal", "Netherlands");
 
-    const advantages = await screen.findByText(/ahead on/i);
-    const lines = within(advantages.parentElement!).getAllByRole("listitem");
     // The sentence is its own element inside the line, because a line may also carry the
     // place its gap takes across both lists. Matched whole and in place, so a screen that
-    // reworded a sentence or reordered the list still fails.
-    const sentences = [
-      "Cost of living: 82 against 41, worth +4.9 points",
-      "Coastline access: 70 against 64, worth +0.2 points",
-    ];
-    expect(lines).toHaveLength(sentences.length);
-    sentences.forEach((sentence, at) => {
-      expect(within(lines[at]!).getByText(sentence)).toBeInTheDocument();
-    });
+    // reworded a sentence or reordered a list still fails. Read from the comparator's side:
+    // what the Netherlands leads Portugal on, then what it trails on, costliest first.
+    const lists = {
+      "Ahead on": ["Broadband coverage: 88 against 61, worth +1.8 points"],
+      "Behind on": [
+        "Cost of living: 41 against 82, worth -4.9 points",
+        "Coastline access: 64 against 70, worth -0.2 points",
+      ],
+    };
+    for (const [label, sentences] of Object.entries(lists)) {
+      const list = await screen.findByText(label);
+      const lines = within(list.parentElement!).getAllByRole("listitem");
+      expect(lines).toHaveLength(sentences.length);
+      sentences.forEach((sentence, at) => {
+        expect(within(lines[at]!).getByText(sentence)).toBeInTheDocument();
+      });
+    }
   });
 
   /**
    * The two lists arrive ordered separately, so neither says whether the largest disadvantage
-   * outweighs the second advantage. These tags are the only thing the screen adds to the
-   * synthesis, and they add no number: the fixture's own figures put the disadvantage worth
-   * -1.8 above the advantage worth +0.2.
+   * outweighs the best advantage. These tags are the only thing the screen adds to the
+   * synthesis, and they add no number: the fixture's own figures put the advantage worth +1.8
+   * between the disadvantages worth -4.9 and -0.2.
    */
   it("marks the three gaps that move the total most, across both lists", async () => {
     renderShell("/compare");
@@ -196,12 +203,12 @@ describe("the comparison", () => {
 
     const advantages = await screen.findByText(/ahead on/i);
     const ahead = within(advantages.parentElement!).getAllByRole("listitem");
-    expect(ahead[0]).toHaveTextContent("#1");
-    expect(ahead[1]).toHaveTextContent("#3");
+    expect(ahead[0]).toHaveTextContent("#2");
 
     const disadvantages = screen.getByText(/behind on/i);
     const behind = within(disadvantages.parentElement!).getAllByRole("listitem");
-    expect(behind[0]).toHaveTextContent("#2");
+    expect(behind[0]).toHaveTextContent("#1");
+    expect(behind[1]).toHaveTextContent("#3");
   });
 
   it("reports a refusal from the server rather than showing an empty table", async () => {
@@ -371,8 +378,9 @@ describe("the attribute figures inside a pillar", () => {
 
     await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
 
+    // Spain's 105.5 against Portugal's 92.1: the server's gap, comparator minus focus.
     const row = screen.getByRole("row", { name: /cost of living index/i });
-    expect(row).toHaveTextContent("-13.4");
+    expect(row).toHaveTextContent("+13.4");
     expect(row).not.toHaveTextContent("points");
   });
 
@@ -411,7 +419,7 @@ describe("the attribute figures inside a pillar", () => {
 
     const row = screen.getByRole("row", { name: /median rent/i });
     expect(row).toHaveTextContent("gaps in EUR");
-    expect(within(row).getByText("-100.0 EUR")).not.toHaveClass("matrix__delta--faint");
+    expect(within(row).getByText("+100.0 EUR")).not.toHaveClass("matrix__delta--faint");
     // Both operands are on screen in euros, so the gap can be checked (RC-1, `reqs.md` 5.5).
     expect(row).toHaveTextContent("2500 RON (500 EUR)");
     expect(row).toHaveTextContent("600 EUR");
@@ -456,7 +464,7 @@ describe("the attribute figures inside a pillar", () => {
   });
 
   /**
-   * UI-19. The server's raw delta is focus minus comparator, and it is printed as the server
+   * UI-19. The server's raw delta is comparator minus focus, and it is printed as the server
    * sent it -- so the row has to say which way round it reads.
    */
   it("says which way a raw gap is measured", async () => {
@@ -469,92 +477,28 @@ describe("the attribute figures inside a pillar", () => {
 
     expect(
       screen.getByRole("row", { name: /cost of living index/i }),
-    ).toHaveTextContent("its own unit; gaps read focus minus comparator");
+    ).toHaveTextContent("its own unit; gaps read comparator minus focus");
   });
 
   /**
-   * UI-19. **A higher figure is not a better one.** Portugal has 1,341 km more coastline than the
-   * Netherlands and scores higher for it, so the Netherlands is behind -- while the server's raw
-   * gap, focus minus comparator, is positive and used to be drawn as the Netherlands ahead.
+   * UI-19. **A higher figure is not a better one.** The Netherlands' cost of living is 13.4
+   * above Portugal's, so the server's raw gap, comparator minus focus, is positive -- and the
+   * Netherlands scores lower for it, so it is behind. Coloured by the figure's sign, it would be
+   * drawn ahead.
    */
   it("colours a raw gap by which side scored better, not by which figure is higher", async () => {
-    mockServer.use(
-      http.get(`${BASE}/comparisons`, () =>
-        HttpResponse.json(aCoastlineComparison()),
-      ),
-    );
     renderShell("/compare");
     await compare("Portugal", "Netherlands");
     await openPillar("Economy");
-    await screen.findByRole("row", { name: /coastline access/i });
+    await screen.findByRole("row", { name: /cost of living index/i });
 
     await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
 
-    const row = screen.getByRole("row", { name: /coastline access/i });
+    const row = screen.getByRole("row", { name: /cost of living index/i });
     // The server's number, unchanged, and coloured as the comparator trailing the focus.
-    expect(within(row).getByText("+1,341.0")).toHaveClass("matrix__delta--behind");
+    expect(within(row).getByText("+13.4")).toHaveClass("matrix__delta--behind");
   });
 });
-
-/**
- * Portugal against the Netherlands on one maximised attribute, filed under economics so the
- * fixture's one pillar can open it: Portugal has more of it and scores higher for it.
- */
-function aCoastlineComparison() {
-  return {
-    criteria_set: "default",
-    level: "country",
-    focus: {
-      candidate: "country.portugal",
-      name: "Portugal",
-      score: 78,
-      coverage: 92,
-      match_status: "matching",
-      pillar_scores: [
-        { pillar: "economics", score: 81, weight: 25, contribution: 20.25 },
-      ],
-    },
-    comparators: [
-      {
-        candidate: "country.netherlands",
-        name: "Netherlands",
-        score: 71,
-        coverage: 88,
-        match_status: "matching",
-        pillar_scores: [
-          { pillar: "economics", score: 74, weight: 25, contribution: 18.5 },
-        ],
-      },
-    ],
-    attributes: [
-      {
-        attribute: "country.coastline_access",
-        pillar: "economics",
-        focus: {
-          normalised_score: 70,
-          value: {
-            data_source: "eurostat",
-            payload: { magnitude: 1793, unit: "km" },
-            retrieval_date: "2026-01-01",
-          },
-        },
-        comparators: [
-          {
-            candidate: "country.netherlands",
-            normalised_score: 64,
-            delta: 1341,
-            value: {
-              data_source: "eurostat",
-              payload: { magnitude: 452, unit: "km" },
-              retrieval_date: "2026-01-01",
-            },
-          },
-        ],
-      },
-    ],
-    synthesis: [],
-  };
-}
 
 describe("when a comparison cannot be drawn", () => {
   it("says what to choose before anything is selected in the sidebar", async () => {
@@ -676,6 +620,10 @@ describe("when a comparison cannot be drawn", () => {
               score_delta: null,
               advantages: [],
               disadvantages: [],
+              // No total, so no line; economics, which only Portugal scored, cannot be compared.
+              ahead: [],
+              behind: [],
+              not_comparable: ["economics"],
             },
           ],
         }),
@@ -769,6 +717,7 @@ function twoPillarComparison() {
       {
         attribute: "country.cost_of_living_index",
         pillar: "economics",
+        effective_weight: 12.5,
         focus: { normalised_score: 82 },
         comparators: [
           { candidate: "country.netherlands", normalised_score: 41, delta: -13.4 },
@@ -777,6 +726,7 @@ function twoPillarComparison() {
       {
         attribute: "country.rent_to_income",
         pillar: "housing",
+        effective_weight: 10,
         focus: { normalised_score: 55 },
         comparators: [
           { candidate: "country.netherlands", normalised_score: 62, delta: 3.1 },
@@ -818,6 +768,7 @@ function missingFigureComparison() {
       {
         attribute: "country.cost_of_living_index",
         pillar: "economics",
+        effective_weight: 12.5,
         focus: {
           normalised_score: 82,
           value: {
@@ -868,8 +819,11 @@ const ROMANIAN_RENT = {
   },
 };
 
-/** Romania's rent in lei, Spain's in euros: the gap the server sends is in euros. */
-function rentComparison(focus: object = ROMANIAN_RENT) {
+/**
+ * Romania's rent in lei, Spain's in euros: the gap the server sends is in euros, Spain's 600
+ * less Romania's 500.
+ */
+function rentComparison(focus: { normalised_score: number | null } = ROMANIAN_RENT) {
   return {
     criteria_set: "default",
     level: "country",
@@ -895,12 +849,14 @@ function rentComparison(focus: object = ROMANIAN_RENT) {
       {
         attribute: "country.median_rent",
         pillar: "economics",
+        // Zero where the focus was not scored on it, as the server sends it.
+        effective_weight: focus.normalised_score === null ? 0 : 12.5,
         focus,
         comparators: [
           {
             candidate: "country.spain",
             normalised_score: 40,
-            delta: -100,
+            delta: 100,
             value: {
               data_source: "eurostat",
               payload: { amount: 600, currency: "EUR", amount_eur: 600 },

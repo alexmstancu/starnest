@@ -230,8 +230,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Live sets only. A deleted set is listed nowhere until it is restored. */
         get: operations["listCriteriaSets"];
         put?: never;
+        /**
+         * @description A new set is a **full copy of the default set** (`reqs.md` 3.4): every criterion with its
+         *     weight, lock, rule, anchors and threshold, every pillar weight and lock at every level,
+         *     and the rules the default turns on -- so it can be ranked wherever the default can. The
+         *     default is the set the list marks `is_default`, and it is copied even after it has been
+         *     deleted, when the list no longer shows it.
+         *     409 `criteria_set_exists` when a set, live or deleted, already holds `id`: identifiers
+         *     are never reused. 409 `criteria_set_name_taken` when a live set already has this name
+         *     (`CriteriaSetName`). 409 `no_default_criteria_set` when no set is the default. A refused
+         *     request writes nothing.
+         */
         post: operations["createCriteriaSet"];
         delete?: never;
         options?: never;
@@ -249,15 +261,53 @@ export interface paths {
         /**
          * @description `level` narrows the criteria and the pillar weights together, never one without the
          *     other: weights sum to 100 within a level, so narrowing only the criteria would describe
-         *     a set whose pillar weights summed to 200.
+         *     a set whose pillar weights summed to 200. A deleted set answers 404, as an unknown one
+         *     does.
          */
         get: operations["getCriteriaSet"];
         put?: never;
         post?: never;
+        /**
+         * @description Deletes the set **restorably**. It leaves every list and every read at once, and nothing
+         *     it holds is removed -- its criteria with their rules, anchors and thresholds, its locks,
+         *     its pillar weights and the rules it turns on -- so
+         *     `POST /criteria-sets/{criteriaSetId}/restore` brings it back exactly. Saved rankings
+         *     computed with it stay readable, so they never stop a deletion. Its identifier stays
+         *     taken. 404 when no live set has this identifier.
+         */
         delete: operations["deleteCriteriaSet"];
         options?: never;
         head?: never;
+        /**
+         * @description 409 `criteria_set_name_taken` when another live set has this name (`CriteriaSetName`);
+         *     nothing is changed. 404 when no live set has this identifier.
+         */
         patch: operations["renameCriteriaSet"];
+        trace?: never;
+    };
+    "/criteria-sets/{criteriaSetId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bring a deleted criteria set back exactly as it was
+         * @description The way back from `DELETE /criteria-sets/{criteriaSetId}`: the set returns to every list
+         *     and every read holding everything it held when it was deleted. Idempotent: a set that is
+         *     not deleted is answered unchanged, because an identifier names one set for ever.
+         *     409 `criteria_set_name_taken` when a live set has taken its name since it was deleted
+         *     (`CriteriaSetName`); nothing is changed. 404 when no set, live or deleted, has this
+         *     identifier.
+         */
+        post: operations["restoreCriteriaSet"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/criteria-sets/{criteriaSetId}/duplicate": {
@@ -271,7 +321,11 @@ export interface paths {
         put?: never;
         /**
          * Copy a criteria set
-         * @description The safe way to experiment — a drag edits a set in place (`reqs.md` Q168).
+         * @description The safe way to experiment — a drag edits a set in place (`reqs.md` Q168). 404 when no
+         *     live set has this identifier: a deleted set cannot be copied until it is restored.
+         *     409 `criteria_set_exists` when a set, live or deleted, already holds `id`: identifiers
+         *     are never reused. 409 `criteria_set_name_taken` when a live set already has this name
+         *     (`CriteriaSetName`). A refused request writes nothing.
          */
         post: operations["duplicateCriteriaSet"];
         delete?: never;
@@ -750,7 +804,7 @@ export interface paths {
         };
         /**
          * A focus candidate against comparators
-         * @description Levels are never mixed. The comparator limit comes from settings.
+         * @description Levels are never mixed. The comparator limit comes from settings. Every gap and every worth in the answer reads comparator minus focus: positive where the comparator is ahead, as the matrix draws it. Comparators come back in the order they were asked for.
          */
         get: operations["getComparison"];
         put?: never;
@@ -798,12 +852,17 @@ export interface components {
          */
         Error: {
             /** @description Stable and machine-readable. Branch on this, never on the message. */
-            code: string;
+            code: components["schemas"]["ErrorCode"];
             message: string;
             details?: {
                 [key: string]: unknown;
             };
         };
+        /**
+         * @description Every refusal this API makes, by code. A client words each one and branches on it; `message` is for a person reading the API directly and may change.
+         * @enum {string}
+         */
+        ErrorCode: "not_found" | "candidate_not_found" | "household_not_configured" | "weights_all_locked" | "criteria_set_exists" | "criteria_set_in_use" | "nothing_to_retry" | "nothing_to_ask_again" | "spend_cap_not_set" | "nothing_to_fetch" | "run_already_in_flight" | "llm_not_configured" | "manual_entry_not_permitted" | "invalid_value" | "answer_recorded_by_a_person" | "score_scale_not_set" | "comparator_limit_not_set" | "invalid_comparison" | "invalid_criteria_set" | "invalid_criterion" | "unknown_place" | "invalid_reference_period" | "invalid_request" | "cannot_be_scored" | "cannot_be_ranked" | "invalid_match_rule_result" | "unknown_data_source" | "unknown_scope";
         /** @description The span the data describes. Start equals end for a single day. */
         ReferencePeriod: {
             /** Format: date */
@@ -1069,9 +1128,33 @@ export interface components {
             weight: number;
             weight_locked: boolean;
         };
+        /**
+         * @description A criteria set's name: not blank, at most 60 characters, and trimmed of surrounding
+         *     spaces when stored. Unique among live sets, ignoring case and surrounding spaces: a name
+         *     another live set has is refused with 409 `criteria_set_name_taken`, naming it in
+         *     `details.name`. A deleted set's name is free: a live set may take it, and the deleted
+         *     set's restore is then refused.
+         */
+        CriteriaSetName: string;
         CriteriaSetSummary: {
             id: string;
             name: string;
+        };
+        /** @description A live set, as the list gives it. */
+        CriteriaSetListItem: components["schemas"]["CriteriaSetSummary"] & {
+            /** @description The set a new one is copied from (`reqs.md` 3.4). At most one set is the default. */
+            is_default?: boolean;
+            /**
+             * @description One entry per level the set weighs pillars at: the pillar with the largest weight
+             *     there, a tie going to the lower `display_order`. Empty for a set that weighs no
+             *     pillar.
+             */
+            heaviest_pillars?: {
+                level: string;
+                pillar: string;
+                /** @description Percentage, 0-100, as PillarWeight gives it. */
+                weight: number;
+            }[];
         };
         CriteriaSet: components["schemas"]["CriteriaSetSummary"] & {
             pillar_weights?: components["schemas"]["PillarWeight"][];
@@ -1319,6 +1402,8 @@ export interface components {
         ComparisonAttributeRow: {
             attribute: string;
             pillar?: string;
+            /** @description What this attribute counted for in the focus's total after redistribution, on the basis AttributeScore.effective_weight uses. Zero where the focus has no figure. */
+            effective_weight: number;
             focus: {
                 value?: components["schemas"]["Value"];
                 normalised_score?: number | null;
@@ -1327,9 +1412,9 @@ export interface components {
                 candidate?: string;
                 value?: components["schemas"]["Value"];
                 normalised_score?: number | null;
-                /** @description Focus minus comparator. In the attribute's own unit, except a Monetary attribute, whose delta is in EUR -- the only figure comparable across candidates that may hold different currencies (reqs.md 5.5). */
+                /** @description Comparator minus focus. In the attribute's own unit, except a Monetary attribute, whose delta is in EUR -- the only figure comparable across candidates that may hold different currencies (reqs.md 5.5). Null unless both sides have a figure. */
                 delta?: number | null;
-                /** @description What the delta is worth. Drives the synthesis. */
+                /** @description What the score gap is worth to the focus's total, comparator minus focus: the exact score difference times the focus's effective weight, in score points. Null unless both sides were scored. */
                 weighted_contribution?: number | null;
             }[];
         };
@@ -1339,13 +1424,27 @@ export interface components {
             focus: components["schemas"]["CandidateResult"];
             comparators: components["schemas"]["CandidateResult"][];
             attributes: components["schemas"]["ComparisonAttributeRow"][];
-            /** @description Templated from weighted contributions, never model-written. Deterministic. */
+            /** @description One entry per comparator, in the order of `comparators`. Templated from weighted contributions, never model-written; deterministic. Read from the comparator's side: `score_delta` is its total minus the focus's, `advantages` are what it leads on and `disadvantages` what it trails on. */
             synthesis?: {
-                comparator?: string;
-                score_delta?: number;
-                advantages?: string[];
-                disadvantages?: string[];
+                comparator: string;
+                /** @description The comparator's total minus the focus's. Null when either has no total. */
+                score_delta: number | null;
+                /** @description Deprecated; removed once the interface reads `ahead`. */
+                advantages: string[];
+                /** @description Deprecated; removed once the interface reads `behind`. */
+                disadvantages: string[];
+                /** @description The pillars the comparator leads on, most worth first, at most three. Empty when either side has no total. */
+                ahead: components["schemas"]["SynthesisLine"][];
+                /** @description The pillars the comparator trails on, most worth first, at most three. Empty when either side has no total. */
+                behind: components["schemas"]["SynthesisLine"][];
+                /** @description Pillars left out because either side has no score there, in the focus's pillar order. */
+                not_comparable: string[];
             }[];
+        };
+        SynthesisLine: {
+            pillar: string;
+            /** @description What this pillar's gap is worth to the total, comparator minus focus, in score points: the comparator's pillar contribution minus the focus's -- the figure the matrix shows for this pillar under "Weighted impact". Never zero. */
+            worth: number;
         };
         ExternalScore: {
             candidate: string;
@@ -1790,7 +1889,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["CriteriaSetSummary"][];
+                        items: components["schemas"]["CriteriaSetListItem"][];
                     };
                 };
             };
@@ -1809,7 +1908,7 @@ export interface operations {
                 "application/json": {
                     /** @example partner */
                     id: string;
-                    name: string;
+                    name: components["schemas"]["CriteriaSetName"];
                 };
             };
         };
@@ -1849,14 +1948,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deleted */
+            /** @description Deleted, and restorable */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            409: components["responses"]["Conflict"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["InvalidRequest"];
         };
     };
@@ -1872,12 +1971,31 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    name: string;
+                    name: components["schemas"]["CriteriaSetName"];
                 };
             };
         };
         responses: {
             200: components["responses"]["CriteriaSet"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["InvalidRequest"];
+        };
+    };
+    restoreCriteriaSet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                criteriaSetId: components["parameters"]["CriteriaSetId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["CriteriaSet"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["InvalidRequest"];
         };
     };
@@ -1894,12 +2012,13 @@ export interface operations {
             content: {
                 "application/json": {
                     id: string;
-                    name: string;
+                    name: components["schemas"]["CriteriaSetName"];
                 };
             };
         };
         responses: {
             201: components["responses"]["CriteriaSet"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["InvalidRequest"];
         };
@@ -2473,6 +2592,15 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            /** @description `score_scale_not_set`: there is no top of the score range to score onto. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             422: components["responses"]["InvalidRequest"];
         };
     };
@@ -2501,6 +2629,15 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            /** @description `score_scale_not_set`: there is no top of the score range to score onto. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             422: components["responses"]["InvalidRequest"];
         };
     };
@@ -2552,6 +2689,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvaluationSummary"];
+                };
+            };
+            /** @description `score_scale_not_set`: there is no top of the score range to score onto. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             422: components["responses"]["InvalidRequest"];

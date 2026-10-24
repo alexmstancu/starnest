@@ -21,6 +21,8 @@ type Ranking = components["schemas"]["Ranking"];
 type Run = components["schemas"]["Run"];
 type Settings = components["schemas"]["Settings"];
 type Comparison = components["schemas"]["Comparison"];
+type SynthesisPair = NonNullable<Comparison["synthesis"]>[number];
+type SynthesisLine = components["schemas"]["SynthesisLine"];
 type RunPlan = components["schemas"]["RunPlan"];
 type RunDetail = components["schemas"]["RunDetail"];
 type StoredValue = components["schemas"]["Value"];
@@ -378,8 +380,11 @@ export const SETTINGS: Settings = {
 
 /**
  * One comparison: Portugal against the Netherlands, with a gap that matters and one that does
- * not. The synthesis is the server's, never assembled here -- the interface prints the
- * sentences it is given (`reqs.md` 8.5).
+ * not. **Every number reads comparator minus focus, as the server's do** (PL-091): a positive
+ * gap is the comparator ahead, and its advantages are what it leads the focus on. The synthesis
+ * is the server's, never assembled by the interface -- which prints the sentences it is given
+ * (`reqs.md` 8.5) -- so its total gap is taken from the two totals and its pillar lines from the
+ * two sides' pillars, as the server takes them.
  */
 export function comparisonFor(
   criteriaSet: string,
@@ -414,6 +419,9 @@ export function comparisonFor(
       {
         attribute: "country.cost_of_living_index",
         pillar: "economics",
+        // What the attribute counted for in the focus's total, out of 100: each comparator's
+        // `weighted_contribution` is its score gap at this weight, as the server weighs it.
+        effective_weight: 12,
         // The raw figure beside the score, which is what the Compare toggle switches between
         // (`ComparisonAttributeRow` carries the whole `Value`, not only its score).
         focus: {
@@ -428,8 +436,8 @@ export function comparisonFor(
         comparators: comparators.map((candidate) => ({
           candidate,
           normalised_score: 41,
-          delta: -13.4,
-          weighted_contribution: 4.9,
+          delta: 13.4,
+          weighted_contribution: -4.92,
           value: comparedValue(
             "country.cost_of_living_index",
             candidate,
@@ -441,6 +449,7 @@ export function comparisonFor(
       {
         attribute: "country.coastline_access",
         pillar: "nature",
+        effective_weight: 3,
         focus: {
           normalised_score: 70,
           value: comparedValue(
@@ -453,23 +462,74 @@ export function comparisonFor(
         comparators: comparators.map((candidate) => ({
           candidate,
           normalised_score: 64,
-          delta: 1341,
-          weighted_contribution: 0.2,
           // No `value` on this one: a comparator with no figure must read as absent rather
-          // than as a zero, which is the whole reason the raw view exists.
+          // than as a zero, which is the whole reason the raw view exists -- and with one side
+          // missing there is no raw gap either.
+          delta: null,
+          weighted_contribution: -0.18,
         })),
       },
     ],
     synthesis: comparators.map((candidate) => ({
       comparator: candidate,
-      score_delta: 7,
-      advantages: [
-        "Cost of living: 82 against 41, worth +4.9 points",
-        "Coastline access: 70 against 64, worth +0.2 points",
+      score_delta: againstFocus(named(focus).score, named(candidate).score),
+      // Deprecated, and still sent until the cards read the pillar lines (C07 U5).
+      advantages: ["Broadband coverage: 88 against 61, worth +1.8 points"],
+      disadvantages: [
+        "Cost of living: 41 against 82, worth -4.9 points",
+        "Coastline access: 64 against 70, worth -0.2 points",
       ],
-      disadvantages: ["Broadband coverage: 61 against 88, worth -1.8 points"],
+      ...pillarLines(named(focus), named(candidate)),
     })),
   };
+}
+
+/** The comparator's number minus the focus's, or null unless both have one: the server's rule. */
+function againstFocus(focus: number | null, theirs: number | null): number | null {
+  return focus === null || theirs === null ? null : theirs - focus;
+}
+
+/**
+ * A pair's pillar lines, by the server's rule (PL-099, PL-100): each of the focus's pillars both
+ * sides scored is worth the comparator's contribution minus the focus's, and any other cannot be
+ * compared. At most three lines a side, most worth first, and none when either total is missing.
+ *
+ * **Derived rather than written out**, because this fixture's comparators carry no pillar scores:
+ * lines written for today's data would turn wrong, in silence, the day one gains some.
+ */
+export function pillarLines(
+  focus: CandidateResult,
+  comparator: CandidateResult,
+): Pick<SynthesisPair, "ahead" | "behind" | "not_comparable"> {
+  const ours = scoredContributions(focus);
+  const theirs = scoredContributions(comparator);
+  const lines: SynthesisLine[] = [];
+  const notComparable: string[] = [];
+  for (const { pillar } of focus.pillar_scores ?? []) {
+    const worth = againstFocus(ours.get(pillar) ?? null, theirs.get(pillar) ?? null);
+    if (worth === null) notComparable.push(pillar);
+    else lines.push({ pillar, worth });
+  }
+  const drawn = focus.score === null || comparator.score === null ? [] : lines;
+  return {
+    ahead: mostWorthFirst(drawn.filter((line) => line.worth > 0)),
+    behind: mostWorthFirst(drawn.filter((line) => line.worth < 0)),
+    not_comparable: notComparable,
+  };
+}
+
+/** What each scored pillar put into the total. A pillar nobody scored is absent, not zero. */
+function scoredContributions(result: CandidateResult): Map<string, number> {
+  return new Map(
+    (result.pillar_scores ?? [])
+      .filter((pillar) => pillar.score !== null)
+      .map((pillar) => [pillar.pillar, pillar.contribution]),
+  );
+}
+
+/** The three lines worth most either way. The sort is stable, so a tie keeps the focus's order. */
+function mostWorthFirst(lines: readonly SynthesisLine[]): SynthesisLine[] {
+  return [...lines].sort((one, other) => Math.abs(other.worth) - Math.abs(one.worth)).slice(0, 3);
 }
 
 /** A stored value as a comparison carries it: the figure in its own unit, with provenance. */

@@ -157,7 +157,7 @@ export const handlers = [
     if (criteriaSetDetails[body.id]) {
       return HttpResponse.json(
         {
-          code: "already_exists",
+          code: "criteria_set_exists",
           message: `A criteria set called ${body.id} already exists.`,
         },
         { status: 409 },
@@ -400,11 +400,11 @@ export const handlers = [
     if ((body.citizenships ?? []).length === 0) {
       return HttpResponse.json(
         {
-          code: "invalid_field",
+          code: "invalid_request",
           message: "A household needs at least one citizenship.",
           details: { field: "citizenships" },
         },
-        { status: 400 },
+        { status: 422 },
       );
     }
     household = body;
@@ -422,11 +422,11 @@ export const handlers = [
     ) {
       return HttpResponse.json(
         {
-          code: "invalid_field",
+          code: "invalid_request",
           message: "The score scale maximum must be at least 1.",
           details: { field: "score_scale_max" },
         },
-        { status: 400 },
+        { status: 422 },
       );
     }
     settings = body;
@@ -446,10 +446,10 @@ export const handlers = [
     if (!criteriaSet || !level) {
       return HttpResponse.json(
         {
-          code: "missing_query_parameter",
+          code: "invalid_request",
           message: "criteria_set and level are both required.",
         },
-        { status: 400 },
+        { status: 422 },
       );
     }
 
@@ -470,10 +470,10 @@ export const handlers = [
     if (!criteriaSet || !level) {
       return HttpResponse.json(
         {
-          code: "missing_query_parameter",
+          code: "invalid_request",
           message: "criteria_set and level are both required.",
         },
-        { status: 400 },
+        { status: 422 },
       );
     }
 
@@ -570,11 +570,11 @@ export const handlers = [
       if (typeof body.weight !== "number" || !Number.isFinite(body.weight)) {
         return HttpResponse.json(
           {
-            code: "invalid_field",
+            code: "invalid_request",
             message: "weight must be a number between 0 and 100.",
             details: { field: "weight" },
           },
-          { status: 400 },
+          { status: 422 },
         );
       }
 
@@ -838,6 +838,8 @@ export const handlers = [
 
   http.all(`${BASE}/*`, ({ request }) => {
     const path = new URL(request.url).pathname;
+    // The one code here no server sends, on purpose: a gap in the mock must not pass for one of
+    // the server's own answers (`refusalCodes.test.ts`).
     return HttpResponse.json(
       {
         code: "not_mocked",

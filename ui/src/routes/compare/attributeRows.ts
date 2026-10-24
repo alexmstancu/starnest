@@ -42,7 +42,7 @@ export interface AttributeSource {
   comparators: readonly {
     candidate: string;
     score: number | null;
-    /** Focus minus comparator, in the attribute's own unit (the server's own figure). */
+    /** Comparator minus focus, in the attribute's own unit (the server's own figure). */
     rawDelta: number | null;
     figure: string;
   }[];
@@ -53,16 +53,15 @@ export interface AttributeCell {
   score: number | null;
   /** The comparator's score minus the focus's, in normalised points. Null where either absent. */
   scoreDelta: number | null;
-  /** Focus minus comparator, in the attribute's own unit: the server's figure, printed as is. */
+  /** Comparator minus focus, in the attribute's own unit: the server's figure, printed as is. */
   rawDelta: number | null;
   /**
    * What the raw view's bar is drawn from: the raw gap's size, signed by `scoreDelta`.
    *
    * **A raw gap's sign says which figure is higher, not which is better** -- a higher cost of
-   * living is worse, a longer coastline better, and a target band is better from neither side --
-   * and the server's raw delta runs the other way from the score delta besides (UI-19). The
-   * scores already know every goal, so they decide the direction. Null where either score is
-   * missing, the scores tie, or there is no raw gap.
+   * living is worse, a longer coastline better, and a target band is better from neither side
+   * (UI-19). The scores already know every goal, so they decide the direction. Null where
+   * either score is missing, the scores tie, or there is no raw gap.
    */
   rawBar: number | null;
   figure: string;

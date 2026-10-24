@@ -13,8 +13,9 @@ describe("the mock server", () => {
       (thrown: unknown) => thrown,
     )) as ApiError;
 
-    expect(error.code).toBe("missing_query_parameter");
-    expect(error.status).toBe(400);
+    // As the server does: a required query parameter left out is a malformed request.
+    expect(error.code).toBe("invalid_request");
+    expect(error.status).toBe(422);
   });
 
   it("serves a ranking per level, so the level toggle changes what is shown", async () => {

@@ -251,7 +251,7 @@ function AttributeRowView({
   name: string;
 }) {
   const raw = shownAs === "raw";
-  // The raw gap is the server's focus minus comparator, printed as sent, so the row says which
+  // The raw gap is the server's comparator minus focus, printed as sent, so the row says which
   // way round it reads; the bar beneath it is coloured by the scores (UI-19).
   const note = raw ? rawNote(row) : "normalised 0–100";
 
@@ -293,8 +293,8 @@ function AttributeRowView({
 function rawNote(row: AttributeRow): string {
   if (row.focusRaw === null && row.focusScore === null) return "no figure";
   return row.gapUnit === null
-    ? "its own unit; gaps read focus minus comparator"
-    : `its own currency; gaps in ${row.gapUnit}, focus minus comparator`;
+    ? "its own unit; gaps read comparator minus focus"
+    : `its own currency; gaps in ${row.gapUnit}, comparator minus focus`;
 }
 
 /** The baseline column: the line everything else is measured from, so it carries no bar. */
