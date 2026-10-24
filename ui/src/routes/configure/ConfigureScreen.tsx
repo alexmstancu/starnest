@@ -6,6 +6,7 @@ import { LoadedRegion } from "../../shell/LoadedRegion";
 import { useSelection } from "../../shell/SelectionContext";
 import { CriteriaPanel } from "./criteria/CriteriaPanel";
 import { CriteriaSetsPanel } from "./sets/CriteriaSetsPanel";
+import { useCriteriaSets } from "./sets/useCriteriaSets";
 import { DataSourcesPanel } from "./sources/DataSourcesPanel";
 import { HouseholdPanel } from "./household/HouseholdPanel";
 import { PillarWeightsPanel } from "./pillars/PillarWeightsPanel";
@@ -46,6 +47,13 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   // unmounted each time one is opened. The history names its changes from it too.
   const catalog = useAttributeCatalog(levelId);
   const editor = useCriteriaEditor(criteriaSetId, history, catalog.catalog);
+  // **The one writer of sets, here rather than in its panel** (D-C03-9): its entries and the
+  // holds between it and the other writers belong to the screen that owns the history.
+  const sets = useCriteriaSets({
+    selection,
+    history,
+    writesInFlight: editor.busy || pillarSaving,
+  });
   // **One signal that the gate answers have moved** (UI-12). The rules and the proposals read
   // the answers separately, so a confirm or a research pass re-read only the proposals, and a
   // gate went on describing answers that had since changed until the screen was remounted.
@@ -92,7 +100,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
             each other: which set you are editing, who is moving, what matters and how much,
             what rules out, which source wins, and what an acquisition may spend. */}
         <div className="configure__stages">
-          <CriteriaSetsPanel />
+          <CriteriaSetsPanel form={sets} />
           <HouseholdPanel />
 
           {/* **Six cards, whatever each read is doing** (PL-013). Stages 3 and 4 show the set,
@@ -187,7 +195,10 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
             is "what have I just done?", and an answer that has to be scrolled back to is an
             answer nobody reads. */}
         <aside className="configure__rail">
-          <RecentChanges history={history} busy={editor.busy || pillarSaving} />
+          <RecentChanges
+            history={history}
+            busy={editor.busy || pillarSaving || sets.busy}
+          />
         </aside>
       </div>
     </section>

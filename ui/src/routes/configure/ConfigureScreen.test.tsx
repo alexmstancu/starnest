@@ -1094,8 +1094,9 @@ describe("while a change is being saved", () => {
 
     writes.release();
 
-    // The answer has landed once the change is listed: it is the copy's, and recorded as such.
-    await (await historyPanel()).findByText("1 in this session");
+    // The answer has landed once the change is listed beside the copy (D-C03-9): it is the
+    // copy's, and recorded as such.
+    await (await historyPanel()).findByText("2 in this session");
     expect(readingOf(COST_OF_LIVING)).toBe("50.0%");
     expect(readingOf(TAX)).toBe("30.0%");
   });
@@ -1137,7 +1138,8 @@ describe("while a change is being saved", () => {
     await userEvent.selectOptions(activeSet(), "default_copy");
     await waitFor(() => expect(reads).toBe(1));
     writes.release();
-    await (await historyPanel()).findByText("1 in this session");
+    // The copy is listed too (D-C03-9), so the save makes two.
+    await (await historyPanel()).findByText("2 in this session");
     release();
 
     // The stale read is answered by reading again; only the second read's answer is shown, and
@@ -1732,11 +1734,12 @@ describe("changes made in more than one set", () => {
     await duplicateDefault();
     await saveWeight(COST_OF_LIVING, "40");
     const panel = await historyPanel();
-    await panel.findByText("1 in this session");
+    // The copy is listed below the weights (D-C03-9).
+    await panel.findByText("2 in this session");
     await chooseSet("default");
     await saveWeight(COST_OF_LIVING, "40");
 
-    await panel.findByText("2 in this session");
+    await panel.findByText("3 in this session");
     expect(
       panel.getByText("Weight for Cost of living index: 50 to 40, in Default copy"),
     ).toBeInTheDocument();
@@ -1757,7 +1760,7 @@ describe("changes made in more than one set", () => {
       ),
     );
     await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
-    await panel.findByText("1 in this session");
+    await panel.findByText("2 in this session");
     await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
 
     await waitFor(() =>

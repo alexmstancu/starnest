@@ -1,11 +1,12 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
-import { deleteCriteriaSet } from "../../../api/endpoints";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createCriteriaSet, deleteCriteriaSet } from "../../../api/endpoints";
 import { mockServer } from "../../../mocks/server";
 import {
   expectHeld,
+  expectNotHeld,
   followChromiumFocusFixup,
 } from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
@@ -44,12 +45,39 @@ async function create(name: string) {
   await user.click(sets.getByRole("button", { name: "Create set" }));
 }
 
+/** Recent changes, where a set verb is listed and undone. */
+async function historyPanel() {
+  return within(await screen.findByRole("region", { name: /^recent changes/i }));
+}
+
+/** The armed strip that stands between Delete and the deletion. */
+async function strip() {
+  return within(await screen.findByRole("alert", { name: /^delete /i }));
+}
+
+/** Delete, then confirm on the strip: the deletion as a reader makes it. */
+async function deleteSet(user: UserEvent, name: string) {
+  await user.click((await row(name)).getByRole("button", { name: "Delete" }));
+  await user.click((await strip()).getByRole("button", { name: `Delete ${name}` }));
+}
+
+/** Every write the screen sends from now on, as "METHOD path". Reads are not writes. */
+function recordWrites(): string[] {
+  const writes: string[] = [];
+  mockServer.events.on("request:start", ({ request }) => {
+    if (request.method !== "GET") {
+      writes.push(`${request.method} ${new URL(request.url).pathname}`);
+    }
+  });
+  return writes;
+}
+
 /**
  * Holds every request of one kind until the test lets go, counting them; returning nothing then
  * hands each on to the mock's own handler, so what lands is what the server would have said.
  */
 function holdRequests(
-  method: "post" | "patch" | "delete",
+  method: "post" | "put" | "patch" | "delete",
   path: string,
 ): { sent: string[]; release: () => void } {
   let release = (): void => undefined;
@@ -176,7 +204,7 @@ describe("the criteria sets panel", () => {
     renderShell("/configure");
     await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
 
-    await user.click((await row("Default")).getByRole("button", { name: "Delete" }));
+    await deleteSet(user, "Default");
 
     // **Asserted through the panel, not the `<select>`.** A select whose value matches no
     // option falls back to the first one in jsdom, so `toHaveValue` passes whatever the
@@ -198,7 +226,7 @@ describe("the criteria sets panel", () => {
     const user = userEvent.setup();
     renderShell("/configure");
 
-    await user.click((await row("Default")).getByRole("button", { name: "Delete" }));
+    await deleteSet(user, "Default");
 
     await waitFor(() =>
       expect(
@@ -304,9 +332,10 @@ describe("a set action pressed from the keyboard", () => {
       method: "delete",
       path: "/v1/criteria-sets/:criteriaSetId",
       pressTwice: async (user) => {
-        const remove = (await row("Remote only")).getByRole("button", { name: "Delete" });
-        await user.click(remove);
-        await user.click(remove);
+        await user.click((await row("Remote only")).getByRole("button", { name: "Delete" }));
+        const confirm = (await strip()).getByRole("button", { name: "Delete Remote only" });
+        await user.click(confirm);
+        await user.click(confirm);
       },
     },
   ];
@@ -378,8 +407,7 @@ describe("a set action pressed from the keyboard", () => {
     {
       // The row that takes the deleted one's place, in the same slot.
       action: "Delete",
-      press: async (user) =>
-        user.click((await row("Default")).getByRole("button", { name: "Delete" })),
+      press: async (user) => deleteSet(user, "Default"),
       focusedOn: async () =>
         (await row("Remote only")).getByRole("button", { name: "Delete" }),
     },
@@ -459,6 +487,245 @@ describe("renaming a set from the keyboard", () => {
 });
 
 /**
+ * PL-033 (UF-025, Critical), PL-035. **A deleted set is one undo away, exactly.** Delete used to
+ * destroy the set on one click with no record; the server now keeps it restorable, and the
+ * screen asks first, lists the deletion in Recent changes, and undoes it with the one request
+ * that brings it back.
+ */
+describe("deleting a set", () => {
+  let writes: string[] = [];
+  afterEach(() => {
+    mockServer.events.removeAllListeners("request:start");
+    writes = [];
+  });
+
+  it("arms a strip that names the set, what goes with it and that it is in use, and sends nothing", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    writes = recordWrites();
+
+    await user.click((await row("Default")).getByRole("button", { name: "Delete" }));
+
+    const armed = await strip();
+    expect(armed.getByText(/^Delete Default\?/)).toHaveTextContent(
+      "Its criteria, pillar weights and rules go with it",
+    );
+    expect(armed.getByText(/in use/)).toHaveTextContent("Remote only");
+    expect(armed.getByText(/saved rankings/i)).toBeInTheDocument();
+    expect(armed.getByRole("button", { name: "Duplicate first" })).toBeInTheDocument();
+    expect(document.activeElement).toBe(
+      armed.getByRole("button", { name: "Delete Default" }),
+    );
+    expect(writes).toEqual([]);
+  });
+
+  it("keeps the set when the strip is dismissed, and focus returns to Delete", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    writes = recordWrites();
+
+    await user.click((await row("Remote only")).getByRole("button", { name: "Delete" }));
+    await user.click((await strip()).getByRole("button", { name: "Keep it" }));
+
+    expect(screen.queryByRole("alert", { name: /^delete /i })).toBeNull();
+    expect(document.activeElement).toBe(
+      (await row("Remote only")).getByRole("button", { name: "Delete" }),
+    );
+    expect(writes).toEqual([]);
+  });
+
+  it("offers a copy first, and copying deletes nothing", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    writes = recordWrites();
+
+    await user.click((await row("Default")).getByRole("button", { name: "Delete" }));
+    await user.click((await strip()).getByRole("button", { name: "Duplicate first" }));
+
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default_copy"));
+    expect(writes).toEqual(["POST /v1/criteria-sets/default/duplicate"]);
+    expect(screen.queryByRole("alert", { name: /^delete /i })).toBeNull();
+  });
+
+  /** T33-U1. */
+  it("takes the set out at once and lists 'Deleted <name>' under Criteria set", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+
+    await deleteSet(user, "Remote only");
+
+    await waitFor(() =>
+      expect(screen.queryByRole("listitem", { name: "Remote only" })).toBeNull(),
+    );
+    const entry = (await historyPanel()).getByText("Deleted Remote only").closest("li")!;
+    expect(entry).toHaveTextContent("Criteria set");
+  });
+
+  /** T33-U2. */
+  it("undoes the deletion with one POST …/restore and nothing else, and the row returns from the server", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await deleteSet(user, "Remote only");
+    const history = await historyPanel();
+    await history.findByText("Deleted Remote only");
+    writes = recordWrites();
+
+    await user.click(history.getByRole("button", { name: "Undo this" }));
+
+    expect(await row("Remote only")).toBeTruthy();
+    expect(writes).toEqual(["POST /v1/criteria-sets/remote_only/restore"]);
+    await waitFor(() => expect(history.queryByText("Deleted Remote only")).toBeNull());
+  });
+
+  /** T33-U3. */
+  it("puts the set back in use when the one in use is undeleted", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    await deleteSet(user, "Default");
+    await waitFor(async () =>
+      expect((await row("Remote only")).getByRole("button", { name: "In use" })).toBeTruthy(),
+    );
+
+    await user.click((await historyPanel()).getByRole("button", { name: "Undo this" }));
+
+    await waitFor(async () =>
+      expect((await row("Default")).getByRole("button", { name: "In use" })).toBeTruthy(),
+    );
+  });
+
+  /** T33-U4. */
+  it("leaves the selection alone when another set was chosen since", async () => {
+    const user = userEvent.setup();
+    // Three sets, so one can be chosen after the deletion moved the selection to another.
+    await createCriteriaSet("partner", "Partner");
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    await deleteSet(user, "Default");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("partner"));
+    await user.click((await row("Remote only")).getByRole("button", { name: "Use" }));
+
+    await user.click((await historyPanel()).getByRole("button", { name: "Undo this" }));
+
+    expect(await row("Default")).toBeTruthy();
+    await waitFor(async () =>
+      expect((await row("Remote only")).getByRole("button", { name: "In use" })).toBeTruthy(),
+    );
+    expect((await row("Default")).getByRole("button", { name: "Use" })).toBeTruthy();
+  });
+
+  /** T33-U5, S8: no later-answered write may sit above the deletion entry. */
+  it("holds Delete on the set in use while a weight change to it is being saved", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    const writes = holdRequests(
+      "put",
+      "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId",
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Lock Economy" }));
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+    const remove = (await row("Default")).getByRole("button", { name: "Delete" });
+    expectHeld(remove);
+    expect(remove).toHaveAttribute("title", "Delete and fall back to another set");
+    await user.click(remove);
+    expect(screen.queryByRole("alert", { name: /^delete /i })).toBeNull();
+
+    writes.release();
+    await waitFor(() => expectNotHeld(remove));
+  });
+
+  /** T33-U6. */
+  it("lets nothing be undone while a deletion is being sent", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await user.click((await row("Default")).getByRole("button", { name: "Rename" }));
+    await user.keyboard("{Control>}a{/Control}Alex{Enter}");
+    const history = await historyPanel();
+    await history.findByText("Renamed Default to Alex");
+    const deletion = holdRequests("delete", "/v1/criteria-sets/:criteriaSetId");
+
+    await deleteSet(user, "Remote only");
+    await waitFor(() => expect(deletion.sent).toHaveLength(1));
+
+    expectHeld(history.getByRole("button", { name: "Undo this" }));
+    deletion.release();
+    await history.findByText("Deleted Remote only");
+  });
+
+  /** T33-U7. */
+  it("keeps the entry and says why when the server refuses the restore", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await deleteSet(user, "Remote only");
+    const history = await historyPanel();
+    await history.findByText("Deleted Remote only");
+    // Another tab takes the name meanwhile.
+    await createCriteriaSet("elsewhere", "Remote only");
+
+    await user.click(history.getByRole("button", { name: "Undo this" }));
+
+    expect(await history.findByText("criteria_set_name_taken")).toBeInTheDocument();
+    expect(history.getByText("Deleted Remote only")).toBeInTheDocument();
+  });
+});
+
+/** D-C03-9. The other three set verbs are listed too, each undone by the request that reverses it. */
+describe("Recent changes for a set", () => {
+  afterEach(() => mockServer.events.removeAllListeners("request:start"));
+
+  it("lists a created set and undoes it by deleting it", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await create("Partner");
+    const history = await historyPanel();
+    await history.findByText("Created Partner");
+    const writes = recordWrites();
+
+    await user.click(history.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() => expect(screen.queryByRole("listitem", { name: "Partner" })).toBeNull());
+    expect(writes).toEqual(["DELETE /v1/criteria-sets/partner"]);
+  });
+
+  it("lists a run of renames as one, from the first name, and undoes it to that name", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    for (const name of ["Alex", "Alexa"]) {
+      const current = name === "Alex" ? "Default" : "Alex";
+      await user.click((await row(current)).getByRole("button", { name: "Rename" }));
+      await user.keyboard(`{Control>}a{/Control}${name}{Enter}`);
+      await row(name);
+    }
+    const history = await historyPanel();
+    await history.findByText("Renamed Default to Alexa");
+
+    await user.click(history.getByRole("button", { name: "Undo this" }));
+
+    expect(await row("Default")).toBeTruthy();
+  });
+
+  it("lists a copy and undoes it by deleting the copy", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await user.click((await row("Default")).getByRole("button", { name: "Duplicate" }));
+    const history = await historyPanel();
+    await history.findByText("Duplicated Default as Default copy");
+    const writes = recordWrites();
+
+    await user.click(history.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("listitem", { name: "Default copy" })).toBeNull(),
+    );
+    expect(writes).toEqual(["DELETE /v1/criteria-sets/default_copy"]);
+  });
+});
+
+/**
  * UI-28. **An empty list that has arrived is not a list still on its way.** The selection treated
  * the two alike, so discarding the last set left it selected: every screen went on showing and
  * asking for a set the server no longer had.
@@ -474,7 +741,7 @@ describe("when every set has been discarded", () => {
     await row("Remote only");
     await deleteCriteriaSet("remote_only");
 
-    await user.click((await row("Default")).getByRole("button", { name: "Delete" }));
+    await deleteSet(user, "Default");
   }
 
   it("leaves nothing selected when the last sets are gone", async () => {

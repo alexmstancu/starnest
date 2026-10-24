@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { HeldButton } from "../../../shell/HeldButton";
 import { useSelection } from "../../../shell/SelectionContext";
-import { useCriteriaSets } from "./useCriteriaSets";
+import { SetDeletionStrip } from "./SetDeletionStrip";
+import type { CriteriaSetsForm } from "./useCriteriaSets";
 import { useSetFocus } from "./useSetFocus";
 
 /**
@@ -19,32 +21,40 @@ import { useSetFocus } from "./useSetFocus";
  * "Create set" once its name is cleared, the last set's Delete -- keeps focus and says so with
  * `aria-disabled`; Chromium throws focus off a disabled one.
  *
- * **Markup only.** What each action does is `useCriteriaSets.ts`; where focus goes after it is
- * `useSetFocus.ts`.
+ * **Delete asks first** (PL-033): it arms `SetDeletionStrip`, and only the strip sends.
+ *
+ * **Markup only.** What each action does is `useCriteriaSets.ts`, called once by the screen so
+ * its writes and its history outlive a remount; where focus goes after it is `useSetFocus.ts`.
  */
-export function CriteriaSetsPanel() {
-  const { criteriaSets, criteriaSetId, reload, selectCriteriaSet } =
-    useSelection();
-  const form = useCriteriaSets({
-    names: criteriaSets.map((set) => set.name),
-    reload,
-    select: selectCriteriaSet,
-  });
+export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
+  const { criteriaSets, criteriaSetId, selectCriteriaSet } = useSelection();
   const only = criteriaSets.length === 1;
-  const { renameField, newName, buttonId, renameClosed, deleted } = useSetFocus(
+  const [armed, setArmed] = useState<string | null>(null);
+  const armedSet = criteriaSets.find((set) => set.id === armed);
+  const { renameField, newName, buttonId, returnTo, deleted } = useSetFocus(
     criteriaSets,
     form.renaming,
   );
   const saveRename = async (criteriaSetId: string) => {
     await form.saveRename();
-    renameClosed(criteriaSetId);
-  };
-  const discard = async (criteriaSetId: string) => {
-    if (await form.discard(criteriaSetId)) deleted(criteriaSetId);
+    returnTo(criteriaSetId, "rename");
   };
   const cancelRename = (criteriaSetId: string) => {
     form.cancelRename();
-    renameClosed(criteriaSetId);
+    returnTo(criteriaSetId, "rename");
+  };
+  const discard = async (criteriaSetId: string) => {
+    if (!(await form.discard(criteriaSetId))) return;
+    setArmed(null);
+    deleted(criteriaSetId);
+  };
+  const disarm = (criteriaSetId: string) => {
+    setArmed(null);
+    returnTo(criteriaSetId, "delete");
+  };
+  const duplicateFirst = async (criteriaSetId: string, name: string) => {
+    await form.duplicate(criteriaSetId, name);
+    disarm(criteriaSetId);
   };
 
   return (
@@ -165,13 +175,15 @@ export function CriteriaSetsPanel() {
                     <HeldButton
                       id={buttonId(set.id, "delete")}
                       className="action action--danger"
-                      held={form.busy || only}
+                      held={form.deleteHeld(set.id) || only}
                       title={
                         only
                           ? "The only set there is cannot be deleted"
-                          : "Delete this set"
+                          : inUse
+                            ? "Delete and fall back to another set"
+                            : "Delete this set"
                       }
-                      onClick={() => void discard(set.id)}
+                      onClick={() => setArmed(set.id)}
                     >
                       Delete
                     </HeldButton>
@@ -182,6 +194,22 @@ export function CriteriaSetsPanel() {
           );
         })}
       </ul>
+
+      {armedSet !== undefined && (
+        <SetDeletionStrip
+          key={armedSet.id}
+          name={armedSet.name}
+          fallback={
+            armedSet.id === criteriaSetId
+              ? (criteriaSets.find((set) => set.id !== armedSet.id)?.name ?? null)
+              : null
+          }
+          held={form.deleteHeld(armedSet.id)}
+          onDelete={() => void discard(armedSet.id)}
+          onDuplicate={() => void duplicateFirst(armedSet.id, armedSet.name)}
+          onKeep={() => disarm(armedSet.id)}
+        />
+      )}
 
       <form
         className="set-create"

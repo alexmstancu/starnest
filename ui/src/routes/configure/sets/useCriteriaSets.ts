@@ -2,24 +2,35 @@
  * What the criteria-set stage does: make one, use one, rename one, copy one, discard one
  * (`reqs.md` 3.4).
  *
- * **A new set is empty**, which the API decides: copying one would mean starting from somebody
- * else's priorities without being asked. Discarding a set does not touch a saved evaluation,
- * which froze its own copy of the criteria (`reqs.md` Q193) -- the difference between an opinion
- * and a measurement.
+ * **A new set is a copy of the default**, which the API decides (PL-034). Deleting a set does
+ * not touch a saved evaluation, which froze its own copy of the criteria (`reqs.md` Q193), and
+ * the server keeps the set restorable (PL-033, PL-035).
+ *
+ * **The one writer of sets, at screen level** (D-C03-9, G5). It is the only module that sends a
+ * set verb, and each verb it sends is noted in Recent changes with the request that reverses it:
+ * Created (undo deletes it, restorably), Renamed (undo renames back), Duplicated (undo deletes
+ * the copy) and Deleted (undo restores it, and puts it back in use if it was and nobody has
+ * chosen another set since). Choosing a set is not a stored change, so it is not noted.
  *
  * **One name, not a name and an identifier.** The design asks for what the set is called and
  * derives the rest (`setIdentifier.ts`); the server still refuses a collision, so nothing is
  * guessed around.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createCriteriaSet,
   deleteCriteriaSet,
   duplicateCriteriaSet,
   renameCriteriaSet,
+  restoreCriteriaSet,
 } from "../../../api/endpoints";
+import type { Selection } from "../../../shell/SelectionContext";
+import type { ChangeHistory } from "../useChangeHistory";
 import { copyName, identifierFrom } from "./setIdentifier";
+
+/** Where Recent changes says a set verb was made. */
+const STAGE = "Criteria set";
 
 export interface CriteriaSetsForm {
   newName: string;
@@ -44,14 +55,34 @@ export interface CriteriaSetsForm {
   duplicate: (criteriaSetId: string, currentName: string) => Promise<void>;
   /** Resolves true once the set is gone, false when it was refused or not sent. */
   discard: (criteriaSetId: string) => Promise<boolean>;
+  /**
+   * Delete is held on the set in use while a write to it is in flight (S8): answered after the
+   * deletion, that write would sit above its entry and 404 before the restore could run.
+   */
+  deleteHeld: (criteriaSetId: string) => boolean;
 }
 
 export function useCriteriaSets(options: {
-  /** Every set's name, so a copy can be given one that is not taken. */
-  names: readonly string[];
-  reload: () => void;
-  select: (criteriaSetId: string | null) => void;
+  selection: Selection;
+  history: ChangeHistory;
+  /** A write to the set in use is in flight: a criterion's or a pillar's. */
+  writesInFlight: boolean;
 }): CriteriaSetsForm {
+  const { selection, history } = options;
+  const names = selection.criteriaSets.map((set) => set.name);
+  const nameOf = (criteriaSetId: string) =>
+    selection.criteriaSets.find((set) => set.id === criteriaSetId)?.name ?? criteriaSetId;
+  // What is in use when an undo runs, which is later than any render this hook has seen.
+  const inUse = useRef(selection.criteriaSetId);
+  useEffect(() => {
+    inUse.current = selection.criteriaSetId;
+  }, [selection.criteriaSetId]);
+
+  /** Deleting restorably, which is also how a created set or a copy is undone. */
+  const deleteAndReread = async (criteriaSetId: string) => {
+    await deleteCriteriaSet(criteriaSetId);
+    selection.reload();
+  };
   const [newName, setNewName] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -61,7 +92,7 @@ export function useCriteriaSets(options: {
   // **One action at a time, across every row** (PL-037). A ref, not the state above: two presses
   // can land before the first has re-rendered, and the second would be sent too.
   const inFlight = useRef(false);
-  const createRefusal = refusalOf(newName, options.names);
+  const createRefusal = refusalOf(newName, names);
 
   /** Whether the action was sent and answered without a refusal. */
   async function act(action: () => Promise<void>): Promise<boolean> {
@@ -71,7 +102,7 @@ export function useCriteriaSets(options: {
     setFailure(null);
     try {
       await action();
-      options.reload();
+      selection.reload();
       return true;
     } catch (error) {
       setFailure(error);
@@ -107,10 +138,28 @@ export function useCriteriaSets(options: {
     saveRename: async () => {
       const target = renaming;
       if (target === null || renameDraft.trim() === "") return;
+      const name = renameDraft.trim();
+      const was = nameOf(target);
+      const targetKey = `criteria-set:${target}:renamed`;
+      // A run of renames is one entry, so it reads from the name the run started from.
+      const latest = history.changes[0];
+      const first =
+        latest?.target === targetKey ? (latest.before as { name: string }).name : was;
       await act(async () => {
-        await renameCriteriaSet(target, renameDraft.trim());
+        await renameCriteriaSet(target, name);
         setRenaming(null);
         setRenameDraft("");
+        history.note({
+          target: targetKey,
+          stage: STAGE,
+          label: `Renamed ${first} to ${name}`,
+          before: { name: was },
+          after: { name },
+          reverse: async (before) => {
+            await renameCriteriaSet(target, (before as { name: string }).name);
+            selection.reload();
+          },
+        });
       });
     },
     // **Refused here as well as held on screen** (UIC-G1): Enter in the field submits whatever
@@ -124,25 +173,69 @@ export function useCriteriaSets(options: {
         const name = newName.trim();
         const created = await createCriteriaSet(identifierFrom(name), name);
         setNewName("");
-        options.select(created.id);
+        selection.selectCriteriaSet(created.id);
+        history.note({
+          target: `criteria-set:${created.id}:created`,
+          stage: STAGE,
+          label: `Created ${name}`,
+          before: { exists: false },
+          after: { exists: true },
+          reverse: () => deleteAndReread(created.id),
+        });
       });
     },
     // The copy is selected, because duplicating is how an experiment starts and the next
     // edit belongs to the copy rather than to what it was copied from.
     duplicate: async (criteriaSetId, currentName) => {
       await act(async () => {
-        const name = copyName(currentName, options.names);
+        const name = copyName(currentName, names);
         const copy = await duplicateCriteriaSet(
           criteriaSetId,
           identifierFrom(name),
           name,
         );
-        options.select(copy.id);
+        selection.selectCriteriaSet(copy.id);
+        history.note({
+          target: `criteria-set:${copy.id}:duplicated`,
+          stage: STAGE,
+          label: `Duplicated ${currentName} as ${name}`,
+          before: { exists: false },
+          after: { exists: true },
+          reverse: () => deleteAndReread(copy.id),
+        });
       });
     },
-    // Discarding says nothing about what to select next: `SelectionContext` holds the rule that
-    // the chosen set is one that exists, and applies it when the refreshed list arrives (P44).
-    discard: (criteriaSetId) => act(() => deleteCriteriaSet(criteriaSetId)),
+    // **The set in use falls back to the first other set**, the one `SelectionContext` would
+    // adopt (P44), chosen here so the undo knows where the deletion left the selection. The
+    // name is captured now: a deleted set is in no list to read it from later.
+    discard: (criteriaSetId) => {
+      const name = nameOf(criteriaSetId);
+      const wasInUse = selection.criteriaSetId === criteriaSetId;
+      const fallback = wasInUse
+        ? (selection.criteriaSets.find((set) => set.id !== criteriaSetId)?.id ?? null)
+        : null;
+      return act(async () => {
+        await deleteCriteriaSet(criteriaSetId);
+        if (wasInUse) selection.selectCriteriaSet(fallback);
+        history.note({
+          target: `criteria-set:${criteriaSetId}:deleted`,
+          stage: STAGE,
+          label: `Deleted ${name}`,
+          before: { deleted: false, wasInUse },
+          after: { deleted: true },
+          reverse: async () => {
+            await restoreCriteriaSet(criteriaSetId);
+            selection.reload();
+            // Back in use only if the selection is still where the deletion left it.
+            if (wasInUse && inUse.current === fallback) {
+              selection.selectCriteriaSet(criteriaSetId);
+            }
+          },
+        });
+      });
+    },
+    deleteHeld: (criteriaSetId) =>
+      busy || (options.writesInFlight && criteriaSetId === selection.criteriaSetId),
   };
 }
 

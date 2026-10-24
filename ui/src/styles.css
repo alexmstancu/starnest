@@ -1554,9 +1554,10 @@ select.field__control {
   background: var(--colour-surface-sunken);
 }
 
-/* Deleting is the one action here that cannot be undone, and it is the only one drawn in red.
-   The danger is in the border and the text, not a filled button: a red block would pull the
-   eye to the most destructive thing on the screen. */
+/* Deleting is the one action here that takes a set out of use, and it is the only one drawn in
+   red; it asks first, and Recent changes can bring the set back (PL-033). The danger is in the
+   border and the text, not a filled button: a red block would pull the eye to the most
+   destructive thing on the screen. */
 .action--danger {
   border-color: var(--colour-danger-border);
   color: var(--colour-danger);
