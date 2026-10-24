@@ -3,7 +3,7 @@ import { useAttributeNames } from "../../api/useAttributeNames";
 import { useCandidateNames } from "../../api/useCandidateNames";
 import { useSourceNames } from "../../api/useSourceNames";
 import { formatCount } from "../../format/display";
-import { HeldButton } from "./HeldButton";
+import { HeldButton } from "../../shell/HeldButton";
 import { failureGroups } from "./failureGroups";
 import { groupLabel, groupMeta, itemDetail, itemPhrase, type ItemNames } from "./itemNames";
 import { type Item, groupBy, keyOf, questionsIn, scopeFor } from "./runScope";

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { refocusIfLost } from "../focusReturn";
+import { refocusIfLost } from "../../../shell/focusReturn";
 
 type Direction = "up" | "down";
 

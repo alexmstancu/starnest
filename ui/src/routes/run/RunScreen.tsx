@@ -20,7 +20,7 @@ import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
 import { describeGaps, describeScope } from "./databaseHolds";
 import { describeFailures, failuresIn } from "./failureGroups";
-import { HeldButton } from "./HeldButton";
+import { HeldButton } from "../../shell/HeldButton";
 import { ItemGroups } from "./ItemGroups";
 import { OpenToHandEntry } from "./OpenToHandEntry";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";

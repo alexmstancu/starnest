@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
-import { refocusIfLost } from "../focusReturn";
+import { refocusIfLost } from "../../../shell/focusReturn";
 import type { Proposals } from "./useProposals";
 
 /** The key a proposal's row is drawn under, and its Confirm button is found by. */

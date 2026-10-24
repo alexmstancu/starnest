@@ -8,13 +8,16 @@ import type { ReactNode, Ref } from "react";
  * the page while the request ran. Held, the button keeps focus, says it is unavailable with
  * `aria-disabled`, and a press does nothing until the answer is in.
  *
- * **`disabled` stays for what is not in flight** -- nothing selected, no level to plan in --
- * where there is no answer to wait for, only nothing to do.
+ * **`disabled` stays for a state the control's own press cannot produce** -- nothing selected,
+ * no level to plan in -- where there is no answer to wait for, only nothing to do.
+ *
+ * In the shell because Acquire and Configure both hold their writes this way (D12).
  */
 export function HeldButton({
   held,
   disabled = false,
   className,
+  title,
   onClick,
   children,
   ref,
@@ -23,6 +26,7 @@ export function HeldButton({
   held: boolean;
   disabled?: boolean;
   className: string;
+  title?: string;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -31,6 +35,7 @@ export function HeldButton({
       ref={ref}
       type="button"
       className={className}
+      title={title}
       disabled={disabled}
       aria-disabled={held || undefined}
       onClick={() => {

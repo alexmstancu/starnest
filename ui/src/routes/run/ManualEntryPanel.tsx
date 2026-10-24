@@ -18,7 +18,7 @@ import {
   type ManualField,
   type ManualKind,
 } from "./manualEntry";
-import { HeldButton } from "./HeldButton";
+import { HeldButton } from "../../shell/HeldButton";
 import { useManualEntry, type ManualEntryState } from "./useManualEntry";
 
 /** The source a typed figure is stored under: a catalog row, named by the catalog. */

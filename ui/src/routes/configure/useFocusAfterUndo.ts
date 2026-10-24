@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
-import { refocusIfLost } from "./focusReturn";
+import { refocusIfLost } from "../../shell/focusReturn";
 import type { ChangeHistory } from "./useChangeHistory";
 
 /**
