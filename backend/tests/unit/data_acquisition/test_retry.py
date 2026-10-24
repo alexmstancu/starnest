@@ -34,6 +34,7 @@ from starnest.data_acquisition import (
     AcquisitionFailure,
     CostMeter,
     Estimate,
+    NothingToFetchError,
     Run,
     RunningSpend,
     RunScope,
@@ -770,3 +771,178 @@ class TestRetryingWhatOnlyTheStandInStepFailed:
             if str(value.candidate) == "country.liechtenstein"  # type: ignore[attr-defined]
         ]
         assert len(borrowed) == 1, "the borrow was dropped because a source also failed"
+
+
+def a_swiss_figure(attribute: str) -> Value:
+    """Switzerland's own figure for one attribute, stored earlier and so lendable."""
+    return Value(
+        candidate="country.switzerland",
+        attribute=attribute,
+        value_type=ValueType.RATIO,
+        data_source="eurostat",
+        reference_period=ReferencePeriod(
+            start=datetime(2025, 1, 1).date(), end=datetime(2025, 12, 31).date()
+        ),
+        retrieval_date=datetime.now(UTC),
+        confidence_level=ConfidenceLevel.HIGH,
+        payload=Ratio(value=Decimal("11.4"), basis="households"),
+    )
+
+
+def a_run_failing_on(*failures: tuple[str, Candidate, str]) -> Run:
+    """A finished run whose failures are the (source, candidate, attribute) triples given."""
+    return Run(
+        id=24,
+        status=RunStatus.COMPLETED,
+        started_at=datetime.now(UTC),
+        triggered_by="user",
+        scope=RunScope(
+            level="country",
+            candidates=tuple(dict.fromkeys(str(candidate.id) for _, candidate, _ in failures)),
+            attributes=tuple(dict.fromkeys(attribute for _, _, attribute in failures)),
+        ),
+        failures=tuple(
+            AcquisitionFailure(
+                attribute=attribute,
+                reason="the source could not answer",
+                candidate=str(candidate.id),
+                data_source=DataSourceId(source),
+            )
+            for source, candidate, attribute in failures
+        ),
+    )
+
+
+class TestARetryBorrowsOnlyForItsOwnPairs:
+    """FU-A1 (PL-042). A retry asks about the exact pairs it went back to (BE-11), and the borrow
+    step still read the two lists those pairs span -- so every declared borrow inside that
+    rectangle was written under the retry, though nobody had asked about it, and the run then
+    counted more answers than it had items."""
+
+    async def test_a_retry_borrows_only_for_the_exact_pairs_it_asked_about(self) -> None:
+        """Liechtenstein borrows both attributes from Switzerland. The retry asks about its
+        overburden rate and Portugal's overcrowding, so Liechtenstein's overcrowding -- a corner
+        of the rectangle, not a pair -- is not this retry's to borrow."""
+        failed = a_run_failing_on(
+            ("eurostat", LIECHTENSTEIN, OVERBURDEN), ("oecd", PORTUGAL, OVERCROWDING)
+        )
+        store = RecordingValueStore(
+            holds=(a_swiss_figure(OVERBURDEN), a_swiss_figure(OVERCROWDING))
+        )
+
+        await retry_run(
+            failed=failed,
+            adapters=[StubSource("eurostat", (OVERBURDEN,)), StubSource("oecd", (OVERCROWDING,))],
+            attributes=[an_attribute(OVERBURDEN), an_attribute(OVERCROWDING)],
+            candidates=[LIECHTENSTEIN, PORTUGAL],
+            values=store,
+            runs=RecordingRunStore(answers_with=failed),
+            stand_ins=[
+                BORROWS_FROM_SWITZERLAND,
+                BORROWS_FROM_SWITZERLAND.model_copy(update={"attribute": OVERCROWDING}),
+            ],
+        )
+
+        borrowed = {
+            (str(value.candidate), str(value.attribute))  # type: ignore[attr-defined]
+            for value in store.appended
+        }
+        assert borrowed == {("country.liechtenstein", OVERBURDEN)}
+
+
+class TestARetryRecordsOnlyWhatItCanReach:
+    """FU-A2 (PL-043). A retry took its pairs from every failure of the run it retries and its
+    sources from the ones still switched on, and never intersected the two. A failure of a
+    source nobody will ask became an item no source was asked about -- reported unanswered for
+    ever -- and when no failing source was left the refusal said that no source was switched on,
+    while others were."""
+
+    @pytest.mark.parametrize(
+        "world_bank_declares",
+        [None, (OVERCROWDING,)],
+        ids=["its source is switched off or gone", "its source no longer declares it"],
+    )
+    async def test_a_failure_no_source_will_be_asked_about_is_not_an_item(
+        self, world_bank_declares: tuple[str, ...] | None
+    ) -> None:
+        """World Bank's failure on Spain's overburden rate is a corner of the two Eurostat
+        failures, so only the reach of its source can keep it out."""
+        failed = a_run_failing_on(
+            ("eurostat", PORTUGAL, OVERBURDEN),
+            ("eurostat", SPAIN, OVERCROWDING),
+            ("world_bank", SPAIN, OVERBURDEN),
+        )
+        runs = RecordingRunStore(answers_with=failed)
+        world_bank = (
+            [] if world_bank_declares is None else [StubSource("world_bank", world_bank_declares)]
+        )
+
+        await retry_run(
+            failed=failed,
+            adapters=[StubSource("eurostat", (OVERBURDEN, OVERCROWDING)), *world_bank],
+            attributes=[an_attribute(OVERBURDEN), an_attribute(OVERCROWDING)],
+            candidates=[PORTUGAL, SPAIN],
+            values=RecordingValueStore(),
+            runs=runs,
+        )
+
+        assert runs.opened[0].pairs == (
+            (str(PORTUGAL.id), OVERBURDEN),
+            (str(SPAIN.id), OVERCROWDING),
+        )
+
+    @pytest.mark.parametrize(
+        ("stand_ins", "items"),
+        [
+            ((), {(str(PORTUGAL.id), OVERBURDEN), ("country.liechtenstein", OVERCROWDING)}),
+            (
+                (BORROWS_FROM_SWITZERLAND,),
+                {
+                    (str(PORTUGAL.id), OVERBURDEN),
+                    ("country.liechtenstein", OVERCROWDING),
+                    ("country.liechtenstein", OVERBURDEN),
+                },
+            ),
+        ],
+        ids=["no stand-in is declared or enabled", "the stand-in is still declared"],
+    )
+    async def test_a_failed_borrow_is_an_item_only_while_its_stand_in_is_declared(
+        self, stand_ins: tuple[StandIn, ...], items: set[tuple[str, str]]
+    ) -> None:
+        failed = a_run_failing_on(
+            ("eurostat", PORTUGAL, OVERBURDEN),
+            ("eurostat", LIECHTENSTEIN, OVERCROWDING),
+            ("stand_in", LIECHTENSTEIN, OVERBURDEN),
+        )
+        runs = RecordingRunStore(answers_with=failed)
+
+        await retry_run(
+            failed=failed,
+            adapters=[StubSource("eurostat", (OVERBURDEN, OVERCROWDING))],
+            attributes=[an_attribute(OVERBURDEN), an_attribute(OVERCROWDING)],
+            candidates=[PORTUGAL, LIECHTENSTEIN],
+            values=RecordingValueStore(),
+            runs=runs,
+            stand_ins=stand_ins,
+        )
+
+        assert set(runs.opened[0].pairs or ()) == items
+
+    async def test_a_retry_with_nothing_it_can_reach_is_refused_and_says_why(self) -> None:
+        """Eurostat is switched on; only World Bank failed, and it is switched off."""
+        failed = a_run_failing_on(("world_bank", SPAIN, OVERBURDEN))
+        runs = RecordingRunStore(answers_with=failed)
+
+        with pytest.raises(NothingToFetchError) as refused:
+            await retry_run(
+                failed=failed,
+                adapters=[StubSource("eurostat", (OVERBURDEN,))],
+                attributes=[an_attribute(OVERBURDEN)],
+                candidates=[SPAIN],
+                values=RecordingValueStore(),
+                runs=runs,
+            )
+
+        assert "no data source is switched on" not in str(refused.value)
+        assert "switched off" in str(refused.value)
+        assert runs.opened == []

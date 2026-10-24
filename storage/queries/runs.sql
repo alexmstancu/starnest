@@ -140,6 +140,9 @@ VALUES (:match_rule, :candidate, :data_source, :llm_call_count, :cost_eur);
 --
 -- The scope is summarised rather than listed: it is stored expanded, one row per candidate and
 -- one per attribute, and a history row wants its size, not its contents.
+--
+-- **Only a pair among the run's items counts** (FU-A1), here as in select_run: a row naming any
+-- other pair is evidence the run should never have written, and counting it read "3 of 2".
 SELECT r.id,
        r.run_status,
        r.triggered_by,
@@ -162,10 +165,18 @@ SELECT r.id,
                 UNION
                 SELECT reuse.candidate, reuse.attribute
                 FROM   data_acquisition_run_reuse AS reuse
-                WHERE  reuse.data_acquisition_run = r.id) AS answered) AS items_completed,
+                WHERE  reuse.data_acquisition_run = r.id) AS answered
+        WHERE  EXISTS (SELECT 1 FROM data_acquisition_run_item AS item
+                       WHERE  item.data_acquisition_run = r.id
+                         AND  item.candidate = answered.candidate
+                         AND  item.attribute = answered.attribute)) AS items_completed,
        (SELECT count(DISTINCT (f.candidate, f.attribute))
         FROM   data_acquisition_failure AS f
         WHERE  f.data_acquisition_run = r.id
+          AND  EXISTS (SELECT 1 FROM data_acquisition_run_item AS item
+                       WHERE  item.data_acquisition_run = r.id
+                         AND  item.candidate = f.candidate
+                         AND  item.attribute = f.attribute)
           AND  NOT EXISTS (SELECT 1 FROM value AS v
                            WHERE  v.data_acquisition_run = r.id
                              AND  v.candidate = f.candidate
@@ -196,6 +207,10 @@ SELECT count(*) FROM data_acquisition_run;
 -- OECD's failure is still listed by select_run_failures, source and all, because it is still a
 -- thing worth retrying. A run with a thousand failures should not make its own status
 -- unreadable, so they are counted here and listed there.
+--
+-- **Both count only pairs among the run's items** (FU-A1): one primary-key probe per pair. A
+-- value, re-confirmation or failure stamped with the run for a pair it never asked about is
+-- not an answer to it -- a retry's borrow written outside its pairs once read "3 of 2".
 SELECT r.id,
        r.run_status,
        r.triggered_by,
@@ -224,10 +239,18 @@ SELECT r.id,
                 UNION
                 SELECT reuse.candidate, reuse.attribute
                 FROM   data_acquisition_run_reuse AS reuse
-                WHERE  reuse.data_acquisition_run = r.id) AS answered) AS items_completed,
+                WHERE  reuse.data_acquisition_run = r.id) AS answered
+        WHERE  EXISTS (SELECT 1 FROM data_acquisition_run_item AS item
+                       WHERE  item.data_acquisition_run = r.id
+                         AND  item.candidate = answered.candidate
+                         AND  item.attribute = answered.attribute)) AS items_completed,
        (SELECT count(DISTINCT (f.candidate, f.attribute))
         FROM   data_acquisition_failure AS f
         WHERE  f.data_acquisition_run = r.id
+          AND  EXISTS (SELECT 1 FROM data_acquisition_run_item AS item
+                       WHERE  item.data_acquisition_run = r.id
+                         AND  item.candidate = f.candidate
+                         AND  item.attribute = f.attribute)
           AND  NOT EXISTS (SELECT 1 FROM value AS v
                            WHERE  v.data_acquisition_run = r.id
                              AND  v.candidate = f.candidate
@@ -412,6 +435,9 @@ RETURNING id;
 -- with the totals; left out, a run that only re-read tables listed nobody. A re-read figure that
 -- its source rejected again is that source's failure (BE-08), so it is not credited as stored
 -- as well -- one pair read stored and failed at once is the double count `85d545d` removed.
+--
+-- **Only pairs among the run's items count, or list a source** (FU-A1), as in select_run: a
+-- source whose every row names a pair the run never asked about contributed nothing to it.
 SELECT reached.data_source,
        (SELECT count(*)
         FROM   (SELECT v.candidate, v.attribute
@@ -428,7 +454,11 @@ SELECT reached.data_source,
                                    WHERE  f.data_acquisition_run = u.data_acquisition_run
                                      AND  f.data_source = u.data_source
                                      AND  f.candidate = u.candidate
-                                     AND  f.attribute = u.attribute)) AS stored) AS items_stored,
+                                     AND  f.attribute = u.attribute)) AS stored
+        WHERE  EXISTS (SELECT 1 FROM data_acquisition_run_item AS item
+                       WHERE  item.data_acquisition_run = :data_acquisition_run
+                         AND  item.candidate = stored.candidate
+                         AND  item.attribute = stored.attribute)) AS items_stored,
        (SELECT count(*)
         FROM   (SELECT f.candidate, f.attribute
                 FROM   data_acquisition_failure AS f
@@ -439,18 +469,27 @@ SELECT reached.data_source,
                 FROM   value AS v
                 WHERE  v.data_acquisition_run = :data_acquisition_run
                   AND  v.data_source = reached.data_source
-                  AND  v.rejection_reason IS NOT NULL) AS failed_on) AS items_failed
-FROM   (SELECT DISTINCT data_source
-        FROM   value
-        WHERE  data_acquisition_run = :data_acquisition_run
-        UNION
-        SELECT DISTINCT data_source
-        FROM   data_acquisition_failure
-        WHERE  data_acquisition_run = :data_acquisition_run
-        UNION
-        SELECT DISTINCT data_source
-        FROM   data_acquisition_run_reuse
-        WHERE  data_acquisition_run = :data_acquisition_run) AS reached
+                  AND  v.rejection_reason IS NOT NULL) AS failed_on
+        WHERE  EXISTS (SELECT 1 FROM data_acquisition_run_item AS item
+                       WHERE  item.data_acquisition_run = :data_acquisition_run
+                         AND  item.candidate = failed_on.candidate
+                         AND  item.attribute = failed_on.attribute)) AS items_failed
+FROM   (SELECT DISTINCT touched.data_source
+        FROM   (SELECT data_source, candidate, attribute
+                FROM   value
+                WHERE  data_acquisition_run = :data_acquisition_run
+                UNION
+                SELECT data_source, candidate, attribute
+                FROM   data_acquisition_failure
+                WHERE  data_acquisition_run = :data_acquisition_run
+                UNION
+                SELECT data_source, candidate, attribute
+                FROM   data_acquisition_run_reuse
+                WHERE  data_acquisition_run = :data_acquisition_run) AS touched
+        WHERE  EXISTS (SELECT 1 FROM data_acquisition_run_item AS item
+                       WHERE  item.data_acquisition_run = :data_acquisition_run
+                         AND  item.candidate = touched.candidate
+                         AND  item.attribute = touched.attribute)) AS reached
 ORDER  BY reached.data_source;
 
 -- name: request_run_stop(data_acquisition_run, asked_at)<!

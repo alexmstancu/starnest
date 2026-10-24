@@ -544,6 +544,7 @@ class TestARunOverSeveralSources:
 
 
 PRICES = "country.cost_of_living_index"
+TAX = "country.total_tax_rate_effective"
 LIECHTENSTEIN = "country.liechtenstein"
 
 
@@ -932,6 +933,55 @@ class TestRetryingARun:
 
         assert asked_again == 0
 
+    async def test_a_switched_off_source_s_failures_are_not_items_of_the_retry(
+        self, database_url: str
+    ) -> None:
+        """FU-A2 (PL-043). Eurostat failed on Portugal's overburden rate, OECD on Spain's
+        overcrowding, and World Bank -- since switched off -- on Spain's overburden rate. That
+        last pair is a corner of the other two, and nobody's to ask about again: recorded as an
+        item, it was reported unanswered by a retry that never asked anyone about it."""
+        each_failing_on_one_pair = (
+            a_stub_source(silent_on=(OVERBURDEN,)),
+            a_stub_source(
+                data_source="oecd", answers=(OVERCROWDING,), silent_about=("country.spain",)
+            ),
+            a_stub_source(
+                data_source="world_bank", answers=(OVERBURDEN,), silent_about=("country.spain",)
+            ),
+        )
+        async with an_api(database_url, each_failing_on_one_pair) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            await api.patch("/v1/data-sources/world_bank", json={"is_enabled": False})
+
+            retried = (await api.post(f"/v1/data-acquisition-runs/{first['id']}/retry")).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{retried['id']}")).json()
+            await api.patch("/v1/data-sources/world_bank", json={"is_enabled": True})
+
+        assert detail["progress"]["items_total"] == 2
+        assert detail["unanswered"] == []
+
+    async def test_a_retry_only_switched_off_sources_could_answer_is_refused_truthfully(
+        self, database_url: str
+    ) -> None:
+        """FU-A2 (PL-043). Only World Bank failed, and it is switched off; Eurostat is on. The
+        refusal used to say that no data source was switched on."""
+        only_world_bank_fails = (
+            a_stub_source(silent_about=()),
+            a_stub_source(data_source="world_bank", answers=(OVERBURDEN,)),
+        )
+        async with an_api(database_url, only_world_bank_fails) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            await api.patch("/v1/data-sources/world_bank", json={"is_enabled": False})
+
+            refused = await api.post(f"/v1/data-acquisition-runs/{first['id']}/retry")
+            runs = (await api.get("/v1/data-acquisition-runs")).json()["total"]
+            await api.patch("/v1/data-sources/world_bank", json={"is_enabled": True})
+
+        assert refused.status_code == 409
+        assert refused.json()["code"] == "nothing_to_fetch"
+        assert "no data source is switched on" not in refused.json()["message"]
+        assert runs == 1
+
     async def test_a_source_the_household_switched_off_is_not_asked_at_all(
         self, database_url: str
     ) -> None:
@@ -1038,6 +1088,47 @@ class TestRetryingARun:
         response = await api.post("/v1/data-acquisition-runs/999999/retry")
 
         assert response.status_code == 404
+
+
+class TestARetryBorrowsOnlyForItsOwnPairs:
+    async def test_it_counts_no_more_than_it_asked_about(self, database_url: str) -> None:
+        """FU-A1 (PL-042), on the seeded declarations: Switzerland stands in for Liechtenstein's
+        prices and tax rate (`0460`). Eurostat fails on Liechtenstein's prices and OECD on
+        Portugal's tax rate, so the retry asks about those two pairs -- and the borrow step,
+        reading the rectangle they span, also lent Liechtenstein's tax rate under the retry. The
+        run read "3 of 2": two pairs answered by borrowing, and Portugal's still failing."""
+        sources = (
+            a_stub_source(
+                answers=(PRICES, TAX), silent_about=(LIECHTENSTEIN,), silent_on=(PRICES,)
+            ),
+            a_stub_source(data_source="oecd", answers=(TAX,)),
+        )
+        async with an_api(database_url, sources) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            retried = (await api.post(f"/v1/data-acquisition-runs/{first['id']}/retry")).json()
+            progress = (await api.get(f"/v1/data-acquisition-runs/{retried['id']}")).json()[
+                "progress"
+            ]
+            written_for_a_pair_nobody_asked_about = await _count(
+                database_url,
+                "SELECT (SELECT count(*) FROM value"
+                "        WHERE data_acquisition_run = %s AND candidate = %s AND attribute = %s)"
+                "     + (SELECT count(*) FROM data_acquisition_failure"
+                "        WHERE data_acquisition_run = %s AND candidate = %s AND attribute = %s)",
+                retried["id"],
+                LIECHTENSTEIN,
+                TAX,
+                retried["id"],
+                LIECHTENSTEIN,
+                TAX,
+            )
+
+        assert progress["items_total"] == 2
+        assert (
+            progress["items_completed"] + progress["items_failed"] + progress["items_unanswered"]
+            == progress["items_total"]
+        )
+        assert written_for_a_pair_nobody_asked_about == 0
 
 
 NO_SOURCE_COVERS = "country.liechtenstein"

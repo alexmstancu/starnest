@@ -70,6 +70,9 @@ class OpenedRun:
     runs: RunStore
     stand_ins: Sequence[StandIn]
     meter: CostMeter
+    pairs: tuple[tuple[str, str], ...] | None = None
+    """The exact (candidate, attribute) pairs the run asks about -- its items -- when it named
+    them; `None` for the rectangle. The borrow step is held to them too (FU-A1)."""
 
 
 async def open_run(
@@ -241,6 +244,7 @@ async def open_run(
         runs=runs,
         stand_ins=stand_ins,
         meter=CostMeter(cap_eur=spend_cap_eur),
+        pairs=scope_pairs,
     )
 
 
@@ -409,6 +413,7 @@ async def continue_run(opened: OpenedRun) -> Run:
             candidates=candidates,
             values=opened.values,
             run=run,
+            pairs=opened.pairs,
         )
         failures.extend(borrowed.failures)
     except Exception:
@@ -554,6 +559,9 @@ class NothingToFetchError(ValueError):
     `asked_this_run` declines to ask; and a run with every source switched off, which
     `switched_on` leaves nothing of. The second is reachable in a few clicks, so its refusal
     names the remedy rather than the arithmetic.
+
+    A retry raises it too, before opening anything, when every failure it would go back to
+    belongs to a source nobody may ask any more (FU-A2).
     """
 
 
@@ -611,22 +619,32 @@ async def retry_run(
     per candidate, and since BE-08 every figure rejected by its credible range is a failure --
     so one source's failure billed another again for a country it had already answered (BE-11).
 
-    **The scope is still the smallest one covering the failures**: every failed candidate against
-    every failed attribute, because a run's scope is two lists. So it can name a pair no source
-    is asked about, which the new run counts as unanswered, and a source that failed on two pairs
-    is still asked about the rectangle they span -- but never about another source's failures.
+    **The scope is the failures somebody will be asked about, pair by pair** (BE-11, FU-A2): a
+    failure of a source still switched on that still declares the attribute, or a failed borrow
+    whose stand-in is still declared. A failure of a source switched off or gone since would be an
+    item nobody is asked about, reported unanswered for ever, so it is left out -- and a retry
+    with nothing left is refused before a run is opened. Its failures are retried by switching
+    the source back on and retrying the original run: a retry of this one does not carry them.
 
-    Declared stand-ins run afterwards as in any run, so a substitute's figure that arrives in the
-    retry is lent on in the same pass.
+    Declared stand-ins run afterwards for the retry's own pairs only (FU-A1), so a substitute's
+    figure that arrives in the retry is lent on in the same pass to a pair the retry asks about;
+    any other borrow is refreshed by the next run that covers it.
     """
     if not failed.failures or failed.scope is None:
         raise NothingToRetryError(
             f"run {failed.id} failed on nothing, so there is nothing to retry"
         )
+    reachable = _failures_a_retry_can_reach(failed.failures, adapters, stand_ins)
+    if not reachable:
+        raise NothingToFetchError(
+            f"every source run {failed.id} failed on is now switched off or can no longer answer "
+            f"what it failed on, so a retry would ask nobody. If a source was switched off, "
+            f"switch it back on in Configure and retry run {failed.id}"
+        )
 
-    failed_on = _what_each_source_failed_on(failed.failures)
-    wanted_candidates = {failure.candidate for failure in failed.failures}
-    wanted_attributes = {failure.attribute for failure in failed.failures}
+    failed_on = _what_each_source_failed_on(reachable)
+    wanted_candidates = {failure.candidate for failure in reachable}
+    wanted_attributes = {failure.attribute for failure in reachable}
     return await execute(
         adapters=[
             _AskedOnlyAbout(adapter, failed_on[adapter.data_source])
@@ -635,10 +653,10 @@ async def retry_run(
         ],
         attributes=[attribute for attribute in attributes if attribute.id in wanted_attributes],
         candidates=[candidate for candidate in candidates if candidate.id in wanted_candidates],
-        # The exact pairs, so the run's items are the failures themselves rather than the rectangle
-        # the two lists above span -- no corner no source is asked about is counted unanswered
-        # (BE-11).
-        pairs=_pairs_of(failed.failures),
+        # The exact pairs, so the run's items are the reachable failures themselves rather than
+        # the rectangle the two lists above span -- no corner no source is asked about is counted
+        # unanswered (BE-11).
+        pairs=_pairs_of(reachable),
         values=values,
         runs=runs,
         level=failed.scope.level,
@@ -652,7 +670,35 @@ async def retry_run(
         # **The borrow may be the only work this retry has** (P51). `stand_in` is not an
         # adapter, so a run whose only failures came from borrowing narrows the source list to
         # nothing -- and the borrow is exactly what the household asked to go back to.
-        may_borrow_alone=any(failure.data_source == STAND_IN for failure in failed.failures),
+        may_borrow_alone=any(failure.data_source == STAND_IN for failure in reachable),
+    )
+
+
+def _failures_a_retry_can_reach(
+    failures: Sequence[AcquisitionFailure],
+    adapters: Sequence[SourceAdapter],
+    stand_ins: Sequence[StandIn],
+) -> tuple[AcquisitionFailure, ...]:
+    """The failures a retry will ask somebody about again (FU-A2).
+
+    Through a source among `adapters` -- switched on and registered -- that still declares the
+    attribute, since `_AskedOnlyAbout` asks it nothing else; or, for a failed borrow, through a
+    stand-in still declared for that exact pair. Any other failure has nobody left to ask.
+    """
+    declared = {
+        (str(adapter.data_source), str(attribute))
+        for adapter in adapters
+        for attribute in adapter.attributes
+    }
+    borrowable = {(str(each.candidate), str(each.attribute)) for each in stand_ins}
+    return tuple(
+        failure
+        for failure in failures
+        if (str(failure.data_source), str(failure.attribute)) in declared
+        or (
+            failure.data_source == STAND_IN
+            and (failure.candidate, str(failure.attribute)) in borrowable
+        )
     )
 
 

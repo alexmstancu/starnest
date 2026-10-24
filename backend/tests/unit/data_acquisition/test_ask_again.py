@@ -22,6 +22,7 @@ from starnest.data import (
     Ratio,
     RatioParameters,
     ReferencePeriod,
+    StandIn,
     Value,
     ValueType,
 )
@@ -102,8 +103,9 @@ class StubSource(SourceAdapter):
 
 
 class RecordingValueStore:
-    def __init__(self) -> None:
+    def __init__(self, holds: tuple[Value, ...] = ()) -> None:
         self.appended: list[Value] = []
+        self._holds = holds
 
     async def append(self, values):
         self.appended.extend(values)
@@ -111,6 +113,10 @@ class RecordingValueStore:
 
     async def record_reuse(self, run, data_source, pairs):
         return None
+
+    async def read_active_values(self, *, candidates=None, attributes=None):
+        """What the stand-in step reads to find a figure worth borrowing."""
+        return self._holds
 
 
 class RecordingRunStore(RunStore):
@@ -311,3 +317,49 @@ class TestWhatItKeeps:
         _, values = await asking_again(a_run(unanswered), (a_source(),))
 
         assert values.appended == []
+
+
+def switzerland_stands_in_for_liechtenstein(attribute: str) -> StandIn:
+    return StandIn(
+        candidate="country.liechtenstein",
+        candidate_name="Liechtenstein",
+        attribute=attribute,
+        substitute="country.switzerland",
+        substitute_name="Switzerland",
+        reason="no source covers Liechtenstein for this",
+    )
+
+
+class TestWhatItBorrows:
+    async def test_only_for_the_items_it_asks_about_again(self) -> None:
+        """FU-A1 (PL-042). Liechtenstein's overburden rate and Portugal's overcrowding went
+        unanswered. Liechtenstein's overcrowding is a corner of the rectangle those two items
+        span, not an item, so asking again has no business borrowing it -- the borrow step read
+        the rectangle, and wrote a figure nobody asked about under the new run."""
+        unanswered = (
+            UnansweredItem(candidate="country.liechtenstein", attribute=OVERBURDEN),
+            UnansweredItem(candidate="country.portugal", attribute=OVERCROWDING),
+        )
+        values = RecordingValueStore(
+            holds=(
+                a_value("country.switzerland", OVERBURDEN),
+                a_value("country.switzerland", OVERCROWDING),
+            )
+        )
+
+        await ask_again(
+            run=a_run(unanswered),
+            adapters=[a_source()],
+            attributes=[an_attribute(OVERBURDEN), an_attribute(OVERCROWDING)],
+            candidates=[LIECHTENSTEIN, PORTUGAL],
+            values=values,
+            runs=RecordingRunStore(answers_with=a_run(unanswered)),
+            stand_ins=[
+                switzerland_stands_in_for_liechtenstein(OVERBURDEN),
+                switzerland_stands_in_for_liechtenstein(OVERCROWDING),
+            ],
+        )
+
+        assert [(v.candidate, v.attribute) for v in values.appended] == [
+            ("country.liechtenstein", OVERBURDEN)
+        ]

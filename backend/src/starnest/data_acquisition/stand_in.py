@@ -6,17 +6,17 @@ original as its publisher issued it. Stored under the original publisher it woul
 publisher and read as a measurement of the wrong place -- "fabrication with the paperwork filled
 in", which is the one thing this application must not do.
 
-**Written every run, whether or not a real figure exists.** The stand-in source ranks below
-every source that measures a place, so a real figure wins the active-value rule the day one is
-published, and the copy stays stored beside it as what it always was. No list anywhere says who
-currently needs a stand-in; the active-value rule already answers that.
+**Written by every run that covers the pair, whether or not a real figure exists.** The stand-in
+source ranks below every source that measures a place, so a real figure wins the active-value
+rule the day one is published, and the copy stays stored beside it as what it always was. No list
+anywhere says who currently needs a stand-in; the active-value rule already answers that.
 
 **Only a real figure is borrowed.** A substitute whose own active figure is itself a stand-in has
 nothing to lend, and a chain of borrowings would put a third country's number on screen under the
 second one's name.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import UTC, datetime
 
 from starnest.candidates import Candidate
@@ -43,14 +43,20 @@ async def stand_in(
     values: ValueStore,
     run: int | None = None,
     retrieved_at: datetime | None = None,
+    pairs: Collection[tuple[str, str]] | None = None,
 ) -> RunOutcome:
     """Borrow every declared figure within the run's scope, and append the copies.
 
     Runs after every source has been asked, so a substitute's figure fetched in this same run is
     the one borrowed. Only declarations whose candidate *and* attribute are in scope are acted
     on: a run narrowed to Germany has no business writing anything for Liechtenstein.
+
+    **A run that names its exact (candidate, attribute) `pairs` borrows only for those** (FU-A1).
+    A retry asks about the pairs it went back to, and the rectangle they span holds corners
+    nobody asked about: a borrow written there carried the retry's id and was counted as its
+    answer, so the run read "3 of 2". `None` is a run over the rectangle, which covers every pair.
     """
-    in_scope = _the_declarations_in_scope(stand_ins, attributes, candidates)
+    in_scope = declarations_in_scope(stand_ins, attributes, candidates, pairs=pairs)
     if not in_scope:
         return RunOutcome(stored=(), failures=())
 
@@ -68,17 +74,27 @@ async def stand_in(
     return RunOutcome(stored=tuple(stored), failures=borrowed.failures)
 
 
-def _the_declarations_in_scope(
+def declarations_in_scope(
     stand_ins: Sequence[StandIn],
     attributes: Sequence[Attribute],
     candidates: Sequence[Candidate],
+    *,
+    pairs: Collection[tuple[str, str]] | None = None,
 ) -> list[StandIn]:
+    """The declarations a run over this scope borrows for: candidate and attribute both in scope,
+    and the (candidate, attribute) pair among the run's `pairs` when it names them."""
     wanted_attributes = {attribute.id for attribute in attributes}
     wanted_candidates = {candidate.id for candidate in candidates}
+    wanted_pairs = None if pairs is None else set(pairs)
     return [
         declared
         for declared in stand_ins
-        if declared.attribute in wanted_attributes and declared.candidate in wanted_candidates
+        if declared.attribute in wanted_attributes
+        and declared.candidate in wanted_candidates
+        and (
+            wanted_pairs is None
+            or (str(declared.candidate), str(declared.attribute)) in wanted_pairs
+        )
     ]
 
 
