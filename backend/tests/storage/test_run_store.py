@@ -9,10 +9,11 @@ scope, the value rows and the failure rows. A fake store could only return whate
 told to; what is under test is the derivation itself.
 """
 
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 import pytest
 from psycopg import errors
@@ -753,6 +754,19 @@ class TestARunCountsOnlyItsOwnItems:
             run.items_unanswered,
         ) == (2, 1, 1, 0)
 
+    async def test_the_detail_lists_only_its_items(
+        self, pool: AsyncConnectionPool, a_run_with_rows_outside_its_items: int
+    ) -> None:
+        """The lists are read from the same items as the counts (ST-11). Greece and Italy were
+        never asked about, so their failures are not this run's to list -- nor, since the list
+        is a retry's scope, to send a retry back to."""
+        run = await PostgresRunStore(pool).read_run(a_run_with_rows_outside_its_items)
+
+        assert [(f.data_source, f.candidate, f.attribute) for f in run.failures] == [
+            ("eurostat", "country.liechtenstein", OVERCROWDING)
+        ]
+        assert run.unanswered == ()
+
     async def test_the_history_row_counts_only_its_items(
         self, pool: AsyncConnectionPool, a_run_with_rows_outside_its_items: int
     ) -> None:
@@ -775,6 +789,168 @@ class TestARunCountsOnlyItsOwnItems:
         """Eurostat stored one item and failed on one; everything else it wrote lies outside.
         The stand-in source wrote nothing inside the items, so it did not reach this run."""
         assert await reach_of(pool, a_run_with_rows_outside_its_items) == {"eurostat": (1, 1)}
+
+
+class CommitsMidRead:
+    """The store's own queries, with another process's write committed the moment `select_run`
+    returns -- before any statement the same read might run after it."""
+
+    def __init__(self, queries: Any, write: Callable[[], Awaitable[object]]) -> None:
+        self._queries = queries
+        self._write = write
+        self._written = False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._queries, name)
+
+    async def select_run(self, connection: Any, **asked: Any) -> Any:
+        row = await self._queries.select_run(connection, **asked)
+        if not self._written:
+            self._written = True
+            await self._write()
+        return row
+
+
+@pytest.fixture
+async def another_process(database_url: str) -> AsyncIterator[AsyncConnectionPool]:
+    """A second backend on the same database -- the docker one beside `make serve` -- holding
+    the one connection production gives each process (NEW-21)."""
+    async with AsyncConnectionPool(database_url, min_size=1, max_size=1, open=False) as other:
+        await other.open(wait=True)
+        yield other
+
+
+class TestOnePollIsOneSnapshot:
+    """ST-11 (PL-044). A screen polls a run every two seconds while the run writes, and one poll
+    must be one picture: its counts and its lists taken at the same moment.
+
+    Read as four statements under READ COMMITTED, each took its own snapshot, so a commit landing
+    between them split a count from its list -- two unanswered beside a list of one. One
+    connection per process hid it (NEW-21); a second process on the same database does not.
+    Here that process commits the moment the first statement returns, the widest gap a read made
+    of several statements can leave.
+    """
+
+    @pytest.fixture
+    async def a_run_half_answered(self, pool: AsyncConnectionPool) -> int:
+        """Four items: Portugal's overburden answered, its overcrowding failed, and both of
+        Liechtenstein's unanswered."""
+        runs = PostgresRunStore(pool)
+        run = await runs.start_run(
+            RunScope(
+                level="country",
+                candidates=("country.liechtenstein", "country.portugal"),
+                attributes=(OVERBURDEN, OVERCROWDING),
+            ),
+            triggered_by="test",
+        )
+        await PostgresValueStore(pool).append([a_figure(run, "country.portugal", OVERBURDEN)])
+        await runs.record_failures(
+            run,
+            [
+                AcquisitionFailure(
+                    OVERCROWDING, "503", candidate="country.portugal", data_source="eurostat"
+                )
+            ],
+        )
+        return run
+
+    async def test_a_failure_landing_mid_read_cannot_split_a_count_from_its_list(
+        self,
+        pool: AsyncConnectionPool,
+        another_process: AsyncConnectionPool,
+        a_run_half_answered: int,
+    ) -> None:
+        store = PostgresRunStore(pool)
+        store._queries = CommitsMidRead(
+            store._queries,
+            write=lambda: PostgresRunStore(another_process).record_failures(
+                a_run_half_answered,
+                [
+                    AcquisitionFailure(
+                        OVERBURDEN, "403", candidate="country.liechtenstein", data_source="eurostat"
+                    )
+                ],
+            ),
+        )
+
+        run = await store.read_run(a_run_half_answered)
+
+        assert len(run.unanswered) == run.items_unanswered
+        # No source failed on an answered item here, so each pair listed is one failed item.
+        assert len({(f.candidate, f.attribute) for f in run.failures}) == run.items_failed
+        assert run.items_completed + run.items_failed + run.items_unanswered == run.items_total
+
+    async def test_a_figure_landing_mid_read_cannot_split_the_totals_from_the_breakdown(
+        self,
+        pool: AsyncConnectionPool,
+        another_process: AsyncConnectionPool,
+        a_run_half_answered: int,
+    ) -> None:
+        store = PostgresRunStore(pool)
+        store._queries = CommitsMidRead(
+            store._queries,
+            write=lambda: PostgresValueStore(another_process).append(
+                [a_figure(a_run_half_answered, "country.liechtenstein", OVERBURDEN)]
+            ),
+        )
+
+        run = await store.read_run(a_run_half_answered)
+
+        # Eurostat is the only source that answered anything, so what it stored is what completed.
+        assert {r.data_source: r.items_stored for r in run.by_source} == {
+            "eurostat": run.items_completed
+        }
+        assert len(run.unanswered) == run.items_unanswered
+
+    async def test_each_list_keeps_the_order_its_own_query_gave_it(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """Folded into one statement, the lists are still ordered, and as before: the failures by
+        pair then source, the unanswered by pair, the sources by name. The items and failures are
+        written in the reverse of each order, so arriving as written is not arriving in order."""
+        runs = PostgresRunStore(pool)
+        run = await runs.start_run(
+            RunScope(
+                level="country",
+                candidates=("country.portugal", "country.liechtenstein"),
+                attributes=(OVERCROWDING, OVERBURDEN),
+                pairs=(
+                    ("country.portugal", OVERCROWDING),
+                    ("country.portugal", OVERBURDEN),
+                    ("country.liechtenstein", OVERCROWDING),
+                    ("country.liechtenstein", OVERBURDEN),
+                ),
+            ),
+            triggered_by="test",
+        )
+        await runs.record_failures(
+            run,
+            [
+                AcquisitionFailure(
+                    OVERCROWDING, "503", candidate="country.portugal", data_source="world_bank"
+                ),
+                AcquisitionFailure(
+                    OVERCROWDING, "503", candidate="country.portugal", data_source="eurostat"
+                ),
+                AcquisitionFailure(
+                    OVERBURDEN, "403", candidate="country.liechtenstein", data_source="oecd"
+                ),
+            ],
+        )
+
+        read = await runs.read_run(run)
+
+        assert [(f.candidate, f.attribute, f.data_source) for f in read.failures] == [
+            ("country.liechtenstein", OVERBURDEN, "oecd"),
+            ("country.portugal", OVERCROWDING, "eurostat"),
+            ("country.portugal", OVERCROWDING, "world_bank"),
+        ]
+        assert [(item.candidate, item.attribute) for item in read.unanswered] == [
+            ("country.liechtenstein", OVERCROWDING),
+            ("country.portugal", OVERBURDEN),
+        ]
+        assert [reach.data_source for reach in read.by_source] == ["eurostat", "oecd", "world_bank"]
 
 
 EARLIER = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)

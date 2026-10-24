@@ -194,23 +194,122 @@ LIMIT  :limit_rows OFFSET :offset_rows;
 SELECT count(*) FROM data_acquisition_run;
 
 -- name: select_run(data_acquisition_run)^
--- One run with its planned scope and live progress, in a single read -- this is what a screen
--- polls while a run is in flight, so it must not cost four queries per poll.
+-- One run with its planned scope, its live progress and the three lists behind it -- what a
+-- screen polls while a run is in flight.
 --
--- items_total is the planned cross product: every attribute in scope, for every candidate in
--- scope. items_completed counts the distinct pairs that actually produced a value row, which
--- includes values stored as rejected -- the item was fetched and answered, and whether the
--- answer survived validation is a separate question the value itself records.
+-- **One statement, so one snapshot** (ST-11). Under READ COMMITTED each statement sees the
+-- database as it stood when that statement began, so a count read by one statement and its list
+-- read by the next straddled any commit between them: a failure landing there read two
+-- unanswered beside a list of one. Every count and list here comes from the same CTEs, so they
+-- agree however many connections or processes write while a poll reads (NEW-21).
 --
--- items_failed counts the pairs some source failed on and NO source answered, so it never
+-- **Driven from the run's items** (FU-A1). Every count and list starts at
+-- data_acquisition_run_item, so a value, re-confirmation or failure stamped with the run for a
+-- pair it never asked about is neither counted nor listed -- a retry's borrow written outside its
+-- pairs once read "3 of 2". The answered and failed pairs are sets joined to the items, never a
+-- probe per item into `value`, which has no index on a run's pairs.
+--
+-- items_total counts the items: the rectangle a sweep's scope spans, or the exact pairs a retry
+-- asked about (BE-11). items_completed counts the items that produced a value row or were
+-- re-confirmed (ST-09), values stored as rejected included: the item was fetched and answered,
+-- and whether the answer survived validation is a separate question the value itself records.
+--
+-- items_failed counts the items some source failed on and NO source answered, so it never
 -- overlaps items_completed. Where OECD failed and the estimate answered, the item is complete;
--- OECD's failure is still listed by select_run_failures, source and all, because it is still a
--- thing worth retrying. A run with a thousand failures should not make its own status
--- unreadable, so they are counted here and listed there.
+-- OECD's failure is still in `failures`, source and all, because it is still worth retrying --
+-- that list is the scope of a retry, which asks only these sources about these items.
 --
--- **Both count only pairs among the run's items** (FU-A1): one primary-key probe per pair. A
--- value, re-confirmation or failure stamped with the run for a pair it never asked about is
--- not an answer to it -- a retry's borrow written outside its pairs once read "3 of 2".
+-- items_unanswered closes the arithmetic (reqs.md Q217): an item with neither. Eurostat answers
+-- with a whole indicator and simply omits Liechtenstein, so the adapter records no figure and,
+-- rightly, no failure either. Derived, not stored: a table recording that absence could disagree
+-- with the rows themselves. `unanswered` lists them so the household can ask again, with no
+-- source because none failed: asking again asks whoever can answer the attribute, which the
+-- adapters declare and the database does not.
+--
+-- `by_source` is what each source stored and failed on, derived like the rest, and it lists every
+-- source with either: one that only failed is the one a reader came looking for. Its two counts
+-- are independent and sum to nothing: OECD may fail on an item the estimate then answers, and
+-- both are true of the run. **A rejected figure is its source's failure, not stored** (BE-08). It
+-- is read from the value row itself, so a run older than BE-08, or a figure rejected after its
+-- run as `0473` rejected 156, reads as a new run does (NEW-30). The failure list, and so a retry,
+-- stay the failure rows: a paid source must not be re-asked about a figure rejected long after it
+-- answered. **A re-read figure is stored by the source that re-read it** (NEW-54), unless that
+-- source failed on it too, as a re-read rejection does: stored and failed at once is the double
+-- count `85d545d` removed.
+WITH item AS (
+    SELECT candidate, attribute
+    FROM   data_acquisition_run_item
+    WHERE  data_acquisition_run = :data_acquisition_run
+),
+answered AS (
+    SELECT v.candidate, v.attribute
+    FROM   value AS v
+    WHERE  v.data_acquisition_run = :data_acquisition_run
+    UNION
+    SELECT reuse.candidate, reuse.attribute
+    FROM   data_acquisition_run_reuse AS reuse
+    WHERE  reuse.data_acquisition_run = :data_acquisition_run
+),
+failure AS (
+    SELECT f.data_source, f.candidate, f.attribute, f.error_message
+    FROM   data_acquisition_failure AS f
+    JOIN   item USING (candidate, attribute)
+    WHERE  f.data_acquisition_run = :data_acquisition_run
+),
+item_state AS (
+    SELECT item.candidate,
+           item.attribute,
+           answered.candidate IS NOT NULL AS is_answered,
+           failed.candidate IS NOT NULL   AS has_failed
+    FROM   item
+    LEFT   JOIN answered USING (candidate, attribute)
+    LEFT   JOIN (SELECT DISTINCT candidate, attribute FROM failure) AS failed
+           USING (candidate, attribute)
+),
+progress AS (
+    SELECT count(*)                                                AS items_total,
+           count(*) FILTER (WHERE is_answered)                     AS items_completed,
+           count(*) FILTER (WHERE has_failed AND NOT is_answered)  AS items_failed,
+           count(*) FILTER (WHERE NOT (is_answered OR has_failed)) AS items_unanswered,
+           COALESCE(
+               jsonb_agg(jsonb_build_object('candidate', candidate, 'attribute', attribute)
+                         ORDER BY candidate, attribute)
+                   FILTER (WHERE NOT (is_answered OR has_failed)),
+               '[]'::jsonb)                                        AS unanswered
+    FROM   item_state
+),
+stored AS (
+    SELECT v.data_source, v.candidate, v.attribute
+    FROM   value AS v
+    WHERE  v.data_acquisition_run = :data_acquisition_run
+      AND  v.rejection_reason IS NULL
+    UNION
+    (SELECT reuse.data_source, reuse.candidate, reuse.attribute
+     FROM   data_acquisition_run_reuse AS reuse
+     WHERE  reuse.data_acquisition_run = :data_acquisition_run
+     EXCEPT
+     SELECT failure.data_source, failure.candidate, failure.attribute
+     FROM   failure)
+),
+failed_on AS (
+    SELECT failure.data_source, failure.candidate, failure.attribute
+    FROM   failure
+    UNION
+    SELECT v.data_source, v.candidate, v.attribute
+    FROM   value AS v
+    WHERE  v.data_acquisition_run = :data_acquisition_run
+      AND  v.rejection_reason IS NOT NULL
+),
+reach AS (
+    SELECT outcome.data_source,
+           count(*) FILTER (WHERE outcome.is_stored)     AS items_stored,
+           count(*) FILTER (WHERE NOT outcome.is_stored) AS items_failed
+    FROM   (SELECT stored.*, true AS is_stored FROM stored
+            UNION ALL
+            SELECT failed_on.*, false FROM failed_on) AS outcome
+    JOIN   item USING (candidate, attribute)
+    GROUP  BY outcome.data_source
+)
 SELECT r.id,
        r.run_status,
        r.triggered_by,
@@ -230,96 +329,22 @@ SELECT r.id,
             FROM   data_acquisition_run_attribute AS scope
             WHERE  scope.data_acquisition_run = r.id),
            '[]'::jsonb) AS scope_attributes,
-       (SELECT count(*) FROM data_acquisition_run_item AS item
-        WHERE  item.data_acquisition_run = r.id) AS items_total,
-       (SELECT count(*)
-        FROM   (SELECT v.candidate, v.attribute
-                FROM   value AS v
-                WHERE  v.data_acquisition_run = r.id
-                UNION
-                SELECT reuse.candidate, reuse.attribute
-                FROM   data_acquisition_run_reuse AS reuse
-                WHERE  reuse.data_acquisition_run = r.id) AS answered
-        WHERE  EXISTS (SELECT 1 FROM data_acquisition_run_item AS item
-                       WHERE  item.data_acquisition_run = r.id
-                         AND  item.candidate = answered.candidate
-                         AND  item.attribute = answered.attribute)) AS items_completed,
-       (SELECT count(DISTINCT (f.candidate, f.attribute))
-        FROM   data_acquisition_failure AS f
-        WHERE  f.data_acquisition_run = r.id
-          AND  EXISTS (SELECT 1 FROM data_acquisition_run_item AS item
-                       WHERE  item.data_acquisition_run = r.id
-                         AND  item.candidate = f.candidate
-                         AND  item.attribute = f.attribute)
-          AND  NOT EXISTS (SELECT 1 FROM value AS v
-                           WHERE  v.data_acquisition_run = r.id
-                             AND  v.candidate = f.candidate
-                             AND  v.attribute = f.attribute)
-          AND  NOT EXISTS (SELECT 1 FROM data_acquisition_run_reuse AS reuse
-                           WHERE  reuse.data_acquisition_run = r.id
-                             AND  reuse.candidate = f.candidate
-                             AND  reuse.attribute = f.attribute)) AS items_failed,
-       -- items_unanswered closes the arithmetic (reqs.md Q217): a pair the scope names that
-       -- produced neither a value nor a failure. Eurostat answers with a whole indicator and
-       -- simply omits Liechtenstein, so the adapter records no figure and, rightly, no failure
-       -- either -- and before this the item belonged to none of the three counts.
-       --
-       -- Derived, not stored. It is the absence of two rows, and a table recording that absence
-       -- could disagree with the rows themselves.
-       (SELECT count(*)
-        FROM   data_acquisition_run_item AS item
-        WHERE  item.data_acquisition_run = r.id
-          AND  NOT EXISTS (SELECT 1 FROM value AS v
-                           WHERE  v.data_acquisition_run = r.id
-                             AND  v.candidate = item.candidate
-                             AND  v.attribute = item.attribute)
-          AND  NOT EXISTS (SELECT 1 FROM data_acquisition_failure AS f
-                           WHERE  f.data_acquisition_run = r.id
-                             AND  f.candidate = item.candidate
-                             AND  f.attribute = item.attribute)
-          AND  NOT EXISTS (SELECT 1 FROM data_acquisition_run_reuse AS reuse
-                           WHERE  reuse.data_acquisition_run = r.id
-                             AND  reuse.candidate = item.candidate
-                             AND  reuse.attribute = item.attribute)) AS items_unanswered
+       progress.items_total,
+       progress.items_completed,
+       progress.items_failed,
+       progress.items_unanswered,
+       progress.unanswered,
+       COALESCE(
+           (SELECT jsonb_agg(to_jsonb(failure)
+                             ORDER BY failure.candidate, failure.attribute, failure.data_source)
+            FROM   failure),
+           '[]'::jsonb) AS failures,
+       COALESCE(
+           (SELECT jsonb_agg(to_jsonb(reach) ORDER BY reach.data_source) FROM reach),
+           '[]'::jsonb) AS by_source
 FROM   data_acquisition_run AS r
+CROSS  JOIN progress
 WHERE  r.id = :data_acquisition_run;
-
--- name: select_run_failures(data_acquisition_run)
--- What a run failed on, item by item and source by source. This is both the failure list on
--- the run screen and the scope of the retry run, which asks only these sources about these items.
-SELECT f.data_source,
-       f.candidate,
-       f.attribute,
-       f.error_message
-FROM   data_acquisition_failure AS f
-WHERE  f.data_acquisition_run = :data_acquisition_run
-ORDER  BY f.candidate, f.attribute, f.data_source;
-
--- name: select_run_unanswered(data_acquisition_run)
--- The items nobody answered, so the household can ask again about them (reqs.md Q217).
---
--- The same derivation items_unanswered counts, listed rather than counted: every pair the scope
--- names with no value row and no failure row for this run. There is no source column because no
--- source failed -- each one asked answered, with nothing for that candidate -- so asking again
--- means asking whoever can answer the attribute, which the adapters declare and the database
--- does not.
-SELECT item.candidate,
-       item.attribute
-FROM   data_acquisition_run_item AS item
-WHERE  item.data_acquisition_run = :data_acquisition_run
-  AND  NOT EXISTS (SELECT 1 FROM value AS v
-                   WHERE  v.data_acquisition_run = :data_acquisition_run
-                     AND  v.candidate = item.candidate
-                     AND  v.attribute = item.attribute)
-  AND  NOT EXISTS (SELECT 1 FROM data_acquisition_failure AS f
-                   WHERE  f.data_acquisition_run = :data_acquisition_run
-                     AND  f.candidate = item.candidate
-                     AND  f.attribute = item.attribute)
-  AND  NOT EXISTS (SELECT 1 FROM data_acquisition_run_reuse AS reuse
-                   WHERE  reuse.data_acquisition_run = :data_acquisition_run
-                     AND  reuse.candidate = item.candidate
-                     AND  reuse.attribute = item.attribute)
-ORDER  BY item.candidate, item.attribute;
 
 -- name: select_run_values(data_acquisition_run)
 -- What a run produced, as ids and their pairs. The full values are read through values.sql;
@@ -396,101 +421,6 @@ SET    run_status  = 'failed',
        finished_at = :finished_at
 WHERE  run_status = 'running'
 RETURNING id;
-
--- name: select_run_by_source(data_acquisition_run)
--- What each source contributed to one run: the items it stored a figure for, and the items it
--- failed on.
---
--- **Derived, never stored**, for the reason Q217 settled for items_unanswered: a second record
--- of the same arithmetic can disagree with the first, and then neither is trustworthy. A value
--- row already names both its run and its source, and so does a failure row.
---
--- The source list is the union of the two sides, so a source that only failed and a source
--- that only answered both appear. Leaving either out would make a "source by source" panel
--- silently incomplete, which is worse than not drawing it.
---
--- A source's two counts are independent and deliberately not made to sum to anything: OECD may
--- fail on an item the estimate then answers, and both facts are true of that run.
---
--- **A rejected figure is stored but counts here as a failure, not as stored** (BE-08). The
--- figure contributed nothing: counted on both sides, one pair read as stored and failed at
--- once, and a source whose every figure was rejected looked half-full rather than barren. The
--- run's own items_completed still counts the pair: it was answered.
---
--- **The failure side reads the value row's own rejection, not only the failure rows** (NEW-30).
--- A run has written a failure beside each figure it rejects only since BE-08, so an older run
--- has none, and neither has a figure rejected after its run -- as `0473` rejected 156 LLM
--- figures. Counted from failure rows alone such a pair belonged to neither count, so a source
--- whose every figure was rejected that way read 0 and 0 -- which a screen drops as a source that
--- touched nothing. Derived from the rejection itself, an older run and an after-the-fact
--- rejection read exactly as a new run does: Q217's "derived, never stored" again, since a
--- failure row standing in for a fact the value row already holds is a second record that can be
--- missing. UNION de-duplicates the pairs a run did write a failure for, so each counts once.
--- Only this count reads it: the failure list, and so a retry, stay the failure rows, and must not
--- re-ask a paid source about a figure rejected long after it answered.
---
--- **A figure the source re-read counts as stored by it** (NEW-54). A transcribed table re-read is
--- the same observation, so no new row carries this run (ST-09), and the run's totals count the
--- pair completed from its reuse row. Credited to the source that re-read it, the breakdown agrees
--- with the totals; left out, a run that only re-read tables listed nobody. A re-read figure that
--- its source rejected again is that source's failure (BE-08), so it is not credited as stored
--- as well -- one pair read stored and failed at once is the double count `85d545d` removed.
---
--- **Only pairs among the run's items count, or list a source** (FU-A1), as in select_run: a
--- source whose every row names a pair the run never asked about contributed nothing to it.
-SELECT reached.data_source,
-       (SELECT count(*)
-        FROM   (SELECT v.candidate, v.attribute
-                FROM   value AS v
-                WHERE  v.data_acquisition_run = :data_acquisition_run
-                  AND  v.data_source = reached.data_source
-                  AND  v.rejection_reason IS NULL
-                UNION
-                SELECT u.candidate, u.attribute
-                FROM   data_acquisition_run_reuse AS u
-                WHERE  u.data_acquisition_run = :data_acquisition_run
-                  AND  u.data_source = reached.data_source
-                  AND  NOT EXISTS (SELECT 1 FROM data_acquisition_failure AS f
-                                   WHERE  f.data_acquisition_run = u.data_acquisition_run
-                                     AND  f.data_source = u.data_source
-                                     AND  f.candidate = u.candidate
-                                     AND  f.attribute = u.attribute)) AS stored
-        WHERE  EXISTS (SELECT 1 FROM data_acquisition_run_item AS item
-                       WHERE  item.data_acquisition_run = :data_acquisition_run
-                         AND  item.candidate = stored.candidate
-                         AND  item.attribute = stored.attribute)) AS items_stored,
-       (SELECT count(*)
-        FROM   (SELECT f.candidate, f.attribute
-                FROM   data_acquisition_failure AS f
-                WHERE  f.data_acquisition_run = :data_acquisition_run
-                  AND  f.data_source = reached.data_source
-                UNION
-                SELECT v.candidate, v.attribute
-                FROM   value AS v
-                WHERE  v.data_acquisition_run = :data_acquisition_run
-                  AND  v.data_source = reached.data_source
-                  AND  v.rejection_reason IS NOT NULL) AS failed_on
-        WHERE  EXISTS (SELECT 1 FROM data_acquisition_run_item AS item
-                       WHERE  item.data_acquisition_run = :data_acquisition_run
-                         AND  item.candidate = failed_on.candidate
-                         AND  item.attribute = failed_on.attribute)) AS items_failed
-FROM   (SELECT DISTINCT touched.data_source
-        FROM   (SELECT data_source, candidate, attribute
-                FROM   value
-                WHERE  data_acquisition_run = :data_acquisition_run
-                UNION
-                SELECT data_source, candidate, attribute
-                FROM   data_acquisition_failure
-                WHERE  data_acquisition_run = :data_acquisition_run
-                UNION
-                SELECT data_source, candidate, attribute
-                FROM   data_acquisition_run_reuse
-                WHERE  data_acquisition_run = :data_acquisition_run) AS touched
-        WHERE  EXISTS (SELECT 1 FROM data_acquisition_run_item AS item
-                       WHERE  item.data_acquisition_run = :data_acquisition_run
-                         AND  item.candidate = touched.candidate
-                         AND  item.attribute = touched.attribute)) AS reached
-ORDER  BY reached.data_source;
 
 -- name: request_run_stop(data_acquisition_run, asked_at)<!
 -- Ask a run to stop, and say whether there was a running one to ask.

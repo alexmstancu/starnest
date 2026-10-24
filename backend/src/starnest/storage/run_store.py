@@ -5,8 +5,9 @@
 something different after the catalog grew, and both selective retry and the dry-run estimate
 need to know what was actually asked for on the day.
 
-One read serves a poll (`arch.md` 8.4): status, progress and counts arrive together, because a
-screen polling a live run should not cost four queries a second.
+One statement serves a poll (`arch.md` 8.4): status, progress, counts and lists arrive together,
+from one snapshot (ST-11), so a commit landing mid-poll cannot split a count from its list -- and
+a screen polling a live run does not cost four queries a second.
 """
 
 import json
@@ -170,29 +171,12 @@ class PostgresRunStore(RunStore):
             )
 
     async def read_run(self, run: int) -> Run:
+        """Everything a poll shows, read by one statement and so from one snapshot (ST-11)."""
         async with acquire(self._pool) as connection:
             row = await self._queries.select_run(connection, data_acquisition_run=run)
-            if row is None:
-                raise UnknownRunError(f"there is no data acquisition run numbered {run}")
-            failures = [
-                failure
-                async for failure in self._queries.select_run_failures(
-                    connection, data_acquisition_run=run
-                )
-            ]
-            unanswered = [
-                item
-                async for item in self._queries.select_run_unanswered(
-                    connection, data_acquisition_run=run
-                )
-            ]
-            by_source = [
-                reach
-                async for reach in self._queries.select_run_by_source(
-                    connection, data_acquisition_run=run
-                )
-            ]
-        return _run_from(row, failures, unanswered, by_source)
+        if row is None:
+            raise UnknownRunError(f"there is no data acquisition run numbered {run}")
+        return _run_from(row)
 
     async def read_runs(self, *, limit: int = 20, offset: int = 0) -> tuple[Run, ...]:
         async with acquire(self._pool) as connection:
@@ -245,12 +229,8 @@ class PostgresRunStore(RunStore):
         return tuple(swept)
 
 
-def _run_from(
-    row: Any,
-    failures: Sequence[Any],
-    unanswered: Sequence[Any],
-    by_source: Sequence[Any] = (),
-) -> Run:
+def _run_from(row: Any) -> Run:
+    """A detail row, its three lists arriving as JSON arrays of objects beside the counts."""
     return Run(
         id=int(row.id),
         status=RunStatus(row.run_status),
@@ -276,24 +256,24 @@ def _run_from(
         stop_requested_at=row.stop_requested_at,
         failures=tuple(
             AcquisitionFailure(
-                attribute=failure.attribute,
-                candidate=failure.candidate,
-                reason=failure.error_message,
-                data_source=DataSourceId(failure.data_source),
+                attribute=failure["attribute"],
+                candidate=failure["candidate"],
+                reason=failure["error_message"],
+                data_source=DataSourceId(failure["data_source"]),
             )
-            for failure in failures
+            for failure in row.failures
         ),
         unanswered=tuple(
-            UnansweredItem(candidate=item.candidate, attribute=item.attribute)
-            for item in unanswered
+            UnansweredItem(candidate=item["candidate"], attribute=item["attribute"])
+            for item in row.unanswered
         ),
         by_source=tuple(
             SourceReach(
-                data_source=DataSourceId(reach.data_source),
-                items_stored=int(reach.items_stored),
-                items_failed=int(reach.items_failed),
+                data_source=DataSourceId(reach["data_source"]),
+                items_stored=int(reach["items_stored"]),
+                items_failed=int(reach["items_failed"]),
             )
-            for reach in by_source
+            for reach in row.by_source
         ),
     )
 
