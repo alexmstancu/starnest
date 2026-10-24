@@ -40,14 +40,14 @@ describe("the household panel", () => {
     ).toHaveAttribute("aria-pressed", "true");
     expect(
       within(
-        screen.getByRole("group", { name: "Children under 18" }),
+        screen.getByRole("group", { name: "Children" }),
       ).getByRole("button", { name: "1" }),
     ).toHaveAttribute("aria-pressed", "true");
     // Chips, not a comma-separated string: the passport shows by name. Awaited, because the
     // roster is fetched and the chip reads the id until it lands.
     expect(
       await within(
-        await screen.findByRole("list", { name: /citizenships held/i }),
+        await screen.findByRole("list", { name: "Passports held" }),
       ).findByText("Romania"),
     ).toBeInTheDocument();
   });
@@ -65,7 +65,7 @@ describe("the household panel", () => {
     await panel();
 
     expect(
-      screen.getByRole("combobox", { name: "Home city candidate" }),
+      screen.getByRole("combobox", { name: "Moving from (city)" }),
     ).toHaveValue("");
   });
 
@@ -74,13 +74,13 @@ describe("the household panel", () => {
     renderShell("/configure");
     const household = await panel();
 
-    await user.clear(field("Target monthly spend"));
-    await user.type(field("Target monthly spend"), "3100");
+    await user.clear(field("Comfortable monthly spend"));
+    await user.type(field("Comfortable monthly spend"), "3100");
     await user.click(household.getByRole("button", { name: "Save household" }));
 
     expect(await household.findByText("Saved.")).toBeInTheDocument();
     await waitFor(() =>
-      expect(field("Target monthly spend")).toHaveValue("3100"),
+      expect(field("Comfortable monthly spend")).toHaveValue("3100"),
     );
   });
 
@@ -111,13 +111,13 @@ describe("the household panel", () => {
     renderShell("/configure");
     const household = await panel();
 
-    await user.clear(field("Maximum rent"));
+    await user.clear(field("Rent ceiling"));
     await user.click(household.getByRole("button", { name: "Save household" }));
 
     expect(await household.findByText("Saved.")).toBeInTheDocument();
     // Absent in the response, so absent in the form -- not "0", which would be a rent cap
     // nobody chose.
-    await waitFor(() => expect(field("Maximum rent")).toHaveValue(""));
+    await waitFor(() => expect(field("Rent ceiling")).toHaveValue(""));
   });
 
   it("shows the server's refusal rather than pretending the record was written", async () => {
@@ -188,7 +188,7 @@ describe("a household nobody has recorded yet", () => {
     ).toBeInTheDocument();
     expect(field("Net income")).toHaveValue("");
     expect(
-      screen.queryByRole("list", { name: /citizenships held/i }),
+      screen.queryByRole("list", { name: "Passports held" }),
     ).not.toBeInTheDocument();
     expect(household.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -208,25 +208,25 @@ describe("a household nobody has recorded yet", () => {
     );
     await user.click(
       within(
-        screen.getByRole("group", { name: "Children under 18" }),
+        screen.getByRole("group", { name: "Children" }),
       ).getByRole("button", { name: "None" }),
     );
     // Chosen from the roster, never typed: the stored value is an id the database holds.
     await user.type(
-      screen.getByRole("combobox", { name: "Home country candidate" }),
+      screen.getByRole("combobox", { name: "Moving from" }),
       "Romania",
     );
     await user.click(
       within(
-        screen.getByRole("listbox", { name: "Home country candidate" }),
+        screen.getByRole("listbox", { name: "Moving from" }),
       ).getByRole("option", { name: "Romania" }),
     );
     await user.type(
-      screen.getByRole("combobox", { name: "Citizenships" }),
+      screen.getByRole("combobox", { name: "Passports held" }),
       "Romania",
     );
     await user.click(
-      within(screen.getByRole("listbox", { name: "Citizenships" })).getByRole(
+      within(screen.getByRole("listbox", { name: "Passports held" })).getByRole(
         "option",
         { name: "Romania" },
       ),
@@ -364,12 +364,12 @@ describe("the household panel while a save is in flight", () => {
     renderShell("/configure");
     const household = await panel();
 
-    await user.clear(field("Target monthly spend"));
-    await user.type(field("Target monthly spend"), "3100");
+    await user.clear(field("Comfortable monthly spend"));
+    await user.type(field("Comfortable monthly spend"), "3100");
     await user.click(household.getByRole("button", { name: "Save household" }));
     await waitFor(() => expect(writes.sent).toHaveLength(1));
-    await user.clear(field("Maximum rent"));
-    await user.type(field("Maximum rent"), "1600");
+    await user.clear(field("Rent ceiling"));
+    await user.type(field("Rent ceiling"), "1600");
 
     writes.release();
 
@@ -381,8 +381,8 @@ describe("the household panel while a save is in flight", () => {
     );
     // What was stored is older than what is on screen, so it is neither adopted nor called saved.
     expect(household.queryByText("Saved.")).toBeNull();
-    expect(field("Maximum rent")).toHaveValue("1600");
-    expect(field("Target monthly spend")).toHaveValue("3100");
+    expect(field("Rent ceiling")).toHaveValue("1600");
+    expect(field("Comfortable monthly spend")).toHaveValue("3100");
   });
 
   it("refuses a maximum rent of '.', and says which field", async () => {
@@ -397,13 +397,13 @@ describe("the household panel while a save is in flight", () => {
     renderShell("/configure");
     const household = await panel();
 
-    await user.clear(field("Maximum rent"));
-    await user.type(field("Maximum rent"), ".");
+    await user.clear(field("Rent ceiling"));
+    await user.type(field("Rent ceiling"), ".");
     await user.click(household.getByRole("button", { name: "Save household" }));
-    fireEvent.submit(field("Maximum rent").closest("form")!);
+    fireEvent.submit(field("Rent ceiling").closest("form")!);
 
-    expect(field("Maximum rent")).toHaveAttribute("aria-invalid", "true");
-    expect(field("Maximum rent")).toHaveAccessibleDescription(
+    expect(field("Rent ceiling")).toHaveAttribute("aria-invalid", "true");
+    expect(field("Rent ceiling")).toHaveAccessibleDescription(
       /not a number that can be saved/i,
     );
     expect(field("Net income")).toHaveAttribute("aria-invalid", "false");
@@ -448,7 +448,7 @@ describe("the household panel's confirmation", () => {
     await user.click(household.getByRole("button", { name: "Save household" }));
     await waitFor(() => expect(status).toHaveTextContent("Saved."));
 
-    await user.type(field("Maximum rent"), "0");
+    await user.type(field("Rent ceiling"), "0");
 
     expect(household.getByRole("status")).toBe(status);
     expect(status).toBeEmptyDOMElement();
@@ -487,7 +487,7 @@ describe("the household panel's confirmation", () => {
  */
 async function homePickerWithItsRoster(): Promise<HTMLInputElement> {
   const home = screen.getByRole<HTMLInputElement>("combobox", {
-    name: "Home country candidate",
+    name: "Moving from",
   });
   await waitFor(() => expect(home).toHaveValue("Romania"));
   return home;
@@ -522,7 +522,7 @@ describe("the household panel from the keyboard", () => {
     await user.clear(home);
     await user.type(home, typed);
     expect(
-      screen.getByRole("listbox", { name: "Home country candidate" }),
+      screen.getByRole("listbox", { name: "Moving from" }),
     ).toBeInTheDocument();
 
     await user.keyboard("{Enter}");
@@ -530,7 +530,7 @@ describe("the household panel from the keyboard", () => {
 
     expect(writes.saved).toBe(0);
     expect(
-      screen.getByRole("listbox", { name: "Home country candidate" }),
+      screen.getByRole("listbox", { name: "Moving from" }),
     ).toBeInTheDocument();
   });
 
@@ -543,7 +543,7 @@ describe("the household panel from the keyboard", () => {
     await user.clear(home);
     await user.type(home, "Portu{Enter}");
     expect(
-      screen.queryByRole("listbox", { name: "Home country candidate" }),
+      screen.queryByRole("listbox", { name: "Moving from" }),
     ).toBeNull();
 
     await user.keyboard("{Enter}");
@@ -574,7 +574,7 @@ describe("the household panel from the keyboard", () => {
 
     expect(home).toHaveValue("Portu");
     expect(
-      screen.getByRole("listbox", { name: "Home country candidate" }),
+      screen.getByRole("listbox", { name: "Moving from" }),
     ).toBeInTheDocument();
     expect(writes.saved).toBe(0);
   });
@@ -583,13 +583,13 @@ describe("the household panel from the keyboard", () => {
     const user = userEvent.setup();
     renderShell("/configure");
     await panel();
-    const citizenships = screen.getByRole("combobox", { name: "Citizenships" });
+    const citizenships = screen.getByRole("combobox", { name: "Passports held" });
     await user.click(citizenships);
     await user.type(citizenships, "Port");
 
     await user.tab();
     expect(
-      within(screen.getByRole("listbox", { name: "Citizenships" })).getByRole(
+      within(screen.getByRole("listbox", { name: "Passports held" })).getByRole(
         "option",
         { name: "Portugal" },
       ),
@@ -598,11 +598,11 @@ describe("the household panel from the keyboard", () => {
 
     expect(
       await within(
-        screen.getByRole("list", { name: /citizenships held/i }),
+        screen.getByRole("list", { name: "Passports held" }),
       ).findByText("Portugal"),
     ).toBeInTheDocument();
     expect(citizenships).toHaveFocus();
-    expect(screen.queryByRole("listbox", { name: "Citizenships" })).toBeNull();
+    expect(screen.queryByRole("listbox", { name: "Passports held" })).toBeNull();
   });
 });
 
@@ -640,12 +640,12 @@ describe("the household panel when the list of places is not there", () => {
         household.queryByText(/list of places could not be read/i),
       ).toBeNull(),
     );
-    const home = screen.getByRole("combobox", { name: "Home country candidate" });
+    const home = screen.getByRole("combobox", { name: "Moving from" });
     await user.clear(home);
     await user.type(home, "Port");
     expect(
       within(
-        screen.getByRole("listbox", { name: "Home country candidate" }),
+        screen.getByRole("listbox", { name: "Moving from" }),
       ).getByRole("option", { name: "Portugal" }),
     ).toBeInTheDocument();
   });

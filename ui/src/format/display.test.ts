@@ -9,6 +9,7 @@ import {
   formatMatchStatus,
   formatMoney,
   formatMoneyPerMonth,
+  formatCountInWords,
   formatPercentage,
   formatScore,
   formatSigned,
@@ -60,6 +61,20 @@ describe("formatCount", () => {
   it("prints the absent marker for no number", () => {
     expect(formatCount(null)).toBe(ABSENT);
     expect(formatCount(Number.NaN)).toBe(ABSENT);
+  });
+});
+
+describe("formatCountInWords", () => {
+  it("writes a small count in words, and zero as the caller names it", () => {
+    expect(formatCountInWords(2)).toBe("Two");
+    expect(formatCountInWords(0, "None")).toBe("None");
+    expect(formatCountInWords(0)).toBe("Zero");
+  });
+
+  it("falls back to the figure past ten or for a fraction, and to the absent mark", () => {
+    expect(formatCountInWords(12)).toBe("12");
+    expect(formatCountInWords(1.5)).toBe(formatCount(1.5));
+    expect(formatCountInWords(null)).toBe(formatCount(null));
   });
 });
 

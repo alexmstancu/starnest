@@ -117,6 +117,21 @@ export function formatMoneyPerMonth(
   return `${whole} / month`;
 }
 
+const COUNT_WORDS = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
+
+/**
+ * A small count as the design writes a household's: "Two" adults, "None" for no children.
+ * Past ten, or for anything that is not a whole number, the figure itself.
+ */
+export function formatCountInWords(
+  count: number | null | undefined,
+  zero = COUNT_WORDS[0],
+): string {
+  if (!isFiniteNumber(count)) return ABSENT;
+  if (count === 0) return zero ?? "Zero";
+  return COUNT_WORDS[count] ?? formatCount(count);
+}
+
 /** An ISO date-time, shown to the minute. Seconds are noise in every place this appears. */
 export function formatDateTime(value: string | null | undefined): string {
   const parsed = parseDate(value);

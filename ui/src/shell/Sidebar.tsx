@@ -16,6 +16,7 @@ import {
   formatIdentifier,
   formatMoney,
   formatMoneyPerMonth,
+  formatCountInWords,
 } from "../format/display";
 import { describeSaved, newestFirst, summariseSaved } from "../format/savedRanking";
 import { HOUSEHOLD_LABELS } from "../format/vocabulary";
@@ -229,11 +230,11 @@ function HouseholdCard({ freshness }: { freshness: number }) {
         <dl className="stat-list">
           <Stat
             label={HOUSEHOLD_LABELS.number_adults}
-            value={formatCount(resource.data.number_adults)}
+            value={formatCountInWords(resource.data.number_adults)}
           />
           <Stat
             label={HOUSEHOLD_LABELS.number_children}
-            value={formatCount(resource.data.number_children)}
+            value={formatCountInWords(resource.data.number_children, "None")}
           />
           <Stat
             label={HOUSEHOLD_LABELS.net_income}
@@ -241,11 +242,11 @@ function HouseholdCard({ freshness }: { freshness: number }) {
           />
           <Stat
             label={HOUSEHOLD_LABELS.target_monthly_spend}
-            value={formatMoney(resource.data.target_monthly_spend, "EUR")}
+            value={formatMoneyPerMonth(resource.data.target_monthly_spend, "EUR")}
           />
           <Stat
             label={HOUSEHOLD_LABELS.max_rent}
-            value={formatMoney(resource.data.max_rent, "EUR")}
+            value={formatMoneyPerMonth(resource.data.max_rent, "EUR")}
           />
           <Stat
             label={HOUSEHOLD_LABELS.home_country_candidate}

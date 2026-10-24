@@ -51,7 +51,7 @@ export function CitizenshipField({
         }
       />
       {held.length > 0 && (
-        <ul className="chip-list" aria-label={`${label} held`}>
+        <ul className="chip-list" aria-label={label}>
           {held.map((each) => (
             <li key={each}>
               <span className="chip chip--accent">

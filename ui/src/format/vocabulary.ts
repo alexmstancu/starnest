@@ -14,12 +14,12 @@
 export const HOUSEHOLD_LABELS = {
   net_income: "Net income",
   number_adults: "Adults",
-  number_children: "Children under 18",
-  target_monthly_spend: "Target monthly spend",
-  max_rent: "Maximum rent",
-  home_country_candidate: "Home country candidate",
-  home_city_candidate: "Home city candidate",
-  citizenships: "Citizenships",
+  number_children: "Children",
+  target_monthly_spend: "Comfortable monthly spend",
+  max_rent: "Rent ceiling",
+  home_country_candidate: "Moving from",
+  home_city_candidate: "Moving from (city)",
+  citizenships: "Passports held",
 } as const;
 
 export type HouseholdField = keyof typeof HOUSEHOLD_LABELS;

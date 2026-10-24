@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatMoney } from "../format/display";
+import { formatDateTime, formatMoneyPerMonth } from "../format/display";
 import {
   CITY_CANDIDATES,
   COUNTRY_CANDIDATES,
@@ -206,13 +206,13 @@ describe("the sidebar counts and last run", () => {
     // show -- rather than "Romania", read from the shared candidate roster.
     await waitFor(() =>
       expect(
-        household.getByText("Home country candidate").nextSibling,
+        household.getByText("Moving from").nextSibling,
       ).toHaveTextContent("Romania"),
     );
     expect(
-      household.getByText("Home country candidate").nextSibling,
+      household.getByText("Moving from").nextSibling,
     ).not.toHaveTextContent("country.romania");
-    expect(household.getByText("Citizenships").nextSibling).toHaveTextContent(
+    expect(household.getByText("Passports held").nextSibling).toHaveTextContent(
       "Romania",
     );
   });
@@ -229,6 +229,26 @@ describe("the sidebar counts and last run", () => {
       expect(household.getByText("Net income").nextSibling).toHaveTextContent(
         "€7,400 / month",
       ),
+    );
+  });
+
+  // PL-165. **The design's words and values**: counts in words, money whole and with its period.
+  it("words the household as the design does", async () => {
+    renderShell("/rank");
+
+    const household = within(
+      await screen.findByRole("region", { name: /household summary/i }),
+    );
+
+    await waitFor(() =>
+      expect(household.getByText("Adults").nextSibling).toHaveTextContent("Two"),
+    );
+    expect(household.getByText("Children").nextSibling).toHaveTextContent("One");
+    expect(
+      household.getByText("Comfortable monthly spend").nextSibling,
+    ).toHaveTextContent("€2,800 / month");
+    expect(household.getByText("Rent ceiling").nextSibling).toHaveTextContent(
+      "€1,500 / month",
     );
   });
 
@@ -281,8 +301,8 @@ describe("what the sidebar reads again", () => {
   async function sidebarHasRead(): Promise<void> {
     await sidebarIsLoaded();
     await waitFor(() =>
-      expect(figure("Household summary", "Target monthly spend")).toHaveTextContent(
-        formatMoney(HOUSEHOLD.target_monthly_spend, "EUR"),
+      expect(figure("Household summary", "Comfortable monthly spend")).toHaveTextContent(
+        formatMoneyPerMonth(HOUSEHOLD.target_monthly_spend, "EUR"),
       ),
     );
     await waitFor(() => expect(figure("Candidates", "Matching")).toHaveTextContent("2"));
@@ -316,7 +336,7 @@ describe("what the sidebar reads again", () => {
     renderShell("/configure");
     await sidebarHasRead();
     const household = within(await screen.findByRole("region", { name: "Household" }));
-    const spend = household.getByRole("textbox", { name: "Target monthly spend" });
+    const spend = household.getByRole("textbox", { name: "Comfortable monthly spend" });
 
     await user.clear(spend);
     await user.type(spend, "3100");
@@ -325,8 +345,8 @@ describe("what the sidebar reads again", () => {
     await user.click(screen.getByRole("link", { name: "Rank" }));
 
     await waitFor(() =>
-      expect(figure("Household summary", "Target monthly spend")).toHaveTextContent(
-        formatMoney(3100, "EUR"),
+      expect(figure("Household summary", "Comfortable monthly spend")).toHaveTextContent(
+        formatMoneyPerMonth(3100, "EUR"),
       ),
     );
   });
