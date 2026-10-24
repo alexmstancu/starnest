@@ -679,7 +679,7 @@ inner module ever names a concrete implementation.
 | `ValueStore` | `data` | `storage` | Read active values for candidates and attributes; append new values; never update |
 | `CatalogStore` | `data` | `storage` | Read attributes, pillars, levels, sources, breakdown schemes, and the match-rule and compound-rule catalogs — all of it objective, all changed only by migration |
 | `FxRateProvider` | `data` | `data_sources` | The rate for a currency pair on a date, with its source |
-| `Clock` | `data` | runtime | Now — so `max_age` and staleness are testable without waiting |
+| `Clock` | `data` | runtime | Now — for the dates a run stamps. Staleness is not read from it: `is_fresh` comes from the `active_value` view (PL-064) |
 | `CriteriaStore` | `criteria` | `storage` | Read and write criteria sets and their criteria |
 | `HouseholdStore` | `household` | `storage` | Read and write the single household record |
 | `EvaluationStore` | `evaluation` | `storage` | Persist a saved evaluation with its snapshot and per-attribute detail |
@@ -769,7 +769,7 @@ The boundaries above are what make each of these possible without the layer bene
 |---|---|---|
 | Normalisation, redistribution, coverage, matching | Table-driven tests over plain inputs | Pure functions of a value and a criterion — no store, no clock, no network |
 | Use cases | In-memory fakes of the store interfaces | A fake implementing `ValueStore` is a dictionary; the use case cannot tell |
-| Staleness and `max_age` | A fake `Clock` | Otherwise a test for "this value is stale" would wait months |
+| Staleness and `max_age` | A boundary computed in SQL on the database's today | Freshness is the `active_value` view's `is_fresh`, read with the value (PL-064); a test computes the last fresh day the same way, so it holds on any day |
 | Source adapters | Recorded fixtures of real responses | Live APIs are slow, flaky, rate-limited, and change underneath you |
 | `storage/` | A **real** PostgreSQL instance | The schema carries the type-agreement constraints, the one-of checks and the singleton checks. Testing those against a fake proves nothing — the constraints *are* the behaviour under test |
 | **The whole backend** | **An acceptance suite that speaks HTTP** | The same contract the interface uses, exercised end to end with no browser. This is the consumer that makes the API a boundary rather than an intention |

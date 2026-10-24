@@ -273,6 +273,7 @@ def _drawn(figures: Figures, *, min_coverage: Decimal | None = None) -> Comparis
         values=values,
         score_scale_max=A_SMALL_SCALE,
         min_coverage=min_coverage,
+        stale_values=frozenset(),
     )
     comparators = [candidate for candidate in figures if candidate != FOCUS]
     return compare(

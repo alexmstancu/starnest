@@ -5,7 +5,7 @@ same values in, same winner out. Every test below is therefore written as a comp
 competing values rather than as an assertion about one.
 """
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -26,7 +26,13 @@ from starnest.data import (
     select_active_values,
 )
 
-TODAY = date(2026, 8, 19)
+
+def fresh_unless(*stale: Value):
+    """The view's `is_fresh`, said outright: every value fresh but the ones named."""
+    return lambda value: all(value is not each for each in stale)
+
+
+EVERYTHING_FRESH = fresh_unless()
 
 EUROSTAT = DataSource(
     id="eurostat",
@@ -76,8 +82,12 @@ def a_value(**overrides: object) -> Value:
     return Value(**(fields | overrides))
 
 
-def chosen(*values: Value, priority: SourcePriority = GLOBAL_ORDER) -> Value | None:
-    return select_active_value(values, attribute=RENT, priority=priority, on=TODAY)
+def chosen(
+    *values: Value, priority: SourcePriority = GLOBAL_ORDER, stale: tuple[Value, ...] = ()
+) -> Value | None:
+    return select_active_value(
+        values, attribute=RENT, priority=priority, is_fresh=fresh_unless(*stale)
+    )
 
 
 class TestRuleOneAValueFromASwitchedOffSourceNeverCompetes:
@@ -137,47 +147,30 @@ class TestRuleOneRejectedValuesNeverCompete:
 
 
 class TestRuleTwoFreshBeatsStale:
+    """Which values are fresh is the view's answer, given here as an input (PL-064, D20)."""
+
     def test_a_fresh_crowdsourced_figure_beats_a_stale_official_one(self) -> None:
         """Whatever the source's rank -- this is the rule that outranks source priority."""
-        stale = a_value(
-            data_source="eurostat", reference_period=ReferencePeriod.covering_year(2019)
-        )
+        stale = a_value(data_source="eurostat")
         fresh = a_value(data_source="numbeo")
-        assert chosen(stale, fresh) is fresh
+        assert chosen(stale, fresh, stale=(stale,)) is fresh
 
     def test_a_stale_value_still_wins_when_it_is_the_last_one_standing(self) -> None:
-        stale = a_value(reference_period=ReferencePeriod.covering_year(2019))
-        assert chosen(stale) is stale
+        stale = a_value()
+        assert chosen(stale, stale=(stale,)) is stale
 
-    def test_an_attribute_with_no_max_age_has_no_stale_values(self) -> None:
-        """**Nothing can age past a limit that was never set**, so rule 2 stands aside.
+    def test_the_same_pair_goes_by_source_once_both_are_fresh(self) -> None:
+        """The control the first test needs: freshness, not the order given, decided it."""
+        official = a_value(data_source="eurostat")
+        crowdsourced = a_value(data_source="numbeo")
+        assert chosen(official, crowdsourced) is official
 
-        The pair differs only in the period it describes: same source, same confidence, same
-        retrieval moment. That is what makes this about freshness -- the earlier version put a
-        1900 numbeo figure against a manual one and let source priority decide, so it would
-        have passed with the freshness rule intact and failed if the two sources ever swapped
-        rank (D16). Here the only rule left to break the tie is the last one, the row written
-        last, and the ancient figure is given the higher id so that winning proves its age was
-        never consulted.
-        """
-        ageless = RENT.model_copy(update={"max_age": None})
+    def test_the_period_is_never_recounted(self) -> None:
+        """A figure from 1900 that the caller calls fresh is fresh: no day count overrides the
+        view, which is the disagreement a month-end used to expose."""
         ancient = a_value(reference_period=ReferencePeriod.covering_year(1900), id=2)
         current = a_value(id=1)
-
-        assert (
-            select_active_value(
-                [ancient, current], attribute=ageless, priority=GLOBAL_ORDER, on=TODAY
-            )
-            is ancient
-        )
-
-    def test_the_same_pair_goes_the_other_way_once_the_attribute_has_a_max_age(self) -> None:
-        """The control the test above needs to mean anything: with a limit declared, the same
-        two values are decided by age rather than by which row was written last."""
-        ancient = a_value(reference_period=ReferencePeriod.covering_year(1900), id=2)
-        current = a_value(id=1)
-
-        assert chosen(ancient, current) is current
+        assert chosen(ancient, current) is ancient
 
 
 class TestRuleThreeSourcePriority:
@@ -259,7 +252,7 @@ class TestSelectingForEveryCandidateAndOption:
         lisbon = a_value(candidate="country.portugal", data_source="eurostat")
         madrid = a_value(candidate="country.spain", data_source="numbeo")
         active = select_active_values(
-            [lisbon, madrid], attribute=RENT, priority=GLOBAL_ORDER, on=TODAY
+            [lisbon, madrid], attribute=RENT, priority=GLOBAL_ORDER, is_fresh=EVERYTHING_FRESH
         )
         assert active == {
             ("country.portugal", None): lisbon,
@@ -277,7 +270,10 @@ class TestSelectingForEveryCandidateAndOption:
             payload=Monetary.in_euro(Decimal("1200")),
         )
         active = select_active_values(
-            [one_bed, two_bed, superseded], attribute=RENT, priority=GLOBAL_ORDER, on=TODAY
+            [one_bed, two_bed, superseded],
+            attribute=RENT,
+            priority=GLOBAL_ORDER,
+            is_fresh=EVERYTHING_FRESH,
         )
         assert active == {
             ("country.portugal", "one_bedroom"): one_bed,
@@ -288,12 +284,17 @@ class TestSelectingForEveryCandidateAndOption:
         rejected = a_value(candidate="country.spain", rejection_reason="not credible")
         kept = a_value(candidate="country.portugal")
         active = select_active_values(
-            [rejected, kept], attribute=RENT, priority=GLOBAL_ORDER, on=TODAY
+            [rejected, kept], attribute=RENT, priority=GLOBAL_ORDER, is_fresh=EVERYTHING_FRESH
         )
         assert list(active) == [("country.portugal", None)]
 
     def test_nothing_in_gives_nothing_out(self) -> None:
-        assert select_active_values([], attribute=RENT, priority=GLOBAL_ORDER, on=TODAY) == {}
+        assert (
+            select_active_values(
+                [], attribute=RENT, priority=GLOBAL_ORDER, is_fresh=EVERYTHING_FRESH
+            )
+            == {}
+        )
 
 
 class TestTheGuard:

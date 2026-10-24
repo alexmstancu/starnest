@@ -218,3 +218,19 @@ class ValueListing(BaseModel):
 
     value: Value
     is_active: bool
+
+
+class ActiveValue(BaseModel):
+    """A value scoring reads, and whether the active-value view calls it fresh today.
+
+    **Freshness is the view's answer, carried rather than recomputed** (PL-064). The view
+    measures `max_age` in calendar months; a `timedelta` read through psycopg has already turned
+    each month into 30 days, so a Python recount disagrees with the view a day or two either
+    side of every expiry. Paired here for the same reason as `ValueListing`: being fresh is
+    about today, and a `Value` is a fact about one figure that does not change with the date.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    value: Value
+    is_fresh: bool

@@ -1,18 +1,15 @@
-"""The first of the two dates, and the staleness question it answers.
+"""The first of the two dates: what period a figure describes.
 
-Every assertion about `has_aged_past` is really an assertion about the `is_fresh` expression
-in the `active_value` view (`arch.md` 4): age is measured from what the data describes, not
-from when it was downloaded.
+Whether a period has aged past its attribute's `max_age` is not answered here: the `active_value`
+view's `is_fresh` is the one answer (PL-064), tested in `tests/storage/`.
 """
 
-from datetime import date, timedelta
+from datetime import date
 
 import pytest
 from pydantic import ValidationError
 
 from starnest.data import InvalidReferencePeriodError, ReferencePeriod
-
-A_YEAR = timedelta(days=365)
 
 
 class TestWhatAPeriodAccepts:
@@ -59,25 +56,3 @@ class TestWhatAPeriodRefuses:
     def test_refuses_a_field_it_does_not_declare(self) -> None:
         with pytest.raises(ValidationError):
             ReferencePeriod(start=date(2026, 1, 1), end=date(2026, 1, 1), retrieval_date="now")
-
-
-class TestGoingStale:
-    def test_a_figure_within_max_age_is_fresh(self) -> None:
-        period = ReferencePeriod.covering_year(2026)
-        assert period.has_aged_past(A_YEAR, on=date(2027, 6, 1)) is False
-
-    def test_a_figure_past_max_age_is_stale(self) -> None:
-        period = ReferencePeriod.covering_year(2019)
-        assert period.has_aged_past(A_YEAR, on=date(2026, 8, 19)) is True
-
-    def test_the_day_max_age_expires_still_counts_as_fresh(self) -> None:
-        """The view compares with `>=`, so the boundary day is fresh. So does this."""
-        period = ReferencePeriod.on_day(date(2026, 1, 1))
-        assert period.has_aged_past(A_YEAR, on=date(2027, 1, 1)) is False
-        assert period.has_aged_past(A_YEAR, on=date(2027, 1, 2)) is True
-
-    def test_an_attribute_declaring_no_max_age_never_goes_stale(self) -> None:
-        """A coastline does not age (`reqs.md` 6.6)."""
-        assert (
-            ReferencePeriod.covering_year(1900).has_aged_past(None, on=date(2026, 8, 19)) is False
-        )

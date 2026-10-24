@@ -318,3 +318,40 @@ def test_every_reader_of_a_figure_says_what_it_makes_of_a_declared_scale() -> No
         f"read a figure and are not listed: {sorted(found - READERS_OF_A_FIGURE.keys())}; "
         f"listed and no longer read one: {sorted(READERS_OF_A_FIGURE.keys() - found)}"
     )
+
+
+CLOCK_READS = {("datetime", "now"), ("datetime", "utcnow"), ("date", "today"), ("time", "time")}
+"""Every way a module could ask what time it is."""
+
+
+def _clock_reads_in(tree: ast.Module) -> list[str]:
+    return [
+        f"{node.value.id}.{node.attr}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and (node.value.id, node.attr) in CLOCK_READS
+    ]
+
+
+def test_evaluation_reads_no_clock() -> None:
+    """`evaluation/__init__.py` promises "no clock", and `ranking.py` broke it (PL-064).
+
+    Which figures have aged is the active-value view's answer, read through the value store and
+    handed in as `stale_values`; a clock read here would be a second, day-counting answer to the
+    same question, and the two disagree a day or two either side of every expiry.
+    """
+    found = {
+        str(path.relative_to(SOURCE)): reads
+        for path in sorted((SOURCE / "evaluation").rglob("*.py"))
+        if (reads := _clock_reads_in(ast.parse(path.read_text(encoding="utf-8"))))
+    }
+
+    assert found == {}
+
+
+def test_a_clock_read_would_be_found() -> None:
+    """The control, so the test above cannot pass by finding nothing anywhere."""
+    assert _clock_reads_in(ast.parse("from datetime import datetime\nx = datetime.now(UTC)\n")) == [
+        "datetime.now"
+    ]

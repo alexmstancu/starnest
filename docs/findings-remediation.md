@@ -33,9 +33,8 @@
 > downgrades like the screen); and **ST-07 freeze remainder** (`0507`: a `pillar_weight_locked`
 > column, `evaluation_match_rule`/`evaluation_compound_rule` tables, a `non_match_input` table and
 > an `ordinal` on both input tables — each a frozen child of `evaluation` with `ON DELETE CASCADE`,
-> proven by a real-insert boot-sweep test). **Only open item left in my lane:** BE-07's month-end
-> calendar precision (a Low deferral — unfixable Python-side without carrying calendar units through
-> psycopg's `interval`→`timedelta` mapping, and it would then disagree with `active_value`'s SQL).
+> proven by a real-insert boot-sweep test). BE-07's month-end calendar precision is closed by
+> PL-064: the ranking takes `is_fresh` from the `active_value` view, so it no longer counts days.
 >
 > Four High/Medium rows below still read `wave-1/2` but are in fact **fixed outside my commits**
 > (verified in code 2026-10-21, landed by the other agent's waves): **BE-02** (scores stay
@@ -157,7 +156,7 @@ guard (a CHECK, a validator, a narrowed query), but are called out so their prio
 | BE-04 | Medium | REAL | `evaluation/weighting.py:131-146`; `ranking.py:84` | WeightingError unmapped → HTTP 500; zero-weight empty pillar still refused | FIXED (prior session: `_refuse_a_pillar_nothing_scores_into` filters zero-weight pillars; WeightingError wrapped as RankingError→422) |
 | BE-05 | Medium | REAL | `criteria/criterion.py:168-177`; `0009-criteria.sql:76-77` | reqs 3.3a legal-scales-per-type unenforced | FIXED (`_reject_a_method_illegal_for_the_value_type` + `_LEGAL_METHODS`; non-normalised types unconstrained) |
 | BE-06 | Medium | REAL (latent) | `data/attribute.py:286-317`; `data/payloads.py:189-200` | Quantity payload unit not checked vs declared unit (manual-entry exposed) | FIXED (unit-match check in `rejection_reason_for`; stored-with-reason, non-destructive; unconstrained when no declared unit) |
-| BE-07 | Medium | REAL | `data/confidence.py:69-100`; `data/measurements.py:49,83` | derive_confidence has no production caller; stale HIGH stays HIGH | FIXED (core `4188571`; 2026-10-22 `scripts/rank.py` now builds `max_age` from the catalog and passes it, so `make rank` downgrades like the screen. **Low remainder deferred:** the month-end calendar precision (`ranking.py` compares a `timedelta`) cannot be fixed Python-side without carrying calendar units through psycopg's `interval`->`timedelta` mapping and would then disagree with `active_value`'s SQL unless that changed too -- disproportionate to a "few days at month ends" Low) |
+| BE-07 | Medium | REAL | `data/confidence.py:69-100`; `data/measurements.py:49,83` | derive_confidence has no production caller; stale HIGH stays HIGH | FIXED (core `4188571`; 2026-10-22 `scripts/rank.py` now builds `max_age` from the catalog and passes it, so `make rank` downgrades like the screen. The month-end remainder (KT-A4) is closed by PL-064: freshness is read from the `active_value` view's `is_fresh` with each value, and `make rank` calls `the_ranking`) |
 
 | BE-08 | Medium | REAL | `data/measurements.py:90-102`; `data_acquisition/run.py:114-138` | range-rejected figure stored as Value, not a failure; selective retry can't reach it | wave-2 |
 | BE-09 | Low | REAL (latent) | `data_sources/who/adapter.py:164-195` | WHO builds Value without rejection_reason_for; credible-range bypass (latent) | wave-3 |

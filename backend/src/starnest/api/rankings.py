@@ -161,6 +161,7 @@ class TheRanking:
     results: tuple[CandidateResult, ...]
     score_scale_max: int
     values: Mapping[str, Sequence[Value]]
+    stale_values: frozenset[int]
 
 
 async def the_ranking(
@@ -199,10 +200,18 @@ async def the_ranking(
         )
 
     roster = await candidates.read_candidates(level=level)
-    active = {
-        str(candidate.id): await values.read_active_values(candidates=[str(candidate.id)])
-        for candidate in roster
-    }
+    # **One read for the level, in one snapshot** (PL-065), and the stale ids from the same rows
+    # (PL-064): the flag that lowers a figure's grade in the confidence split is the flag the
+    # active-value view chose it by. Built from the roster rather than from the values, so a
+    # candidate with no figure at all stays in the ranking as `insufficient_data` (`reqs.md` 5.4).
+    read = await values.read_active_values_with_freshness(level=level)
+    grouped: dict[str, list[Value]] = {}
+    for each in read:
+        grouped.setdefault(str(each.value.candidate), []).append(each.value)
+    active = {str(candidate.id): tuple(grouped.get(str(candidate.id), ())) for candidate in roster}
+    stale_values = frozenset(
+        each.value.id for each in read if not each.is_fresh and each.value.id is not None
+    )
     # Both mechanisms that can rule a candidate out, and the rules that only warn (`reqs.md`
     # 5.4). A gate nobody has answered leaves its candidate matching, which is what an
     # unresearched question means.
@@ -210,11 +219,8 @@ async def the_ranking(
     for answer in await match_rule_results.read_results(level=level):
         answers.setdefault(str(answer.candidate), []).append(answer)
 
-    # How fast each attribute's data goes stale, so the confidence split can drop a grade for a
-    # figure aged past it (BE-07). Objective catalog data, read here and passed in -- the
-    # ranking works on criteria and values and does not otherwise know the catalog.
+    # What the catalog calls each attribute and gate, for the sentences a result carries.
     attributes = await catalog.read_attributes(level=level)
-    max_age = {str(attribute.id): attribute.max_age for attribute in attributes}
     results = rank_candidates(
         criteria=criteria_set_read,
         level=level,
@@ -224,8 +230,8 @@ async def the_ranking(
         compound_rules=await catalog.read_compound_rules(level=level),
         gate_answers=answers,
         home_candidate=await _home_country(households),
-        max_age=max_age,
         names=names_in(attributes, await catalog.read_match_rules(level=level)),
+        stale_values=stale_values,
     )
     return TheRanking(
         criteria=criteria_set_read,
@@ -233,6 +239,7 @@ async def the_ranking(
         results=results,
         score_scale_max=settings.score_scale_max,
         values=active,
+        stale_values=stale_values,
     )
 
 

@@ -17,6 +17,7 @@ import pytest
 
 from starnest.candidates import Level, LevelHierarchy
 from starnest.data import (
+    ActiveValue,
     Attribute,
     CatalogStore,
     Clock,
@@ -64,6 +65,16 @@ class InMemoryValueStore(ValueStore):
 
     async def read_active_values(self, *, level=None, candidates=(), attributes=()):
         return tuple(value for value in self._values if not value.is_rejected)
+
+    async def read_active_values_with_freshness(self, *, level=None, candidates=(), attributes=()):
+        # Nothing here declares a `max_age`, so nothing has aged: the view's answer for such a
+        # catalog, and the only one a fake with no calendar can honestly give.
+        return tuple(
+            ActiveValue(value=value, is_fresh=True)
+            for value in await self.read_active_values(
+                level=level, candidates=candidates, attributes=attributes
+            )
+        )
 
     async def read_values(
         self, *, candidate=None, attribute=None, include_superseded=True, limit=None, offset=0
@@ -215,11 +226,3 @@ class TestTheClock:
         be a genuinely confusing thing to debug."""
         clock = FixedClock(datetime(2026, 8, 19, 23, 59, tzinfo=UTC))
         assert clock.today() == date(2026, 8, 19)
-
-    def test_exists_so_staleness_can_be_tested_without_waiting(self) -> None:
-        assert (
-            AN_ATTRIBUTE.has_gone_stale(
-                ReferencePeriod.covering_year(2019), on=FixedClock(FETCHED).today()
-            )
-            is False
-        )

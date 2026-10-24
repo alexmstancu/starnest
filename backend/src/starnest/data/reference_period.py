@@ -10,7 +10,7 @@ timezone rather than a span in the world (`arch.md` 9.6). The two are different 
 merging them is not something anyone can do by accident.
 """
 
-from datetime import date, timedelta
+from datetime import date
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -58,16 +58,3 @@ class ReferencePeriod(BaseModel):
     def covers(self, day: date) -> bool:
         """Whether the span includes this day, both ends counting as inside."""
         return self.start <= day <= self.end
-
-    def has_aged_past(self, max_age: timedelta | None, *, on: date) -> bool:
-        """Whether the figure has gone stale by the attribute's `max_age`, as of `on`.
-
-        Age is measured from **what the data describes**, not from when it was downloaded:
-        rent from 2019 fetched this morning is stale rent. This mirrors the `is_fresh`
-        expression of the `active_value` view (`arch.md` 4, rule 2), which is why the
-        comparison is against `end` and why an attribute declaring no `max_age` never
-        goes stale.
-        """
-        if max_age is None:
-            return False
-        return self.end + max_age < on

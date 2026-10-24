@@ -12,7 +12,7 @@ of the result whatever its status.
 weighting doing what it is for, rather than a shape invented for these tests.
 """
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -61,13 +61,16 @@ CLIMATE_ZONE = "country.climate_zone"
 CITY_RENT = "city.house_price_to_income_ratio"
 
 
-def rank(criteria, values, *, scale: int = A_SMALL_SCALE, min_coverage=None, **rules):
+def rank(
+    criteria, values, *, scale: int = A_SMALL_SCALE, min_coverage=None, stale=frozenset(), **rules
+):
     return rank_candidates(
         criteria=criteria,
         level="country",
         values=values,
         score_scale_max=scale,
         min_coverage=min_coverage,
+        stale_values=stale,
         **rules,
     )
 
@@ -892,24 +895,27 @@ class TestWhatTheScoreRestsOn:
         assert portugal.coverage == Decimal(0)
         assert portugal.coverage_by_confidence == {}
 
-    def test_a_figure_aged_past_its_max_age_drops_a_grade_in_the_split(self) -> None:
-        """BE-07. The split reads each figure's stored grade, but a figure aged past its
-        attribute's max_age is worth less now than when it was fetched, so a live ranking drops
-        it one grade (low is the floor). Saved evaluations keep their frozen split; only this
-        live read re-derives it."""
+    @staticmethod
+    def portugal_high_and_low():
+        """Portugal on two figures, one high (id 1) and one low (id 2); half the weight each."""
         values = three_countries_one_missing_its_rent()
         values["country.portugal"] = (
-            values["country.portugal"][0],
+            values["country.portugal"][0].model_copy(update={"id": 1}),
             a_value(
                 candidate="country.portugal",
                 attribute=RENT,
                 payload=Count(count=5),
                 confidence_level=ConfidenceLevel.LOW,
+                id=2,
             ),
         )
-        aged = {str(a_criterion().attribute): timedelta(days=30), RENT: timedelta(days=30)}
+        return values
 
-        portugal = by_candidate(rank(two_pillars(), values, max_age=aged, as_of=date(2030, 1, 1)))[
+    def test_a_figure_the_view_calls_stale_drops_a_grade_in_the_split(self) -> None:
+        """BE-07, PL-064. A figure the active-value view calls stale is worth a grade less now
+        than when it was fetched, so a live ranking drops it one grade. Saved evaluations keep
+        their frozen split; only this live read re-derives it."""
+        portugal = by_candidate(rank(two_pillars(), self.portugal_high_and_low(), stale={1}))[
             "country.portugal"
         ]
 
@@ -917,41 +923,31 @@ class TestWhatTheScoreRestsOn:
         assert portugal.coverage_by_confidence[ConfidenceLevel.MEDIUM] == Decimal(50)
         assert portugal.coverage_by_confidence[ConfidenceLevel.LOW] == Decimal(50)
 
-    def test_a_fresh_figure_keeps_its_grade(self) -> None:
-        """The control: as of a date inside the figures' period, nothing is stale and the split
-        is the stored one."""
-        values = three_countries_one_missing_its_rent()
-        values["country.portugal"] = (
-            values["country.portugal"][0],
-            a_value(
-                candidate="country.portugal",
-                attribute=RENT,
-                payload=Count(count=5),
-                confidence_level=ConfidenceLevel.LOW,
-            ),
-        )
-        aged = {str(a_criterion().attribute): timedelta(days=30), RENT: timedelta(days=30)}
+    def test_low_is_the_floor(self) -> None:
+        """A stale low figure stays low: there is no grade beneath it to fall to."""
+        portugal = by_candidate(rank(two_pillars(), self.portugal_high_and_low(), stale={1, 2}))[
+            "country.portugal"
+        ]
 
-        portugal = by_candidate(rank(two_pillars(), values, max_age=aged, as_of=date(2026, 6, 1)))[
+        assert portugal.coverage_by_confidence[ConfidenceLevel.MEDIUM] == Decimal(50)
+        assert portugal.coverage_by_confidence[ConfidenceLevel.LOW] == Decimal(50)
+
+    def test_an_empty_set_downgrades_nothing(self) -> None:
+        """The control: with nothing named stale the split is the stored one, however old the
+        periods -- age is the view's to judge, never a recount here."""
+        portugal = by_candidate(rank(two_pillars(), self.portugal_high_and_low()))[
             "country.portugal"
         ]
 
         assert portugal.coverage_by_confidence[ConfidenceLevel.HIGH] == Decimal(50)
         assert portugal.coverage_by_confidence[ConfidenceLevel.LOW] == Decimal(50)
 
-    def test_an_attribute_with_no_max_age_never_goes_stale(self) -> None:
-        """An attribute declaring no max_age never ages (a coastline does not), so no amount of
-        time downgrades its figure."""
-        portugal = by_candidate(
-            rank(
-                two_pillars(),
-                three_countries_one_missing_its_rent(),
-                max_age={},
-                as_of=date(2030, 1, 1),
-            )
-        )["country.portugal"]
+    def test_a_stale_id_moves_no_score(self) -> None:
+        """Staleness grades the evidence and never discounts the figure (`reqs.md` 5.7)."""
+        fresh = by_candidate(rank(two_pillars(), self.portugal_high_and_low()))
+        aged = by_candidate(rank(two_pillars(), self.portugal_high_and_low(), stale={1, 2}))
 
-        assert portugal.coverage_by_confidence[ConfidenceLevel.HIGH] == Decimal(100)
+        assert {c: r.score for c, r in fresh.items()} == {c: r.score for c, r in aged.items()}
 
 
 class TestATargetRangeCriterion:

@@ -6,22 +6,26 @@
 Every number it prints came from a stored value with a reference date. Countries with no
 figures appear as `insufficient_data`, which is the honest outcome and the one worth seeing.
 
-**It makes the same call `GET /v1/rankings` makes** (`api/rankings.py`): the score scale and the
-coverage floor from the household's settings, the compound rules, and every gate's answers.
-It used to hardcode a scale of 100 and pass none of the rest, so it applied no coverage floor --
-and printed Liechtenstein as `matching` at 47% coverage when the product, with a floor of 60,
-does not. A script that ranks differently from the product is a second opinion nobody asked for,
-and it was the one being quoted.
+**It is the ranking `GET /v1/rankings` serves** (`api/rankings.py`, D20): it calls
+`the_ranking` itself rather than assembling the inputs again. It used to repeat the assembly, and
+the copy drifted three ways -- a hardcoded scale of 100 and no coverage floor (it printed
+Liechtenstein as `matching` at 47% coverage when the product, with a floor of 60, does not), then
+a read per candidate and no home country. A script that ranks differently from the product is a
+second opinion nobody asked for, and it was the one being quoted. What is left here is printing,
+which `lines_of` does as a pure function so a unit test can read it.
 """
 
 import asyncio
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
+from fastapi import HTTPException
 from psycopg_pool import AsyncConnectionPool
 
+from starnest.api.rankings import TheRanking, the_ranking
 from starnest.data import ConfidenceLevel
-from starnest.evaluation import rank_candidates
+from starnest.household import Settings
 from starnest.main import Environment
 from starnest.storage import (
     PostgresCandidateStore,
@@ -42,65 +46,54 @@ async def main(criteria_set: str) -> int:
     environment = Environment(_env_file=REPO / ".env")  # type: ignore[call-arg]
     async with AsyncConnectionPool(environment.database_url, min_size=1, open=False) as pool:
         await pool.open(wait=True)
-        settings = await PostgresHouseholdStore(pool).get_settings()
-        if settings.score_scale_max is None:
+        households = PostgresHouseholdStore(pool)
+        try:
+            ranking = await the_ranking(
+                criteria_set,
+                COUNTRY,
+                PostgresCriteriaStore(pool),
+                PostgresCandidateStore(pool),
+                PostgresValueStore(pool),
+                households,
+                PostgresCatalogStore(pool),
+                PostgresMatchRuleResultStore(pool),
+            )
+        except HTTPException as refusal:
             # Refused rather than assumed, as the API refuses: a scale nobody chose would make
             # every score this prints a number on a scale nobody chose (`CLAUDE.md`).
-            print("the score scale is not set, so nothing can be ranked: set it in Settings")
+            print(refusal.detail["message"] if isinstance(refusal.detail, dict) else refusal.detail)
             return 1
+        settings = await households.get_settings()
+    for line in lines_of(ranking, settings):
+        print(line)
+    return 0
 
-        criteria = await PostgresCriteriaStore(pool).read_criteria_set(criteria_set, level=COUNTRY)
-        candidates = await PostgresCandidateStore(pool).read_candidates(level=COUNTRY)
-        values = PostgresValueStore(pool)
-        active = {
-            str(candidate.id): await values.read_active_values(candidates=[str(candidate.id)])
-            for candidate in candidates
-        }
-        catalog = PostgresCatalogStore(pool)
-        compound_rules = await catalog.read_compound_rules(level=COUNTRY)
-        # The age past which a figure drops a confidence grade at read (BE-07). Built from the
-        # catalog exactly as the ranking endpoint builds it (`api/rankings.py`), so `make rank`
-        # grades a stale figure the same way the screen does rather than never downgrading at all.
-        max_age = {
-            str(attribute.id): attribute.max_age
-            for attribute in await catalog.read_attributes(level=COUNTRY)
-        }
-        answers: dict[str, list] = {}
-        for answer in await PostgresMatchRuleResultStore(pool).read_results(level=COUNTRY):
-            answers.setdefault(str(answer.candidate), []).append(answer)
 
-    results = rank_candidates(
-        criteria=criteria,
-        level=COUNTRY,
-        values=active,
-        score_scale_max=settings.score_scale_max,
-        min_coverage=settings.min_coverage,
-        compound_rules=compound_rules,
-        gate_answers=answers,
-        max_age=max_age,
-    )
-
+def lines_of(ranking: TheRanking, settings: Settings) -> Iterator[str]:
+    """The ranking as `make rank` prints it, one line at a time."""
     floor = "none" if settings.min_coverage is None else f"{settings.min_coverage:.0f}%"
-    print(f"scale 0-{settings.score_scale_max}, coverage floor {floor}\n")
+    yield f"scale 0-{ranking.score_scale_max}, coverage floor {floor}"
+    yield ""
     # "of it, low": the share of the covered weight resting on a low-confidence figure -- an
     # estimate or a neighbour's figure standing in (reqs.md 5.7). Never discounted in the score,
     # so this column is the only place the difference shows.
-    print(f"{'':4} {'candidate':28} {'score':>5} {'coverage':>9} {'of it, low':>11}  status")
+    yield f"{'':4} {'candidate':28} {'score':>5} {'coverage':>9} {'of it, low':>11}  status"
+    results = ranking.results
     for result in sorted(results, key=lambda r: (r.rank is None, r.rank or 0)):
         rank = f"{result.rank}." if result.rank else "  "
         score = result.score if result.score is not None else "--"
         split = result.coverage_by_confidence
         low = f"{split[ConfidenceLevel.LOW]:.0f}%" if split else "--"
-        print(
+        yield (
             f"{rank:>4} {result.candidate!s:28} {score:>5} "
             f"{result.coverage:>8.0f}% {low:>11}  {result.match_status}"
         )
     unscored = [r for r in results if r.score is None]
     if unscored:
-        print(f"\n{len(unscored)} without a score:")
+        yield ""
+        yield f"{len(unscored)} without a score:"
         for result in unscored:
-            print(f"  {result.candidate}: {result.insufficient_reason}")
-    return 0
+            yield f"  {result.candidate}: {result.insufficient_reason}"
 
 
 if __name__ == "__main__":

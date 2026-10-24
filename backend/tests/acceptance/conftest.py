@@ -229,7 +229,10 @@ async def stored_figures(database_url: str) -> AsyncIterator[None]:
         ValueType,
     )
 
-    a_year = ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 12, 31))
+    # Last calendar year, counted from today rather than written down (SV-N4): a fixed 2025 aged
+    # past these attributes' `max_age` in 2028 and turned the "high: 100" split medium.
+    last_year = date.today().year - 1
+    a_year = ReferencePeriod(start=date(last_year, 1, 1), end=date(last_year, 12, 31))
 
     def a_figure(candidate: str, attribute: str, figure: str) -> Value:
         satisfaction = attribute == "country.life_satisfaction"

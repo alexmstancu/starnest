@@ -11,7 +11,7 @@ rather than a logic change. What lives here is only the shape a row has to have.
 """
 
 from collections.abc import Iterable
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from enum import StrEnum
 
@@ -35,7 +35,6 @@ from starnest.data.payloads import (
     Ratio,
     ValueType,
 )
-from starnest.data.reference_period import ReferencePeriod
 from starnest.data.sources import DataSource, SourcePriority, SourcePriorityOverride
 
 
@@ -277,10 +276,6 @@ class Attribute(BaseModel):
     def is_broken_down(self) -> bool:
         """Whether one figure is not enough and values arrive per breakdown option."""
         return self.breakdown_scheme is not None
-
-    def has_gone_stale(self, period: ReferencePeriod, *, on: date) -> bool:
-        """Whether a figure describing `period` has aged past `max_age` by `on`."""
-        return period.has_aged_past(self.max_age, on=on)
 
     def effective_source_priority(self, sources: Iterable[DataSource]) -> SourcePriority:
         """The order sources are consulted for this attribute, overrides applied.

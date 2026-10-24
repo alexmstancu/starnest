@@ -255,19 +255,22 @@ def _sources_that_can_fetch(
 
 
 _DAYS_IN_A_MONTH = 365.25 / 12
-"""What PostgreSQL's own epoch arithmetic implies: a year is 365.25 days, so a month is this.
+"""The mean length of a calendar month, which turns the day count psycopg hands back into months.
 
-`interval '2 years'` comes back as 730.5 days and `interval '24 months'` means the same thing;
-dividing by this recovers 24 exactly. `interval '3 mons'` is the one inexact case -- PostgreSQL
-gives it 90 days flat, which is 2.96 of these -- and it rounds to 3, which is what it means.
+psycopg loads an interval's years as 365 days and its months as 30 (SV-N5): `interval '2 years'`
+arrives as 730 days, not 730.5, and `interval '60 months'` -- which PostgreSQL holds as five
+years -- as 1825. Dividing by this gives 23.98 and 59.96, each within half a month of what was
+written, so rounding recovers it. `interval '3 mons'` arrives as 90 days, 2.96 of these, and
+rounds to 3. The shortfall grows by a quarter-day a year and under half a day a month, so the
+rounding holds for any horizon shorter than forty years.
 """
 
 
 def _months_of(max_age: timedelta | None) -> int | None:
     """A staleness horizon in whole months, which is the unit the catalog declares.
 
-    Days would be lossy and slightly wrong: two years is 730.5 of them (known-issues D18). The
-    catalog holds only whole months (`reqs.md` 7.1), so rounding recovers exactly what was
+    Days would be lossy and slightly wrong: two years arrives as 730 of them (known-issues D18).
+    The catalog holds only whole months (`reqs.md` 7.1), so rounding recovers exactly what was
     written rather than approximating something continuous.
     """
     if max_age is None:

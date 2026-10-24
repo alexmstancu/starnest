@@ -149,6 +149,7 @@ class TestWhereTheDifferenceAgainstHomeIsApplied:
                 level="country",
                 values=values_for(portugal=90, spain=50, italy=10),
                 score_scale_max=A_SMALL_SCALE,
+                stale_values=frozenset(),
                 **overrides,  # type: ignore[arg-type]
             )
         }

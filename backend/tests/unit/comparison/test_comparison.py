@@ -588,7 +588,13 @@ def a_scored_comparison():
         )
         for candidate, by_attribute in figures.items()
     }
-    ranking = rank_candidates(criteria=criteria, level="country", values=values, score_scale_max=10)
+    ranking = rank_candidates(
+        criteria=criteria,
+        level="country",
+        values=values,
+        score_scale_max=10,
+        stale_values=frozenset(),
+    )
     return compare(
         results=ranking, focus=PORTUGAL, comparators=[SPAIN], magnitudes={}, comparator_limit=5
     )

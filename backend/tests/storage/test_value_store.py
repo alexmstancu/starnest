@@ -7,8 +7,8 @@ what the domain refuses**: a payload of the wrong type is rejected by the compos
 key of `arch.md` 3.3b, from the other side, with no Python check involved.
 """
 
-from collections.abc import Callable
-from datetime import UTC, date, datetime
+from collections.abc import AsyncIterator, Callable
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -657,3 +657,91 @@ async def test_no_external_score_has_ever_been_published_about_anyone(
     values: PostgresValueStore,
 ) -> None:
     assert await values.read_external_scores() == ()
+
+
+# --- freshness, from the view (PL-064) -------------------------------------------------------
+
+EARLIEST_FRESH_END = """
+    SELECT min(day)::date
+    FROM   generate_series(CURRENT_DATE - interval '61 months', CURRENT_DATE, interval '1 day')
+           AS day
+    WHERE  (day::date + interval '60 months')::date >= CURRENT_DATE
+"""
+"""The earliest period end still fresh under a 60-month `max_age`, by the view's arithmetic.
+
+Computed in SQL, on the database's today, so it holds on any day -- month ends and leap days
+included, where 1,825 days and 60 calendar months part company.
+"""
+
+
+async def earliest_fresh_end(pool: AsyncConnectionPool) -> date:
+    async with pool.connection() as connection:
+        row = await (await connection.execute(EARLIEST_FRESH_END)).fetchone()
+    assert row is not None
+    return row[0]
+
+
+@pytest.fixture
+async def sixty_months(pool: AsyncConnectionPool) -> AsyncIterator[str]:
+    """`A_COUNT_ATTRIBUTE` ages after 60 months for one test, then back to what it was."""
+    async with pool.connection() as connection:
+        row = await (
+            await connection.execute(
+                "SELECT max_age FROM attribute WHERE id = %s", (A_COUNT_ATTRIBUTE,)
+            )
+        ).fetchone()
+        assert row is not None
+        await connection.execute(
+            "UPDATE attribute SET max_age = interval '60 months' WHERE id = %s",
+            (A_COUNT_ATTRIBUTE,),
+        )
+    try:
+        yield A_COUNT_ATTRIBUTE
+    finally:
+        async with pool.connection() as connection:
+            await connection.execute(
+                "UPDATE attribute SET max_age = %s WHERE id = %s", (row[0], A_COUNT_ATTRIBUTE)
+            )
+
+
+def ending_on(end: date, *, candidate: str) -> Value:
+    return a_value(
+        attribute=A_COUNT_ATTRIBUTE, payload=Count(count=1), candidate=candidate
+    ).model_copy(update={"reference_period": ReferencePeriod(start=end, end=end)})
+
+
+async def test_freshness_is_the_view_s_answer_on_either_side_of_the_boundary(
+    values: PostgresValueStore, pool: AsyncConnectionPool, sixty_months: str
+) -> None:
+    """The last fresh day is fresh and the day before it is not, by calendar months.
+
+    *Mutation:* compute `is_fresh` in Python from the `timedelta` psycopg returns, and this
+    fails -- 60 months arrive as 1,825 days and the boundary moves by a day or two.
+    """
+    last_fresh = await earliest_fresh_end(pool)
+    await values.append(
+        [
+            ending_on(last_fresh, candidate=A_CANDIDATE),
+            ending_on(last_fresh - timedelta(days=1), candidate=ANOTHER_CANDIDATE),
+        ]
+    )
+
+    read = await values.read_active_values_with_freshness(attributes=[sixty_months])
+
+    assert {str(each.value.candidate): each.is_fresh for each in read} == {
+        A_CANDIDATE: True,
+        ANOTHER_CANDIDATE: False,
+    }
+
+
+async def test_the_values_alone_are_the_same_rows(values: PostgresValueStore) -> None:
+    """`read_active_values` is the same read with the flag dropped, so the two cannot drift."""
+    await values.append([a_value(attribute=A_COUNT_ATTRIBUTE, payload=Count(count=3))])
+
+    paired = await values.read_active_values_with_freshness(level="country")
+
+    assert tuple(each.value for each in paired) == await values.read_active_values(level="country")
+
+
+async def test_nothing_stored_reads_no_pairs(values: PostgresValueStore) -> None:
+    assert await values.read_active_values_with_freshness(level="country") == ()

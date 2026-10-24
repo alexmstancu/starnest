@@ -2,7 +2,9 @@
 
 Pure functions over values and a `CriteriaSet`. No store, no clock, no network -- so every
 rule here is unit-testable against figures written by hand, and none of it has to be re-proven
-against a database. `import-linter` enforces the absence of a plugin import.
+against a database. `import-linter` enforces the absence of a plugin import, and
+`tests/unit/test_architecture.py` the absence of a clock read: which figures have aged is the
+caller's to say, from the active-value view (PL-064).
 
 **What is here** (`reqs.md` 5): `fixed`, `percentile` and `as_is` normalisation, the three goals
 with `target_range`'s falloff, weight redistribution over the criteria that have a value,

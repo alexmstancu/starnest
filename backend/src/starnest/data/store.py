@@ -34,7 +34,7 @@ from starnest.data.population_centre import PopulationCentre
 from starnest.data.rules import CompoundRule, MatchRule
 from starnest.data.sources import DataSource
 from starnest.data.stand_in import StandIn
-from starnest.data.value import Value, ValueListing
+from starnest.data.value import ActiveValue, Value, ValueListing
 
 
 class UnknownAttributeError(LookupError):
@@ -66,6 +66,21 @@ class ValueStore(ABC):
 
         Every breakdown option comes back. Reducing several options to the one that applies
         is a criterion's choice, made when the score is computed and never here.
+        """
+
+    @abstractmethod
+    async def read_active_values_with_freshness(
+        self,
+        *,
+        level: str | None = None,
+        candidates: Sequence[str] = (),
+        attributes: Sequence[str] = (),
+    ) -> tuple[ActiveValue, ...]:
+        """`read_active_values`, each paired with whether the active-value view calls it fresh.
+
+        What a ranking reads (PL-064): the same rows from the same statement, so the flag that
+        lowers a figure's grade in the confidence split is the flag that chose it, computed by
+        the database's calendar arithmetic on the database's today -- never recounted in days.
         """
 
     @abstractmethod

@@ -6,7 +6,7 @@ believable and unwanted. And **a mismatched type is an error, not a rejection** 
 nothing to store and nothing to explain.
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -28,7 +28,6 @@ from starnest.data import (
     QuantityParameters,
     Ratio,
     RatioParameters,
-    ReferencePeriod,
     SourceKind,
     SourcePriorityOverride,
     ValueType,
@@ -299,14 +298,7 @@ class TestRejectingAFigureThatIsNotCredible:
         )
 
 
-class TestStalenessAndPriority:
-    def test_asks_the_period_whether_it_has_aged_past_max_age(self) -> None:
-        attribute = an_attribute(max_age=timedelta(days=365))
-        assert attribute.has_gone_stale(ReferencePeriod.covering_year(2019), on=date(2026, 8, 19))
-        assert not attribute.has_gone_stale(
-            ReferencePeriod.covering_year(2026), on=date(2026, 8, 19)
-        )
-
+class TestSourcePriority:
     def test_resolves_the_whole_source_order_including_what_it_does_not_override(self) -> None:
         attribute = an_attribute(
             source_priority_overrides=(SourcePriorityOverride(data_source="numbeo", rank=1),)

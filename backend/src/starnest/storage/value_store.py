@@ -20,6 +20,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from starnest.candidates import CandidateId
 from starnest.data import (
+    ActiveValue,
     AssignedScore,
     AttributeId,
     Boolean,
@@ -61,7 +62,22 @@ class PostgresValueStore(ValueStore):
         candidates: Sequence[str] = (),
         attributes: Sequence[str] = (),
     ) -> tuple[Value, ...]:
-        """One query for the whole ranking, payloads included.
+        """The values alone, for the readers that do not grade them (the stand-in path)."""
+        return tuple(
+            active.value
+            for active in await self.read_active_values_with_freshness(
+                level=level, candidates=candidates, attributes=attributes
+            )
+        )
+
+    async def read_active_values_with_freshness(
+        self,
+        *,
+        level: str | None = None,
+        candidates: Sequence[str] = (),
+        attributes: Sequence[str] = (),
+    ) -> tuple[ActiveValue, ...]:
+        """One query for the whole ranking, payloads and the view's `is_fresh` included.
 
         The payload travels with the row here and nowhere else in this file: this is the read
         a slider drag repeats, so it pays the wider SELECT rather than a second round trip.
@@ -81,11 +97,14 @@ class PostgresValueStore(ValueStore):
                 )
             ]
         return tuple(
-            _value_from(
-                row,
-                payload=_payload_from(row.value_type, row.payload),
-                rejection_reason=None,
-                citations=(),
+            ActiveValue(
+                value=_value_from(
+                    row,
+                    payload=_payload_from(row.value_type, row.payload),
+                    rejection_reason=None,
+                    citations=(),
+                ),
+                is_fresh=row.is_fresh,
             )
             for row in rows
         )
@@ -440,8 +459,9 @@ def _value_from(
     `is_active` are both derived facts about a row's standing among other rows, and `Value` is
     deliberately a fact about one figure (`data/value.py`).
 
-    `is_active` is dropped here and then paired back on by `read_values`, in a `ValueListing`.
-    The contract requires it on every value it returns, so losing it outright left `api/`
+    Both are dropped here and paired back on by the caller -- `is_active` in a `ValueListing`,
+    `is_fresh` in an `ActiveValue`. The contract requires `is_active` on every value it returns,
+    so losing it outright left `api/`
     unable to populate a required field (known-issues D6) -- but putting it ON the value would
     be storing a comparison on the thing compared, which is what this paragraph refuses.
     """

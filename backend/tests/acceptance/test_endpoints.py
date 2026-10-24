@@ -1058,6 +1058,86 @@ class TestWhatARankingSaysItRestsOn:
             "low": 0,
         }
 
+    @pytest.mark.parametrize(
+        ("days_before_the_boundary", "split"),
+        [
+            (0, {"absolute": 0, "high": 100, "medium": 0, "low": 0}),
+            (1, {"absolute": 0, "high": 0, "medium": 100, "low": 0}),
+        ],
+        ids=["the last fresh day keeps its grade", "the day before drops one"],
+    )
+    async def test_a_figure_the_view_calls_fresh_keeps_its_grade(
+        self,
+        api: httpx.AsyncClient,
+        database_url: str,
+        days_before_the_boundary: int,
+        split: dict[str, int],
+    ) -> None:
+        """PL-064: a figure counts a grade lower exactly when the active-value view calls it
+        stale. The boundary is computed in SQL on the database's today, so this holds on any
+        day; a Python recount of 60 months as 1,825 days moves it by a day or two.
+
+        *Mutation:* restore the day count (`has_aged_past`) in the ranking, and one side fails.
+        """
+        attributes = (OVERBURDEN, OVERCROWDING, "country.life_satisfaction")
+        async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+            await pool.open(wait=True)
+            async with pool.connection() as connection:
+                kept = await (
+                    await connection.execute(
+                        "SELECT id, max_age FROM attribute WHERE id = ANY(%s)", (list(attributes),)
+                    )
+                ).fetchall()
+                await connection.execute(
+                    "UPDATE attribute SET max_age = interval '60 months' WHERE id = ANY(%s)",
+                    (list(attributes),),
+                )
+                await connection.execute(
+                    "INSERT INTO settings (id, score_scale_max) VALUES (1, 100)"
+                    " ON CONFLICT (id) DO UPDATE SET score_scale_max = 100"
+                )
+                row = await (
+                    await connection.execute(
+                        "SELECT min(day)::date FROM generate_series("
+                        " CURRENT_DATE - interval '61 months', CURRENT_DATE, interval '1 day')"
+                        " AS day WHERE (day::date + interval '60 months')::date >= CURRENT_DATE"
+                    )
+                ).fetchone()
+            try:
+                assert row is not None
+                end = date.fromordinal(row[0].toordinal() - days_before_the_boundary)
+                last_year = date.today().year - 1
+                await PostgresValueStore(pool).append(
+                    [
+                        a_boundary_figure("country.portugal", attribute, end, end)
+                        for attribute in attributes
+                    ]
+                    + [
+                        a_boundary_figure(
+                            "country.greece",
+                            attribute,
+                            date(last_year, 1, 1),
+                            date(last_year, 12, 31),
+                        )
+                        for attribute in attributes
+                    ]
+                )
+
+                body = (
+                    await api.get(
+                        "/v1/rankings", params={"criteria_set": MINIMAL, "level": COUNTRY}
+                    )
+                ).json()
+            finally:
+                async with pool.connection() as connection:
+                    for attribute, max_age in kept:
+                        await connection.execute(
+                            "UPDATE attribute SET max_age = %s WHERE id = %s", (max_age, attribute)
+                        )
+
+        portugal = next(c for c in body["candidates"] if c["candidate"] == "country.portugal")
+        assert portugal["coverage_by_confidence"] == split
+
     async def test_a_candidate_with_nothing_covered_has_no_split_rather_than_zeros(
         self, api: httpx.AsyncClient, stored_figures: None
     ) -> None:
@@ -1144,3 +1224,22 @@ class TestNarrowingValuesToOneRun:
 
         assert body["items"] == []
         assert body["total"] == 0
+
+
+def a_boundary_figure(candidate: str, attribute: str, start: date, end: date) -> Value:
+    """A high-confidence figure describing `start` to `end`, of the shape `attribute` takes."""
+    satisfaction = attribute == "country.life_satisfaction"
+    return Value(
+        candidate=candidate,
+        attribute=attribute,
+        value_type=ValueType.QUANTITY if satisfaction else ValueType.RATIO,
+        data_source="eurostat",
+        reference_period=ReferencePeriod(start=start, end=end),
+        retrieval_date=datetime.now(UTC),
+        confidence_level=ConfidenceLevel.HIGH,
+        payload=(
+            Quantity(magnitude=Decimal("7"), unit="ladder_points")
+            if satisfaction
+            else Ratio(value=Decimal("10"), basis="households")
+        ),
+    )

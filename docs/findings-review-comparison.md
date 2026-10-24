@@ -473,7 +473,7 @@ The other agent fixed its remaining larger findings in two passes, and non-Claud
 | Finding | Commits | Verdict |
 |---|---|---|
 | BE-19 | `d7a1263`, `946db36` | FIXED. Each batch's failures are saved before the next fetch. One gap remains: a value or reuse row commits a moment before its failure does, so a kill in between loses that failure (BEA-1 / FU-A7, Low). You accepted it on 2026-10-22, recorded in `known-issues.md` |
-| BE-07 | `4188571`, `babfbe5` | FIXED, in the scope you approved (the confidence split only). The API and `make rank` both downgrade a figure aged past its `max_age`. No test covers the CLI, because scripts are outside coverage. Month-end precision (KT-A4) is deferred as Low. The deferral's stated reason is unsound: SQL can compute the expiry behind a port, the way active-value freshness does |
+| BE-07 | `4188571`, `babfbe5` | FIXED, in the scope you approved (the confidence split only). The API and `make rank` both downgrade a figure aged past its `max_age`. No test covers the CLI, because scripts are outside coverage. Month-end precision (KT-A4) was deferred as Low, and is now closed by PL-064: the expiry is the view's `is_fresh`, read behind the value store's port, and `make rank` calls `the_ranking` |
 | BE-31 | `a9d7929` | FIXED. The exact import table of `arch.md` 6.1 is enforced on direct imports |
 | BE-33 | `a7a2fa8` | FIXED. A run's spend is written per batch |
 | NEW-48 | `27add01`, `6c38f51` | FIXED. A retried source is asked only about its own failed pairs, in both fetch paths |

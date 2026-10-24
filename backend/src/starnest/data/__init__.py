@@ -134,6 +134,7 @@ from starnest.data.sources import (
 from starnest.data.stand_in import MalformedStandInError, StandIn
 from starnest.data.store import CatalogStore, UnknownAttributeError, ValueStore
 from starnest.data.value import (
+    ActiveValue,
     ConflictingObservationError,
     MalformedValueError,
     Value,
@@ -148,6 +149,7 @@ __all__ = [
     "MANUAL_ENTRY_DEFAULT_CONFIDENCE",
     "PAYLOAD_CLASSES",
     "SHARE_SUM_TOLERANCE",
+    "ActiveValue",
     "ActiveValueKey",
     "AllowedRange",
     "AnswerRecordedByAPersonError",

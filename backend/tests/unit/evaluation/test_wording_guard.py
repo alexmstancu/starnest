@@ -163,6 +163,7 @@ def _insufficient_reasons(names: Names) -> list[str]:
             values=values,
             score_scale_max=10,
             names=names,
+            stale_values=frozenset(),
             **settings,
         )
         found = {str(result.candidate): result for result in results}

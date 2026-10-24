@@ -21,10 +21,14 @@ the wrong number with correct-looking provenance.
 SQL, is what the ranking reads: a second one consulted at runtime would drift, and would drift
 silently. This exists so the rule is table-testable, and so the two can be checked against each
 other -- same inputs, same winner.
+
+**Freshness is an input here, never a count** (PL-064, D20). The view measures `max_age` in
+calendar months; a `timedelta` read through psycopg has already turned each month into 30 days,
+so recounting age here would name a different winner a day or two either side of every expiry.
+The caller says which values are fresh -- in production, the view's own `is_fresh`.
 """
 
-from collections.abc import Iterable, Mapping
-from datetime import date
+from collections.abc import Callable, Iterable, Mapping
 
 from starnest.candidates import CandidateId
 from starnest.data.attribute import Attribute
@@ -50,7 +54,7 @@ def select_active_value(
     *,
     attribute: Attribute,
     priority: SourcePriority,
-    on: date,
+    is_fresh: Callable[[Value], bool],
 ) -> Value | None:
     """The one value scoring reads, or `None` when no candidate figure survives.
 
@@ -65,7 +69,7 @@ def select_active_value(
         return None
     return min(
         survivors,
-        key=lambda value: _ordering_key(value, attribute=attribute, priority=priority, on=on),
+        key=lambda value: _ordering_key(value, priority=priority, is_fresh=is_fresh),
     )
 
 
@@ -74,7 +78,7 @@ def select_active_values(
     *,
     attribute: Attribute,
     priority: SourcePriority,
-    on: date,
+    is_fresh: Callable[[Value], bool],
 ) -> Mapping[ActiveValueKey, Value]:
     """The active value for every candidate and breakdown option present in `values`.
 
@@ -88,7 +92,11 @@ def select_active_values(
     return {
         key: chosen
         for key, competing in grouped.items()
-        if (chosen := select_active_value(competing, attribute=attribute, priority=priority, on=on))
+        if (
+            chosen := select_active_value(
+                competing, attribute=attribute, priority=priority, is_fresh=is_fresh
+            )
+        )
         is not None
     }
 
@@ -117,7 +125,7 @@ def _the_values_this_attribute_may_rank(
 
 
 def _ordering_key(
-    value: Value, *, attribute: Attribute, priority: SourcePriority, on: date
+    value: Value, *, priority: SourcePriority, is_fresh: Callable[[Value], bool]
 ) -> tuple[bool, tuple[int, int], int, float, int]:
     """Rules 2 to 5 as one key that sorts ascending, smallest winning.
 
@@ -126,7 +134,7 @@ def _ordering_key(
     how the two are kept honest.
     """
     return (
-        attribute.has_gone_stale(value.reference_period, on=on),
+        not is_fresh(value),
         priority.rank_of(value.data_source),
         value.confidence_level.priority_order,
         -value.retrieval_date.timestamp(),
