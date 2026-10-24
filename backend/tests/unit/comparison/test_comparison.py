@@ -11,7 +11,7 @@ from decimal import Decimal
 import grimp
 import pytest
 
-from starnest.comparison import ComparisonError, compare
+from starnest.comparison import ComparatorLimitExceededError, ComparisonError, compare
 from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor
 from starnest.data import Count
 from starnest.evaluation import (
@@ -480,12 +480,18 @@ def _lines(lines) -> list[tuple[str, Decimal]]:
 class TestWhatCannotBeCompared:
     def test_a_candidate_that_is_not_in_this_ranking(self) -> None:
         """Which is also how levels stay unmixed: a city is not in a country ranking."""
-        with pytest.raises(ComparisonError, match="not in this ranking"):
+        with pytest.raises(ComparisonError, match="not in this ranking") as refused:
             a_comparison(comparators=["city.lisbon"])
 
+        assert refused.value.details == {"candidates": ["city.lisbon"]}
+
     def test_more_comparators_than_the_configured_limit(self) -> None:
-        with pytest.raises(ComparisonError, match="limit of 1"):
+        """A refusal of its own, carrying the limit and the count, so a client can say which
+        setting to change rather than calling the request malformed (PL-007)."""
+        with pytest.raises(ComparatorLimitExceededError, match="limit of 1") as refused:
             a_comparison(comparators=[SPAIN, GREECE], comparator_limit=1)
+
+        assert refused.value.details == {"limit": 1, "asked": 2}
 
     def test_the_limit_is_the_callers_and_has_no_default(self) -> None:
         """`reqs.md` 8.5: configurable, never hardcoded. A default here would be the bound."""
@@ -495,16 +501,30 @@ class TestWhatCannotBeCompared:
             )
 
     def test_a_focus_compared_with_itself(self) -> None:
-        with pytest.raises(ComparisonError, match="itself"):
+        with pytest.raises(ComparisonError, match="itself") as refused:
             a_comparison(comparators=[PORTUGAL])
 
+        assert refused.value.details == {"candidates": [PORTUGAL]}
+
     def test_the_same_comparator_twice(self) -> None:
-        with pytest.raises(ComparisonError, match="twice"):
-            a_comparison(comparators=[SPAIN, SPAIN])
+        with pytest.raises(ComparisonError, match="twice") as refused:
+            a_comparison(comparators=[SPAIN, GREECE, SPAIN])
+
+        assert refused.value.details == {"candidates": [SPAIN]}
 
     def test_no_comparators_at_all(self) -> None:
-        with pytest.raises(ComparisonError, match="at least one"):
+        """It concerns the focus, the one candidate the request does name."""
+        with pytest.raises(ComparisonError, match="at least one") as refused:
             a_comparison(comparators=[])
+
+        assert refused.value.details == {"candidates": [PORTUGAL]}
+
+    def test_only_the_limit_has_a_refusal_of_its_own(self) -> None:
+        """The four other causes are a request built wrong, not a setting to change."""
+        with pytest.raises(ComparisonError) as refused:
+            a_comparison(comparators=[PORTUGAL])
+
+        assert not isinstance(refused.value, ComparatorLimitExceededError)
 
 
 SATISFACTION = "country.life_satisfaction"

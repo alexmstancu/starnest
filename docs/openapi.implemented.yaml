@@ -1000,6 +1000,7 @@ components:
       - answer_recorded_by_a_person
       - score_scale_not_set
       - comparator_limit_not_set
+      - comparator_limit_exceeded
       - invalid_comparison
       - invalid_criteria_set
       - invalid_criterion

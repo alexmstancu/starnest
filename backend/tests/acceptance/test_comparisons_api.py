@@ -272,10 +272,12 @@ class TestWhatIsRefused:
     ) -> None:
         await _settings(database_url, comparator_limit=1)
 
-        response = await _compare(api, comparators=[GREECE, "country.spain"])
+        response = await _compare(api, comparators=[GREECE, SPAIN])
 
         assert response.status_code == 409
-        assert response.json()["code"] == "invalid_comparison"
+        body = response.json()
+        assert body["code"] == "comparator_limit_exceeded"
+        assert body["details"] == {"limit": 1, "asked": 2}
 
     async def test_a_comparator_that_is_not_in_this_ranking(
         self, api: httpx.AsyncClient, database_url: str, stored_figures: None
@@ -286,14 +288,34 @@ class TestWhatIsRefused:
         response = await _compare(api, comparators=["city.lisbon"])
 
         assert response.status_code == 409
-        assert "not in this ranking" in response.json()["message"]
+        body = response.json()
+        assert body["code"] == "invalid_comparison"
+        assert "not in this ranking" in body["message"]
+        assert body["details"] == {"candidates": ["city.lisbon"]}
 
     async def test_a_focus_compared_with_itself(
         self, api: httpx.AsyncClient, database_url: str, stored_figures: None
     ) -> None:
         await _settings(database_url, comparator_limit=5)
 
-        assert (await _compare(api, comparators=[PORTUGAL])).status_code == 409
+        response = await _compare(api, comparators=[PORTUGAL])
+
+        assert response.status_code == 409
+        body = response.json()
+        assert body["code"] == "invalid_comparison"
+        assert body["details"] == {"candidates": [PORTUGAL]}
+
+    async def test_the_same_comparator_twice_names_it(
+        self, api: httpx.AsyncClient, database_url: str, stored_figures: None
+    ) -> None:
+        await _settings(database_url, comparator_limit=5)
+
+        response = await _compare(api, comparators=[GREECE, SPAIN, GREECE])
+
+        assert response.status_code == 409
+        body = response.json()
+        assert body["code"] == "invalid_comparison"
+        assert body["details"] == {"candidates": [GREECE]}
 
     async def test_no_comparator_limit_configured(
         self, api: httpx.AsyncClient, database_url: str, stored_figures: None

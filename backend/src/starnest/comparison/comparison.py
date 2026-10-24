@@ -28,6 +28,7 @@ explain the total gap. A pillar either side has no score on is named as not comp
 neither list (PL-099), and with either total missing there are no lines at all (C07-F).
 """
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -44,7 +45,22 @@ declares."""
 
 
 class ComparisonError(ValueError):
-    """The comparison asked for cannot be drawn."""
+    """The comparison asked for cannot be drawn, naming the candidates it concerns."""
+
+    def __init__(self, message: str, *, candidates: Sequence[str]) -> None:
+        super().__init__(message)
+        self.details: dict[str, object] = {"candidates": list(candidates)}
+
+
+class ComparatorLimitExceededError(ComparisonError):
+    """More comparators than the configured limit: a setting to change, not a request built
+    wrong, so it carries the limit and the count rather than candidates (PL-007)."""
+
+    def __init__(self, *, limit: int, asked: int) -> None:
+        super().__init__(
+            f"{asked} comparators is more than the configured limit of {limit}", candidates=()
+        )
+        self.details = {"limit": limit, "asked": asked}
 
 
 @dataclass(frozen=True)
@@ -138,16 +154,17 @@ def compare(
     """
     display_names = names or {}
     if not comparators:
-        raise ComparisonError("a comparison needs at least one comparator")
+        raise ComparisonError("a comparison needs at least one comparator", candidates=[focus])
     if len(comparators) > comparator_limit:
-        raise ComparisonError(
-            f"{len(comparators)} comparators is more than the configured limit of "
-            f"{comparator_limit}"
-        )
+        raise ComparatorLimitExceededError(limit=comparator_limit, asked=len(comparators))
     if focus in comparators:
-        raise ComparisonError(f"{focus} cannot be compared with itself")
-    if len(set(comparators)) != len(comparators):
-        raise ComparisonError("a comparator appears twice, which would draw the same column twice")
+        raise ComparisonError(f"{focus} cannot be compared with itself", candidates=[focus])
+    repeated = [candidate for candidate, times in Counter(comparators).items() if times > 1]
+    if repeated:
+        raise ComparisonError(
+            "a comparator appears twice, which would draw the same column twice",
+            candidates=repeated,
+        )
 
     ranked = {str(result.candidate): result for result in results}
     focus_result = _the_candidate(ranked, focus)
@@ -176,7 +193,8 @@ def _the_candidate(ranked: Mapping[str, CandidateResult], candidate: str) -> Can
         return ranked[candidate]
     except KeyError:
         raise ComparisonError(
-            f"{candidate!r} is not in this ranking, so it cannot be compared within it"
+            f"{candidate!r} is not in this ranking, so it cannot be compared within it",
+            candidates=[candidate],
         ) from None
 
 

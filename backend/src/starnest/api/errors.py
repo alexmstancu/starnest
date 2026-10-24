@@ -25,7 +25,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field, ValidationError
 
 from starnest.candidates import MalformedIdentifierError, UnknownCandidateError
-from starnest.comparison import ComparisonError
+from starnest.comparison import ComparatorLimitExceededError, ComparisonError
 from starnest.criteria import (
     CriteriaSetError,
     CriteriaSetExistsError,
@@ -86,6 +86,7 @@ class ErrorCode(StrEnum):
     ANSWER_RECORDED_BY_A_PERSON = "answer_recorded_by_a_person"
     SCORE_SCALE_NOT_SET = "score_scale_not_set"
     COMPARATOR_LIMIT_NOT_SET = "comparator_limit_not_set"
+    COMPARATOR_LIMIT_EXCEEDED = "comparator_limit_exceeded"
     INVALID_COMPARISON = "invalid_comparison"
     INVALID_CRITERIA_SET = "invalid_criteria_set"
     INVALID_CRITERION = "invalid_criterion"
@@ -148,6 +149,7 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     MalformedIdentifierError: _refusal(422, "invalid_request"),
     NormalisationError: _refusal(422, "cannot_be_scored"),
     RankingError: _refusal(422, "cannot_be_ranked"),
+    ComparatorLimitExceededError: _refusal(409, "comparator_limit_exceeded"),
     ComparisonError: _refusal(409, "invalid_comparison"),
     MalformedMatchRuleResultError: _refusal(422, "invalid_match_rule_result"),
     UnknownDataSourceError: _refusal(422, "unknown_data_source"),
@@ -261,11 +263,15 @@ def _details_of(error: Exception) -> dict[str, Any] | None:
     """The offending field, where the error carries one.
 
     `WeightsAllLockedError` knows which locks were in the way, and the screen names them
-    (`reqs.md` 5.2). A message a user cannot act on is barely better than no message.
+    (`reqs.md` 5.2). A message a user cannot act on is barely better than no message. Any other
+    domain error says what it concerns in a `details` mapping of its own, passed through as is.
     """
     locked = getattr(error, "locked", None)
     if locked:
         return {"locked": [str(attribute) for attribute in locked]}
+    details = getattr(error, "details", None)
+    if isinstance(details, Mapping) and details:
+        return dict(details)
     return None
 
 

@@ -7,6 +7,7 @@ comparison is always live, and freezing one is post-MVP.
 from starnest.comparison.comparison import (
     AttributeComparison,
     ComparatorCell,
+    ComparatorLimitExceededError,
     Comparison,
     ComparisonError,
     Synthesis,
@@ -17,6 +18,7 @@ from starnest.comparison.comparison import (
 __all__ = [
     "AttributeComparison",
     "ComparatorCell",
+    "ComparatorLimitExceededError",
     "Comparison",
     "ComparisonError",
     "Synthesis",

@@ -1102,7 +1102,10 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/Comparison" } }
         "409":
-          description: Levels mixed, or more comparators than the configured limit.
+          description: >-
+            `comparator_limit_not_set`; `comparator_limit_exceeded` (`details.limit`,
+            `details.asked`); `invalid_comparison` (`details.candidates`: the ids it concerns);
+            or `score_scale_not_set`.
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
@@ -1202,6 +1205,7 @@ components:
         - answer_recorded_by_a_person
         - score_scale_not_set
         - comparator_limit_not_set
+        - comparator_limit_exceeded
         - invalid_comparison
         - invalid_criteria_set
         - invalid_criterion
