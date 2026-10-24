@@ -12,7 +12,7 @@
  * guessed around.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   createCriteriaSet,
   deleteCriteriaSet,
@@ -27,16 +27,23 @@ export interface CriteriaSetsForm {
   renaming: string | null;
   renameDraft: string;
   failure: unknown;
-  canCreate: boolean;
+  /** A set action is in flight, so every other one is held until it answers (PL-037). */
+  busy: boolean;
+  /** Why the name typed cannot make a set, or null when it can. */
+  createRefusal: string | null;
+  /** A press of Create set was refused, so the reason is said rather than only implied. */
+  createRefused: boolean;
   canSaveRename: boolean;
   typeNewName: (value: string) => void;
   typeRenameDraft: (value: string) => void;
   beginRename: (criteriaSetId: string, currentName: string) => void;
   cancelRename: () => void;
-  saveRename: () => void;
-  create: () => void;
-  duplicate: (criteriaSetId: string, currentName: string) => void;
-  discard: (criteriaSetId: string) => void;
+  /** Resolves once the rename has answered, whichever way. */
+  saveRename: () => Promise<void>;
+  create: () => Promise<void>;
+  duplicate: (criteriaSetId: string, currentName: string) => Promise<void>;
+  /** Resolves true once the set is gone, false when it was refused or not sent. */
+  discard: (criteriaSetId: string) => Promise<boolean>;
 }
 
 export function useCriteriaSets(options: {
@@ -49,14 +56,29 @@ export function useCriteriaSets(options: {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [failure, setFailure] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [createRefused, setCreateRefused] = useState(false);
+  // **One action at a time, across every row** (PL-037). A ref, not the state above: two presses
+  // can land before the first has re-rendered, and the second would be sent too.
+  const inFlight = useRef(false);
+  const createRefusal = refusalOf(newName, options.names);
 
-  async function act(action: () => Promise<void>): Promise<void> {
+  /** Whether the action was sent and answered without a refusal. */
+  async function act(action: () => Promise<void>): Promise<boolean> {
+    if (inFlight.current) return false;
+    inFlight.current = true;
+    setBusy(true);
     setFailure(null);
     try {
       await action();
       options.reload();
+      return true;
     } catch (error) {
       setFailure(error);
+      return false;
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
     }
   }
 
@@ -65,9 +87,14 @@ export function useCriteriaSets(options: {
     renaming,
     renameDraft,
     failure,
-    canCreate: identifierFrom(newName) !== "",
+    busy,
+    createRefusal,
+    createRefused,
     canSaveRename: renameDraft.trim() !== "",
-    typeNewName: setNewName,
+    typeNewName: (value) => {
+      setNewName(value);
+      setCreateRefused(false);
+    },
     typeRenameDraft: setRenameDraft,
     beginRename: (criteriaSetId, currentName) => {
       setRenaming(criteriaSetId);
@@ -77,26 +104,33 @@ export function useCriteriaSets(options: {
       setRenaming(null);
       setRenameDraft("");
     },
-    saveRename: () => {
+    saveRename: async () => {
       const target = renaming;
-      if (target === null) return;
-      void act(async () => {
+      if (target === null || renameDraft.trim() === "") return;
+      await act(async () => {
         await renameCriteriaSet(target, renameDraft.trim());
         setRenaming(null);
         setRenameDraft("");
       });
     },
-    create: () =>
-      void act(async () => {
+    // **Refused here as well as held on screen** (UIC-G1): Enter in the field submits whatever
+    // the button looks like, now that it is held rather than disabled.
+    create: async () => {
+      if (createRefusal !== null) {
+        setCreateRefused(true);
+        return;
+      }
+      await act(async () => {
         const name = newName.trim();
         const created = await createCriteriaSet(identifierFrom(name), name);
         setNewName("");
         options.select(created.id);
-      }),
+      });
+    },
     // The copy is selected, because duplicating is how an experiment starts and the next
     // edit belongs to the copy rather than to what it was copied from.
-    duplicate: (criteriaSetId, currentName) =>
-      void act(async () => {
+    duplicate: async (criteriaSetId, currentName) => {
+      await act(async () => {
         const name = copyName(currentName, options.names);
         const copy = await duplicateCriteriaSet(
           criteriaSetId,
@@ -104,9 +138,21 @@ export function useCriteriaSets(options: {
           name,
         );
         options.select(copy.id);
-      }),
+      });
+    },
     // Discarding says nothing about what to select next: `SelectionContext` holds the rule that
     // the chosen set is one that exists, and applies it when the refreshed list arrives (P44).
-    discard: (criteriaSetId) => void act(() => deleteCriteriaSet(criteriaSetId)),
+    discard: (criteriaSetId) => act(() => deleteCriteriaSet(criteriaSetId)),
   };
+}
+
+/**
+ * Why a name cannot make a set, said before anything is sent. A presentational guard: the server
+ * still refuses an identifier something already holds.
+ */
+function refusalOf(name: string, taken: readonly string[]): string | null {
+  if (identifierFrom(name) === "") return "Give the new set a name first.";
+  const wanted = name.trim().toLowerCase();
+  const clash = taken.find((each) => each.trim().toLowerCase() === wanted);
+  return clash === undefined ? null : `A set called ${clash} already exists.`;
 }

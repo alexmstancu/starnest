@@ -16,6 +16,7 @@ import type { ReactNode, Ref } from "react";
 export function HeldButton({
   held,
   disabled = false,
+  id,
   className,
   title,
   onClick,
@@ -25,6 +26,7 @@ export function HeldButton({
   ref?: Ref<HTMLButtonElement>;
   held: boolean;
   disabled?: boolean;
+  id?: string;
   className: string;
   title?: string;
   onClick: () => void;
@@ -33,6 +35,7 @@ export function HeldButton({
   return (
     <button
       ref={ref}
+      id={id}
       type="button"
       className={className}
       title={title}

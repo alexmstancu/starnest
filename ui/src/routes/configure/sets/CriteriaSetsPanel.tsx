@@ -1,6 +1,8 @@
 import { ActRefusal } from "../../../shell/ActRefusal";
+import { HeldButton } from "../../../shell/HeldButton";
 import { useSelection } from "../../../shell/SelectionContext";
 import { useCriteriaSets } from "./useCriteriaSets";
+import { useSetFocus } from "./useSetFocus";
 
 /**
  * The sets of priorities themselves: make one, use one, rename one, copy one, discard one
@@ -13,7 +15,12 @@ import { useCriteriaSets } from "./useCriteriaSets";
  * even when one of them is unavailable: a button that moves is a button you have to find
  * again.
  *
- * **Markup only.** What each action does is `useCriteriaSets.ts`.
+ * **Held, never disabled** (PL-037). A control whose own press makes it unavailable -- "In use",
+ * "Create set" once its name is cleared, the last set's Delete -- keeps focus and says so with
+ * `aria-disabled`; Chromium throws focus off a disabled one.
+ *
+ * **Markup only.** What each action does is `useCriteriaSets.ts`; where focus goes after it is
+ * `useSetFocus.ts`.
  */
 export function CriteriaSetsPanel() {
   const { criteriaSets, criteriaSetId, reload, selectCriteriaSet } =
@@ -24,6 +31,21 @@ export function CriteriaSetsPanel() {
     select: selectCriteriaSet,
   });
   const only = criteriaSets.length === 1;
+  const { renameField, newName, buttonId, renameClosed, deleted } = useSetFocus(
+    criteriaSets,
+    form.renaming,
+  );
+  const saveRename = async (criteriaSetId: string) => {
+    await form.saveRename();
+    renameClosed(criteriaSetId);
+  };
+  const discard = async (criteriaSetId: string) => {
+    if (await form.discard(criteriaSetId)) deleted(criteriaSetId);
+  };
+  const cancelRename = (criteriaSetId: string) => {
+    form.cancelRename();
+    renameClosed(criteriaSetId);
+  };
 
   return (
     <section className="stage" aria-labelledby="criteria-sets-heading">
@@ -64,10 +86,20 @@ export function CriteriaSetsPanel() {
             >
               {renaming ? (
                 <input
+                  ref={renameField}
                   className="set-row__rename"
                   aria-label={`New name for ${set.name}`}
                   value={form.renameDraft}
                   onChange={(event) => form.typeRenameDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void saveRename(set.id);
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      cancelRename(set.id);
+                    }
+                  }}
                 />
               ) : (
                 <span className="set-row__name">{set.name}</span>
@@ -81,64 +113,68 @@ export function CriteriaSetsPanel() {
                   "Delete" on the only set there is, would both leave a hole that shifts
                   every other button one place left. */}
               <span className="set-row__actions">
+                {/* Keyed, so Save and Cancel are taken away rather than reused as Use and
+                    Rename -- focus left on a reused button would sit on a different verb. */}
                 {renaming ? (
                   <>
-                    <button
-                      type="button"
+                    <HeldButton
+                      key="save"
                       className="action"
-                      disabled={!form.canSaveRename}
-                      onClick={form.saveRename}
+                      held={form.busy || !form.canSaveRename}
+                      onClick={() => void saveRename(set.id)}
                     >
                       Save
-                    </button>
-                    <button
-                      type="button"
+                    </HeldButton>
+                    <HeldButton
+                      key="cancel"
                       className="action"
-                      onClick={form.cancelRename}
+                      held={form.busy}
+                      onClick={() => cancelRename(set.id)}
                     >
                       Cancel
-                    </button>
+                    </HeldButton>
                   </>
                 ) : (
                   <>
-                    <button
-                      type="button"
+                    <HeldButton
+                      key="use"
                       className="action"
-                      disabled={inUse}
+                      held={inUse}
                       title="Edit and rank with this set"
                       onClick={() => selectCriteriaSet(set.id)}
                     >
                       {inUse ? "In use" : "Use"}
-                    </button>
-                    <button
-                      type="button"
+                    </HeldButton>
+                    <HeldButton
+                      id={buttonId(set.id, "rename")}
                       className="action"
+                      held={form.busy}
                       title="Rename this set"
                       onClick={() => form.beginRename(set.id, set.name)}
                     >
                       Rename
-                    </button>
-                    <button
-                      type="button"
+                    </HeldButton>
+                    <HeldButton
                       className="action"
+                      held={form.busy}
                       title="Copy it before experimenting"
-                      onClick={() => form.duplicate(set.id, set.name)}
+                      onClick={() => void form.duplicate(set.id, set.name)}
                     >
                       Duplicate
-                    </button>
-                    <button
-                      type="button"
+                    </HeldButton>
+                    <HeldButton
+                      id={buttonId(set.id, "delete")}
                       className="action action--danger"
-                      disabled={only}
+                      held={form.busy || only}
                       title={
                         only
                           ? "The only set there is cannot be deleted"
                           : "Delete this set"
                       }
-                      onClick={() => form.discard(set.id)}
+                      onClick={() => void discard(set.id)}
                     >
                       Delete
-                    </button>
+                    </HeldButton>
                   </>
                 )}
               </span>
@@ -151,13 +187,14 @@ export function CriteriaSetsPanel() {
         className="set-create"
         onSubmit={(event) => {
           event.preventDefault();
-          form.create();
+          void form.create();
         }}
       >
         <label className="visually-hidden" htmlFor="new-criteria-set">
           Name a new set
         </label>
         <input
+          ref={newName}
           id="new-criteria-set"
           className="field__control set-create__name"
           placeholder="Name a new set…"
@@ -167,10 +204,16 @@ export function CriteriaSetsPanel() {
         <button
           type="submit"
           className="button button--primary"
-          disabled={!form.canCreate}
+          aria-disabled={form.busy || form.createRefusal !== null || undefined}
+          aria-describedby={form.createRefused ? "new-criteria-set-refusal" : undefined}
         >
           Create set
         </button>
+        {form.createRefused && form.createRefusal !== null && (
+          <p id="new-criteria-set-refusal" className="panel__hint" role="status">
+            {form.createRefusal}
+          </p>
+        )}
       </form>
     </section>
   );
