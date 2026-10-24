@@ -699,6 +699,10 @@ export const handlers = [
         retrieval_date: body.retrieval_date,
         confidence_level: body.confidence_level ?? "medium",
         is_active: true,
+        // Derived as the server derives them, never assumed: a typed figure can describe an
+        // old period, and the `manual` source can be switched off.
+        is_fresh: endedWithin(body.reference_period.end, attribute.max_age_months),
+        source_is_enabled: dataSources.find((each) => each.id === "manual")?.is_enabled ?? false,
         quote: body.quote ?? null,
         citations: body.citations ?? [],
         data_acquisition_run: null,
@@ -1016,4 +1020,12 @@ function round(value: number): number {
 /** Two answers about the same gate for the same candidate: one row, whoever wrote it. */
 function isSameAnswer(one: MatchRuleResult, other: MatchRuleResult): boolean {
   return one.match_rule === other.match_rule && one.candidate === other.candidate;
+}
+
+/** Whether a period that ended on `end` is still within `months` of today; no limit is fresh. */
+function endedWithin(end: string, months: number | null | undefined): boolean {
+  if (months === null || months === undefined) return true;
+  const limit = new Date(`${end}T00:00:00Z`);
+  limit.setUTCMonth(limit.getUTCMonth() + months);
+  return limit.getTime() >= Date.now();
 }

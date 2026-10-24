@@ -1032,6 +1032,10 @@ export interface components {
             confidence_level: "absolute" | "high" | "medium" | "low";
             /** @description Derived, not stored — the value scoring would use. */
             is_active: boolean;
+            /** @description Derived, not stored: whether the period this figure describes ended within its attribute's max_age of today, by the calendar arithmetic the active-value rule uses (reqs.md 3.6, 7.1). A figure that is not fresh counts one confidence grade lower in a ranking's coverage_by_confidence (reqs.md 5.7); confidence_level stays the grade it was stored with. */
+            is_fresh: boolean;
+            /** @description Derived, not stored: whether this figure's source is switched on. A figure from a switched-off source is never active, and is kept and shown (reqs.md Q232). */
+            source_is_enabled: boolean;
             /** @description Why this figure was rejected, in words: the attribute named as the catalog names it, never its identifier. A reason stored before reasons were worded is named at read time. */
             rejection_reason?: string | null;
             quote?: string | null;
@@ -1394,6 +1398,7 @@ export interface components {
             computed_at: string;
             /** @description The top of the score range every score in this ranking is on: the setting at the moment a live ranking was computed, the frozen value for a saved one. Draw and label every score, pillar score and difference against this, never against the current setting, which may have changed since. Anchored criteria do not rescale when the range changes: an anchor's score is the number it was given. */
             score_scale_max: number;
+            /** @description In display order: the ranked candidates by rank, then every unranked candidate by score, highest first, those with no score last; ties by candidate id. The same order for a live and a saved ranking. */
             candidates: components["schemas"]["CandidateResult"][];
         };
         EvaluationSummary: {

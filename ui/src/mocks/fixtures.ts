@@ -906,6 +906,10 @@ export function attributeScoresOf(
   }));
 }
 
+/**
+ * Every figure here is fresh (each period ended within its attribute's 24 months) and from a
+ * switched-on source, as the server would derive them today.
+ */
 export const STORED_VALUES: StoredValue[] = [
   /**
    * **A figure with no criterion attached**, which `reqs.md` 3.0 provides for and
@@ -925,6 +929,8 @@ export const STORED_VALUES: StoredValue[] = [
     retrieval_date: "2026-09-11T08:00:00Z",
     confidence_level: "high",
     is_active: true,
+    is_fresh: true,
+    source_is_enabled: true,
     quote: null,
     citations: [],
     data_acquisition_run: 7,
@@ -952,6 +958,8 @@ export const STORED_VALUES: StoredValue[] = [
     // Superseded by the identical row above, which is what a re-fetch does. `is_active` is
     // deliberately not part of the fingerprint: the newest copy is the one shown.
     is_active: false,
+    is_fresh: true,
+    source_is_enabled: true,
     quote: null,
     citations: [],
     data_acquisition_run: 5,
@@ -967,6 +975,8 @@ export const STORED_VALUES: StoredValue[] = [
     retrieval_date: "2026-09-11T08:00:00Z",
     confidence_level: "high",
     is_active: true,
+    is_fresh: true,
+    source_is_enabled: true,
     quote: "Eurostat 2025: 94.5",
     citations: [],
     data_acquisition_run: 7,
@@ -982,6 +992,8 @@ export const STORED_VALUES: StoredValue[] = [
     retrieval_date: "2025-09-11T08:00:00Z",
     confidence_level: "high",
     is_active: false,
+    is_fresh: true,
+    source_is_enabled: true,
     quote: "Eurostat 2024: 92.1",
     citations: [],
     data_acquisition_run: 5,
@@ -997,6 +1009,8 @@ export const STORED_VALUES: StoredValue[] = [
     retrieval_date: "2026-09-11T08:00:00Z",
     confidence_level: "low",
     is_active: true,
+    is_fresh: true,
+    source_is_enabled: true,
     quote: "Estimated from Eurostat's tax-benefit figures",
     citations: [
       "https://ec.europa.eu/eurostat/tax-benefit",
@@ -1027,6 +1041,8 @@ export const STORED_VALUES: StoredValue[] = [
     retrieval_date: "2026-09-11T08:00:00Z",
     confidence_level: "high",
     is_active: true,
+    is_fresh: true,
+    source_is_enabled: true,
     quote: "Eurostat 2025: 112.8",
     citations: [],
     data_acquisition_run: null,
