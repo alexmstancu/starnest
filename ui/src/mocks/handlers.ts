@@ -17,7 +17,6 @@ import {
   PILLARS,
   attributeScoresOf,
   COMPOUND_RULES,
-  CRITERIA_SETS,
   DATA_SOURCES,
   EXTERNAL_SCORES,
   HOLDINGS_GAPS,
@@ -51,7 +50,6 @@ import {
 type Criterion = components["schemas"]["Criterion"];
 type MatchRuleResult = components["schemas"]["MatchRuleResult"];
 type CriteriaSet = components["schemas"]["CriteriaSet"];
-type CriteriaSetSummary = components["schemas"]["CriteriaSetSummary"];
 type PillarWeight = components["schemas"]["PillarWeight"];
 type Settings = components["schemas"]["Settings"];
 type RunDetail = components["schemas"]["RunDetail"];
@@ -71,7 +69,14 @@ const BASE = "/v1";
  * anything they wrote.
  */
 let criteriaSetDetails = makeCriteriaSetDetails();
-let criteriaSetSummaries: CriteriaSetSummary[] = [...CRITERIA_SETS];
+/**
+ * Deleted sets, kept whole under the id they still hold, as the server keeps its tombstones
+ * (PL-033): every read and edit answers 404 for one, a restore brings it back exactly, and its
+ * id is never given to another set.
+ */
+let deletedCriteriaSets: Record<string, CriteriaSet> = {};
+/** The set a new one is copied from, as the server marks one `is_default`. */
+const DEFAULT_CRITERIA_SET = "default";
 let settings: Settings = { ...SETTINGS };
 let household: Household = { ...HOUSEHOLD };
 // Copied element by element, as `dataSources` is: a spread clones the array and leaves every
@@ -100,7 +105,7 @@ const STOPPED_AT = "2026-09-12T09:00:06Z";
 
 export function resetMockData(): void {
   criteriaSetDetails = makeCriteriaSetDetails();
-  criteriaSetSummaries = [...CRITERIA_SETS];
+  deletedCriteriaSets = {};
   settings = { ...SETTINGS };
   household = { ...HOUSEHOLD };
   matchRuleResults = MATCH_RULE_RESULTS.map((each) => ({ ...each }));
@@ -179,72 +184,43 @@ export const handlers = [
     return HttpResponse.json({ items: inStoredOrder(dataSources) });
   }),
 
+  // Live sets only, in the server's order: by id.
   http.get(`${BASE}/criteria-sets`, () =>
-    HttpResponse.json({ items: criteriaSetSummaries }),
+    HttpResponse.json({
+      items: Object.values(criteriaSetDetails)
+        .map(({ id, name }) => ({ id, name }))
+        .sort((one, other) => (one.id < other.id ? -1 : 1)),
+    }),
   ),
 
-  // A duplicate is a **full copy**, never a sparse overlay (`reqs.md` Q191), which is the
-  // whole reason it is a distinct operation from creating an empty set.
+  // A duplicate is a **full copy**, never a sparse overlay (`reqs.md` Q191). Only a live set
+  // can be copied; a deleted one answers 404 until it is restored.
   http.post(
     `${BASE}/criteria-sets/:criteriaSetId/duplicate`,
     async ({ params, request }) => {
       const source = criteriaSetDetails[String(params["criteriaSetId"])];
       if (!source) return notFound(String(params["criteriaSetId"]));
-
       const body = (await request.json()) as { id: string; name: string };
-      if (criteriaSetDetails[body.id]) {
-        return HttpResponse.json(
-          {
-            code: "criteria_set_exists",
-            message: `A criteria set called ${body.id} already exists.`,
-          },
-          { status: 409 },
-        );
-      }
-
-      const copy: CriteriaSet = {
-        ...structuredClone(source),
-        id: body.id,
-        name: body.name,
-      };
-      criteriaSetDetails[body.id] = copy;
-      criteriaSetSummaries = [
-        ...criteriaSetSummaries,
-        { id: body.id, name: body.name },
-      ];
-      return HttpResponse.json(copy, { status: 201 });
+      return createFrom(source, body);
     },
   ),
 
+  // A new set is a full copy of the default, deleted or not (PL-034); no default is a 409.
   http.post(`${BASE}/criteria-sets`, async ({ request }) => {
     const body = (await request.json()) as { id: string; name: string };
-    if (criteriaSetDetails[body.id]) {
+    const source =
+      criteriaSetDetails[DEFAULT_CRITERIA_SET] ??
+      deletedCriteriaSets[DEFAULT_CRITERIA_SET];
+    if (!source) {
       return HttpResponse.json(
         {
-          code: "criteria_set_exists",
-          message: `A criteria set called ${body.id} already exists.`,
+          code: "no_default_criteria_set",
+          message: "no criteria set is the default, so a new set has nothing to copy",
         },
         { status: 409 },
       );
     }
-    // Empty, as the contract says: copying another set's priorities would be deciding for the
-    // user. `POST /criteria-sets/{id}/duplicate` is how somebody asks for a copy.
-    const created: CriteriaSet = {
-      id: body.id,
-      name: body.name,
-      pillar_weights: [],
-      criteria: [],
-      enforced_match_rules: [],
-      applied_compound_rules: [],
-      match_rule_outcomes: {},
-      compound_rule_outcomes: {},
-    };
-    criteriaSetDetails[body.id] = created;
-    criteriaSetSummaries = [
-      ...criteriaSetSummaries,
-      { id: body.id, name: body.name },
-    ];
-    return HttpResponse.json(created, { status: 201 });
+    return createFrom(source, body);
   }),
 
   http.patch(
@@ -255,23 +231,38 @@ export const handlers = [
       if (!set) return notFound(id);
       const body = (await request.json()) as { name?: string };
       if (body.name !== undefined) {
+        if (nameTaken(body.name, id)) {
+          return nameTakenRefusal(body.name, `the criteria set '${id}' cannot be renamed`);
+        }
         set.name = body.name;
-        criteriaSetSummaries = criteriaSetSummaries.map((summary) =>
-          summary.id === id ? { ...summary, name: body.name! } : summary,
-        );
       }
       return HttpResponse.json(set);
     },
   ),
 
+  // Restorably: the set leaves every list and read, and keeps its id (PL-033).
   http.delete(`${BASE}/criteria-sets/:criteriaSetId`, ({ params }) => {
     const id = String(params["criteriaSetId"]);
-    if (!criteriaSetDetails[id]) return notFound(id);
+    const set = criteriaSetDetails[id];
+    if (!set) return notFound(id);
+    deletedCriteriaSets[id] = set;
     delete criteriaSetDetails[id];
-    criteriaSetSummaries = criteriaSetSummaries.filter(
-      (summary) => summary.id !== id,
-    );
     return new HttpResponse(null, { status: 204 });
+  }),
+
+  // Exactly as it was; idempotent on a live set; refused when a live set took its name since.
+  http.post(`${BASE}/criteria-sets/:criteriaSetId/restore`, ({ params }) => {
+    const id = String(params["criteriaSetId"]);
+    const live = criteriaSetDetails[id];
+    if (live) return HttpResponse.json(live);
+    const deleted = deletedCriteriaSets[id];
+    if (!deleted) return notFound(id);
+    if (nameTaken(deleted.name, id)) {
+      return nameTakenRefusal(deleted.name, `the criteria set '${id}' cannot be restored`);
+    }
+    criteriaSetDetails[id] = deleted;
+    delete deletedCriteriaSets[id];
+    return HttpResponse.json(deleted);
   }),
 
   http.put(
@@ -559,6 +550,7 @@ export const handlers = [
     if (missing) return missing;
     const criteriaSet = query.get("criteria_set")!;
     const level = query.get("level")!;
+    if (!criteriaSetDetails[criteriaSet]) return notFound(criteriaSet);
 
     const refused = refusedBeforeScoring(criteriaSet);
     if (refused) return refused;
@@ -1594,6 +1586,59 @@ function isItemOf(
   const listed = (names: string[] | null | undefined, name: string) =>
     names === null || names === undefined || names.includes(name);
   return listed(scope?.candidates, pair.candidate) && listed(scope?.attributes, pair.attribute);
+}
+
+/** The checks the server makes on a new set's id and name, in its order, then the copy. */
+function createFrom(source: CriteriaSet, body: { id: string; name: string }) {
+  if (!/^[a-z][a-z0-9_]*$/.test(body.id)) {
+    return HttpResponse.json(
+      {
+        code: "invalid_request",
+        message:
+          `'${body.id}' is not a valid identifier: the segment '${body.id}' must be lowercase ` +
+          "letters, digits and underscores, and must start with a letter",
+      },
+      { status: 422 },
+    );
+  }
+  if (criteriaSetDetails[body.id] || deletedCriteriaSets[body.id]) {
+    return HttpResponse.json(
+      {
+        code: "criteria_set_exists",
+        message:
+          `a criteria set called '${body.id}' already exists, or was deleted: an identifier ` +
+          "is never given to another set",
+      },
+      { status: 409 },
+    );
+  }
+  if (nameTaken(body.name)) {
+    return nameTakenRefusal(body.name, `the criteria set '${body.id}' cannot be made`);
+  }
+  const copy: CriteriaSet = { ...structuredClone(source), id: body.id, name: body.name };
+  criteriaSetDetails[body.id] = copy;
+  return HttpResponse.json(copy, { status: 201 });
+}
+
+/** Whether a live set other than `except` has this name, ignoring case and surrounding spaces. */
+function nameTaken(name: string, except?: string): boolean {
+  const wanted = name.trim().toLowerCase();
+  return Object.values(criteriaSetDetails).some(
+    (set) => set.id !== except && set.name.trim().toLowerCase() === wanted,
+  );
+}
+
+function nameTakenRefusal(name: string, refused: string) {
+  return HttpResponse.json(
+    {
+      code: "criteria_set_name_taken",
+      message:
+        `${refused}: another live criteria set is already called '${name}', ignoring case ` +
+        "and surrounding spaces",
+      details: { name },
+    },
+    { status: 409 },
+  );
 }
 
 function notFound(id: string) {

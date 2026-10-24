@@ -162,9 +162,9 @@ describe("the sidebar selectors", () => {
     renderShell("/rank");
     const selector = await sidebarIsLoaded();
 
-    await user.selectOptions(selector, "remote-only");
+    await user.selectOptions(selector, "remote_only");
 
-    expect(selector).toHaveValue("remote-only");
+    expect(selector).toHaveValue("remote_only");
     // The ranking screen names the criteria set the ranking it is showing was computed under,
     // taken from the response rather than from the selector -- so this asserts the fetch
     // followed the selection, not merely that the dropdown changed.

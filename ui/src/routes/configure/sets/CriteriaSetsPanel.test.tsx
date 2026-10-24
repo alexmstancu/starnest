@@ -13,8 +13,8 @@ import { renderShell } from "../../../testing/renderShell";
 /**
  * Making, using, renaming, copying and discarding a set of priorities.
  *
- * **A new set is empty, and the screen says so.** Copying another set's weights would be
- * deciding for the user; asking for a copy is a separate operation (`reqs.md` Q168).
+ * **A new set is a copy of the default** (PL-034), as the server makes it: an empty one could
+ * never be ranked. Copying a chosen set is Duplicate (`reqs.md` Q168).
  *
  * **The stage is a list with four verbs, not four forms.** These tests reach a set by its
  * name and then press the verb, which is how it is used -- and which is why they no longer
@@ -67,16 +67,17 @@ function holdRequests(
 }
 
 describe("the criteria sets panel", () => {
-  it("creates a set, selects it, and shows that it holds nothing yet", async () => {
+  it("creates a set as a copy of the default, and selects it", async () => {
     renderShell("/configure");
 
     await create("Partner");
 
     await waitFor(() => expect(sidebarSets()).toHaveValue("partner"));
-    // A new set weighs no pillar, so there is no pillar to open and nothing inside one.
+    // A copy of the default weighs its pillars, so it can be ranked at once (PL-034).
     expect(
-      await screen.findByText("This set weighs no pillar yet."),
+      await screen.findByRole("region", { name: "Pillar weights" }),
     ).toBeInTheDocument();
+    expect(screen.queryByText("This set weighs no pillar yet.")).toBeNull();
   });
 
   it("refuses an identifier that is already taken, rather than overwriting the set", async () => {
@@ -142,7 +143,7 @@ describe("the criteria sets panel", () => {
 
     await user.click((await row("Remote only")).getByRole("button", { name: "Use" }));
 
-    await waitFor(() => expect(sidebarSets()).toHaveValue("remote-only"));
+    await waitFor(() => expect(sidebarSets()).toHaveValue("remote_only"));
   });
 
   /**
@@ -471,7 +472,7 @@ describe("when every set has been discarded", () => {
     const user = userEvent.setup();
     await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
     await row("Remote only");
-    await deleteCriteriaSet("remote-only");
+    await deleteCriteriaSet("remote_only");
 
     await user.click((await row("Default")).getByRole("button", { name: "Delete" }));
   }
@@ -498,8 +499,9 @@ describe("when every set has been discarded", () => {
     await create("Partner");
 
     await waitFor(() => expect(sidebarSets()).toHaveValue("partner"));
+    // The default is copied even once it has been deleted, as the server copies it.
     expect(
-      await screen.findByText("This set weighs no pillar yet."),
+      await screen.findByRole("region", { name: "Pillar weights" }),
     ).toBeInTheDocument();
   });
 });

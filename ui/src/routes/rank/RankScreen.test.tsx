@@ -1120,7 +1120,7 @@ describe("the drill-down", () => {
 
     await userEvent.selectOptions(
       screen.getByRole("combobox", { name: /active criteria set/i }),
-      "remote-only",
+      "remote_only",
     );
 
     await waitFor(() =>

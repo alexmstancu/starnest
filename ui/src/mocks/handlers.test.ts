@@ -3,17 +3,23 @@ import { ApiError } from "../api/ApiError";
 import { getJson, patchJson, postJson } from "../api/client";
 import {
   enterValueManually,
+  createCriteriaSet,
+  deleteCriteriaSet,
+  duplicateCriteriaSet,
   fetchCriteriaSet,
   fetchDataSources,
   fetchHoldings,
+  fetchCriteriaSets,
   fetchRanking,
   fetchRun,
+  renameCriteriaSet,
   replaceHousehold,
   replaceSettings,
   reorderDataSources,
   researchMatchRules,
   setCompoundRuleApplication,
   setMatchRuleEnforcement,
+  restoreCriteriaSet,
   updateCriterionRule,
   updateDataSource,
   type CriterionRule,
@@ -60,9 +66,9 @@ describe("the mock server", () => {
   });
 
   it("echoes the criteria set it was asked about", async () => {
-    const ranking = await fetchRanking("remote-only", "country");
+    const ranking = await fetchRanking("remote_only", "country");
 
-    expect(ranking.criteria_set).toBe("remote-only");
+    expect(ranking.criteria_set).toBe("remote_only");
   });
 });
 
@@ -796,5 +802,75 @@ describe("the mock's source reorder", () => {
     expect(error.details).toEqual({
       errors: [{ location: ["body", "order", "0"], problem: "Input should be a valid string", kind: "string_type" }],
     });
+  });
+});
+
+/**
+ * **A set's lifecycle as the server keeps it** (PL-033, PL-034): a deletion is a tombstone that
+ * keeps its id, a restore brings the set back exactly, and a new set copies the default. The
+ * codes and `details` are `errors.py`'s.
+ */
+describe("the mock criteria sets", () => {
+  async function refusal(request: Promise<unknown>): Promise<ApiError> {
+    return (await request.catch((thrown: unknown) => thrown)) as ApiError;
+  }
+
+  it("deletes restorably: gone from every read, then back exactly", async () => {
+    const before = await fetchCriteriaSet("remote_only");
+
+    await deleteCriteriaSet("remote_only");
+
+    expect((await fetchCriteriaSets()).items.map((set) => set.id)).toEqual(["default"]);
+    expect((await refusal(fetchCriteriaSet("remote_only"))).code).toBe("not_found");
+    expect((await refusal(fetchRanking("remote_only", "country"))).status).toBe(404);
+    expect(await restoreCriteriaSet("remote_only")).toEqual(before);
+    expect(await fetchCriteriaSet("remote_only")).toEqual(before);
+  });
+
+  it("restores idempotently, and 404s an id no set ever held", async () => {
+    const live = await fetchCriteriaSet("default");
+
+    expect(await restoreCriteriaSet("default")).toEqual(live);
+    expect(await restoreCriteriaSet("default")).toEqual(live);
+    expect((await refusal(restoreCriteriaSet("never_held"))).status).toBe(404);
+  });
+
+  it("refuses a restore whose name a live set took meanwhile, naming it", async () => {
+    await deleteCriteriaSet("remote_only");
+    await renameCriteriaSet("default", "remote ONLY");
+
+    const refused = await refusal(restoreCriteriaSet("remote_only"));
+
+    expect([refused.status, refused.code]).toEqual([409, "criteria_set_name_taken"]);
+    expect(refused.details).toEqual({ name: "Remote only" });
+  });
+
+  it("never gives a deleted set's id to another set", async () => {
+    await deleteCriteriaSet("remote_only");
+
+    const refused = await refusal(createCriteriaSet("remote_only", "Another"));
+
+    expect([refused.status, refused.code]).toEqual([409, "criteria_set_exists"]);
+  });
+
+  it("creates a set as a full copy of the default, even a deleted default", async () => {
+    const shipped = await fetchCriteriaSet("default");
+    await deleteCriteriaSet("default");
+
+    const created = await createCriteriaSet("partner", "Partner");
+
+    expect(created).toEqual({ ...shipped, id: "partner", name: "Partner" });
+  });
+
+  it("refuses a name a live set has, and an id the server would not hold", async () => {
+    const taken = await refusal(duplicateCriteriaSet("default", "other", "Remote only"));
+    const malformed = await refusal(createCriteriaSet("remote-only", "Remote"));
+
+    expect([taken.status, taken.code, taken.details]).toEqual([
+      409,
+      "criteria_set_name_taken",
+      { name: "Remote only" },
+    ]);
+    expect([malformed.status, malformed.code]).toEqual([422, "invalid_request"]);
   });
 });

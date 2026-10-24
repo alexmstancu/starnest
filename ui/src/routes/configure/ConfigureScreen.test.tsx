@@ -349,7 +349,7 @@ describe("the criteria list", () => {
 
     await user.selectOptions(
       screen.getByRole("combobox", { name: /active criteria set/i }),
-      "remote-only",
+      "remote_only",
     );
 
     expect(await weightSlider(BROADBAND)).toHaveValue("70");
@@ -2155,7 +2155,7 @@ describe("a research pass while the screen changes around it", () => {
     await startAPass();
     await waitFor(() => expect(research.sent).toHaveLength(2));
 
-    await chooseSet("remote-only");
+    await chooseSet("remote_only");
 
     // Another panel, drawn for another set, showing the pass the screen still holds.
     expect(theProposals().getByRole("status")).toHaveTextContent(
@@ -2191,7 +2191,7 @@ describe("a research pass while the screen changes around it", () => {
       ),
     );
 
-    await chooseSet("remote-only");
+    await chooseSet("remote_only");
     expect((await screen.findAllByText("The server failed while answering.")).length).toBeGreaterThan(0);
     await userEvent.click(
       theProposals().getByRole("button", { name: "Stop after this question" }),
@@ -2313,11 +2313,11 @@ describe("the six stages", () => {
     const user = userEvent.setup();
     renderShell("/configure");
     await weightSlider(COST_OF_LIVING);
-    mockServer.use(heldForever("/v1/criteria-sets/remote-only"));
+    mockServer.use(heldForever("/v1/criteria-sets/remote_only"));
 
     await user.selectOptions(
       screen.getByRole("combobox", { name: /active criteria set/i }),
-      "remote-only",
+      "remote_only",
     );
 
     const weights = await screen.findByRole("region", { name: "Pillar weights" });
@@ -2560,7 +2560,7 @@ describe("a pillar change undone after the panel remounted", () => {
     fireEvent.pointerUp(economy());
     await waitFor(() => expect(economy()).toHaveValue("50"));
 
-    await chooseSet("remote-only");
+    await chooseSet("remote_only");
     await screen.findByRole("slider", { name: "Transport weight" });
     await chooseSet("default");
     await waitFor(() => expect(economy()).toHaveValue("50"));
@@ -2591,7 +2591,7 @@ describe("a pillar change undone after the panel remounted", () => {
         return HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 });
       }),
       // No set comes back, so no pillar panel mounts again to say the write is over.
-      http.get("/v1/criteria-sets/remote-only", async () => {
+      http.get("/v1/criteria-sets/remote_only", async () => {
         await held;
         return HttpResponse.json({}, { status: 500 });
       }),
@@ -2602,7 +2602,7 @@ describe("a pillar change undone after the panel remounted", () => {
       expectHeld(panel.getByRole("button", { name: "Undo this" })),
     );
 
-    await chooseSet("remote-only");
+    await chooseSet("remote_only");
     await waitFor(() =>
       expect(screen.queryByRole("slider", { name: "Economy weight" })).toBeNull(),
     );

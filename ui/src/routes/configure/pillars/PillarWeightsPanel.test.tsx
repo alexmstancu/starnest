@@ -318,17 +318,14 @@ describe("the pillar weights panel", () => {
   });
 
   it("says so when the set weighs no pillar yet", async () => {
-    const user = userEvent.setup();
+    // Create copies the default now (PL-034), so a set that weighs nothing is served directly.
+    const { default: shipped } = makeCriteriaSetDetails();
+    mockServer.use(
+      http.get("/v1/criteria-sets/:criteriaSetId", () =>
+        HttpResponse.json({ ...shipped, pillar_weights: [], criteria: [] }),
+      ),
+    );
     renderShell("/configure");
-    const sets = within(
-      await screen.findByRole("region", { name: /^criteria set/i }),
-    );
-
-    await user.type(
-      sets.getByRole("textbox", { name: /name a new set/i }),
-      "Empty",
-    );
-    await user.click(sets.getByRole("button", { name: "Create set" }));
 
     expect(
       await screen.findByText("This set weighs no pillar yet."),

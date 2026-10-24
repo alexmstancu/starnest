@@ -556,6 +556,20 @@ export function deleteCriteriaSet(
   });
 }
 
+/**
+ * The way back from a deletion: the set returns exactly as it was (PL-033). Idempotent on a live
+ * set; 409 `criteria_set_name_taken` when a live set took its name meanwhile.
+ */
+export function restoreCriteriaSet(
+  criteriaSetId: string,
+  options?: RequestOptions,
+): Promise<CriteriaSet> {
+  return postJson("/criteria-sets/{criteriaSetId}/restore", undefined, {
+    ...options,
+    pathParams: { criteriaSetId },
+  });
+}
+
 export function fetchDataSources(
   options?: RequestOptions,
 ): Promise<{ items: DataSource[] }> {

@@ -41,7 +41,7 @@ export const LEVELS: Level[] = [
 
 export const CRITERIA_SETS: CriteriaSetSummary[] = [
   { id: "default", name: "Default" },
-  { id: "remote-only", name: "Remote only" },
+  { id: "remote_only", name: "Remote only" },
 ];
 
 /**
@@ -159,8 +159,8 @@ export function makeCriteriaSetDetails(): Record<string, CriteriaSet> {
       match_rule_outcomes: { "country.visa_route_exists": "not_matching" },
       compound_rule_outcomes: {},
     },
-    "remote-only": {
-      id: "remote-only",
+    "remote_only": {
+      id: "remote_only",
       name: "Remote only",
       pillar_weights: [
         {

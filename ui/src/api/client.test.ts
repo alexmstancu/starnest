@@ -386,7 +386,7 @@ describe("a write addressed under a criteria set", () => {
     );
 
     expect(answeredWrites("default")).toBe(1);
-    expect(answeredWrites("remote-only")).toBe(0);
+    expect(answeredWrites("remote_only")).toBe(0);
   });
 
   it("is noted for every kind of write: a patch, a post and a delete as well", async () => {
