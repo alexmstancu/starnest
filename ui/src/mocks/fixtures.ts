@@ -325,12 +325,16 @@ export function candidatesForLevel(level: string | null): Candidate[] {
   return COUNTRY_CANDIDATES;
 }
 
+/** The mock settings' score range, which every score-bearing fixture carries as the server does. */
+const MOCK_SCORE_SCALE = 100;
+
 export function rankingFor(criteriaSet: string, level: string): Ranking {
   return {
     evaluation: null,
     criteria_set: criteriaSet,
     level,
     computed_at: "2026-08-30T09:15:00Z",
+    score_scale_max: MOCK_SCORE_SCALE,
     candidates: level === "city" ? CITY_RESULTS : COUNTRY_RESULTS,
   };
 }
@@ -370,7 +374,7 @@ export const RUNS: Run[] = [
 
 export const SETTINGS: Settings = {
   min_coverage: 60,
-  score_scale_max: 100,
+  score_scale_max: MOCK_SCORE_SCALE,
   comparator_limit: 5,
   run_spend_cap_eur: 10,
   // Null, like the shipped database: every run refetches everything until somebody decides
@@ -413,6 +417,7 @@ export function comparisonFor(
   return {
     criteria_set: criteriaSet,
     level,
+    score_scale_max: MOCK_SCORE_SCALE,
     focus: named(focus),
     comparators: comparators.map(named),
     attributes: [
