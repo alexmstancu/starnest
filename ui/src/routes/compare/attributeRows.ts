@@ -17,6 +17,7 @@
 import { formatSigned } from "../../format/display";
 import { EURO } from "../../format/figure";
 import { maxAbsDelta } from "./divergingBar";
+import { rankInPillar } from "./ordering";
 
 /**
  * One attribute as the drill-down receives it, already reduced to numbers and display strings
@@ -39,11 +40,15 @@ export interface AttributeSource {
   /** The unit the server's raw gaps are in when it is not the figure's own: EUR for money,
    *  since the comparison subtracts euro equivalents. Null for every other type. */
   gapUnit: string | null;
+  /** What this attribute counted for in the focus's total, as a percentage; absent is unknown. */
+  weight?: number | null;
   comparators: readonly {
     candidate: string;
     score: number | null;
     /** Comparator minus focus, in the attribute's own unit (the server's own figure). */
     rawDelta: number | null;
+    /** What the score gap is worth to the focus's total, as the server computed it. */
+    worth?: number | null;
     figure: string;
   }[];
 }
@@ -64,6 +69,8 @@ export interface AttributeCell {
    * either score is missing, the scores tie, or there is no raw gap.
    */
   rawBar: number | null;
+  /** What the gap is worth to the focus's total, comparator minus focus; null where unknown. */
+  worth: number | null;
   figure: string;
 }
 
@@ -74,11 +81,17 @@ export interface AttributeRow {
   focusRaw: number | null;
   focusFigure: string;
   gapUnit: string | null;
+  /** What the attribute counted for in the focus's total, as a percentage, or null. */
+  weight: number | null;
+  /** Its place among the pillar's heaviest (0 for the heaviest), or undefined outside them. */
+  place: number | undefined;
   cells: AttributeCell[];
   /** The ruler the score-view bars are drawn against, shared across the whole pillar. */
   scoreScale: number;
   /** The ruler the raw-view bars are drawn against, this row's own because units differ. */
   rawScale: number;
+  /** The ruler the worth bars are drawn against: the pillar's largest worth. */
+  worthScale: number;
 }
 
 /**
@@ -172,6 +185,7 @@ export function attributeGroups(
         scoreDelta,
         rawDelta,
         rawBar: rawBarOf(rawDelta, scoreDelta),
+        worth: found?.worth ?? null,
         figure: found?.figure ?? "",
       };
     });
@@ -183,9 +197,12 @@ export function attributeGroups(
       focusRaw: source.focusRaw,
       focusFigure: source.focusFigure,
       gapUnit: source.gapUnit,
+      weight: source.weight ?? null,
+      // Filled once the pillar's rows are all in, as are the rulers shared across them.
+      place: undefined,
       cells,
-      // Filled once the pillar's rows are all in, since the score ruler is shared across them.
       scoreScale: 0,
+      worthScale: 0,
       rawScale: maxAbsDelta(cells.map((cell) => ({ delta: cell.rawDelta }))),
     };
 
@@ -199,7 +216,16 @@ export function attributeGroups(
         maxAbsDelta(row.cells.map((cell) => ({ delta: cell.scoreDelta }))),
       ),
     );
-    for (const row of rows) row.scoreScale = scoreScale;
+    const worthScale = Math.max(
+      0,
+      ...rows.map((row) => maxAbsDelta(row.cells.map((cell) => ({ delta: cell.worth })))),
+    );
+    const places = rankInPillar(rows);
+    for (const row of rows) {
+      row.scoreScale = scoreScale;
+      row.worthScale = worthScale;
+      row.place = places.get(row.attribute);
+    }
   }
 
   return byPillar;

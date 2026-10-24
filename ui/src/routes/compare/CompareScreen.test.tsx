@@ -395,6 +395,78 @@ describe("opening a pillar to its attributes", () => {
   });
 });
 
+/** PL-098, PL-097. What an attribute counted for, and what its gap is worth to the total. */
+describe("an attribute row's weight and worth", () => {
+  it("shows its weight and its place in the pillar", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    await openPillar("Economy");
+
+    // Portugal's tax rate counted for 27.5% of its total and its cost of living for 12.5%.
+    const tax = await screen.findByRole("row", { name: /total effective tax rate/i });
+    const cost = screen.getByRole("row", { name: /cost of living index/i });
+    expect(tax.querySelector(".matrix__weight")).toHaveTextContent("27.5%");
+    expect(tax).toHaveTextContent("#1 in pillar");
+    expect(cost.querySelector(".matrix__weight")).toHaveTextContent("12.5%");
+    expect(cost).toHaveTextContent("#2 in pillar");
+  });
+
+  it("shows no weight and no place where the focus has no figure", async () => {
+    mockServer.use(
+      http.get(`${BASE}/attributes`, () =>
+        HttpResponse.json({ items: [...ATTRIBUTES, MEDIAN_RENT] }),
+      ),
+      http.get(`${BASE}/comparisons`, () =>
+        HttpResponse.json(rentComparison({ normalised_score: null })),
+      ),
+    );
+    renderShell("/compare");
+    await compare("Romania", "Spain");
+    await openPillar("Economy");
+
+    const rent = await screen.findByRole("row", { name: /median rent/i });
+    expect(rent.querySelector(".matrix__weight")).toHaveTextContent("—");
+    expect(rent).not.toHaveTextContent("in pillar");
+  });
+
+  /** The Netherlands' cost of living scores 41 against 73, at 12.5%: worth −4.0 to the total. */
+  it("shows what each gap is worth under weighted impact", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    await openPillar("Economy");
+    await userEvent.click(screen.getByRole("radio", { name: /weighted impact/i }));
+
+    const cost = await screen.findByRole("row", { name: /cost of living index/i });
+    expect(within(cost).getByText("\u22124.0")).toHaveClass("matrix__delta--behind");
+    const tax = screen.getByRole("row", { name: /total effective tax rate/i });
+    expect(within(tax).getByText("+2.2")).toHaveClass("matrix__delta--ahead");
+  });
+
+  it("shows the score gap again in score points", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    await openPillar("Economy");
+
+    const cost = await screen.findByRole("row", { name: /cost of living index/i });
+    expect(within(cost).getByText("\u221232")).toBeInTheDocument();
+  });
+
+  it("shows no worth where the comparator was not scored", async () => {
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, () => HttpResponse.json(missingFigureComparison())),
+    );
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    await openPillar("Economy");
+    await userEvent.click(screen.getByRole("radio", { name: /weighted impact/i }));
+
+    const cost = await screen.findByRole("row", { name: /cost of living index/i });
+    expect(cost.querySelector(".matrix__cell:not(.matrix__cell--focus) .matrix__delta")).toHaveTextContent(
+      /^—$/,
+    );
+  });
+});
+
 describe("the attribute figures inside a pillar", () => {
   it("shows scores until asked for figures", async () => {
     serveFigures("country.spain", "Spain");

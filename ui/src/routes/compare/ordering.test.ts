@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pillarPriority, pillarWeightsAt } from "./ordering";
+import { pillarPriority, pillarWeightsAt, rankInPillar } from "./ordering";
 
 describe("the set's pillar weights at one level", () => {
   const set = {
@@ -64,5 +64,32 @@ describe("which pillars are priorities", () => {
 
   it("ranks nothing when no weight is known", () => {
     expect(pillarPriority(new Map()).size).toBe(0);
+  });
+});
+
+/** PL-098. "#N in pillar" ranks a pillar's attributes by what each counted for. */
+describe("an attribute's place in its pillar", () => {
+  it("ranks the three heaviest, a tie in the server's order", () => {
+    const places = rankInPillar([
+      { attribute: "a", weight: 10 },
+      { attribute: "b", weight: 20 },
+      { attribute: "c", weight: 20 },
+      { attribute: "d", weight: 5 },
+    ]);
+
+    expect([...places]).toEqual([
+      ["b", 0],
+      ["c", 1],
+      ["a", 2],
+    ]);
+  });
+
+  it("never places an attribute that counted for nothing, or whose weight is unknown", () => {
+    const places = rankInPillar([
+      { attribute: "a", weight: 0 },
+      { attribute: "b", weight: null },
+    ]);
+
+    expect(places.size).toBe(0);
   });
 });

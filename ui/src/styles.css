@@ -4577,3 +4577,8 @@ select.field__control {
   padding-top: 6px;
   border-top: var(--border-width) solid var(--colour-border);
 }
+
+/* An attribute's place among its pillar's heaviest, beside its name (C07 U6). */
+.matrix__attr-name .matrix__priority {
+  margin-left: 6px;
+}

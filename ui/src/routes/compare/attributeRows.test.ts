@@ -267,3 +267,63 @@ describe("which way a raw gap is drawn", () => {
     expect(row!.cells[0]!.rawDelta).toBe(-1341);
   });
 });
+
+/** PL-098, PL-097. What each attribute counted for, and what each of its gaps is worth. */
+describe("an attribute's weight and worth", () => {
+  const weighted = (
+    attribute: string,
+    weight: number | null,
+    worths: readonly (number | null)[],
+  ): AttributeSource => ({
+    ...economicsA,
+    attribute,
+    weight,
+    comparators: economicsA.comparators.map((cell, at) => ({ ...cell, worth: worths[at] ?? null })),
+  });
+
+  it("carries the focus's weight and each comparator's worth as the server sent them", () => {
+    const [row] = attributeGroups([weighted("country.a", 12.5, [-4, 1.5])], order).get(
+      "economics",
+    )!;
+
+    expect(row?.weight).toBe(12.5);
+    expect(row?.cells.map((cell) => cell.worth)).toEqual([-4, 1.5]);
+  });
+
+  it("reads an absent weight and worth as unknown, never as zero", () => {
+    const [row] = attributeGroups([economicsA], order).get("economics")!;
+
+    expect(row?.weight).toBeNull();
+    expect(row?.cells.map((cell) => cell.worth)).toEqual([null, null]);
+  });
+
+  it("draws every worth in a pillar against the pillar's largest", () => {
+    const rows = attributeGroups(
+      [weighted("country.a", 12.5, [-4, 1]), weighted("country.b", 27.5, [2.2, null])],
+      order,
+    ).get("economics")!;
+
+    expect(rows.map((row) => row.worthScale)).toEqual([4, 4]);
+  });
+
+  it("places the three heaviest in their pillar", () => {
+    const rows = attributeGroups(
+      [
+        weighted("country.a", 10, []),
+        weighted("country.b", 30, []),
+        weighted("country.c", 0, []),
+        weighted("country.d", 20, []),
+        weighted("country.e", 15, []),
+      ],
+      order,
+    ).get("economics")!;
+
+    expect(rows.map((row) => [row.attribute, row.place])).toEqual([
+      ["country.a", undefined],
+      ["country.b", 0],
+      ["country.c", undefined],
+      ["country.d", 1],
+      ["country.e", 2],
+    ]);
+  });
+});

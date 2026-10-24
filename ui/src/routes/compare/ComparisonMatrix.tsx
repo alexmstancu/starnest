@@ -87,10 +87,14 @@ export function ComparisonMatrix({
       focusRaw: payloadMagnitude(row.focus?.value),
       focusFigure: row.focus?.value ? describeFigure(row.focus.value) : ABSENT,
       gapUnit: rawGapUnit(row.focus?.value),
+      // The server sends 0 where the focus has no figure; that is no weight, not a light one.
+      weight:
+        typeof row.focus?.normalised_score === "number" ? (row.effective_weight ?? null) : null,
       comparators: (row.comparators ?? []).map((cell) => ({
         candidate: cell.candidate ?? "",
         score: cell.normalised_score ?? null,
         rawDelta: cell.delta ?? null,
+        worth: cell.weighted_contribution ?? null,
         figure: cell.value ? describeFigure(cell.value) : ABSENT,
       })),
     })),
@@ -170,6 +174,8 @@ export function ComparisonMatrix({
                 attributes={attributes}
                 shownAs={shownAs}
                 scale={scale}
+                measure={measure}
+                pillarFocus={row.focus}
                 naming={(attribute) => attributeName(attributeNames, attribute)}
               />
             );
@@ -199,6 +205,8 @@ function PillarGroup({
   attributes,
   shownAs,
   scale,
+  measure,
+  pillarFocus,
   naming,
 }: {
   label: string;
@@ -212,6 +220,9 @@ function PillarGroup({
   attributes: readonly AttributeRow[];
   shownAs: "score" | "raw";
   scale: ScaleReading;
+  measure: Measure;
+  /** The focus's reading on this pillar, which an impact's tint is measured against. */
+  pillarFocus: number | null;
   naming: (attribute: string) => string;
 }) {
   const rowClass =
@@ -263,6 +274,8 @@ function PillarGroup({
             row={attribute}
             shownAs={shownAs}
             scale={scale}
+            measure={measure}
+            pillarFocus={pillarFocus}
             name={naming(attribute.attribute)}
           />
         ))}
@@ -270,19 +283,30 @@ function PillarGroup({
   );
 }
 
-/** One attribute, read either as a normalised score or as the figure in its own unit. */
+/**
+ * One attribute, read either as a normalised score or as the figure in its own unit.
+ *
+ * **Under "Weighted impact" the gap slot is what the gap is worth** (PL-097, C07-D): the
+ * server's number, drawn against the pillar's largest worth, while the figure above it stays
+ * the score or the raw figure the other toggle chose.
+ */
 function AttributeRowView({
   row,
   shownAs,
   scale,
+  measure,
+  pillarFocus,
   name,
 }: {
   row: AttributeRow;
   shownAs: "score" | "raw";
   scale: ScaleReading;
+  measure: Measure;
+  pillarFocus: number | null;
   name: string;
 }) {
   const raw = shownAs === "raw";
+  const impact = measure === "impact";
   // The raw gap is the server's comparator minus focus, printed as sent, so the row says which
   // way round it reads; the bar beneath it is coloured by the scores (UI-19).
   const note = raw ? rawNote(row) : scale.note;
@@ -290,10 +314,15 @@ function AttributeRowView({
   return (
     <tr className="matrix__row matrix__row--attr">
       <th scope="row" className="matrix__label matrix__label--attr">
-        <span className="matrix__attr-name">{name}</span>
+        <span className="matrix__attr-name">
+          {name}
+          {row.place !== undefined && (
+            <span className="matrix__priority">#{row.place + 1} in pillar</span>
+          )}
+        </span>
         <span className="matrix__attr-note">{note}</span>
       </th>
-      <td className="matrix__weight" />
+      <td className="matrix__weight">{formatPercentage(row.weight, 1)}</td>
       <FocusCell
         text={raw ? row.focusFigure || ABSENT : formatScore(row.focusScore)}
         compact
@@ -301,9 +330,11 @@ function AttributeRowView({
       {row.cells.map((cell) => {
         const bar = !scale.drawn
           ? null
-          : raw
-            ? divergingBar(cell.rawBar, row.rawScale, row.focusRaw)
-            : divergingBar(cell.scoreDelta, row.scoreScale, row.focusScore);
+          : impact
+            ? divergingBar(cell.worth, row.worthScale, pillarFocus)
+            : raw
+              ? divergingBar(cell.rawBar, row.rawScale, row.focusRaw)
+              : divergingBar(cell.scoreDelta, row.scoreScale, row.focusScore);
         return (
           <Cell
             key={cell.candidate}
@@ -311,7 +342,11 @@ function AttributeRowView({
             compact
             scoreText={raw ? cell.figure || ABSENT : formatScore(cell.score)}
             deltaText={
-              raw ? rawGapText(cell.rawDelta, row.gapUnit) : formatSigned(cell.scoreDelta, 0)
+              impact
+                ? formatSigned(cell.worth, decimalsFor(measure))
+                : raw
+                  ? rawGapText(cell.rawDelta, row.gapUnit)
+                  : formatSigned(cell.scoreDelta, 0)
             }
           />
         );

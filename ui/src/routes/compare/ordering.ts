@@ -40,6 +40,17 @@ export function pillarPriority(weights: ReadonlyMap<string, number>): ReadonlyMa
   return topPlaces([...weights].map(([key, weight]) => ({ key, weight })));
 }
 
+/**
+ * "#N in pillar" (PL-098): the attributes that counted most in the focus's total, ranked the
+ * way the pillars are -- the heaviest three, nothing for an attribute that counted for nothing
+ * or whose weight is unknown, and a tie in the server's order.
+ */
+export function rankInPillar(
+  rows: readonly { attribute: string; weight: number | null }[],
+): ReadonlyMap<string, number> {
+  return topPlaces(rows.map((row) => ({ key: row.attribute, weight: row.weight ?? 0 })));
+}
+
 /** The heaviest few keys, by place. The sort is stable, so a tie keeps the order given. */
 function topPlaces(
   entries: readonly { key: string; weight: number }[],
