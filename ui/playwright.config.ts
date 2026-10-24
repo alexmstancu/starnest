@@ -57,6 +57,9 @@ export default defineConfig({
     // `localhost` rather than `127.0.0.1`: Vite binds the name, which resolves to ::1 first,
     // so the numeric form reaches nothing.
     baseURL: `http://localhost:${uiPort}`,
+    // Times are shown on the reader's clock; a fixed zone that is not UTC keeps a spec from
+    // passing only because the machine running it happens to sit in UTC (`vite.config.ts`).
+    timezoneId: "Europe/Bucharest",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },

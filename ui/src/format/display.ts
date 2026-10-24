@@ -133,26 +133,40 @@ export function formatCountInWords(
   return COUNT_WORDS[count] ?? formatCount(count);
 }
 
-/** An ISO date-time, shown to the minute. Seconds are noise in every place this appears. */
+/**
+ * An instant, shown to the minute on the reader's clock.
+ *
+ * **The reader's zone, not UTC**, so it agrees with Recent changes (`describeWhen`) and one
+ * screen never shows two clocks. Seconds are noise in every place this appears.
+ */
 export function formatDateTime(value: string | null | undefined): string {
   const parsed = parseDate(value);
   if (!parsed) return ABSENT;
   return new Intl.DateTimeFormat(DISPLAY_LOCALE, {
     dateStyle: "medium",
     timeStyle: "short",
-    timeZone: "UTC",
   }).format(parsed);
 }
 
-/** An ISO date. Used for reference and retrieval dates, which are days, not instants. */
+/**
+ * A day: the one a bare date names, or the reader's day for an instant.
+ *
+ * **The string says which it is.** The contract's `date` and `date-time` both arrive as
+ * `string`, so a call site cannot tell them apart. A bare `YYYY-MM-DD` is a calendar day and is
+ * printed as written (read in UTC, which is how `Date` parsed it); anything carrying a time is
+ * an instant and becomes the day it was on the reader's clock, as `formatDateTime` shows it.
+ */
 export function formatDate(value: string | null | undefined): string {
   const parsed = parseDate(value);
   if (!parsed) return ABSENT;
+  const namesADay = BARE_DATE.test(value ?? "");
   return new Intl.DateTimeFormat(DISPLAY_LOCALE, {
     dateStyle: "medium",
-    timeZone: "UTC",
+    ...(namesADay ? { timeZone: "UTC" } : {}),
   }).format(parsed);
 }
+
+const BARE_DATE = /^\d{4}(-\d{2}){0,2}$/;
 
 /** `not_matching` reads as "Not matching" wherever a status is shown. */
 /**

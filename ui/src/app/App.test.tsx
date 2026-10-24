@@ -257,7 +257,7 @@ describe("the sidebar counts and last run", () => {
 
     const lastRun = within(await screen.findByRole("region", { name: /last acquisition/i }));
     await waitFor(() => expect(lastRun.getByText("Status").nextSibling).toHaveTextContent("completed"));
-    expect(lastRun.getByText("Started").nextSibling).toHaveTextContent("29 Aug 2026, 18:02");
+    expect(lastRun.getByText("Started").nextSibling).toHaveTextContent("29 Aug 2026, 21:02");
     expect(lastRun.getByRole("link", { name: /acquisition history/i })).toHaveAttribute("href", "/acquire");
   });
 

@@ -104,10 +104,8 @@ export function foldRepeats(
  * lives, where an unreadable date becomes `—` for every screen at once and a test already
  * covers it.
  *
- * **It also fixes a day that could be wrong.** `toLocaleDateString` with no `timeZone` reads
- * the machine's; `formatDate` pins UTC, as every other date on this panel does. A figure
- * fetched at 08:00Z was printed as the day before, in this sentence only, for any reader west
- * of UTC -- beside a "Fetched" cell naming the right day.
+ * **The reader's day, like the "Fetched" cell beside it.** Both go through `formatDate`, which
+ * reads an instant on the reader's clock, so the sentence and the cell can never name two days.
  */
 export function describeRepeats(
   copies: number,

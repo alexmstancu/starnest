@@ -127,7 +127,7 @@ describe("the ranking table", () => {
     // Capitalised: the catalog ships ids, and a reader is shown a name.
     expect(rank.getByText("Level").nextSibling).toHaveTextContent("Country");
     expect(rank.getByText("Computed").nextSibling).toHaveTextContent(
-      "30 Aug 2026, 09:15",
+      "30 Aug 2026, 12:15",
     );
   });
 });
@@ -1063,7 +1063,7 @@ describe("an outside opinion's provenance", () => {
 
     const numbeo = within(outside).getByRole("row", { name: /numbeo/i });
     expect(numbeo).toHaveTextContent("Describes1 Jan 2026 to 30 Jun 2026");
-    expect(numbeo).toHaveTextContent("Fetched1 Sept 2026, 08:00");
+    expect(numbeo).toHaveTextContent("Fetched1 Sept 2026, 11:00");
   });
 
   it("gives a publisher's rank out of how many it ranked", async () => {

@@ -105,12 +105,22 @@ describe("formatMoney", () => {
 });
 
 describe("formatDateTime and formatDate", () => {
-  it("prints an ISO instant to the minute in UTC", () => {
-    expect(formatDateTime("2026-08-29T18:02:00Z")).toBe("29 Aug 2026, 18:02");
+  /**
+   * **The suite runs in Europe/Bucharest** (`vite.config.ts`), three hours east of UTC in
+   * summer, so a formatter that went back to UTC prints a different minute and a different
+   * day here, rather than passing by coincidence on a machine that happens to be in UTC.
+   */
+  it("prints an instant to the minute on the reader's clock", () => {
+    expect(formatDateTime("2026-08-29T18:02:00Z")).toBe("29 Aug 2026, 21:02");
   });
 
-  it("prints an ISO date as a day", () => {
+  it("prints an instant past the reader's midnight as the reader's day", () => {
+    expect(formatDate("2026-10-01T22:30:00Z")).toBe("2 Oct 2026");
+  });
+
+  it("prints a bare date as the day it names, whatever the reader's clock", () => {
     expect(formatDate("2026-08-29")).toBe("29 Aug 2026");
+    expect(formatDate("2026-01-01")).toBe("1 Jan 2026");
   });
 
   it("prints the absent marker for empty and unparseable input", () => {

@@ -1,6 +1,12 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
+// **Unit tests read the clock in a zone that is not UTC**, set here so every worker inherits it
+// before it formats its first date. A formatter that slipped back to UTC then prints a different
+// minute, instead of passing by coincidence on a machine that happens to sit in UTC. The same
+// zone is pinned for the browser in `playwright.config.ts`.
+if (process.env["VITEST"]) process.env["TZ"] = "Europe/Bucharest";
+
 export default defineConfig({
   plugins: [react()],
 

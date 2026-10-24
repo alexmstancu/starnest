@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StoredValue } from "../../api/endpoints";
 import { describeRepeats, foldRepeats } from "./repeatedValues";
+import { formatDate } from "../../format/display";
 
 function aValue(over: Partial<StoredValue> = {}): StoredValue {
   return {
@@ -211,23 +212,15 @@ describe("saying that a figure arrived more than once", () => {
   });
 
   /**
-   * **The day is UTC's, not the machine's**, like every other date on this panel. The sentence
-   * used to format its own date with no `timeZone`, so a figure fetched at 08:00Z read as the
-   * day before for a reader west of UTC -- beside a "Fetched" cell naming the right day.
-   *
-   * **Both ends of the day, so the assertion does not depend on where it runs.** A local-time
-   * formatter and a UTC one agree except when the offset carries the instant across midnight,
-   * and which instant that is depends on the sign of the offset: 00:30Z moves back a day for
-   * any reader west of UTC, 23:30Z moves forward for any reader east of it. One of these two
-   * fails on every clock that is not itself UTC, which is why the old test at 19:16Z passed
-   * everywhere while the formatter was wrong.
+   * **The day is the reader's, the same as the "Fetched" cell beside it.** Both go through
+   * `formatDate`, and the suite runs in Europe/Bucharest (`vite.config.ts`): 22:30Z on the 1st is
+   * already the 2nd there, so a sentence that read the day in UTC would disagree with the cell.
    */
-  it("reads the first fetch in UTC, whatever the reader's clock says", () => {
-    expect(describeRepeats(2, "2026-10-02T00:30:00Z")).toBe(
-      "unchanged across 2 acquisitions, first on 2 Oct 2026",
+  it("reads the first fetch on the reader's clock, as the Fetched cell does", () => {
+    const fetched = "2026-10-01T22:30:00Z";
+    expect(describeRepeats(2, fetched)).toBe(
+      `unchanged across 2 acquisitions, first on ${formatDate(fetched)}`,
     );
-    expect(describeRepeats(2, "2026-10-02T23:30:00Z")).toBe(
-      "unchanged across 2 acquisitions, first on 2 Oct 2026",
-    );
+    expect(formatDate(fetched)).toBe("2 Oct 2026");
   });
 });

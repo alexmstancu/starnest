@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatDateTime } from "../../format/display";
 import {
   type Change,
   describeReach,
@@ -244,5 +245,16 @@ describe("when a change was made", () => {
     expect(describeWhen(new Date("2026-09-23T14:32:00Z"))).not.toBe(
       describeWhen(new Date("2026-09-23T14:41:00Z")),
     );
+  });
+});
+
+/**
+ * PL-020: one screen never shows two clocks. Rank's "Computed" and a Recent changes entry made
+ * at the same instant name the same minute, in a zone that is not UTC (`vite.config.ts`).
+ */
+describe("the clock Recent changes reads", () => {
+  it("is the one every other time on screen is shown in", () => {
+    const instant = "2026-08-29T18:02:00Z";
+    expect(formatDateTime(instant)).toContain(describeWhen(new Date(instant)));
   });
 });
