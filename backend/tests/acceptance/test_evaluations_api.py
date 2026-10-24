@@ -84,6 +84,31 @@ class TestKeepingARanking:
         assert (await api.get("/v1/evaluations")).json()["items"] == []
 
 
+class TestAKeptRankingKeepsItsScale:
+    """A saved ranking shows its evidence, and the scale it was scored on is part of it (D46).
+
+    The setting may move afterwards; the scores kept under it do not, so reading them against
+    the current setting would draw every bar against a range they were never on (PL-062).
+    """
+
+    A_LATER_SCALE = 150
+
+    async def test_a_kept_ranking_keeps_the_scale_it_was_frozen_with(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        kept = await _keep_one(api)
+        moved = await api.put("/v1/settings", json={"score_scale_max": self.A_LATER_SCALE})
+        assert moved.status_code == 200
+
+        ranking = await api.get(f"/v1/evaluations/{kept['id']}")
+        detail = await api.get(f"/v1/evaluations/{kept['id']}/candidates/{PORTUGAL}")
+
+        assert [ranking.json()["score_scale_max"], detail.json()["score_scale_max"]] == [
+            kept["score_scale_max"]
+        ] * 2
+        assert kept["score_scale_max"] != self.A_LATER_SCALE
+
+
 class TestWhatTheSnapshotFreezes:
     async def test_the_criteria_come_back_with_their_weights_and_anchors(
         self, api: httpx.AsyncClient, stored_figures: None

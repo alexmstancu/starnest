@@ -326,6 +326,12 @@ components:
           - type: 'null'
           description: Null only when insufficient data. On the evaluation's scale.
           title: Score
+        score_scale_max:
+          description: 'The top of the range every score here is on: the setting when
+            a live result was computed, the frozen value for a saved one -- never
+            the current setting for that.'
+          title: Score Scale Max
+          type: integer
         warnings:
           default: []
           items:
@@ -337,6 +343,7 @@ components:
       - name
       - coverage
       - match_status
+      - score_scale_max
       title: CandidateScoreDetailBody
       type: object
     CandidatesBody:
@@ -424,6 +431,11 @@ components:
         level:
           title: Level
           type: string
+        score_scale_max:
+          description: 'The top of the range both sides'' scores are on: always the
+            live setting.'
+          title: Score Scale Max
+          type: integer
         synthesis:
           default: []
           items:
@@ -433,6 +445,7 @@ components:
       required:
       - criteria_set
       - level
+      - score_scale_max
       - focus
       - comparators
       - attributes
@@ -1752,10 +1765,17 @@ components:
         level:
           title: Level
           type: string
+        score_scale_max:
+          description: 'The top of the range every score here is on: the setting when
+            a live result was computed, the frozen value for a saved one -- never
+            the current setting for that.'
+          title: Score Scale Max
+          type: integer
       required:
       - criteria_set
       - level
       - computed_at
+      - score_scale_max
       - candidates
       title: RankingBody
       type: object

@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from typing import Annotated, ClassVar
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from starnest.api.bodies import ContractBody
 from starnest.api.dependencies import (
@@ -81,6 +81,9 @@ class SynthesisBody(BaseModel):
 class ComparisonBody(BaseModel):
     criteria_set: str
     level: str
+    score_scale_max: int = Field(
+        description="The top of the range both sides' scores are on: always the live setting."
+    )
     focus: CandidateResultBody
     comparators: tuple[CandidateResultBody, ...]
     attributes: tuple[ComparisonAttributeRowBody, ...]
@@ -141,6 +144,7 @@ async def get_comparison(
     return ComparisonBody(
         criteria_set=criteria_set,
         level=level,
+        score_scale_max=ranking.score_scale_max,
         focus=_result_body(drawn.focus, names),
         comparators=tuple(_result_body(result, names) for result in drawn.comparators),
         attributes=tuple(

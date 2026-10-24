@@ -806,6 +806,36 @@ class TestGetRanking:
         assert "score_scale_max" in response.text
 
 
+class TestEveryScoreCarriesItsScale:
+    """A live response carries the scale it was computed on: the setting at that moment (PL-062).
+
+    **At 150, not 100**, because 100 is the number a client that assumed the scale would
+    already draw correctly -- the defect this exists for was invisible there.
+    """
+
+    SCALE = 150
+
+    async def test_every_scored_response_carries_the_scale_it_was_computed_on(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        stored = await api.put(
+            "/v1/settings", json={"score_scale_max": self.SCALE, "comparator_limit": 5}
+        )
+        assert stored.status_code == 200
+        params = {"criteria_set": MINIMAL, "level": COUNTRY}
+
+        ranking = await api.get("/v1/rankings", params=params)
+        detail = await api.get("/v1/rankings/candidates/country.portugal", params=params)
+        comparison = await api.get(
+            "/v1/comparisons",
+            params={**params, "focus": "country.portugal", "comparators": ["country.greece"]},
+        )
+
+        assert [
+            response.json()["score_scale_max"] for response in (ranking, detail, comparison)
+        ] == [self.SCALE] * 3
+
+
 class TestTheListsTheInterfaceNeedsBeforeItCanRender:
     """Levels, criteria sets and candidates. Not in `docs/mine2e.md` M3's list of four, and
     the interface cannot draw a screen without them -- the plan under-counted, and building it

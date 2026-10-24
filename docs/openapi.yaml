@@ -1955,7 +1955,7 @@ components:
         # No maximum. The ceiling is the evaluation's own score_scale_max, which is a setting
         # the user edits, so it cannot be stated here as a constant (same reason as the frozen
         # anchors below).
-        score: { type: [integer, "null"], minimum: 0, description: Null only when insufficient data. }
+        score: { type: [integer, "null"], minimum: 0, description: "Null only when insufficient data. On the enclosing response's score_scale_max." }
         insufficient_reason:
           type: [string, "null"]
           description: >-
@@ -2002,12 +2002,21 @@ components:
 
     Ranking:
       type: object
-      required: [criteria_set, level, computed_at, candidates]
+      required: [criteria_set, level, computed_at, score_scale_max, candidates]
       properties:
         evaluation: { type: [integer, "null"], description: Set when this is a saved evaluation rather than a live computation. }
         criteria_set: { type: string }
         level: { type: string }
         computed_at: { type: string, format: date-time }
+        score_scale_max:
+          type: integer
+          minimum: 1
+          description: >-
+            The top of the score range every score in this ranking is on: the setting at the
+            moment a live ranking was computed, the frozen value for a saved one. Draw and label
+            every score, pillar score and difference against this, never against the current
+            setting, which may have changed since. Anchored criteria do not rescale when the
+            range changes: an anchor's score is the number it was given.
         candidates: { type: array, items: { $ref: "#/components/schemas/CandidateResult" } }
 
     EvaluationSummary:
@@ -2031,7 +2040,7 @@ components:
       properties:
         attribute: { type: string }
         pillar: { type: string }
-        normalised_score: { type: [integer, "null"], description: Null when no value was available. }
+        normalised_score: { type: [integer, "null"], description: "0 to the enclosing response's score_scale_max. Null when no value was available." }
         weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. Weight within the pillar as configured." }
         effective_weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. After redistribution for missing data." }
         contribution: { type: number }
@@ -2050,8 +2059,9 @@ components:
           type: [integer, "null"]
           minimum: 0
           description: >-
-            What this pillar scored, as a weighted mean of its criteria. Null when no criterion
-            in it was scored -- zero would read as "measured, and bad".
+            What this pillar scored, as a weighted mean of its criteria, from 0 to the enclosing
+            response's score_scale_max. Null when no criterion in it was scored -- zero would
+            read as "measured, and bad".
         weight:
           type: number
           minimum: 0
@@ -2068,7 +2078,14 @@ components:
       allOf:
         - $ref: "#/components/schemas/CandidateResult"
         - type: object
+          required: [score_scale_max]
           properties:
+            score_scale_max:
+              type: integer
+              minimum: 1
+              description: >-
+                The top of the score range this candidate's scores are on: the live setting, or
+                the saved evaluation's frozen value.
             attribute_scores: { type: array, items: { $ref: "#/components/schemas/AttributeScore" } }
 
     ComparisonAttributeRow:
@@ -2102,10 +2119,16 @@ components:
 
     Comparison:
       type: object
-      required: [criteria_set, level, focus, comparators, attributes]
+      required: [criteria_set, level, score_scale_max, focus, comparators, attributes]
       properties:
         criteria_set: { type: string }
         level: { type: string }
+        score_scale_max:
+          type: integer
+          minimum: 1
+          description: >-
+            The top of the score range the focus's and comparators' scores are on. Always the
+            live setting: a comparison is computed, never stored.
         focus: { $ref: "#/components/schemas/CandidateResult" }
         comparators: { type: array, items: { $ref: "#/components/schemas/CandidateResult" } }
         attributes: { type: array, items: { $ref: "#/components/schemas/ComparisonAttributeRow" } }

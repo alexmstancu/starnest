@@ -14,6 +14,7 @@ the sentence saying why.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -101,6 +102,17 @@ class AttributeScoreBody(BaseModel):
     contribution: float
 
 
+ScoreScaleMax = Annotated[
+    int,
+    Field(
+        description=(
+            "The top of the range every score here is on: the setting when a live result was "
+            "computed, the frozen value for a saved one -- never the current setting for that."
+        ),
+    ),
+]
+
+
 class CandidateScoreDetailBody(CandidateResultBody):
     """Why a candidate scored what it scored, attribute by attribute.
 
@@ -110,6 +122,7 @@ class CandidateScoreDetailBody(CandidateResultBody):
     been saved would be two answers to one question.
     """
 
+    score_scale_max: ScoreScaleMax
     attribute_scores: tuple[AttributeScoreBody, ...] = ()
 
 
@@ -117,6 +130,7 @@ class RankingBody(BaseModel):
     criteria_set: str
     level: str
     computed_at: datetime
+    score_scale_max: ScoreScaleMax
     candidates: tuple[CandidateResultBody, ...]
 
 
@@ -235,6 +249,7 @@ async def get_ranking(
         criteria_set=criteria_set,
         level=level,
         computed_at=datetime.now(UTC),
+        score_scale_max=ranking.score_scale_max,
         candidates=tuple(_result_body(result, names) for result in _in_rank_order(ranking.results)),
     )
 
@@ -284,6 +299,7 @@ async def get_ranked_candidate_detail(
     names = {str(candidate.id): candidate.name for candidate in ranking.roster}
     return CandidateScoreDetailBody(
         **_result_body(result, names).model_dump(),
+        score_scale_max=ranking.score_scale_max,
         attribute_scores=tuple(_attribute_score_body(row) for row in result.attribute_scores),
     )
 

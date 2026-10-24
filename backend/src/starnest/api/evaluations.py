@@ -138,6 +138,7 @@ async def get_evaluation(
         criteria_set=saved.criteria_set,
         level=saved.level,
         computed_at=saved.computed_at,
+        score_scale_max=saved.score_scale_max,
         candidates=tuple(_result_body(result, names) for result in _in_rank_order(results)),
     )
 
@@ -182,6 +183,7 @@ async def get_candidate_score_detail(
     }
     return CandidateScoreDetailBody(
         **_result_body(result, names).model_dump(),
+        score_scale_max=saved.score_scale_max,
         attribute_scores=tuple(_attribute_score_body(row) for row in result.attribute_scores),
     )
 
