@@ -55,7 +55,7 @@ import {
  */
 export function RunScreen({ route }: { route: RouteDefinition }) {
   const { levelId } = useSelection();
-  const run = useRunScreen();
+  const run = useRunScreen(levelId);
 
   // Built once and placed in one of two slots, because it is one card either way: the top of
   // the screen while the run is in flight, and inside a fold under the remedies once it is not.
@@ -144,6 +144,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                   detailKind="failed"
                   act="Retry"
                   busy={run.busy === "planning"}
+                  onSelectionChange={run.disarm}
                   onPropose={(scope, describedAs) =>
                     run.propose(scope, describedAs, "failed")
                   }
@@ -189,6 +190,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                   detailKind="unanswered"
                   act="Retry"
                   busy={run.busy === "planning"}
+                  onSelectionChange={run.disarm}
                   onPropose={(scope, describedAs) =>
                     run.propose(scope, describedAs, "unanswered")
                   }

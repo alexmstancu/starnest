@@ -64,6 +64,14 @@ export interface ArmedRun {
   plan: RunPlan;
   commitment: Commitment;
   origin: GapKind;
+  /**
+   * The run on the card when it was armed. **Another run on the card disarms it** (PL-116), and
+   * so does every act the reader takes on the card -- Refresh, Stop, opening a run -- because
+   * each may redraw the items the scope was drawn from. A read the screen takes on its own, such
+   * as handing the card back after a refused start, leaves it armed: nothing the reader chose
+   * has changed.
+   */
+  armedOn: number | null;
 }
 
 export interface RunScreenState {
@@ -112,17 +120,35 @@ export interface RunScreenState {
   /** Start the armed run. Only reachable once something has been armed. */
   commit: () => void;
   cancel: () => void;
+  /**
+   * The selection a scope is drawn from has changed: put away whatever is armed, and let no
+   * estimate still being read arm the scope the reader has just left (PL-116).
+   */
+  disarm: () => void;
   open: (run: Run) => void;
 }
 
-export function useRunScreen(): RunScreenState {
+/** `levelId` is the level on screen: an armed scope at any other level is no longer the reader's. */
+export function useRunScreen(levelId: string | null): RunScreenState {
   const [plan, setPlan] = useState<RunPlan | null>(null);
   const [planOrigin, setPlanOrigin] = useState<GapKind | null>(null);
   const { current, claim, reclaim, isCurrent, show, clear, unclaimed } =
     useWatchedRun();
   const [busy, setBusy] = useState<RunAct | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
-  const [armed, setArmed] = useState<ArmedRun | null>(null);
+  const [armedState, setArmed] = useState<ArmedRun | null>(null);
+  // **Derived, not cleared by an effect** (PL-116): an effect runs after the paint, and a "Yes"
+  // pressed in between would still start the scope the card has just left. Dismiss is covered
+  // here, since it empties the card.
+  const armed =
+    armedState !== null &&
+    armedState.armedOn === (current?.id ?? null) &&
+    armedState.scope.level === levelId
+      ? armedState
+      : null;
+  // Bumped by every change of selection, so an estimate read for the selection before it arms
+  // nothing.
+  const selectionVersion = useRef(0);
   // Every act still going, oldest first. The label is the newest of them, so the first act to
   // end no longer clears the label of one still going (NEW-10).
   const going = useRef<{ what: RunAct }[]>([]);
@@ -283,27 +309,34 @@ export function useRunScreen(): RunScreenState {
         }),
       );
     },
-    propose: (scope, what, origin) =>
+    propose: (scope, what, origin) => {
+      const version = selectionVersion.current;
+      const armedOn = current?.id ?? null;
       void act("planning", async () => {
+        setArmed(null);
         setPlan(null);
         setPlanOrigin(null);
         const planned = await planRun(scope);
         // The cap is read at the moment of arming, not cached: it is a setting somebody may
         // have just changed, and a stale ceiling in a confirmation is worse than none.
         const settings = await fetchSettings();
+        if (version !== selectionVersion.current) return;
         setArmed({
           scope,
           plan: planned,
           origin,
+          armedOn,
           commitment: describeCommitment({
             act: what,
+            fromRun: armedOn,
             itemsTotal: planned.items_total,
             llmCallCount: planned.llm_call_count,
             estimatedCostEur: planned.estimated_cost_eur,
             capEur: settings.run_spend_cap_eur,
           }),
         });
-      }),
+      });
+    },
     commit: () => {
       if (!armed) return;
       const ticket = claim();
@@ -325,8 +358,13 @@ export function useRunScreen(): RunScreenState {
       setPlan(null);
       setPlanOrigin(null);
     },
+    disarm: () => {
+      selectionVersion.current += 1;
+      setArmed(null);
+    },
     refresh: () => {
       if (!current) return;
+      setArmed(null);
       const ticket = claim(current.id);
       void act("opening", () => watch(ticket, current.id));
     },
@@ -335,6 +373,7 @@ export function useRunScreen(): RunScreenState {
       if (!current) return;
       const runId = current.id;
       const ticket = claim(runId);
+      setArmed(null);
       setStopsAsked((runs) => new Set(runs).add(runId));
       void act("stopping", async () => {
         // The 202 carries the run back, so `stop_requested_at` is on screen immediately
@@ -359,6 +398,7 @@ export function useRunScreen(): RunScreenState {
     // now says so, where before the promise rejected into nothing and the click looked ignored.
     open: (run) => {
       const ticket = claim(run.id);
+      setArmed(null);
       void act("opening", () => watch(ticket, run.id));
     },
   };

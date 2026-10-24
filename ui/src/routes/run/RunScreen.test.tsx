@@ -796,7 +796,7 @@ describe("re-asking about part of a run", () => {
     );
 
     const strip = await screen.findByRole("alert");
-    expect(strip).toHaveTextContent(/Retry 1 selected over 96 values/);
+    expect(strip).toHaveTextContent(/Retry 1 selected from acquisition 8 over 96 values/);
     // The shipped plan asks no paid source, and saying so plainly is what stops a reader
     // learning to click past the confirmations that do cost something.
     expect(strip).toHaveTextContent(/costs nothing/i);
@@ -2500,35 +2500,39 @@ describe("which run the card shows", () => {
     expect(screen.queryByRole("region", { name: /acquisition 7/i })).toBeNull();
   });
 
-  it("shows the run a confirmation started, not a read already on its way", async () => {
-    const history = countHistoryReads();
+  // PL-116 changed this one: it pressed Yes while a Refresh was reading, and the start won. A
+  // Refresh now puts the confirmation away, since it may redraw the items the scope came from,
+  // so there is no Yes left to press and the read it overtook simply lands.
+  it("puts a confirmation away when a refresh overtakes it, and starts nothing", async () => {
+    const started: unknown[] = [];
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
+        started.push(await request.json());
+        return HttpResponse.json({ id: 8 }, { status: 202 });
+      }),
+    );
     renderShell("/acquire");
     await screen.findByRole("region", { name: /acquisition 7/i });
-    const before = history.count;
     await openFromHistory("6");
     const card = within(
       await screen.findByRole("region", { name: /acquisition 6/i }),
     );
-    await waitFor(() => expect(history.count).toBe(before + 1));
     await userEvent.click(
       screen.getByRole("button", { name: /^retry 1 failed$/i }),
     );
-    const yes = await screen.findByRole("button", { name: /yes, start it/i });
-    await waitFor(() => expect(history.count).toBe(before + 2));
+    await screen.findByRole("button", { name: /yes, start it/i });
 
     const read = holdTheNextReadOf(6);
     await userEvent.click(card.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(read.arrived()).toBe(true));
-    await userEvent.click(yes);
-    await screen.findByRole("region", { name: /acquisition 8/i });
-    await waitFor(() => expect(history.count).toBe(before + 3));
+    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
     read.release();
-    await waitFor(() => expect(history.count).toBe(before + 4));
+    await everyActHasEnded();
 
     expect(
-      screen.getByRole("region", { name: /acquisition 8/i }),
+      screen.getByRole("region", { name: /acquisition 6/i }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: /acquisition 6/i })).toBeNull();
+    expect(started).toEqual([]);
   });
 });
 
@@ -3081,7 +3085,7 @@ describe("a stop a refresh overlaps", () => {
  */
 describe("an act on the card with no card to act on", () => {
   it("asks for nothing, and leaves the opening view to open", async () => {
-    const { result } = renderHook(() => useRunScreen());
+    const { result } = renderHook(() => useRunScreen(null));
 
     act(() => {
       result.current.refresh();
@@ -3855,5 +3859,187 @@ describe("acting from the keyboard", () => {
     expect(
       await screen.findByRole("region", { name: /acquisition 8/i }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * PL-116, UF-076. **An armed "Yes, start it" starts only the scope still on screen.** Armed on
+ * one run, the strip survived opening another, Refresh, Stop, Dismiss and a change to the
+ * selection -- so "Yes" started a scope the reader could no longer see, which may include paid
+ * calls. Every input that defines the scope disarms it, and the strip names what it starts.
+ */
+describe("an armed start whose scope changes", () => {
+  function recordStarts(): unknown[] {
+    const started: unknown[] = [];
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
+        started.push(await request.json());
+        return HttpResponse.json({ id: 14 }, { status: 202 });
+      }),
+    );
+    return started;
+  }
+
+  async function theFailureGroup() {
+    serveSourceNames({ oecd: "OECD" });
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    const group = within(
+      await screen.findByRole("region", { name: /which sources broke/i }),
+    );
+    await group.findByRole("button", { name: "OECD 1 item" });
+    return group;
+  }
+
+  async function armTheSelection() {
+    const group = await theFailureGroup();
+    await userEvent.click(group.getByRole("button", { name: /^OECD 1 item$/ }));
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
+    await userEvent.click(group.getByRole("button", { name: /^Retry 1 selected$/ }));
+    await screen.findByRole("alert");
+    return group;
+  }
+
+  it.each<[string, (group: Awaited<ReturnType<typeof armTheSelection>>) => Promise<void>]>([
+    ["Clear all", (group) => userEvent.click(group.getByRole("button", { name: "Clear all" }))],
+    ["None on the group", (group) => userEvent.click(group.getByRole("button", { name: "None" }))],
+    [
+      "an item unticked",
+      (group) => userEvent.click(group.getByRole("checkbox", { name: /for Liechtenstein$/ })),
+    ],
+  ])("is disarmed when the selection changes: %s", async (_, change) => {
+    const started = recordStarts();
+    const group = await armTheSelection();
+
+    await change(group);
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+    expect(started).toEqual([]);
+  });
+
+  it("does not arm when the selection changes while the estimate is read", async () => {
+    const plan = heldAnswer();
+    const group = await theFailureGroup();
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, async () => {
+        await plan.held;
+        return HttpResponse.json(RUN_PLAN);
+      }),
+    );
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
+    await userEvent.click(group.getByRole("button", { name: /^Retry 1 selected$/ }));
+
+    await userEvent.click(group.getByRole("button", { name: "Clear all" }));
+    plan.release();
+    await everyActHasEnded();
+
+    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+  });
+
+  it.each<[string, () => Promise<void>]>([
+    [
+      "Refresh",
+      async () => {
+        const card = screen.getByRole("region", { name: /acquisition 7/i });
+        await userEvent.click(within(card).getByRole("button", { name: "Refresh" }));
+        await everyActHasEnded();
+      },
+    ],
+    [
+      "Dismiss",
+      async () => {
+        const card = screen.getByRole("region", { name: /acquisition 7/i });
+        await userEvent.click(within(card).getByRole("button", { name: "Dismiss" }));
+      },
+    ],
+    [
+      "another run opened from the history",
+      async () => {
+        await openFromHistory("6");
+        await screen.findByRole("region", { name: /acquisition 6/i });
+        await everyActHasEnded();
+      },
+    ],
+  ])("is disarmed when the card's run changes: %s", async (_, change) => {
+    const started = recordStarts();
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    await userEvent.click(
+      await screen.findByRole("button", { name: /^Retry 1 failed$/ }),
+    );
+    await screen.findByRole("alert");
+
+    await change();
+
+    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+    expect(started).toEqual([]);
+  });
+
+  it("is disarmed when the run on the card is stopped", async () => {
+    aRunWhoseStopIsHeld().release();
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /acquisition 7/i }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: /^Retry 1 failed$/ }),
+    );
+    await screen.findByRole("alert");
+
+    await userEvent.click(
+      card.getByRole("button", { name: /stop — keep what completed/i }),
+    );
+    await everyActHasEnded();
+
+    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+  });
+
+  it("names the run it was armed on and how many it starts", async () => {
+    await armTheSelection();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /^Retry 1 selected from acquisition 7 over 96 values\./,
+    );
+  });
+
+  it("sends exactly the scope it named", async () => {
+    const planned: unknown[] = [];
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, async ({ request }) => {
+        planned.push(await request.json());
+        return HttpResponse.json(RUN_PLAN);
+      }),
+    );
+    const started = recordStarts();
+    await armTheSelection();
+
+    await userEvent.click(
+      within(screen.getByRole("alert")).getByRole("button", { name: /yes, start it/i }),
+    );
+
+    await waitFor(() => expect(started).toHaveLength(1));
+    const named = {
+      level: "country",
+      candidates: ["country.liechtenstein"],
+      attributes: ["country.total_tax_rate_effective"],
+    };
+    expect(planned).toEqual([named]);
+    expect(started).toEqual([{ ...named, accept_uncapped_spend: false }]);
+  });
+
+  it("is disarmed when the level changes", async () => {
+    const { result, rerender } = renderHook(
+      ({ level }: { level: string | null }) => useRunScreen(level),
+      { initialProps: { level: "country" } },
+    );
+    await waitFor(() => expect(result.current.current?.id).toBe(7));
+
+    act(() => result.current.propose({ level: "country" }, "Retry", "failed"));
+    await waitFor(() => expect(result.current.armed).not.toBeNull());
+
+    rerender({ level: "city" });
+
+    expect(result.current.armed).toBeNull();
   });
 });

@@ -27,6 +27,7 @@ export function ItemGroups({
   act,
   detailKind,
   busy,
+  onSelectionChange,
   onPropose,
 }: {
   items: readonly Item[];
@@ -39,6 +40,8 @@ export function ItemGroups({
   act: string;
   /** An estimate is being read, so the button is held until it answers (NEW-44). */
   busy: boolean;
+  /** Any change to what is picked, so a start armed for the old selection is put away (PL-116). */
+  onSelectionChange: () => void;
   onPropose: (
     scope: ReturnType<typeof scopeFor>,
     describedAs: string,
@@ -66,6 +69,7 @@ export function ItemGroups({
   const questions = questionsIn(scope);
 
   function toggle(keys: readonly string[], on: boolean): void {
+    onSelectionChange();
     setSelected((current) => {
       const next = new Set(current);
       for (const key of keys) {

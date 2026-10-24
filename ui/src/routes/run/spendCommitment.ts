@@ -27,6 +27,8 @@ export interface Commitment {
 export interface CommitmentFacts {
   /** What the act is called, e.g. "Start this run". */
   act: string;
+  /** The run whose items the act starts again, named so the strip says which run it is about. */
+  fromRun?: number | null;
   itemsTotal?: number | null;
   llmCallCount?: number | null;
   estimatedCostEur?: number | null;
@@ -38,20 +40,24 @@ export function describeCommitment(facts: CommitmentFacts): Commitment {
   const paidCalls = facts.llmCallCount ?? 0;
   const spends = paidCalls > 0;
   const items = formatCount(facts.itemsTotal ?? 0);
+  const act =
+    facts.fromRun === null || facts.fromRun === undefined
+      ? facts.act
+      : `${facts.act} from acquisition ${String(facts.fromRun)}`;
 
   if (!spends) {
     // **Free by construction, and worth saying so.** A paid source is asked only when a run
     // names its attributes, so a sweep over a level costs nothing -- and a confirmation that
     // implied otherwise would train the reader to click past the ones that matter.
     return {
-      sentence: `${facts.act} over ${items} values. No paid source is in scope, so this costs nothing.`,
+      sentence: `${act} over ${items} values. No paid source is in scope, so this costs nothing.`,
       spends: false,
       uncapped: false,
     };
   }
 
   const ceiling = formatMoney(facts.estimatedCostEur ?? 0, "EUR");
-  const opening = `${facts.act} over ${items} values, and can spend up to ${ceiling} across ${formatCount(paidCalls)} paid calls.`;
+  const opening = `${act} over ${items} values, and can spend up to ${ceiling} across ${formatCount(paidCalls)} paid calls.`;
 
   if (facts.capEur === null || facts.capEur === undefined) {
     return {
