@@ -197,8 +197,8 @@ VALUES (:criteria_set, :name);
 -- A plain `SELECT ... FOR UPDATE`, not folded into `select_criteria_set`: that read aggregates
 -- the criteria and rules with `jsonb_agg`, and `FOR UPDATE` is not allowed beside an aggregate.
 --
--- **A deleted set cannot be locked, so it cannot be edited.** An edit queued behind a deletion
--- re-checks the row once that commits (READ COMMITTED) and gets nothing back: refused, not lost.
+-- **A deleted set cannot be locked, so it cannot be edited or replaced.** A write queued behind
+-- a deletion re-checks the row once that commits (READ COMMITTED) and gets nothing back: refused.
 SELECT id
 FROM   criteria_set
 WHERE  id = :criteria_set

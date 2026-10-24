@@ -11,8 +11,11 @@ Around it: an identifier is never reused (P1-28), a name belongs to one live set
 taken while a set was deleted holds its restore off (P1-35), and one set is the default (P1-29).
 """
 
+import ast
 import asyncio
 import contextlib
+import inspect
+import textwrap
 from collections.abc import AsyncIterator, Awaitable, Callable
 from decimal import Decimal
 from pathlib import Path
@@ -88,6 +91,13 @@ NO_ATTRIBUTE_CAN_HOLD = {"criterion_threshold_boolean", "criterion_threshold_sha
 """No attribute in the catalog is a `Boolean` or a `ShareComposition`, so no criterion can carry
 these thresholds yet. They stay in the snapshot: the day one can, it is covered."""
 
+REWRITES_WITHOUT_THE_LOCK = {
+    "create_criteria_set": "a new set: inserting its row is refused for an id any set holds, "
+    "live or deleted, so there is no deleted set for it to write into",
+    "_purge": "tests and tooling only, and it destroys the set, deleted or not",
+}
+"""Store methods that clear or write a set's rows without taking the live set's lock first."""
+
 A_ROW_OF_EVERY_KIND = (
     "UPDATE pillar_weight SET weight_locked = true"
     " WHERE criteria_set = %(criteria_set)s AND pillar = 'housing'",
@@ -144,7 +154,7 @@ async def make(
             await criteria.purge_criteria_set(identifier)
 
 
-def _a_set(identifier: str, *, name: str | None = None) -> CriteriaSet:
+def _a_set(identifier: str, *, name: str | None = None, locked: bool = False) -> CriteriaSet:
     """One criterion in one pillar, which is the smallest set whose weights sum."""
     return CriteriaSet(
         id=identifier,
@@ -158,9 +168,14 @@ def _a_set(identifier: str, *, name: str | None = None) -> CriteriaSet:
                 weight=Decimal(100),
                 goal=Goal.MAXIMISE,
                 normalisation_method=NormalisationMethod.PERCENTILE,
+                weight_locked=locked,
             ),
         ),
-        pillar_weights=(PillarWeight(pillar="culture", level=COUNTRY, weight=Decimal(100)),),
+        pillar_weights=(
+            PillarWeight(
+                pillar="culture", level=COUNTRY, weight=Decimal(100), weight_locked=locked
+            ),
+        ),
     )
 
 
@@ -338,6 +353,53 @@ class TestADeletionRacingAnEdit:
         with pytest.raises(UnknownCriteriaSetError, match="to edit"):
             await asyncio.wait_for(edit, PATIENCE_SECONDS)
         assert (await criteria.restore_criteria_set(RACED)).name == RACED
+
+    async def test_a_replacement_queued_behind_a_deletion_finds_no_set(
+        self,
+        criteria: PostgresCriteriaStore,
+        make: Callable[[CriteriaSet], Awaitable[None]],
+        pool: AsyncConnectionPool,
+    ) -> None:
+        """**A replacement locks the live set first, as an edit does** (review of 957b3f6).
+
+        Unlocked, it read the set live, met the deletion only at its name -- which it then skipped
+        -- and still rewrote every row the deleted set owns: renumbered criteria, flipped locks, in
+        a set nobody could see, so restoring it was no longer exact (P1-27).
+        """
+        await make(_a_set(RACED))
+        before = await _rows_owned_by(pool, RACED)
+        async with pool.connection() as deleter:
+            await criteria._queries.discard_criteria_set(deleter, criteria_set=RACED)
+            replacement = asyncio.create_task(
+                criteria.replace_criteria_set(_a_set(RACED, name="Written too late", locked=True))
+            )
+            assert await _a_lock_is_awaited(pool), "the replacement never waited for the deletion"
+
+        with pytest.raises(UnknownCriteriaSetError, match="to replace"):
+            await asyncio.wait_for(replacement, PATIENCE_SECONDS)
+        await criteria.restore_criteria_set(RACED)
+        assert await _rows_owned_by(pool, RACED) == before
+
+    def test_every_rewrite_of_a_sets_rows_locks_the_live_set_first(self) -> None:
+        """The races above as a rule over the store's own code, so a write path added later
+        cannot rewrite a deleted set's rows: one that clears or writes them takes
+        `lock_criteria_set` before any other query, or is listed here with the reason."""
+        rewriting = {"delete_criteria_set_contents", "_write_contents"}
+        unlocked = set()
+        for method in ast.walk(
+            ast.parse(textwrap.dedent(inspect.getsource(PostgresCriteriaStore)))
+        ):
+            if not isinstance(method, ast.AsyncFunctionDef):
+                continue
+            calls = sorted(
+                (node for node in ast.walk(method) if isinstance(node, ast.Call)),
+                key=lambda node: (node.lineno, node.col_offset),
+            )
+            called = [call.func.attr for call in calls if isinstance(call.func, ast.Attribute)]
+            if rewriting & set(called) and called[0] != "lock_criteria_set":
+                unlocked.add(method.name)
+
+        assert unlocked == set(REWRITES_WITHOUT_THE_LOCK)
 
 
 class TestIdentifiersAndNames:

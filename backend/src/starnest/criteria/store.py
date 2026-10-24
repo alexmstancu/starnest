@@ -123,9 +123,9 @@ class CriteriaStore(ABC):
     async def replace_criteria_set(self, criteria_set: CriteriaSet) -> None:
         """Overwrite an existing live set with this one, criteria and weights together.
 
-        Raises `UnknownCriteriaSetError` when there is nothing to replace. Creating instead
-        would turn a mistyped identifier into a new set nobody asked for, which is the kind
-        of success that is worse than a failure.
+        Raises `UnknownCriteriaSetError` when there is nothing to replace -- a replacement that
+        waited on a deletion included. Creating instead would turn a mistyped identifier into a
+        new set nobody asked for, which is the kind of success that is worse than a failure.
         """
 
     @abstractmethod

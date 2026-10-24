@@ -98,18 +98,22 @@ class PostgresCriteriaStore(CriteriaStore):
             ) from taken
 
     async def replace_criteria_set(self, criteria_set: CriteriaSet) -> None:
-        """Delete the contents and write them again, inside one transaction.
+        """Delete the contents and write them again, inside one transaction, under the set's lock.
 
         Whole rather than differential: working out which criteria changed would mean this
         module knowing what a change to a set means, and that knowledge lives in `criteria/`
         where the rebalancing rules are. A caller reads a set, asks the domain for the new one,
         and hands the result back.
+
+        **The live set is locked first, as an edit locks it.** Read without a lock, a replacement
+        racing a deletion saw the set live and rewrote every row the deleted set owns -- so its
+        restore was no longer exact (P1-27). Locked, it waits, and then finds nothing to replace.
         """
         async with acquire(self._pool) as connection:
-            existing = await self._queries.select_criteria_set(
-                connection, criteria_set=str(criteria_set.id), level=None, include_deleted=False
+            locked = await self._queries.lock_criteria_set(
+                connection, criteria_set=str(criteria_set.id)
             )
-            if existing is None:
+            if locked is None:
                 raise UnknownCriteriaSetError(
                     f"there is no criteria set called {criteria_set.id!r} to replace"
                 )
