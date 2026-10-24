@@ -1085,7 +1085,8 @@ class TestWhatARankingSaysItRestsOn:
             async with pool.connection() as connection:
                 kept = await (
                     await connection.execute(
-                        "SELECT id, max_age FROM attribute WHERE id = ANY(%s)", (list(attributes),)
+                        "SELECT id, max_age::text FROM attribute WHERE id = ANY(%s)",
+                        (list(attributes),),
                     )
                 ).fetchall()
                 await connection.execute(
@@ -1132,7 +1133,8 @@ class TestWhatARankingSaysItRestsOn:
                 async with pool.connection() as connection:
                     for attribute, max_age in kept:
                         await connection.execute(
-                            "UPDATE attribute SET max_age = %s WHERE id = %s", (max_age, attribute)
+                            "UPDATE attribute SET max_age = %s::interval WHERE id = %s",
+                            (max_age, attribute),
                         )
 
         portugal = next(c for c in body["candidates"] if c["candidate"] == "country.portugal")

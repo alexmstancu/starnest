@@ -687,7 +687,7 @@ async def sixty_months(pool: AsyncConnectionPool) -> AsyncIterator[str]:
     async with pool.connection() as connection:
         row = await (
             await connection.execute(
-                "SELECT max_age FROM attribute WHERE id = %s", (A_COUNT_ATTRIBUTE,)
+                "SELECT max_age::text FROM attribute WHERE id = %s", (A_COUNT_ATTRIBUTE,)
             )
         ).fetchone()
         assert row is not None
@@ -700,7 +700,8 @@ async def sixty_months(pool: AsyncConnectionPool) -> AsyncIterator[str]:
     finally:
         async with pool.connection() as connection:
             await connection.execute(
-                "UPDATE attribute SET max_age = %s WHERE id = %s", (row[0], A_COUNT_ATTRIBUTE)
+                "UPDATE attribute SET max_age = %s::interval WHERE id = %s",
+                (row[0], A_COUNT_ATTRIBUTE),
             )
 
 

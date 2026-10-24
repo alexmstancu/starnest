@@ -531,7 +531,8 @@ async def overburden_ages_in_a_month(database_url: str) -> AsyncIterator[str]:
 
     `stored_figures` describes last year, so its overburden figures are stale under this and
     every other attribute's are not: one test can see both answers. Restored to exactly what it
-    was, `NULL` included.
+    was, `NULL` included -- as text, because a `timedelta` written back stores `730 days` where
+    the catalog says `2 years`, and `test_catalog_arithmetic` reads the difference.
     """
     attribute = "country.housing_cost_overburden_rate"
     async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
@@ -539,7 +540,7 @@ async def overburden_ages_in_a_month(database_url: str) -> AsyncIterator[str]:
         async with pool.connection() as connection:
             row = await (
                 await connection.execute(
-                    "SELECT max_age FROM attribute WHERE id = %s", (attribute,)
+                    "SELECT max_age::text FROM attribute WHERE id = %s", (attribute,)
                 )
             ).fetchone()
             assert row is not None
@@ -551,5 +552,5 @@ async def overburden_ages_in_a_month(database_url: str) -> AsyncIterator[str]:
         finally:
             async with pool.connection() as connection:
                 await connection.execute(
-                    "UPDATE attribute SET max_age = %s WHERE id = %s", (row[0], attribute)
+                    "UPDATE attribute SET max_age = %s::interval WHERE id = %s", (row[0], attribute)
                 )
