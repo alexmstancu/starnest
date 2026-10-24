@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   acquiringProgress,
   acquisitionEnded,
+  announcementFor,
   runningRunOf,
 } from "./acquiringProgress";
 
@@ -95,5 +96,34 @@ describe("whether a run has ended since the last look", () => {
 
   it("is not so when nothing was running and nothing is", () => {
     expect(acquisitionEnded(null, undefined)).toBe(false);
+  });
+});
+
+describe("what a look announces (PL-131)", () => {
+  const running = (id: number) => ({ id, run_status: "running" as const });
+  const completed = (id: number) => ({ id, run_status: "completed" as const });
+
+  it("announces a run the first time it is seen running", () => {
+    expect(announcementFor(null, running(7))).toBe("An acquisition is running.");
+  });
+
+  it("announces nothing while the same run goes on running", () => {
+    expect(announcementFor(7, running(7))).toBeNull();
+  });
+
+  it("announces the end of the run it saw running", () => {
+    expect(announcementFor(7, completed(7))).toBe("The acquisition has ended.");
+    expect(announcementFor(7, undefined)).toBe("The acquisition has ended.");
+  });
+
+  it("announces both when another run has taken its place", () => {
+    expect(announcementFor(7, running(8))).toBe(
+      "The acquisition has ended. An acquisition is running.",
+    );
+  });
+
+  it("announces nothing when nothing was running and nothing is", () => {
+    expect(announcementFor(null, completed(7))).toBeNull();
+    expect(announcementFor(null, undefined)).toBeNull();
   });
 });

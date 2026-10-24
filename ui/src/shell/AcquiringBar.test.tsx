@@ -14,7 +14,11 @@ import { renderShell } from "../testing/renderShell";
 
 const BASE = "/v1";
 
-function acquisitionIsRunning(completed: number, total: number) {
+function acquisitionIsRunning(
+  completed: number,
+  total: number,
+  { failed = 0, stopRequestedAt = null }: { failed?: number; stopRequestedAt?: string | null } = {},
+) {
   mockServer.use(
     http.get(`${BASE}/data-acquisition-runs`, () =>
       HttpResponse.json({
@@ -36,11 +40,21 @@ function acquisitionIsRunning(completed: number, total: number) {
         run_status: "running",
         triggered_by: "user",
         started_at: "2026-09-21T09:00:00Z",
-        progress: { items_total: total, items_completed: completed },
+        stop_requested_at: stopRequestedAt,
+        progress: { items_total: total, items_completed: completed, items_failed: failed },
         failures: [],
       }),
     ),
   );
+}
+
+/** The strip itself, which is not a live region: what it announces is said apart (PL-131). */
+function strip(): Promise<HTMLElement> {
+  return screen.findByRole("region", { name: /acquisition in progress/i });
+}
+
+function queryStrip(): HTMLElement | null {
+  return screen.queryByRole("region", { name: /acquisition in progress/i });
 }
 
 afterEach(() => {
@@ -53,7 +67,7 @@ describe("the acquiring bar", () => {
     acquisitionIsRunning(24, 96);
     renderShell("/rank");
 
-    const bar = await screen.findByRole("status");
+    const bar = await strip();
     expect(bar).toHaveTextContent(/acquiring/i);
     expect(bar).toHaveTextContent("24 of 96");
   });
@@ -62,7 +76,7 @@ describe("the acquiring bar", () => {
     acquisitionIsRunning(1, 2);
     renderShell("/rank");
 
-    const bar = await screen.findByRole("status");
+    const bar = await strip();
     expect(bar.querySelector("a")).toHaveAttribute("href", "/acquire");
   });
 
@@ -72,14 +86,14 @@ describe("the acquiring bar", () => {
     renderShell("/acquire");
 
     await screen.findByRole("heading", { name: "Acquire" });
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(queryStrip()).toBeNull();
   });
 
   it("says nothing at all when nothing is running", async () => {
     renderShell("/rank");
 
     await screen.findByRole("heading", { name: "Rank" });
-    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    await waitFor(() => expect(queryStrip()).toBeNull());
   });
 
   /**
@@ -103,6 +117,79 @@ describe("the acquiring bar", () => {
     acquisitionIsRunning(0, 0);
     renderShell("/rank");
 
-    expect(await screen.findByRole("status")).toHaveTextContent("starting");
+    expect(await strip()).toHaveTextContent("starting");
+  });
+});
+
+describe("PL-131: what the strip says, and what it announces", () => {
+  it("counts the items that failed as done as well as those completed", async () => {
+    acquisitionIsRunning(20, 96, { failed: 4 });
+    renderShell("/rank");
+
+    expect(await strip()).toHaveTextContent("24 of 96");
+  });
+
+  it("says Stopping… once somebody has asked the run to stop", async () => {
+    acquisitionIsRunning(24, 96, { stopRequestedAt: "2026-09-21T09:05:00Z" });
+    renderShell("/rank");
+
+    const bar = await strip();
+    expect(bar).toHaveTextContent("Stopping…");
+    expect(bar).not.toHaveTextContent("Acquiring…");
+  });
+
+  it("says Acquiring… while nobody has asked it to stop", async () => {
+    acquisitionIsRunning(24, 96);
+    renderShell("/rank");
+
+    expect(await strip()).toHaveTextContent("Acquiring…");
+  });
+
+  it("is not itself a live region, so a poll's new count is not read out", async () => {
+    acquisitionIsRunning(24, 96);
+    renderShell("/rank");
+
+    const bar = await strip();
+    expect(bar).not.toHaveAttribute("role", "status");
+    expect(bar).not.toHaveAttribute("aria-live");
+    expect(bar.closest("[aria-live], [role='status']")).toBeNull();
+  });
+
+  it("announces the start, and then the end, and nothing between", async () => {
+    acquisitionIsRunning(24, 96);
+    renderShell("/rank");
+    await strip();
+    const announcer = screen.getByTestId("acquisition-announcer");
+    expect(announcer).toHaveAttribute("role", "status");
+    expect(announcer).toHaveTextContent("An acquisition is running.");
+    expect(announcer).not.toHaveTextContent("24");
+
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 42,
+              run_status: "completed",
+              triggered_by: "user",
+              started_at: "2026-09-21T09:00:00Z",
+              cost_eur: 0,
+            },
+          ],
+          total: 1,
+        }),
+      ),
+    );
+    await waitFor(() => expect(announcer).toHaveTextContent("The acquisition has ended."), {
+      timeout: 5000,
+    });
+    expect(queryStrip()).toBeNull();
+  });
+
+  it("announces nothing when nothing has run", async () => {
+    renderShell("/rank");
+    await screen.findByRole("heading", { name: "Rank" });
+
+    expect(screen.getByTestId("acquisition-announcer")).toBeEmptyDOMElement();
   });
 });

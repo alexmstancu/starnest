@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { fetchRun, fetchRuns, type RunDetail } from "../api/endpoints";
-import { acquisitionEnded, runningRunOf } from "./acquiringProgress";
+import { acquisitionEnded, announcementFor, runningRunOf } from "./acquiringProgress";
 
 /**
  * Whether an acquisition is in flight, and how far through it is.
@@ -19,14 +19,24 @@ import { acquisitionEnded, runningRunOf } from "./acquiringProgress";
  */
 export interface Acquiring {
   run: RunDetail | null;
+  /** Items finished either way: completed, or failed with no source answering (PL-131). */
   done: number;
   total: number;
+  /** Somebody asked it to stop; it stops once the source in flight finishes. */
+  stopping: boolean;
+}
+
+export interface AcquiringState {
+  acquiring: Acquiring | null;
+  /** The last start or end, for a live region: never the count, which moves every look. */
+  announcement: string;
 }
 
 const EVERY = 2000;
 
-export function useAcquiring(onEnded: () => void): Acquiring | null {
+export function useAcquiring(onEnded: () => void): AcquiringState {
   const [acquiring, setAcquiring] = useState<Acquiring | null>(null);
+  const [announcement, setAnnouncement] = useState("");
   // An effect event, so a caller's new callback is used without restarting the poll -- which
   // would forget the run it had seen running, and with it the end it was waiting for.
   const reportEnded = useEffectEvent(onEnded);
@@ -47,16 +57,20 @@ export function useAcquiring(onEnded: () => void): Acquiring | null {
         const newest = items[0];
         if (!live) return;
         if (acquisitionEnded(seenRunning, newest)) reportEnded();
+        const said = announcementFor(seenRunning, newest);
+        if (said !== null) setAnnouncement(said);
         seenRunning = runningRunOf(newest);
         if (newest?.run_status !== "running") {
           setAcquiring(null);
         } else {
           const detail = await fetchRun(newest.id, { signal: controller.signal });
           if (!live) return;
+          const progress = detail.progress;
           setAcquiring({
             run: detail,
-            done: detail.progress?.items_completed ?? 0,
-            total: detail.progress?.items_total ?? 0,
+            done: (progress?.items_completed ?? 0) + (progress?.items_failed ?? 0),
+            total: progress?.items_total ?? 0,
+            stopping: Boolean(detail.stop_requested_at),
           });
         }
       } catch {
@@ -76,5 +90,5 @@ export function useAcquiring(onEnded: () => void): Acquiring | null {
     };
   }, []);
 
-  return acquiring;
+  return { acquiring, announcement };
 }

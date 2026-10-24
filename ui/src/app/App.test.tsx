@@ -427,7 +427,9 @@ describe("what the sidebar reads again", () => {
     );
     await waitFor(() => expect(figure("Candidates", "Matching")).toHaveTextContent("2"));
     // Seen running, which is what makes its end news.
-    expect(await screen.findByRole("status")).toHaveTextContent("24 of 96");
+    expect(
+      await screen.findByRole("region", { name: /acquisition in progress/i }),
+    ).toHaveTextContent("24 of 96");
 
     status = "completed";
     nothingMatchesAnyMore();

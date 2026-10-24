@@ -42,3 +42,25 @@ export function acquisitionEnded(
 ): boolean {
   return seenRunning !== null && runningRunOf(newest) !== seenRunning;
 }
+
+const STARTED = "An acquisition is running.";
+const ENDED = "The acquisition has ended.";
+
+/**
+ * What a look says aloud, if anything (PL-131): **only a start and an end.** The count moves on
+ * every look, and a live region around it read every poll out to a screen reader.
+ *
+ * A run is "started" the first time a look sees it running -- the shell may open on one already
+ * under way, which is news to the reader all the same.
+ */
+export function announcementFor(
+  seenRunning: number | null,
+  newest: LookedAt | undefined,
+): string | null {
+  const running = runningRunOf(newest);
+  const said = [
+    acquisitionEnded(seenRunning, newest) ? ENDED : null,
+    running !== null && running !== seenRunning ? STARTED : null,
+  ].filter((sentence) => sentence !== null);
+  return said.length === 0 ? null : said.join(" ");
+}
