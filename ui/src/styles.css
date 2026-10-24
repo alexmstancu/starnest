@@ -3594,29 +3594,34 @@ select.field__control {
   text-decoration: underline;
 }
 
+.table--ranking > tbody > tr {
+  background: var(--colour-surface);
+}
+
+/* A row that opens the drill-down says so with the whole row. A saved ranking's rows open
+   nothing, so they offer neither the pointer nor the tint (PL-076). */
+.table--ranking > tbody > tr.table__row--toggle {
+  cursor: pointer;
+}
+
+.table--ranking > tbody > tr.table__row--toggle:hover {
+  background: var(--colour-surface-raised);
+}
+
 /*
  * `reqs.md` 5.4: a non-matching candidate keeps its score, greyed out. Muted, not hidden --
  * the row is still readable, and still says what it would have scored.
+ *
+ * **A state is written with the row's own prefix, after the row's base** (PL-075). Written as a
+ * bare `.table__row--*` it is one class deep and loses to the base whatever the order, so the
+ * ground never showed. `rankingRowStyles.test.ts` holds this.
  */
-.table__row--not-matching {
+.table--ranking > tbody > tr.table__row--not-matching {
   color: var(--colour-text-muted);
   background: var(--colour-surface-raised);
 }
 
-.table__row--open {
-  background: var(--colour-accent-surface);
-}
-
-/* The whole row opens the drill-down, so the whole row says so. */
-.table--ranking > tbody > tr {
-  cursor: pointer;
-  background: var(--colour-surface);
-}
-
-.table--ranking > tbody > tr:hover {
-  background: var(--colour-surface-raised);
-}
-
+.table--ranking > tbody > tr.table__row--open,
 .table--ranking > tbody > tr.table__row--open:hover {
   background: var(--colour-accent-surface);
 }
@@ -3638,10 +3643,6 @@ select.field__control {
   cursor: default;
 }
 
-.table--ranking > tbody > tr.table__detail:hover {
-  background: var(--colour-surface-raised);
-}
-
 .table--ranking > tbody > tr.table__detail > td {
   display: block;
 }
@@ -3656,10 +3657,6 @@ select.field__control {
   border-top: 2px solid #f79009;
   border-bottom: var(--border-width) solid var(--colour-warning-border);
   cursor: default;
-}
-
-.table--ranking > tbody > tr.table__band:hover {
-  background: var(--colour-warning-surface);
 }
 
 .table--ranking > tbody > tr.table__band > td {

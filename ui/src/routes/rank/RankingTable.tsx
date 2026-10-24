@@ -1,4 +1,4 @@
-import { Fragment, useId, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { type CandidateResult, type Ranking } from "../../api/endpoints";
 import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
 import {
@@ -453,9 +453,23 @@ function PillarChart({
   // The bar the keyboard is on while it is inside the chart, and null once it has left.
   const [focused, setFocused] = useState<string | null>(null);
   const slots = useRef<(SVGGElement | null)[]>([]);
-  if (bars.length === 0) return null;
+  const pillarIds = bars.map((bar) => bar.pillar);
+  const stop = tabStopOf(pillarIds, focused, chosen);
+  // The bar the keyboard was last on, kept past a blur its own removal caused.
+  const held = useRef<string | null>(null);
 
-  const stop = tabStopOf(bars.map((bar) => bar.pillar), focused, chosen);
+  // **A re-read can draw the chart without the bar the keyboard is on**, and a browser answers
+  // by putting focus on the page. So the chart hands it to its new stop -- but only when it was
+  // lost: focus the reader moved somewhere else stays where they put it (NEW-45's rule).
+  useEffect(() => {
+    const was = held.current;
+    if (was === null || pillarIds.includes(was)) return;
+    held.current = null;
+    if (document.activeElement !== document.body || stop === undefined) return;
+    slots.current[pillarIds.indexOf(stop)]?.focus();
+  });
+
+  if (bars.length === 0) return null;
 
   return (
     <svg
@@ -468,9 +482,13 @@ function PillarChart({
       onBlur={
         onChoose &&
         ((event) => {
-          if (!event.currentTarget.contains(event.relatedTarget)) {
-            setFocused(null);
-          }
+          if (event.currentTarget.contains(event.relatedTarget)) return;
+          setFocused(null);
+          // A bar still on the page was left on purpose; one that is gone was taken away.
+          const left = event.target;
+          queueMicrotask(() => {
+            if (left.isConnected) held.current = null;
+          });
         })
       }
     >
@@ -520,7 +538,13 @@ function PillarChart({
           tabIndex={onChoose ? (bar.pillar === stop ? 0 : -1) : undefined}
           aria-pressed={onChoose ? chosen === bar.pillar : undefined}
           aria-label={onChoose ? bar.title : undefined}
-          onFocus={onChoose && (() => setFocused(bar.pillar))}
+          onFocus={
+            onChoose &&
+            (() => {
+              setFocused(bar.pillar);
+              held.current = bar.pillar;
+            })
+          }
           onClick={
             onChoose &&
             ((event) => {
