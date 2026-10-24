@@ -754,8 +754,11 @@ export const ATTRIBUTES: Attribute[] = [
 ];
 
 /**
- * What the pass made of each stored figure: the score it normalised to, the weight it used
- * after redistribution, and the points it added.
+ * What the pass made of each stored figure: the score it normalised to, the weight it was
+ * given, the weight it used after redistribution, and the points it added.
+ *
+ * **The weights are one consistent level** (D21): broadband has no figure, so its declared 10
+ * was spread over every criterion with one, each in proportion -- 100/90 of what it was given.
  *
  * **The attributes are the stored values' own**, so the drill-down's three new columns have a
  * reading for every row it draws -- except `country.summer_daytime_high`, deliberately left
@@ -767,6 +770,7 @@ export const ATTRIBUTE_SCORES: AttributeScore[] = [
     attribute: "country.cost_of_living_index",
     pillar: "economics",
     normalised_score: 73,
+    weight: 11.25,
     effective_weight: 12.5,
     contribution: 9.125,
   },
@@ -774,6 +778,7 @@ export const ATTRIBUTE_SCORES: AttributeScore[] = [
     attribute: "country.average_rent",
     pillar: "housing",
     normalised_score: 61,
+    weight: 18,
     effective_weight: 20,
     contribution: 12.2,
   },
@@ -781,6 +786,7 @@ export const ATTRIBUTE_SCORES: AttributeScore[] = [
     attribute: "country.total_tax_rate_effective",
     pillar: "economics",
     normalised_score: 48,
+    weight: 24.75,
     effective_weight: 27.5,
     contribution: 13.2,
   },
@@ -791,6 +797,7 @@ export const ATTRIBUTE_SCORES: AttributeScore[] = [
     attribute: "country.broadband_coverage",
     pillar: "connectivity",
     normalised_score: null,
+    weight: 10,
     effective_weight: 0,
     contribution: 0,
   },

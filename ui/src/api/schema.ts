@@ -1032,6 +1032,7 @@ export interface components {
             confidence_level: "absolute" | "high" | "medium" | "low";
             /** @description Derived, not stored — the value scoring would use. */
             is_active: boolean;
+            /** @description Why this figure was rejected, in words: the attribute named as the catalog names it, never its identifier. A reason stored before reasons were worded is named at read time. */
             rejection_reason?: string | null;
             quote?: string | null;
             citations?: string[];
@@ -1341,6 +1342,7 @@ export interface components {
         };
         Warning: {
             compound_rule: string;
+            /** @description In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved. */
             detail: string;
         };
         /** @description Exactly one of criterion, match_rule or compound_rule is set. */
@@ -1349,16 +1351,18 @@ export interface components {
             criterion?: string | null;
             match_rule?: string | null;
             compound_rule?: string | null;
+            /** @description In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved. A gate's own recorded reason is served as it was written. */
             reason_detail: string;
         };
         CandidateResult: {
             candidate: string;
+            /** @description The roster's name. A saved ranking's candidate that has since left the roster reads as its identifier made into words, never the identifier itself. */
             name: string;
             /** @description Null when the candidate does not match. */
             rank?: number | null;
             /** @description Null only when insufficient data. On the enclosing response's score_scale_max. */
             score: number | null;
-            /** @description Why this candidate could not be scored, in words -- a blocking criterion with no figure, or coverage below the floor. Null whenever there is a score. Separate from non_match_reasons, which say why a candidate that COULD be scored does not match: "we could not measure this" and "we measured it and it fails" are different things to show. */
+            /** @description Why this candidate could not be scored, in words -- a blocking criterion with no figure, or coverage below the floor. Null whenever there is a score. Separate from non_match_reasons, which say why a candidate that COULD be scored does not match: "we could not measure this" and "we measured it and it fails" are different things to show. In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved. */
             insufficient_reason?: string | null;
             /** @description Percentage, 0-100. The share of active weight actually backed by data. */
             coverage: number;
@@ -1407,9 +1411,9 @@ export interface components {
             pillar: string;
             /** @description 0 to the enclosing response's score_scale_max. Null when no value was available. */
             normalised_score: number | null;
-            /** @description Percentage, 0-100. Weight within the pillar as configured. */
-            weight?: number;
-            /** @description Percentage, 0-100. After redistribution for missing data. */
+            /** @description Percentage of the whole level, 0-100, as configured: the criterion's share of its pillar times its pillar's share of the level, after excluded criteria are taken out and before any redistribution for missing data. The scored criteria's weights sum to 100. A saved evaluation's are computed from its frozen criteria. */
+            weight: number;
+            /** @description Percentage of the whole level, 0-100, after the weight of every criterion with no figure was spread proportionally over every criterion that has one (reqs.md 5.3). Zero for a criterion with no figure. contribution = exact score x effective_weight / 100. */
             effective_weight: number;
             contribution: number;
             value?: components["schemas"]["Value"];
