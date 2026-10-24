@@ -368,3 +368,18 @@ They are built in the design's own idiom -- `.panel__hint` for the line, `.notic
 an end nobody asked for, a held `.button` -- with no new class and no new token. **Please draw
 the three states**, and say whether the outcome belongs in the line or in a card of its own:
 it is the one place on this screen that reports money already spent.
+
+## The lock is a padlock, and held controls have one look (2026-10-24)
+
+**The lock draws a padlock, not a disc** (NEW-68, D30) -- a deliberate divergence. The design
+draws a filled or hollow disc in a 26px square, which reads as a radio button rather than a lock.
+Both locks, pillar (26px) and criterion (24px), now draw one inline-SVG padlock inside the same
+bordered square: **shut and filled when the weight is held, open when it is free**, coloured by
+the button's text colour so the teal tint still says "on". It has a hover state (teal border)
+and a pressed state (the tint one step deeper). The carets and arrows stay as they are. **Please
+draw the padlock in the design file**: a later sync that brings the disc back would undo this.
+
+**A held control looks held, the same way everywhere** (NEW-46, D27, D28): 45% opacity and a
+not-allowed cursor, faded only after 120ms so a quick save does not make twenty controls blink.
+This now covers the weight sliders, both locks, the "Missing figure blocks scoring" box and the
+acquisition numbers in Acquire's history, which looked unchanged while held.

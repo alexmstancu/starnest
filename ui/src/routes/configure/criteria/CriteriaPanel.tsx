@@ -17,7 +17,9 @@ import {
   weightedCriteria,
   weightFrom,
   weightReading,
+  lockTitle,
 } from "../weights";
+import { LockIcon } from "../LockIcon";
 import {
   chipsFor,
   titleOf,
@@ -396,7 +398,7 @@ function CriterionRow({
             {weightReading(moving ? typed : shown)}
           </span>
 
-          {/* **A button, not a checkbox.** The design draws a filled or hollow disc, and a
+          {/* **A button, not a checkbox.** A padlock, shut or open (NEW-68), and a
               native checkbox cannot be one without being hidden behind a label -- which is
               the shape that shipped a lock nobody could click (P52). Sent on its own, never
               with the weight: the server refuses to move a locked weight even to the value it
@@ -412,14 +414,10 @@ function CriterionRow({
             aria-pressed={locked}
             // Held, not disabled, for the slider's reason; the editor refuses the press meanwhile.
             aria-disabled={held || undefined}
-            title={
-              locked
-                ? "Held where it is, and takes no share of a rebalance"
-                : "Moves in proportion when another weight changes"
-            }
+            title={lockTitle(locked)}
             onClick={() => onSetLock(criterion.attribute, !locked)}
           >
-            <span aria-hidden="true">{locked ? "●" : "○"}</span>
+            <LockIcon locked={locked} />
           </button>
         </span>
       </div>

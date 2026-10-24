@@ -559,6 +559,19 @@ describe("locking a criterion's weight", () => {
   }
 
 
+  it("draws each lock as a padlock, shut or open as the set says, never a disc", async () => {
+    renderShell("/configure");
+    await settled();
+
+    const locked = await findLock(OUTLOOK);
+    expect(locked.querySelector("svg")).toHaveAttribute("data-state", "shut");
+    expect(lockFor(COST_OF_LIVING).querySelector("svg")).toHaveAttribute(
+      "data-state",
+      "open",
+    );
+    expect(locked).toHaveTextContent(/^$/);
+  });
+
   it("shows which criteria are locked, as the set says", async () => {
     renderShell("/configure");
     await settled();

@@ -18,7 +18,9 @@ import {
   weightedPillars,
   weightFrom,
   weightReading,
+  lockTitle,
 } from "../weights";
+import { LockIcon } from "../LockIcon";
 
 type PillarWeight = components["schemas"]["PillarWeight"];
 
@@ -381,7 +383,7 @@ function PillarRow({
           {weightReading(moving ? typed : shown)}
         </span>
 
-        {/* **A button, not a checkbox.** The design draws a filled or hollow disc, and a native
+        {/* **A button, not a checkbox.** A padlock, shut or open (NEW-68), and a native
           checkbox cannot be one without being hidden behind a label -- which is the shape
           that shipped a lock nobody could click (P52). `aria-pressed` is what tells a screen
           reader it is a toggle. */}
@@ -396,18 +398,12 @@ function PillarRow({
           aria-pressed={weight.weight_locked}
           // Held, not disabled, for the slider's reason; `lock` refuses the press meanwhile.
           aria-disabled={saving || undefined}
-          title={
-            weight.weight_locked
-              ? "Held where it is, and takes no share of a rebalance"
-              : "Moves in proportion when another weight changes"
-          }
+          title={lockTitle(weight.weight_locked)}
           onClick={() =>
             void onLock(weight.pillar, !weight.weight_locked)
           }
         >
-          <span aria-hidden="true">
-            {weight.weight_locked ? "\u25CF" : "\u25CB"}
-          </span>
+          <LockIcon locked={weight.weight_locked} />
         </button>
       </div>
       {/* Indented under the pillar whose hundred they share, with a rule down the side: the

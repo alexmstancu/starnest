@@ -426,8 +426,12 @@ describe("a rule while it is being saved", () => {
       name: "Missing figure blocks scoring",
     });
     expectHeld(blocks);
+    // A group says it is held; its fields carry the look, so the group is not faded twice.
     for (const group of ["Target band", "Scale anchors", "Matching threshold"]) {
-      expectHeld(screen.getByRole("group", { name: group }));
+      expect(screen.getByRole("group", { name: group })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
     }
     const bandMinimum = screen.getByRole("spinbutton", { name: "Band minimum" });
     const threshold = screen.getByRole("spinbutton", {

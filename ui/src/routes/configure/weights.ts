@@ -303,3 +303,10 @@ export function countByPillar(
   }
   return counts;
 }
+
+/** What a lock says it does, pillar or criterion alike: one sentence for each state. */
+export function lockTitle(locked: boolean): string {
+  return locked
+    ? "Held where it is, and takes no share of a rebalance"
+    : "Moves in proportion when another weight changes";
+}

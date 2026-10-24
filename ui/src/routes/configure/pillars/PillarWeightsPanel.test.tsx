@@ -250,6 +250,22 @@ describe("the pillar weights panel", () => {
     expect(screen.queryByText(/weights_all_locked/)).toBeNull();
   });
 
+  it("draws its lock as a padlock, shut when locked and open when free, never a disc", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await screen.findByRole("slider", { name: "Economy weight" });
+    const lock = () => screen.getByRole("button", { name: "Lock Economy" });
+    const padlock = () => lock().querySelector("svg");
+
+    expect(padlock()).toHaveAttribute("data-state", "open");
+    expect(lock()).toHaveTextContent(/^$/);
+
+    await user.click(lock());
+
+    await waitFor(() => expect(padlock()).toHaveAttribute("data-state", "shut"));
+    expect(lock()).not.toHaveTextContent(/[\u25CF\u25CB]/);
+  });
+
   it("sends the lock without a weight, because a locked weight cannot be moved", async () => {
     const sent: unknown[] = [];
     mockServer.events.on("request:start", async ({ request }) => {

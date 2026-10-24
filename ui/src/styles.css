@@ -115,6 +115,11 @@
   --radius-medium: 4px;
   --border-width: 1px;
 
+  /* **One held look** (D27, D28): every control held while a write is in flight fades the same
+     way, and only after a short delay, so a quick save does not make twenty controls blink. */
+  --held-opacity: 0.45;
+  --held-delay: 120ms;
+
   /* Type. **`tnum` is the load-bearing one**: with proportional figures a column of scores
      and coverage percentages does not line up, and every screen here is a column of numbers. */
   --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -787,18 +792,8 @@ select.field__control {
   cursor: pointer;
 }
 
-/* A lock standing on its own in a table cell, rather than one of a row of choices.
-   `.toggle` takes its width from a flex parent; alone it has none, so a lock built the same
-   way was readable and unclickable. This gives it a size of its own. */
-.toggle--lock {
-  display: inline-flex;
-  min-width: 5.5rem;
-  padding: 4px 8px;
-  font-size: var(--font-size-small);
-}
-
 /* One selectable item in a group's list: smaller than a segmented choice, its text starting at
-   the left. **Full width, unlike `.toggle--lock`**: `.toggle__detail` pushes each item's reason
+   the left. **Full width**: `.toggle__detail` pushes each item's reason
    to the right-hand edge, and that only reads as one column when every row spans the list. */
 .toggle--item {
   justify-content: flex-start;
@@ -1230,10 +1225,13 @@ select.field__control {
   font-variant-numeric: tabular-nums;
 }
 
-/* **Filled when held, hollow when free.** A lock is a state, not an action, so it is drawn
-   as one: the disc is the state and the tint says it is on. 26px square because that is the
-   smallest square this design gives anything clickable. */
-.weight-row__lock {
+/* **A padlock in a square, shut when held and open when free** (NEW-68, D30): the padlock is
+   the state and the tint says it is on. 26px square because that is the smallest square this
+   design gives anything clickable; the criterion row's lock below is the same at 24px. */
+.weight-row__lock,
+.criterion-row__lock {
+  display: inline-grid;
+  place-items: center;
   width: 26px;
   height: 26px;
   padding: 0;
@@ -1241,14 +1239,41 @@ select.field__control {
   border-radius: var(--radius-medium);
   background: var(--colour-surface);
   color: var(--colour-text-muted);
-  font-size: 11px;
   cursor: pointer;
 }
 
-.weight-row__lock--on {
+.weight-row__lock--on,
+.criterion-row__lock--on {
   border-color: var(--colour-accent);
   background: var(--colour-accent-surface);
   color: var(--colour-accent);
+}
+
+.weight-row__lock:hover:not([aria-disabled="true"]),
+.criterion-row__lock:hover:not([aria-disabled="true"]) {
+  border-color: var(--colour-accent);
+  color: var(--colour-accent-strong);
+}
+
+/* Pressed: the tint one step deeper, as `.button` does for an outlined control. */
+.weight-row__lock:active:not([aria-disabled="true"]),
+.criterion-row__lock:active:not([aria-disabled="true"]) {
+  border-color: var(--colour-accent);
+  background: color-mix(in srgb, var(--colour-accent) 14%, var(--colour-surface));
+}
+
+/* **The one held look** (D27, D28), for the controls that had none: the weight sliders, both
+   locks, the "blocks scoring" box and Acquire's history numbers. Held is `aria-disabled`, never
+   `disabled`, so focus stays (NEW-34). The fade waits `--held-delay`; coming back is at once. */
+.weight-row__slider[aria-disabled="true"],
+.criterion-row__slider[aria-disabled="true"],
+.weight-row__lock[aria-disabled="true"],
+.criterion-row__lock[aria-disabled="true"],
+.field--inline input[type="checkbox"][aria-disabled="true"],
+.link-button[aria-disabled="true"] {
+  opacity: var(--held-opacity);
+  cursor: not-allowed;
+  transition: opacity 0s linear var(--held-delay);
 }
 
 .weight-row__caret {
@@ -1356,32 +1381,11 @@ select.field__control {
   font-variant-numeric: tabular-nums;
 }
 
-/* The pillar row's lock at the size a nested row can carry. Filled when held, hollow when
-   free: a lock is a state, so it is drawn as one. */
+/* The pillar row's lock at the size a nested row can carry. */
 .criterion-row__lock {
   width: 24px;
   height: 24px;
   flex: none;
-  padding: 0;
-  border: var(--border-width) solid var(--colour-border-strong);
-  border-radius: var(--radius-medium);
-  background: var(--colour-surface);
-  color: var(--colour-text-muted);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.criterion-row__lock--on {
-  border-color: var(--colour-accent);
-  background: var(--colour-accent-surface);
-  color: var(--colour-accent);
-}
-
-/* Held while a write is in flight looks the same as disabled (NEW-34). */
-.criterion-row__lock:disabled,
-.criterion-row__lock[aria-disabled="true"] {
-  cursor: default;
-  opacity: 0.55;
 }
 
 /* The weight again, as a length. **Two readings of one number**: the percentage answers "how
@@ -3844,7 +3848,7 @@ select.field__control {
   cursor: pointer;
 }
 
-.link-button:hover {
+.link-button:hover:not([aria-disabled="true"]) {
   color: var(--colour-accent-strong);
   text-decoration: underline;
 }

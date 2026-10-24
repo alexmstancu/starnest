@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fireEvent } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
 import { expect } from "vitest";
@@ -88,10 +90,43 @@ export async function pressArrowRight(user: UserEvent): Promise<void> {
  * **Held, not disabled** (NEW-34): a write is in flight, so the control takes no input -- and it
  * is still a control a keyboard can stand on, saying so with `aria-disabled` rather than with
  * `disabled`, which would throw focus off it.
+ *
+ * **And it looks held** (NEW-46): jsdom applies no stylesheet, so an attribute nothing styles
+ * passed here while the control looked exactly as it does when it takes input. The stylesheet
+ * is read as text and one of its held rules must match the control.
  */
 export function expectHeld(control: HTMLElement): void {
   expect(control).toBeEnabled();
   expect(control).toHaveAttribute("aria-disabled", "true");
+  expect(
+    heldSelectors().some((selector) => control.matches(selector)),
+    `no held rule in styles.css matches ${control.outerHTML.slice(0, 120)}`,
+  ).toBe(true);
+}
+
+const HELD = '[aria-disabled="true"]';
+
+/**
+ * Every selector in `styles.css` that styles a held control -- `[aria-disabled="true"]` outside a
+ * `:not(...)`, where it means the opposite. Read once: the sheet does not change during a run.
+ */
+const heldSelectors = (() => {
+  let selectors: string[] | undefined;
+  return (): string[] => {
+    // Read from disk: vitest hands a test an empty string for any CSS import, `?raw` included.
+    selectors ??= readHeldSelectors(
+      readFileSync(join(__dirname, "..", "styles.css"), "utf8"),
+    );
+    return selectors;
+  };
+})();
+
+export function readHeldSelectors(stylesheet: string): string[] {
+  const rules = stylesheet.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{[^{}]*\}/g);
+  return [...rules]
+    .flatMap(([, prelude = ""]) => prelude.split(/,(?![^(]*\))/))
+    .map((selector) => selector.trim())
+    .filter((selector) => selector.replace(/:not\([^)]*\)/g, "").includes(HELD));
 }
 
 /** The write has answered and the control takes input again. */
