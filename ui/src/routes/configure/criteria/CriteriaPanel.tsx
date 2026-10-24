@@ -112,18 +112,6 @@ export function CriteriaPanel({
       <h3 id={headingId} className="panel__heading">
         {pillar === undefined ? "Criteria" : "Attribute weights inside this pillar"}
       </h3>
-      <p className="panel__hint">
-        Weights are percentages within a pillar. Changing one rebalances the
-        others, which the backend computes and this panel reports. A
-        criterion&apos;s rule — its goal, scale and threshold — is edited per
-        row, and moves no weight.
-      </p>
-      <p className="panel__hint">
-        A locked weight is held where it is and takes no share of a rebalance.
-        Lock everything in a pillar and there is nowhere left for a change to
-        go, which the backend refuses rather than silently absorbing.
-      </p>
-
       <PillarTotals
         names={names}
         criteria={previewedCriteria(shown, preview)}
@@ -187,7 +175,7 @@ function PillarTotals({
           key={each.pillar}
           className={
             each.balanced
-              ? "chip chip--accent"
+              ? "chip chip--matching"
               : "chip chip--not_matching"
           }
         >

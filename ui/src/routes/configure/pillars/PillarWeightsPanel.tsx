@@ -170,7 +170,7 @@ export function PillarWeightsPanel({
           Total
           <span
             className={
-              comesToAHundred(total) ? "chip chip--matching" : "chip chip--warning"
+              comesToAHundred(total) ? "chip chip--matching" : "chip chip--not_matching"
             }
           >
             {formatPercentage(total, 1)}
@@ -344,7 +344,13 @@ function PillarRow({
       {/* **A group, named for its pillar.** The row holds three controls that are all about
           one pillar -- the slider, the reading, the lock -- and saying so is what lets a
           reader and a test find "economics" rather than "the fifth row". */}
-      <div className="weight-row" role="group" aria-label={pillarName(names, weight.pillar)}>
+      <div
+        className="weight-row"
+        role="group"
+        aria-label={pillarName(names, weight.pillar)}
+        // An attribute, as the source rows' drag states are: state a test can read (PL-114).
+        data-open={open ? "true" : undefined}
+      >
         {/* **The name is the way in.** A criterion's weight is a share of its pillar's, so
           opening the pillar is what reveals the attributes it is shared among. */}
         {onOpen === undefined ? (

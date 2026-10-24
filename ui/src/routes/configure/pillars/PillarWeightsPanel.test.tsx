@@ -906,3 +906,54 @@ describe("a pillar slider nobody moved", () => {
   });
 });
 
+
+/** PL-114 and PL-115. Stage 3 in the design's colours, without the two jargon paragraphs. */
+describe("stage 3 as the design draws it", () => {
+  function servedWithWeights(weights: number[]) {
+    const set = makeCriteriaSetDetails()["default"];
+    if (set === undefined) throw new Error("the fixtures lost the default set");
+    const pillarWeights = (set.pillar_weights ?? []).map((each, index) => ({
+      ...each,
+      weight: weights[index] ?? each.weight,
+    }));
+    mockServer.use(
+      http.get("/v1/criteria-sets/default", () =>
+        HttpResponse.json({ ...set, pillar_weights: pillarWeights }),
+      ),
+    );
+  }
+
+  it("draws a total of 100 in green", async () => {
+    renderShell("/configure");
+    const pillars = await panel();
+    expect(await pillars.findByText("100.0%")).toHaveClass("chip--matching");
+  });
+
+  it("draws a total that is not 100 in red", async () => {
+    servedWithWeights([40, 35, 20]);
+    renderShell("/configure");
+    const pillars = await panel();
+    expect(await pillars.findByText("95.0%")).toHaveClass("chip--not_matching");
+  });
+
+  it("tints the open pillar, and only that one", async () => {
+    renderShell("/configure");
+    await panel();
+    await userEvent.click(await screen.findByRole("button", { name: /^Economy/ }));
+
+    expect(screen.getByRole("group", { name: "Economy" })).toHaveAttribute("data-open", "true");
+    expect(screen.getByRole("group", { name: "Housing" })).not.toHaveAttribute("data-open");
+  });
+
+  it("draws each pillar's criteria total in green, and says nothing about a backend", async () => {
+    renderShell("/configure");
+    await panel();
+    await userEvent.click(await screen.findByRole("button", { name: /^Economy/ }));
+
+    const totals = await screen.findByRole("list", { name: "Weight totals by pillar" });
+    within(totals)
+      .getAllByRole("listitem")
+      .forEach((total) => expect(total).toHaveClass("chip--matching"));
+    expect(screen.queryByText(/backend/i)).not.toBeInTheDocument();
+  });
+});
