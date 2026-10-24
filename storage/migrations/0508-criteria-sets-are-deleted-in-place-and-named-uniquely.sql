@@ -54,10 +54,11 @@ CREATE UNIQUE INDEX criteria_set_one_default
     ON criteria_set (is_default)
     WHERE is_default;
 
+UPDATE criteria_set SET is_default = true WHERE id = 'local_employment';
+
 DO $$
 BEGIN
-    UPDATE criteria_set SET is_default = true WHERE id = 'local_employment';
-    IF NOT FOUND THEN
+    IF NOT EXISTS (SELECT 1 FROM criteria_set WHERE is_default) THEN
         RAISE NOTICE '0508: no criteria set is called local_employment, so no set is the '
             'default and a new set has nothing to copy until one is made the default.';
     END IF;
