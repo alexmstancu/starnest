@@ -277,46 +277,76 @@ def _level_wide_weights(
     pillar_weights = {
         (weight.pillar, weight.level): weight.weight for weight in criteria.pillar_weights
     }
-    try:
-        within_pillar = _renormalised_within_each_pillar(scored)
-        scoring_pillars = {criterion.pillar for criterion in scored}
-        across_pillars = renormalise(
-            {
-                str(pillar): weight
-                for (pillar, weight_level), weight in pillar_weights.items()
-                if weight_level == level and pillar in scoring_pillars
-            }
-        )
-        return {
-            str(criterion.attribute): within_pillar[str(criterion.attribute)]
-            * across_pillars[str(criterion.pillar)]
-            / TOTAL
-            for criterion in scored
-        }
-    except WeightingError as degenerate:
-        # A pillar whose only scored criteria carry no weight between them -- excluding the one
-        # weighted criterion of a `[100, 0]` pillar leaves `{c: 0}` -- cannot be renormalised,
-        # because 0/0 has no proportions. That is a configuration that cannot be ranked, not a
-        # server fault, so it is a RankingError (a 422) rather than a WeightingError escaping to
-        # a 500 (BE-04).
-        raise RankingError(
-            f"{criteria.id} cannot be ranked at level {level}: {degenerate}"
-        ) from degenerate
+    within_pillar = _renormalised_within_each_pillar(criteria, scored, level)
+    across_pillars = _renormalised_across_pillars(
+        criteria,
+        {
+            str(pillar): weight
+            for (pillar, weight_level), weight in pillar_weights.items()
+            if weight_level == level and pillar in {criterion.pillar for criterion in scored}
+        },
+        level,
+    )
+    return {
+        str(criterion.attribute): within_pillar[str(criterion.attribute)]
+        * across_pillars[str(criterion.pillar)]
+        / TOTAL
+        for criterion in scored
+    }
 
 
-def _renormalised_within_each_pillar(scored: Sequence[Criterion]) -> dict[str, Decimal]:
+# **Weights that cannot be renormalised are a configuration that cannot be ranked**, not a
+# server fault: 0/0 has no proportions, so a RankingError (a 422) rather than a WeightingError
+# escaping to a 500 (BE-04). Each names the pillars to mend, in fields (PL-006).
+
+
+def _renormalised_within_each_pillar(
+    criteria: CriteriaSet, scored: Sequence[Criterion], level: str
+) -> dict[str, Decimal]:
     """Each criterion's weight inside its own pillar, the pillar's criteria summing to 100.
 
     Criterion weights sum to 100 within a pillar by the ontology's own rule, so for a pillar
-    with nothing excluded this returns them unchanged.
+    with nothing excluded this returns them unchanged. Excluding the one weighted criterion of a
+    `[100, 0]` pillar leaves `{c: 0}`, which is refused as `criteria_without_weight`.
     """
     by_pillar: dict[str, dict[str, Decimal]] = {}
     for criterion in scored:
         by_pillar.setdefault(str(criterion.pillar), {})[str(criterion.attribute)] = criterion.weight
     renormalised: dict[str, Decimal] = {}
-    for weights in by_pillar.values():
-        renormalised.update(renormalise(weights))
+    weightless: list[str] = []
+    for pillar, weights in sorted(by_pillar.items()):
+        try:
+            renormalised.update(renormalise(weights))
+        except WeightingError:
+            weightless.append(pillar)
+    if weightless:
+        raise RankingError(
+            f"{criteria.id} cannot be ranked at level {level}: the criteria still scored under "
+            f"{weightless} carry no weight between them. Give one of them weight, or score one "
+            "that has it.",
+            details={"reason": "criteria_without_weight", "pillars": weightless},
+        )
     return renormalised
+
+
+def _renormalised_across_pillars(
+    criteria: CriteriaSet, pillar_weights: Mapping[str, Decimal], level: str
+) -> dict[str, Decimal]:
+    """The pillars still scoring, sharing the level's 100 between them.
+
+    When every pillar carrying weight has all its criteria excluded, the ones still scoring
+    carry none, which is refused as `pillars_without_weight`.
+    """
+    try:
+        return renormalise(pillar_weights)
+    except WeightingError as degenerate:
+        scoring = sorted(pillar_weights)
+        raise RankingError(
+            f"{criteria.id} cannot be ranked at level {level}: the pillars still scored, "
+            f"{scoring}, carry no weight between them. Give one of them weight, or score a "
+            "criterion in a pillar that has it.",
+            details={"reason": "pillars_without_weight", "pillars": scoring},
+        ) from degenerate
 
 
 @dataclass(frozen=True)

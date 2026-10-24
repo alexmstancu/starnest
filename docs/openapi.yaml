@@ -1169,9 +1169,12 @@ components:
         refuses, an identifier that cannot be one -- and `details.errors` lists each offending
         `location` with its `problem`. Any other code is the domain's own refusal, such as
         `invalid_criterion`, `unknown_place` or `unknown_scope`. `cannot_be_ranked` names its
-        cause in `details.reason` where it is one of two: `scores_nothing`, no criterion is
-        scored at the level; or `pillar_without_criteria`, pillars carry weight that no
-        criterion scores into, listed in `details.pillars`. `invalid_criterion` raised against
+        cause in `details.reason` where it is one of four: `scores_nothing`, no criterion is
+        scored at the level; `pillar_without_criteria`, pillars carry weight that no criterion
+        scores into; `criteria_without_weight`, the criteria still scored in a pillar carry no
+        weight between them; or `pillars_without_weight`, the pillars still scored carry no
+        weight between them. All but the first list their pillars in `details.pillars`.
+        `invalid_criterion` raised against
         the score range carries `details.reason: anchor_above_scale`, with the `attribute`, its
         `anchor_score` and the `score_scale_max` it is above.
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }

@@ -693,6 +693,43 @@ class TestWhenThereIsNoRankingToProduce:
         with pytest.raises(RankingError):
             rank(criteria, values_for(portugal=90, spain=10))
 
+    def test_a_pillar_whose_scored_criteria_weigh_nothing_is_named_in_fields(self) -> None:
+        """The same refusal says why in fields, as the other two do, so a screen can word it
+        and send the reader to the pillar that needs mending (PL-006)."""
+        criteria = a_set(
+            [
+                a_criterion(weight=Decimal("100"), is_scored=False),
+                a_criterion(attribute=A_THIRD_ATTRIBUTE, weight=Decimal("0")),
+            ]
+        )
+
+        with pytest.raises(RankingError) as refused:
+            rank(criteria, values_for(portugal=90, spain=10))
+
+        assert refused.value.details == {
+            "reason": "criteria_without_weight",
+            "pillars": [A_PILLAR],
+        }
+
+    def test_scoring_pillars_that_weigh_nothing_are_named_in_fields(self) -> None:
+        """The pillar that carries the weight has every criterion excluded, and the one still
+        scoring carries none: the level has no share to give anything (PL-006)."""
+        criteria = a_set(
+            [
+                a_criterion(weight=Decimal("100")),
+                a_criterion(attribute=RENT, pillar=HOUSING, weight=Decimal("100"), is_scored=False),
+            ],
+            [a_pillar_weight(weight="0"), a_pillar_weight(pillar=HOUSING, weight="100")],
+        )
+
+        with pytest.raises(RankingError) as refused:
+            rank(criteria, values_for(portugal=90, spain=10))
+
+        assert refused.value.details == {
+            "reason": "pillars_without_weight",
+            "pillars": [A_PILLAR],
+        }
+
     def test_a_criterion_whose_column_cannot_be_normalised_costs_coverage(self) -> None:
         """One candidate under percentile has no standing to score. The criterion contributes
         nothing to anybody rather than failing the ranking, and coverage says so."""

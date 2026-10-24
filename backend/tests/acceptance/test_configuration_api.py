@@ -123,6 +123,57 @@ class TestPillarWeights:
         assert locked[pillar] is True
 
 
+class TestASetWhoseWeightsCannotBeRenormalised:
+    """Exclusions can leave weight with nowhere to go, and the refusal says where (PL-006).
+
+    Both arranged through the API the Configure tab uses, because that is how a household gets
+    here: the weight is moved onto what is then unticked.
+    """
+
+    HOUSING = "housing"
+
+    async def test_a_pillar_whose_scored_criteria_weigh_nothing_is_named(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        await api.put("/v1/settings", json={"score_scale_max": 100})
+        path = f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}"
+        assert (await api.patch(path, json={"weight": 100})).status_code == 200
+        assert (await api.patch(path, json={"is_scored": False})).status_code == 200
+
+        body = await _the_refusal_to_rank(api, a_scratch_criteria_set)
+
+        assert body["details"] == {"reason": "criteria_without_weight", "pillars": [self.HOUSING]}
+
+    async def test_scoring_pillars_that_weigh_nothing_are_named(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        await api.put("/v1/settings", json={"score_scale_max": 100})
+        base = f"/v1/criteria-sets/{a_scratch_criteria_set}"
+        moved = await api.put(f"{base}/pillar-weights/{self.HOUSING}", json={"weight": 100})
+        assert moved.status_code == 200
+        criteria = (await api.get(base)).json()["criteria"]
+        for criterion in criteria:
+            if criterion["pillar"] == self.HOUSING:
+                unticked = await api.patch(
+                    f"{base}/criteria/{criterion['attribute']}", json={"is_scored": False}
+                )
+                assert unticked.status_code == 200
+
+        body = await _the_refusal_to_rank(api, a_scratch_criteria_set)
+
+        still_scoring = sorted({c["pillar"] for c in criteria if c["pillar"] != self.HOUSING})
+        assert body["details"] == {"reason": "pillars_without_weight", "pillars": still_scoring}
+
+
+async def _the_refusal_to_rank(api: httpx.AsyncClient, criteria_set: str) -> dict:
+    response = await api.get(
+        "/v1/rankings", params={"criteria_set": criteria_set, "level": COUNTRY}
+    )
+    body = response.json()
+    assert (response.status_code, body["code"]) == (422, "cannot_be_ranked")
+    return body
+
+
 class TestTheRulesASetEnforces:
     async def test_a_gate_can_be_enforced_and_released(
         self, api: httpx.AsyncClient, a_scratch_criteria_set: str
