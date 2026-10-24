@@ -14,6 +14,7 @@ the sentence saying why.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException
@@ -30,7 +31,12 @@ from starnest.api.dependencies import (
 from starnest.candidates import Candidate
 from starnest.criteria import CriteriaSet
 from starnest.data import MatchRuleResult, Value
-from starnest.evaluation import AttributeScore, CandidateResult, rank_candidates
+from starnest.evaluation import (
+    AttributeScore,
+    CandidateResult,
+    declared_weights,
+    rank_candidates,
+)
 from starnest.household import HouseholdNotConfiguredError
 
 router = APIRouter(tags=["rankings"])
@@ -98,6 +104,12 @@ class AttributeScoreBody(BaseModel):
     attribute: str
     pillar: str
     normalised_score: int | None = None
+    weight: float = Field(
+        description=(
+            "Its share of the level as configured, after exclusions and before redistribution: "
+            "the same basis as effective_weight (PL-063)."
+        ),
+    )
     effective_weight: float
     contribution: float
 
@@ -297,18 +309,29 @@ async def get_ranked_candidate_detail(
             },
         )
     names = {str(candidate.id): candidate.name for candidate in ranking.roster}
+    weights = declared_weights(ranking.criteria, level)
     return CandidateScoreDetailBody(
         **_result_body(result, names).model_dump(),
         score_scale_max=ranking.score_scale_max,
-        attribute_scores=tuple(_attribute_score_body(row) for row in result.attribute_scores),
+        attribute_scores=tuple(
+            _attribute_score_body(row, weights) for row in result.attribute_scores
+        ),
     )
 
 
-def _attribute_score_body(row: AttributeScore) -> AttributeScoreBody:
+def _attribute_score_body(
+    row: AttributeScore, declared: Mapping[str, Decimal]
+) -> AttributeScoreBody:
+    """One row of a drill-down, its two weights on one basis (PL-063, D21).
+
+    `declared` comes from the criteria the pass was scored by -- the live set for a live
+    ranking, the frozen snapshot for a saved one -- so the two paths answer alike.
+    """
     return AttributeScoreBody(
         attribute=str(row.attribute),
         pillar=str(row.pillar),
         normalised_score=row.normalised_score,
+        weight=float(declared[str(row.attribute)]),
         effective_weight=float(row.effective_weight),
         contribution=float(row.contribution),
     )

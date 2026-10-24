@@ -126,9 +126,15 @@ components:
         pillar:
           title: Pillar
           type: string
+        weight:
+          description: 'Its share of the level as configured, after exclusions and
+            before redistribution: the same basis as effective_weight (PL-063).'
+          title: Weight
+          type: number
       required:
       - attribute
       - pillar
+      - weight
       - effective_weight
       - contribution
       title: AttributeScoreBody

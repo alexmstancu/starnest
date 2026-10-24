@@ -238,6 +238,17 @@ def _criteria_to_score(criteria: CriteriaSet, level: str) -> tuple[Criterion, ..
     )
 
 
+def declared_weights(criteria: CriteriaSet, level: str) -> dict[str, Decimal]:
+    """Each scored criterion's weight as a share of the whole level, as configured.
+
+    After excluded criteria are taken out and before any redistribution for missing data, so
+    it is on the same basis as a result's `effective_weight` and differs from it only where a
+    figure was missing (PL-063, D21). The scored criteria's weights sum to 100.
+    """
+    scored = _criteria_to_score(criteria, level)
+    return _level_wide_weights(criteria, scored, level) if scored else {}
+
+
 def _level_wide_weights(
     criteria: CriteriaSet, scored: Sequence[Criterion], level: str
 ) -> dict[str, Decimal]:

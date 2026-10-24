@@ -173,6 +173,52 @@ class TestTheDrillDownOnALiveRanking:
         # docstring already claimed to be making.
         assert live == saved
 
+    async def test_weight_and_weight_used_are_on_one_basis(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        """Both are shares of the whole level (PL-063, D21). A row with a figure was used at its
+        weight or more, the excess being what missing figures handed on; a row with none keeps
+        its weight and was used at nothing; and the weights are the whole level."""
+        live = (
+            await api.get(
+                f"/v1/rankings/candidates/{PORTUGAL}",
+                params={"criteria_set": MINIMAL, "level": COUNTRY},
+            )
+        ).json()
+        rows = live["attribute_scores"]
+        answered = [row for row in rows if row["normalised_score"] is not None]
+        missing = [row for row in rows if row["normalised_score"] is None]
+        coverage = live["coverage"] / 100
+
+        assert round(sum(row["weight"] for row in rows), 6) == 100
+        assert answered and missing
+        for row in answered:
+            assert row["effective_weight"] == pytest.approx(row["weight"] / coverage)
+        assert all(row["weight"] > 0 and row["effective_weight"] == 0 for row in missing)
+
+    async def test_the_saved_drill_down_weighs_by_the_frozen_criteria(
+        self, api: httpx.AsyncClient, stored_figures: None, a_scratch_criteria_set: str
+    ) -> None:
+        """A weight moved after saving leaves the saved weights as they were."""
+        kept = (
+            await api.post(
+                "/v1/evaluations", json={"criteria_set": a_scratch_criteria_set, "level": COUNTRY}
+            )
+        ).json()
+        before = (await api.get(f"/v1/evaluations/{kept['id']}/candidates/{PORTUGAL}")).json()
+
+        moved = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria"
+            "/country.housing_cost_overburden_rate",
+            json={"weight": 70},
+        )
+        assert moved.status_code == 200
+        after = (await api.get(f"/v1/evaluations/{kept['id']}/candidates/{PORTUGAL}")).json()
+
+        assert [row["weight"] for row in after["attribute_scores"]] == [
+            row["weight"] for row in before["attribute_scores"]
+        ]
+
     async def test_the_contributions_add_up_to_the_score(
         self, api: httpx.AsyncClient, stored_figures: None
     ) -> None:

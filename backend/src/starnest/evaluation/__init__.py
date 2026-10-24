@@ -21,7 +21,7 @@ from starnest.evaluation.magnitudes import (
     magnitude_of,
 )
 from starnest.evaluation.normalisation import NormalisationError, scores_for
-from starnest.evaluation.ranking import RankingError, rank_candidates
+from starnest.evaluation.ranking import RankingError, declared_weights, rank_candidates
 from starnest.evaluation.results import AttributeScore, CandidateResult, MatchStatus
 from starnest.evaluation.rules import (
     NonMatch,
@@ -63,6 +63,7 @@ __all__ = [
     "confidence_split",
     "contribution_of",
     "coverage_of",
+    "declared_weights",
     "figure_of",
     "gates_that_rule_out",
     "is_scoreable",

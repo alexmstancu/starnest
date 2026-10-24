@@ -31,7 +31,7 @@ from starnest.api.rankings import (
     _result_body,
     the_ranking,
 )
-from starnest.evaluation import SavedEvaluation
+from starnest.evaluation import SavedEvaluation, declared_weights
 
 router = APIRouter(tags=["evaluation"])
 
@@ -181,10 +181,13 @@ async def get_candidate_score_detail(
         str(candidate.id): candidate.name
         for candidate in await candidates.read_candidates(level=saved.level)
     }
+    weights = declared_weights(await evaluations.read_criteria(evaluation_id), saved.level)
     return CandidateScoreDetailBody(
         **_result_body(result, names).model_dump(),
         score_scale_max=saved.score_scale_max,
-        attribute_scores=tuple(_attribute_score_body(row) for row in result.attribute_scores),
+        attribute_scores=tuple(
+            _attribute_score_body(row, weights) for row in result.attribute_scores
+        ),
     )
 
 

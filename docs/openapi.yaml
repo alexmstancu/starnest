@@ -2078,13 +2078,13 @@ components:
 
     AttributeScore:
       type: object
-      required: [attribute, pillar, normalised_score, effective_weight, contribution]
+      required: [attribute, pillar, normalised_score, weight, effective_weight, contribution]
       properties:
         attribute: { type: string }
         pillar: { type: string }
         normalised_score: { type: [integer, "null"], description: "0 to the enclosing response's score_scale_max. Null when no value was available." }
-        weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. Weight within the pillar as configured." }
-        effective_weight: { type: number, minimum: 0, maximum: 100, description: "Percentage, 0-100. After redistribution for missing data." }
+        weight: { type: number, minimum: 0, maximum: 100, description: "Percentage of the whole level, 0-100, as configured: the criterion's share of its pillar times its pillar's share of the level, after excluded criteria are taken out and before any redistribution for missing data. The scored criteria's weights sum to 100. A saved evaluation's are computed from its frozen criteria." }
+        effective_weight: { type: number, minimum: 0, maximum: 100, description: "Percentage of the whole level, 0-100, after the weight of every criterion with no figure was spread proportionally over every criterion that has one (reqs.md 5.3). Zero for a criterion with no figure. contribution = exact score x effective_weight / 100." }
         contribution: { type: number }
         value: { $ref: "#/components/schemas/Value" }
         alternative_values:

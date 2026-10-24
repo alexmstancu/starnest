@@ -38,7 +38,7 @@ from starnest.data import (
     RuleOutcome,
     ValueType,
 )
-from starnest.evaluation import MatchStatus, RankingError, rank_candidates
+from starnest.evaluation import MatchStatus, RankingError, declared_weights, rank_candidates
 
 from .builders import (
     A_CANDIDATE,
@@ -447,6 +447,68 @@ class TestExcludingACriterionIsNotMissingOne:
 
         assert sum(weights.values()) == Decimal(100)
         assert weights[a_criterion().attribute] == Decimal(60)
+
+
+class TestTheDeclaredWeights:
+    """The weight each criterion was given, on the same basis as the weight it was used at.
+
+    A drill-down shows both, and they may differ only where the weight of a missing figure was
+    spread over the rest (PL-063, D21). Served on two bases -- a share of the pillar beside a
+    share of the level -- every row looked to have lost most of its weight.
+    """
+
+    def test_they_sum_to_a_hundred_over_the_scored_criteria(self) -> None:
+        criteria = a_set(
+            [
+                a_criterion(weight=Decimal("60")),
+                a_criterion(attribute=A_THIRD_ATTRIBUTE, weight=Decimal("40")),
+                a_criterion(attribute=RENT, pillar=HOUSING, weight=Decimal("100")),
+            ],
+            [a_pillar_weight(weight="80"), a_pillar_weight(pillar=HOUSING, weight="20")],
+        )
+
+        weights = declared_weights(criteria, "country")
+
+        assert sum(weights.values()) == Decimal(100)
+        assert weights[a_criterion().attribute] == Decimal(48)
+        assert weights[RENT] == Decimal(20)
+
+    def test_they_equal_the_weights_used_when_nothing_is_missing(self) -> None:
+        criteria = two_pillars(first="80", second="20")
+
+        found = by_candidate(
+            rank(criteria, every_attribute_answered(AN_ATTRIBUTE, RENT, portugal=90, spain=10))
+        )
+
+        assert {
+            row.attribute: row.effective_weight
+            for row in found["country.portugal"].attribute_scores
+        } == declared_weights(criteria, "country")
+
+    def test_a_missing_figure_keeps_its_declared_weight_and_is_used_at_none(self) -> None:
+        criteria = two_pillars()
+        spain = by_candidate(rank(criteria, three_countries_one_missing_its_rent()))[
+            "country.spain"
+        ]
+
+        declared = declared_weights(criteria, "country")
+        assert declared[RENT] == Decimal(50)
+        used = {row.attribute: row.effective_weight for row in spain.attribute_scores}
+        assert used[RENT] == Decimal(0)
+
+    def test_an_excluded_criterion_has_no_declared_weight(self) -> None:
+        criteria = a_set(
+            [
+                a_criterion(weight=Decimal("100")),
+                a_criterion(attribute=RENT, pillar=HOUSING, weight=Decimal("100"), is_scored=False),
+            ],
+            [a_pillar_weight(weight="50"), a_pillar_weight(pillar=HOUSING, weight="50")],
+        )
+
+        assert declared_weights(criteria, "country") == {a_criterion().attribute: Decimal(100)}
+
+    def test_another_levels_criteria_are_not_weighed(self) -> None:
+        assert declared_weights(two_pillars(), "city") == {}
 
 
 class TestAMatchingThresholdRulesOut:
