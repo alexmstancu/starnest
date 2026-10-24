@@ -73,6 +73,9 @@ def _without_the_gate(connection: psycopg.Connection, gate: str) -> None:
         "DELETE FROM non_match_reason WHERE match_rule = %s",
         "DELETE FROM match_rule_result_citation WHERE match_rule = %s",
         "DELETE FROM match_rule_result WHERE match_rule = %s",
+        "DELETE FROM match_rule_answer_citation WHERE answer IN "
+        "(SELECT id FROM match_rule_answer WHERE match_rule = %s)",
+        "DELETE FROM match_rule_answer WHERE match_rule = %s",
         "DELETE FROM match_rule_research_spend WHERE match_rule = %s",
         "DELETE FROM match_rule WHERE id = %s",
     ):

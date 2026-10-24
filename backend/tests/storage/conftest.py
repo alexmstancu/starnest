@@ -28,6 +28,7 @@ WRITABLE_TABLES = (
     "data_acquisition_run",
     "evaluation",
     "match_rule_research_spend",
+    "match_rule_answer",
 )
 """Everything a storage test may write.
 
@@ -40,7 +41,9 @@ have no rows of their own that outlive their parent value, and a run's scope and
 `evaluation` and `data_acquisition_run` joined when their stores began writing rows: the
 acceptance suite counts them, so one left behind here would fail a test there for no reason
 of its own. `match_rule_research_spend` is the gate-research spend ledger (BE-34): written at
-runtime per billed call, never seeded.
+runtime per billed call, never seeded. `match_rule_answer` holds every gate answer ever recorded
+(Q237); CASCADE takes the live answers, both page tables and any saved refusal citing one, and
+TRUNCATE CASCADE never reaches a table the named one *references*, so it is named itself.
 """
 
 

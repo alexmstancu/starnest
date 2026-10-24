@@ -86,6 +86,9 @@ OBJECTIVE = {
     "match_rule",
     "match_rule_result",
     "match_rule_result_citation",
+    # Every answer ever recorded, kept once written, with its pages (Q237).
+    "match_rule_answer",
+    "match_rule_answer_citation",
     # Which candidates a gate concerns: the UK route is a question about the UK (NEW-01).
     "match_rule_candidate",
     # What each gate-research call billed, beside the runs' own spend (BE-34).
@@ -275,6 +278,54 @@ def test_the_objective_side_never_references_the_subjective_side(
         if referencing in OBJECTIVE and referenced in SUBJECTIVE
     ]
     assert violations == [], f"objective tables must not reference subjective ones: {violations}"
+
+
+def test_every_foreign_key_into_the_evaluation_tree_cascades(
+    connection: psycopg.Connection,
+) -> None:
+    """**An evaluation's snapshot dies with it** (0482, G-S9), so nothing may hold a row of it.
+
+    The tree is computed rather than listed: `evaluation`, and every table with a foreign key
+    into a table already in it. A key into any of them without ON DELETE CASCADE blocks the
+    boot sweep the moment a test ranking carries such a row -- `0504` shipped exactly that. A
+    key *out* of the tree (a saved reason citing a gate-answer version or a value) is the other
+    direction and is not asked about: the sweep deletes the citing row, never what it cites.
+    """
+    blocking = connection.execute(
+        """
+        WITH RECURSIVE tree(relation) AS (
+            SELECT 'evaluation'::regclass
+            UNION
+            SELECT k.conrelid::regclass
+            FROM   pg_constraint AS k
+            JOIN   tree ON tree.relation = k.confrelid
+            WHERE  k.contype = 'f'
+        )
+        SELECT k.conname, k.conrelid::regclass::text, k.confrelid::regclass::text
+        FROM   pg_constraint AS k
+        JOIN   tree ON tree.relation = k.confrelid
+        WHERE  k.contype = 'f' AND k.confdeltype <> 'c'
+        ORDER  BY k.conname
+        """
+    ).fetchall()
+    tree = connection.execute(
+        """
+        WITH RECURSIVE tree(relation) AS (
+            SELECT 'evaluation'::regclass
+            UNION
+            SELECT k.conrelid::regclass
+            FROM   pg_constraint AS k
+            JOIN   tree ON tree.relation = k.confrelid
+            WHERE  k.contype = 'f'
+        )
+        SELECT relation::text FROM tree
+        """
+    ).fetchall()
+
+    assert {"candidate_result", "non_match_reason", "evaluation_criterion"} <= {
+        relation for (relation,) in tree
+    }, "the tree must reach the tables a saved ranking is made of, or this checks nothing"
+    assert blocking == [], f"keys into the evaluation tree must cascade: {blocking}"
 
 
 def test_instants_and_reference_periods_are_different_types(

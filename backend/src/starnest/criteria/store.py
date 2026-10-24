@@ -228,9 +228,11 @@ class CriteriaStore(ABC):
 class MatchRuleResultStore(ABC):
     """Each gate's answer for each candidate, with the pages it was read from and any override.
 
-    **One answer per gate per candidate**: recording replaces, because a gate is re-checked
-    rather than accumulated. An override is a reason and the moment it was given, and travels
-    with the answer everywhere it is shown (`reqs.md` 3.7).
+    **One live answer per gate per candidate**: recording replaces it, because a gate is
+    re-checked rather than accumulated -- and keeps the answer it replaced as an immutable
+    version, so a correction never destroys what it corrects and a saved refusal can pin the
+    version it read (`reqs.md` Q237). An override is a reason and the moment it was given, and
+    travels with the answer everywhere it is shown (`reqs.md` 3.7).
     """
 
     @abstractmethod

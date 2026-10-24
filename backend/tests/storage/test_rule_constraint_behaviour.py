@@ -32,15 +32,28 @@ THE_HOUSEHOLD_MONEY_FIGURES = ("net_income", "target_monthly_spend", "max_rent")
 def _record_a_gate_answer(
     connection: psycopg.Connection, *, start: date | None, end: date | None
 ) -> None:
-    """One researched gate answer, carrying whichever half of a reference period is given."""
+    """One researched gate answer, carrying whichever half of a reference period is given.
+
+    The live row must point at a version (0511), which is written whole so that only the live
+    row carries the half-period under test.
+    """
+    (version,) = connection.execute(
+        """
+        INSERT INTO match_rule_answer (match_rule, candidate, match_result, data_source,
+                                       retrieval_date)
+        VALUES (%s, %s, 'matching', 'manual', %s)
+        RETURNING id
+        """,
+        (A_GATE, A_CANDIDATE, datetime.now(UTC)),
+    ).fetchone()
     connection.execute(
         """
-        INSERT INTO match_rule_result (match_rule, candidate, match_result, data_source,
+        INSERT INTO match_rule_result (match_rule, candidate, answer, match_result, data_source,
                                        reference_period_start, reference_period_end,
                                        retrieval_date)
-        VALUES (%s, %s, 'matching', 'manual', %s, %s, %s)
+        VALUES (%s, %s, %s, 'matching', 'manual', %s, %s, %s)
         """,
-        (A_GATE, A_CANDIDATE, start, end, datetime.now(UTC)),
+        (A_GATE, A_CANDIDATE, version, start, end, datetime.now(UTC)),
     )
 
 

@@ -30,7 +30,12 @@ from starnest.evaluation.rules import (
     judgements_of,
     thresholds_that_rule_out,
 )
-from starnest.evaluation.store import EvaluationStore, SavedEvaluation, UnknownEvaluationError
+from starnest.evaluation.store import (
+    EvaluationStore,
+    SavedEvaluation,
+    UnknownEvaluationError,
+    UnsavableEvidenceError,
+)
 from starnest.evaluation.weighting import (
     WeightingError,
     confidence_split,
@@ -52,6 +57,7 @@ __all__ = [
     "RuleWarning",
     "SavedEvaluation",
     "UnknownEvaluationError",
+    "UnsavableEvidenceError",
     "UnscoreableValueError",
     "WeightingError",
     "confidence_split",

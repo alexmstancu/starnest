@@ -191,6 +191,14 @@ class MatchRuleResult(BaseModel):
     )
     override_reason: str | None = None
     override_date: datetime | None = None
+    id: int | None = Field(
+        default=None,
+        description=(
+            "The stored version this answer is (`reqs.md` Q237), assigned by the database. "
+            "Absent on an answer not yet stored. A version is never changed, so a saved "
+            "refusal that names it reopens to exactly the answer it read."
+        ),
+    )
 
     @model_validator(mode="after")
     def _enforce_what_an_answer_may_claim(self) -> "MatchRuleResult":

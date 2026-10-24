@@ -119,6 +119,12 @@ def a_figure_for(attribute: str) -> str:
     )
 
 
+ANSWERS_UNDONE = (
+    "DO $$ BEGIN "
+    "DELETE FROM match_rule_result WHERE match_rule = 'li_eea_quota'; "
+    "DELETE FROM match_rule_answer WHERE match_rule = 'li_eea_quota'; END $$"
+)
+
 REFUSALS = (
     Refusal(
         migration="0503-gate-research-spend-is-ledgered",
@@ -130,11 +136,28 @@ REFUSALS = (
     ),
     Refusal(
         migration="0493-liechtensteins-quota-is-a-gate",
-        write="INSERT INTO match_rule_result "
+        # The live answer points at its version (0511), so the version is written first.
+        write="DO $$ DECLARE version bigint; BEGIN "
+        "INSERT INTO match_rule_answer "
         "(match_rule, candidate, match_result, data_source, retrieval_date) "
-        "VALUES ('li_eea_quota', 'country.liechtenstein', 'not_matching', 'manual', now())",
-        undo="DELETE FROM match_rule_result WHERE match_rule = 'li_eea_quota'",
+        "VALUES ('li_eea_quota', 'country.liechtenstein', 'not_matching', 'manual', now()) "
+        "RETURNING id INTO version; "
+        "INSERT INTO match_rule_result "
+        "(match_rule, candidate, answer, match_result, data_source, retrieval_date) "
+        "VALUES ('li_eea_quota', 'country.liechtenstein', version, 'not_matching', 'manual', "
+        "now()); END $$",
+        undo=ANSWERS_UNDONE,
         says="cannot roll back 0493: 1 answer",
+    ),
+    # A superseded gate answer is history 0511's rollback would drop (PL-143): a version that is
+    # not its pair's live one.
+    Refusal(
+        migration="0511-a-gate-answer-is-kept-once-written",
+        write="INSERT INTO match_rule_answer "
+        "(match_rule, candidate, match_result, data_source, retrieval_date) "
+        "VALUES ('li_eea_quota', 'country.liechtenstein', 'matching', 'manual', now())",
+        undo=ANSWERS_UNDONE,
+        says="cannot roll back 0511: 1 earlier gate answer(s)",
     ),
     Refusal(
         migration="0492-child-benefit-is-a-share-of-the-wage",

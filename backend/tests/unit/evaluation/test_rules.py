@@ -8,6 +8,8 @@ application exists to prevent (`devplan.md` D5).
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import pytest
+
 from starnest.criteria import (
     BooleanThreshold,
     LabelThreshold,
@@ -284,6 +286,17 @@ class TestTheGates:
         assert non_match.reason_detail == "no sponsor"
         assert non_match.compound_rule is None
 
+    def test_a_gate_that_rules_out_carries_the_answer_it_read(self) -> None:
+        """So a saved refusal can pin the version it read (FU-A4)."""
+        read = an_answer("uk_skilled_worker", MatchResult.NOT_MATCHING, "no sponsor").model_copy(
+            update={"id": 7}
+        )
+
+        (non_match,) = gates_that_rule_out(enforced=["uk_skilled_worker"], answers=[read])
+
+        assert non_match.gate_answer == read
+        assert non_match.input_values == ()
+
     def test_an_answer_with_no_reason_still_says_which_gate(self) -> None:
         (non_match,) = gates_that_rule_out(
             enforced=["uk_skilled_worker"],
@@ -327,6 +340,50 @@ def _verdict(threshold, value_type, payload):
     criterion = a_criterion(value_type=value_type, matching_threshold=threshold)
     value = a_value(value_type=value_type, payload=payload)
     return thresholds_that_rule_out([criterion], [value])
+
+
+class TestAThresholdNamesTheFigureItJudged:
+    """FU-A3: the id of the very value that crossed the line, whatever its type -- including the
+    ones no score reads, which a figure-only lookup would silently lose."""
+
+    @pytest.mark.parametrize(
+        ("threshold", "value_type", "payload"),
+        [
+            (RangeThreshold(max_value=Decimal(50)), ValueType.COUNT, Count(count=90)),
+            (
+                LabelThreshold(label="temperate", containment_rule="must_contain"),
+                ValueType.LABEL_SET,
+                LabelSet(labels=("continental",)),
+            ),
+            (BooleanThreshold(required_value=False), ValueType.BOOLEAN, Boolean(value=True)),
+            (
+                ShareThreshold(label="muslim", max_share=Decimal(30)),
+                ValueType.SHARE_COMPOSITION,
+                ShareComposition(
+                    shares=(
+                        Share(label="muslim", share=Decimal(45)),
+                        Share(label="other", share=Decimal(55)),
+                    )
+                ),
+            ),
+        ],
+        ids=["range", "label", "boolean", "share"],
+    )
+    def test_a_crossed_threshold_names_the_value_it_judged(
+        self, threshold, value_type, payload
+    ) -> None:
+        criterion = a_criterion(value_type=value_type, matching_threshold=threshold)
+        value = a_value(value_type=value_type, payload=payload, id=41)
+
+        (out,) = thresholds_that_rule_out([criterion], [value])
+
+        assert out.input_values == (41,)
+        assert out.gate_answer is None
+
+    def test_a_value_never_stored_names_nothing(self) -> None:
+        out = _verdict(RangeThreshold(max_value=Decimal(50)), ValueType.COUNT, Count(count=90))
+
+        assert out[0].input_values == ()
 
 
 class TestMatchingThresholds:

@@ -24,6 +24,20 @@ class UnknownEvaluationError(LookupError):
     """No evaluation has that identifier."""
 
 
+class UnsavableEvidenceError(ValueError):
+    """A non-match whose evidence does not fit its mechanism, refused before anything is saved.
+
+    A gate refusal must name the stored version of its own gate's answer for its own candidate,
+    and nothing else; a threshold refusal names at most the one value row it judged (FU-A3,
+    FU-A4). Checked when a ranking is saved and never when one is read back: a reopened ranking
+    holds what it held, and refusing to read it would turn every saved one into a 500.
+    """
+
+    def __init__(self, message: str, *, details: dict[str, object]) -> None:
+        super().__init__(message)
+        self.details = details
+
+
 @dataclass(frozen=True)
 class SavedEvaluation:
     """The header of a kept ranking: what was run, when, on which scale, and why it was kept."""

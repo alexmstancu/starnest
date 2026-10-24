@@ -20,12 +20,13 @@ from psycopg_pool import AsyncConnectionPool
 from starnest.candidates import Candidate
 from starnest.data import Attribute, DataSourceId
 from starnest.data_acquisition import Acquired, RunScope, SourceAdapter
-from starnest.evaluation import RuleWarning
+from starnest.evaluation import NonMatch, RuleWarning
 from starnest.main import AdapterDeclarationError, start_up
 from starnest.storage import (
     PostgresCatalogStore,
     PostgresCriteriaStore,
     PostgresEvaluationStore,
+    PostgresMatchRuleResultStore,
     PostgresRunStore,
     SchemaBehindError,
 )
@@ -171,6 +172,7 @@ class TestSweepingWhatATestSaved:
         pool: AsyncConnectionPool,
         note: str,
         warnings: tuple[RuleWarning, ...] = (),
+        non_match_reasons: tuple[NonMatch, ...] = (),
     ) -> int:
         from datetime import UTC, datetime
 
@@ -188,6 +190,7 @@ class TestSweepingWhatATestSaved:
                     coverage=Decimal("100"),
                     match_status=MatchStatus.MATCHING,
                     warnings=warnings,
+                    non_match_reasons=non_match_reasons,
                 )
             ],
             score_scale_max=100,
@@ -290,6 +293,49 @@ class TestSweepingWhatATestSaved:
         booted = await boot(pool, database_url)
 
         assert booted.test_evaluations_swept == 1
+
+    async def test_the_boot_discards_a_gate_refusal_and_keeps_the_answer_it_cited(
+        self, pool: AsyncConnectionPool, database_url: str
+    ) -> None:
+        """PL-143: a saved gate refusal cites a gate-answer version by an outgoing key, so the
+        sweep deletes the refusal and the version -- recorded history -- stays."""
+        from datetime import UTC, datetime
+
+        from starnest.data import MatchResult, MatchRuleResult
+
+        gates = PostgresMatchRuleResultStore(pool)
+        await gates.record(
+            MatchRuleResult(
+                match_rule="uk_skilled_worker",
+                candidate="country.portugal",
+                match_result=MatchResult.NOT_MATCHING,
+                data_source="manual",
+                retrieval_date=datetime.now(tz=UTC),
+            )
+        )
+        (answer,) = await gates.read_results(candidate="country.portugal")
+        try:
+            await self._save(
+                pool,
+                f"{TEST_EVALUATION_MARKER}sanity suite with a gate refusal",
+                non_match_reasons=(
+                    NonMatch(match_rule=answer.match_rule, reason_detail="x", gate_answer=answer),
+                ),
+            )
+
+            booted = await boot(pool, database_url)
+
+            assert booted.test_evaluations_swept == 1
+            async with pool.connection() as connection:
+                kept = await (
+                    await connection.execute(
+                        "SELECT count(*) FROM match_rule_answer WHERE id = %s", (answer.id,)
+                    )
+                ).fetchone()
+            assert kept == (1,)
+        finally:
+            async with pool.connection() as connection:
+                await connection.execute("TRUNCATE match_rule_answer CASCADE")
 
     async def test_the_boot_discards_what_the_browser_suite_saved(
         self, pool: AsyncConnectionPool, database_url: str

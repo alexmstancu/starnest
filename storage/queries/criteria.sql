@@ -564,8 +564,14 @@ VALUES (:criterion, 'ShareComposition', :label, :min_share, :max_share);
 --
 -- Citations travel with the answer. A gate is displayed as the reason a candidate is out, so it
 -- carries the same obligation to show its sources that a value does (reqs.md 3.7, 6.9).
+--
+-- **One row per pair, always: the live answer.** Every version a pair has had is kept in
+-- match_rule_answer (Q237), and none of them is read here -- a superseded not_matching that
+-- reached the ranking would rule a candidate out on an answer somebody corrected. r.answer names
+-- the version the live row shows, so a saved refusal can pin it.
 SELECT r.match_rule,
        r.candidate,
+       r.answer,
        r.match_result,
        r.reason,
        r.data_source,
@@ -594,8 +600,29 @@ WHERE  (:candidate::text IS NULL OR r.candidate = :candidate)
   AND  (:level::text IS NULL OR c.level = :level)
 ORDER  BY r.candidate, r.match_rule;
 
--- name: upsert_match_rule_result(match_rule, candidate, match_result, reason, data_source, reference_period_start, reference_period_end, retrieval_date, override_reason, override_date)!
--- One answer per gate per candidate, so a re-run replaces rather than accumulates. This is also
+-- name: insert_match_rule_answer(match_rule, candidate, match_result, reason, data_source, reference_period_start, reference_period_end, retrieval_date, override_reason, override_date)<!
+-- One version of a gate's answer, never changed once written (Q237). The live row is pointed at
+-- it by upsert_match_rule_result in the same transaction.
+INSERT INTO match_rule_answer (
+    match_rule, candidate, match_result, reason, data_source,
+    reference_period_start, reference_period_end, retrieval_date,
+    override_reason, override_date)
+VALUES (:match_rule, :candidate, :match_result, :reason, :data_source,
+        :reference_period_start, :reference_period_end, :retrieval_date,
+        :override_reason, :override_date)
+RETURNING id;
+
+-- name: insert_match_rule_answer_citations(answer, urls)!
+-- The pages one version was read from, kept with it for good.
+INSERT INTO match_rule_answer_citation (answer, url)
+SELECT :answer, url
+FROM   unnest(:urls::text[]) AS url
+ON CONFLICT DO NOTHING;
+
+-- name: upsert_match_rule_result(match_rule, candidate, answer, match_result, reason, data_source, reference_period_start, reference_period_end, retrieval_date, override_reason, override_date)!
+-- One LIVE answer per gate per candidate, pointing at the version it shows (:answer, written
+-- first by insert_match_rule_answer). The version is never touched again, so a replaced answer
+-- survives in match_rule_answer with its pages (Q237); only this row moves. This is also
 -- how a candidate is ruled out by hand: the not_manually_excluded rule, answered not_matching,
 -- with an override reason and the date it was given (reqs.md Q152).
 --
@@ -607,16 +634,18 @@ ORDER  BY r.candidate, r.match_rule;
 -- override a gate while it runs; the proposal written afterwards used to overwrite that answer
 -- silently. A person's answer still replaces anything, and a proposal still replaces a
 -- proposal. A row left alone counts as none written, which is how the store knows to leave its
--- citations alone too.
+-- citations alone too -- and to discard the version it wrote for the declined proposal, which
+-- is history for an answer that never stood.
 INSERT INTO match_rule_result (
-    match_rule, candidate, match_result, reason, data_source,
+    match_rule, candidate, answer, match_result, reason, data_source,
     reference_period_start, reference_period_end, retrieval_date,
     override_reason, override_date)
-VALUES (:match_rule, :candidate, :match_result, :reason, :data_source,
+VALUES (:match_rule, :candidate, :answer, :match_result, :reason, :data_source,
         :reference_period_start, :reference_period_end, :retrieval_date,
         :override_reason, :override_date)
 ON CONFLICT (match_rule, candidate) DO UPDATE
-SET match_result           = EXCLUDED.match_result,
+SET answer                 = EXCLUDED.answer,
+    match_result           = EXCLUDED.match_result,
     reason                 = EXCLUDED.reason,
     data_source            = EXCLUDED.data_source,
     reference_period_start = EXCLUDED.reference_period_start,

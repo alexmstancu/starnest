@@ -41,6 +41,7 @@ WRITABLE_TABLES = (
     "settings",
     "data_acquisition_run",
     "match_rule_result",
+    "match_rule_answer",
     "external_score",
     "evaluation",
     "match_rule_research_spend",

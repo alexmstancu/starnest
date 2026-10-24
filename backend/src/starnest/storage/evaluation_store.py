@@ -11,7 +11,7 @@ those statements read, and rows back into domain objects.
 
 import json
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -37,8 +37,12 @@ from starnest.data import (
     BreakdownOptionId,
     CompoundRuleId,
     ConfidenceLevel,
+    DataSourceId,
+    MatchResult,
     MatchRuleId,
+    MatchRuleResult,
     PillarId,
+    ReferencePeriod,
     ValueType,
 )
 from starnest.evaluation import (
@@ -50,6 +54,7 @@ from starnest.evaluation import (
     RuleWarning,
     SavedEvaluation,
     UnknownEvaluationError,
+    UnsavableEvidenceError,
 )
 from starnest.evaluation.ranking import pillars_of
 from starnest.storage.connections import acquire
@@ -80,6 +85,9 @@ class PostgresEvaluationStore(EvaluationStore):
         computed_at: datetime,
         note: str | None = None,
     ) -> SavedEvaluation:
+        for result in results:
+            for reason in result.non_match_reasons:
+                _refuse_evidence_that_does_not_fit(result.candidate, reason)
         pillar_weights = {
             str(w.pillar): w.weight for w in criteria.pillar_weights if w.level == level
         }
@@ -169,6 +177,16 @@ class PostgresEvaluationStore(EvaluationStore):
                         None if reason.compound_rule is None else str(reason.compound_rule)
                     ),
                     "reason_detail": reason.reason_detail,
+                    # The evidence a gate or a threshold refusal read, pinned by key (FU-A3,
+                    # FU-A4). A compound rule's inputs go to non_match_input below.
+                    "match_rule_answer": (
+                        None if reason.gate_answer is None else reason.gate_answer.id
+                    ),
+                    "used_value": (
+                        reason.input_values[0]
+                        if reason.criterion is not None and reason.input_values
+                        else None
+                    ),
                 }
                 for result in results
                 for reason in result.non_match_reasons
@@ -210,7 +228,7 @@ class PostgresEvaluationStore(EvaluationStore):
                 )
             # The value rows behind each not_matching compound rule -- the mirror of the warning
             # inputs, so a saved non-match keeps the source/date chain that produced it (ST-07).
-            # Only a compound rule reads stored figures; a gate or a criterion threshold has none.
+            # A threshold's one figure is a column of its reason, and a gate reads no figure.
             non_match_inputs = [
                 {
                     "candidate_result": identifiers[str(result.candidate)],
@@ -329,6 +347,40 @@ class PostgresEvaluationStore(EvaluationStore):
                 connection, marker=TEST_EVALUATION_MARKER
             )
         return int(row.discarded)
+
+
+def _refuse_evidence_that_does_not_fit(candidate: CandidateId, reason: NonMatch) -> None:
+    """Hold a non-match's evidence to its mechanism before the first row is written.
+
+    **Here, in the writer, and never on the way back** (C6): a ranking saved before 0511 has no
+    evidence at all, and a read-time check would make reopening it a 500.
+    """
+    if reason.match_rule is not None:
+        answer = reason.gate_answer
+        if (
+            reason.input_values
+            or answer is None
+            or answer.id is None
+            or answer.match_rule != reason.match_rule
+            or str(answer.candidate) != str(candidate)
+        ):
+            raise UnsavableEvidenceError(
+                f"the refusal by {reason.match_rule} for {candidate} must name the stored answer "
+                "it read, of its own gate and candidate, and no figure",
+                details={"reason": "gate_answer", "match_rule": str(reason.match_rule)},
+            )
+    elif reason.gate_answer is not None or (
+        reason.criterion is not None and len(reason.input_values) > 1
+    ):
+        raise UnsavableEvidenceError(
+            f"a refusal for {candidate} that is not a gate names no gate answer, and a "
+            "threshold names at most the one figure it judged",
+            details={
+                "reason": "evidence",
+                "attribute": None if reason.criterion is None else str(reason.criterion),
+                "inputs": len(reason.input_values),
+            },
+        )
 
 
 def _frozen(
@@ -471,8 +523,39 @@ def _result_from(row: Any, attribute_scores: tuple[AttributeScore, ...] = ()) ->
                     else CompoundRuleId(reason["compound_rule"])
                 ),
                 input_values=tuple(reason.get("input_values", [])),
+                gate_answer=_gate_answer_from(reason.get("gate_answer")),
             )
             for reason in getattr(row, "non_match_reasons", []) or []
+        ),
+    )
+
+
+def _gate_answer_from(frozen: dict[str, Any] | None) -> MatchRuleResult | None:
+    """The version a saved gate refusal read, or None for any other reason and for refusals
+    saved before 0511. Built from the version's own columns, never the live answer."""
+    if frozen is None:
+        return None
+    start, end = frozen["reference_period_start"], frozen["reference_period_end"]
+    return MatchRuleResult(
+        id=frozen["id"],
+        match_rule=MatchRuleId(frozen["match_rule"]),
+        candidate=CandidateId(frozen["candidate"]),
+        match_result=MatchResult(frozen["match_result"]),
+        data_source=DataSourceId(frozen["data_source"]),
+        retrieval_date=datetime.fromisoformat(frozen["retrieval_date"]),
+        reason=frozen["reason"],
+        is_proposal=bool(frozen["is_proposal"]),
+        reference_period=(
+            ReferencePeriod(start=date.fromisoformat(start), end=date.fromisoformat(end))
+            if start is not None and end is not None
+            else None
+        ),
+        citations=tuple(frozen["citations"]),
+        override_reason=frozen["override_reason"],
+        override_date=(
+            None
+            if frozen["override_date"] is None
+            else datetime.fromisoformat(frozen["override_date"])
         ),
     )
 

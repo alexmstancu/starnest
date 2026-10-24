@@ -8,6 +8,7 @@ actually were. These tests save one, change the live set, and read the saved one
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import psycopg
 import pytest
 from psycopg_pool import AsyncConnectionPool
 
@@ -20,7 +21,16 @@ from starnest.criteria import (
     RangeThreshold,
     ReducerMode,
 )
-from starnest.data import ConfidenceLevel, Ratio, ReferencePeriod, Value, ValueType
+from starnest.data import (
+    ConfidenceLevel,
+    LabelSet,
+    MatchResult,
+    MatchRuleResult,
+    Ratio,
+    ReferencePeriod,
+    Value,
+    ValueType,
+)
 from starnest.evaluation import (
     AttributeScore,
     CandidateResult,
@@ -28,8 +38,14 @@ from starnest.evaluation import (
     NonMatch,
     RuleWarning,
     UnknownEvaluationError,
+    UnsavableEvidenceError,
 )
-from starnest.storage import PostgresCriteriaStore, PostgresEvaluationStore, PostgresValueStore
+from starnest.storage import (
+    PostgresCriteriaStore,
+    PostgresEvaluationStore,
+    PostgresMatchRuleResultStore,
+    PostgresValueStore,
+)
 from starnest.storage.connections import acquire
 from starnest.storage.evaluation_store import TEST_EVALUATION_MARKER
 
@@ -43,6 +59,26 @@ TAX = "country.total_tax_rate_effective"
 SATISFACTION = "country.life_satisfaction"
 CLIMATE_ZONE = "country.climate_zone"
 COMPUTED_AT = datetime(2026, 9, 12, 9, 0, tzinfo=UTC)
+GATE = "uk_skilled_worker"
+
+
+async def a_recorded_refusal(
+    pool: AsyncConnectionPool, *, reason: str = "no sponsor", **answer: object
+) -> NonMatch:
+    """A gate refusal as the ranking builds one: from an answer a person recorded and the store
+    read back, so it names the stored version it read."""
+    gates = PostgresMatchRuleResultStore(pool)
+    fields: dict[str, object] = {
+        "match_rule": GATE,
+        "candidate": PORTUGAL,
+        "match_result": MatchResult.NOT_MATCHING,
+        "data_source": "manual",
+        "retrieval_date": COMPUTED_AT,
+        "reason": reason,
+    }
+    assert await gates.record(MatchRuleResult(**(fields | answer)))  # type: ignore[arg-type]
+    (stored,) = await gates.read_results(candidate=PORTUGAL, match_rule=GATE)
+    return NonMatch(match_rule=GATE, reason_detail=reason, gate_answer=stored)
 
 
 def a_result(candidate: str, score: int | None, rank: int | None, **overrides: object):
@@ -306,9 +342,7 @@ class TestTheRulesTravelWithTheResult:
             None,
             match_status=MatchStatus.NOT_MATCHING,
             warnings=(RuleWarning(compound_rule="cheap_but_taxed", detail="cheap and taxed"),),
-            non_match_reasons=(
-                NonMatch(match_rule="uk_skilled_worker", reason_detail="no sponsor"),
-            ),
+            non_match_reasons=(await a_recorded_refusal(pool),),
         )
 
         saved = await store.save(
@@ -342,9 +376,7 @@ class TestTheRulesTravelWithTheResult:
             None,
             match_status=MatchStatus.NOT_MATCHING,
             warnings=(RuleWarning(compound_rule="cheap_but_taxed", detail="cheap and taxed"),),
-            non_match_reasons=(
-                NonMatch(match_rule="uk_skilled_worker", reason_detail="no sponsor"),
-            ),
+            non_match_reasons=(await a_recorded_refusal(pool),),
         )
 
         saved = await store.save(
@@ -543,6 +575,154 @@ class TestTheRestOfTheReadingIsFrozen:
         (read,) = await PostgresEvaluationStore(pool).read_results(saved.id)
         assert [str(r.criterion) for r in read.non_match_reasons] == [CLIMATE_ZONE]
         assert read.non_match_reasons[0].reason_detail == reason
+
+
+def a_zone(year: int, zone: str) -> Value:
+    """Portugal's climate zone for one year: a LabelSet, which no score reads."""
+    return Value(
+        candidate=PORTUGAL,
+        attribute=CLIMATE_ZONE,
+        value_type=ValueType.LABEL_SET,
+        data_source="copernicus",
+        reference_period=ReferencePeriod(
+            start=datetime(year, 1, 1).date(), end=datetime(year, 12, 31).date()
+        ),
+        retrieval_date=datetime(2026, 9, 1, tzinfo=UTC),
+        confidence_level=ConfidenceLevel.HIGH,
+        payload=LabelSet(labels=(zone,)),
+    )
+
+
+class TestTheEvidenceIsFrozen:
+    """A saved refusal reopens to the evidence it read, after that evidence has moved on (PL-143:
+    FU-A3, FU-A4). Both read statements are asked, because two statements feed `_result_from`
+    and an aggregation on one alone reads as absent on exactly one screen."""
+
+    async def _save(self, pool: AsyncConnectionPool, reason: NonMatch) -> int:
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        ruled_out = a_result(
+            PORTUGAL, 71, None, match_status=MatchStatus.NOT_MATCHING, non_match_reasons=(reason,)
+        )
+        saved = await PostgresEvaluationStore(pool).save(
+            criteria=criteria,
+            level=COUNTRY,
+            results=[ruled_out],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+        )
+        return saved.id
+
+    async def _both_reads(self, pool: AsyncConnectionPool, evaluation: int) -> list[NonMatch]:
+        store = PostgresEvaluationStore(pool)
+        (listed,) = await store.read_results(evaluation)
+        drilled = await store.read_candidate(evaluation, PORTUGAL)
+        return [*listed.non_match_reasons, *drilled.non_match_reasons]
+
+    async def test_a_reopened_gate_refusal_reads_the_answer_it_used_after_a_person_corrects_it(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """A person's correction is the one way the answer behind a saved refusal can change: a
+        confirmed answer is never researched again (map F7), so a re-research would prove
+        nothing."""
+        read = await a_recorded_refusal(
+            pool,
+            reason="no sponsor licence in this field",
+            citations=("https://www.gov.uk/b", "https://www.gov.uk/a"),
+            reference_period=ReferencePeriod(
+                start=datetime(2026, 1, 1).date(), end=datetime(2026, 12, 31).date()
+            ),
+            override_reason="checked with two employers",
+            override_date=COMPUTED_AT,
+        )
+        evaluation = await self._save(pool, read)
+
+        corrected = await a_recorded_refusal(
+            pool, reason="sponsors exist after all", match_result=MatchResult.MATCHING
+        )
+
+        assert corrected.gate_answer.id != read.gate_answer.id
+        for reopened in await self._both_reads(pool, evaluation):
+            assert reopened.gate_answer == read.gate_answer
+            assert reopened.gate_answer.citations == (
+                "https://www.gov.uk/a",
+                "https://www.gov.uk/b",
+            )
+
+    async def test_a_threshold_refusal_keeps_the_figure_it_judged_after_a_newer_one(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """A LabelSet on the excluded climate-zone criterion: no contribution row pins it, so
+        the reason is the only record of which figure crossed the line."""
+        values = PostgresValueStore(pool)
+        (judged,) = await values.append([a_zone(2024, "Csa")])
+        evaluation = await self._save(
+            pool,
+            NonMatch(criterion=CLIMATE_ZONE, reason_detail="Csa", input_values=(judged.id,)),
+        )
+
+        await values.append([a_zone(2025, "Csb")])
+
+        for reopened in await self._both_reads(pool, evaluation):
+            assert reopened.input_values == (judged.id,)
+            assert reopened.gate_answer is None
+        listed = await values.read_values(candidate=PORTUGAL, attribute=CLIMATE_ZONE)
+        assert judged.id in {listing.value.id for listing in listed}
+
+    async def test_a_gate_refusal_naming_no_stored_answer_is_refused_and_nothing_is_saved(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        store = PostgresEvaluationStore(pool)
+        before = await store.read_evaluations()
+
+        with pytest.raises(UnsavableEvidenceError) as refused:
+            await self._save(pool, NonMatch(match_rule=GATE, reason_detail="no sponsor"))
+
+        assert refused.value.details == {"reason": "gate_answer", "match_rule": GATE}
+        assert await store.read_evaluations() == before
+
+    async def test_a_gate_refusal_citing_another_candidates_answer_is_refused(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        theirs = (await a_recorded_refusal(pool)).gate_answer.model_copy(
+            update={"candidate": GREECE}
+        )
+
+        with pytest.raises(UnsavableEvidenceError):
+            await self._save(pool, NonMatch(match_rule=GATE, reason_detail="x", gate_answer=theirs))
+
+    async def test_a_threshold_naming_two_figures_is_refused(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        with pytest.raises(UnsavableEvidenceError) as refused:
+            await self._save(
+                pool, NonMatch(criterion=CLIMATE_ZONE, reason_detail="x", input_values=(1, 2))
+            )
+
+        assert refused.value.details == {
+            "reason": "evidence",
+            "attribute": CLIMATE_ZONE,
+            "inputs": 2,
+        }
+
+    async def test_the_schema_refuses_a_figure_on_a_gate_refusal(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """The writer's rule, held a second time where a raw insert would bypass it."""
+        read = await a_recorded_refusal(pool)
+        evaluation = await self._save(pool, read)
+        (judged,) = await PostgresValueStore(pool).append([a_zone(2024, "Csa")])
+
+        with pytest.raises(psycopg.errors.CheckViolation) as refused:
+            async with pool.connection() as connection:
+                await connection.execute(
+                    "UPDATE non_match_reason SET used_value = %s WHERE evaluation = %s",
+                    (judged.id, evaluation),
+                )
+
+        assert (
+            refused.value.diag.constraint_name
+            == "non_match_reason_only_a_threshold_names_one_figure"
+        )
 
 
 class TestSweepingWhatATestSaved:

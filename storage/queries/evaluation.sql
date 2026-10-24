@@ -139,16 +139,21 @@ JOIN   candidate_result AS parent ON parent.id = detail.candidate_result;
 -- Why a candidate is out. Both mechanisms feed one surface, so the user never looks in two
 -- places: a criterion's matching threshold, a match rule, or a compound rule -- exactly one per
 -- row, which the schema enforces rather than this statement.
+--
+-- With the evidence it read, by key (FU-A3, FU-A4): a gate refusal the answer version, a
+-- threshold refusal the value row. Both are immutable, so the reason reopens to them later.
 INSERT INTO non_match_reason (candidate_result, evaluation, attribute, match_rule,
-                              compound_rule, reason_detail)
+                              compound_rule, reason_detail, match_rule_answer, used_value)
 SELECT reason.candidate_result, parent.evaluation, reason.attribute, reason.match_rule,
-       reason.compound_rule, reason.reason_detail
+       reason.compound_rule, reason.reason_detail, reason.match_rule_answer, reason.used_value
 FROM   jsonb_to_recordset(:reasons::jsonb) AS reason(
-           candidate_result bigint,
-           attribute        text,
-           match_rule       text,
-           compound_rule    text,
-           reason_detail    text)
+           candidate_result  bigint,
+           attribute         text,
+           match_rule        text,
+           compound_rule     text,
+           reason_detail     text,
+           match_rule_answer bigint,
+           used_value        bigint)
 JOIN   candidate_result AS parent ON parent.id = reason.candidate_result;
 
 -- name: insert_candidate_warnings(warnings)!
@@ -256,14 +261,45 @@ SELECT r.id,
                        'match_rule',    reason.match_rule,
                        'compound_rule', reason.compound_rule,
                        'detail',        reason.reason_detail,
-                       -- The value rows behind a not_matching compound rule, in condition order
-                       -- (ST-07). Empty for a gate or a criterion threshold, which read none.
-                       'input_values',  COALESCE(
-                           (SELECT jsonb_agg(nmi.value_id ORDER BY nmi.ordinal)
-                            FROM   non_match_input AS nmi
-                            WHERE  nmi.candidate_result = reason.candidate_result
-                              AND  nmi.compound_rule = reason.compound_rule),
-                           '[]'::jsonb))
+                       -- The value rows the rule judged: the one a threshold read (FU-A3), or
+                       -- a not_matching compound rule's in condition order (ST-07). Empty for
+                       -- a gate, which reads no figure.
+                       'input_values',  CASE
+                           WHEN reason.used_value IS NOT NULL
+                               THEN jsonb_build_array(reason.used_value)
+                           ELSE COALESCE(
+                               (SELECT jsonb_agg(nmi.value_id ORDER BY nmi.ordinal)
+                                FROM   non_match_input AS nmi
+                                WHERE  nmi.candidate_result = reason.candidate_result
+                                  AND  nmi.compound_rule = reason.compound_rule),
+                               '[]'::jsonb)
+                       END,
+                       -- The gate-answer VERSION the refusal read (FU-A4), never the live
+                       -- answer, with its pages in the order the live read gives them. Null
+                       -- for any other reason and for refusals saved before 0511. A LEFT
+                       -- join: a reason is never dropped for lacking one.
+                       'gate_answer',   (
+                           SELECT jsonb_build_object(
+                                      'id',                     version.id,
+                                      'match_rule',             version.match_rule,
+                                      'candidate',              version.candidate,
+                                      'match_result',           version.match_result,
+                                      'reason',                 version.reason,
+                                      'data_source',            version.data_source,
+                                      'reference_period_start', version.reference_period_start,
+                                      'reference_period_end',   version.reference_period_end,
+                                      'retrieval_date',         version.retrieval_date,
+                                      'override_reason',        version.override_reason,
+                                      'override_date',          version.override_date,
+                                      'is_proposal',            source.source_kind = 'llm',
+                                      'citations',              COALESCE(
+                                          (SELECT jsonb_agg(page.url ORDER BY page.url)
+                                           FROM   match_rule_answer_citation AS page
+                                           WHERE  page.answer = version.id),
+                                          '[]'::jsonb))
+                           FROM   match_rule_answer AS version
+                           LEFT   JOIN data_source AS source ON source.id = version.data_source
+                           WHERE  version.id = reason.match_rule_answer))
                      ORDER BY reason.id)
             FROM   non_match_reason AS reason
             WHERE  reason.candidate_result = r.id),
@@ -369,14 +405,45 @@ SELECT r.id,
                        'match_rule',    reason.match_rule,
                        'compound_rule', reason.compound_rule,
                        'detail',        reason.reason_detail,
-                       -- The value rows behind a not_matching compound rule, in condition order
-                       -- (ST-07). Empty for a gate or a criterion threshold, which read none.
-                       'input_values',  COALESCE(
-                           (SELECT jsonb_agg(nmi.value_id ORDER BY nmi.ordinal)
-                            FROM   non_match_input AS nmi
-                            WHERE  nmi.candidate_result = reason.candidate_result
-                              AND  nmi.compound_rule = reason.compound_rule),
-                           '[]'::jsonb))
+                       -- The value rows the rule judged: the one a threshold read (FU-A3), or
+                       -- a not_matching compound rule's in condition order (ST-07). Empty for
+                       -- a gate, which reads no figure.
+                       'input_values',  CASE
+                           WHEN reason.used_value IS NOT NULL
+                               THEN jsonb_build_array(reason.used_value)
+                           ELSE COALESCE(
+                               (SELECT jsonb_agg(nmi.value_id ORDER BY nmi.ordinal)
+                                FROM   non_match_input AS nmi
+                                WHERE  nmi.candidate_result = reason.candidate_result
+                                  AND  nmi.compound_rule = reason.compound_rule),
+                               '[]'::jsonb)
+                       END,
+                       -- The gate-answer VERSION the refusal read (FU-A4), never the live
+                       -- answer, with its pages in the order the live read gives them. Null
+                       -- for any other reason and for refusals saved before 0511. A LEFT
+                       -- join: a reason is never dropped for lacking one.
+                       'gate_answer',   (
+                           SELECT jsonb_build_object(
+                                      'id',                     version.id,
+                                      'match_rule',             version.match_rule,
+                                      'candidate',              version.candidate,
+                                      'match_result',           version.match_result,
+                                      'reason',                 version.reason,
+                                      'data_source',            version.data_source,
+                                      'reference_period_start', version.reference_period_start,
+                                      'reference_period_end',   version.reference_period_end,
+                                      'retrieval_date',         version.retrieval_date,
+                                      'override_reason',        version.override_reason,
+                                      'override_date',          version.override_date,
+                                      'is_proposal',            source.source_kind = 'llm',
+                                      'citations',              COALESCE(
+                                          (SELECT jsonb_agg(page.url ORDER BY page.url)
+                                           FROM   match_rule_answer_citation AS page
+                                           WHERE  page.answer = version.id),
+                                          '[]'::jsonb))
+                           FROM   match_rule_answer AS version
+                           LEFT   JOIN data_source AS source ON source.id = version.data_source
+                           WHERE  version.id = reason.match_rule_answer))
                      ORDER BY reason.id)
             FROM   non_match_reason AS reason
             WHERE  reason.candidate_result = r.id),

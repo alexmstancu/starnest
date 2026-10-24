@@ -66,10 +66,14 @@ class NonMatch:
     match_rule: MatchRuleId | None = None
     compound_rule: CompoundRuleId | None = None
     input_values: tuple[int, ...] = ()
-    """The ids of the value rows a *compound* rule read to rule a candidate out -- the mirror of
-    `RuleWarning.input_values` (ST-07), so a saved non-match can be reopened to the figures that
-    produced it. Empty for a gate (`match_rule`) or a criterion threshold, which read no stored
-    value rows, and when the caller passed figures without their value ids."""
+    """The ids of the value rows the rule judged, so a saved non-match can be reopened to the
+    figures that produced it (ST-07, FU-A3): a compound rule's inputs in condition order -- the
+    mirror of `RuleWarning.input_values` -- or the one row a criterion threshold judged. Empty
+    for a gate, which reads no value, and when the caller passed figures without their ids."""
+    gate_answer: MatchRuleResult | None = None
+    """The answer a gate refusal read (FU-A4). Its `id` names the stored version, which never
+    changes, so a saved refusal reopens to this answer after any correction (`reqs.md` Q237).
+    None for a threshold or a compound rule, and on refusals saved before versions existed."""
 
 
 def judgements_of(
@@ -222,6 +226,7 @@ def gates_that_rule_out(
         NonMatch(
             match_rule=rule,
             reason_detail=failed[rule].reason or f"{rule} answers not_matching for this candidate",
+            gate_answer=failed[rule],
         )
         for rule in enforced
         if rule in failed
@@ -245,7 +250,8 @@ def thresholds_that_rule_out(
 
     **A missing or unplaceable figure never rules out.** You cannot cross a line you have no
     figure for; that is insufficient coverage, not a non-match (`reqs.md` 5.3). Only a value that
-    is present and on the wrong side of the line produces a `NonMatch`, named by its criterion.
+    is present and on the wrong side of the line produces a `NonMatch`, named by its criterion
+    and carrying the id of the very value it judged (FU-A3), whatever its type.
     """
     by_attribute = {str(value.attribute): value for value in values}
     reasons = []
@@ -258,7 +264,13 @@ def thresholds_that_rule_out(
             continue
         reason = _crosses(threshold, value)
         if reason is not None:
-            reasons.append(NonMatch(criterion=criterion.attribute, reason_detail=reason))
+            reasons.append(
+                NonMatch(
+                    criterion=criterion.attribute,
+                    reason_detail=reason,
+                    input_values=() if value.id is None else (value.id,),
+                )
+            )
     return tuple(reasons)
 
 

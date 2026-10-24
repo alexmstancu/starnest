@@ -1,14 +1,18 @@
 """A gate's answer, and who may replace it (`reqs.md` 3.7, 6.10 use 3).
 
-One answer per gate per candidate, so a new answer replaces the old one and its pages. **Except
+One live answer per gate per candidate, so a new answer replaces the old one and its pages as
+the answer that stands -- while every answer written is kept as an immutable version with its own
+pages (`reqs.md` Q237), so a correction never destroys what it corrects. **Except
 that a model never replaces a person** (NEW-02). A research pass reads the answers once when it
 starts, so a person can confirm or override a gate while the pass runs -- and the proposal
 written afterwards used to overwrite that answer, silently, which is the one thing a confirmed
 answer must never be.
 """
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from psycopg_pool import AsyncConnectionPool
@@ -52,7 +56,7 @@ async def answers(pool: AsyncConnectionPool) -> AsyncIterator[PostgresMatchRuleR
         yield PostgresMatchRuleResultStore(pool)
     finally:
         async with pool.connection() as connection:
-            await connection.execute("TRUNCATE match_rule_result CASCADE")
+            await connection.execute("TRUNCATE match_rule_answer CASCADE")
 
 
 async def the_answer(store: PostgresMatchRuleResultStore) -> MatchRuleResult:
@@ -208,3 +212,106 @@ class TestItSaysWhetherItStoredTheAnswer:
         )
 
         assert stored is True
+
+
+async def versions_of(pool: AsyncConnectionPool) -> list[Any]:
+    """Every version the pair has had, oldest first, with its pages."""
+    async with pool.connection() as connection:
+        cursor = await connection.execute(
+            """
+            SELECT v.id, v.data_source, v.match_result, v.reason, v.override_reason,
+                   v.override_date, v.retrieval_date,
+                   ARRAY(SELECT c.url FROM match_rule_answer_citation AS c
+                         WHERE c.answer = v.id ORDER BY c.url) AS citations
+            FROM   match_rule_answer AS v
+            WHERE  v.match_rule = %s AND v.candidate = %s
+            ORDER  BY v.recorded_at, v.id
+            """,
+            (GATE, UNITED_KINGDOM),
+        )
+        return list(await cursor.fetchall())
+
+
+class TestEveryAnswerIsKept:
+    """A gate answer is a version, never edited once written; the live row points at the one
+    that stands (`reqs.md` Q237, PL-143)."""
+
+    async def test_a_correction_keeps_the_answer_it_replaced_with_its_pages_and_override(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        first = an_answer(
+            "manual",
+            MatchResult.NOT_MATCHING,
+            OFFICIAL_PAGE,
+            at=MORNING,
+            override_reason="no sponsor will hire from abroad in this field",
+            override_date=MORNING,
+        )
+        await answers.record(first)
+
+        await answers.record(an_answer("manual", MatchResult.MATCHING, ANOTHER_PAGE, at=NOON))
+
+        kept, corrected = await versions_of(pool)
+        assert (kept[1], kept[2], kept[3]) == ("manual", "not_matching", first.reason)
+        assert (kept[4], kept[5], kept[6]) == (first.override_reason, MORNING, MORNING)
+        assert kept[7] == [OFFICIAL_PAGE]
+        assert (corrected[2], corrected[7]) == ("matching", [ANOTHER_PAGE])
+
+    async def test_a_declined_proposal_leaves_no_version(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        await answers.record(an_answer("manual", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING))
+
+        assert not await answers.record(
+            an_answer("llm", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON)
+        )
+
+        assert [version[1] for version in await versions_of(pool)] == ["manual"]
+
+    async def test_the_live_answer_points_at_the_version_it_shows(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        for answer in (
+            an_answer("llm", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING),
+            an_answer("manual", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON),
+            an_answer("manual", MatchResult.UNKNOWN, OFFICIAL_PAGE, at=NOON),
+        ):
+            await answers.record(answer)
+            live = await the_answer(answers)
+            newest = (await versions_of(pool))[-1]
+
+            assert live.id == newest[0]
+            assert (str(live.data_source), str(live.match_result), live.reason) == newest[1:4]
+            assert list(live.citations) == newest[7]
+
+    async def test_every_reader_sees_one_live_answer_per_pair(
+        self, answers: PostgresMatchRuleResultStore
+    ) -> None:
+        """History never reaches a reader: a superseded not_matching that did would rule a
+        candidate out on an answer somebody corrected."""
+        await answers.record(
+            an_answer("manual", MatchResult.NOT_MATCHING, OFFICIAL_PAGE, at=MORNING)
+        )
+        await answers.record(an_answer("manual", MatchResult.MATCHING, ANOTHER_PAGE, at=NOON))
+
+        whole_level = await answers.read_results(level="country")
+
+        assert [(str(a.match_rule), str(a.candidate), a.match_result) for a in whole_level] == [
+            (GATE, UNITED_KINGDOM, MatchResult.MATCHING)
+        ]
+
+    async def test_two_first_answers_at_once_both_keep_their_version(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        """Two people answering a pair nobody has answered: the upserts serialise on the live
+        row, both versions stay, and the live row shows the one it points at."""
+        await asyncio.gather(
+            answers.record(an_answer("manual", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING)),
+            answers.record(an_answer("manual", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON)),
+        )
+
+        versions = await versions_of(pool)
+        live = await the_answer(answers)
+        assert len(versions) == 2
+        (shown,) = [version for version in versions if version[0] == live.id]
+        assert (str(live.match_result), list(live.citations)) == (shown[2], shown[7])
