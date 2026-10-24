@@ -348,6 +348,31 @@ def test_every_command_and_url_reaches_the_copy_by_the_name_that_was_measured(
     assert suite.suite_database == COPY_URL
 
 
+def test_a_hash_in_the_name_cuts_the_copys_name_and_never_reaches_the_live_one(
+    sandbox: Sandbox,
+) -> None:
+    """**P96, accepted** (D67). Make ends a line at `#`, so `POSTGRES_DB=app#db` names the copy
+    `app_e2e` while compose names the live database `app#db`. That is safe only if every command
+    -- the database tools, yoyo and the suite -- gets the cut name, and none gets the live one."""
+    with_database_name(sandbox, "app#db")
+
+    result = sandbox.make("e2e", FAKE_DOCKER_RUNS_SCRIPT="1")
+
+    assert result.returncode == 0, output(result)
+    handed = [
+        argument.removeprefix("--dbname=")
+        for call in sandbox.calls()
+        if call.tool in DATABASE_TOOLS
+        for argument in call.arguments
+        if not argument.startswith(("-", "/backups/")) or argument.startswith("--dbname=")
+    ]
+    assert handed == ["app_e2e"] * 4
+    assert [call for call in sandbox.calls() if "app#db" in repr(call)] == []
+    assert parse_uri(sandbox.migrated_url()).database == "app_e2e"
+    [suite] = sandbox.calls_to("npm")
+    assert conninfo_to_dict(suite.suite_database)["dbname"] == "app_e2e"
+
+
 @pytest.mark.parametrize("ignoring", ["make -i", "MAKEFLAGS=i"])
 @pytest.mark.parametrize("target", ["e2e", "e2e-database", "e2e-drop"])
 @pytest.mark.parametrize(
