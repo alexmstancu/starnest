@@ -7,12 +7,14 @@ beside it, so the screen prints an outcome it did not compute.
 
 import httpx
 import pytest
+from psycopg_pool import AsyncConnectionPool
 
 pytestmark = pytest.mark.acceptance
 
 COUNTRY = "country"
 MINIMAL = "minimal"
 NEW_SET = "a_scratch_of_my_own"
+OVERBURDEN = "country.housing_cost_overburden_rate"
 
 
 @pytest.fixture
@@ -41,8 +43,9 @@ class TestCriteriaSets:
 
         response = await api.get("/v1/rankings", params={"criteria_set": NEW_SET, "level": COUNTRY})
 
-        assert response.status_code == 422
-        assert "scores nothing" in response.json()["message"]
+        body = response.json()
+        assert (response.status_code, body["code"]) == (422, "cannot_be_ranked")
+        assert body["details"] == {"reason": "scores_nothing"}
 
     async def test_an_identifier_that_is_taken_is_refused(
         self, api: httpx.AsyncClient, a_new_set: dict
@@ -227,6 +230,132 @@ class TestSettings:
         stored = (await api.get("/v1/settings")).json()
         assert stored["min_coverage"] is None
         assert stored["comparator_limit"] is None
+
+
+class TestAScoreRangeBelowAnAnchor:
+    """A criterion anchors a figure to a score, and the score range has to reach it (PL-006).
+
+    Refused when either side is saved, so the conflict is named where it is made rather than
+    surfacing later on Rank as ids. **Only a range the request changes is refused** (N7): one
+    already stored below an anchor -- by a migration, or before this check existed -- would
+    otherwise block every settings save, whichever field the household meant to change.
+    """
+
+    A_RANGE_BELOW_THE_SHIPPED_ANCHORS = 10
+    """The shipped sets anchor figures to scores of up to 100."""
+
+    async def test_a_changed_range_below_an_anchor_is_refused_naming_the_lowest_that_fits(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.put(
+            "/v1/settings", json={"score_scale_max": self.A_RANGE_BELOW_THE_SHIPPED_ANCHORS}
+        )
+
+        body = response.json()
+        assert (response.status_code, body["code"]) == (409, "score_scale_below_anchors")
+        assert set(body["details"]) == {"minimum", "criteria_set", "attribute"}
+        assert body["details"]["minimum"] == 100
+        assert await _the_highest_anchor_of(api, body["details"]) == 100
+
+    async def test_a_refused_range_is_not_stored(self, api: httpx.AsyncClient) -> None:
+        await api.put(
+            "/v1/settings", json={"score_scale_max": self.A_RANGE_BELOW_THE_SHIPPED_ANCHORS}
+        )
+
+        assert (await api.get("/v1/settings")).json()["score_scale_max"] is None
+
+    async def test_a_stored_range_below_an_anchor_does_not_block_another_setting(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        await _store_past_the_check(database_url, self.A_RANGE_BELOW_THE_SHIPPED_ANCHORS)
+
+        response = await api.put(
+            "/v1/settings",
+            json={"score_scale_max": self.A_RANGE_BELOW_THE_SHIPPED_ANCHORS, "comparator_limit": 5},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["comparator_limit"] == 5
+
+    async def test_a_stored_range_below_an_anchor_is_explained_when_ranking(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """What a migration can still leave behind, said in fields a client can word."""
+        await _store_past_the_check(database_url, self.A_RANGE_BELOW_THE_SHIPPED_ANCHORS)
+
+        response = await api.get(
+            "/v1/rankings", params={"criteria_set": "local_employment", "level": COUNTRY}
+        )
+
+        body = response.json()
+        assert (response.status_code, body["code"]) == (422, "invalid_criterion")
+        assert body["details"]["reason"] == "anchor_above_scale"
+        assert body["details"]["score_scale_max"] == self.A_RANGE_BELOW_THE_SHIPPED_ANCHORS
+
+    async def test_an_anchor_above_the_range_is_refused_when_it_is_saved(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        await api.put("/v1/settings", json={"score_scale_max": 100})
+
+        response = await _anchor_overburden_up_to(api, a_scratch_criteria_set, 150)
+
+        body = response.json()
+        assert (response.status_code, body["code"]) == (422, "invalid_criterion")
+        assert body["details"] == {
+            "reason": "anchor_above_scale",
+            "attribute": OVERBURDEN,
+            "anchor_score": 150,
+            "score_scale_max": 100,
+        }
+
+    async def test_a_refused_anchor_is_not_stored(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        await api.put("/v1/settings", json={"score_scale_max": 100})
+        before = await _the_anchors_of_overburden(api, a_scratch_criteria_set)
+
+        await _anchor_overburden_up_to(api, a_scratch_criteria_set, 150)
+
+        assert await _the_anchors_of_overburden(api, a_scratch_criteria_set) == before
+
+
+async def _the_highest_anchor_of(api: httpx.AsyncClient, named: dict) -> int:
+    """The highest score the criterion a refusal names anchors a figure to."""
+    criteria_set = (await api.get(f"/v1/criteria-sets/{named['criteria_set']}")).json()
+    criterion = next(c for c in criteria_set["criteria"] if c["attribute"] == named["attribute"])
+    return max(anchor["score"] for anchor in criterion["scale_anchors"])
+
+
+async def _the_anchors_of_overburden(api: httpx.AsyncClient, criteria_set: str) -> list[dict]:
+    body = (await api.get(f"/v1/criteria-sets/{criteria_set}")).json()
+    return next(c for c in body["criteria"] if c["attribute"] == OVERBURDEN)["scale_anchors"]
+
+
+async def _store_past_the_check(database_url: str, score_scale_max: int) -> None:
+    """A range written by SQL, as a migration or an older build could have left it."""
+    async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
+        await pool.open(wait=True)
+        async with pool.connection() as connection:
+            await connection.execute(
+                "INSERT INTO settings (id, score_scale_max) VALUES (1, %s)"
+                " ON CONFLICT (id) DO UPDATE SET score_scale_max = EXCLUDED.score_scale_max",
+                (score_scale_max,),
+            )
+
+
+async def _anchor_overburden_up_to(
+    api: httpx.AsyncClient, criteria_set: str, top_score: int
+) -> httpx.Response:
+    return await api.patch(
+        f"/v1/criteria-sets/{criteria_set}/criteria/{OVERBURDEN}",
+        json={
+            "normalisation_method": "fixed",
+            "scale_anchors": [
+                {"input_value": 0, "score": top_score},
+                {"input_value": 50, "score": 0},
+            ],
+        },
+    )
 
 
 class TestReadingOneOfSomething:

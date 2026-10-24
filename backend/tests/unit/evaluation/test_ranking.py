@@ -660,8 +660,10 @@ class TestWhenThereIsNoRankingToProduce:
     def test_a_set_that_scores_nothing_at_this_level_is_refused(self) -> None:
         criteria = a_set([a_criterion(is_scored=False)])
 
-        with pytest.raises(RankingError, match="scores nothing at level"):
+        with pytest.raises(RankingError) as refused:
             rank(criteria, values_for(portugal=90, spain=10))
+
+        assert refused.value.details == {"reason": "scores_nothing"}
 
     def test_a_zero_weight_pillar_with_no_criteria_is_not_refused(self) -> None:
         """The refusal's own remedy is "give it no weight". A pillar whose weight is zero has
@@ -1273,6 +1275,13 @@ class TestAPillarThatNothingScoresInto:
             rank(self.ninety_ten_with_an_empty_pillar(), values_for(portugal=90, spain=10))
 
         assert "no criterion" in str(refused.value)
+
+    def test_the_refusal_names_the_pillar_in_fields_a_client_can_word(self) -> None:
+        """The sentence is for a person reading the API; a screen words the details (PL-006)."""
+        with pytest.raises(RankingError) as refused:
+            rank(self.ninety_ten_with_an_empty_pillar(), values_for(portugal=90, spain=10))
+
+        assert refused.value.details == {"reason": "pillar_without_criteria", "pillars": [HOUSING]}
 
     def test_a_set_whose_pillars_all_have_criteria_is_scored_as_before(self) -> None:
         """The control. Every shipped set is in this state, and the check must not touch it."""

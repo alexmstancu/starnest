@@ -27,7 +27,7 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.bodies import ContractBody, PartialChangeBody
-from starnest.api.dependencies import Catalog, Criteria
+from starnest.api.dependencies import Catalog, Criteria, Households
 from starnest.api.errors import built_from_the_request
 from starnest.criteria import (
     BooleanThreshold,
@@ -281,7 +281,11 @@ async def get_criteria_set(
     response_model=RebalancedPillar,
 )
 async def update_criterion(
-    criteria_set_id: str, attribute_id: str, change: CriterionInput, criteria: Criteria
+    criteria_set_id: str,
+    attribute_id: str,
+    change: CriterionInput,
+    criteria: Criteria,
+    households: Households,
 ) -> RebalancedPillar:
     """Move one weight, and return the pillar it moved within.
 
@@ -291,10 +295,20 @@ async def update_criterion(
 
     Raises `WeightsAllLockedError` -- a 409 -- when every other weight in the pillar is locked,
     naming the locks so the screen can say which ones.
+
+    **An anchor above the score range is refused as it is saved** (PL-006), rather than left
+    for Rank to meet as a set it cannot score. Checked inside the edit, so the refusal rolls the
+    edit back; an unset range has no top to be above.
     """
-    changed = await criteria.edit_criteria_set(
-        criteria_set_id, lambda current: _applied(current, attribute_id, change)
-    )
+    score_scale_max = (await households.get_settings()).score_scale_max
+
+    def mutate(current: CriteriaSet) -> CriteriaSet:
+        edited = _applied(current, attribute_id, change)
+        if score_scale_max is not None:
+            edited.refuse_unless_its_anchors_fit(score_scale_max)
+        return edited
+
+    changed = await criteria.edit_criteria_set(criteria_set_id, mutate)
 
     pillar = changed.criterion_for(attribute_id).pillar
     level = changed.criterion_for(attribute_id).attribute.level_id

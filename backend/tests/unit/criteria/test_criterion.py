@@ -590,8 +590,15 @@ def test_an_anchor_scoring_above_the_scale_is_refused() -> None:
         )
     )
 
-    with pytest.raises(CriterionDeclarationError, match="score scale stops at 10"):
+    with pytest.raises(CriterionDeclarationError) as refused:
         overshooting.refuse_unless_its_anchors_fit(A_SMALL_SCALE)
+
+    assert refused.value.details == {
+        "reason": "anchor_above_scale",
+        "attribute": RENT,
+        "anchor_score": 50,
+        "score_scale_max": A_SMALL_SCALE,
+    }
 
 
 def test_an_anchor_exactly_at_the_top_of_the_scale_is_accepted() -> None:

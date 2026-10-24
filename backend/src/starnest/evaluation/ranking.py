@@ -52,7 +52,16 @@ ValuesByCandidate = Mapping[str, Sequence[Value]]
 
 
 class RankingError(ValueError):
-    """The ranking could not be produced, and producing a wrong one is not the alternative."""
+    """The ranking could not be produced, and producing a wrong one is not the alternative.
+
+    `details` says why in fields -- a `reason`, and the `pillars` it concerns -- so a client can
+    word the refusal and send the reader where it is mended without parsing this sentence
+    (PL-006).
+    """
+
+    def __init__(self, message: str, *, details: Mapping[str, object] | None = None) -> None:
+        super().__init__(message)
+        self.details = details
 
 
 def rank_candidates(
@@ -87,7 +96,8 @@ def rank_candidates(
     scored_criteria = _criteria_to_score(criteria, level)
     if not scored_criteria:
         raise RankingError(
-            f"{criteria.id} scores nothing at level {level}, so there is no ranking to produce"
+            f"{criteria.id} scores nothing at level {level}, so there is no ranking to produce",
+            details={"reason": "scores_nothing"},
         )
     criteria.refuse_unless_its_anchors_fit(score_scale_max)
     _refuse_a_pillar_nothing_scores_into(criteria, level)
@@ -191,7 +201,11 @@ def _refuse_a_pillar_nothing_scores_into(criteria: CriteriaSet, level: str) -> N
         raise RankingError(
             f"{criteria.id} gives weight at level {level} to {sorted(empty)}, which no criterion "
             "scores into, so the level would score out of less than 100. Give the pillar a "
-            "criterion or give it no weight."
+            "criterion or give it no weight.",
+            details={
+                "reason": "pillar_without_criteria",
+                "pillars": [str(pillar) for pillar in sorted(empty)],
+            },
         )
 
 

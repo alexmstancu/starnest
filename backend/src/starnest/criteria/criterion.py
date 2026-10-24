@@ -10,6 +10,7 @@ criteria sets and neither is wrong.
 not a rule at all.
 """
 
+from collections.abc import Mapping
 from decimal import Decimal
 from enum import StrEnum
 from itertools import pairwise
@@ -32,7 +33,14 @@ class CriterionDeclarationError(ValueError):
     Distinct from `ThresholdShapeError`, which is about a threshold suiting a value type. This
     is about the criterion's own fields contradicting each other -- a `target_range` goal with
     no band, a `select` reducer naming no option.
+
+    `details`, where a refusal gives them, say the same in fields a client can word without
+    parsing the sentence (PL-006).
     """
+
+    def __init__(self, message: str, *, details: Mapping[str, object] | None = None) -> None:
+        super().__init__(message)
+        self.details = details
 
 
 class Goal(StrEnum):
@@ -393,15 +401,22 @@ class Criterion(BaseModel):
         is possible for a live criterion, which belongs to no evaluation and so has no scale
         beside it in any row -- which is exactly why this method exists rather than a CHECK.
 
-        Called where a criteria set is written or read for scoring. An anchor scoring 4200 on
-        a scale of 100 is not a large score; it is a number with no meaning, and it would
-        reach a ranking as one (known-issues D25).
+        Called where an anchor is written -- a criterion's update, the one write that changes
+        one -- and where a set is read for scoring. An anchor scoring 4200 on a scale of 100 is
+        not a large score; it is a number with no meaning, and it would reach a ranking as one
+        (known-issues D25).
         """
         for anchor in self.scale_anchors:
             if anchor.score > score_scale_max:
                 raise CriterionDeclarationError(
                     f"{self.attribute} anchors {anchor.input_value} to a score of "
-                    f"{anchor.score}, and the score scale stops at {score_scale_max}"
+                    f"{anchor.score}, and the score scale stops at {score_scale_max}",
+                    details={
+                        "reason": "anchor_above_scale",
+                        "attribute": str(self.attribute),
+                        "anchor_score": anchor.score,
+                        "score_scale_max": score_scale_max,
+                    },
                 )
 
     @property

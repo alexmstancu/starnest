@@ -33,6 +33,7 @@ from starnest.api.errors import (
 from starnest.candidates import MalformedIdentifierError
 from starnest.criteria import ScaleAnchor, ThresholdShapeError
 from starnest.data import InvalidReferencePeriodError, ReferencePeriod
+from starnest.evaluation import RankingError
 from starnest.household import Household, HouseholdPlaceError
 
 NEW_YEARS_DAY, NEW_YEARS_EVE = date(2026, 1, 1), date(2026, 12, 31)
@@ -134,6 +135,26 @@ class TestWhatTheHandlersLeaveAlone:
 
         assert response.status_code == 404
         assert json.loads(bytes(response.body)) == {"detail": "Not Found"}
+
+
+class TestTheDetailsARefusalCarries:
+    """One convention for every domain error: a `details` mapping, rendered as it is (PL-006).
+
+    A client words a refusal from its code and its details, never from the sentence, so the
+    specifics a screen needs have to travel as fields.
+    """
+
+    async def test_a_domain_errors_details_reach_the_body(self) -> None:
+        refused = RankingError("nothing to rank", details={"reason": "scores_nothing"})
+
+        response = await domain_error_handler(A_REQUEST, refused)
+
+        assert json.loads(bytes(response.body))["details"] == {"reason": "scores_nothing"}
+
+    async def test_a_domain_error_with_none_renders_none(self) -> None:
+        response = await domain_error_handler(A_REQUEST, RankingError("nothing to rank"))
+
+        assert "details" not in json.loads(bytes(response.body))
 
 
 def _paging(page: int = 1, page_size: Annotated[int, Query(alias="page-size")] = 10) -> int:

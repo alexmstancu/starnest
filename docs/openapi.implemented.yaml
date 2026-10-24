@@ -999,6 +999,7 @@ components:
       - invalid_value
       - answer_recorded_by_a_person
       - score_scale_not_set
+      - score_scale_below_anchors
       - comparator_limit_not_set
       - comparator_limit_exceeded
       - invalid_comparison
@@ -3048,7 +3049,16 @@ paths:
         Raises `WeightsAllLockedError` -- a 409 -- when every other weight in the
         pillar is locked,
 
-        naming the locks so the screen can say which ones.'
+        naming the locks so the screen can say which ones.
+
+
+        **An anchor above the score range is refused as it is saved** (PL-006), rather
+        than left
+
+        for Rank to meet as a set it cannot score. Checked inside the edit, so the
+        refusal rolls the
+
+        edit back; an unset range has no top to be above.'
       operationId: updateCriterion
       parameters:
       - in: path
@@ -4333,7 +4343,19 @@ paths:
         made, and substituting a default here would be this application choosing what
         "enough
 
-        coverage" means (`devplan.md` 0.3).'
+        coverage" means (`devplan.md` 0.3).
+
+
+        **A changed range has to reach every anchor** (PL-006), or a set anchoring
+        a figure above
+
+        its top could no longer be ranked. **Only a change is refused** (N7): a range
+        already stored
+
+        below an anchor -- by a migration, say -- would otherwise block every save
+        of the other
+
+        four, and Rank explains that state instead.'
       operationId: replaceSettings
       requestBody:
         content:

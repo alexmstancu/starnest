@@ -85,6 +85,7 @@ class ErrorCode(StrEnum):
     INVALID_VALUE = "invalid_value"
     ANSWER_RECORDED_BY_A_PERSON = "answer_recorded_by_a_person"
     SCORE_SCALE_NOT_SET = "score_scale_not_set"
+    SCORE_SCALE_BELOW_ANCHORS = "score_scale_below_anchors"
     COMPARATOR_LIMIT_NOT_SET = "comparator_limit_not_set"
     COMPARATOR_LIMIT_EXCEEDED = "comparator_limit_exceeded"
     INVALID_COMPARISON = "invalid_comparison"
@@ -260,11 +261,11 @@ async def domain_error_handler(request: Request, error: Exception) -> JSONRespon
 
 
 def _details_of(error: Exception) -> dict[str, Any] | None:
-    """The offending field, where the error carries one.
+    """What the refusal is about, in fields a client can word without parsing the sentence.
 
-    `WeightsAllLockedError` knows which locks were in the way, and the screen names them
-    (`reqs.md` 5.2). A message a user cannot act on is barely better than no message. Any other
-    domain error says what it concerns in a `details` mapping of its own, passed through as is.
+    One convention for any domain error: an optional `details` mapping, passed through as it is
+    (PL-006, PL-007). `WeightsAllLockedError` predates it and carries the locks in the way, which
+    the screen names (`reqs.md` 5.2). A message a user cannot act on is barely better than none.
     """
     locked = getattr(error, "locked", None)
     if locked:

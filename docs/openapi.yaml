@@ -76,6 +76,13 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/SettingsInput" } } }
       responses:
         "200": { $ref: "#/components/responses/Settings" }
+        "409":
+          description: >-
+            `score_scale_below_anchors`: a criterion anchors a figure to a score above the new top
+            of the range. `details.minimum` is the lowest top every live anchor fits under, with
+            the `criteria_set` and `attribute` that need it. A null, or a value equal to the stored
+            one, is never refused.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /levels:
@@ -1161,7 +1168,12 @@ components:
         operation does not declare, a value of the wrong type or out of range, a null the field
         refuses, an identifier that cannot be one -- and `details.errors` lists each offending
         `location` with its `problem`. Any other code is the domain's own refusal, such as
-        `invalid_criterion`, `unknown_place` or `unknown_scope`.
+        `invalid_criterion`, `unknown_place` or `unknown_scope`. `cannot_be_ranked` names its
+        cause in `details.reason` where it is one of two: `scores_nothing`, no criterion is
+        scored at the level; or `pillar_without_criteria`, pillars carry weight that no
+        criterion scores into, listed in `details.pillars`. `invalid_criterion` raised against
+        the score range carries `details.reason: anchor_above_scale`, with the `attribute`, its
+        `anchor_score` and the `score_scale_max` it is above.
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     NotFound:
       description: No such resource.
@@ -1204,6 +1216,7 @@ components:
         - invalid_value
         - answer_recorded_by_a_person
         - score_scale_not_set
+        - score_scale_below_anchors
         - comparator_limit_not_set
         - comparator_limit_exceeded
         - invalid_comparison
