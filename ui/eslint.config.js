@@ -5,6 +5,47 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
+const NO_INLINE_STYLE = {
+  selector: "JSXAttribute[name.name='style']",
+  message:
+    "No inline styles: put a class in styles.css. An inline style is design in a " +
+    "component, which is what makes a redesign a rewrite.",
+};
+
+const NO_PARSING_IN_MARKUP = {
+  selector:
+    "CallExpression[callee.name=/^(Number|parseInt|parseFloat)$/], " +
+    "MemberExpression[property.name='toFixed']",
+  message:
+    "Parsing and formatting belong outside the markup: a number becomes text in " +
+    "format/display.ts, and text becomes a number in format/typedNumber.ts.",
+};
+
+// **A box that takes a number is a NumberField** (PL-024, UF-026). `type="number"` reports text
+// it cannot parse as "", which a form read as "no bound"; a keystroke filter behind `inputMode`
+// turned "72,000" into 72. `src/app/numberBoxes.test.ts` holds the ledger below to the code.
+const NUMBER_BOX_MESSAGE =
+  "A box that takes a number is a NumberField: it keeps what was typed and refuses what " +
+  "it cannot read.";
+const NO_HAND_MADE_NUMBER_BOX = [
+  {
+    selector:
+      "JSXOpeningElement[name.name='input'] > JSXAttribute[name.name='type'][value.value='number']",
+    message: NUMBER_BOX_MESSAGE,
+  },
+  {
+    selector: "JSXOpeningElement[name.name='input'] > JSXAttribute[name.name='inputMode']",
+    message: NUMBER_BOX_MESSAGE,
+  },
+];
+
+/** Today's hand-made number boxes, and who moves each onto NumberField. */
+const NUMBER_BOX_LEDGER = {
+  "src/routes/configure/household/HouseholdPanel.tsx": "C02 U2 (PL-024)",
+  "src/routes/configure/settings/SettingsPanel.tsx": "C02 U2 (PL-024)",
+  "src/routes/configure/criteria/CriterionRuleFields.tsx": "C02 U3 (PL-024)",
+};
+
 /**
  * The interface's lint rules.
  *
@@ -76,15 +117,7 @@ export default tseslint.config(
           ],
         },
       ],
-      "no-restricted-syntax": [
-        "error",
-        {
-          selector: "JSXAttribute[name.name='style']",
-          message:
-            "No inline styles: put a class in styles.css. An inline style is design in a " +
-            "component, which is what makes a redesign a rewrite.",
-        },
-      ],
+      "no-restricted-syntax": ["error", NO_INLINE_STYLE, ...NO_HAND_MADE_NUMBER_BOX],
     },
   },
 
@@ -102,21 +135,27 @@ export default tseslint.config(
     rules: {
       "no-restricted-syntax": [
         "error",
-        {
-          selector: "JSXAttribute[name.name='style']",
-          message:
-            "No inline styles: put a class in styles.css. An inline style is design in a " +
-            "component, which is what makes a redesign a rewrite.",
-        },
-        {
-          selector:
-            "CallExpression[callee.name=/^(Number|parseInt|parseFloat)$/], " +
-            "MemberExpression[property.name='toFixed']",
-          message:
-            "Parsing and formatting belong outside the markup: a number becomes text in " +
-            "format/display.ts, and text becomes a number in the panel's own module.",
-        },
+        NO_INLINE_STYLE,
+        NO_PARSING_IN_MARKUP,
+        ...NO_HAND_MADE_NUMBER_BOX,
       ],
+    },
+  },
+
+  {
+    // The shared field is the one place a box sets its numeric keypad.
+    name: "number boxes: the shared field",
+    files: ["src/shell/NumberField.tsx"],
+    rules: {
+      "no-restricted-syntax": ["error", NO_INLINE_STYLE, NO_PARSING_IN_MARKUP],
+    },
+  },
+
+  {
+    name: "number boxes: today's call sites, ledgered",
+    files: Object.keys(NUMBER_BOX_LEDGER),
+    rules: {
+      "no-restricted-syntax": ["error", NO_INLINE_STYLE, NO_PARSING_IN_MARKUP],
     },
   },
 
@@ -190,8 +229,9 @@ export default tseslint.config(
                 "./src/format",
               ],
             },
-            // `format/` turns a number into text and imports nothing of ours: it is the one
-            // place with no dependencies at all, which is what makes it safe to call anywhere.
+            // `format/` turns numbers into text and text into numbers, and imports nothing of
+            // ours: it is the one place with no dependencies at all, which is what makes it safe
+            // to call anywhere.
             {
               target: "./src/format",
               from: [

@@ -302,6 +302,168 @@ describe("the design is a plugin", () => {
   });
 });
 
+/** Product source as text with its comments removed, so prose about a pattern never matches it. */
+function productSource(path: string): string {
+  return readFileSync(path, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+}
+
+function productFiles(): string[] {
+  return sourceFiles().filter(
+    (path) =>
+      !/\.test\.tsx?$/.test(path) &&
+      !path.includes(`${SOURCE}/mocks/`) &&
+      !path.includes(`${SOURCE}/testing/`) &&
+      !path.endsWith("api/schema.ts"),
+  );
+}
+
+/** Each ledger entry must still be needed: a listed file that no longer matches is stale. */
+function againstLedger(found: string[], ledger: Record<string, string>) {
+  return {
+    unlisted: found.filter((path) => !(path in ledger)),
+    stale: Object.keys(ledger).filter((path) => !found.includes(path)),
+  };
+}
+
+describe("typed text becomes a number in one place", () => {
+  /**
+   * PL-024 (UF-026). Four modules called `Number()` on typed text, each with rules of its own,
+   * and one of them read "72,000" as 72 and said "Saved.". `format/typedNumber.ts` is the one
+   * parser now; a screen that turns text into a number elsewhere is listed here with the reason
+   * or the cluster that moves it, and an entry that is no longer needed fails.
+   */
+  const LEDGER: Record<string, string> = {
+    "routes/configure/weights.ts": "permanent: a range slider's value is always a number in range",
+    "routes/run/acquisitionDiff.ts": "permanent: a select's value, never typed",
+    "routes/compare/synthesisImpact.ts": "permanent: the server's sentence, never typed",
+    "routes/run/manualEntry.ts": "C06 (PL-085) moves hand entry onto readNumber",
+    "routes/configure/household/householdForm.ts": "C02 U2 (PL-024) moves it onto readNumber",
+    "routes/configure/settings/settingsForm.ts": "C02 U2 (PL-024) moves it onto readNumber",
+    "routes/configure/numericInput.ts": "C02 U2 and U3 (PL-024) delete it",
+    "routes/configure/criteria/criterionForm.ts": "C02 U3 (PL-024) moves it onto readNumber",
+  };
+
+  it("happens nowhere else in a screen, unless the ledger says why", () => {
+    const parsing = productFiles()
+      .filter((path) => /\/(routes|shell)\//.test(path))
+      .filter((path) =>
+        /\b(Number|parseFloat|parseInt)\s*\(|Number\.(parseFloat|parseInt)\s*\(/.test(
+          productSource(path),
+        ),
+      )
+      .map((path) => path.replace(`${SOURCE}/`, ""));
+
+    expect(againstLedger(parsing, LEDGER)).toEqual({ unlisted: [], stale: [] });
+  });
+});
+
+describe("every class the markup uses is styled", () => {
+  /**
+   * PL-027 (UF-037). A class with no rule is invisible until a browser renders it: the rule
+   * editor and the "Accept an uncapped spend" checkbox shipped with no layout at all. This
+   * generalises the meter test above to every class a component can emit.
+   *
+   * A class counts as styled when a selector names it, or names one of its `--` modifiers. A
+   * class built from a template (`chip--${tone}`) needs a selector with that prefix. Anything
+   * else is listed with the cluster that owns it, and an entry that is styled or gone fails.
+   */
+  const LEDGER: Record<string, string> = {
+    notice__message: "C01",
+    "screen--configure": "C01",
+    fieldset: "C01",
+    "matrix__cell--focus": "C07",
+    "matrix__cell--compact": "C07",
+    "rule-form": "C02 U3 (PL-027)",
+    "rule-form__row": "C02 U3 (PL-027)",
+    "rule-form__group": "C02 U3 (PL-027)",
+    "rule-form__problems": "C02 U3 (PL-027)",
+    "rule-form__actions": "C02 U3 (PL-027)",
+    "lock-icon": "C08 (PL-109): sized by its attributes, a hook with no rule yet",
+  };
+
+  const STRING = /"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g;
+  const strings = (text: string) =>
+    [...text.matchAll(STRING)].map((match) => match[1] ?? match[2] ?? match[3] ?? "");
+
+  /** Every string inside a `className={...}` expression, its braces balanced. */
+  function classNameExpressions(text: string): string[] {
+    return [...text.matchAll(/className=\{/g)].flatMap((match) => {
+      const start = (match.index ?? 0) + "className={".length;
+      let depth = 1;
+      let end = start;
+      while (depth > 0 && end < text.length) {
+        if (text[end] === "{") depth++;
+        if (text[end] === "}") depth--;
+        end++;
+      }
+      return strings(text.slice(start, end - 1));
+    });
+  }
+
+  /** What a component can put in a class attribute, as written in its source. */
+  function classesIn(text: string): string[] {
+    const direct = [...text.matchAll(/className="([^"]*)"/g)].map((match) => match[1] ?? "");
+    // A class kept in a variable or a map (`CHIP_CLASS`, `rowClass`) is found by its BEM shape.
+    const named = strings(text).filter((each) =>
+      /^[a-z][a-z0-9-]*(__|--)[a-z0-9_${}.-]*( [a-z0-9_${}.-]+)*$/.test(each.trim()),
+    );
+    return [...direct, ...classNameExpressions(text), ...named]
+      .flatMap((each) => each.split(/\s+/))
+      .filter((token) => /^[a-z][a-z0-9_-]*(\$\{.*)?$/.test(token));
+  }
+
+  function unstyledClasses(): string[] {
+    const stylesheet = readFileSync(join(SOURCE, "styles.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const selectors = [...stylesheet.matchAll(/([^{}]+)\{/g)].map((match) => match[1]).join(" ");
+    const styled = [...new Set([...selectors.matchAll(/\.([a-z][a-z0-9_-]*)/g)].map((m) => m[1] ?? ""))];
+    const isStyled = (token: string) => {
+      const template = token.indexOf("${");
+      if (template === 0) return true;
+      if (template > 0) {
+        const prefix = token.slice(0, template);
+        return styled.some((name) => name.startsWith(prefix) && name.length > prefix.length);
+      }
+      return styled.some((name) => name === token || name.startsWith(`${token}--`));
+    };
+
+    const unstyled = productFiles()
+      .filter((path) => /\.tsx?$/.test(path))
+      .flatMap((path) => classesIn(productSource(path)))
+      .filter((token) => !isStyled(token));
+    return [...new Set(unstyled)].sort();
+  }
+
+  it("has a rule in the stylesheet, unless the ledger names its owner", () => {
+    expect(againstLedger(unstyledClasses(), LEDGER)).toEqual({ unlisted: [], stale: [] });
+  });
+});
+
+describe("a checkbox is drawn with its words in one place", () => {
+  /**
+   * T27-4 (PL-027). `label.field` is a column flex that fills the card, so a checkbox inside it
+   * was ticked by a click anywhere across the card. `shell/CheckboxField.tsx` is the one label
+   * that wraps a box and its words; the screens still writing their own move onto it in U3.
+   */
+  const LEDGER: Record<string, string> = {
+    "routes/configure/criteria/CriterionRuleFields.tsx": "C02 U3 (PL-027)",
+    "routes/configure/proposals/ProposalsPanel.tsx": "C02 U3 (PL-027)",
+  };
+
+  it("is CheckboxField, unless the ledger names who moves it", () => {
+    const writingTheirOwn = productFiles()
+      .filter((path) => !path.endsWith("shell/CheckboxField.tsx"))
+      .filter((path) => productSource(path).includes('className="field field--inline"'))
+      .map((path) => path.replace(`${SOURCE}/`, ""));
+
+    expect(againstLedger(writingTheirOwn, LEDGER)).toEqual({ unlisted: [], stale: [] });
+  });
+});
+
 describe("the reverse proxy", () => {
   it("gives synchronous gate research a longer read timeout than a polled run", () => {
     /**

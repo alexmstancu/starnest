@@ -4529,3 +4529,22 @@ select.field__control {
   --colour-tick: #98a2b3;
   --colour-success-deep: #05603a;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════════════
+   A refused number field (PL-024, C02-S8)
+
+   The design marks the box itself, not only its note: a soft red border on a near-white red
+   fill (README, Round 4 additions). Neither is the danger border, which is a step paler, so
+   they are tokens of their own. After `.field__control` and its hover, never above them: the
+   mark must win a tie by source order.
+   ══════════════════════════════════════════════════════════════════════════════════════ */
+:root {
+  --colour-invalid-border: #fda29b;
+  --colour-invalid-surface: #fffbfa;
+}
+
+.field__control[aria-invalid="true"],
+.field__control[aria-invalid="true"]:hover {
+  border-color: var(--colour-invalid-border);
+  background: var(--colour-invalid-surface);
+}
