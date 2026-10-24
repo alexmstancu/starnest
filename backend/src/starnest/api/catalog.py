@@ -31,9 +31,16 @@ class LevelBody(BaseModel):
     parent_level: str | None = None
 
 
+class HeaviestPillarBody(BaseModel):
+    level: str
+    pillar: str
+    weight: float = Field(ge=0, le=100)
+
+
 class CriteriaSetSummaryBody(BaseModel):
     id: str
     name: str
+    heaviest_pillars: tuple[HeaviestPillarBody, ...]
 
 
 class CandidateBody(BaseModel):
@@ -119,12 +126,24 @@ async def list_levels(catalog: Catalog) -> LevelsBody:
 
 @router.get("/criteria-sets", operation_id="listCriteriaSets", response_model=CriteriaSetsBody)
 async def list_criteria_sets(criteria: Criteria) -> CriteriaSetsBody:
-    """Headers only. Reading 41 criteria per set to fill a dropdown would make the most
-    frequently rendered element in the product the most expensive one."""
+    """Headers only, with each set's heaviest pillar per level (PL-040). Reading 41 criteria per
+    set to fill a dropdown would make the most frequently rendered element in the product the
+    most expensive one."""
     return CriteriaSetsBody(
         items=tuple(
-            CriteriaSetSummaryBody(id=str(identifier), name=name)
-            for identifier, name in await criteria.read_criteria_set_summaries()
+            CriteriaSetSummaryBody(
+                id=str(summary.id),
+                name=summary.name,
+                heaviest_pillars=tuple(
+                    HeaviestPillarBody(
+                        level=str(heaviest.level),
+                        pillar=str(heaviest.pillar),
+                        weight=float(heaviest.weight),
+                    )
+                    for heaviest in summary.heaviest_pillars
+                ),
+            )
+            for summary in await criteria.read_criteria_set_summaries()
         )
     )
 

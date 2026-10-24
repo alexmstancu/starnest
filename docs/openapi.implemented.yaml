@@ -667,6 +667,11 @@ components:
       type: object
     CriteriaSetSummaryBody:
       properties:
+        heaviest_pillars:
+          items:
+            $ref: '#/components/schemas/HeaviestPillarBody'
+          title: Heaviest Pillars
+          type: array
         id:
           title: Id
           type: string
@@ -676,6 +681,7 @@ components:
       required:
       - id
       - name
+      - heaviest_pillars
       title: CriteriaSetSummaryBody
       type: object
     CriteriaSetsBody:
@@ -950,18 +956,23 @@ components:
       type: object
     DuplicateRequest:
       additionalProperties: false
-      description: What the copy will be called, and what to call it.
+      description: 'What the copy will be called, and what to call it; the server
+        derives `id` when it is
+
+        left out (PL-039).'
       properties:
         id:
-          minLength: 1
+          anyOf:
+          - minLength: 1
+            type: string
+          - type: 'null'
           title: Id
-          type: string
         name:
+          maxLength: 60
           minLength: 1
           title: Name
           type: string
       required:
-      - id
       - name
       title: DuplicateRequest
       type: object
@@ -1227,6 +1238,25 @@ components:
       - target_range
       title: Goal
       type: string
+    HeaviestPillarBody:
+      properties:
+        level:
+          title: Level
+          type: string
+        pillar:
+          title: Pillar
+          type: string
+        weight:
+          maximum: 100.0
+          minimum: 0.0
+          title: Weight
+          type: number
+      required:
+      - level
+      - pillar
+      - weight
+      title: HeaviestPillarBody
+      type: object
     HouseholdBody:
       additionalProperties: false
       description: '`HouseholdInput` from the contract, which `Household` is defined
@@ -1575,17 +1605,21 @@ components:
       type: object
     NewCriteriaSetBody:
       additionalProperties: false
+      description: The new set's name; the server derives `id` when it is left out
+        (PL-039).
       properties:
         id:
-          minLength: 1
+          anyOf:
+          - minLength: 1
+            type: string
+          - type: 'null'
           title: Id
-          type: string
         name:
+          maxLength: 60
           minLength: 1
           title: Name
           type: string
       required:
-      - id
       - name
       title: NewCriteriaSetBody
       type: object
@@ -1877,6 +1911,7 @@ components:
       additionalProperties: false
       properties:
         name:
+          maxLength: 60
           minLength: 1
           title: Name
           type: string
@@ -2902,10 +2937,13 @@ paths:
       - rules
   /v1/criteria-sets:
     get:
-      description: 'Headers only. Reading 41 criteria per set to fill a dropdown would
-        make the most
+      description: 'Headers only, with each set''s heaviest pillar per level (PL-040).
+        Reading 41 criteria per
 
-        frequently rendered element in the product the most expensive one.'
+        set to fill a dropdown would make the most frequently rendered element in
+        the product the
+
+        most expensive one.'
       operationId: listCriteriaSets
       responses:
         '200':
@@ -2940,10 +2978,11 @@ paths:
         written.
 
 
-        Refused with 409 when the identifier is taken: silently replacing a set somebody
-        built is
+        Refused with 409 when an identifier given is taken: silently replacing a set
+        somebody built
 
-        the worst kind of success (`criteria/store.py`).'
+        is the worst kind of success (`criteria/store.py`). Left out, it is derived
+        from the name.'
       operationId: createCriteriaSet
       requestBody:
         content:

@@ -21,10 +21,11 @@ means. It reads the set, asks the domain for the changed one, and writes it back
 """
 
 from decimal import Decimal
-from typing import ClassVar
+from itertools import islice
+from typing import Annotated, ClassVar
 
 from fastapi import APIRouter, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from starnest.api.bodies import ContractBody, PartialChangeBody
 from starnest.api.dependencies import Catalog, Criteria
@@ -33,6 +34,9 @@ from starnest.criteria import (
     BooleanThreshold,
     CriteriaSet,
     CriteriaSetError,
+    CriteriaSetExistsError,
+    CriteriaSetNameTakenError,
+    CriteriaStore,
     Criterion,
     Goal,
     LabelThreshold,
@@ -43,6 +47,7 @@ from starnest.criteria import (
     ScaleAnchor,
     ShareThreshold,
     UnknownCriterionError,
+    identifiers_from,
 )
 from starnest.criteria.criteria_set import THE_SCORING_RULE
 from starnest.data import UnknownCompoundRuleError, UnknownMatchRuleError
@@ -440,13 +445,26 @@ def _number_or_none(figure: Decimal | None) -> float | None:
     return None if figure is None else float(figure)
 
 
+SetName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
+"""A name as a request may give it (PL-036, PL-041, S4): trimmed, then not blank and at most 60.
+
+On the requests only, never on `CriteriaSet`: a name stored before the cap existed must still
+read, and can still be renamed shorter."""
+
+_IDENTIFIERS_TRIED = 100
+"""How many identifiers a name is tried under before the creation is refused (PL-039).
+
+A bound, not an expectation: the first is free unless the user keeps a hundred sets of one name."""
+
+
 class DuplicateRequest(BaseModel):
-    """What the copy will be called, and what to call it."""
+    """What the copy will be called, and what to call it; the server derives `id` when it is
+    left out (PL-039)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str = Field(min_length=1)
-    name: str = Field(min_length=1)
+    id: str | None = Field(default=None, min_length=1)
+    name: SetName
 
 
 @router.post(
@@ -469,23 +487,52 @@ async def duplicate_criteria_set(
     is what makes `local_employment` safe to leave exactly as seeded.
     """
     original = await criteria.read_criteria_set(criteria_set_id)
-    copy = original.duplicated_as(wanted.id, wanted.name)
-    await criteria.create_criteria_set(copy)
-    response.headers["Location"] = f"/v1/criteria-sets/{wanted.id}"
+    copy = await _create_as_copy(original, wanted.id, wanted.name, criteria)
+    response.headers["Location"] = f"/v1/criteria-sets/{copy.id}"
     return _set_body(copy)
 
 
+async def _create_as_copy(
+    original: CriteriaSet, identifier: str | None, name: str, criteria: CriteriaStore
+) -> CriteriaSet:
+    """Store a copy of `original` under `identifier`, or under the first identifier derived from
+    `name` that no set, live or deleted, has ever held (D-C03-2).
+
+    Tried by inserting rather than by reading the ids first, so a set created meanwhile under
+    the same derivation is met by the primary key, and the next candidate taken.
+    """
+    if identifier is not None:
+        copy = original.duplicated_as(identifier, name)
+        await criteria.create_criteria_set(copy)
+        return copy
+    for candidate in islice(identifiers_from(name), _IDENTIFIERS_TRIED):
+        copy = original.duplicated_as(candidate, name)
+        try:
+            await criteria.create_criteria_set(copy)
+        except CriteriaSetNameTakenError:
+            raise
+        except CriteriaSetExistsError:
+            continue
+        return copy
+    raise CriteriaSetExistsError(
+        f"the first {_IDENTIFIERS_TRIED} identifiers derived from {name!r} are all held by sets, "
+        "live or deleted: give one"
+    )
+
+
 class NewCriteriaSetBody(BaseModel):
+    """The new set's name; the server derives `id` when it is left out (PL-039)."""
+
     model_config = ConfigDict(extra="forbid")
 
-    id: str = Field(min_length=1)
-    name: str = Field(min_length=1)
+    id: str | None = Field(default=None, min_length=1)
+    name: SetName
 
 
 class RenameBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1)
+    name: SetName
 
 
 class PillarWeightInput(PartialChangeBody):
@@ -536,12 +583,12 @@ async def create_criteria_set(body: NewCriteriaSetBody, criteria: Criteria) -> C
     pillar to it, so it was a set nothing could ever rank. Copied the way a duplicate is, so what
     a copy holds is decided in one place. No default is a 409, and nothing is written.
 
-    Refused with 409 when the identifier is taken: silently replacing a set somebody built is
-    the worst kind of success (`criteria/store.py`).
+    Refused with 409 when an identifier given is taken: silently replacing a set somebody built
+    is the worst kind of success (`criteria/store.py`). Left out, it is derived from the name.
     """
     default = await criteria.read_default_criteria_set()
-    await criteria.create_criteria_set(default.duplicated_as(body.id, body.name))
-    return _set_body(await criteria.read_criteria_set(body.id))
+    created = await _create_as_copy(default, body.id, body.name, criteria)
+    return _set_body(await criteria.read_criteria_set(created.id))
 
 
 @router.patch(

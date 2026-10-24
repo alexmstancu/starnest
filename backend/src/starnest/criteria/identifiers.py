@@ -13,6 +13,11 @@ module holds is only the preference: which of those rules a given set enforces.
 `CatalogId`, which is itself checked by constructing a `LevelId`.
 """
 
+import re
+import unicodedata
+from collections.abc import Iterator
+from itertools import count
+
 from starnest.data import CatalogId
 
 
@@ -24,3 +29,26 @@ class CriteriaSetId(CatalogId):
     """
 
     __slots__ = ()
+
+
+def identifiers_from(name: str) -> Iterator[CriteriaSetId]:
+    """Every identifier a set called `name` may take, in the order to try them (PL-039).
+
+    Derived once, at creation, and never regenerated from the name afterwards (`arch.md` 3.2a):
+    accents stripped, lower case, every run of anything else one underscore. A name with nothing
+    left, or one starting with a digit, is prefixed `set`, because an identifier starts with a
+    letter. Endless -- `zurich`, `zurich_2`, `zurich_3`... -- so the caller bounds it, taking the
+    first one no set has ever held.
+    """
+    stem = _stem_of(name)
+    yield CriteriaSetId(stem)
+    for counter in count(2):
+        yield CriteriaSetId(f"{stem}_{counter}")
+
+
+def _stem_of(name: str) -> str:
+    unaccented = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    stem = re.sub(r"[^a-z0-9]+", "_", unaccented.lower()).strip("_")
+    if not stem:
+        return "set"
+    return f"set_{stem}" if stem[0].isdigit() else stem

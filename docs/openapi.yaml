@@ -356,7 +356,7 @@ paths:
         and the rules the default turns on -- so it can be ranked wherever the default can. The
         default is the set the list marks `is_default`, and it is copied even after it has been
         deleted, when the list no longer shows it.
-        409 `criteria_set_exists` when a set, live or deleted, already holds `id`: identifiers
+        409 `criteria_set_exists` when a set, live or deleted, already holds the `id` given: identifiers
         are never reused. 409 `criteria_set_name_taken` when a live set already has this name
         (`CriteriaSetName`). 409 `no_default_criteria_set` when no set is the default. A refused
         request writes nothing.
@@ -366,9 +366,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [id, name]
+              required: [name]
               properties:
-                id: { type: string, examples: ["partner"] }
+                id: { $ref: "#/components/schemas/NewCriteriaSetId" }
                 name: { $ref: "#/components/schemas/CriteriaSetName" }
       responses:
         "201": { $ref: "#/components/responses/CriteriaSet" }
@@ -453,7 +453,7 @@ paths:
       description: |
         The safe way to experiment — a drag edits a set in place (`reqs.md` Q168). 404 when no
         live set has this identifier: a deleted set cannot be copied until it is restored.
-        409 `criteria_set_exists` when a set, live or deleted, already holds `id`: identifiers
+        409 `criteria_set_exists` when a set, live or deleted, already holds the `id` given: identifiers
         are never reused. 409 `criteria_set_name_taken` when a live set already has this name
         (`CriteriaSetName`). A refused request writes nothing.
       operationId: duplicateCriteriaSet
@@ -464,14 +464,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [id, name]
+              required: [name]
               properties:
-                id: { type: string }
+                id: { $ref: "#/components/schemas/NewCriteriaSetId" }
                 name: { $ref: "#/components/schemas/CriteriaSetName" }
       responses:
         "201": { $ref: "#/components/responses/CriteriaSet" }
         "404": { $ref: "#/components/responses/NotFound" }
-        # The identifier is the caller's to choose, so it can already be taken. Refused rather
+        # An identifier the caller chooses can already be taken. Refused rather
         # than overwritten: silently replacing a set somebody built loses the weights they
         # chose and says nothing (reqs.md Q191).
         "409": { $ref: "#/components/responses/Conflict" }
@@ -1741,6 +1741,17 @@ components:
         `details.name`. A deleted set's name is free: a live set may take it, and the deleted
         set's restore is then refused.
 
+    NewCriteriaSetId:
+      type: string
+      examples: ["partner"]
+      description: |
+        Optional. Left out, the server derives it from the name, once and never again: accents
+        stripped, lower case, every run of anything else one underscore, prefixed `set_` when
+        nothing is left or it starts with a digit -- "Zürich" gives `zurich`, "2026 plan"
+        `set_2026_plan`, "Ελλάδα" `set` -- and the first of `<stem>`, `<stem>_2`, `<stem>_3`...
+        that no set, live or deleted, has ever held. Given, it is used as it is, and refused with
+        409 `criteria_set_exists` when a set, live or deleted, holds it.
+
     CriteriaSetSummary:
       type: object
       required: [id, name]
@@ -1751,9 +1762,10 @@ components:
       allOf:
         - $ref: "#/components/schemas/CriteriaSetSummary"
         - type: object
-          # Deliberately not required yet: the server does not send these, and every served list
-          # is validated against this schema (`test_contract_conformance.py`). They become
-          # required in the commit that serves them.
+          # `is_default` is deliberately not required yet: the server does not send it, and every
+          # served list is validated against this schema (`test_contract_conformance.py`). It
+          # becomes required in the commit that serves it.
+          required: [heaviest_pillars]
           properties:
             is_default:
               type: boolean

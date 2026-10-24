@@ -17,9 +17,26 @@
 -- The set picker. Header rows only -- reading one whole is a separate, heavier query.
 -- Live sets only: a deleted set keeps every row it owns to be restored exactly (PL-033), so
 -- this filter and its twins below are all that keep it off the screen.
+-- Each row carries the pillar the set weighs most at every level, in level order, a tie going to
+-- the pillar shown first; `[]` for a set that weighs no pillar (PL-040). The weight travels as
+-- text, so it reaches `Decimal` with every digit `numeric` kept rather than through a float.
 SELECT s.id,
-       s.name
+       s.name,
+       COALESCE(heaviest.pillars, '[]'::json) AS heaviest_pillars
 FROM   criteria_set AS s
+LEFT   JOIN LATERAL (
+         SELECT json_agg(
+                  json_build_object('level', top.level, 'pillar', top.pillar,
+                                    'weight', top.weight::text)
+                  ORDER BY top.depth_order) AS pillars
+         FROM   (SELECT DISTINCT ON (w.level)
+                        w.level, w.pillar, w.weight, l.depth_order
+                 FROM   pillar_weight AS w
+                 JOIN   pillar AS p ON p.id = w.pillar
+                 JOIN   level  AS l ON l.id = w.level
+                 WHERE  w.criteria_set = s.id
+                 ORDER  BY w.level, w.weight DESC, p.display_order) AS top
+       ) AS heaviest ON true
 WHERE  s.deleted_at IS NULL
 ORDER  BY s.id;
 

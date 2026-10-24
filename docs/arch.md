@@ -224,8 +224,9 @@ Czechia, Türkiye, Eswatini — and when one does, `candidate.name` is updated a
 is not. Every foreign key survives. The identifier may end up reading oddly; that is the correct
 trade, because the alternative is rewriting every row that points at it.
 
-> A readable identifier is a surrogate key that happens to be legible. It is not derived from
-> the display name and is never regenerated from it.
+> A readable identifier is a surrogate key that happens to be legible. It may be derived from
+> the display name once, at creation -- a criteria set created without an identifier is given
+> one (PL-039) -- and is never regenerated from it.
 
 ### 3.3 A shared parent with typed children
 

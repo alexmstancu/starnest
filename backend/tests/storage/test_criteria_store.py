@@ -22,6 +22,7 @@ from starnest.criteria import (
     CriteriaSet,
     CriteriaSetInUseError,
     Goal,
+    HeaviestPillar,
     NormalisationMethod,
     PillarWeight,
     UnknownCriteriaSetError,
@@ -86,10 +87,40 @@ class TestReadingASet:
     async def test_the_summaries_carry_every_set(self, criteria: PostgresCriteriaStore) -> None:
         """The switcher shows names, so it reads names -- not 41 criteria per set to fill a
         dropdown."""
-        summaries = dict(await criteria.read_criteria_set_summaries())
+        summaries = {summary.id for summary in await criteria.read_criteria_set_summaries()}
 
         assert MINIMAL in summaries
         assert SHIPPED in summaries
+
+    async def test_each_summary_names_the_heaviest_pillar_a_tie_going_to_the_one_shown_first(
+        self, criteria: PostgresCriteriaStore
+    ) -> None:
+        """T40-B1 (PL-040). Housing is shown before career and sorts after it by id, so the tie
+        tells display order from identifier order; a set weighing no pillar has no heaviest."""
+        tied = CriteriaSet(
+            id="tied_by_a_test",
+            name="Tied by a test",
+            pillar_weights=(
+                PillarWeight(pillar="career", level=COUNTRY, weight=Decimal("40.5")),
+                PillarWeight(pillar="economics", level=COUNTRY, weight=Decimal(19)),
+                PillarWeight(pillar="housing", level=COUNTRY, weight=Decimal("40.5")),
+            ),
+        )
+        weightless = CriteriaSet(id="weightless_by_a_test", name="Weightless by a test")
+        await criteria.create_criteria_set(tied)
+        await criteria.create_criteria_set(weightless)
+        try:
+            summaries = {
+                summary.id: summary for summary in await criteria.read_criteria_set_summaries()
+            }
+        finally:
+            await criteria.purge_criteria_set(tied.id)
+            await criteria.purge_criteria_set(weightless.id)
+
+        assert summaries[tied.id].heaviest_pillars == (
+            HeaviestPillar(level=COUNTRY, pillar="housing", weight=Decimal("40.5")),
+        )
+        assert summaries[weightless.id].heaviest_pillars == ()
 
     async def test_a_whole_set_round_trips_through_the_database(
         self, criteria: PostgresCriteriaStore

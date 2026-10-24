@@ -23,11 +23,13 @@ candidate, modelled where findings are.
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from decimal import Decimal
 from typing import NamedTuple
 
+from starnest.candidates import LevelId
 from starnest.criteria.criteria_set import CriteriaSet
 from starnest.criteria.identifiers import CriteriaSetId
-from starnest.data import AttributeId, MatchRuleResult
+from starnest.data import AttributeId, MatchRuleResult, PillarId
 from starnest.household import Settings
 
 
@@ -95,12 +97,30 @@ class HighestAnchor(NamedTuple):
     attribute: AttributeId
 
 
+class HeaviestPillar(NamedTuple):
+    """The pillar a set weighs most at one level, a tie going to the pillar shown first (PL-040)."""
+
+    level: LevelId
+    pillar: PillarId
+    weight: Decimal
+
+
+class CriteriaSetSummary(NamedTuple):
+    """A live set as the switcher lists it: what it is called, and what it weighs most."""
+
+    id: CriteriaSetId
+    name: str
+    heaviest_pillars: tuple[HeaviestPillar, ...]
+    """One per level the set weighs pillars at, in level order; empty when it weighs none."""
+
+
 class CriteriaStore(ABC):
     """Read and write criteria sets, their criteria, their anchors and their weights."""
 
     @abstractmethod
-    async def read_criteria_set_summaries(self) -> tuple[tuple[CriteriaSetId, str], ...]:
-        """Every live set's identifier and name, for the switcher the sidebar shows everywhere.
+    async def read_criteria_set_summaries(self) -> tuple[CriteriaSetSummary, ...]:
+        """Every live set's identifier, name and heaviest pillars, for the switcher the sidebar
+        shows everywhere.
 
         Summaries rather than whole sets. The switcher displays names; reading 41 criteria
         with their anchors and thresholds for each set to populate a dropdown would make the

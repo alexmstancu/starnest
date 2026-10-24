@@ -246,7 +246,7 @@ class TestDeletingInPlace:
 
         with pytest.raises(UnknownCriteriaSetError):
             await criteria.read_criteria_set(RESTORED)
-        assert RESTORED not in dict(await criteria.read_criteria_set_summaries())
+        assert RESTORED not in {s.id for s in await criteria.read_criteria_set_summaries()}
 
         restored = await criteria.restore_criteria_set(RESTORED)
 

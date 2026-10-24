@@ -858,7 +858,24 @@ class TestTheListsTheInterfaceNeedsBeforeItCanRender:
         body = (await api.get("/v1/criteria-sets")).json()
 
         assert {s["id"] for s in body["items"]} >= {MINIMAL, "local_employment"}
-        assert all(set(s) == {"id", "name"} for s in body["items"])
+        assert all(set(s) == {"id", "name", "heaviest_pillars"} for s in body["items"])
+
+    async def test_each_listed_set_names_its_heaviest_pillar_as_its_weights_give_it(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """PL-040: the list agrees with the set's own pillar weights, read whole."""
+        listed = (await api.get("/v1/criteria-sets")).json()["items"]
+        shipped = next(item for item in listed if item["id"] == "local_employment")
+        weights = (await api.get("/v1/criteria-sets/local_employment")).json()["pillar_weights"]
+        at_country = [weight for weight in weights if weight["level"] == COUNTRY]
+
+        assert [h["level"] for h in shipped["heaviest_pillars"]] == [COUNTRY]
+        assert shipped["heaviest_pillars"][0]["weight"] == max(w["weight"] for w in at_country)
+        assert shipped["heaviest_pillars"][0]["pillar"] in {
+            w["pillar"]
+            for w in at_country
+            if w["weight"] == shipped["heaviest_pillars"][0]["weight"]
+        }
 
     async def test_the_candidates_at_a_level_come_back_whole(self, api: httpx.AsyncClient) -> None:
         """Bounded by the catalog, so returned whole rather than paginated (`arch.md` 7.6)."""

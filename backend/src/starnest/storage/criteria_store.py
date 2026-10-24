@@ -23,6 +23,7 @@ from psycopg import AsyncConnection
 from psycopg.errors import ForeignKeyViolation, UniqueViolation
 from psycopg_pool import AsyncConnectionPool
 
+from starnest.candidates import LevelId
 from starnest.criteria import (
     BooleanThreshold,
     CriteriaSet,
@@ -30,9 +31,11 @@ from starnest.criteria import (
     CriteriaSetId,
     CriteriaSetInUseError,
     CriteriaSetNameTakenError,
+    CriteriaSetSummary,
     CriteriaStore,
     Criterion,
     Goal,
+    HeaviestPillar,
     HighestAnchor,
     LabelThreshold,
     MatchingThreshold,
@@ -45,7 +48,7 @@ from starnest.criteria import (
     ShareThreshold,
     UnknownCriteriaSetError,
 )
-from starnest.data import AttributeId, UnknownAttributeError, ValueType
+from starnest.data import AttributeId, PillarId, UnknownAttributeError, ValueType
 from starnest.household import Settings
 from starnest.storage.connections import acquire
 from starnest.storage.household_store import settings_from, write_settings
@@ -62,10 +65,24 @@ class PostgresCriteriaStore(CriteriaStore):
         self._pool = pool
         self._queries = load_queries()
 
-    async def read_criteria_set_summaries(self) -> tuple[tuple[CriteriaSetId, str], ...]:
+    async def read_criteria_set_summaries(self) -> tuple[CriteriaSetSummary, ...]:
         async with acquire(self._pool) as connection:
             rows = [row async for row in self._queries.select_criteria_sets(connection)]
-        return tuple((CriteriaSetId(row.id), row.name) for row in rows)
+        return tuple(
+            CriteriaSetSummary(
+                CriteriaSetId(row.id),
+                row.name,
+                tuple(
+                    HeaviestPillar(
+                        LevelId(heaviest["level"]),
+                        PillarId(heaviest["pillar"]),
+                        Decimal(heaviest["weight"]),
+                    )
+                    for heaviest in row.heaviest_pillars
+                ),
+            )
+            for row in rows
+        )
 
     async def read_criteria_set(
         self, criteria_set: CriteriaSetId | str, *, level: str | None = None

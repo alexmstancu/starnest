@@ -33,7 +33,7 @@ from starnest.criteria.criterion import (
     ScaleAnchor,
     TargetRange,
 )
-from starnest.criteria.identifiers import CriteriaSetId
+from starnest.criteria.identifiers import CriteriaSetId, identifiers_from
 from starnest.criteria.rebalancing import (
     TOTAL,
     WeightedItem,
@@ -44,7 +44,9 @@ from starnest.criteria.store import (
     CriteriaSetExistsError,
     CriteriaSetInUseError,
     CriteriaSetNameTakenError,
+    CriteriaSetSummary,
     CriteriaStore,
+    HeaviestPillar,
     HighestAnchor,
     MatchRuleResultStore,
     NoDefaultCriteriaSetError,
@@ -70,10 +72,12 @@ __all__ = [
     "CriteriaSetId",
     "CriteriaSetInUseError",
     "CriteriaSetNameTakenError",
+    "CriteriaSetSummary",
     "CriteriaStore",
     "Criterion",
     "CriterionDeclarationError",
     "Goal",
+    "HeaviestPillar",
     "HighestAnchor",
     "LabelThreshold",
     "MatchRuleResultStore",
@@ -91,5 +95,6 @@ __all__ = [
     "UnknownCriterionError",
     "WeightedItem",
     "WeightsAllLockedError",
+    "identifiers_from",
     "rebalance",
 ]
