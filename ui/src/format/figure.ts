@@ -39,7 +39,7 @@ const READABLE_UNIT: Record<string, string> = {
   years: "years",
 };
 
-function readableUnit(unit: unknown): string {
+export function readableUnit(unit: unknown): string {
   const token = String(unit);
   return READABLE_UNIT[token] ?? token.replace(/_/g, " ");
 }

@@ -4629,3 +4629,15 @@ select.field__control {
   letter-spacing: 0.02em;
   color: var(--colour-warning);
 }
+
+/* ── Compare's column headers (C07 U8, PL-108) ─────────────────────────────────────────
+   Every candidate header sits right, over its numbers, and the focus's is in the accent. */
+.table--matrix > thead > tr > th.matrix__head {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.table--matrix > thead > tr > th.matrix__head--focus {
+  color: var(--colour-accent);
+}

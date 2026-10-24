@@ -177,7 +177,7 @@ describe("a card's pillar lines and the matrix", () => {
       const unscored = pillars.filter((pillar) => {
         const row = pillarRow(table, pillar);
         return [focusColumn, column].some(
-          (at) => cellIn(row, at)?.querySelector(".matrix__score")?.textContent === "—",
+          (at) => cellIn(row, at)?.querySelector(".matrix__score")?.textContent === "No score",
         );
       });
       expect(notComparableOn(comparator), comparator).toEqual(unscored);

@@ -50,7 +50,7 @@ export function ViewChoices({
         <p className="choice__meaning">
           {shownAs === "score"
             ? "Everything on the one score scale, so pillars and attributes can be read side by side."
-            : "Each figure as its publisher issued it, in its own unit — which is what a source can be checked against."}
+            : "Each figure as its publisher issued it, in its own unit — which is what a source can be checked against. Pillar rows stay in points, because a pillar has no unit of its own."}
         </p>
       </div>
 

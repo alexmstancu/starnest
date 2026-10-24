@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { Comparison } from "../../api/endpoints";
 import {
-  ABSENT,
   attributeName,
   formatDecimal,
   formatPercentage,
@@ -10,14 +9,17 @@ import {
   pillarName,
 } from "../../format/display";
 import { describeFigure } from "../../format/figure";
-import { isScale, scoreRange } from "../../format/scoreScale";
+import { isScale } from "../../format/scoreScale";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { usePillarNames } from "../../api/usePillarNames";
 import { divergingBar, maxAbsDelta, type Divergence } from "./divergingBar";
 import { pillarMatrix, type MatrixCell } from "./pillarMatrix";
 import {
   attributeGroups,
+  attributeNote,
+  hasFigure,
   payloadMagnitude,
+  publishedUnit,
   rawGapText,
   rawGapUnit,
   type AttributeRow,
@@ -82,10 +84,9 @@ export function ComparisonMatrix({
   // On the comparison's own scale (PL-062), which is the live setting and not always 100.
   // **No scale, no bar**: the scores print, and nothing is drawn or tinted against a top
   // nobody sent.
-  const range = scoreRange(comparison.score_scale_max);
   const scale: ScaleReading = {
-    note: range === "" ? "normalised score" : `normalised ${range}`,
     drawn: isScale(comparison.score_scale_max),
+    max: isScale(comparison.score_scale_max) ? comparison.score_scale_max : null,
   };
 
   const groups = attributeGroups(
@@ -94,7 +95,8 @@ export function ComparisonMatrix({
       pillar: row.pillar ?? "",
       focusScore: row.focus?.normalised_score ?? null,
       focusRaw: payloadMagnitude(row.focus?.value),
-      focusFigure: row.focus?.value ? describeFigure(row.focus.value) : ABSENT,
+      focusFigure: row.focus?.value ? describeFigure(row.focus.value) : "",
+      unitWords: publishedUnit(row.focus?.value),
       focusProvenance: provenanceOf(row.focus?.value),
       gapUnit: rawGapUnit(row.focus?.value),
       // The server sends 0 where the focus has no figure; that is no weight, not a light one.
@@ -105,7 +107,7 @@ export function ComparisonMatrix({
         score: cell.normalised_score ?? null,
         rawDelta: cell.delta ?? null,
         worth: cell.weighted_contribution ?? null,
-        figure: cell.value ? describeFigure(cell.value) : ABSENT,
+        figure: cell.value ? describeFigure(cell.value) : "",
         provenance: provenanceOf(cell.value),
       })),
     })),
@@ -131,12 +133,12 @@ export function ComparisonMatrix({
             >
               Weight
             </th>
-            <th scope="col">
+            <th scope="col" className="matrix__head matrix__head--focus">
               {comparison.focus.name} (focus)
               <StatusChip result={comparison.focus} />
             </th>
             {comparators.map((each) => (
-              <th key={each.candidate} scope="col">
+              <th key={each.candidate} scope="col" className="matrix__head">
                 {each.name}
                 <StatusChip result={each} />
               </th>
@@ -152,12 +154,12 @@ export function ComparisonMatrix({
               <td className="matrix__weight">
                 {formatPercentage(totalRow.weight, 1)}
               </td>
-              <FocusCell text={formatScore(totalRow.focus)} />
+              <FocusCell text={scoreText(totalRow.focus)} />
               {totalRow.cells.map((cell) => (
                 <Cell
                   key={cell.candidate}
                   bar={scale.drawn ? divergingBar(cell.delta, totalScale, totalRow.focus) : null}
-                  scoreText={formatScore(cell.score)}
+                  scoreText={scoreText(cell.score)}
                   deltaText={deltaText(cell)}
                 />
               ))}
@@ -191,6 +193,7 @@ export function ComparisonMatrix({
                 scale={scale}
                 measure={measure}
                 pillarFocus={row.focus}
+                focusName={comparison.focus.name}
                 naming={(attribute) => attributeName(attributeNames, attribute)}
               />
             );
@@ -201,10 +204,11 @@ export function ComparisonMatrix({
   );
 }
 
-/** How the matrix reads its scores: the scale's name, and whether there is one to draw against. */
+/** How the matrix reads its scores: whether there is a scale to draw against, and its top. */
 interface ScaleReading {
-  note: string;
   drawn: boolean;
+  /** The scale's top, or null when the comparison carried none. */
+  max: number | null;
 }
 
 /** A pillar row, and -- when it is open -- the attribute rows beneath it. */
@@ -222,6 +226,7 @@ function PillarGroup({
   scale,
   measure,
   pillarFocus,
+  focusName,
   naming,
 }: {
   label: string;
@@ -238,6 +243,7 @@ function PillarGroup({
   measure: Measure;
   /** The focus's reading on this pillar, which an impact's tint is measured against. */
   pillarFocus: number | null;
+  focusName: string;
   naming: (attribute: string) => string;
 }) {
   const rowClass =
@@ -291,6 +297,7 @@ function PillarGroup({
             scale={scale}
             measure={measure}
             pillarFocus={pillarFocus}
+            note={attributeNote(attribute, shownAs, focusName, scale.max)}
             name={naming(attribute.attribute)}
           />
         ))}
@@ -311,6 +318,7 @@ function AttributeRowView({
   scale,
   measure,
   pillarFocus,
+  note,
   name,
 }: {
   row: AttributeRow;
@@ -318,13 +326,12 @@ function AttributeRowView({
   scale: ScaleReading;
   measure: Measure;
   pillarFocus: number | null;
+  /** How the row reads, from `attributeNote`. */
+  note: string;
   name: string;
 }) {
   const raw = shownAs === "raw";
   const impact = measure === "impact";
-  // The raw gap is the server's comparator minus focus, printed as sent, so the row says which
-  // way round it reads; the bar beneath it is coloured by the scores (UI-19).
-  const note = raw ? rawNote(row) : scale.note;
 
   return (
     <tr className="matrix__row matrix__row--attr">
@@ -339,7 +346,7 @@ function AttributeRowView({
       </th>
       <td className="matrix__weight">{formatPercentage(row.weight, 1)}</td>
       <FocusCell
-        text={raw ? row.focusFigure || ABSENT : formatScore(row.focusScore)}
+        text={raw ? figureText(row.focusFigure) : scoreText(row.focusScore)}
         provenance={row.focusProvenance}
         compact
       />
@@ -357,7 +364,7 @@ function AttributeRowView({
             bar={bar}
             compact
             provenance={cell.provenance}
-            scoreText={raw ? cell.figure || ABSENT : formatScore(cell.score)}
+            scoreText={raw ? figureText(cell.figure) : scoreText(cell.score)}
             deltaText={
               impact
                 ? formatSigned(cell.worth, decimalsFor(measure))
@@ -373,14 +380,16 @@ function AttributeRowView({
 }
 
 /**
- * What a raw row says about its gaps. A monetary figure is shown in its own currency, but its
- * gap is the server's euro gap, so the row says so rather than calling it the figure's unit.
+ * A score as a cell prints it: "No score" where there is none (PL-101). A dash is kept for the
+ * gap slot, where it means "no difference to read" rather than "nothing here".
  */
-function rawNote(row: AttributeRow): string {
-  if (row.focusRaw === null && row.focusScore === null) return "no figure";
-  return row.gapUnit === null
-    ? "its own unit; gaps read comparator minus focus"
-    : `its own currency; gaps in ${row.gapUnit}, comparator minus focus`;
+function scoreText(value: number | null): string {
+  return value === null ? "No score" : formatScore(value);
+}
+
+/** A figure as a cell prints it, or "No value" where the candidate has none (PL-101). */
+function figureText(figure: string): string {
+  return hasFigure(figure) ? figure : "No value";
 }
 
 /** The baseline column: the line everything else is measured from, so it carries no bar. */
@@ -515,6 +524,7 @@ function decimalsFor(measure: Measure): number {
 
 /** A pillar reading: a score, or an impact on the total to one decimal. */
 function readingText(value: number | null, measure: Measure): string {
+  if (value === null) return "No score";
   return measure === "impact" ? formatDecimal(value, decimalsFor(measure)) : formatScore(value);
 }
 

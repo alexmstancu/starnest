@@ -14,8 +14,8 @@
  * `routes/` may not call `Number`, which is why even that subtraction lives in a module.
  */
 
-import { formatSigned } from "../../format/display";
-import { EURO } from "../../format/figure";
+import { ABSENT, formatSigned } from "../../format/display";
+import { EURO, readableUnit } from "../../format/figure";
 import { maxAbsDelta } from "./divergingBar";
 import { rankInPillar } from "./ordering";
 
@@ -41,10 +41,12 @@ export interface AttributeSource {
   /** The focus's figure as a bare magnitude, for judging a gap's relative size. Null when it
    *  has no numeric magnitude (a label set, a boolean) or no figure at all. */
   focusRaw: number | null;
-  /** The focus's figure in words, already formatted. */
+  /** The focus's figure in words, already formatted; empty where it has none. */
   focusFigure: string;
   /** Where the focus's figure came from, or null where it has none. */
   focusProvenance?: Provenance | null;
+  /** The unit the figure is published in, in words, where its payload names one. */
+  unitWords?: string | null;
   /** The unit the server's raw gaps are in when it is not the figure's own: EUR for money,
    *  since the comparison subtracts euro equivalents. Null for every other type. */
   gapUnit: string | null;
@@ -91,6 +93,7 @@ export interface AttributeRow {
   focusRaw: number | null;
   focusFigure: string;
   focusProvenance: Provenance | null;
+  unitWords: string | null;
   gapUnit: string | null;
   /** What the attribute counted for in the focus's total, as a percentage, or null. */
   weight: number | null;
@@ -130,6 +133,12 @@ export function payloadMagnitude(
   return null;
 }
 
+/** The unit a figure's payload names, in words, or null where it names none. */
+export function publishedUnit(value: { payload?: unknown } | null | undefined): string | null {
+  const unit = payloadOf(value)?.["unit"];
+  return typeof unit === "string" && unit !== "" ? readableUnit(unit) : null;
+}
+
 /** EUR for a monetary figure, whose raw gap is in euros whatever its own currency; else null. */
 export function rawGapUnit(value: { payload?: unknown } | null | undefined): string | null {
   const euros = payloadOf(value)?.["amount_eur"];
@@ -143,6 +152,40 @@ export function rawGapUnit(value: { payload?: unknown } | null | undefined): str
 export function rawGapText(delta: number | null, unit: string | null): string {
   const text = formatSigned(delta, "figure");
   return unit === null || delta === null || !Number.isFinite(delta) ? text : `${text} ${unit}`;
+}
+
+/** Whether a figure's words say anything: an empty string or a dash is no figure. */
+export function hasFigure(figure: string): boolean {
+  return figure !== "" && figure !== ABSENT;
+}
+
+/**
+ * What an attribute row says about how it reads (PL-105): per row, not per mode, so it never
+ * describes a figure the focus does not have or a gap the row cannot have.
+ *
+ * **The direction is stated once, as comparator minus focus** (D24a), and only where some
+ * comparator has a raw gap: a label set or a boolean has none to describe.
+ */
+export function attributeNote(
+  row: AttributeRow,
+  shownAs: "score" | "raw",
+  focusName: string,
+  scale: number | null,
+): string {
+  const focusHasIt = shownAs === "raw" ? hasFigure(row.focusFigure) : row.focusScore !== null;
+  if (!focusHasIt) return `no value for ${focusName}`;
+  if (shownAs === "score") return scale === null ? "normalised score" : `normalised 0–${scale}`;
+
+  const published =
+    row.gapUnit !== null
+      ? "in its own currency, as published"
+      : row.unitWords !== null
+        ? `in ${row.unitWords}, as published`
+        : "as published";
+  if (!row.cells.some((cell) => cell.rawDelta !== null)) return published;
+  return row.gapUnit === null
+    ? `${published}; gaps read comparator minus focus`
+    : `${published}; gaps in ${row.gapUnit}, comparator minus focus`;
 }
 
 function payloadOf(value: { payload?: unknown } | null | undefined): Record<string, unknown> | null {
@@ -209,6 +252,7 @@ export function attributeGroups(
       focusRaw: source.focusRaw,
       focusFigure: source.focusFigure,
       focusProvenance: source.focusProvenance ?? null,
+      unitWords: source.unitWords ?? null,
       gapUnit: source.gapUnit,
       weight: source.weight ?? null,
       // Filled once the pillar's rows are all in, as are the rulers shared across them.

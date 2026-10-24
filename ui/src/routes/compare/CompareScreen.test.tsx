@@ -585,9 +585,9 @@ describe("a figure's provenance on Compare", () => {
     return screen.findByRole("row", { name: /cost of living index/i });
   }
 
-  /** Every figure cell in the row: the focus's and each comparator's. */
+  /** Every figure cell in the row, the focus's and each comparator's: all but the weight. */
   function figureCells(row: HTMLElement): HTMLElement[] {
-    return [...row.querySelectorAll<HTMLElement>(".matrix__cell")];
+    return within(row).getAllByRole("cell").slice(1);
   }
 
   it.each(["score", "raw"] as const)(
@@ -640,6 +640,26 @@ describe("a figure's provenance on Compare", () => {
 });
 
 describe("the attribute figures inside a pillar", () => {
+  /** PL-105. A score's note names the scale the comparison is on. */
+  it("says what a score is measured on", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    await openPillar("Economy");
+
+    const row = await screen.findByRole("row", { name: /cost of living index/i });
+    expect(row.querySelector(".matrix__attr-note")).toHaveTextContent(/^normalised 0–100$/);
+  });
+
+  /** PL-105. Raw mode leaves the pillar rows in points, and says so. */
+  it("says the pillars stay in points when figures are shown raw", async () => {
+    renderShell("/compare");
+    await userEvent.click(await screen.findByRole("radio", { name: /raw figures/i }));
+
+    expect(
+      screen.getByText(/pillar rows stay in points, because a pillar has no unit of its own/i),
+    ).toBeInTheDocument();
+  });
+
   it("shows scores until asked for figures", async () => {
     serveFigures("country.spain", "Spain");
     renderShell("/compare");
@@ -725,7 +745,8 @@ describe("the attribute figures inside a pillar", () => {
     expect(row).toHaveTextContent("600 EUR");
   });
 
-  it("says there is no figure where the focus has neither a figure nor a score", async () => {
+  /** PL-105. The note names the focus, and says nothing of gaps a row with no focus cannot have. */
+  it("says no value for the focus, and nothing about gaps the row cannot have", async () => {
     mockServer.use(
       http.get(`${BASE}/attributes`, () =>
         HttpResponse.json({ items: [...ATTRIBUTES, MEDIAN_RENT] }),
@@ -741,10 +762,16 @@ describe("the attribute figures inside a pillar", () => {
 
     await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
 
-    expect(screen.getByRole("row", { name: /median rent/i })).toHaveTextContent("no figure");
+    const note = screen.getByRole("row", { name: /median rent/i }).querySelector(".matrix__attr-note");
+    expect(note).toHaveTextContent(/^no value for Romania$/);
+
+    await userEvent.click(screen.getByRole("radio", { name: /score 0/i }));
+
+    expect(note).toHaveTextContent(/^no value for Romania$/);
   });
 
-  it("says nothing rather than zero where a figure is missing", async () => {
+  /** PL-101. Words where nothing can be shown; a dash only where a gap would be. */
+  it("reads No value where a figure is missing, and no gap beside it", async () => {
     mockServer.use(
       http.get(`${BASE}/comparisons`, () =>
         HttpResponse.json(missingFigureComparison()),
@@ -760,7 +787,13 @@ describe("the attribute figures inside a pillar", () => {
     const row = screen.getByRole("row", { name: /cost of living index/i });
     // The focus has its figure; the comparator, which the server gave no value, reads absent.
     expect(row).toHaveTextContent("92.1 EU27 = 100");
-    expect(within(row).getAllByText("—").length).toBeGreaterThan(0);
+    const [, , netherlands] = within(row).getAllByRole("cell");
+    expect(netherlands?.querySelector(".matrix__score")).toHaveTextContent(/^No value$/);
+    expect(netherlands?.querySelector(".matrix__delta")).toHaveTextContent(/^—$/);
+    // No comparator has a raw gap, so the note promises none.
+    expect(row.querySelector(".matrix__attr-note")).toHaveTextContent(
+      /^in EU27 = 100, as published$/,
+    );
   });
 
   /**
@@ -777,8 +810,8 @@ describe("the attribute figures inside a pillar", () => {
     await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
 
     expect(
-      screen.getByRole("row", { name: /cost of living index/i }),
-    ).toHaveTextContent("its own unit; gaps read comparator minus focus");
+      screen.getByRole("row", { name: /cost of living index/i }).querySelector(".matrix__attr-note"),
+    ).toHaveTextContent(/^in EU27 = 100, as published; gaps read comparator minus focus$/);
   });
 
   /**
@@ -890,7 +923,8 @@ describe("when a comparison cannot be drawn", () => {
     expect(screen.getByRole("button", { name: /^compare$/i })).toBeDisabled();
   });
 
-  it("shows a dash where a comparator has no score at all", async () => {
+  /** PL-101. Words where nothing can be shown; a dash only in a gap's place. */
+  it("reads No score and No comparable score where a comparator has no score at all", async () => {
     mockServer.use(
       http.get(`${BASE}/comparisons`, () =>
         HttpResponse.json({
@@ -938,7 +972,9 @@ describe("when a comparison cannot be drawn", () => {
 
     const table = await screen.findByRole("table", { name: /every pillar/i });
     const total = within(table).getByRole("row", { name: /total score/i });
-    expect(within(total).getAllByText("—").length).toBeGreaterThan(0);
+    const netherlands = within(total).getAllByRole("cell")[2];
+    expect(netherlands?.querySelector(".matrix__score")).toHaveTextContent(/^No score$/);
+    expect(netherlands?.querySelector(".matrix__delta")).toHaveTextContent(/^—$/);
     const card = await cardOf("Netherlands");
     expect(within(card).getByText("No comparable score")).toBeInTheDocument();
     expect(card).toHaveTextContent("Not comparable, no data: Economy");

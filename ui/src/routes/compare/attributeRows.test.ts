@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ABSENT } from "../../format/display";
 import {
   attributeGroups,
+  attributeNote,
   payloadMagnitude,
   rawGapText,
   rawGapUnit,
@@ -325,5 +326,44 @@ describe("an attribute's weight and worth", () => {
       ["country.d", 1],
       ["country.e", 2],
     ]);
+  });
+});
+
+/** PL-105. What an attribute row's note says, row by row. */
+describe("an attribute row's note", () => {
+  const rowOf = (source: AttributeSource) => attributeGroups([source], order).get(source.pillar)![0]!;
+  const indexed = { ...economicsA, unitWords: "EU27 = 100" };
+
+  it("names the scale a score is on", () => {
+    expect(attributeNote(rowOf(indexed), "score", "Portugal", 50)).toBe("normalised 0–50");
+    expect(attributeNote(rowOf(indexed), "score", "Portugal", null)).toBe("normalised score");
+  });
+
+  it("names the unit a raw figure is published in, and which way its gaps read", () => {
+    expect(attributeNote(rowOf(indexed), "raw", "Portugal", 100)).toBe(
+      "in EU27 = 100, as published; gaps read comparator minus focus",
+    );
+  });
+
+  it("says a monetary gap is in euros whatever the figure's currency", () => {
+    const rent = { ...economicsA, gapUnit: "EUR" };
+    expect(attributeNote(rowOf(rent), "raw", "Romania", 100)).toBe(
+      "in its own currency, as published; gaps in EUR, comparator minus focus",
+    );
+  });
+
+  it("describes no gap a row cannot have", () => {
+    const labels = {
+      ...economicsA,
+      unitWords: null,
+      comparators: economicsA.comparators.map((cell) => ({ ...cell, rawDelta: null })),
+    };
+    expect(attributeNote(rowOf(labels), "raw", "Portugal", 100)).toBe("as published");
+  });
+
+  it("says the focus has no value, in either reading", () => {
+    const missing = { ...indexed, focusScore: null, focusRaw: null, focusFigure: "" };
+    expect(attributeNote(rowOf(missing), "score", "Portugal", 100)).toBe("no value for Portugal");
+    expect(attributeNote(rowOf(missing), "raw", "Portugal", 100)).toBe("no value for Portugal");
   });
 });
