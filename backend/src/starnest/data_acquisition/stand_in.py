@@ -16,7 +16,7 @@ nothing to lend, and a chain of borrowings would put a third country's number on
 second one's name.
 """
 
-from collections.abc import Collection, Sequence
+from collections.abc import Awaitable, Callable, Collection, Sequence
 from datetime import UTC, datetime
 
 from starnest.candidates import Candidate
@@ -44,6 +44,7 @@ async def stand_in(
     run: int | None = None,
     retrieved_at: datetime | None = None,
     pairs: Collection[tuple[str, str]] | None = None,
+    record_failures: Callable[[Sequence[AcquisitionFailure]], Awaitable[None]] | None = None,
 ) -> RunOutcome:
     """Borrow every declared figure within the run's scope, and append the copies.
 
@@ -55,6 +56,12 @@ async def stand_in(
     A retry asks about the pairs it went back to, and the rectangle they span holds corners
     nobody asked about: a borrow written there carried the retry's id and was counted as its
     answer, so the run read "3 of 2". `None` is a run over the rectangle, which covers every pair.
+
+    **What cannot be lent is recorded before the copies are written** (P93). The run used to
+    hold these failures until it ended, so a kill while the copies were written lost them, and a
+    pair with nothing to borrow read as unanswered rather than failed. First rather than after
+    the copies, unlike a source's failures (`run.py`), because a copy costs nothing: one lost to
+    a failure that could not be written is borrowed again by the next run covering the pair.
     """
     in_scope = declarations_in_scope(stand_ins, attributes, candidates, pairs=pairs)
     if not in_scope:
@@ -67,6 +74,8 @@ async def stand_in(
     borrowed = figures_standing_in(
         in_scope, substitutes_figures, retrieved_at=retrieved_at or datetime.now(tz=UTC)
     )
+    if record_failures is not None and borrowed.failures:
+        await record_failures(borrowed.failures)
     stamped = tuple(
         value.model_copy(update={"data_acquisition_run": run}) for value in borrowed.values
     )

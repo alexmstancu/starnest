@@ -9,7 +9,7 @@ scope, the value rows and the failure rows. A fake store could only return whate
 told to; what is under test is the derivation itself.
 """
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -18,22 +18,32 @@ import pytest
 from psycopg import errors
 from psycopg_pool import AsyncConnectionPool
 
-from starnest.candidates import CandidateId
+from starnest.candidates import Candidate, CandidateId
 from starnest.data import (
+    Attribute,
     ConfidenceLevel,
     DataSourceId,
     MatchRuleId,
     Ratio,
+    RatioParameters,
     ReferencePeriod,
+    StandIn,
     Value,
     ValueType,
 )
 from starnest.data_acquisition import (
+    STAND_IN,
+    Acquired,
     AcquisitionFailure,
+    CostMeter,
+    OpenedRun,
     ResearchSpend,
     RunAlreadyInFlightError,
     RunScope,
     RunStatus,
+    SourceAdapter,
+    acquire,
+    continue_run,
 )
 from starnest.storage import PostgresCatalogStore, PostgresRunStore, PostgresValueStore
 
@@ -330,7 +340,7 @@ class TestARunScopedToExactPairs:
         assert run.items_completed + run.items_failed + run.items_unanswered == run.items_total
 
 
-def a_figure(run: int, candidate: str, attribute: str, source: str = "eurostat") -> Value:
+def a_figure(run: int | None, candidate: str, attribute: str, source: str = "eurostat") -> Value:
     """One stored figure, with the provenance every value carries and nothing incidental."""
     return Value(
         candidate=candidate,
@@ -971,6 +981,153 @@ class TestSweepingRunsAProcessAbandoned:
         await PostgresRunStore(pool).sweep_abandoned_runs(finished_at=moment)
 
         assert (await PostgresRunStore(pool).read_run(a_run)).finished_at is not None
+
+
+class ProcessKilled(BaseException):
+    """kill -9, as near as a test gets. `continue_run` catches `Exception` and writes its failures
+    on the way out, which would hide the order under test; it cannot catch this."""
+
+
+class KilledWriting:
+    """The real value store, killed as a figure `dies_at` picks out reaches it."""
+
+    def __init__(self, store: PostgresValueStore, dies_at: Callable[[Value], bool]) -> None:
+        self._store = store
+        self._dies_at = dies_at
+
+    async def append(self, values: Sequence[Value]) -> tuple[Value, ...]:
+        if any(self._dies_at(value) for value in values):
+            raise ProcessKilled
+        return await self._store.append(values)
+
+    async def record_reuse(self, run, data_source, pairs) -> None:  # type: ignore[no-untyped-def]
+        await self._store.record_reuse(run, data_source, pairs)
+
+    async def read_active_values(self, **asked) -> tuple[Value, ...]:  # type: ignore[no-untyped-def]
+        return await self._store.read_active_values(**asked)
+
+
+class AnswersWith(SourceAdapter):
+    """Eurostat, answering the overburden rate with exactly the figures it was given."""
+
+    def __init__(self, *figures: Value) -> None:
+        self._figures = figures
+
+    @property
+    def data_source(self) -> DataSourceId:
+        return DataSourceId("eurostat")
+
+    @property
+    def attributes(self) -> tuple:
+        return (OVERBURDEN,)
+
+    async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+        return Acquired(values=self._figures)
+
+
+def a_ratio_attribute(identifier: str) -> Attribute:
+    return Attribute(
+        id=identifier,
+        name=identifier,
+        level="country",
+        value_type=ValueType.RATIO,
+        pillar="housing",
+        ratio_parameters=RatioParameters(basis="households"),
+    )
+
+
+def switzerland_standing_in_for_liechtenstein(attribute: str) -> StandIn:
+    return StandIn(
+        candidate="country.liechtenstein",
+        candidate_name="Liechtenstein",
+        attribute=attribute,
+        substitute="country.switzerland",
+        substitute_name="Switzerland",
+        reason="no source covers Liechtenstein for this",
+    )
+
+
+A_COUNTRY = {"id": "country", "depth_order": 1}
+PORTUGAL = Candidate(id="country.portugal", name="Portugal", level=A_COUNTRY, country_code="PT")
+LIECHTENSTEIN = Candidate(
+    id="country.liechtenstein", name="Liechtenstein", level=A_COUNTRY, country_code="LI"
+)
+
+
+class TestWhatAKilledRunLeavesForARetry:
+    """P93. A kill never leaves a written figure without the failure a retry reads.
+
+    The sweep is what the next boot does to the run a kill left `running`, so what it reads
+    afterwards is what the household sees.
+    """
+
+    async def test_a_rejection_killed_before_its_figure_reads_failed(
+        self, pool: AsyncConnectionPool, a_run: int
+    ) -> None:
+        """Killed as the rejected figure is written, its failure is already committed: the pair
+        counts as failed, which a retry reaches, rather than unanswered."""
+        runs = PostgresRunStore(pool)
+        rejected, _ = a_rejected_figure(a_run, "country.portugal")
+
+        with pytest.raises(ProcessKilled):
+            await acquire(
+                adapter=AnswersWith(rejected),
+                attributes=[a_ratio_attribute(OVERBURDEN)],
+                candidates=[PORTUGAL],
+                values=KilledWriting(
+                    PostgresValueStore(pool), dies_at=lambda value: value.is_rejected
+                ),
+                run=a_run,
+                record_failures=lambda batch: runs.record_failures(a_run, batch),
+            )
+        await runs.sweep_abandoned_runs(finished_at=datetime.now(UTC))
+
+        swept = await runs.read_run(a_run)
+        assert (swept.items_failed, swept.items_unanswered) == (1, 0)
+        assert await reach_of(pool, a_run) == {"eurostat": (0, 1)}
+
+    async def test_a_borrow_killed_while_its_copies_are_written_keeps_what_it_could_not_lend(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """The stand-in step's failures were held until the run ended, so a kill while its copies
+        were written lost them and a pair with nothing to borrow read as unanswered. Switzerland
+        lends its overburden rate, has no overcrowding rate to lend, and the kill lands on the
+        copy."""
+        runs, values = PostgresRunStore(pool), PostgresValueStore(pool)
+        await values.append([a_figure(None, "country.switzerland", OVERBURDEN)])
+        run = await runs.start_run(
+            RunScope(
+                level="country",
+                candidates=(str(LIECHTENSTEIN.id),),
+                attributes=(OVERBURDEN, OVERCROWDING),
+            ),
+            triggered_by="test",
+        )
+
+        with pytest.raises(ProcessKilled):
+            await continue_run(
+                OpenedRun(
+                    id=run,
+                    adapters=(),
+                    answerable=(),
+                    in_scope=(a_ratio_attribute(OVERBURDEN), a_ratio_attribute(OVERCROWDING)),
+                    candidates=(LIECHTENSTEIN,),
+                    values=KilledWriting(
+                        values, dies_at=lambda value: value.data_source == STAND_IN
+                    ),
+                    runs=runs,
+                    stand_ins=(
+                        switzerland_standing_in_for_liechtenstein(OVERBURDEN),
+                        switzerland_standing_in_for_liechtenstein(OVERCROWDING),
+                    ),
+                    meter=CostMeter(cap_eur=None),
+                )
+            )
+        await runs.sweep_abandoned_runs(finished_at=datetime.now(UTC))
+
+        swept = await runs.read_run(run)
+        assert (swept.items_failed, swept.items_unanswered) == (1, 1)
+        assert [(f.data_source, f.attribute) for f in swept.failures] == [(STAND_IN, OVERCROWDING)]
 
 
 class TestAskingARunToStop:

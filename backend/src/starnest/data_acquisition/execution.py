@@ -414,6 +414,10 @@ async def continue_run(opened: OpenedRun) -> Run:
             values=opened.values,
             run=run,
             pairs=opened.pairs,
+            # Durable as the borrow is decided, as each source's are per batch (P93).
+            record_failures=lambda batch: runs.record_failures(
+                run, _item_by_item(batch, candidates)
+            ),
         )
         failures.extend(borrowed.failures)
     except Exception:

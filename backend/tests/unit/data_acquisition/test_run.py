@@ -464,6 +464,157 @@ class TestWhatARunKeeps:
         ]
 
 
+class ProcessKilled(BaseException):
+    """kill -9, as near as a unit test gets. `continue_run` catches `Exception` and records what
+    it can on the way out; it cannot catch this, so nothing after the kill is written -- which is
+    the whole difference between a kill and an error."""
+
+
+class FailureWriter:
+    """The run's per-batch failure writer, keeping what it was handed -- what a kill finds."""
+
+    def __init__(self) -> None:
+        self.committed: list[AcquisitionFailure] = []
+
+    async def __call__(self, batch: Sequence[AcquisitionFailure]) -> None:
+        self.committed.extend(batch)
+
+
+class DiesWritingARejectedFigure(RecordingValueStore):
+    async def append(self, values):
+        if any(value.is_rejected for value in values):
+            raise ProcessKilled
+        return await super().append(values)
+
+
+class DiesReConfirmingAPair(RecordingValueStore):
+    async def record_reuse(self, run, data_source, pairs) -> None:
+        pairs = list(pairs)
+        if pairs:
+            raise ProcessKilled
+        await super().record_reuse(run, data_source, pairs)
+
+
+class AlreadyHoldsOptions(RecordingValueStore):
+    """Holds some breakdown options of a pair already, so appending those is a no-op."""
+
+    def __init__(self, *held: str) -> None:
+        super().__init__()
+        self._held = set(held)
+
+    async def append(self, values):
+        newly = [value for value in values if value.breakdown_option not in self._held]
+        self.appended.extend(newly)
+        return tuple(newly)
+
+
+class TestTheOrderABatchIsWrittenIn:
+    """P93. A rejected figure is a failure as well (BE-08), and the failure -- the only row a retry
+    reads -- used to commit after the figure and its reuse row. A kill between them kept the
+    rejection and lost the failure, so the pair was never asked again. Each batch is now written
+    accepted figures first, then its failures, then its rejected figures."""
+
+    async def test_a_rejection_s_failure_is_committed_before_its_figure(self) -> None:
+        written = FailureWriter()
+
+        with pytest.raises(ProcessKilled):
+            await acquire(
+                adapter=StubAdapter(
+                    {OVERBURDEN: Acquired(values=(a_rejected_value(),))}, declares=(OVERBURDEN,)
+                ),
+                attributes=[an_attribute()],
+                candidates=[PORTUGAL],
+                values=DiesWritingARejectedFigure(),
+                run=13,
+                record_failures=written,
+            )
+
+        assert [failure.reason for failure in written.committed] == [
+            f"the figure was stored and rejected: {NOT_CREDIBLE}"
+        ]
+
+    async def test_a_re_read_rejection_s_failure_is_committed_before_its_reuse_row(self) -> None:
+        """A transcribed figure already on record is a no-op append and a reuse row. Left without
+        its failure, that row is credited as stored by its source's breakdown."""
+        rejected = a_rejected_value()
+        pair = (str(rejected.candidate), str(rejected.attribute))
+        written = FailureWriter()
+
+        with pytest.raises(ProcessKilled):
+            await acquire(
+                adapter=StubAdapter(
+                    {OVERBURDEN: Acquired(values=(rejected,))}, declares=(OVERBURDEN,)
+                ),
+                attributes=[an_attribute()],
+                candidates=[PORTUGAL],
+                values=DiesReConfirmingAPair(already_holds=frozenset({pair})),
+                run=13,
+                record_failures=written,
+            )
+
+        assert [(failure.candidate, failure.attribute) for failure in written.committed] == [pair]
+
+    async def test_a_failure_that_cannot_be_written_keeps_the_figures_already_accepted(
+        self,
+    ) -> None:
+        """The half that writing every failure first would lose (BE-19). A failure write that
+        raises -- a database fault -- must not cost a paid batch the figures it already bought,
+        nor store a rejected figure without its failure."""
+        accepted = a_value().model_copy(update={"candidate": "country.spain"})
+        store = RecordingValueStore()
+
+        async def refuse(batch: Sequence[AcquisitionFailure]) -> None:
+            raise RuntimeError("the database refused the write")
+
+        with pytest.raises(RuntimeError, match="refused the write"):
+            await acquire(
+                adapter=StubAdapter(
+                    {OVERBURDEN: Acquired(values=(accepted, a_rejected_value()))},
+                    declares=(OVERBURDEN,),
+                ),
+                attributes=[an_attribute()],
+                candidates=[PORTUGAL, SPAIN],
+                values=store,
+                run=13,
+                record_failures=refuse,
+            )
+
+        assert [(value.candidate, value.is_rejected) for value in store.appended] == [
+            ("country.spain", False)
+        ]
+
+    @pytest.mark.parametrize(
+        ("already_held", "re_confirmed"),
+        [
+            ((), False),
+            (("rejected",), False),
+            (("accepted",), False),
+            (("accepted", "rejected"), True),
+        ],
+        ids=["both new", "only the accepted new", "only the rejected new", "neither new"],
+    )
+    async def test_a_pair_is_re_confirmed_only_when_none_of_its_figures_is_new(
+        self, already_held: tuple[str, ...], re_confirmed: bool
+    ) -> None:
+        """ST-09's rule survives the split. A pair answered by an accepted and a rejected breakdown
+        option is re-confirmed only when neither figure was new, and recorded once."""
+        accepted = a_value().model_copy(update={"breakdown_option": "accepted"})
+        rejected = a_rejected_value().model_copy(update={"breakdown_option": "rejected"})
+        store = AlreadyHoldsOptions(*already_held)
+
+        await acquire(
+            adapter=StubAdapter(
+                {OVERBURDEN: Acquired(values=(accepted, rejected))}, declares=(OVERBURDEN,)
+            ),
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=store,
+            run=13,
+        )
+
+        assert store.reused == ([("country.portugal", OVERBURDEN)] if re_confirmed else [])
+
+
 class TestWhenTheCapIsReachedInsideOneSource:
     """The cap has to bite between *attributes*, not only between sources (P47).
 

@@ -13,7 +13,7 @@ and have them land with real provenance -- which is the only thing minE2E needs,
 thing that can be judged before any figure exists.
 """
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal
 
@@ -86,6 +86,16 @@ async def acquire(
     if meter is not None and adapter.costs_money:
         adapter.meter_with(meter)
 
+    async def reconfirm(pairs: set[tuple[str, str]]) -> None:
+        # **A pair the source answered that was already on record is re-confirmed, not
+        # unanswered** (ST-09). A transcribed table re-read is the same observation, so its
+        # append is a no-op and no new row carries this run -- but the source did answer.
+        # Recorded so the run counts the pair completed rather than offering to ask again for a
+        # figure that is there. Keyed on the pair: a new value for it means it was stored, so
+        # only a pair its batch stored nothing new for is a reuse.
+        if run is not None and pairs:
+            await values.record_reuse(run, adapter.data_source, pairs)
+
     for attribute in answerable:
         # **One batch at a time, not the whole attribute at once** (BE-19). A structured source
         # yields its one indicator in a single batch; a paid source billing per candidate yields
@@ -138,19 +148,20 @@ async def acquire(
                     for value in acquired.values
                 )
             )
-            if fetched:
-                newly = await values.append(fetched)
-                stored.extend(newly)
-                # **A pair the source answered that was already on record is re-confirmed, not
-                # unanswered** (ST-09). A transcribed table re-read is the same observation, so
-                # its append is a no-op and no new row carries this run -- but the source did
-                # answer. Recorded so the run counts the pair completed rather than offering to
-                # ask again for a figure that is there. Keyed on the pair: a new value for it
-                # means it was stored, so only a pair with nothing new is a reuse.
-                if run is not None:
-                    answered = {(str(v.candidate), str(v.attribute)) for v in fetched}
-                    stored_now = {(str(v.candidate), str(v.attribute)) for v in newly}
-                    await values.record_reuse(run, adapter.data_source, answered - stored_now)
+            # **Accepted figures first, then the failures, then the rejected figures** (P93). A
+            # rejection's failure -- the only row a retry reads -- used to commit after the figure
+            # and its reuse row, so a kill between them kept the rejection, lost the failure, and
+            # no retry ever reached the pair. Not every failure first: one that could not be
+            # written would then cost a paid batch the figures it had already bought (BE-19). A
+            # kill between the failures and the rejected figures leaves a failure with nothing
+            # stored behind it, and a retry asks again -- the honest direction to be wrong in.
+            accepted = tuple(value for value in fetched if not value.is_rejected)
+            rejected = tuple(value for value in fetched if value.is_rejected)
+            newly_accepted = await values.append(accepted) if accepted else ()
+            stored.extend(newly_accepted)
+            # A pair a rejected figure answered too is settled with the rejected ones below.
+            await reconfirm(_pairs_of(accepted) - _pairs_of(rejected) - _pairs_of(newly_accepted))
+
             # Which source failed, stamped for the same reason as the run above: two sources
             # answer the total tax rate, and a retry has to know which one to ask again.
             #
@@ -173,8 +184,7 @@ async def acquire(
                     reason=f"the figure was stored and rejected: {value.rejection_reason}",
                     data_source=adapter.data_source,
                 )
-                for value in acquired.values
-                if value.is_rejected
+                for value in rejected
             )
             failures.extend(stamped)
             if collecting is not None:
@@ -189,6 +199,12 @@ async def acquire(
             if record_failures is not None and stamped:
                 await record_failures(stamped)
 
+            newly_rejected = await values.append(rejected) if rejected else ()
+            stored.extend(newly_rejected)
+            await reconfirm(
+                _pairs_of(rejected) - _pairs_of(newly_rejected) - _pairs_of(newly_accepted)
+            )
+
         # After this attribute is stored, never before it: the cap stops the *next* call, and
         # what has already been paid for is kept. The run one level up sees the exhausted meter
         # and halts, so the attributes left unasked are reported as unanswered rather than
@@ -202,3 +218,7 @@ async def acquire(
         cost_eur=cost,
         calls=calls,
     )
+
+
+def _pairs_of(values: Iterable[Value]) -> set[tuple[str, str]]:
+    return {(str(value.candidate), str(value.attribute)) for value in values}
