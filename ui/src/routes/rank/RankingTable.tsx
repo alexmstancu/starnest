@@ -146,6 +146,7 @@ export function RankingTable({
               <CandidateRow
                 names={names}
                 result={result}
+                scaleMax={ranking.score_scale_max}
                 open={isOpen(open, result.candidate)}
                 chosenPillar={chosenPillarOf(open, result.candidate)}
                 onToggle={onToggle}
@@ -243,6 +244,7 @@ function PillarKey({
 function CandidateRow({
   names,
   result,
+  scaleMax,
   open,
   chosenPillar = null,
   onToggle,
@@ -253,6 +255,8 @@ function CandidateRow({
 }: {
   names: PillarNames;
   result: CandidateResult;
+  /** The top of the range the ranking's scores are on: live, or frozen with a saved one. */
+  scaleMax: number | null | undefined;
   open: boolean;
   /** Which of this candidate's pillars the panel underneath is filtered to. */
   chosenPillar?: string | null;
@@ -355,6 +359,7 @@ function CandidateRow({
           names={names}
           candidate={result.name}
           pillars={result.pillar_scores}
+          scaleMax={scaleMax}
           chosen={chosenPillar}
           onChoose={
             onChoosePillar && ((pillar) => onChoosePillar(row, pillar))
@@ -431,6 +436,7 @@ function PillarChart({
   names,
   candidate,
   pillars,
+  scaleMax,
   chosen = null,
   onChoose,
 }: {
@@ -438,6 +444,7 @@ function PillarChart({
   /** The candidate's name, which is what a selectable chart is announced as. */
   candidate: string;
   pillars?: readonly PillarScore[] | null;
+  scaleMax: number | null | undefined;
   /** The pillar whose values the panel below is filtered to, drawn as the chosen bar. */
   chosen?: string | null;
   /**
@@ -448,7 +455,7 @@ function PillarChart({
    */
   onChoose?: (pillar: string) => void;
 }) {
-  const bars = pillarBars(pillars, (pillar) => pillarName(names, pillar));
+  const bars = pillarBars(pillars, scaleMax, (pillar) => pillarName(names, pillar));
   const hatch = useId();
   // The bar the keyboard is on while it is inside the chart, and null once it has left.
   const [focused, setFocused] = useState<string | null>(null);

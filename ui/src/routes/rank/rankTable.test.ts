@@ -125,7 +125,7 @@ describe("the pillar chart", () => {
   ];
 
   it("draws one bar per pillar, in the order they arrive", () => {
-    expect(pillarBars(roster).map((b) => b.pillar)).toEqual([
+    expect(pillarBars(roster, 100).map((b) => b.pillar)).toEqual([
       "economics",
       "family",
       "housing",
@@ -133,7 +133,7 @@ describe("the pillar chart", () => {
   });
 
   it("draws an unscored pillar full height and hatched, never omitted", () => {
-    const [, family] = pillarBars(roster);
+    const [, family] = pillarBars(roster, 100);
     // No ramp colour is the signal for "nothing was stored"; the chart hatches it.
     expect(family?.fill).toBeNull();
     expect(family?.height).toBe(PILLAR_CHART.height);
@@ -146,33 +146,26 @@ describe("the pillar chart", () => {
    * missing one, and those two mean opposite things.
    */
   it("gives the lowest score a bar with a body rather than a hairline", () => {
-    const [lowest] = pillarBars([
-      { pillar: "x", score: 1, weight: 1, contribution: 0 },
-    ]);
+    const [lowest] = pillarBars(
+      [{ pillar: "x", score: 1, weight: 1, contribution: 0 }],
+      100,
+    );
     expect(lowest?.height).toBe(19);
     expect(lowest?.label).toBe("1");
   });
 
-  /** 96 and above fills the band; 40 and below sits at the floor. */
+  /** 96% of the scale and above fills the band; 40% and below sits at the floor. */
   it("scales a bar across the range the scores actually occupy", () => {
-    const [top] = pillarBars([
-      { pillar: "x", score: 96, weight: 1, contribution: 0 },
-    ]);
+    const [top] = pillarBars([{ pillar: "x", score: 96, weight: 1, contribution: 0 }], 100);
     expect(top?.height).toBe(PILLAR_CHART.height);
-    const [middle] = pillarBars([
-      { pillar: "x", score: 68, weight: 1, contribution: 0 },
-    ]);
+    const [middle] = pillarBars([{ pillar: "x", score: 68, weight: 1, contribution: 0 }], 100);
     expect(middle?.height).toBeGreaterThan(19);
     expect(middle?.height).toBeLessThan(PILLAR_CHART.height);
   });
 
   it("ramps a bar's colour from amber through to teal as it scores", () => {
-    const [low] = pillarBars([
-      { pillar: "a", score: 40, weight: 1, contribution: 1 },
-    ]);
-    const [high] = pillarBars([
-      { pillar: "b", score: 96, weight: 1, contribution: 1 },
-    ]);
+    const [low] = pillarBars([{ pillar: "a", score: 40, weight: 1, contribution: 1 }], 100);
+    const [high] = pillarBars([{ pillar: "b", score: 96, weight: 1, contribution: 1 }], 100);
     // Amber at the floor: red channel far above blue.
     const amber = low!.fill!.bottom.match(/\d+/g)!.map(Number);
     expect(amber[0]).toBeGreaterThan(amber[2]!);
@@ -191,6 +184,7 @@ describe("the pillar chart", () => {
         weight: 1,
         contribution: 1,
       })),
+      100,
     );
     expect(bars[0]?.x).toBe(0);
     const last = bars[10]!;
@@ -202,12 +196,59 @@ describe("the pillar chart", () => {
   });
 
   it("titles each bar, because a stripe of colour explains nothing on its own", () => {
-    expect(pillarBars(roster)[0]?.title).toBe("economics: 80, weight 16.3%");
+    expect(pillarBars(roster, 100)[0]?.title).toBe("economics: 80, weight 16.3%");
   });
 
   it("draws nothing when the ranking carried no pillars", () => {
-    expect(pillarBars([])).toEqual([]);
-    expect(pillarBars(null)).toEqual([]);
+    expect(pillarBars([], 100)).toEqual([]);
+    expect(pillarBars(null, 100)).toEqual([]);
+  });
+  /**
+   * PL-062. The top of the score range is a setting, so a bar is drawn against the scale the
+   * ranking came with. Clamped to 100, 128 on a scale of 150 printed "100" and stood level with
+   * a 96.
+   */
+  describe("on a scale other than 100", () => {
+    const onOneFifty = [
+      { pillar: "economics", score: 128, weight: 20, contribution: 25.6 },
+      { pillar: "safety", score: 96, weight: 10, contribution: 9.6 },
+    ];
+
+    it("prints the score as it came, never clamped to 100", () => {
+      const [economics] = pillarBars(onOneFifty, 150);
+      expect(economics?.label).toBe("128");
+      expect(economics?.title).toBe("economics: 128, weight 20.0%");
+    });
+
+    it("draws a higher score taller, above 100 as below it", () => {
+      const [economics, safety] = pillarBars(onOneFifty, 150);
+      expect(economics!.height).toBeGreaterThan(safety!.height);
+    });
+
+    it("fills the band at 96% of the scale and sits at the floor at 40% of it", () => {
+      const [top, floor] = pillarBars(
+        [
+          { pillar: "a", score: 144, weight: 1, contribution: 0 },
+          { pillar: "b", score: 60, weight: 1, contribution: 0 },
+        ],
+        150,
+      );
+      expect(top?.height).toBe(PILLAR_CHART.height);
+      expect(floor?.height).toBe(19);
+    });
+
+    it("reads a small scale as its own, so 48 out of 50 fills the band", () => {
+      const [top] = pillarBars(
+        [{ pillar: "a", score: 48, weight: 1, contribution: 0 }],
+        50,
+      );
+      expect(top?.height).toBe(PILLAR_CHART.height);
+    });
+
+    it("draws nothing when the ranking carried no scale to draw against", () => {
+      expect(pillarBars(onOneFifty, null)).toEqual([]);
+      expect(pillarBars(onOneFifty, undefined)).toEqual([]);
+    });
   });
 });
 

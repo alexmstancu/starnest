@@ -7,6 +7,8 @@
  * chosen here.
  */
 
+import { isScale, scoreShare } from "../../format/scoreScale";
+
 /** The four grades `reqs.md` 5.7 splits covered weight into. */
 export interface ConfidenceSplit {
   absolute?: number | null;
@@ -39,7 +41,7 @@ export function coverageBar(coverage: number | null | undefined): {
   width: string;
   tone: Tone;
 } {
-  const percentage = clampPercentage(coverage);
+  const percentage = clampShare(coverage);
   const tone: Tone =
     percentage >= 75 ? "good" : percentage >= 60 ? "fair" : "weak";
   return { width: `${percentage}%`, tone };
@@ -65,7 +67,7 @@ export function confidenceBands(
   let offset = 0;
   const bands: Band[] = [];
   for (const [grade, tone] of grades) {
-    const share = clampPercentage(split?.[grade]);
+    const share = clampShare(split?.[grade]);
     if (share <= 0) {
       continue;
     }
@@ -87,12 +89,12 @@ export function confidenceLabel(
 ): string {
   const parts = confidenceBands(split).map(
     (band) =>
-      `${round(clampPercentage(split?.[band.grade as keyof ConfidenceSplit]))}${band.grade.charAt(0)}`,
+      `${round(clampShare(split?.[band.grade as keyof ConfidenceSplit]))}${band.grade.charAt(0)}`,
   );
   return parts.length === 0 ? "—" : parts.join(" / ");
 }
 
-function clampPercentage(value: number | null | undefined): number {
+function clampShare(value: number | null | undefined): number {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return 0;
   }
@@ -132,13 +134,16 @@ export interface PillarBar {
 export const PILLAR_CHART = { width: 522, height: 36, columns: 11, gap: 2 } as const;
 
 /**
- * **The bars encode 40 to 96, not 0 to 100.** Scores across 32 countries occupy the middle of
- * the range and nothing else: a bar scaled from zero would put every country in the same
- * narrow band near the top, which is a chart that cannot be read. Clipping to the range the
- * answers actually occupy is what makes the differences visible -- and the number is printed
+ * **The bars encode 40% to 96% of the scale, not all of it.** Scores across 32 countries occupy
+ * the middle of the range and nothing else: a bar scaled from zero would put every country in
+ * the same narrow band near the top, which is a chart that cannot be read. Clipping to the range
+ * the answers actually occupy is what makes the differences visible -- and the number is printed
  * inside the bar, so nothing is lost to the reader who wants the figure rather than the shape.
+ *
+ * **Fractions of the scale the ranking came with** (PL-062), never points: on a scale of 150 the
+ * band is 60 to 144, and 128 is drawn above 96 rather than both clamped to 100.
  */
-const READABLE_RANGE = { from: 40, to: 96 } as const;
+const READABLE_RANGE = { from: 0.4, to: 0.96 } as const;
 
 /** The shortest and tallest a scored bar is drawn, so even the lowest score has a body. */
 const BAR_HEIGHT = { shortest: 19, tallest: 36 } as const;
@@ -156,10 +161,10 @@ const RAMP: readonly (readonly [number, number, number])[] = [
   [45, 212, 191],
 ];
 
-/** Where a score sits on the readable range, 0 at the bottom and 1 at the top. */
-function positionOf(score: number): number {
+/** Where a share of the scale sits on the readable range, 0 at the bottom and 1 at the top. */
+function positionOf(share: number): number {
   const { from, to } = READABLE_RANGE;
-  return Math.max(0, Math.min(1, (score - from) / (to - from)));
+  return Math.max(0, Math.min(1, (share - from) / (to - from)));
 }
 
 /**
@@ -187,9 +192,14 @@ function rampColour(position: number, lift: number): string {
  * zero. Omitting it would silently renumber the others -- the reader counts eleven bars and
  * reads the shape of a decision -- and zero would claim it measured badly rather than that
  * nobody measured it.
+ *
+ * **No scale, no chart**: a bar's height is a share of the scale, and without one there is
+ * nothing to measure it against. The scores still print wherever else they appear.
  */
 export function pillarBars(
   pillars: readonly PillarScore[] | null | undefined,
+  /** The top of the range these scores are on, from the response that carried them. */
+  scaleMax: number | null | undefined,
   /**
    * What to call each pillar in its tooltip. Passed in rather than looked up, so this module
    * stays a pure function and the hover reads "Economy" where the catalog says so.
@@ -197,16 +207,17 @@ export function pillarBars(
   name: (pillar: string) => string = (pillar) => pillar,
 ): PillarBar[] {
   const roster = pillars ?? [];
-  if (roster.length === 0) {
+  if (roster.length === 0 || !isScale(scaleMax)) {
     return [];
   }
   const { width, height, gap } = PILLAR_CHART;
   const slot = (width - gap * (roster.length - 1)) / roster.length;
 
   return roster.map((pillar, index) => {
-    const scored = typeof pillar.score === "number";
-    const score = scored ? clampPercentage(pillar.score) : 0;
-    const position = positionOf(score);
+    const share = scoreShare(pillar.score, scaleMax);
+    const scored = share !== null;
+    const score = pillar.score ?? 0;
+    const position = positionOf(share ?? 0);
     const drawn = scored
       ? Math.round(
           BAR_HEIGHT.shortest +
@@ -250,7 +261,7 @@ export function confidenceReadings(
 ): { grade: string; reading: string; loud: boolean }[] {
   if (!split) return [];
   return (["absolute", "high", "medium", "low"] as const)
-    .filter((grade) => grade !== "absolute" || clampPercentage(split[grade]) > 0)
+    .filter((grade) => grade !== "absolute" || clampShare(split[grade]) > 0)
     .map((grade) => {
       const share = split[grade] ?? 0;
       return {

@@ -179,6 +179,7 @@ function TheRanking({
               candidate={row.candidate}
               name={row.name}
               pillars={row.pillars}
+              scaleMax={resource.data.score_scale_max}
               chosen={row.chosenPillar ?? null}
               onChoose={(pillar) => choose(row, pillar)}
             />

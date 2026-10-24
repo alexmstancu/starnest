@@ -30,6 +30,7 @@ import {
   RUNS,
   RUN_PLAN,
   SETTINGS,
+  MOCK_SCORE_SCALE,
   STARTED_RUN,
   STARTED_RUN_DETAIL,
   STORED_VALUES,
@@ -445,7 +446,7 @@ export const handlers = [
     const criteriaSet = query.get("criteria_set")!;
     const level = query.get("level")!;
 
-    return HttpResponse.json(rankingFor(criteriaSet, level));
+    return HttpResponse.json(rankingFor(criteriaSet, level, scaleInForce()));
   }),
 
   /**
@@ -463,12 +464,16 @@ export const handlers = [
     const level = query.get("level")!;
 
     const candidateId = String(params["candidateId"]);
-    const ranked = rankingFor(criteriaSet, level).candidates.find(
+    const ranked = rankingFor(criteriaSet, level, scaleInForce()).candidates.find(
       (each) => each.candidate === candidateId,
     );
     if (!ranked) return notFound(candidateId);
 
-    return HttpResponse.json({ ...ranked, attribute_scores: attributeScoresOf(candidateId) });
+    return HttpResponse.json({
+      ...ranked,
+      score_scale_max: scaleInForce(),
+      attribute_scores: attributeScoresOf(candidateId, scaleInForce()),
+    });
   }),
 
   // Saved rankings. The store is module state rather than a fixture, because the thing worth
@@ -483,12 +488,14 @@ export const handlers = [
       level: string;
       note?: string;
     };
+    // Frozen with it: a saved ranking keeps the scale it was computed on, whatever the
+    // setting does afterwards.
     const saved = {
       id: nextEvaluationId++,
       criteria_set: body.criteria_set,
       level: body.level,
       computed_at: "2026-09-21T09:00:00Z",
-      score_scale_max: 100,
+      score_scale_max: scaleInForce(),
       ...(body.note === undefined ? {} : { note: body.note }),
     };
     savedEvaluations = [saved, ...savedEvaluations];
@@ -502,7 +509,10 @@ export const handlers = [
       (entry) => String(entry.id) === String(params["evaluationId"]),
     );
     if (!saved) return notFound(String(params["evaluationId"]));
-    return HttpResponse.json(rankingFor(saved.criteria_set, saved.level));
+    return HttpResponse.json({
+      ...rankingFor(saved.criteria_set, saved.level, saved.score_scale_max),
+      evaluation: saved.id,
+    });
   }),
 
   http.get(`${BASE}/criteria-sets/:criteriaSetId`, ({ params }) => {
@@ -618,7 +628,7 @@ export const handlers = [
     }
     const repeated = [...new Set(comparators.filter((each, at) => comparators.indexOf(each) !== at))];
     const ranked = new Map(
-      rankingFor(criteriaSet, level).candidates.map((result) => [result.candidate, result]),
+      rankingFor(criteriaSet, level, scaleInForce()).candidates.map((result) => [result.candidate, result]),
     );
     const unranked = [focus, ...comparators].find((candidate) => !ranked.has(candidate));
     const refused: [string, string[]] | null =
@@ -643,6 +653,7 @@ export const handlers = [
         level,
         ranked.get(focus)!,
         comparators.map((candidate) => ranked.get(candidate)!),
+        scaleInForce(),
       ),
     );
   }),
@@ -862,6 +873,18 @@ function missingFrom(query: URLSearchParams, required: readonly string[]) {
     },
     { status: 422 },
   );
+}
+
+/**
+ * The scale a live score is on: the setting, as the server reads it.
+ *
+ * **Kinder than the server when the setting is unset**, as these handlers already were: the
+ * server refuses every score with `score_scale_not_set` there, and a test that needs that
+ * refusal still arranges it itself. Made faithful, the sidebar's counts print the raw code --
+ * a defect of its own, recorded with PL-062 rather than fixed under it.
+ */
+function scaleInForce(): number {
+  return settings.score_scale_max ?? MOCK_SCORE_SCALE;
 }
 
 function notFound(id: string) {

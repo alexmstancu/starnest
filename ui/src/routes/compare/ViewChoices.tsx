@@ -5,6 +5,10 @@
  * is measured in decide how every number below reads, so answering them afterwards means
  * re-reading everything; and each carries the sentence that says what the choice means,
  * because "weighted impact" is not self-explaining to somebody who has not met it.
+ *
+ * **They name no range** (PL-062). They are answered before any comparison exists, so there is
+ * no scale yet to name, and the top of the range is a setting rather than 100; the matrix names
+ * the comparison's own scale where its scores appear.
  */
 export function ViewChoices({
   shownAs,
@@ -30,7 +34,7 @@ export function ViewChoices({
                 checked={shownAs === "score"}
                 onChange={() => onShownAs("score")}
               />
-              Score 0–100
+              Scores
             </label>
             <label className="toggle">
               <input
@@ -45,7 +49,7 @@ export function ViewChoices({
         </fieldset>
         <p className="choice__meaning">
           {shownAs === "score"
-            ? "Everything on one 0–100 scale, so pillars and attributes can be read side by side."
+            ? "Everything on the one score scale, so pillars and attributes can be read side by side."
             : "Each figure as its publisher issued it, in its own unit — which is what a source can be checked against."}
         </p>
       </div>
@@ -76,7 +80,7 @@ export function ViewChoices({
         </fieldset>
         <p className="choice__meaning">
           {measure === "points"
-            ? "Raw pillar scores on 0–100, ignoring how much each pillar is weighted."
+            ? "Raw pillar scores, in points of the score scale, ignoring how much each pillar is weighted."
             : "What each difference is worth to the total, which is the gap times the pillar's weight — a large gap on a small pillar moves little."}
         </p>
       </div>

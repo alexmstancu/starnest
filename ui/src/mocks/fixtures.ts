@@ -325,18 +325,64 @@ export function candidatesForLevel(level: string | null): Candidate[] {
   return COUNTRY_CANDIDATES;
 }
 
-/** The mock settings' score range, which every score-bearing fixture carries as the server does. */
-const MOCK_SCORE_SCALE = 100;
+/**
+ * The top of the score range `SETTINGS` ships with, and so the scale a live ranking or
+ * comparison is on unless a test sets another (PL-062). Named once, so the two cannot drift.
+ */
+export const MOCK_SCORE_SCALE = 100;
 
-export function rankingFor(criteriaSet: string, level: string): Ranking {
+/**
+ * A number written on the shipped scale, moved onto another (PL-062).
+ *
+ * **Every score-derived number moves, nothing is relabelled**: a fixture that kept 78 and
+ * called the scale 50 would be a response the server can never send. A total is a whole
+ * number, as the server's are; the rest keep their fractions.
+ */
+function onScale(points: number, scaleMax: number): number {
+  // Untouched on its own scale, so a fixture's figure reads exactly as it is written.
+  if (scaleMax === MOCK_SCORE_SCALE) return points;
+  return (points * scaleMax) / MOCK_SCORE_SCALE;
+}
+
+function wholeOnScale(points: number | null | undefined, scaleMax: number): number | null {
+  return typeof points === "number" ? Math.round(onScale(points, scaleMax)) : null;
+}
+
+/** A candidate's result on another scale: its total, its parent's and every pillar. */
+function resultOnScale(result: CandidateResult, scaleMax: number): CandidateResult {
+  return {
+    ...result,
+    score: wholeOnScale(result.score, scaleMax),
+    ...(result.parent_score === undefined
+      ? {}
+      : { parent_score: wholeOnScale(result.parent_score, scaleMax) }),
+    ...(result.pillar_scores === undefined
+      ? {}
+      : {
+          pillar_scores: result.pillar_scores.map((pillar) => ({
+            ...pillar,
+            score: pillar.score === null ? null : onScale(pillar.score, scaleMax),
+            contribution: onScale(pillar.contribution, scaleMax),
+          })),
+        }),
+  };
+}
+
+/** A ranking as the server sends it: on the scale it was computed on, which travels with it. */
+export function rankingFor(
+  criteriaSet: string,
+  level: string,
+  scaleMax: number = MOCK_SCORE_SCALE,
+): Ranking {
   return {
     evaluation: null,
     criteria_set: criteriaSet,
     level,
     computed_at: "2026-08-30T09:15:00Z",
-    // The scale the scores were computed on, which the server freezes beside them (PL-062).
-    score_scale_max: MOCK_SCORE_SCALE,
-    candidates: level === "city" ? CITY_RESULTS : COUNTRY_RESULTS,
+    score_scale_max: scaleMax,
+    candidates: (level === "city" ? CITY_RESULTS : COUNTRY_RESULTS).map((result) =>
+      resultOnScale(result, scaleMax),
+    ),
   };
 }
 
@@ -395,9 +441,13 @@ export function comparisonFor(
   level: string,
   focus: CandidateResult,
   comparators: readonly CandidateResult[],
+  scaleMax: number = MOCK_SCORE_SCALE,
 ): Comparison {
   const scores = new Map(
-    [focus, ...comparators].map((result) => [result.candidate, attributeScoresOf(result.candidate)]),
+    [focus, ...comparators].map((result) => [
+      result.candidate,
+      attributeScoresOf(result.candidate, scaleMax),
+    ]),
   );
   const attributes = scores.get(focus.candidate)!.map((row) => ({
     attribute: row.attribute,
@@ -422,7 +472,7 @@ export function comparisonFor(
   return {
     criteria_set: criteriaSet,
     level,
-    score_scale_max: MOCK_SCORE_SCALE,
+    score_scale_max: scaleMax,
     focus,
     comparators: [...comparators],
     attributes,
@@ -804,7 +854,8 @@ export const ATTRIBUTE_SCORES: AttributeScore[] = [
 ];
 
 /**
- * What the pass made of each candidate's figures, as `GET /rankings/candidates/{id}` serves it.
+ * What the pass made of each candidate's figures, as `GET /rankings/candidates/{id}` serves it,
+ * on the scale it was computed on (PL-062): each score and the points it added move with it.
  * Portugal's are `ATTRIBUTE_SCORES`; the two comparators the Compare tests draw differ from it
  * on purpose, so the comparison has gaps -- each the same weights, rescored, because a
  * comparison weighs every gap at the focus's weight anyway. Any other candidate reads Portugal's.
@@ -820,14 +871,24 @@ const RESCORED: Readonly<Record<string, Readonly<Record<string, number>>>> = {
   },
 };
 
-export function attributeScoresOf(candidate: string): AttributeScore[] {
+export function attributeScoresOf(
+  candidate: string,
+  scaleMax: number = MOCK_SCORE_SCALE,
+): AttributeScore[] {
   const rescored = RESCORED[candidate] ?? {};
   return ATTRIBUTE_SCORES.map((row) => {
     const score = rescored[row.attribute];
     return score === undefined
       ? row
       : { ...row, normalised_score: score, contribution: (score * row.effective_weight) / 100 };
-  });
+  }).map((row) => ({
+    ...row,
+    normalised_score:
+      row.normalised_score === null || row.normalised_score === undefined
+        ? row.normalised_score
+        : onScale(row.normalised_score, scaleMax),
+    contribution: onScale(row.contribution, scaleMax),
+  }));
 }
 
 export const STORED_VALUES: StoredValue[] = [

@@ -10,6 +10,7 @@ import {
   pillarName,
 } from "../../format/display";
 import { describeFigure } from "../../format/figure";
+import { isScale, scoreRange } from "../../format/scoreScale";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { usePillarNames } from "../../api/usePillarNames";
 import { divergingBar, maxAbsDelta, type Divergence } from "./divergingBar";
@@ -64,6 +65,14 @@ export function ComparisonMatrix({
   const pillarScale = maxAbsDelta(pillarRows.flatMap((row) => row.cells));
   const totalScale = maxAbsDelta(totalRow?.cells ?? []);
   const priority = pillarPriority(comparison.focus);
+  // On the comparison's own scale (PL-062), which is the live setting and not always 100.
+  // **No scale, no bar**: the scores print, and nothing is drawn or tinted against a top
+  // nobody sent.
+  const range = scoreRange(comparison.score_scale_max);
+  const scale: ScaleReading = {
+    note: range === "" ? "normalised score" : `normalised ${range}`,
+    drawn: isScale(comparison.score_scale_max),
+  };
 
   const groups = attributeGroups(
     comparison.attributes.map((row) => ({
@@ -118,7 +127,7 @@ export function ComparisonMatrix({
               {totalRow.cells.map((cell) => (
                 <Cell
                   key={cell.candidate}
-                  bar={divergingBar(cell.delta, totalScale, totalRow.focus)}
+                  bar={scale.drawn ? divergingBar(cell.delta, totalScale, totalRow.focus) : null}
                   scoreText={formatScore(cell.score)}
                   deltaText={deltaText(cell)}
                 />
@@ -144,12 +153,13 @@ export function ComparisonMatrix({
                 }
                 cells={row.cells.map((cell) => ({
                   candidate: cell.candidate,
-                  bar: divergingBar(cell.delta, pillarScale, row.focus),
+                  bar: scale.drawn ? divergingBar(cell.delta, pillarScale, row.focus) : null,
                   scoreText: readingText(cell.score, measure),
                   deltaText: deltaText(cell, measure),
                 }))}
                 attributes={attributes}
                 shownAs={shownAs}
+                scale={scale}
                 naming={(attribute) => attributeName(attributeNames, attribute)}
               />
             );
@@ -158,6 +168,12 @@ export function ComparisonMatrix({
       </table>
     </div>
   );
+}
+
+/** How the matrix reads its scores: the scale's name, and whether there is one to draw against. */
+interface ScaleReading {
+  note: string;
+  drawn: boolean;
 }
 
 /** A pillar row, and -- when it is open -- the attribute rows beneath it. */
@@ -172,6 +188,7 @@ function PillarGroup({
   cells,
   attributes,
   shownAs,
+  scale,
   naming,
 }: {
   label: string;
@@ -181,9 +198,10 @@ function PillarGroup({
   open: boolean;
   canOpen: boolean;
   onToggle: () => void;
-  cells: { candidate: string; bar: Divergence; scoreText: string; deltaText: string }[];
+  cells: { candidate: string; bar: Divergence | null; scoreText: string; deltaText: string }[];
   attributes: readonly AttributeRow[];
   shownAs: "score" | "raw";
+  scale: ScaleReading;
   naming: (attribute: string) => string;
 }) {
   const rowClass =
@@ -234,6 +252,7 @@ function PillarGroup({
             key={attribute.attribute}
             row={attribute}
             shownAs={shownAs}
+            scale={scale}
             name={naming(attribute.attribute)}
           />
         ))}
@@ -245,16 +264,18 @@ function PillarGroup({
 function AttributeRowView({
   row,
   shownAs,
+  scale,
   name,
 }: {
   row: AttributeRow;
   shownAs: "score" | "raw";
+  scale: ScaleReading;
   name: string;
 }) {
   const raw = shownAs === "raw";
   // The raw gap is the server's comparator minus focus, printed as sent, so the row says which
   // way round it reads; the bar beneath it is coloured by the scores (UI-19).
-  const note = raw ? rawNote(row) : "normalised 0–100";
+  const note = raw ? rawNote(row) : scale.note;
 
   return (
     <tr className="matrix__row matrix__row--attr">
@@ -268,9 +289,11 @@ function AttributeRowView({
         compact
       />
       {row.cells.map((cell) => {
-        const bar = raw
-          ? divergingBar(cell.rawBar, row.rawScale, row.focusRaw)
-          : divergingBar(cell.scoreDelta, row.scoreScale, row.focusScore);
+        const bar = !scale.drawn
+          ? null
+          : raw
+            ? divergingBar(cell.rawBar, row.rawScale, row.focusRaw)
+            : divergingBar(cell.scoreDelta, row.scoreScale, row.focusScore);
         return (
           <Cell
             key={cell.candidate}
@@ -324,21 +347,23 @@ function Cell({
   deltaText,
   compact,
 }: {
-  bar: Divergence;
+  /** Null when the comparison carried no scale: the figures print, with no track, tint or bar. */
+  bar: Divergence | null;
   scoreText: string;
   deltaText: string;
   compact?: boolean;
 }) {
   const cellClass =
     `matrix__cell${compact ? " matrix__cell--compact" : ""}` +
-    (bar.edge ? ` matrix__cell--${bar.direction}` : "");
-  const deltaClass =
-    `matrix__delta matrix__delta--${bar.direction}` +
-    (bar.edge ? " matrix__delta--strong" : bar.faint ? " matrix__delta--faint" : "");
+    (bar?.edge ? ` matrix__cell--${bar.direction}` : "");
+  const deltaClass = bar
+    ? `matrix__delta matrix__delta--${bar.direction}` +
+      (bar.edge ? " matrix__delta--strong" : bar.faint ? " matrix__delta--faint" : "")
+    : "matrix__delta";
 
   return (
     <td className={cellClass}>
-      {bar.alpha > 0 && (
+      {bar && bar.alpha > 0 && (
         <svg
           className="matrix__tint"
           viewBox="0 0 1 1"
@@ -357,28 +382,31 @@ function Cell({
         <span className="matrix__score">{scoreText}</span>
         <span className={deltaClass}>{deltaText}</span>
       </div>
-      <div className={compact ? "matrix__track matrix__track--compact" : "matrix__track"}>
-        <span className="matrix__tick" />
-        {bar.direction !== "level" && (
-          <svg
-            className="matrix__bar"
-            viewBox="0 0 100 10"
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            <rect
-              className={`matrix__bar-fill matrix__bar-fill--${bar.direction}`}
-              x={bar.left}
-              y="0"
-              width={bar.width}
-              height="10"
-              rx="1.5"
-              ry="1.5"
-              fillOpacity={bar.barOpacity}
-            />
-          </svg>
-        )}
-      </div>
+      {/* No scale, no gauge: an empty track and its tick would still imply a top. */}
+      {bar && (
+        <div className={compact ? "matrix__track matrix__track--compact" : "matrix__track"}>
+          <span className="matrix__tick" />
+          {bar.direction !== "level" && (
+            <svg
+              className="matrix__bar"
+              viewBox="0 0 100 10"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <rect
+                className={`matrix__bar-fill matrix__bar-fill--${bar.direction}`}
+                x={bar.left}
+                y="0"
+                width={bar.width}
+                height="10"
+                rx="1.5"
+                ry="1.5"
+                fillOpacity={bar.barOpacity}
+              />
+            </svg>
+          )}
+        </div>
+      )}
     </td>
   );
 }

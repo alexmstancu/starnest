@@ -392,7 +392,7 @@ describe("the attribute figures inside a pillar", () => {
     await screen.findByRole("row", { name: /cost of living index/i });
 
     await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
-    await userEvent.click(screen.getByRole("radio", { name: /score 0.*100/i }));
+    await userEvent.click(screen.getByRole("radio", { name: /^scores$/i }));
 
     const row = screen.getByRole("row", { name: /cost of living index/i });
     expect(row).toHaveTextContent("82");
@@ -597,6 +597,7 @@ describe("when a comparison cannot be drawn", () => {
         HttpResponse.json({
           criteria_set: "default",
           level: "country",
+          score_scale_max: 100,
           focus: {
             candidate: "country.portugal",
             name: "Portugal",
@@ -692,6 +693,7 @@ function twoPillarComparison() {
   return {
     criteria_set: "default",
     level: "country",
+    score_scale_max: 100,
     focus: {
       candidate: "country.portugal",
       name: "Portugal",
@@ -767,6 +769,7 @@ function missingFigureComparison() {
   return {
     criteria_set: "default",
     level: "country",
+    score_scale_max: 100,
     focus: {
       candidate: "country.portugal",
       name: "Portugal",
@@ -852,6 +855,7 @@ function rentComparison(focus: { normalised_score: number | null } = ROMANIAN_RE
   return {
     criteria_set: "default",
     level: "country",
+    score_scale_max: 100,
     focus: {
       candidate: "country.romania",
       name: "Romania",
@@ -911,6 +915,7 @@ describe("a small gap", () => {
     return {
       criteria_set: "default",
       level: "country",
+      score_scale_max: 100,
       focus: {
         candidate: "country.romania",
         name: "Romania",

@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { components } from "../api/schema";
 import { fetchComparison, fetchRankedCandidateDetail } from "../api/endpoints";
-import { ATTRIBUTES, STORED_VALUES, pillarLines } from "./fixtures";
+import {
+  ATTRIBUTES,
+  MOCK_SCORE_SCALE,
+  STORED_VALUES,
+  attributeScoresOf,
+  comparisonFor,
+  pillarLines,
+  rankingFor,
+} from "./fixtures";
 
 type CandidateResult = components["schemas"]["CandidateResult"];
 
@@ -198,5 +206,82 @@ describe("the default comparison", () => {
         );
       }
     }
+  });
+});
+
+/**
+ * PL-062. **A fixture on another scale is a response the server could send**: its scores move
+ * with the scale rather than being relabelled, so nothing reads 78 on a scale of 50.
+ */
+describe("the score fixtures, on any scale", () => {
+  const SCORE_KEYS = new Set(["score", "normalised_score", "parent_score"]);
+
+  /** Every score anywhere in a response, found by the names the contract gives a score. */
+  function scoresIn(response: unknown): number[] {
+    if (Array.isArray(response)) return response.flatMap(scoresIn);
+    if (response === null || typeof response !== "object") return [];
+    return Object.entries(response).flatMap(([key, value]) =>
+      SCORE_KEYS.has(key) && typeof value === "number" ? [value] : scoresIn(value),
+    );
+  }
+
+  /** A comparison as the handler draws it: from the ranking on the same scale. */
+  function comparisonOn(scale: number | undefined, focus: string, comparators: string[]) {
+    const ranked = rankingFor("default", "country", scale).candidates;
+    const result = (id: string) => ranked.find((each) => each.candidate === id)!;
+    return comparisonFor("default", "country", result(focus), comparators.map(result), scale);
+  }
+
+  function everyResponseOn(scale: number): unknown[] {
+    return [
+      rankingFor("default", "country", scale),
+      rankingFor("default", "city", scale),
+      comparisonOn(scale, "country.portugal", ["country.netherlands", "country.spain"]),
+      ["country.portugal", "country.netherlands", "country.spain"].map((candidate) =>
+        attributeScoresOf(candidate, scale),
+      ),
+    ];
+  }
+
+  const name = (attribute: string) =>
+    ATTRIBUTES.find((each) => each.id === attribute)?.name ?? attribute;
+
+  it.each([50, 100, 150])("puts no score outside 0 to %i", (scale) => {
+    const scores = everyResponseOn(scale).flatMap(scoresIn);
+    expect(scores.length).toBeGreaterThan(10);
+    expect(scores.filter((score) => score < 0 || score > scale)).toEqual([]);
+  });
+
+  it("moves every score with the scale rather than relabelling it", () => {
+    const shipped = rankingFor("default", "country").candidates[0]!;
+    const halved = rankingFor("default", "country", 50).candidates[0]!;
+
+    expect(halved.score).toBe(Math.round(shipped.score! / 2));
+    expect(halved.pillar_scores?.[0]?.score).toBe(shipped.pillar_scores![0]!.score! / 2);
+    expect(halved.pillar_scores?.[0]?.contribution).toBe(
+      shipped.pillar_scores![0]!.contribution / 2,
+    );
+  });
+
+  it("is the fixture as written on the shipped scale", () => {
+    expect(rankingFor("default", "country").score_scale_max).toBe(MOCK_SCORE_SCALE);
+    expect(rankingFor("default", "country").candidates[0]?.score).toBe(78);
+    expect(attributeScoresOf("country.portugal")[0]?.contribution).toBe(9.125);
+    expect(
+      comparisonOn(undefined, "country.portugal", ["country.spain"]).synthesis?.[0]
+        ?.disadvantages,
+    ).toEqual([
+      `${name("country.cost_of_living_index")}: 52 against 73, worth -2.6 points`,
+      `${name("country.total_tax_rate_effective")}: 40 against 48, worth -2.2 points`,
+    ]);
+  });
+
+  it("writes the synthesis's numbers on the scale too", () => {
+    const comparison = comparisonOn(50, "country.portugal", ["country.spain"]);
+    expect(comparison.synthesis?.[0]?.disadvantages).toEqual([
+      `${name("country.cost_of_living_index")}: 26 against 36.5, worth -1.3 points`,
+      `${name("country.total_tax_rate_effective")}: 20 against 24, worth -1.1 points`,
+    ]);
+    expect(comparison.synthesis?.[0]?.score_delta).toBe(32 - 39);
   });
 });

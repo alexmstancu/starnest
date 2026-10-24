@@ -3,7 +3,8 @@
  * numbers, dates and currency codes and never a pre-formatted string.
  *
  * **Nothing here rescales anything.** Weights and coverage arrive as percentages, 0-100, and
- * are printed as percentages; scores arrive as integers 0-100 and are printed as they are.
+ * are printed as percentages; scores arrive as integers from 0 to the `score_scale_max` that
+ * came with them, which is a setting and not always 100, and are printed as they are.
  * A conversion in this file would be arithmetic on a domain number, which belongs to the
  * backend.
  */
@@ -32,7 +33,7 @@ export function formatPercentage(value: number | null | undefined, fractionDigit
   }).format(value)}%`;
 }
 
-/** A score: an integer 0-100, or `—` when the candidate has insufficient data. */
+/** A score, as an integer on its own scale (`scoreScale.ts`), or `—` when there is none. */
 export function formatScore(value: number | null | undefined): string {
   if (!isFiniteNumber(value)) return ABSENT;
   return new Intl.NumberFormat(DISPLAY_LOCALE, { maximumFractionDigits: 0 }).format(value);

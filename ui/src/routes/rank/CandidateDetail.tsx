@@ -27,6 +27,7 @@ import {
 import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
 import { describeFigure } from "../../format/figure";
+import { scoreRange, scoreTrackWidth } from "../../format/scoreScale";
 import {
   judgementsByAttribute,
   pillarsByAttribute,
@@ -58,12 +59,15 @@ export function CandidateDetail({
   candidate,
   name,
   pillars,
+  scaleMax,
   chosen = null,
   onChoose,
 }: {
   candidate: string;
   name: string;
   pillars?: readonly PillarScore[] | null;
+  /** The top of the range `pillars` are on, from the ranking that carried them. */
+  scaleMax: number | null | undefined;
   /**
    * Which pillar's values to show, or null for all of them.
    *
@@ -131,6 +135,12 @@ export function CandidateDetail({
       ? scored.resource.data.attribute_scores
       : null,
   );
+  // The attribute scores' own scale once they arrive; until then the ranking's, which is the
+  // same live setting -- so the heading never reads a range nobody computed against.
+  const attributeScale =
+    scored.resource.status === "ready"
+      ? scored.resource.data.score_scale_max
+      : scaleMax;
 
   const setCriteria =
     criteria.resource.status === "ready" ? criteria.resource.data.criteria : null;
@@ -161,6 +171,7 @@ export function CandidateDetail({
       <PillarContributions
         names={names}
         pillars={pillars}
+        scaleMax={scaleMax}
         chosen={chosen}
         onChoose={(each) => onChoose?.(each)}
       />
@@ -195,6 +206,7 @@ export function CandidateDetail({
           sourceNames={sourceNames}
           judgements={judgements}
           contributions={contributions}
+          scaleMax={attributeScale}
           values={valuesInPillar(
             values.resource.data.items,
             byAttribute,
@@ -272,6 +284,7 @@ function ValueTable({
   sourceNames,
   judgements,
   contributions,
+  scaleMax,
 }: {
   values: StoredValue[];
   pillar: string | null;
@@ -288,7 +301,10 @@ function ValueTable({
    * scored (`figureInUse`). Empty until it arrives.
    */
   contributions: ReadonlyMap<string, ScoreReading>;
+  /** The top of the range the attribute scores are on, for the column's heading. */
+  scaleMax: number | null | undefined;
 }) {
+  const range = scoreRange(scaleMax);
   if (values.length === 0) {
     return (
       <p className="screen__note">
@@ -311,7 +327,7 @@ function ValueTable({
                 (`reqs.md` 5.4), so showing only the configured weight leaves a reader unable
                 to see where a missing figure went. */}
             <th scope="col" className="col--right">
-              Score 0–100
+              {range === "" ? "Score" : `Score ${range}`}
             </th>
             <th scope="col" className="col--right">
               Weight
@@ -465,17 +481,19 @@ const IN_USE: Record<InUse, { label: string; tint: string }> = {
 function PillarContributions({
   names,
   pillars,
+  scaleMax,
   chosen,
   onChoose,
 }: {
   names: PillarNames;
   pillars?: readonly PillarScore[] | null;
+  scaleMax: number | null | undefined;
   chosen: string | null;
   onChoose: (pillar: string) => void;
 }) {
   const headingId = useId();
-  const bars = pillarBars(pillars, (pillar) => pillarName(names, pillar));
-  if (bars.length === 0) {
+  const bars = pillarBars(pillars, scaleMax, (pillar) => pillarName(names, pillar));
+  if ((pillars ?? []).length === 0) {
     return null;
   }
 
@@ -505,24 +523,26 @@ function PillarContributions({
                   {typeof pillar.score === "number" ? pillar.score : "No score"}
                 </span>
               </div>
-              <svg
-                className="pillar-card__track"
-                viewBox="0 0 100 4"
-                preserveAspectRatio="none"
-                aria-hidden="true"
-              >
-                {/* The same ramp the row's bars use, so a pillar is the same colour
-                    wherever it appears. `fill` is an attribute, not a style, which is what
-                    lets a datum decide a colour without design leaving `styles.css`. */}
-                <rect
-                  className="pillar-card__fill"
-                  fill={bars[at]?.fill?.bottom ?? "#eaecf0"}
-                  width={
-                    typeof pillar.score === "number" ? `${pillar.score}%` : "0%"
-                  }
-                  height="4"
-                />
-              </svg>
+              {/* **No scale, no track** (PL-062): the score above still prints, and a length
+                  against a guessed top would be a reading nobody made. */}
+              {bars.length > 0 && (
+                <svg
+                  className="pillar-card__track"
+                  viewBox="0 0 100 4"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  {/* The same ramp the row's bars use, so a pillar is the same colour
+                      wherever it appears. `fill` is an attribute, not a style, which is what
+                      lets a datum decide a colour without design leaving `styles.css`. */}
+                  <rect
+                    className="pillar-card__fill"
+                    fill={bars[at]?.fill?.bottom ?? "#eaecf0"}
+                    width={scoreTrackWidth(pillar.score, scaleMax) ?? "0%"}
+                    height="4"
+                  />
+                </svg>
+              )}
               <div className="pillar-card__foot">
                 <span>weight {formatPercentage(pillar.weight)}</span>
                 <span>{formatSigned(pillar.contribution)}</span>
