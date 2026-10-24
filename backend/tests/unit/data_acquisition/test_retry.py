@@ -548,6 +548,73 @@ class TestARetryAsksEachSourceOnlyAboutItsOwnFailures:
             (OVERBURDEN, str(PORTUGAL.id))
         ]
 
+    async def test_the_failures_of_a_raising_source_stay_inside_its_own_pairs(self) -> None:
+        """PL-047. A source that crashes is charged with every candidate it was asked about and
+        had not answered -- which, through the wrapper, is only its own failed pairs, never the
+        candidates the retry drew from another source's failures."""
+
+        class Crashes(SourceAdapter):
+            @property
+            def data_source(self) -> DataSourceId:
+                return DataSourceId("eurostat")
+
+            @property
+            def attributes(self) -> tuple:
+                return (OVERBURDEN,)
+
+            async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]):
+                raise KeyError("an unforeseen field")
+
+        class KeepsFailures(RecordingRunStore):
+            def __init__(self, answers_with: Run) -> None:
+                super().__init__(answers_with)
+                self.recorded: set[tuple[str, str | None, str | None]] = set()
+
+            async def record_failures(self, run, failures) -> None:  # type: ignore[no-untyped-def]
+                self.recorded |= {(f.attribute, f.candidate, f.data_source) for f in failures}
+
+        failed = Run(
+            id=23,
+            status=RunStatus.COMPLETED,
+            started_at=datetime.now(UTC),
+            triggered_by="user",
+            scope=RunScope(
+                level="country",
+                candidates=(str(PORTUGAL.id), str(SPAIN.id)),
+                attributes=(OVERBURDEN,),
+            ),
+            failures=(
+                AcquisitionFailure(
+                    attribute=OVERBURDEN,
+                    reason="503",
+                    candidate=str(PORTUGAL.id),
+                    data_source=DataSourceId("eurostat"),
+                ),
+                AcquisitionFailure(
+                    attribute=OVERBURDEN,
+                    reason="the model could not be reached",
+                    candidate=str(SPAIN.id),
+                    data_source=DataSourceId("llm"),
+                ),
+            ),
+        )
+        runs = KeepsFailures(answers_with=failed)
+
+        with pytest.raises(KeyError):
+            await retry_run(
+                failed=failed,
+                adapters=[Crashes(), StubSource("llm", (OVERBURDEN,))],
+                attributes=[an_attribute(OVERBURDEN)],
+                candidates=[PORTUGAL, SPAIN],
+                values=RecordingValueStore(),
+                runs=runs,
+                spend_cap_eur=Decimal(10),
+            )
+
+        assert {(a, c) for a, c, source in runs.recorded if source == "eurostat"} == {
+            (OVERBURDEN, str(PORTUGAL.id))
+        }
+
 
 class TestWhatARetryMaySpend:
     async def test_a_retry_of_a_paid_source_with_no_cap_is_refused(self) -> None:

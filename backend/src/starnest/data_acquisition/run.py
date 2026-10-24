@@ -13,14 +13,17 @@ and have them land with real provenance -- which is the only thing minE2E needs,
 thing that can be judged before any figure exists.
 """
 
+import logging
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from starnest.candidates import Candidate
 from starnest.data import Attribute, Value, ValueStore
-from starnest.data_acquisition.adapter import AcquisitionFailure, SourceAdapter
+from starnest.data_acquisition.adapter import Acquired, AcquisitionFailure, SourceAdapter
 from starnest.data_acquisition.spend import CostMeter
+
+_log = logging.getLogger("starnest.acquisition")
 
 
 @dataclass(frozen=True)
@@ -96,6 +99,34 @@ async def acquire(
         if run is not None and pairs:
             await values.record_reuse(run, adapter.data_source, pairs)
 
+    async def charge_the_crash(attribute: Attribute, settled: set[str], fault: Exception) -> None:
+        # **The item in flight keeps a failure** (PL-047). An exception no adapter turned into
+        # a failure used to leave the candidates it had not answered with no row at all, so they
+        # read as unanswered -- "retrying changes nothing" -- about a source that crashed. Only
+        # the exception's class is quoted (P1-11): its message can carry data or secrets.
+        stamped = [
+            AcquisitionFailure(
+                attribute=attribute.id,
+                candidate=str(candidate.id),
+                reason=(
+                    f"the source stopped with an unexpected error ({type(fault).__name__}) "
+                    "before answering"
+                ),
+                data_source=adapter.data_source,
+            )
+            for candidate in adapter.candidates_asked_about(attribute, candidates)
+            if str(candidate.id) not in settled
+        ]
+        failures.extend(stamped)
+        if collecting is not None:
+            collecting.extend(stamped)
+        if record_failures is not None and stamped:
+            # A second fault must not mask the first; the caller records `collecting` again.
+            try:
+                await record_failures(stamped)
+            except Exception:
+                _log.exception("could not record what %s crashed on", adapter.data_source)
+
     for attribute in answerable:
         # **One batch at a time, not the whole attribute at once** (BE-19). A structured source
         # yields its one indicator in a single batch; a paid source billing per candidate yields
@@ -105,7 +136,19 @@ async def acquire(
         # the difference stays per batch as the source records each call.
         last_spent = meter.spent_eur if meter is not None else Decimal(0)
         last_calls = meter.calls if meter is not None else 0
-        async for acquired in adapter.fetch_in_batches(attribute, candidates):
+        settled: set[str] = set()
+        batches = adapter.fetch_in_batches(attribute, candidates)
+        while True:
+            # **Around the source alone, never the stores** (PL-047): a database fault while
+            # storing a batch is not the source's failure, and must not be recorded as one.
+            try:
+                acquired = await anext(batches)
+            except StopAsyncIteration:
+                break
+            except Exception as fault:
+                await charge_the_crash(attribute, settled, fault)
+                raise
+            settled |= _candidates_settled_by(acquired, candidates)
             cost += acquired.cost_eur
             calls += acquired.calls
             # Recorded before the append, because the call is already billed whatever happens to
@@ -218,6 +261,15 @@ async def acquire(
         cost_eur=cost,
         calls=calls,
     )
+
+
+def _candidates_settled_by(acquired: Acquired, candidates: Sequence[Candidate]) -> set[str]:
+    """The candidates one batch answered or failed -- all of them, for a whole-source failure."""
+    if any(failure.candidate is None for failure in acquired.failures):
+        return {str(candidate.id) for candidate in candidates}
+    return {str(value.candidate) for value in acquired.values} | {
+        str(failure.candidate) for failure in acquired.failures
+    }
 
 
 def _pairs_of(values: Iterable[Value]) -> set[tuple[str, str]]:

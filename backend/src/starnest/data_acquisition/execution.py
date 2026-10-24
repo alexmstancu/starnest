@@ -830,6 +830,11 @@ class _AskedOnlyAbout(SourceAdapter):
     def meter_with(self, meter: RunningSpend) -> None:
         self._adapter.meter_with(meter)
 
+    def candidates_asked_about(
+        self, attribute: Attribute, candidates: Sequence[Candidate]
+    ) -> Sequence[Candidate]:
+        return self._candidates_it_failed_on(attribute, candidates)
+
     @property
     def attributes(self) -> tuple[AttributeId, ...]:
         return tuple(a for a in self._adapter.attributes if a in self._failed_on.attributes)

@@ -157,6 +157,17 @@ class SourceAdapter(ABC):
         being a pure data change, which is the invariant the catalog exists to protect.
         """
 
+    def candidates_asked_about(
+        self, attribute: Attribute, candidates: Sequence[Candidate]
+    ) -> Sequence[Candidate]:
+        """Which of `candidates` this source is actually asked about for `attribute`.
+
+        **One definition of "asked about"** (PL-047). Every candidate by default; a source
+        narrowed for a retry answers with its narrowed list. A source that crashes mid-attribute
+        is charged with exactly these, never with candidates nobody asked it about.
+        """
+        return candidates
+
     async def fetch_in_batches(
         self, attribute: Attribute, candidates: Sequence[Candidate]
     ) -> AsyncIterator[Acquired]:

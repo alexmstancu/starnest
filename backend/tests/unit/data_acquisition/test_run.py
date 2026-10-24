@@ -845,3 +845,108 @@ class TestTheCapInsideOneCandidateSweep:
 
         assert len(adapter.asked_about) == 3
         assert meter.is_exhausted
+
+
+class SecretBearingCrashError(RuntimeError):
+    """An unforeseen fault whose message must never reach a stored failure (P1-11)."""
+
+
+class AnswersPortugalThenCrashes(SourceAdapter):
+    """Yields one batch answering Portugal, then raises something nobody turned into a failure."""
+
+    @property
+    def data_source(self) -> DataSourceId:
+        return DataSourceId("eurostat")
+
+    @property
+    def attributes(self) -> tuple:
+        return (OVERBURDEN,)
+
+    async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+        raise NotImplementedError
+
+    async def fetch_in_batches(
+        self, attribute: Attribute, candidates: Sequence[Candidate]
+    ) -> AsyncIterator[Acquired]:
+        yield Acquired(values=(a_value(),))
+        raise SecretBearingCrashError("token=abc123 in the parser's state")
+
+
+class FailsToAppend(RecordingValueStore):
+    async def append(self, values):
+        raise ConnectionError("the database went away")
+
+
+class TestASourceThatCrashesMidAttribute:
+    """PL-047 (RN-R2). An exception a source never turned into a failure left the run with no
+    row for the candidates it had not yet answered, so they read as "every source answered,
+    none had a row" -- unanswered, and retrying them was said to change nothing."""
+
+    async def test_a_source_that_raises_mid_attribute_leaves_a_failure_for_each_unanswered_candidate(  # noqa: E501
+        self,
+    ) -> None:
+        persisted: list[AcquisitionFailure] = []
+        collected: list[AcquisitionFailure] = []
+
+        async def record(batch: Sequence[AcquisitionFailure]) -> None:
+            persisted.extend(batch)
+
+        with pytest.raises(SecretBearingCrashError):
+            await acquire(
+                adapter=AnswersPortugalThenCrashes(),
+                attributes=[an_attribute()],
+                candidates=[PORTUGAL, SPAIN],
+                values=RecordingValueStore(),
+                run=13,
+                collecting=collected,
+                record_failures=record,
+            )
+
+        assert [(f.attribute, f.candidate, f.data_source) for f in persisted] == [
+            (OVERBURDEN, str(SPAIN.id), DataSourceId("eurostat"))
+        ]
+        assert collected == persisted
+        assert "SecretBearingCrashError" in persisted[0].reason
+        assert "abc123" not in persisted[0].reason
+
+    async def test_a_store_fault_is_not_recorded_as_the_sources_failure(self) -> None:
+        persisted: list[AcquisitionFailure] = []
+        collected: list[AcquisitionFailure] = []
+
+        async def record(batch: Sequence[AcquisitionFailure]) -> None:
+            persisted.extend(batch)
+
+        with pytest.raises(ConnectionError):
+            await acquire(
+                adapter=AnswersPortugalThenCrashes(),
+                attributes=[an_attribute()],
+                candidates=[PORTUGAL, SPAIN],
+                values=FailsToAppend(),
+                run=14,
+                collecting=collected,
+                record_failures=record,
+            )
+
+        assert persisted == []
+        assert collected == []
+
+    async def test_a_fault_recording_the_crash_does_not_mask_the_crash(self) -> None:
+        """The original exception is the one that propagates; the run records `collecting`
+        again on its way out, so the failures are still in hand."""
+        collected: list[AcquisitionFailure] = []
+
+        async def cannot_record(batch: Sequence[AcquisitionFailure]) -> None:
+            raise ConnectionError("the database went away")
+
+        with pytest.raises(SecretBearingCrashError):
+            await acquire(
+                adapter=AnswersPortugalThenCrashes(),
+                attributes=[an_attribute()],
+                candidates=[PORTUGAL, SPAIN],
+                values=RecordingValueStore(),
+                run=15,
+                collecting=collected,
+                record_failures=cannot_record,
+            )
+
+        assert [f.candidate for f in collected] == [str(SPAIN.id)]

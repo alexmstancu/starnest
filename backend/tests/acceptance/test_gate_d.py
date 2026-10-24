@@ -137,7 +137,14 @@ class TestAProcessThatDiedMidRun:
 
         assert detail["run_status"] == "failed"
         assert detail["items_failed"] >= 1
-        assert [failure["candidate"] for failure in detail["failures"]] == ["country.portugal"]
+        declined = [f["candidate"] for f in detail["failures"] if f["attribute"] == OVERBURDEN]
+        assert declined == ["country.portugal"]
+        # **The attribute in flight keeps a failure for every candidate too** (PL-047): the source
+        # died before answering any of them, and without these rows they read as unanswered.
+        in_flight = [f for f in detail["failures"] if f["attribute"] == "country.overcrowding_rate"]
+        assert sorted(f["candidate"] for f in in_flight) == sorted(detail["scope"]["candidates"])
+        assert {f["data_source"] for f in in_flight} == {"eurostat"}
+        assert all("RuntimeError" in f["error_message"] for f in in_flight)
         # **The rows are what a retry asks about**, and the endpoint refuses with 409 when
         # there are none. Not retried here: this source dies on its second call by
         # construction, so the retry would die too and prove nothing about the rows.
