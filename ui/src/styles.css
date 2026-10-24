@@ -2878,6 +2878,113 @@ select.field__control {
   color: var(--colour-text);
 }
 
+/* ── A read on its way, or one that did not arrive (C01 M1, M2) ─────────────────────────
+   **Grey blocks in the shape of what is coming, not a sentence** (PL-012), so nothing moves
+   when it lands. A read that never arrived, and an act that did not go through, take the same
+   red card; a region that failed beside the screen's own read takes its compact line (N4). */
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.skeleton__row {
+  display: flex;
+  gap: 16px;
+}
+
+.skeleton__block {
+  flex: 1;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--colour-border);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+/* The ranking's own columns: a rank, a name, the pillar chart and the score. */
+.skeleton--rank-table .skeleton__block:first-child {
+  flex: 0 0 28px;
+}
+
+.skeleton--rank-table .skeleton__block:nth-child(3) {
+  flex: 3;
+}
+
+/* A stage's rows: a label beside its control. */
+.skeleton--configure-stage .skeleton__block:first-child {
+  flex: 0 0 30%;
+}
+
+.skeleton--acquire-stats .skeleton__block {
+  height: 64px;
+}
+
+.skeleton--compare-picker .skeleton__block {
+  height: 28px;
+}
+
+/* A paragraph ends short of its measure. */
+.skeleton--lines .skeleton__row:last-child .skeleton__block {
+  flex: 0 0 60%;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Still blocks for a reader who asks for no motion: the shape is the information. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton__block {
+    animation: none;
+  }
+}
+
+.failure-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 16px 18px;
+  background: var(--colour-danger-surface);
+  border: var(--border-width) solid var(--colour-danger-border);
+  border-radius: var(--radius-medium);
+  color: var(--colour-danger-deep);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.failure-card__title {
+  font-size: var(--font-size-base);
+  font-weight: var(--weight-strong);
+}
+
+/* The screen's card has said why, so this says only what, and offers the way back. */
+.failure-card--compact {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+}
+
+.failure-card__acts {
+  display: flex;
+  gap: 8px;
+}
+
+/* Figures kept after a re-read failed, so the line says when they were read (P1-05). Amber,
+   not red: they are real, only perhaps no longer current. */
+.stale-read {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: var(--font-size-small);
+  color: var(--colour-warning);
+}
+
 /* Tables -- the ranking and the criteria list */
 
 /* The table sits in a card that scrolls sideways rather than squeezing its columns. The
