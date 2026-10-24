@@ -205,14 +205,16 @@ ui-check: ui-lint ui-typecheck ui-coverage  ## The interface gate
 # - The tools container runs `--no-deps`, so it never starts, stops or recreates the database,
 #   even after .env has changed under a running stack.
 # - No recipe line names $(MAKE), which GNU make runs even under `make -n`: a dry run only prints.
-# - The URL carries the password, so it reaches the recipes through their environment, and
-#   `make -n` prints a variable's name rather than its value.
+# - **Make never holds the password** (P100). `tools/e2e_copy.py` reads the user, password and
+#   port from .env with python-dotenv, as compose does, percent-encodes them, migrates the copy
+#   in-process and replaces itself with npm. Make hands it only the copy's name, measured here:
+#   no quoting, `#` or `$(` in a password can break the URL, and no URL is on a command line.
 
 # Captured before the overrides below, which would otherwise report their own origin: one of these
 # set from anywhere outside -- the command line, the shell, `make -e` -- is refused out loud rather
 # than silently ignored. Under some makes `-e` lets the environment beat a target-specific
-# assignment, and E2E_YOYO_URL, the URL yoyo migrates, is one (RA-1).
-E2E_PASSED := $(strip $(foreach v,E2E_DB E2E_DATABASE_URL E2E_YOYO_URL E2E_SUITE_URL,$(if $(filter undefined,$(origin $(v))),,$(v))))
+# assignment (RA-1). E2E_DATABASE_URL is the URL the suite reads, set by tools/e2e_copy.py alone.
+E2E_PASSED := $(strip $(foreach v,E2E_DB E2E_DATABASE_URL,$(if $(filter undefined,$(origin $(v))),,$(v))))
 E2E_GUARD   = $(if $(E2E_PASSED),$(error $(firstword $(E2E_PASSED)) cannot be set from outside the Makefile: it is derived from .env so that make e2e can only reach its own copy))
 # PostgreSQL keeps 63 bytes of a name and silently drops the rest, so the copy of a 63-byte name
 # would *be* the live name, and `dropdb --force` would drop it (RA-3). The name is measured here
@@ -243,25 +245,21 @@ override E2E_TOO_LONG    = e2e: $(E2E_DB) is longer than the 63 bytes PostgreSQL
 override E2E_DB  := $(E2E_BASE)_e2e
 E2E_BACKEND_PORT ?= 8100
 E2E_UI_PORT      ?= 5180
-override E2E_DATABASE_URL := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@127.0.0.1:$(or $(DATABASE_PORT),5432)/$(E2E_DB)
 NEWEST_BACKUP    := $(lastword $(sort $(wildcard backups/*.dump)))
 # The backup service has the PostgreSQL client tools, which the host does not.
 override PG_TOOLS = $(E2E_FIT)$(COMPOSE) --profile tools run --rm -T --no-deps --entrypoint sh backup -c
 override E2E_DROP = $(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB)'
 
-e2e-database: export E2E_YOYO_URL := $(subst postgresql://,postgresql+psycopg://,$(E2E_DATABASE_URL))
-e2e: export E2E_SUITE_URL := $(E2E_DATABASE_URL)
-
 e2e-database:  ## A throwaway copy of the newest backup, migrated to this checkout
 	@$(E2E_GUARD)test -n "$(NEWEST_BACKUP)" || { echo "e2e: no backup in ./backups -- run make backup"; exit 1; }
 	@echo "e2e: $(notdir $(NEWEST_BACKUP)) -> $(E2E_DB)"
-	@{ $(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB) && createdb $(E2E_DB) && pg_restore --no-owner --no-privileges --single-transaction --dbname=$(E2E_DB) /backups/$(notdir $(NEWEST_BACKUP))' && cd $(BACKEND) && uv run yoyo apply --batch --database "$$E2E_YOYO_URL" ../$(STORAGE)/migrations; } || { cd "$(CURDIR)"; if $(E2E_DROP); then echo "e2e: the copy could not be restored or migrated, so it was dropped"; else echo "e2e: the copy could not be restored or migrated, and dropping it failed too -- run make e2e-drop"; fi; exit 1; }
+	@{ $(PG_TOOLS) 'dropdb --if-exists --force $(E2E_DB) && createdb $(E2E_DB) && pg_restore --no-owner --no-privileges --single-transaction --dbname=$(E2E_DB) /backups/$(notdir $(NEWEST_BACKUP))' && cd $(BACKEND) && uv run python ../tools/e2e_copy.py migrate $(E2E_DB); } || { cd "$(CURDIR)"; if $(E2E_DROP); then echo "e2e: the copy could not be restored or migrated, so it was dropped"; else echo "e2e: the copy could not be restored or migrated, and dropping it failed too -- run make e2e-drop"; fi; exit 1; }
 
 e2e-drop:  ## Drop the browser suite's throwaway database
 	@$(E2E_GUARD)$(E2E_DROP)
 
 e2e: e2e-database  ## Playwright on its own throwaway database, never the live one (E2E_ARGS= to narrow)
-	@$(E2E_GUARD)(cd $(UI) && E2E_DATABASE_URL="$$E2E_SUITE_URL" E2E_BACKEND_PORT=$(E2E_BACKEND_PORT) E2E_UI_PORT=$(E2E_UI_PORT) npm run e2e -- $(E2E_ARGS)); status=$$?; if ! $(E2E_DROP); then echo "e2e: the copy $(E2E_DB) could not be dropped -- run make e2e-drop"; [ $$status -ne 0 ] || status=1; fi; exit $$status
+	@$(E2E_GUARD)(cd $(BACKEND) && E2E_BACKEND_PORT=$(E2E_BACKEND_PORT) E2E_UI_PORT=$(E2E_UI_PORT) uv run python ../tools/e2e_copy.py suite $(E2E_DB) $(E2E_ARGS)); status=$$?; if ! $(E2E_DROP); then echo "e2e: the copy $(E2E_DB) could not be dropped -- run make e2e-drop"; [ $$status -ne 0 ] || status=1; fi; exit $$status
 
 e2e-report:  ## Open the last Playwright report
 	cd $(UI) && npm run e2e:report

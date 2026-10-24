@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -75,15 +76,19 @@ def test_every_make_target_that_runs_yoyo_backs_up_first() -> None:
     """NEW-20. A rollback changes the schema as surely as a migration does, and at least three
     rollback scripts delete stored figures.
 
-    `e2e-database` is exempt: it runs yoyo against a throwaway copy it restores from the newest
-    backup and drops afterwards (UI-03), never the live database, so there is nothing of the
-    household's to back up first -- the copy already is a backup.
+    `e2e-database` is exempt: it migrates, through `tools/e2e_copy.py`, a throwaway copy it
+    restores from the newest backup and drops afterwards (UI-03), never the live database, so
+    there is nothing of the household's to back up first -- the copy already is a backup.
     """
     running_yoyo = {
         name: prerequisites
         for name, (prerequisites, recipe) in make_targets().items()
         if any(
-            re.search(r"\byoyo (apply|rollback)\b|\btools/migrate\.py (apply|rollback)\b", line)
+            re.search(
+                r"\byoyo (apply|rollback)\b"
+                r"|\btools/(?:migrate\.py (apply|rollback)|e2e_copy\.py migrate)\b",
+                line,
+            )
             for line in recipe
         )
     }
@@ -93,6 +98,7 @@ def test_every_make_target_that_runs_yoyo_backs_up_first() -> None:
         if name != "e2e-database"
     }
 
+    assert "e2e-database" in running_yoyo
     assert sorted(against_the_live_database) == ["migrate", "rollback"]
     assert {
         name
@@ -120,14 +126,14 @@ def test_the_backup_still_writes_a_custom_format_dump() -> None:
 
 
 def test_a_target_specific_variable_is_not_read_as_a_rule() -> None:
-    """`e2e-database: export E2E_YOYO_URL := ...` names a target without declaring its rule. Read
+    """`e2e-database: export E2E_COPY_URL := ...` names a target without declaring its rule. Read
     as one, a line after the rule would have replaced its prerequisites and recipe, and the yoyo
     the recipe runs would have dropped out of the backup check above without failing it."""
     rule_then_variable = (
         "e2e-database:  ## A copy\n"
         "\tuv run yoyo apply --batch\n"
         "\n"
-        "e2e-database: export E2E_YOYO_URL := postgresql+psycopg://u@h/db_e2e\n"
+        "e2e-database: export E2E_COPY_URL := postgresql+psycopg://u@h/db_e2e\n"
     )
 
     prerequisites, recipe = make_targets(rule_then_variable)["e2e-database"]
@@ -140,4 +146,26 @@ def test_the_real_makefile_keeps_its_e2e_rules_whole() -> None:
     targets = make_targets()
 
     assert targets["e2e"][0] == ["e2e-database"]
-    assert any(re.search(r"\byoyo apply\b", line) for line in targets["e2e-database"][1])
+    assert any(
+        re.search(r"\btools/e2e_copy\.py migrate\b", line) for line in targets["e2e-database"][1]
+    )
+
+
+@pytest.mark.parametrize("service", ["backend", "migrate"])
+def test_no_container_joins_the_password_into_a_url(service: str) -> None:
+    """P100. Compose interpolates without percent-encoding, so a password joined into a URL broke
+    it at an `@`, `%` or `#`, and libpq's error quoted the password into `docker logs`. The URLs
+    name only the host; libpq takes the credentials and the database from its own variables."""
+    declared = compose_services()[service]
+    urls = [declared["environment"]["DATABASE_URL"]]
+    if service == "migrate":
+        urls.append(re.search(r"--database (\S+)", declared["command"]).group(1))
+
+    assert [url for url in urls if "${" in url or "@" in url] == []
+    assert {
+        key: declared["environment"][key] for key in ("PGUSER", "PGPASSWORD", "PGDATABASE")
+    } == {
+        "PGUSER": "${POSTGRES_USER}",
+        "PGPASSWORD": "${POSTGRES_PASSWORD}",
+        "PGDATABASE": "${POSTGRES_DB}",
+    }

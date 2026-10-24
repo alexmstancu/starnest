@@ -279,7 +279,7 @@ ui/           TypeScript. A client of the contract, over HTTP only
   src/  e2e/      React; Playwright specs owned by the master agent
 docs/         reqs.md, arch.md, datasources.md, devplan.md, known-issues.md
                 openapi.yaml (target) + openapi.implemented.yaml (generated)
-tools/        the three structural audits, and migrate.py (migrate/rollback runner)
+tools/        the three structural audits, migrate.py (migrate/rollback runner) and e2e_copy.py (make e2e's copy)
 compose.yaml  four containers: database, backend, ui, schema diagram
 Makefile      every command the project has
 ```
@@ -318,7 +318,7 @@ Makefile      every command the project has
 | **`make check`** | **Backend lint + boundaries + coverage + audits, then `ui-check`. Both sides. This is the gate** |
 | `make migrate` / `make rollback` | Backs up first, then applies pending migrations (or rolls back the most recent). Both run `tools/migrate.py`, which reads `DATABASE_URL` from `.env` via python-dotenv and hands it to yoyo in-process — a URL exported in the shell or passed on the command line is **refused**, never used (RF-1). The database must be up. **Never automatic** (`arch.md` 7.4) |
 | `make ui-check` | The interface gate: `ui-lint` (eslint, type-aware) + `ui-typecheck` + `ui-coverage` (85% bar) |
-| `make ui-coverage` / `make e2e` | Interface coverage (85% bar); Playwright **on its own throwaway database** -- the newest backup restored and migrated, its own backend and Vite on ports 8100/5180, dropped afterwards (or at once, if it cannot be restored or migrated). It never touches the live database, and the copy's name cannot be overridden (UI-03). `E2E_ARGS=e2e/sanity.spec.ts` narrows it |
+| `make ui-coverage` / `make e2e` | Interface coverage (85% bar); Playwright **on its own throwaway database** -- the newest backup restored and migrated, its own backend and Vite on ports 8100/5180, dropped afterwards (or at once, if it cannot be restored or migrated). It never touches the live database, and the copy's name cannot be overridden (UI-03). `tools/e2e_copy.py` builds the copy's URL from `.env` as compose reads it, so it works with any password and make never holds or prints it (P100). `E2E_ARGS=e2e/sanity.spec.ts` narrows it |
 | `make docker-build` / `docker-up` / `docker-migrate` / `docker-down` | The four containers: database, backend, the interface on `127.0.0.1:5173`, and the live schema diagram on `127.0.0.1:4174` (`docker compose restart schema-diagram` after a migration) |
 | `make schema-diagram` / `schema-diagram-open` | Interactive ER diagram of the **live** schema, via Liam ERD. Output is generated and gitignored — run `make migrate` first, or the diagram shows the schema you have rather than the one you wrote |
 

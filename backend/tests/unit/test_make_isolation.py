@@ -10,16 +10,22 @@ while the behaviour was not:
 
 So these tests run the real `make` on a copy of the Makefile, in a sandbox whose `docker`, `uv`
 and `npm` are fakes. The fakes record how they were called and fail when asked to. Nothing here
-starts a container or touches a database.
+starts a container or touches a database. `uv` hands `tools/e2e_copy.py` to the real interpreter,
+so the URL the suite receives is the one the real script builds (P100); yoyo, which it calls
+in-process, is a fake module that records its arguments.
 """
 
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from dotenv import dotenv_values
+from psycopg.conninfo import conninfo_to_dict
+from yoyo.connections import parse_uri
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -47,8 +53,23 @@ case "${0##*/}" in
     case "$last" in *"${FAKE_DOCKER_FAIL_CONTAINS:-@never@}"*) exit 1 ;; esac
     [ -n "${FAKE_DOCKER_RUNS_SCRIPT-}" ] && exec sh -c "$last" ;;
   npm) exit "${FAKE_NPM_EXIT:-0}" ;;
+  uv)
+    if [ "$1" = run ] && [ "$2" = python ]; then
+      case "$3" in */e2e_copy.py) shift 2; exec "$FAKE_UV_PYTHON" "$@" ;; esac
+    fi ;;
 esac
 exit 0
+"""
+
+
+#: yoyo as `tools/e2e_copy.py` calls it, in-process: it records its arguments as the tools do.
+FAKE_YOYO = """import os
+
+
+def main(arguments):
+    with open(os.environ["FAKE_LOG"], "a") as log:
+        log.write("\\x1f".join(["yoyo", *arguments]) + "\\x1e\\n")
+    return int(os.environ.get("FAKE_YOYO_EXIT", "0"))
 """
 
 
@@ -71,6 +92,13 @@ class Sandbox:
         self.root = root
         self.log = root / "calls.log"
         shutil.copy(ROOT / "Makefile", root / "Makefile")
+        (root / "tools").mkdir()
+        shutil.copy(ROOT / "tools" / "e2e_copy.py", root / "tools" / "e2e_copy.py")
+        fake_yoyo = root / "python" / "yoyo" / "scripts"
+        fake_yoyo.mkdir(parents=True)
+        (fake_yoyo.parent / "__init__.py").touch()
+        (fake_yoyo / "__init__.py").touch()
+        (fake_yoyo / "main.py").write_text(FAKE_YOYO)
         (root / ".env").write_text(
             f"POSTGRES_DB={LIVE}\nPOSTGRES_USER=appuser\nPOSTGRES_PASSWORD={SECRET}\n"
             f"DATABASE_PORT=5432\nDATABASE_URL={LIVE_URL}\n"
@@ -94,6 +122,8 @@ class Sandbox:
                 "PATH": f"{self.root / 'bin'}:/usr/bin:/bin",
                 "HOME": str(self.root),
                 "FAKE_LOG": str(self.log),
+                "FAKE_UV_PYTHON": sys.executable,
+                "PYTHONPATH": str(self.root / "python"),
                 **environment,
             },
             capture_output=True,
@@ -115,6 +145,10 @@ class Sandbox:
 
     def calls_to(self, tool: str) -> list[Call]:
         return [call for call in self.calls() if call.tool == tool]
+
+    def migrated_url(self) -> str:
+        [migration] = self.calls_to("yoyo")
+        return migration.arguments[migration.arguments.index("--database") + 1]
 
 
 @pytest.fixture
@@ -164,10 +198,11 @@ def test_the_copy_is_migrated_and_tested_through_its_own_name(sandbox: Sandbox) 
     result = sandbox.make("e2e")
 
     assert result.returncode == 0, output(result)
-    [migration] = sandbox.calls_to("uv")
-    assert migration.arguments[migration.arguments.index("--database") + 1] == COPY_URL.replace(
-        "postgresql://", "postgresql+psycopg://"
-    )
+    assert [call.arguments for call in sandbox.calls_to("uv")] == [
+        ("run", "python", "../tools/e2e_copy.py", "migrate", COPY),
+        ("run", "python", "../tools/e2e_copy.py", "suite", COPY),
+    ]
+    assert sandbox.migrated_url() == COPY_URL.replace("postgresql://", "postgresql+psycopg://")
     [suite] = sandbox.calls_to("npm")
     assert suite.suite_database == COPY_URL
     for call in sandbox.calls_to("docker"):
@@ -179,8 +214,6 @@ def test_the_copy_is_migrated_and_tested_through_its_own_name(sandbox: Sandbox) 
     [
         ("E2E_DB", LIVE),
         ("E2E_DATABASE_URL", LIVE_URL),
-        ("E2E_YOYO_URL", LIVE_URL.replace("postgresql://", "postgresql+psycopg://")),
-        ("E2E_SUITE_URL", LIVE_URL),
     ],
 )
 def test_the_copy_cannot_be_named_from_the_command_line(
@@ -195,13 +228,14 @@ def test_the_copy_cannot_be_named_from_the_command_line(
     assert sandbox.calls() == []
 
 
-@pytest.mark.parametrize("variable", ["E2E_DB", "E2E_YOYO_URL", "E2E_SUITE_URL"])
+@pytest.mark.parametrize("variable", ["E2E_DB", "E2E_DATABASE_URL"])
 @pytest.mark.parametrize("precedence", [(), ("-e",)], ids=["exported", "make -e"])
 def test_the_copy_cannot_be_named_from_the_environment_either(
     sandbox: Sandbox, variable: str, precedence: tuple[str, ...]
 ) -> None:
-    """Under some makes `-e` puts the environment above a target-specific assignment, and the
-    URL yoyo migrates is one (RA-1). So the copy's names are refused from anywhere outside."""
+    """Under some makes `-e` puts the environment above a makefile's own assignment (RA-1), and
+    the suite reads its URL from its environment. So the copy's names are refused from anywhere
+    outside, before the script could replace them."""
     result = sandbox.make(*precedence, "e2e", **{variable: LIVE_URL})
 
     assert result.returncode != 0
@@ -309,10 +343,7 @@ def test_every_command_and_url_reaches_the_copy_by_the_name_that_was_measured(
         if argument == COPY or argument.startswith("--dbname=")
     ]
     assert handed == [COPY] * 4  # dropped, created, restored into, and dropped after the suite
-    [migration] = sandbox.calls_to("uv")
-    assert migration.arguments[migration.arguments.index("--database") + 1] == COPY_URL.replace(
-        "postgresql://", "postgresql+psycopg://"
-    )
+    assert sandbox.migrated_url() == COPY_URL.replace("postgresql://", "postgresql+psycopg://")
     [suite] = sandbox.calls_to("npm")
     assert suite.suite_database == COPY_URL
 
@@ -491,6 +522,97 @@ def test_a_failed_restore_whose_drop_fails_too_says_how_to_finish(sandbox: Sandb
     assert result.returncode != 0
     assert "make e2e-drop" in output(result)
     assert "so it was dropped" not in output(result)
+
+
+# --- The copy's URL is built from .env as compose reads it (P100) ---------------------------
+
+
+def with_setting(sandbox: Sandbox, line: str) -> None:
+    """`.env` with one key's line replaced, or added when the key is not there yet."""
+    key = line.split("=", 1)[0]
+    env = sandbox.root / ".env"
+    kept = [kept for kept in env.read_text().splitlines() if not kept.startswith(f"{key}=")]
+    env.write_text("\n".join([*kept, line]) + "\n")
+
+
+#: Passwords as `.env` may spell them, each one a different way to break a URL joined in make.
+PASSWORDS = {
+    "an at sign": f"POSTGRES_PASSWORD={SECRET}@127.0.0.1",
+    "a percent not followed by hex": f"POSTGRES_PASSWORD={SECRET}%zz",
+    "a hash": f"POSTGRES_PASSWORD={SECRET}#w",
+    "double-quoted, then a comment": f"POSTGRES_PASSWORD=\"{SECRET} 'q'/:?\" # note",
+    "single-quoted, holding a double quote": f"POSTGRES_PASSWORD='{SECRET}\"q'",
+    "a dollar and a parenthesis": f"POSTGRES_PASSWORD={SECRET}$(cd",
+}
+
+
+@pytest.mark.parametrize("line", PASSWORDS.values(), ids=PASSWORDS.keys())
+def test_any_password_reaches_the_copy_as_written_and_is_never_printed(
+    sandbox: Sandbox, line: str
+) -> None:
+    """Make read the password and joined it into the URL: a quote, a `# comment` or a `#` broke
+    it, and an `@` or a stray `%` got past yoyo to the suite's backend, whose libpq error printed
+    the password. The script reads it with python-dotenv, as compose does, and encodes it."""
+    with_setting(sandbox, line)
+    written = dotenv_values(sandbox.root / ".env")
+
+    result = sandbox.make("e2e")
+
+    assert result.returncode == 0, output(result)
+    assert SECRET not in output(result)
+    migrated = parse_uri(sandbox.migrated_url())
+    [suite] = sandbox.calls_to("npm")
+    for user, password, database in [
+        (migrated.username, migrated.password, migrated.database),
+        tuple(
+            conninfo_to_dict(suite.suite_database)[key] for key in ("user", "password", "dbname")
+        ),
+    ]:
+        assert (user, password, database) == ("appuser", written["POSTGRES_PASSWORD"], COPY)
+
+
+@pytest.mark.parametrize("arguments", [("help",), ("-n", "e2e")], ids=["help", "make -n e2e"])
+def test_a_password_make_cannot_expand_stops_no_target(
+    sandbox: Sandbox, arguments: tuple[str, ...]
+) -> None:
+    """Make holds the password only as a variable nothing expands, so a `$(` in it cannot stop
+    `make help`, and a preview still prints no password."""
+    with_setting(sandbox, PASSWORDS["a dollar and a parenthesis"])
+
+    result = sandbox.make(*arguments)
+
+    assert result.returncode == 0, output(result)
+    assert SECRET not in output(result)
+    assert sandbox.calls() == []
+
+
+@pytest.mark.parametrize(
+    ("line", "exported", "port"),
+    [
+        (None, "5433", "5433"),
+        ("DATABASE_PORT=5432", "5433", "5432"),
+        ('DATABASE_PORT="5434" # the published port', None, "5434"),
+    ],
+    ids=["left out of .env: the shell's", ".env over the shell", "quoted, then a comment"],
+)
+def test_the_copys_port_is_the_one_docker_publishes(
+    sandbox: Sandbox, line: str | None, exported: str | None, port: str
+) -> None:
+    """Compose publishes `DATABASE_PORT` from .env, or from the shell where .env leaves it out,
+    so the script reads the file first and the environment second."""
+    env = sandbox.root / ".env"
+    env.write_text(
+        "".join(f"{kept}\n" for kept in env.read_text().splitlines() if "DATABASE_PORT" not in kept)
+    )
+    if line is not None:
+        with_setting(sandbox, line)
+
+    result = sandbox.make("e2e", **({"DATABASE_PORT": exported} if exported else {}))
+
+    assert result.returncode == 0, output(result)
+    assert parse_uri(sandbox.migrated_url()).port == int(port)
+    [suite] = sandbox.calls_to("npm")
+    assert conninfo_to_dict(suite.suite_database)["port"] == port
 
 
 # --- The live database's own targets (S1, S2) ---------------------------------------------------

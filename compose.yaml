@@ -55,7 +55,16 @@ services:
     environment:
       # Inside the compose network the host is the service name, so the .env value (which
       # points at localhost, for running the backend outside Docker) is overridden here.
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+      #
+      # **The URL carries no credentials** (P100). Compose interpolates without percent-encoding,
+      # so a password joined into a URL broke it at an `@`, `%`, `#` or `/` -- and libpq's
+      # error for a URL it cannot parse quotes the password into `docker logs`. libpq reads the
+      # user, password and database from its own variables instead, which take any value as it
+      # is: the URL is encoded because nothing in it needs encoding.
+      DATABASE_URL: postgresql://database:5432
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -125,8 +134,12 @@ services:
     profiles: ["tools"]
     env_file:
       - .env
+    # Credentials as libpq's own variables, for the reason the backend's explain.
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://database:5432
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
     # **A backup first, every time** (arch.md 9.5). `make migrate` backs up on the host; this
     # makes every container migration wait for `backup` below to finish -- a bare
     # `docker compose run migrate` included -- and a dump that failed stops the migration.
@@ -141,7 +154,7 @@ services:
     # naming the gap -- which is what makes running this separately safe rather than fragile.
     command: >
       yoyo apply --batch
-        --database postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+        --database postgresql+psycopg://database:5432
         /app/storage/migrations
 
   backup:
