@@ -9,7 +9,6 @@ the score scale is: a bound nobody chose is a bound this application invented.
 """
 
 from collections.abc import Mapping, Sequence
-from decimal import Decimal
 from typing import Annotated, ClassVar
 
 from fastapi import APIRouter, HTTPException, Query
@@ -34,7 +33,7 @@ from starnest.comparison import (
     compare,
 )
 from starnest.data import Value, ValueListing
-from starnest.evaluation.magnitudes import UnscoreableValueError, figure_of
+from starnest.evaluation.magnitudes import PublishedFigure, UnscoreableValueError, figure_of
 
 router = APIRouter(tags=["evaluation"])
 
@@ -151,14 +150,15 @@ async def get_comparison(
     )
 
 
-def _magnitudes(values: Mapping[str, Sequence[Value]]) -> dict[str, dict[str, Decimal]]:
+def _magnitudes(values: Mapping[str, Sequence[Value]]) -> dict[str, dict[str, PublishedFigure]]:
     """Each candidate's comparable figure per attribute, in the attribute's own unit -- in EUR for
-    a Monetary attribute, the figure both sides are read as (`magnitudes.py`, `reqs.md` 5.5)."""
-    figures: dict[str, dict[str, Decimal]] = {}
+    a Monetary attribute, the figure both sides are read as (`magnitudes.py`, `reqs.md` 5.5) --
+    with the scale it declares, so no gap is taken across two scales (C06-S2)."""
+    figures: dict[str, dict[str, PublishedFigure]] = {}
     for candidate, stored in values.items():
         for value in stored:
             try:
-                figures.setdefault(candidate, {})[str(value.attribute)] = figure_of(value).magnitude
+                figures.setdefault(candidate, {})[str(value.attribute)] = figure_of(value)
             except UnscoreableValueError:
                 continue
     return figures

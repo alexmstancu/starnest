@@ -14,7 +14,13 @@ import pytest
 from starnest.comparison import ComparisonError, compare
 from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor
 from starnest.data import Count
-from starnest.evaluation import AttributeScore, CandidateResult, MatchStatus, rank_candidates
+from starnest.evaluation import (
+    AttributeScore,
+    CandidateResult,
+    MatchStatus,
+    PublishedFigure,
+    rank_candidates,
+)
 from starnest.evaluation.results import PillarScore
 
 from ..evaluation.builders import a_criterion, a_pillar_weight, a_set, a_value
@@ -90,10 +96,18 @@ THE_RANKING = (
         a_score(PRICES, 55, "10"),
     ),
 )
+
+
+def figures(**by_attribute: str) -> dict[str, PublishedFigure]:
+    return {
+        attribute: PublishedFigure(Decimal(figure)) for attribute, figure in by_attribute.items()
+    }
+
+
 FIGURES = {
-    PORTUGAL: {TAX: Decimal("41.5"), COASTLINE: Decimal("1793"), PRICES: Decimal("94.5")},
-    SPAIN: {TAX: Decimal("47.9"), COASTLINE: Decimal("4964"), PRICES: Decimal("88.2")},
-    GREECE: {TAX: Decimal("52.0"), COASTLINE: Decimal("13676"), PRICES: Decimal("85.0")},
+    PORTUGAL: figures(**{TAX: "41.5", COASTLINE: "1793", PRICES: "94.5"}),
+    SPAIN: figures(**{TAX: "47.9", COASTLINE: "4964", PRICES: "88.2"}),
+    GREECE: figures(**{TAX: "52.0", COASTLINE: "13676", PRICES: "85.0"}),
 }
 
 
@@ -159,6 +173,62 @@ class TestTheTable:
 
         (cell,) = row.comparators
         assert (cell.delta, cell.weighted_contribution) == (None, None)
+
+    def test_no_raw_gap_between_figures_on_different_scales(self) -> None:
+        """7 on 0-10 against 70 on 0-100 is the same judgement, and their difference, -63, is in
+        no unit (C06-S2, P1-52). The figures and the score gap still stand; only the raw gap
+        goes."""
+        ranking = (
+            a_result(PORTUGAL, 60, a_score(PRICES, 70, "40")),
+            a_result(SPAIN, 50, a_score(PRICES, 70, "40")),
+        )
+        on_two_scales = {
+            PORTUGAL: {PRICES: PublishedFigure(Decimal(7), (Decimal(0), Decimal(10)))},
+            SPAIN: {PRICES: PublishedFigure(Decimal(70), (Decimal(0), Decimal(100)))},
+        }
+
+        row = a_comparison(results=ranking, magnitudes=on_two_scales).attributes[0]
+
+        (cell,) = row.comparators
+        assert (row.focus_magnitude, cell.magnitude) == (Decimal(7), Decimal(70))
+        assert cell.delta is None
+        assert cell.weighted_contribution == Decimal(0)
+
+    @pytest.mark.parametrize(
+        "scale",
+        [None, (Decimal(0), Decimal(10))],
+        ids=["both-undeclared", "one-declared-scale"],
+    )
+    def test_figures_on_one_scale_keep_their_raw_gap(
+        self, scale: tuple[Decimal, Decimal] | None
+    ) -> None:
+        ranking = (
+            a_result(PORTUGAL, 60, a_score(PRICES, 70, "40")),
+            a_result(SPAIN, 50, a_score(PRICES, 40, "40")),
+        )
+        on_one_scale = {
+            PORTUGAL: {PRICES: PublishedFigure(Decimal(7), scale)},
+            SPAIN: {PRICES: PublishedFigure(Decimal(4), scale)},
+        }
+
+        (cell,) = a_comparison(results=ranking, magnitudes=on_one_scale).attributes[0].comparators
+
+        assert cell.delta == Decimal(-3)
+
+    def test_a_declared_scale_against_none_has_no_raw_gap(self) -> None:
+        """A figure on a declared scale and one on none are not known to share a unit."""
+        ranking = (
+            a_result(PORTUGAL, 60, a_score(PRICES, 70, "40")),
+            a_result(SPAIN, 50, a_score(PRICES, 40, "40")),
+        )
+        mixed = {
+            PORTUGAL: {PRICES: PublishedFigure(Decimal(7), (Decimal(0), Decimal(10)))},
+            SPAIN: {PRICES: PublishedFigure(Decimal(4))},
+        }
+
+        (cell,) = a_comparison(results=ranking, magnitudes=mixed).attributes[0].comparators
+
+        assert cell.delta is None
 
     def test_each_row_carries_the_focuss_effective_weight(self) -> None:
         """What the attribute counted for in the focus's total, on the basis Rank prints it

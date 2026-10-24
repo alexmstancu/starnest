@@ -259,7 +259,7 @@ MAPPED = "scored: mapped from the scale the figure declares"
 A_SHARE_OF_ITS_SCALE = "ranked: by its share of the scale it declares"
 PROBE = "probe: asks only whether there is a figure"
 RAW_PENDING_THRESHOLDS = "raw, pending C06-S1: compares the magnitude, whatever its scale"
-RAW_PENDING_COMPARE = "raw, pending C06-S2: subtracts magnitudes, whatever their scales"
+SAME_SCALE_ONLY = "compared: a raw gap only between figures on one declared scale (C06-S2)"
 
 READERS_OF_A_FIGURE = {
     ("starnest.evaluation.magnitudes", "figure_of"): THE_READER,
@@ -269,7 +269,7 @@ READERS_OF_A_FIGURE = {
     ("starnest.evaluation.ranking", "_figure_sources_of"): PROBE,
     ("starnest.evaluation.ranking", "_magnitudes_of"): RAW_PENDING_THRESHOLDS,
     ("starnest.evaluation.rules", "_crosses"): RAW_PENDING_THRESHOLDS,
-    ("starnest.api.comparisons", "_magnitudes"): RAW_PENDING_COMPARE,
+    ("starnest.api.comparisons", "_magnitudes"): SAME_SCALE_ONLY,
 }
 """Every function that reads a figure, and what it does with a scale the figure declares."""
 
@@ -309,8 +309,8 @@ def test_every_reader_of_a_figure_says_what_it_makes_of_a_declared_scale() -> No
     every place a figure is read -- so nothing asked whether each one honoured its scale.
 
     A new reader fails here until somebody writes down what it makes of a declared scale, which
-    is the moment to decide it. Three read the raw magnitude today and say so; the commits that
-    fix them (C06-S1, C06-S2) change their rows rather than adding a reader nobody reviewed.
+    is the moment to decide it. Two read the raw magnitude today and say so; the commit that
+    fixes them (C06-S1) changes their rows rather than adding a reader nobody reviewed.
     """
     found = _readers_of_a_figure()
 

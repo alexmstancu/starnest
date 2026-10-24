@@ -34,12 +34,13 @@ from decimal import Decimal
 
 from starnest.candidates import CandidateId
 from starnest.data import AttributeId, PillarId
-from starnest.evaluation import AttributeScore, CandidateResult, contribution_of
+from starnest.evaluation import AttributeScore, CandidateResult, PublishedFigure, contribution_of
 
-Magnitudes = Mapping[str, Mapping[str, Decimal]]
+Magnitudes = Mapping[str, Mapping[str, PublishedFigure]]
 """The figure each candidate holds for each attribute, in the attribute's own unit -- except a
 Monetary attribute, whose figure is its EUR equivalent, the only one comparable across candidates
-that may hold different currencies (`magnitudes.py`, `reqs.md` 5.5)."""
+that may hold different currencies (`magnitudes.py`, `reqs.md` 5.5) -- with the scale it
+declares."""
 
 
 class ComparisonError(ValueError):
@@ -55,7 +56,9 @@ class ComparatorCell:
     magnitude: Decimal | None
     delta: Decimal | None
     """Comparator minus focus, in the attribute's own unit -- in EUR for a Monetary attribute, the
-    figure both sides are read as (`magnitudes.py`). None unless both have a figure."""
+    figure both sides are read as (`magnitudes.py`). None unless both have a figure, and None
+    when the two declare different scales (C06-S2): 7 on 0-10 against 70 on 0-100 is a gap in
+    no unit. The interface sees both figures, so it can say why."""
     weighted_contribution: Decimal | None
     """What the score gap is worth to the focus's total, comparator minus focus: the exact score
     difference times the focus's effective weight. None unless both were scored."""
@@ -192,16 +195,16 @@ def _rows(
             attribute=row.attribute,
             pillar=row.pillar,
             focus_score=row.normalised_score,
-            focus_magnitude=_magnitude(magnitudes, str(focus.candidate), str(row.attribute)),
+            focus_magnitude=_figure_number(
+                _magnitude(magnitudes, str(focus.candidate), str(row.attribute))
+            ),
             focus_effective_weight=row.effective_weight,
             comparators=tuple(
                 _cell(
                     comparator=comparator,
                     attribute=str(row.attribute),
                     focus_exact_score=row.exact_score,
-                    focus_magnitude=_magnitude(
-                        magnitudes, str(focus.candidate), str(row.attribute)
-                    ),
+                    focus_figure=_magnitude(magnitudes, str(focus.candidate), str(row.attribute)),
                     effective_weight=row.effective_weight,
                     scored=scores_of[str(comparator.candidate)].get(str(row.attribute)),
                     magnitudes=magnitudes,
@@ -218,7 +221,7 @@ def _cell(
     comparator: CandidateResult,
     attribute: str,
     focus_exact_score: Decimal | None,
-    focus_magnitude: Decimal | None,
+    focus_figure: PublishedFigure | None,
     effective_weight: Decimal,
     scored: AttributeScore | None,
     magnitudes: Magnitudes,
@@ -227,6 +230,9 @@ def _cell(
 
     **Both gaps read comparator minus focus**, the raw figure's and the score's, so the cell
     says how far the comparator is from the baseline.
+    **A raw gap needs one scale** (C06-S2, P1-52): two figures declaring different scales -- an
+    Index from two publishers, two assigned scores on different ranges -- have none. The worth,
+    read from the scores, already puts both on the score scale and stands.
     **The weight is the focus's effective weight**, after redistribution for what the focus was
     missing, because the contribution answers "what is this gap worth to the focus's total?".
     **The scores are the exact ones** (`reqs.md` 5.1, NEW-17): the displayed scores are rounded,
@@ -234,13 +240,13 @@ def _cell(
     """
     their_score = scored.normalised_score if scored is not None else None
     their_exact_score = scored.exact_score if scored is not None else None
-    their_magnitude = _magnitude(magnitudes, str(comparator.candidate), attribute)
+    their_figure = _magnitude(magnitudes, str(comparator.candidate), attribute)
     score_gap = _against_focus(focus_exact_score, their_exact_score)
     return ComparatorCell(
         candidate=comparator.candidate,
         normalised_score=their_score,
-        magnitude=their_magnitude,
-        delta=_against_focus(focus_magnitude, their_magnitude),
+        magnitude=_figure_number(their_figure),
+        delta=_raw_gap(focus_figure, their_figure),
         weighted_contribution=(
             None if score_gap is None else contribution_of(score_gap, effective_weight)
         ),
@@ -254,8 +260,19 @@ def _against_focus[Number: (int, Decimal)](
     return None if focus is None or theirs is None else theirs - focus
 
 
-def _magnitude(magnitudes: Magnitudes, candidate: str, attribute: str) -> Decimal | None:
+def _raw_gap(focus: PublishedFigure | None, theirs: PublishedFigure | None) -> Decimal | None:
+    """The comparator's figure minus the focus's, when both have one on the same scale."""
+    if focus is None or theirs is None or focus.published_bounds != theirs.published_bounds:
+        return None
+    return _against_focus(focus.magnitude, theirs.magnitude)
+
+
+def _magnitude(magnitudes: Magnitudes, candidate: str, attribute: str) -> PublishedFigure | None:
     return magnitudes.get(candidate, {}).get(attribute)
+
+
+def _figure_number(figure: PublishedFigure | None) -> Decimal | None:
+    return None if figure is None else figure.magnitude
 
 
 def _synthesis(

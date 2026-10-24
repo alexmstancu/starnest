@@ -110,6 +110,53 @@ class TestTheTable:
         assert all(row["effective_weight"] == 0 for row in unanswered)
 
 
+class TestFiguresOnDifferentScales:
+    """C06-S2 (P1-52): a raw gap exists only between figures on one declared scale."""
+
+    async def test_two_scores_on_different_ranges_have_no_raw_gap(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """Portugal 7 on 0-10 and Spain 70 on 0-100 used to read a gap of -63. Both score 70,
+        so the worth stands at zero; the raw gap is in no unit and is not sent."""
+        await _settings(database_url, comparator_limit=5)
+        for candidate, figure, top in ((PORTUGAL, 7, 10), (SPAIN, 70, 100)):
+            stored = await api.post(
+                "/v1/values/manual", json=_an_assigned_score(candidate, figure, top)
+            )
+            assert stored.status_code == 201
+
+        body = (await _compare(api, criteria_set="local_employment", comparators=[SPAIN])).json()
+
+        (row,) = [r for r in body["attributes"] if r["attribute"] == ADMIN_EASE]
+        (cell,) = row["comparators"]
+        assert cell["value"]["payload"]["value"] == 70
+        assert row["focus"]["value"]["payload"]["value"] == 7
+        assert cell["delta"] is None
+        assert cell["weighted_contribution"] == pytest.approx(0)
+
+
+ADMIN_EASE = "country.residency_admin_ease"
+"""An AssignedScore that declares manual entry, scored `as_is` by the shipped `local_employment`."""
+
+
+def _an_assigned_score(candidate: str, figure: int, top: int) -> dict:
+    return {
+        "candidate": candidate,
+        "attribute": ADMIN_EASE,
+        "payload": {
+            "value": figure,
+            "range_min": 0,
+            "range_max": top,
+            "assigned_by": "human",
+            "rationale": "Permits are applied for online",
+        },
+        "reference_period": {"start": "2026-01-01", "end": "2026-12-31"},
+        "retrieval_date": "2026-09-11T10:00:00Z",
+        "quote": "Residence permits are requested through an online portal",
+        "citations": ["https://example.org/permits"],
+    }
+
+
 class TestTheSynthesis:
     async def test_it_names_the_pair_and_reads_from_the_numbers(
         self, api: httpx.AsyncClient, database_url: str, stored_figures: None

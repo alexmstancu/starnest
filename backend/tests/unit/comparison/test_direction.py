@@ -21,7 +21,13 @@ import pytest
 from starnest.comparison import Comparison, compare
 from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor
 from starnest.data import Count
-from starnest.evaluation import AttributeScore, CandidateResult, contribution_of, rank_candidates
+from starnest.evaluation import (
+    AttributeScore,
+    CandidateResult,
+    PublishedFigure,
+    contribution_of,
+    rank_candidates,
+)
 from starnest.evaluation.results import PillarScore
 
 from ..evaluation.builders import A_SMALL_SCALE, a_criterion, a_pillar_weight, a_set, a_value
@@ -274,7 +280,9 @@ def _drawn(figures: Figures, *, min_coverage: Decimal | None = None) -> Comparis
         focus=FOCUS,
         comparators=comparators,
         magnitudes={
-            candidate: {attribute: Decimal(figure) for attribute, figure in held.items()}
+            candidate: {
+                attribute: PublishedFigure(Decimal(figure)) for attribute, figure in held.items()
+            }
             for candidate, held in figures.items()
         },
         comparator_limit=len(comparators),
