@@ -905,6 +905,52 @@ class TestATableCorrectedUnderItsOldDate:
         assert detail["progress"]["items_completed"] == 32
 
 
+class TestWhatARunReConfirmed:
+    """PL-049, UF-073. A re-read of a transcribed table stores no new row, so a run's values alone
+    showed the pair as gone; the run serves what it re-confirmed, naming the figure."""
+
+    async def test_a_run_lists_the_figures_it_re_confirmed_with_their_ids(
+        self, database_url: str
+    ) -> None:
+        one_pair = {
+            "level": COUNTRY,
+            "candidates": [THE_STUB_DECLINES_FOR],
+            "attributes": [TEMPERATURE],
+        }
+        async with an_api(database_url, (_a_transcribed_table(("16", "16")),)) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json=one_pair)).json()
+            second = (await api.post("/v1/data-acquisition-runs", json=one_pair)).json()
+            (stored,) = (
+                await api.get("/v1/values", params={"data_acquisition_run": first["id"]})
+            ).json()["items"]
+            detail = (await api.get(f"/v1/data-acquisition-runs/{second['id']}")).json()
+
+        validate("getRun", detail)
+        assert detail["reconfirmed"] == [
+            {
+                "data_source": "open_meteo",
+                "candidate": THE_STUB_DECLINES_FOR,
+                "attribute": TEMPERATURE,
+                "value": stored["id"],
+            }
+        ]
+
+    async def test_a_run_that_stored_its_figures_re_confirmed_nothing(
+        self, database_url: str
+    ) -> None:
+        one_pair = {
+            "level": COUNTRY,
+            "candidates": [THE_STUB_DECLINES_FOR],
+            "attributes": [TEMPERATURE],
+        }
+        async with an_api(database_url, (_a_transcribed_table(("16",)),)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json=one_pair)).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        assert detail["progress"]["items_completed"] == 1, "the premise: the pair was stored"
+        assert detail["reconfirmed"] == []
+
+
 @asynccontextmanager
 async def _a_refetch_age(api: httpx.AsyncClient, *, days: int) -> AsyncIterator[None]:
     """The refetch age set for as long as a test needs it, and the settings put back after."""

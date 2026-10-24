@@ -112,10 +112,12 @@ WHERE  data_acquisition_run = :data_acquisition_run
 -- stored no new row -- a transcribed table re-read as the same observation (ST-09). The
 -- accounting reads these so the pair counts completed rather than unanswered, and the breakdown
 -- credits the source named here (NEW-54). Idempotent: a pair one source re-confirmed twice in
--- one run is the one row the primary key allows.
-INSERT INTO data_acquisition_run_reuse (data_acquisition_run, data_source, candidate, attribute)
-SELECT :data_acquisition_run, :data_source, pair.candidate, pair.attribute
-FROM   jsonb_to_recordset(:pairs::jsonb) AS pair(candidate text, attribute text)
+-- one run is the one row the primary key allows. Each pair names the stored row it restated, or
+-- null where that is not one row (PL-049), so the diff can show the figure the run produced.
+INSERT INTO data_acquisition_run_reuse
+       (data_acquisition_run, data_source, candidate, attribute, value)
+SELECT :data_acquisition_run, :data_source, pair.candidate, pair.attribute, pair.value
+FROM   jsonb_to_recordset(:pairs::jsonb) AS pair(candidate text, attribute text, value bigint)
 ON CONFLICT ON CONSTRAINT data_acquisition_run_reuse_pkey DO NOTHING;
 
 -- name: insert_research_spend(match_rule, candidate, data_source, llm_call_count, cost_eur)!
@@ -236,6 +238,10 @@ SELECT count(*) FROM data_acquisition_run;
 -- answered. **A re-read figure is stored by the source that re-read it** (NEW-54), unless that
 -- source failed on it too, as a re-read rejection does: stored and failed at once is the double
 -- count `85d545d` removed.
+--
+-- `reconfirmed` lists the run's re-confirmations, each naming the stored value it restated, or
+-- null where the run did not record which (PL-049): with the run's own values, it is what the
+-- run produced, which the acquisition diff compares.
 WITH item AS (
     SELECT candidate, attribute
     FROM   data_acquisition_run_item
@@ -341,7 +347,17 @@ SELECT r.id,
            '[]'::jsonb) AS failures,
        COALESCE(
            (SELECT jsonb_agg(to_jsonb(reach) ORDER BY reach.data_source) FROM reach),
-           '[]'::jsonb) AS by_source
+           '[]'::jsonb) AS by_source,
+       COALESCE(
+           (SELECT jsonb_agg(jsonb_build_object('data_source', reuse.data_source,
+                                                'candidate', reuse.candidate,
+                                                'attribute', reuse.attribute,
+                                                'value', reuse.value)
+                             ORDER BY reuse.candidate, reuse.attribute, reuse.data_source)
+            FROM   data_acquisition_run_reuse AS reuse
+            JOIN   item USING (candidate, attribute)
+            WHERE  reuse.data_acquisition_run = :data_acquisition_run),
+           '[]'::jsonb) AS reconfirmed
 FROM   data_acquisition_run AS r
 CROSS  JOIN progress
 WHERE  r.id = :data_acquisition_run;

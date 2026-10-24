@@ -212,6 +212,28 @@ REFUSALS = (
         "DELETE FROM data_acquisition_run WHERE triggered_by = 'FU-A5 race row'; END $$",
         says="cannot roll back 0506: 1 run",
     ),
+    # A re-confirmation naming the figure it restated is a link 0511's rollback would drop
+    # (PL-049): nothing can re-derive it where two rows could have been restated.
+    Refusal(
+        migration="0511-a-re-confirmation-names-the-figure-it-restated",
+        write="DO $$ DECLARE run_id bigint; figure bigint; BEGIN "
+        "INSERT INTO data_acquisition_run (started_at, triggered_by, run_status, level) "
+        "VALUES (now(), 'PL-049 race row', 'completed', 'country') RETURNING id INTO run_id; "
+        "INSERT INTO value (candidate, attribute, value_type, data_source, "
+        "reference_period_start, reference_period_end, retrieval_date, confidence_level) "
+        "VALUES ('country.romania', 'country.homicide_rate', 'Quantity', 'eurostat', "
+        "'2022-01-01', '2022-12-31', now(), 'high') RETURNING id INTO figure; "
+        "INSERT INTO data_acquisition_run_reuse "
+        "(data_acquisition_run, data_source, candidate, attribute, value) "
+        "VALUES (run_id, 'eurostat', 'country.romania', 'country.homicide_rate', figure); END $$",
+        undo="DO $$ BEGIN "
+        "DELETE FROM data_acquisition_run_reuse WHERE data_acquisition_run IN "
+        "(SELECT id FROM data_acquisition_run WHERE triggered_by = 'PL-049 race row'); "
+        "DELETE FROM value WHERE attribute = 'country.homicide_rate' "
+        "AND candidate = 'country.romania' AND data_source = 'eurostat'; "
+        "DELETE FROM data_acquisition_run WHERE triggered_by = 'PL-049 race row'; END $$",
+        says="cannot roll back 0511: 1 re-confirmation",
+    ),
     # A deleted criteria set is a row 0508's rollback would quietly bring back as a live one, by
     # dropping the column that says it was deleted (PL-033, T33-B7).
     Refusal(

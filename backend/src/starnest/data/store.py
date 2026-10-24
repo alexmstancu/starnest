@@ -19,7 +19,7 @@ here still reads only.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 from starnest.candidates import LevelHierarchy
 from starnest.data.attribute import Attribute, Pillar
@@ -90,6 +90,7 @@ class ValueStore(ABC):
         candidate: str | None = None,
         attribute: str | None = None,
         data_acquisition_run: int | None = None,
+        reconfirmed_by_run: int | None = None,
         include_superseded: bool = True,
         ids: Sequence[int] | None = None,
         limit: int | None = None,
@@ -117,6 +118,7 @@ class ValueStore(ABC):
         candidate: str | None = None,
         attribute: str | None = None,
         data_acquisition_run: int | None = None,
+        reconfirmed_by_run: int | None = None,
         include_superseded: bool = True,
     ) -> int:
         """How many values `read_values` would return unpaginated."""
@@ -142,11 +144,17 @@ class ValueStore(ABC):
 
     @abstractmethod
     async def record_reuse(
-        self, run: int, data_source: DataSourceId | str, pairs: Iterable[tuple[str, str]]
+        self,
+        run: int,
+        data_source: DataSourceId | str,
+        pairs: Mapping[tuple[str, str], int | None],
     ) -> None:
         """Record that `data_source` re-confirmed each (candidate, attribute) pair in this run --
         it answered, but the figure was already on record so `append` stored no new row (ST-09).
         The source is named as a failure's is, so the run's breakdown credits it (NEW-54).
+
+        Each pair maps to the id of the stored value it restated, or `None` where that is not
+        one row (PL-049): the acquisition diff shows that figure as what the run produced.
 
         A transcribed table is stamped with the day it was transcribed, so re-reading it is the
         same observation and its append is a no-op. Without this the run would count the pair

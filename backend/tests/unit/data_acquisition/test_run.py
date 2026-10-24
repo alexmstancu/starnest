@@ -110,6 +110,7 @@ class RecordingValueStore:
         self.appended: list[Value] = []
         self.reused: list[tuple[str, str]] = []
         self.reused_by: list[str] = []
+        self.restated: dict[tuple[str, str], int | None] = {}
         self._on_record = {value.natural_key: value for value in already_holds}
 
     async def append(self, values):
@@ -126,6 +127,7 @@ class RecordingValueStore:
         return tuple(held for key, held in self._on_record.items() if key in keys)
 
     async def record_reuse(self, run, data_source, pairs) -> None:
+        self.restated.update(pairs)
         pairs = list(pairs)
         self.reused.extend(pairs)
         self.reused_by.extend(str(data_source) for _ in pairs)
@@ -345,6 +347,47 @@ class TestWhatARunKeeps:
         )
 
         assert store.reused_by == [str(adapter.data_source)]
+
+    async def test_a_re_confirmation_names_the_figure_on_record(self) -> None:
+        """PL-049. The diff reads the figure a run restated, so the reuse names the stored row:
+        the row on record, not the copy the source handed back, which has no id."""
+        fetched = a_value()
+        store = RecordingValueStore(already_holds=(fetched.model_copy(update={"id": 41}),))
+        adapter = StubAdapter({OVERBURDEN: Acquired(values=(fetched,))}, declares=(OVERBURDEN,))
+
+        await acquire(
+            adapter=adapter,
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=store,
+            run=5,
+        )
+
+        assert store.restated == {("country.portugal", OVERBURDEN): 41}
+
+    async def test_a_pair_re_confirmed_through_two_figures_names_neither(self) -> None:
+        """One reuse row per pair cannot name two rows, and naming one of them would call the
+        other unchanged without evidence -- so none, which the diff reads as refreshed."""
+        figures = [
+            a_value().model_copy(update={"breakdown_option": option}) for option in ("a", "b")
+        ]
+        store = RecordingValueStore(
+            already_holds=[
+                figure.model_copy(update={"id": stored_id})
+                for figure, stored_id in zip(figures, (41, 42), strict=True)
+            ]
+        )
+        adapter = StubAdapter({OVERBURDEN: Acquired(values=tuple(figures))}, declares=(OVERBURDEN,))
+
+        await acquire(
+            adapter=adapter,
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=store,
+            run=5,
+        )
+
+        assert store.restated == {("country.portugal", OVERBURDEN): None}
 
     async def test_a_freshly_stored_pair_is_not_recorded_as_a_reuse(self) -> None:
         """The other side: a pair stored for the first time is not re-confirmation, so nothing

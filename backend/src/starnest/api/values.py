@@ -14,6 +14,7 @@ from enum import StrEnum
 from typing import Any
 
 from fastapi import APIRouter, Query
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict
 
 from starnest.api.dependencies import Candidates, Catalog, Values
@@ -92,6 +93,7 @@ async def list_values(
     candidate: str | None = None,
     attribute: str | None = None,
     data_acquisition_run: int | None = None,
+    reconfirmed_by_run: int | None = None,
     include_superseded: bool = False,
     # The contract's own bounds, enforced rather than described (see `list_runs`).
     limit: int = Query(100, ge=1, le=1000),
@@ -102,12 +104,17 @@ async def list_values(
     **`data_acquisition_run` narrows to what one run produced**, which is what makes comparing
     two acquisitions two requests rather than a walk of the whole corpus. A value keeps the run
     that produced it for the life of the row, so this answers the same way however much has
-    happened since.
+    happened since. **`reconfirmed_by_run` narrows to what one run re-confirmed** rather than
+    stored (PL-049). The two are refused together: their intersection is always empty, since a
+    run re-confirms only what it did not store, so asking for it is a mistake worth naming.
     """
+    if data_acquisition_run is not None and reconfirmed_by_run is not None:
+        raise _both_run_filters()
     listings = await values.read_values(
         candidate=candidate,
         attribute=attribute,
         data_acquisition_run=data_acquisition_run,
+        reconfirmed_by_run=reconfirmed_by_run,
         include_superseded=include_superseded,
         limit=limit,
         offset=offset,
@@ -116,6 +123,7 @@ async def list_values(
         candidate=candidate,
         attribute=attribute,
         data_acquisition_run=data_acquisition_run,
+        reconfirmed_by_run=reconfirmed_by_run,
         include_superseded=include_superseded,
     )
     names = await _attribute_names_for(listings, catalog)
@@ -133,6 +141,20 @@ async def _attribute_names_for(
         str(attribute.id): attribute.name
         for attribute in await catalog.read_attributes(include_retired=True)
     }
+
+
+def _both_run_filters() -> RequestValidationError:
+    """422 `invalid_request`, located at the second filter, in the contract's `FieldProblem`."""
+    return RequestValidationError(
+        [
+            {
+                "type": "mutually_exclusive",
+                "loc": ("query", "reconfirmed_by_run"),
+                "msg": "cannot be asked for together with data_acquisition_run",
+                "input": None,
+            }
+        ]
+    )
 
 
 @router.post(

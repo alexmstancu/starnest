@@ -156,6 +156,15 @@ class SourceReachBody(BaseModel):
     items_failed: int
 
 
+class ReconfirmedBody(BaseModel):
+    """A pair re-confirmed rather than stored, and the stored value it restated (or null)."""
+
+    data_source: str
+    candidate: str
+    attribute: str
+    value: int | None
+
+
 class RunDetailBody(RunBody):
     scope: RunScopeBody | None = None
     progress: ProgressBody | None = None
@@ -164,6 +173,8 @@ class RunDetailBody(RunBody):
     # Source by source. A run's totals say how far it got; this says which source got it there,
     # which is the question behind every retry.
     by_source: tuple[SourceReachBody, ...] = ()
+    # What the run re-confirmed rather than stored: with its values, what it produced (PL-049).
+    reconfirmed: tuple[ReconfirmedBody, ...] = ()
 
 
 class RunsBody(BaseModel):
@@ -503,6 +514,15 @@ async def get_run(run_id: int, runs: Runs) -> RunDetailBody:
                 items_failed=reach.items_failed,
             )
             for reach in run.by_source
+        ),
+        reconfirmed=tuple(
+            ReconfirmedBody(
+                data_source=str(reconfirmed.data_source),
+                candidate=reconfirmed.candidate,
+                attribute=reconfirmed.attribute,
+                value=reconfirmed.value,
+            )
+            for reconfirmed in run.reconfirmed
         ),
     )
 

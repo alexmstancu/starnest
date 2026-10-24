@@ -89,15 +89,19 @@ async def acquire(
     if meter is not None and adapter.costs_money:
         adapter.meter_with(meter)
 
-    async def reconfirm(pairs: set[tuple[str, str]]) -> None:
+    async def reconfirm(pairs: set[tuple[str, str]], on_record: Sequence[Value]) -> None:
         # **A pair the source answered that was already on record is re-confirmed, not
         # unanswered** (ST-09). A transcribed table re-read is the same observation, so its
         # append is a no-op and no new row carries this run -- but the source did answer.
         # Recorded so the run counts the pair completed rather than offering to ask again for a
         # figure that is there. Keyed on the pair: a new value for it means it was stored, so
-        # only a pair its batch stored nothing new for is a reuse.
+        # only a pair its batch stored nothing new for is a reuse. It names the row restated
+        # (PL-049), so the diff can show the figure the run produced.
         if run is not None and pairs:
-            await values.record_reuse(run, adapter.data_source, pairs)
+            restated = _restated_by_pair(on_record)
+            await values.record_reuse(
+                run, adapter.data_source, {pair: restated.get(pair) for pair in pairs}
+            )
 
     async def charge_the_crash(attribute: Attribute, settled: set[str], fault: Exception) -> None:
         # **The item in flight keeps a failure** (PL-047). An exception no adapter turned into
@@ -203,7 +207,8 @@ async def acquire(
             # (NEW-23). Its append would be a silent no-op on the natural key, and the run then
             # credited the source with re-confirming a figure it had just contradicted. It is set
             # aside here and reported with this batch's failures instead.
-            contradicting = await _contradicting(fetched, values) if fetched else ()
+            on_record = await values.read_observations(fetched) if fetched else ()
+            contradicting = _contradicting(fetched, on_record)
             contradicted = _pairs_of(contradicting)
             kept = [value for value in fetched if value not in contradicting]
             accepted = tuple(value for value in kept if not value.is_rejected)
@@ -212,7 +217,11 @@ async def acquire(
             stored.extend(newly_accepted)
             # A pair a rejected figure answered too is settled with the rejected ones below.
             await reconfirm(
-                _pairs_of(accepted) - _pairs_of(rejected) - _pairs_of(newly_accepted) - contradicted
+                _pairs_of(accepted)
+                - _pairs_of(rejected)
+                - _pairs_of(newly_accepted)
+                - contradicted,
+                on_record,
             )
 
             # Which source failed, stamped for the same reason as the run above: two sources
@@ -267,7 +276,8 @@ async def acquire(
                 _pairs_of(rejected)
                 - _pairs_of(newly_rejected)
                 - _pairs_of(newly_accepted)
-                - contradicted
+                - contradicted,
+                on_record,
             )
 
         # After this attribute is stored, never before it: the cap stops the *next* call, and
@@ -292,20 +302,32 @@ _CONTRADICTION = (
 )
 
 
-async def _contradicting(fetched: Sequence[Value], values: ValueStore) -> tuple[Value, ...]:
+def _contradicting(fetched: Sequence[Value], on_record: Sequence[Value]) -> tuple[Value, ...]:
     """The fetched figures whose natural key is on record with another figure or verdict.
 
     **The batch's own first figure under a key counts as on record**: the read sees only what
     was stored before the batch, and the append that follows keeps the first figure under each
     key and skips the rest, so a later, different one would otherwise vanish unreported.
     """
-    on_record = {value.natural_key: value for value in await values.read_observations(fetched)}
+    standing_by_key = {value.natural_key: value for value in on_record}
     contradicting: list[Value] = []
     for value in fetched:
-        standing = on_record.setdefault(value.natural_key, value)
+        standing = standing_by_key.setdefault(value.natural_key, value)
         if not restates(standing, value):
             contradicting.append(value)
     return tuple(contradicting)
+
+
+def _restated_by_pair(on_record: Sequence[Value]) -> dict[tuple[str, str], int | None]:
+    """The stored row each pair's re-read restated, or `None` where that is not one row.
+
+    A pair read under two breakdown options restates two rows, and one reuse row cannot name
+    both; naming either would vouch for the other without evidence, so it names neither.
+    """
+    stored_ids: dict[tuple[str, str], set[int | None]] = {}
+    for value in on_record:
+        stored_ids.setdefault((str(value.candidate), str(value.attribute)), set()).add(value.id)
+    return {pair: next(iter(ids)) if len(ids) == 1 else None for pair, ids in stored_ids.items()}
 
 
 def _candidates_settled_by(acquired: Acquired, candidates: Sequence[Candidate]) -> set[str]:

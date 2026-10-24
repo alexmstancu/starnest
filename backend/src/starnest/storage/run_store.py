@@ -26,6 +26,7 @@ from starnest.data_acquisition import (
     Gap,
     Holdings,
     MonthlySpend,
+    Reconfirmation,
     ResearchSpend,
     Run,
     RunAlreadyInFlightError,
@@ -268,7 +269,7 @@ class PostgresRunStore(RunStore):
 
 
 def _run_from(row: Any) -> Run:
-    """A detail row, its three lists arriving as JSON arrays of objects beside the counts."""
+    """A detail row, its lists arriving as JSON arrays of objects beside the counts."""
     return Run(
         id=int(row.id),
         status=RunStatus(row.run_status),
@@ -312,6 +313,15 @@ def _run_from(row: Any) -> Run:
                 items_failed=int(reach["items_failed"]),
             )
             for reach in row.by_source
+        ),
+        reconfirmed=tuple(
+            Reconfirmation(
+                data_source=DataSourceId(reconfirmed["data_source"]),
+                candidate=reconfirmed["candidate"],
+                attribute=reconfirmed["attribute"],
+                value=reconfirmed["value"],
+            )
+            for reconfirmed in row.reconfirmed
         ),
     )
 

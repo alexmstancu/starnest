@@ -266,7 +266,7 @@ class TestWhatNobodyAnswered:
         sum to the total."""
         store = PostgresRunStore(pool)
         await PostgresValueStore(pool).record_reuse(
-            a_wider_run, "eurostat", [("country.portugal", OVERBURDEN)]
+            a_wider_run, "eurostat", {("country.portugal", OVERBURDEN): None}
         )
 
         run = await store.read_run(a_wider_run)
@@ -284,8 +284,8 @@ class TestWhatNobodyAnswered:
         """Idempotent per run: a retry re-reading the same table records the pair again, and the
         primary key keeps it one row, so the count does not drift."""
         values = PostgresValueStore(pool)
-        await values.record_reuse(a_wider_run, "eurostat", [("country.portugal", OVERBURDEN)])
-        await values.record_reuse(a_wider_run, "eurostat", [("country.portugal", OVERBURDEN)])
+        await values.record_reuse(a_wider_run, "eurostat", {("country.portugal", OVERBURDEN): None})
+        await values.record_reuse(a_wider_run, "eurostat", {("country.portugal", OVERBURDEN): None})
 
         run = await PostgresRunStore(pool).read_run(a_wider_run)
 
@@ -320,6 +320,23 @@ class TestARunScopedToExactPairs:
         run = await PostgresRunStore(pool).read_run(a_retry_of_two_pairs)
 
         assert run.items_total == 2
+
+    async def test_only_the_pairs_it_asked_are_listed_re_confirmed(
+        self, pool: AsyncConnectionPool, a_retry_of_two_pairs: int
+    ) -> None:
+        """FU-A1, PL-049. A re-confirmation stamped with the run for a pair it never asked about
+        is not something the run produced, so the diff must not be handed it."""
+        await PostgresValueStore(pool).record_reuse(
+            a_retry_of_two_pairs,
+            "eurostat",
+            {("country.portugal", OVERBURDEN): None, ("country.portugal", OVERCROWDING): None},
+        )
+
+        run = await PostgresRunStore(pool).read_run(a_retry_of_two_pairs)
+
+        assert [(item.candidate, item.attribute) for item in run.reconfirmed] == [
+            ("country.portugal", OVERBURDEN)
+        ]
 
     async def test_only_the_pairs_it_asked_are_counted_or_listed_unanswered(
         self, pool: AsyncConnectionPool, a_retry_of_two_pairs: int
@@ -502,7 +519,7 @@ class TestWhichSourceGotItThere:
     ) -> None:
         store = PostgresRunStore(pool)
         await PostgresValueStore(pool).record_reuse(
-            a_two_source_run, "eurostat", [("country.portugal", OVERBURDEN)]
+            a_two_source_run, "eurostat", {("country.portugal", OVERBURDEN): None}
         )
 
         reach = {
@@ -520,7 +537,7 @@ class TestWhichSourceGotItThere:
             [a_figure(a_two_source_run, "country.portugal", OVERBURDEN, source="eurostat")]
         )
         await PostgresValueStore(pool).record_reuse(
-            a_two_source_run, "oecd", [("country.liechtenstein", OVERBURDEN)]
+            a_two_source_run, "oecd", {("country.liechtenstein", OVERBURDEN): None}
         )
 
         reach = {
@@ -538,7 +555,7 @@ class TestWhichSourceGotItThere:
             [a_figure(a_two_source_run, "country.portugal", OVERBURDEN, source="eurostat")]
         )
         await PostgresValueStore(pool).record_reuse(
-            a_two_source_run, "eurostat", [("country.portugal", OVERCROWDING)]
+            a_two_source_run, "eurostat", {("country.portugal", OVERCROWDING): None}
         )
 
         reach = {
@@ -556,7 +573,7 @@ class TestWhichSourceGotItThere:
         once -- the double count `85d545d` took out of the breakdown."""
         store = PostgresRunStore(pool)
         await PostgresValueStore(pool).record_reuse(
-            a_two_source_run, "eurostat", [("country.portugal", OVERBURDEN)]
+            a_two_source_run, "eurostat", {("country.portugal", OVERBURDEN): None}
         )
         await store.record_failures(
             a_two_source_run,
@@ -724,8 +741,8 @@ class TestARunCountsOnlyItsOwnItems:
                 a_figure(run, "country.liechtenstein", OVERBURDEN, source="stand_in"),
             ]
         )
-        await values.record_reuse(run, "eurostat", [("country.greece", OVERBURDEN)])
-        await values.record_reuse(run, "stand_in", [("country.portugal", OVERCROWDING)])
+        await values.record_reuse(run, "eurostat", {("country.greece", OVERBURDEN): None})
+        await values.record_reuse(run, "stand_in", {("country.portugal", OVERCROWDING): None})
         await runs.record_failures(
             run,
             [

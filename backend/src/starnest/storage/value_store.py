@@ -12,7 +12,7 @@ definition that could drift, and drift silently.
 """
 
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from psycopg import AsyncConnection
@@ -115,6 +115,7 @@ class PostgresValueStore(ValueStore):
         candidate: str | None = None,
         attribute: str | None = None,
         data_acquisition_run: int | None = None,
+        reconfirmed_by_run: int | None = None,
         include_superseded: bool = True,
         ids: Sequence[int] | None = None,
         limit: int | None = None,
@@ -135,6 +136,7 @@ class PostgresValueStore(ValueStore):
                     candidate=candidate,
                     attribute=attribute,
                     data_acquisition_run=data_acquisition_run,
+                    reconfirmed_by_run=reconfirmed_by_run,
                     include_superseded=include_superseded,
                     value_ids=None if ids is None else list(ids),
                     limit_rows=limit,
@@ -177,6 +179,7 @@ class PostgresValueStore(ValueStore):
         candidate: str | None = None,
         attribute: str | None = None,
         data_acquisition_run: int | None = None,
+        reconfirmed_by_run: int | None = None,
         include_superseded: bool = True,
     ) -> int:
         async with acquire(self._pool) as connection:
@@ -185,6 +188,7 @@ class PostgresValueStore(ValueStore):
                 candidate=candidate,
                 attribute=attribute,
                 data_acquisition_run=data_acquisition_run,
+                reconfirmed_by_run=reconfirmed_by_run,
                 include_superseded=include_superseded,
             )
 
@@ -230,14 +234,19 @@ class PostgresValueStore(ValueStore):
         )
 
     async def record_reuse(
-        self, run: int, data_source: DataSourceId | str, pairs: Iterable[tuple[str, str]]
+        self,
+        run: int,
+        data_source: DataSourceId | str,
+        pairs: Mapping[tuple[str, str], int | None],
     ) -> None:
-        """Record the pairs this run re-confirmed but did not store again (ST-09).
+        """Record the pairs this run re-confirmed but did not store again (ST-09), each with the
+        stored value it restated (PL-049).
 
         One statement: the batch is small (the few transcribed items a run re-read) and the
         insert is idempotent, so a retry re-reading the same table records nothing new."""
         serialised = [
-            {"candidate": candidate, "attribute": attribute} for candidate, attribute in pairs
+            {"candidate": candidate, "attribute": attribute, "value": restated}
+            for (candidate, attribute), restated in pairs.items()
         ]
         if not serialised:
             return

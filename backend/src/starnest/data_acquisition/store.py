@@ -80,6 +80,21 @@ class UnansweredItem:
 
 
 @dataclass(frozen=True)
+class Reconfirmation:
+    """A pair a source answered with a figure already on record, so no new row carries the run.
+
+    `value` is the stored row the re-read restated, or `None` where the run did not record which
+    (PL-049): before `0511`, or where the pair restated more than one row. A reader comparing
+    two runs must never call a `None` unchanged.
+    """
+
+    data_source: DataSourceId
+    candidate: str
+    attribute: str
+    value: int | None
+
+
+@dataclass(frozen=True)
 class SourceReach:
     """How far one source got in one run.
 
@@ -123,6 +138,8 @@ class Run:
     # Source by source, for a run being read back. Empty on a history row, which reports the
     # pass's size rather than its makeup.
     by_source: tuple[SourceReach, ...] = field(default=())
+    # What the run re-confirmed rather than stored. Empty on a history row, as `by_source` is.
+    reconfirmed: tuple[Reconfirmation, ...] = field(default=())
     # When somebody asked it to stop. A run still `running` with this set is one that will stop
     # at its next item -- which is a different thing to tell a reader than "running".
     stop_requested_at: datetime | None = None

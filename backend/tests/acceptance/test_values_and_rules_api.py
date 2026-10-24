@@ -8,7 +8,7 @@ served; `reqs.md` 6.5 that a value may be typed only where its attribute says so
 import asyncio
 import re
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 import httpx
@@ -19,7 +19,7 @@ from starnest.data import Value
 from starnest.storage import PostgresValueStore
 
 from .conftest import a_stub_source, an_api
-from .contract import response_schema, validate
+from .contract import response_schema, validate, validate_refusal
 
 pytestmark = pytest.mark.acceptance
 
@@ -200,6 +200,59 @@ class TestReadingValues:
         body = (await api.get("/v1/values", params={"attribute": OVERBURDEN})).json()
 
         assert all(isinstance(value["payload"]["value"], int | float) for value in body["items"])
+
+
+class TestReadingWhatARunReConfirmed:
+    """PL-049, UF-073 (Δ5). A run that re-read a transcribed table produced figures no row
+    carries its id for, so `data_acquisition_run` alone read them as gone."""
+
+    ONE_PAIR: ClassVar[dict[str, Any]] = {
+        "level": COUNTRY,
+        "candidates": ["country.portugal"],
+        "attributes": [OVERBURDEN],
+    }
+
+    async def test_values_reconfirmed_by_a_run_are_the_ones_its_reuse_rows_name(
+        self, database_url: str
+    ) -> None:
+        transcribed = a_stub_source(
+            answers=(OVERBURDEN,), silent_about=(), retrieved=datetime(2026, 9, 19, tzinfo=UTC)
+        )
+        async with an_api(database_url, (transcribed,)) as api:
+            first = (await api.post("/v1/data-acquisition-runs", json=self.ONE_PAIR)).json()
+            second = (await api.post("/v1/data-acquisition-runs", json=self.ONE_PAIR)).json()
+            produced = (
+                await api.get(
+                    "/v1/values",
+                    params={"data_acquisition_run": first["id"], "include_superseded": True},
+                )
+            ).json()
+            reconfirmed = (
+                await api.get(
+                    "/v1/values",
+                    params={"reconfirmed_by_run": second["id"], "include_superseded": True},
+                )
+            ).json()
+
+        validate("listValues", reconfirmed)
+        assert [value["id"] for value in produced["items"]] != [], "the premise: one was stored"
+        assert [value["id"] for value in reconfirmed["items"]] == [
+            value["id"] for value in produced["items"]
+        ]
+        assert reconfirmed["total"] == 1
+
+    async def test_asking_by_both_runs_at_once_is_refused(self, api: httpx.AsyncClient) -> None:
+        response = await api.get(
+            "/v1/values", params={"data_acquisition_run": 1, "reconfirmed_by_run": 2}
+        )
+
+        assert response.status_code == 422
+        body = response.json()
+        assert body["code"] == "invalid_request"
+        assert [
+            (problem["location"], problem["kind"]) for problem in body["details"]["errors"]
+        ] == [(["query", "reconfirmed_by_run"], "mutually_exclusive")]
+        validate_refusal(body)
 
 
 class TestTypingAValue:

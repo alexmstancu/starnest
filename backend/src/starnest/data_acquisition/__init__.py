@@ -55,6 +55,7 @@ from starnest.data_acquisition.spend import (
 )
 from starnest.data_acquisition.stand_in import STAND_IN, figures_standing_in, stand_in
 from starnest.data_acquisition.store import (
+    Reconfirmation,
     Run,
     RunScope,
     RunStatus,
@@ -80,6 +81,7 @@ __all__ = [
     "NothingToFetchError",
     "NothingToRetryError",
     "OpenedRun",
+    "Reconfirmation",
     "ResearchLedger",
     "ResearchOutcome",
     "ResearchSpend",

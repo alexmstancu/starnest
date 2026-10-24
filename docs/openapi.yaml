@@ -273,6 +273,14 @@ paths:
             it for the life of the row, so this is what makes comparing two acquisitions two
             requests rather than a walk of the whole corpus.
           schema: { type: integer }
+        - name: reconfirmed_by_run
+          in: query
+          description: >
+            Narrow to the stored values one acquisition re-confirmed: re-read as the same
+            observation, so no new row carries that run. Together with data_acquisition_run, it is
+            what the run produced. Values a run re-confirmed before it recorded which are not
+            listed. Refused with 422 alongside data_acquisition_run.
+          schema: { type: integer }
         - { name: candidate, in: query, schema: { type: string } }
         - { name: attribute, in: query, schema: { type: string } }
         - name: include_superseded
@@ -2053,6 +2061,22 @@ components:
                   data_source: { type: string }
                   items_stored: { type: integer }
                   items_failed: { type: integer }
+            reconfirmed:
+              type: array
+              description: >-
+                Pairs a source answered with a figure already on record for the same observation,
+                so no new row carries this run. `value` is the stored figure it restated; null where
+                that is not known -- a pair re-read under more than one breakdown option, or a
+                re-confirmation recorded before runs named the figure, with more than one row it
+                could have restated. A null is never evidence that a figure is unchanged.
+              items:
+                type: object
+                required: [data_source, candidate, attribute, value]
+                properties:
+                  data_source: { type: string }
+                  candidate: { type: string }
+                  attribute: { type: string }
+                  value: { type: [integer, "null"] }
             failures:
               type: array
               items:

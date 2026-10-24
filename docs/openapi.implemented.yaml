@@ -1988,6 +1988,31 @@ components:
       - criteria
       title: RebalancedPillar
       type: object
+    ReconfirmedBody:
+      description: A pair re-confirmed rather than stored, and the stored value it
+        restated (or null).
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        candidate:
+          title: Candidate
+          type: string
+        data_source:
+          title: Data Source
+          type: string
+        value:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Value
+      required:
+      - data_source
+      - candidate
+      - attribute
+      - value
+      title: ReconfirmedBody
+      type: object
     ReducerMode:
       description: 'What to do with an attribute broken down into several options
         (`reqs.md` 3.3b).
@@ -2246,6 +2271,12 @@ components:
           anyOf:
           - $ref: '#/components/schemas/ProgressBody'
           - type: 'null'
+        reconfirmed:
+          default: []
+          items:
+            $ref: '#/components/schemas/ReconfirmedBody'
+          title: Reconfirmed
+          type: array
         run_status:
           title: Run Status
           type: string
@@ -4834,7 +4865,14 @@ paths:
         that produced it for the life of the row, so this answers the same way however
         much has
 
-        happened since.'
+        happened since. **`reconfirmed_by_run` narrows to what one run re-confirmed**
+        rather than
+
+        stored (PL-049). The two are refused together: their intersection is always
+        empty, since a
+
+        run re-confirms only what it did not store, so asking for it is a mistake
+        worth naming.'
       operationId: listValues
       parameters:
       - in: query
@@ -4861,6 +4899,14 @@ paths:
           - type: integer
           - type: 'null'
           title: Data Acquisition Run
+      - in: query
+        name: reconfirmed_by_run
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Reconfirmed By Run
       - in: query
         name: include_superseded
         required: false

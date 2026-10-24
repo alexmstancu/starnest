@@ -93,7 +93,7 @@ WHERE  (:level::text IS NULL OR c.level = :level)
   AND  (:attributes::text[] IS NULL OR v.attribute = ANY(:attributes))
 ORDER  BY v.candidate, v.attribute, v.breakdown_option NULLS FIRST;
 
--- name: select_values(candidate, attribute, data_acquisition_run, include_superseded, value_ids, limit_rows, offset_rows)
+-- name: select_values(candidate, attribute, data_acquisition_run, reconfirmed_by_run, include_superseded, value_ids, limit_rows, offset_rows)
 -- Every stored value for one candidate, with its provenance and its citations, for the
 -- drill-down. Superseded and rejected values are returned too when asked for, because nothing
 -- is discarded and the point of the screen is to show that (reqs.md 3.6).
@@ -134,6 +134,12 @@ WHERE  (:candidate::text IS NULL OR v.candidate = :candidate)
   -- a question about two runs.
   AND  (:data_acquisition_run::integer IS NULL
         OR v.data_acquisition_run = :data_acquisition_run)
+  -- What a run re-confirmed rather than stored: the rows its reuse records name (PL-049). With
+  -- the filter above, what the run produced.
+  AND  (:reconfirmed_by_run::integer IS NULL
+        OR v.id IN (SELECT reuse.value
+                    FROM   data_acquisition_run_reuse AS reuse
+                    WHERE  reuse.data_acquisition_run = :reconfirmed_by_run))
   AND  (:include_superseded OR active.id IS NOT NULL)
   -- The rows a ranking cites by id: the figure each contribution used and the evidence each
   -- refusal or warning read (PL-144), with the same provenance any other listing carries.
@@ -142,7 +148,7 @@ ORDER  BY v.candidate, v.attribute, v.breakdown_option NULLS FIRST,
           v.retrieval_date DESC, v.id DESC
 LIMIT  :limit_rows OFFSET :offset_rows;
 
--- name: count_values(candidate, attribute, data_acquisition_run, include_superseded)$
+-- name: count_values(candidate, attribute, data_acquisition_run, reconfirmed_by_run, include_superseded)$
 -- The `total` beside the page of values above. Same predicate, deliberately.
 SELECT count(*)
 FROM   value AS v
@@ -151,6 +157,10 @@ WHERE  (:candidate::text IS NULL OR v.candidate = :candidate)
   AND  (:attribute::text IS NULL OR v.attribute = :attribute)
   AND  (:data_acquisition_run::integer IS NULL
         OR v.data_acquisition_run = :data_acquisition_run)
+  AND  (:reconfirmed_by_run::integer IS NULL
+        OR v.id IN (SELECT reuse.value
+                    FROM   data_acquisition_run_reuse AS reuse
+                    WHERE  reuse.data_acquisition_run = :reconfirmed_by_run))
   AND  (:include_superseded OR active.id IS NOT NULL);
 
 -- name: select_value_payloads(value_ids)
