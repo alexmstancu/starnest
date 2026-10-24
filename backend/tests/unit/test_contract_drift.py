@@ -468,7 +468,8 @@ class TestEveryRefusalIsDescribed:
             name
             for name in _operations(served, prefix=API_PREFIX)
             if "422" not in declared.get(name, {})
-            or _schema_of(declared[name]["422"], designed) != {"$ref": "#/components/schemas/Error"}
+            or _schema_of(declared[name]["422"], designed)
+            != {"$ref": "#/components/schemas/InvalidRequestError"}
         )
 
         assert undeclared == [], (

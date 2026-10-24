@@ -12,6 +12,7 @@ REST surface, and this module is the REST surface's opinion.
 
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
@@ -313,16 +314,35 @@ async def request_validation_handler(request: Request, error: Exception) -> JSON
     )
 
 
-def _validation_details(error: RequestValidationError) -> list[dict[str, Any]]:
-    """The offending locations and messages, kept to JSON-safe fields.
+_NUMERIC_BOUNDS = ("le", "ge", "lt", "gt")
+"""The `ctx` keys that hold the bound a value fell outside, in the contract's `FieldProblem`."""
 
-    `error.errors()` entries can carry a `ctx` holding the original exception object, which does
-    not serialise, so only the location path and the human message are taken.
+
+def _validation_details(error: RequestValidationError) -> list[dict[str, Any]]:
+    """Each offending field as the contract's `FieldProblem`: where, what kind, and the limit.
+
+    A form words its refusal from `kind` and `limit` (PL-028), so neither is left in the
+    sentence. **Never the whole `ctx`**: it can hold the original exception object or a `date`,
+    neither of which serialises, so only a numeric bound is taken from it.
     """
-    return [
-        {"location": [str(part) for part in item.get("loc", ())], "problem": item.get("msg", "")}
-        for item in error.errors()
-    ]
+    return [_field_problem(item) for item in error.errors()]
+
+
+def _field_problem(item: Mapping[str, Any]) -> dict[str, Any]:
+    problem = {
+        "location": [str(part) for part in item.get("loc", ())],
+        "problem": item.get("msg", ""),
+        "kind": item["type"],
+    }
+    context = item.get("ctx") or {}
+    bounds = [context[key] for key in _NUMERIC_BOUNDS if _is_a_number(context.get(key))]
+    if bounds:
+        problem["limit"] = float(bounds[0])
+    return problem
+
+
+def _is_a_number(bound: object) -> bool:
+    return isinstance(bound, int | float | Decimal) and not isinstance(bound, bool)
 
 
 async def refuse_unknown_query_parameters(request: Request) -> None:

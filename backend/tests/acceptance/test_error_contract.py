@@ -963,7 +963,7 @@ def _assert_in_the_one_error_shape(operation: str, body: dict) -> None:
     went unchecked until every operation declared its 422 (NEW-41). JSON Schema allows a key
     nobody declared, which the last line refuses.
     """
-    assert response_schema(operation, 422) == {"$ref": "#/components/schemas/Error"}
+    assert response_schema(operation, 422) == {"$ref": "#/components/schemas/InvalidRequestError"}
     validate(operation, body, status=422)
     assert undeclared_fields(operation, body, status=422) == []
 

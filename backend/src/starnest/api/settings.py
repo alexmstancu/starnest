@@ -31,9 +31,13 @@ class SettingsBody(BaseModel):
     `number`, and Pydantic renders a `Decimal` as a JSON string -- which is lossless, and not
     what the design says. It went unnoticed while every setting was null (`known-issues.md` P16).
 
-    **The bounds mirror the domain `Settings`** (BE-21), so an out-of-range value is a 422 raised
-    at the boundary rather than a `ValidationError` escaping `Settings(...)` into a 500; floats
-    forbid NaN/Infinity so a non-finite cap can never make the meter fail to trip. `extra='forbid'`
+    **The bounds mirror the domain `Settings` and the contract** (BE-21, PL-028): each is
+    stated as the contract states it -- `ge=1` rather than `gt=0` -- so a refusal's `limit` is
+    the number the contract names. The comparator ceiling can bound the response as well as the
+    request only because the database holds it too (`0509`): a stored 25 would otherwise make
+    every settings read a 500 (C02-S7). An out-of-range value is a 422 raised at the boundary
+    rather than a `ValidationError` escaping `Settings(...)` into a 500; floats forbid
+    NaN/Infinity so a non-finite cap can never make the meter fail to trip. `extra='forbid'`
     matches the domain too, so a misspelled field in this whole-replace PUT is refused rather than
     falling to its null default and silently clearing the real setting (BE-23).
     """
@@ -41,10 +45,10 @@ class SettingsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     min_coverage: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
-    score_scale_max: int | None = Field(default=None, gt=0)
-    comparator_limit: int | None = Field(default=None, ge=1)
+    score_scale_max: int | None = Field(default=None, ge=1)
+    comparator_limit: int | None = Field(default=None, ge=1, le=20)
     run_spend_cap_eur: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    refetch_older_than_days: int | None = Field(default=None, gt=0)
+    refetch_older_than_days: int | None = Field(default=None, ge=1)
 
 
 @router.get("/settings", operation_id="getSettings", response_model=SettingsBody)

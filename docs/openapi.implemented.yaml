@@ -2261,14 +2261,25 @@ components:
         P16).
 
 
-        **The bounds mirror the domain `Settings`** (BE-21), so an out-of-range value
-        is a 422 raised
+        **The bounds mirror the domain `Settings` and the contract** (BE-21, PL-028):
+        each is
 
-        at the boundary rather than a `ValidationError` escaping `Settings(...)` into
-        a 500; floats
+        stated as the contract states it -- `ge=1` rather than `gt=0` -- so a refusal''s
+        `limit` is
 
-        forbid NaN/Infinity so a non-finite cap can never make the meter fail to trip.
-        `extra=''forbid''`
+        the number the contract names. The comparator ceiling can bound the response
+        as well as the
+
+        request only because the database holds it too (`0509`): a stored 25 would
+        otherwise make
+
+        every settings read a 500 (C02-S7). An out-of-range value is a 422 raised
+        at the boundary
+
+        rather than a `ValidationError` escaping `Settings(...)` into a 500; floats
+        forbid
+
+        NaN/Infinity so a non-finite cap can never make the meter fail to trip. `extra=''forbid''`
 
         matches the domain too, so a misspelled field in this whole-replace PUT is
         refused rather than
@@ -2277,7 +2288,8 @@ components:
       properties:
         comparator_limit:
           anyOf:
-          - minimum: 1.0
+          - maximum: 20.0
+            minimum: 1.0
             type: integer
           - type: 'null'
           title: Comparator Limit
@@ -2290,7 +2302,7 @@ components:
           title: Min Coverage
         refetch_older_than_days:
           anyOf:
-          - exclusiveMinimum: 0.0
+          - minimum: 1.0
             type: integer
           - type: 'null'
           title: Refetch Older Than Days
@@ -2302,7 +2314,7 @@ components:
           title: Run Spend Cap Eur
         score_scale_max:
           anyOf:
-          - exclusiveMinimum: 0.0
+          - minimum: 1.0
             type: integer
           - type: 'null'
           title: Score Scale Max

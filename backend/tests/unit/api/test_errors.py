@@ -174,6 +174,13 @@ def an_app_refusing_unknown_query_parameters() -> FastAPI:
     async def add_a_thing() -> dict:
         return {}
 
+    @router.get("/bounded")
+    async def bounded(
+        at_most: Annotated[int, Query(le=20)] = 1,
+        since: Annotated[date, Query(ge=NEW_YEARS_DAY)] = NEW_YEARS_EVE,
+    ) -> dict:
+        return {}
+
     app = FastAPI()
     app.add_exception_handler(RequestValidationError, request_validation_handler)
     app.include_router(router, dependencies=[Depends(refuse_unknown_query_parameters)])
@@ -219,7 +226,11 @@ class TestAQueryParameterNobodyDeclared:
         body = response.json()
         assert body["code"] == "invalid_request"
         assert body["details"]["errors"] == [
-            {"location": ["query", "levle"], "problem": "Extra inputs are not permitted"}
+            {
+                "location": ["query", "levle"],
+                "problem": "Extra inputs are not permitted",
+                "kind": "extra_forbidden",
+            }
         ]
 
     async def test_every_one_nobody_declared_is_named_at_once(self) -> None:
@@ -235,3 +246,29 @@ class TestAQueryParameterNobodyDeclared:
 
     async def test_a_route_sent_none_is_untouched(self) -> None:
         assert (await _get("/things", method="POST")).status_code == 200
+
+
+class TestAFieldProblem:
+    """What each entry of `details.errors` says, so a form can word it without the sentence."""
+
+    async def test_a_numeric_bound_names_its_kind_and_its_limit(self) -> None:
+        (problem,) = (await _get("/bounded?at_most=21")).json()["details"]["errors"]
+
+        assert (problem["location"], problem["kind"], problem["limit"]) == (
+            ["query", "at_most"],
+            "less_than_equal",
+            20,
+        )
+
+    async def test_a_bound_that_is_not_a_number_is_not_sent_as_a_limit(self) -> None:
+        """A date's bound is a `date` object in `ctx`, which would not even serialise."""
+        (problem,) = (await _get("/bounded?since=2025-12-31")).json()["details"]["errors"]
+
+        assert problem["kind"] == "greater_than_equal"
+        assert "limit" not in problem
+
+    async def test_a_refusal_with_no_bound_carries_no_limit(self) -> None:
+        (problem,) = (await _get("/bounded?at_most=many")).json()["details"]["errors"]
+
+        assert problem["kind"] == "int_parsing"
+        assert "limit" not in problem

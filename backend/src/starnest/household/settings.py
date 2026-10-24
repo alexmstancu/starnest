@@ -50,14 +50,16 @@ class Settings(BaseModel):
         ),
     )
     score_scale_max: int | None = Field(
-        default=None, gt=0, description="The top of the score range. Provisionally 100."
+        default=None, ge=1, description="The top of the score range. Provisionally 100."
     )
     comparator_limit: int | None = Field(
         default=None,
         ge=1,
+        le=20,
         description=(
-            "How many comparators one comparison may hold (`reqs.md` 8.5). Provisionally 5, "
-            "and a setting rather than a constant so that it is never hardcoded."
+            "How many comparators one comparison may hold (`reqs.md` 8.5), 1 to 20: twenty is "
+            "the product's ceiling, held by the database too (`0509`). Provisionally 5, and a "
+            "setting rather than a constant so that it is never hardcoded."
         ),
     )
     run_spend_cap_eur: Decimal | None = Field(
@@ -71,7 +73,7 @@ class Settings(BaseModel):
     )
     refetch_older_than_days: int | None = Field(
         default=None,
-        gt=0,
+        ge=1,
         description=(
             "How old a figure must be before a run asks about it again. **Null refetches "
             "everything**, which is the shipped state and the behaviour the planner has "
