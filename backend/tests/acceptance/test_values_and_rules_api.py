@@ -156,6 +156,42 @@ class TestTypingAValue:
         ).json()
         assert everything["total"] == 1  # idempotent: no duplicate row
 
+    async def test_a_manual_figure_resubmitted_with_another_value_is_refused_409(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """NEW-23. The same natural key with another figure used to answer 201 with the *old*
+        figure, so the household believed six years was recorded while five stood. A correction
+        is a new observation: a new retrieval date, never the same one with another number."""
+        first = await api.post("/v1/values/manual", json=A_TYPED_VALUE)
+        refused = await api.post(
+            "/v1/values/manual",
+            json=A_TYPED_VALUE | {"payload": {"magnitude": 6, "unit": "years"}},
+        )
+
+        assert first.status_code == 201
+        assert refused.status_code == 409
+        assert refused.json()["code"] == "conflicting_observation"
+        validate("enterValueManually", refused.json(), status=409)
+        stored = (
+            await api.get(
+                "/v1/values",
+                params={"candidate": A_TYPED_VALUE["candidate"], "attribute": NATURALISATION},
+            )
+        ).json()["items"]
+        assert [value["payload"]["magnitude"] for value in stored] == [5]
+
+    async def test_a_manual_figure_resubmitted_with_new_words_is_still_the_same_one(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """The control (NEW-33): the quote and the pages do not make another observation."""
+        first = await api.post("/v1/values/manual", json=A_TYPED_VALUE)
+        again = await api.post(
+            "/v1/values/manual", json=A_TYPED_VALUE | {"quote": "worded again", "citations": []}
+        )
+
+        assert again.status_code == 201
+        assert again.json()["id"] == first.json()["id"]
+
     async def test_an_attribute_that_does_not_declare_manual_entry_refuses_it(
         self, api: httpx.AsyncClient
     ) -> None:

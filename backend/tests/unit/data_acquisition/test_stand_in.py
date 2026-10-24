@@ -239,6 +239,10 @@ class ActiveFiguresOnly:
     async def record_reuse(self, run, data_source, pairs):
         return None
 
+    async def read_observations(self, values):
+        """Nothing this fake appends is ever a no-op, so nothing is on record to compare."""
+        return ()
+
 
 class TestTheRunStep:
     async def test_it_asks_for_the_substitutes_figures_not_the_candidates(self) -> None:

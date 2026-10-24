@@ -195,6 +195,36 @@ LEFT   JOIN value_text     AS text_body     ON text_body.value_id = v.id
 WHERE  v.id = ANY(:value_ids)
 ORDER  BY v.id;
 
+-- name: select_observations(observations)
+-- The rows already on record under the natural keys asked for (value_natural_key, 0005), so a
+-- re-read can be compared with what its no-op insert below would leave standing (NEW-23).
+-- Payloads are not joined here -- pass the returned ids to select_value_payloads.
+SELECT v.id,
+       v.candidate,
+       v.attribute,
+       v.breakdown_option,
+       v.value_type,
+       v.data_source,
+       v.data_acquisition_run,
+       v.reference_period_start,
+       v.reference_period_end,
+       v.retrieval_date,
+       v.confidence_level,
+       v.rejection_reason,
+       v.quote
+FROM   value AS v
+JOIN   jsonb_to_recordset(:observations::jsonb) AS asked(
+           candidate text, attribute text, data_source text, breakdown_option text,
+           reference_period_start date, reference_period_end date, retrieval_date timestamptz)
+  ON   v.candidate = asked.candidate
+ AND   v.attribute = asked.attribute
+ AND   v.data_source = asked.data_source
+ AND   v.breakdown_option IS NOT DISTINCT FROM asked.breakdown_option
+ AND   v.reference_period_start = asked.reference_period_start
+ AND   v.reference_period_end = asked.reference_period_end
+ AND   v.retrieval_date = asked.retrieval_date
+ORDER  BY v.id;
+
 -- name: select_attribute_coverage(level, attributes)
 -- How many candidates at a level have an active value for each attribute. This is what the
 -- data-acquisition screen reports as coverage of the catalog, and what a run plan compares
@@ -241,10 +271,12 @@ ORDER  BY a.id;
 -- value_natural_key comment and reqs.md 3.6 intend, and a live source never conflicts. A
 -- transcribed table (published_tables) stamps a fixed transcribed_on, so re-reading it is the
 -- *same* observation, not a re-fetch; ON CONFLICT DO NOTHING skips it rather than crashing a
--- re-run on a UniqueViolation. A no-op returns no row, which the store reads as "already stored"
--- (a corrected transcribed figure gets a new row by bumping transcribed_on, never a silent edit;
--- the new date must be the day the publisher was read again -- re-encoding an unchanged
--- transcription is not a read and keeps its date, Q230, NEW-33).
+-- re-run on a UniqueViolation. A no-op returns no row, which the store reads as "already stored".
+-- **A no-op is not a re-confirmation** (NEW-23): the natural key holds no payload, so the run reads
+-- the row on record first (select_observations) and reports a re-read with another figure or
+-- verdict as a failure, never as re-confirmed. A corrected transcribed figure gets a new row by
+-- bumping transcribed_on, never a silent edit; the new date must be the day the publisher was read
+-- again -- re-encoding an unchanged transcription is not a read and keeps its date (Q230, NEW-33).
 INSERT INTO value (candidate, attribute, value_type, data_source, breakdown_option,
                    data_acquisition_run, reference_period_start, reference_period_end,
                    retrieval_date, confidence_level, quote)

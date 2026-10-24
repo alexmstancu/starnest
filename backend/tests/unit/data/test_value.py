@@ -13,12 +13,14 @@ from pydantic import ValidationError
 from starnest.data import (
     Boolean,
     ConfidenceLevel,
+    LabelSet,
     MalformedValueError,
     Monetary,
     Quantity,
     ReferencePeriod,
     Value,
     ValueType,
+    restates,
 )
 
 JULY = ReferencePeriod(start=datetime(2026, 7, 1).date(), end=datetime(2026, 7, 31).date())
@@ -139,6 +141,62 @@ class TestBreakdownOptions:
 
     def test_a_value_for_an_attribute_that_is_not_broken_down_names_no_option(self) -> None:
         assert a_value().breakdown_option is None
+
+
+class TestWhatRestatesAnObservation:
+    """NEW-23, decision P1-10. A re-read under the same natural key is the same observation only
+    when it carries the same figure and the same verdict. Its words do not count (NEW-33): a
+    re-quoted transcription is still the same reading of the publisher."""
+
+    def test_the_same_figure_restates_the_stored_one(self) -> None:
+        assert restates(a_value(id=7), a_value())
+
+    def test_a_different_figure_does_not_restate_the_stored_one(self) -> None:
+        corrected = a_value(payload=Monetary.in_euro(Decimal("1395")))
+
+        assert not restates(a_value(id=7), corrected)
+
+    def test_a_re_quoted_figure_still_restates_it(self) -> None:
+        """NEW-33: twelve workings were re-quoted under their old date, and that is not a new
+        reading. Comparing the quote, the pages or the confidence would flag them every run."""
+        re_quoted = a_value(
+            quote="the same figure, worded again",
+            citations=("https://numbeo.com/rent?again",),
+            confidence_level=ConfidenceLevel.HIGH,
+            data_acquisition_run=12,
+        )
+
+        assert restates(a_value(id=7, quote="as first worded", data_acquisition_run=3), re_quoted)
+
+    def test_a_figure_rejected_now_does_not_restate_one_accepted_then(self) -> None:
+        """The verdict counts: a narrowed credible range turns the same reading into another."""
+        rejected = a_value(payload=None, rejection_reason="1410 is outside the credible range")
+
+        assert not restates(a_value(id=7), rejected)
+
+    def test_a_rejection_restates_the_same_rejection(self) -> None:
+        """A rejected figure is stored without its payload, so its reason -- which names the
+        figure -- is what a re-read is compared on."""
+        reason = "1410 is outside the credible range"
+
+        assert restates(
+            a_value(id=7, payload=None, rejection_reason=reason),
+            a_value(rejection_reason=reason),
+        )
+
+    def test_a_rejection_for_another_figure_does_not_restate_it(self) -> None:
+        stored = a_value(id=7, payload=None, rejection_reason="1410 is outside the range")
+
+        assert not restates(stored, a_value(rejection_reason="1395 is outside the range"))
+
+    def test_labels_read_back_in_another_order_still_restate(self) -> None:
+        """The database returns a label set sorted, an adapter in the publisher's order."""
+        labels = {"attribute": "country.climate_zone", "value_type": ValueType.LABEL_SET}
+
+        assert restates(
+            a_value(**labels, payload=LabelSet(labels=("Cfb", "Csa")), id=7),
+            a_value(**labels, payload=LabelSet(labels=("Csa", "Cfb"))),
+        )
 
 
 class TestOtherPayloadsRideTheSameProvenance:

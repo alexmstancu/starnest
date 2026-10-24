@@ -22,12 +22,14 @@ from starnest.data import (
     MANUAL_ENTRY_DEFAULT_CONFIDENCE,
     BreakdownOptionId,
     ConfidenceLevel,
+    ConflictingObservationError,
     Monetary,
     Payload,
     ReferencePeriod,
     Value,
     ValueListing,
     a_manual_value,
+    restates,
 )
 
 router = APIRouter(tags=["values"])
@@ -120,8 +122,9 @@ async def list_values(
 async def enter_value_manually(
     body: ManualValueBody, values: Values, catalog: Catalog, candidates: Candidates
 ) -> ValueBody:
-    """Refused with 409 `manual_entry_not_permitted` where the attribute does not allow it, and
-    409 `invalid_value` where the value is not one the attribute can hold."""
+    """Refused with 409 `manual_entry_not_permitted` where the attribute does not allow it, 409
+    `invalid_value` where the value is not one the attribute can hold, and 409
+    `conflicting_observation` where another figure is on record under the same natural key."""
     attribute = await catalog.read_attribute(body.attribute)
     if not any(
         str(known.id) == body.candidate
@@ -148,7 +151,14 @@ async def enter_value_manually(
     # append is idempotent: it stores the value, or no-ops if this exact manual entry (same
     # natural key, including the client's retrieval_date) was already recorded. Either way the row
     # is now present, so a re-submit returns the stored value rather than crashing on an empty
-    # result -- the same idempotency the acquisition path relies on.
+    # result -- the same idempotency the acquisition path relies on. **Only when it restates the
+    # one on record** (NEW-23): another figure under the same key used to answer 201 with the old.
+    for on_record in await values.read_observations([value]):
+        if not restates(on_record, value):
+            raise ConflictingObservationError(
+                "another figure is already on record for this candidate, attribute, period and "
+                "retrieval date; a correction is a new observation, with its own retrieval date"
+            )
     await values.append([value])
     listing = next(
         found

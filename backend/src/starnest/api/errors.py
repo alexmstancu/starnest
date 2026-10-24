@@ -39,6 +39,7 @@ from starnest.criteria import (
 )
 from starnest.data import (
     AnswerRecordedByAPersonError,
+    ConflictingObservationError,
     InvalidManualValueError,
     InvalidReferencePeriodError,
     MalformedMatchRuleResultError,
@@ -84,6 +85,7 @@ class ErrorCode(StrEnum):
     LLM_NOT_CONFIGURED = "llm_not_configured"
     MANUAL_ENTRY_NOT_PERMITTED = "manual_entry_not_permitted"
     INVALID_VALUE = "invalid_value"
+    CONFLICTING_OBSERVATION = "conflicting_observation"
     ANSWER_RECORDED_BY_A_PERSON = "answer_recorded_by_a_person"
     SCORE_SCALE_NOT_SET = "score_scale_not_set"
     SCORE_SCALE_BELOW_ANCHORS = "score_scale_below_anchors"
@@ -140,6 +142,7 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     NoResearcherConfiguredError: _refusal(501, "llm_not_configured"),
     ManualEntryNotPermittedError: _refusal(409, "manual_entry_not_permitted"),
     InvalidManualValueError: _refusal(409, "invalid_value"),
+    ConflictingObservationError: _refusal(409, "conflicting_observation"),
     AnswerRecordedByAPersonError: _refusal(409, "answer_recorded_by_a_person"),
     # 422 -- the request describes something the domain will not accept.
     CriteriaSetError: _refusal(422, "invalid_criteria_set"),

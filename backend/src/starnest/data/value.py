@@ -148,6 +148,46 @@ class Value(BaseModel):
         """Whether this figure failed validation. A rejected value never becomes active."""
         return self.rejection_reason is not None
 
+    @property
+    def natural_key(self) -> tuple[object, ...]:
+        """What makes two values one observation: the schema's `value_natural_key` (`0005`)."""
+        return (
+            str(self.candidate),
+            str(self.attribute),
+            str(self.data_source),
+            str(self.breakdown_option) if self.breakdown_option else None,
+            self.reference_period.start,
+            self.reference_period.end,
+            self.retrieval_date,
+        )
+
+
+class ConflictingObservationError(ValueError):
+    """A figure under a natural key already on record with a different figure or verdict."""
+
+
+def restates(stored: Value, fetched: Value) -> bool:
+    """Whether a re-read under the same natural key says what the stored value says (NEW-23).
+
+    **The figure and the verdict, never the words** (decision P1-10, NEW-33): the quote, the
+    pages, the confidence and the run may differ, because re-quoting a transcription is not a new
+    reading of the publisher. A rejected value is stored without its payload, so a rejection is
+    compared on its reason, which names the figure.
+    """
+    if stored.rejection_reason != fetched.rejection_reason:
+        return False
+    return stored.is_rejected or _figure_of(stored.payload) == _figure_of(fetched.payload)
+
+
+def _figure_of(payload: ValuePayload | None) -> dict[str, object]:
+    """The payload with its collections as sets: the store reads a label set back sorted."""
+    if payload is None:
+        return {}
+    return {
+        field: frozenset(content) if isinstance(content, tuple) else content
+        for field, content in payload
+    }
+
 
 class ValueListing(BaseModel):
     """One row of the drill-down: a value, and whether it is the one being scored.

@@ -14,10 +14,17 @@ of fault that looks like data rather than like a bug.
 import re
 from datetime import date
 from decimal import Decimal
+from hashlib import sha256
+from pathlib import Path
 
 import pytest
 
-from starnest.data_sources.published_tables import every_published_table
+from starnest.data_sources.published_tables import (
+    TABLES,
+    PublishedTable,
+    every_published_table,
+    read_table,
+)
 
 SHIPPED = {str(table.attribute): table for table in every_published_table()}
 THE_ROSTER = 32
@@ -104,6 +111,67 @@ def test_a_table_keeps_the_day_its_publisher_was_read(attribute: str, read_on: d
     so 67 figures would have claimed a retrieval nobody made. A new date belongs here only with
     a new read of the publisher: change this test in the same commit, and say which read."""
     assert SHIPPED[attribute].transcribed_on == read_on
+
+
+MANIFEST = Path(__file__).parent / "transcriptions.manifest"
+"""Append-only: one line per (file, `transcribed_on`), and the fingerprint of its figures."""
+
+
+def _fingerprint(table: PublishedTable) -> str:
+    """The country, figure and period columns -- what a run stores as the payload and period. The
+    page and the workings are left out on purpose: re-quoting them is not a new read (NEW-33)."""
+    rows = sorted(
+        f"{row.country_code},{row.figure.normalize():f},{row.period_start},{row.period_end}"
+        for row in table.rows
+    )
+    return sha256("\n".join(rows).encode()).hexdigest()
+
+
+def _recorded() -> dict[tuple[str, str], str]:
+    lines = MANIFEST.read_text().splitlines()
+    entries = [line.split() for line in lines if line.strip() and not line.startswith("#")]
+    recorded = {(name, read_on): fingerprint for name, read_on, fingerprint in entries}
+    assert len(recorded) == len(entries), "a (file, transcribed_on) is recorded twice"
+    return recorded
+
+
+@pytest.mark.parametrize("path", sorted(TABLES.glob("*.csv")), ids=lambda path: path.name)
+def test_a_tables_figures_are_the_ones_recorded_for_its_date(path: Path) -> None:
+    """NEW-23. `transcribed_on` is every figure's retrieval date, and so part of the natural key:
+    a figure edited under the old date is the same observation with another number, which a run
+    can only report as a conflict and never store. A new reading of the publisher gets a new date
+    and a new line appended to the manifest, in the same commit; an edited figure without one
+    fails here."""
+    table = read_table(path)
+
+    assert _recorded().get((path.name, str(table.transcribed_on))) == _fingerprint(table)
+
+
+class TestTheManifestGuard:
+    """The guard above, run against a scratch copy of a shipped table rather than trusted."""
+
+    @staticmethod
+    def a_copy(tmp_path: Path, edit: tuple[str, str]) -> PublishedTable:
+        original = TABLES / "oecd_parental_leave.csv"
+        text = original.read_text(encoding="utf-8")
+        assert edit[0] in text
+        copy = tmp_path / original.name
+        copy.write_text(text.replace(edit[0], edit[1], 1), encoding="utf-8")
+        return read_table(copy)
+
+    def test_a_figure_edited_under_the_old_date_is_caught(self, tmp_path: Path) -> None:
+        """d2904cf: Czechia's raw-length 164 weeks swapped for 50.62, the date kept."""
+        edited = self.a_copy(tmp_path, ("CZ,50.62,", "CZ,164,"))
+
+        assert _recorded()[("oecd_parental_leave.csv", "2026-09-19")] != _fingerprint(edited)
+
+    def test_a_page_re_quoted_under_the_old_date_is_not(self, tmp_path: Path) -> None:
+        """NEW-33: re-quoting the words behind a figure is not a new reading of it."""
+        edited = self.a_copy(
+            tmp_path, ("AT,46.52,2025,https://webfs.", "AT,46.52,2025,https://www.")
+        )
+
+        assert _recorded()[("oecd_parental_leave.csv", "2026-09-19")] == _fingerprint(edited)
 
 
 class TestTheComputedTables:

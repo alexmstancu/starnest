@@ -1,0 +1,15 @@
+# Append-only. One line per shipped transcription: file, transcribed_on, and the sha256 of its
+# country, figure and period columns (test_the_shipped_tables.py::_fingerprint). A new reading
+# of a publisher gets a new transcribed_on and a new line here; never edit a line (NEW-23).
+child_benefit_policy.csv 2026-10-06 b8c6684ee14e8bce1ea427fa9ad5cd682ed7ba7ff37f15b3802e95ec2c922230
+ef_epi_english_proficiency.csv 2026-09-14 0fc14ac1e123dfbb9257800be3d9058b8a25ef6ec5b8ae3aadf72d771a92e2cd
+mipex_openness_to_foreigners.csv 2026-09-14 3ce8c6559cdf85ff273e8bcdc3c317f08715f9b19b914a4cd20e6c65446917c9
+national_elevation_range.csv 2026-10-03 2c79f7980891d8134b4f0bd6b1a5b514107dee14a607f9bbb06130f6c9b516cc
+national_met_office_sunshine.csv 2026-10-12 989688bdee6b154a5b813e861532e6d75ed4d7a2e4c393213c117f4f1bc05e90
+naturalisation_pathway.csv 2026-09-21 29fe235cdc2bf3303d51e19702f83cc063b6072a3acbd2186e2e4c2fc48daa6f
+oecd_parental_leave.csv 2026-09-19 aba5d95274c9db73adbff122963e7ae0cd34c4f29d507147bac8148d4aac866e
+pisa_school_quality.csv 2026-09-21 289492672e51e4b5f89f97403119c327bb81e2f65bdfb248d5029ddc43820fc4
+protected_planet_protected_land.csv 2026-10-11 4c616126f957b4aa9e1a076048c60657992cc06254780daeab56f7d6be47bfd2
+rsf_press_freedom.csv 2026-09-14 382ab500506336a7a25f3f8868a51917ba9c4397318095e21a5c847995dd2e31
+statutory_paid_leave.csv 2026-09-20 83dffb39da5c29d7a3e3680bcac24968e29cd1d6ee4d9e754ebbc0ea5a80f538
+wri_coastline_access.csv 2026-10-02 043d6b62f8440dcdee5dccf808dd86cd33d8c1124b1d4e04b767ce72f12c048a

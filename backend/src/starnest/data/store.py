@@ -112,6 +112,16 @@ class ValueStore(ABC):
         """
 
     @abstractmethod
+    async def read_observations(self, values: Sequence[Value]) -> tuple[Value, ...]:
+        """The stored values sharing a natural key with any of `values`, with their ids.
+
+        What a re-read is compared with before its append decides nothing (NEW-23): `append`
+        skips a natural key already on record, so only this read can tell a re-confirmation
+        from a contradiction. Each comes back with its payload and its verdict -- what
+        `restates` compares -- and without its citations, which it does not.
+        """
+
+    @abstractmethod
     async def record_reuse(
         self, run: int, data_source: DataSourceId | str, pairs: Iterable[tuple[str, str]]
     ) -> None:

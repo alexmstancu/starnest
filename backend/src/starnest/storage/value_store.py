@@ -183,6 +183,29 @@ class PostgresValueStore(ValueStore):
         stored = [await self._append_one(value) for value in values]
         return tuple(value for value in stored if value is not None)
 
+    async def read_observations(self, values: Sequence[Value]) -> tuple[Value, ...]:
+        """One query by natural key, then the payloads by id, as `read_values` reads them."""
+        if not values:
+            return ()
+        keys = [_natural_key_of(value) for value in values]
+        async with acquire(self._pool) as connection:
+            rows = [
+                row
+                async for row in self._queries.select_observations(
+                    connection, observations=json.dumps(keys)
+                )
+            ]
+            payloads = await self._read_payloads(connection, [row.id for row in rows])
+        return tuple(
+            _value_from(
+                row,
+                payload=payloads.get(row.id),
+                rejection_reason=row.rejection_reason,
+                citations=(),
+            )
+            for row in rows
+        )
+
     async def record_reuse(
         self, run: int, data_source: DataSourceId | str, pairs: Iterable[tuple[str, str]]
     ) -> None:
@@ -279,6 +302,25 @@ class PostgresValueStore(ValueStore):
 def _filter_or_none(identifiers: Sequence[str]) -> list[str] | None:
     """An empty filter means "do not narrow", which the SQL spells as a NULL array."""
     return [str(identifier) for identifier in identifiers] or None
+
+
+_NATURAL_KEY = (
+    "candidate",
+    "attribute",
+    "data_source",
+    "breakdown_option",
+    "reference_period_start",
+    "reference_period_end",
+    "retrieval_date",
+)
+"""The columns of `value_natural_key` (`0005`), as `_row_parameters` names them."""
+
+
+def _natural_key_of(value: Value) -> dict[str, str | None]:
+    parameters = _row_parameters(value)
+    return {
+        name: None if parameters[name] is None else str(parameters[name]) for name in _NATURAL_KEY
+    }
 
 
 def _row_parameters(value: Value) -> dict[str, Any]:

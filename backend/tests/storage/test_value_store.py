@@ -246,6 +246,47 @@ async def test_re_storing_a_rejected_value_also_skips_the_duplicate(
     assert second == ()
 
 
+async def test_an_observation_on_record_is_read_back_by_its_natural_key(
+    values: PostgresValueStore,
+) -> None:
+    """NEW-23. A re-read is compared with the figure already stored under its natural key, so
+    the read returns that figure -- payload, verdict and id -- and nothing sharing less of the
+    key: another retrieval instant, another breakdown, another candidate."""
+    on_record = a_value(attribute=A_QUANTITY_ATTRIBUTE, payload=_A_QUANTITY, quote="first read")
+    rejected = a_value(
+        attribute=A_QUANTITY_ATTRIBUTE,
+        payload=None,
+        value_type=ValueType.QUANTITY,
+        candidate=ANOTHER_CANDIDATE,
+        rejection_reason="99 is outside the credible range",
+    )
+    (stored, stored_rejection) = await values.append([on_record, rejected])
+    await values.append(
+        [a_value(attribute=A_QUANTITY_ATTRIBUTE, payload=_A_QUANTITY, retrieved=datetime.now(UTC))]
+    )
+    corrected = on_record.model_copy(
+        update={"payload": Quantity(magnitude=Decimal("40.1"), unit="hours_per_week")}
+    )
+    never_stored = on_record.model_copy(update={"data_source": A_WORSE_SOURCE})
+
+    found = await values.read_observations([corrected, rejected, never_stored])
+
+    assert sorted((value.id, value.payload, value.rejection_reason) for value in found) == sorted(
+        [
+            (stored.id, _A_QUANTITY, None),
+            (stored_rejection.id, None, "99 is outside the credible range"),
+        ]
+    )
+    assert {value.natural_key for value in found} == {
+        on_record.natural_key,
+        rejected.natural_key,
+    }
+
+
+async def test_nothing_asked_for_reads_nothing(values: PostgresValueStore) -> None:
+    assert await values.read_observations([]) == ()
+
+
 A_PUBLISHED_RATE = Decimal("0.201033")
 A_RATE_DAY = date(2026, 6, 30)
 A_FOREIGN_CURRENCY = "RON"

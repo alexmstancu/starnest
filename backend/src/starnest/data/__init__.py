@@ -133,7 +133,13 @@ from starnest.data.sources import (
 )
 from starnest.data.stand_in import MalformedStandInError, StandIn
 from starnest.data.store import CatalogStore, UnknownAttributeError, ValueStore
-from starnest.data.value import MalformedValueError, Value, ValueListing
+from starnest.data.value import (
+    ConflictingObservationError,
+    MalformedValueError,
+    Value,
+    ValueListing,
+    restates,
+)
 
 __all__ = [
     "EURO",
@@ -163,6 +169,7 @@ __all__ = [
     "CompoundRuleInput",
     "CompoundRuleShape",
     "ConfidenceLevel",
+    "ConflictingObservationError",
     "Count",
     "CurrencyCode",
     "CurrencyMismatchError",
@@ -227,6 +234,7 @@ __all__ = [
     "a_manual_value",
     "derive_confidence",
     "payload_class_for",
+    "restates",
     "select_active_value",
     "select_active_values",
 ]

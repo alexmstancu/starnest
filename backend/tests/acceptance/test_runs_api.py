@@ -777,6 +777,102 @@ def _a_source_misreading(candidate_id: str) -> SourceAdapter:
     return MisreadingSource()
 
 
+def _a_transcribed_table(portugal_reads: tuple[str, ...]) -> SourceAdapter:
+    """A transcribed table: every figure stamped with one fixed `transcribed_on`, as
+    `published_tables` stamps them, so each read is the same observation. Portugal's figure is
+    the next of `portugal_reads` each time the table is read -- a correction typed in without a
+    new date (NEW-23)."""
+    from collections.abc import Sequence
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    from starnest.candidates import Candidate
+    from starnest.data import Attribute, DataSourceId, Measurements, Quantity, ReferencePeriod
+    from starnest.data_acquisition import Acquired
+
+    readings = iter(portugal_reads)
+
+    class TranscribedTable(SourceAdapter):
+        @property
+        def data_source(self) -> DataSourceId:
+            return DataSourceId("open_meteo")
+
+        @property
+        def attributes(self) -> tuple:
+            return (TEMPERATURE,)
+
+        async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
+            assert attribute.quantity_parameters is not None
+            portugal = next(readings)
+            measuring = Measurements(
+                attribute=attribute,
+                data_source="open_meteo",
+                retrieved=datetime(2026, 9, 19, tzinfo=UTC),
+            )
+            return Acquired(
+                values=tuple(
+                    measuring.figure(
+                        candidate=candidate,
+                        payload=Quantity(
+                            magnitude=Decimal(
+                                portugal if str(candidate.id) == THE_STUB_DECLINES_FOR else "15"
+                            ),
+                            unit=attribute.quantity_parameters.unit,
+                        ),
+                        period=ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 12, 31)),
+                    )
+                    for candidate in candidates
+                )
+            )
+
+    return TranscribedTable()
+
+
+class TestATableCorrectedUnderItsOldDate:
+    """NEW-23. A re-read under the same natural key with another figure was a silent no-op, and
+    the run then credited the source with re-confirming the figure it had contradicted."""
+
+    async def test_a_corrected_table_under_its_old_date_is_reported_failed(
+        self, database_url: str
+    ) -> None:
+        a_temperature_run = {"level": COUNTRY, "attributes": [TEMPERATURE]}
+        async with an_api(database_url, (_a_transcribed_table(("16", "17")),)) as api:
+            first = await api.post("/v1/data-acquisition-runs", json=a_temperature_run)
+            second = await api.post("/v1/data-acquisition-runs", json=a_temperature_run)
+            assert (first.status_code, second.status_code) == (202, 202), second.text
+            detail = (await api.get(f"/v1/data-acquisition-runs/{second.json()['id']}")).json()
+            stored = (
+                await api.get(
+                    "/v1/values",
+                    params={"candidate": THE_STUB_DECLINES_FOR, "attribute": TEMPERATURE},
+                )
+            ).json()["items"]
+
+        validate("getRun", detail)
+        (failure,) = detail["failures"]
+        assert (failure["data_source"], failure["candidate"]) == (
+            "open_meteo",
+            THE_STUB_DECLINES_FOR,
+        )
+        assert "a different figure is already on record" in failure["error_message"]
+        assert (detail["progress"]["items_completed"], detail["progress"]["items_failed"]) == (
+            31,
+            1,
+        )
+        assert [value["payload"]["magnitude"] for value in stored] == [16]
+
+    async def test_a_table_read_again_unchanged_is_re_confirmed(self, database_url: str) -> None:
+        """The control: the same figures under the same date are every pair completed."""
+        a_temperature_run = {"level": COUNTRY, "attributes": [TEMPERATURE]}
+        async with an_api(database_url, (_a_transcribed_table(("16", "16")),)) as api:
+            await api.post("/v1/data-acquisition-runs", json=a_temperature_run)
+            second = (await api.post("/v1/data-acquisition-runs", json=a_temperature_run)).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{second['id']}")).json()
+
+        assert detail["failures"] == []
+        assert detail["progress"]["items_completed"] == 32
+
+
 @asynccontextmanager
 async def _a_refetch_age(api: httpx.AsyncClient, *, days: int) -> AsyncIterator[None]:
     """The refetch age set for as long as a test needs it, and the settings put back after."""

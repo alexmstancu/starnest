@@ -173,6 +173,10 @@ class RecordingValueStore:
     async def record_reuse(self, run, data_source, pairs):  # type: ignore[no-untyped-def]
         return None
 
+    async def read_observations(self, values):  # type: ignore[no-untyped-def]
+        """Nothing this fake appends is ever a no-op, so nothing is on record to compare."""
+        return ()
+
     async def read_active_values(self, *, candidates=None, attributes=None):  # type: ignore[no-untyped-def]
         """What the stand-in step reads to find a figure worth borrowing."""
         return self._holds

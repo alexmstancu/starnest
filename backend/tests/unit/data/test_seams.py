@@ -85,6 +85,10 @@ class InMemoryValueStore(ValueStore):
         self._values.extend(stored)
         return stored
 
+    async def read_observations(self, values):
+        keys = {value.natural_key for value in values}
+        return tuple(value for value in self._values if value.natural_key in keys)
+
     async def record_reuse(self, run, data_source, pairs):
         self._reused.extend(pairs)
 

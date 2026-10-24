@@ -1179,6 +1179,9 @@ class KilledWriting:
     async def record_reuse(self, run, data_source, pairs) -> None:  # type: ignore[no-untyped-def]
         await self._store.record_reuse(run, data_source, pairs)
 
+    async def read_observations(self, values: Sequence[Value]) -> tuple[Value, ...]:
+        return await self._store.read_observations(values)
+
     async def read_active_values(self, **asked) -> tuple[Value, ...]:  # type: ignore[no-untyped-def]
         return await self._store.read_active_values(**asked)
 

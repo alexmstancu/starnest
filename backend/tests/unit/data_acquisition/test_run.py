@@ -100,22 +100,25 @@ class StubAdapter(SourceAdapter):
 class RecordingValueStore:
     """Just enough `ValueStore` to see what a run tried to append and re-confirm.
 
-    `already_holds` lets a test say which pairs are already on record, so `append` returns them
-    as no-ops the way the real store does for a re-read transcribed figure -- which is what makes
-    a reuse happen (ST-09)."""
+    `already_holds` lets a test say which figures are already on record, so `append` returns one
+    sharing their natural key as a no-op the way the real store does for a re-read transcribed
+    figure (ST-09), and `read_observations` hands back the figure on record -- which is what a
+    run compares the re-read with (NEW-23)."""
 
-    def __init__(self, already_holds: frozenset[tuple[str, str]] = frozenset()) -> None:
+    def __init__(self, already_holds: Sequence[Value] = ()) -> None:
         self.appended: list[Value] = []
         self.reused: list[tuple[str, str]] = []
         self.reused_by: list[str] = []
-        self._already_holds = already_holds
+        self._on_record = {value.natural_key: value for value in already_holds}
 
     async def append(self, values):
-        newly = [
-            v for v in values if (str(v.candidate), str(v.attribute)) not in self._already_holds
-        ]
+        newly = [v for v in values if v.natural_key not in self._on_record]
         self.appended.extend(newly)
         return tuple(newly)
+
+    async def read_observations(self, values):
+        keys = {value.natural_key for value in values}
+        return tuple(held for key, held in self._on_record.items() if key in keys)
 
     async def record_reuse(self, run, data_source, pairs) -> None:
         pairs = list(pairs)
@@ -306,7 +309,7 @@ class TestWhatARunKeeps:
         a figure that is already there."""
         value = a_value()
         pair = (str(value.candidate), str(value.attribute))
-        store = RecordingValueStore(already_holds=frozenset({pair}))
+        store = RecordingValueStore(already_holds=(value,))
         adapter = StubAdapter({OVERBURDEN: Acquired(values=(value,))}, declares=(OVERBURDEN,))
 
         outcome = await acquire(
@@ -325,9 +328,7 @@ class TestWhatARunKeeps:
         """NEW-54. Two sources can re-read the same pair, and the breakdown credits each source
         with what it answered -- so a reuse is recorded against the source, as a failure is."""
         value = a_value()
-        store = RecordingValueStore(
-            already_holds=frozenset({(str(value.candidate), str(value.attribute))})
-        )
+        store = RecordingValueStore(already_holds=(value,))
         adapter = StubAdapter({OVERBURDEN: Acquired(values=(value,))}, declares=(OVERBURDEN,))
 
         await acquire(
@@ -507,6 +508,9 @@ class AlreadyHoldsOptions(RecordingValueStore):
         self.appended.extend(newly)
         return tuple(newly)
 
+    async def read_observations(self, values):
+        return tuple(value for value in values if value.breakdown_option in self._held)
+
 
 class TestTheOrderABatchIsWrittenIn:
     """P93. A rejected figure is a failure as well (BE-08), and the failure -- the only row a retry
@@ -547,7 +551,7 @@ class TestTheOrderABatchIsWrittenIn:
                 ),
                 attributes=[an_attribute()],
                 candidates=[PORTUGAL],
-                values=DiesReConfirmingAPair(already_holds=frozenset({pair})),
+                values=DiesReConfirmingAPair(already_holds=(rejected,)),
                 run=13,
                 record_failures=written,
             )
@@ -950,3 +954,138 @@ class TestASourceThatCrashesMidAttribute:
             )
 
         assert [f.candidate for f in collected] == [str(SPAIN.id)]
+
+
+CONTRADICTION = "a different figure is already on record for this observation"
+
+
+def a_corrected_value(stored: Value) -> Value:
+    """The same observation -- one natural key -- read again with another figure, as a
+    transcribed table edited without a new `transcribed_on` produces it (NEW-23)."""
+    return stored.model_copy(update={"payload": Ratio(value=Decimal("7.1"), basis="households")})
+
+
+class TestAReReadThatContradictsTheStoredFigure:
+    """NEW-23, decision P1-10. A re-read under the same natural key either restates the stored
+    figure and verdict -- a re-confirmation -- or is reported as a failure naming the conflict.
+    It is never silently kept as re-confirmed."""
+
+    async def test_a_re_read_that_contradicts_the_stored_figure_is_a_failure_not_a_reuse(
+        self,
+    ) -> None:
+        stored = a_value()
+        store = RecordingValueStore(already_holds=(stored,))
+        persisted: list[AcquisitionFailure] = []
+
+        async def record(batch: Sequence[AcquisitionFailure]) -> None:
+            persisted.extend(batch)
+
+        outcome = await acquire(
+            adapter=StubAdapter(
+                {OVERBURDEN: Acquired(values=(a_corrected_value(stored),))},
+                declares=(OVERBURDEN,),
+            ),
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=store,
+            run=5,
+            record_failures=record,
+        )
+
+        assert store.reused == []
+        assert store.appended == []
+        (failure,) = persisted
+        assert (failure.candidate, failure.attribute, failure.data_source) == (
+            "country.portugal",
+            OVERBURDEN,
+            DataSourceId("eurostat"),
+        )
+        assert CONTRADICTION in failure.reason
+        assert "transcribed_on" in failure.reason
+        assert outcome.failures == (failure,)
+
+    async def test_a_re_read_that_restates_the_stored_figure_is_a_reuse(self) -> None:
+        """The control. Only its words differ (NEW-33), so it is the same observation."""
+        stored = a_value()
+        re_quoted = stored.model_copy(update={"quote": "the same figure, worded again"})
+        store = RecordingValueStore(already_holds=(stored,))
+
+        outcome = await acquire(
+            adapter=StubAdapter(
+                {OVERBURDEN: Acquired(values=(re_quoted,))}, declares=(OVERBURDEN,)
+            ),
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=store,
+            run=5,
+        )
+
+        assert store.reused == [("country.portugal", OVERBURDEN)]
+        assert outcome.failures == ()
+
+    async def test_make_acquire_reports_the_conflict_without_a_run(self) -> None:
+        """`make acquire` passes no run, and prints `outcome.failures`: the conflict must be
+        among them, or the command reports a clean pass over a figure it did not store."""
+        stored = a_value()
+
+        outcome = await acquire(
+            adapter=StubAdapter(
+                {OVERBURDEN: Acquired(values=(a_corrected_value(stored),))},
+                declares=(OVERBURDEN,),
+            ),
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=RecordingValueStore(already_holds=(stored,)),
+        )
+
+        assert [CONTRADICTION in failure.reason for failure in outcome.failures] == [True]
+
+    async def test_a_re_read_rejected_where_the_stored_figure_was_accepted_is_a_conflict(
+        self,
+    ) -> None:
+        """The verdict counts as well: a narrowed credible range turns the same reading into a
+        different one. Reported as the conflict, not as a figure "stored and rejected" -- nothing
+        was stored."""
+        stored = a_value()
+        rejected_now = stored.model_copy(update={"rejection_reason": NOT_CREDIBLE})
+        store = RecordingValueStore(already_holds=(stored,))
+
+        outcome = await acquire(
+            adapter=StubAdapter(
+                {OVERBURDEN: Acquired(values=(rejected_now,))}, declares=(OVERBURDEN,)
+            ),
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=store,
+            run=5,
+        )
+
+        assert [CONTRADICTION in failure.reason for failure in outcome.failures] == [True]
+        assert store.reused == []
+
+    async def test_the_conflict_is_committed_with_the_batch_s_failures_before_its_rejections(
+        self,
+    ) -> None:
+        """P93's order: accepted figures, then the batch's failures, then its rejected figures. A
+        kill writing the rejected figure keeps the conflict it was reported with."""
+        stored = a_value().model_copy(update={"candidate": "country.spain"})
+        written = FailureWriter()
+
+        with pytest.raises(ProcessKilled):
+            await acquire(
+                adapter=StubAdapter(
+                    {OVERBURDEN: Acquired(values=(a_corrected_value(stored), a_rejected_value()))},
+                    declares=(OVERBURDEN,),
+                ),
+                attributes=[an_attribute()],
+                candidates=[PORTUGAL, SPAIN],
+                values=DiesWritingARejectedFigure(already_holds=(stored,)),
+                run=13,
+                record_failures=written,
+            )
+
+        assert sorted(failure.candidate for failure in written.committed) == [
+            "country.portugal",
+            "country.spain",
+        ]
+        assert any(CONTRADICTION in failure.reason for failure in written.committed)

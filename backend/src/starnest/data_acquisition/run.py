@@ -19,7 +19,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from starnest.candidates import Candidate
-from starnest.data import Attribute, Value, ValueStore
+from starnest.data import Attribute, Value, ValueStore, restates
 from starnest.data_acquisition.adapter import Acquired, AcquisitionFailure, SourceAdapter
 from starnest.data_acquisition.spend import CostMeter
 
@@ -198,12 +198,22 @@ async def acquire(
             # written would then cost a paid batch the figures it had already bought (BE-19). A
             # kill between the failures and the rejected figures leaves a failure with nothing
             # stored behind it, and a retry asks again -- the honest direction to be wrong in.
-            accepted = tuple(value for value in fetched if not value.is_rejected)
-            rejected = tuple(value for value in fetched if value.is_rejected)
+            #
+            # **A re-read that contradicts the figure on record is neither stored nor re-confirmed**
+            # (NEW-23). Its append would be a silent no-op on the natural key, and the run then
+            # credited the source with re-confirming a figure it had just contradicted. It is set
+            # aside here and reported with this batch's failures instead.
+            contradicting = await _contradicting(fetched, values) if fetched else ()
+            contradicted = _pairs_of(contradicting)
+            kept = [value for value in fetched if value not in contradicting]
+            accepted = tuple(value for value in kept if not value.is_rejected)
+            rejected = tuple(value for value in kept if value.is_rejected)
             newly_accepted = await values.append(accepted) if accepted else ()
             stored.extend(newly_accepted)
             # A pair a rejected figure answered too is settled with the rejected ones below.
-            await reconfirm(_pairs_of(accepted) - _pairs_of(rejected) - _pairs_of(newly_accepted))
+            await reconfirm(
+                _pairs_of(accepted) - _pairs_of(rejected) - _pairs_of(newly_accepted) - contradicted
+            )
 
             # Which source failed, stamped for the same reason as the run above: two sources
             # answer the total tax rate, and a retry has to know which one to ask again.
@@ -229,6 +239,15 @@ async def acquire(
                 )
                 for value in rejected
             )
+            stamped.extend(
+                AcquisitionFailure(
+                    attribute=value.attribute,
+                    candidate=str(value.candidate),
+                    reason=_CONTRADICTION,
+                    data_source=adapter.data_source,
+                )
+                for value in contradicting
+            )
             failures.extend(stamped)
             if collecting is not None:
                 collecting.extend(stamped)
@@ -245,7 +264,10 @@ async def acquire(
             newly_rejected = await values.append(rejected) if rejected else ()
             stored.extend(newly_rejected)
             await reconfirm(
-                _pairs_of(rejected) - _pairs_of(newly_rejected) - _pairs_of(newly_accepted)
+                _pairs_of(rejected)
+                - _pairs_of(newly_rejected)
+                - _pairs_of(newly_accepted)
+                - contradicted
             )
 
         # After this attribute is stored, never before it: the cap stops the *next* call, and
@@ -260,6 +282,23 @@ async def acquire(
         failures=tuple(failures),
         cost_eur=cost,
         calls=calls,
+    )
+
+
+_CONTRADICTION = (
+    "a different figure is already on record for this observation (same period and retrieval "
+    "date); the stored figure stands. Re-read the publisher and give the table a new "
+    "transcribed_on"
+)
+
+
+async def _contradicting(fetched: Sequence[Value], values: ValueStore) -> tuple[Value, ...]:
+    """The fetched figures whose natural key is on record with another figure or verdict."""
+    on_record = {value.natural_key: value for value in await values.read_observations(fetched)}
+    return tuple(
+        value
+        for value in fetched
+        if value.natural_key in on_record and not restates(on_record[value.natural_key], value)
     )
 
 
