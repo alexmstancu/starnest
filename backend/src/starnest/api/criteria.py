@@ -27,7 +27,7 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.bodies import ContractBody, PartialChangeBody
-from starnest.api.dependencies import Catalog, Criteria, Households
+from starnest.api.dependencies import Catalog, Criteria
 from starnest.api.errors import built_from_the_request
 from starnest.criteria import (
     BooleanThreshold,
@@ -285,7 +285,6 @@ async def update_criterion(
     attribute_id: str,
     change: CriterionInput,
     criteria: Criteria,
-    households: Households,
 ) -> RebalancedPillar:
     """Move one weight, and return the pillar it moved within.
 
@@ -300,11 +299,11 @@ async def update_criterion(
     for Rank to meet as a set it cannot score. **Only the anchors this request writes** (P1-04,
     N7): one already stored above the range -- by a migration, say -- would otherwise block every
     change to its set, so Rank refuses that set and names the anchor instead. Checked inside the
-    edit, so the refusal rolls it back; an unset range has no top to be above.
+    edit, against the range read and held in that same transaction, so the refusal rolls it back
+    and a range changed in another tab cannot slip in between; an unset range has no top.
     """
-    score_scale_max = (await households.get_settings()).score_scale_max
 
-    def mutate(current: CriteriaSet) -> CriteriaSet:
+    def mutate(current: CriteriaSet, score_scale_max: int | None) -> CriteriaSet:
         edited = _applied(current, attribute_id, change)
         if score_scale_max is not None:
             _refuse_written_anchors_above(
@@ -314,7 +313,7 @@ async def update_criterion(
             )
         return edited
 
-    changed = await criteria.edit_criteria_set(criteria_set_id, mutate)
+    changed = await criteria.edit_criteria_set_under_the_score_scale(criteria_set_id, mutate)
 
     pillar = changed.criterion_for(attribute_id).pillar
     level = changed.criterion_for(attribute_id).attribute.level_id

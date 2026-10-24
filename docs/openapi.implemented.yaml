@@ -3097,7 +3097,11 @@ paths:
         change to its set, so Rank refuses that set and names the anchor instead.
         Checked inside the
 
-        edit, so the refusal rolls it back; an unset range has no top to be above.'
+        edit, against the range read and held in that same transaction, so the refusal
+        rolls it back
+
+        and a range changed in another tab cannot slip in between; an unset range
+        has no top.'
       operationId: updateCriterion
       parameters:
       - in: path
@@ -4394,7 +4398,13 @@ paths:
         below an anchor -- by a migration, say -- would otherwise block every save
         of the other
 
-        four, and Rank explains that state instead.'
+        four, and Rank explains that state instead. **Checked and written in one transaction
+        that
+
+        holds the settings against every anchor edit**, so an anchor written in another
+        tab is either
+
+        seen here or meets the new range itself.'
       operationId: replaceSettings
       requestBody:
         content:

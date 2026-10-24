@@ -628,3 +628,18 @@ INSERT INTO match_rule_result_citation (match_rule, candidate, url)
 SELECT :match_rule, :candidate, url
 FROM   unnest(:urls::text[]) AS url
 ON CONFLICT DO NOTHING;
+
+-- name: select_highest_anchor()^
+-- The highest score any live set anchors a figure to, and where, at every level: one score range
+-- has to reach them all (reqs.md 3.10, PL-006). Read under `lock_settings`, so no anchor is
+-- written between this and the range it is checked against. Ties go to the first set and
+-- attribute by id, so the same state always names the same anchor.
+SELECT anchor.score,
+       c.criteria_set,
+       c.attribute
+FROM   criterion_scale_anchor AS anchor
+JOIN   criterion AS c ON c.id = anchor.criterion
+JOIN   criteria_set AS s ON s.id = c.criteria_set
+WHERE  s.deleted_at IS NULL
+ORDER  BY anchor.score DESC, c.criteria_set, c.attribute
+LIMIT  1;

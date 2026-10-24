@@ -13,6 +13,8 @@ passport it had just given up -- which every visa gate would then read as fact
 
 from typing import Any
 
+from aiosql.queries import Queries
+from psycopg import AsyncConnection
 from psycopg.errors import ForeignKeyViolation
 from psycopg_pool import AsyncConnectionPool
 
@@ -93,24 +95,34 @@ class PostgresHouseholdStore(HouseholdStore):
             row = await self._queries.select_settings(connection)
         if row is None:
             return Settings()
-        return Settings(
-            min_coverage=row.min_coverage,
-            score_scale_max=row.score_scale_max,
-            comparator_limit=row.comparator_limit,
-            refetch_older_than_days=row.refetch_older_than_days,
-            run_spend_cap_eur=row.run_spend_cap_eur,
-        )
+        return settings_from(row)
 
     async def replace_settings(self, settings: Settings) -> None:
         async with acquire(self._pool) as connection:
-            await self._queries.upsert_settings(
-                connection,
-                min_coverage=settings.min_coverage,
-                score_scale_max=settings.score_scale_max,
-                comparator_limit=settings.comparator_limit,
-                refetch_older_than_days=settings.refetch_older_than_days,
-                run_spend_cap_eur=settings.run_spend_cap_eur,
-            )
+            await write_settings(self._queries, connection, settings)
+
+
+def settings_from(row: Any) -> Settings:
+    """A settings row as the domain record; `criteria_store` reads one under its lock too."""
+    return Settings(
+        min_coverage=row.min_coverage,
+        score_scale_max=row.score_scale_max,
+        comparator_limit=row.comparator_limit,
+        refetch_older_than_days=row.refetch_older_than_days,
+        run_spend_cap_eur=row.run_spend_cap_eur,
+    )
+
+
+async def write_settings(queries: Queries, connection: AsyncConnection, settings: Settings) -> None:
+    """The one upsert of the settings row, inside whichever transaction the caller holds."""
+    await queries.upsert_settings(
+        connection,
+        min_coverage=settings.min_coverage,
+        score_scale_max=settings.score_scale_max,
+        comparator_limit=settings.comparator_limit,
+        refetch_older_than_days=settings.refetch_older_than_days,
+        run_spend_cap_eur=settings.run_spend_cap_eur,
+    )
 
 
 def _household_from(row: Any) -> Household:

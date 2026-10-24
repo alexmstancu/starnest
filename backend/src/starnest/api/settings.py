@@ -11,14 +11,12 @@ rather than a fault.
 """
 
 from decimal import Decimal
-from operator import attrgetter
-from typing import NamedTuple
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.dependencies import Criteria, Households
-from starnest.criteria import CriteriaStore
+from starnest.criteria import HighestAnchor
 from starnest.household import Settings
 
 router = APIRouter(tags=["settings"])
@@ -80,36 +78,30 @@ async def replace_settings(
     **A changed range has to reach every anchor** (PL-006), or a set anchoring a figure above
     its top could no longer be ranked. **Only a change is refused** (N7): a range already stored
     below an anchor -- by a migration, say -- would otherwise block every save of the other
-    four, and Rank explains that state instead.
+    four, and Rank explains that state instead. **Checked and written in one transaction that
+    holds the settings against every anchor edit**, so an anchor written in another tab is either
+    seen here or meets the new range itself.
     """
-    stored = await households.get_settings()
-    if body.score_scale_max is not None and body.score_scale_max != stored.score_scale_max:
-        await _refuse_a_range_below_an_anchor(body.score_scale_max, criteria)
-    await households.replace_settings(
-        Settings(
-            min_coverage=None if body.min_coverage is None else Decimal(str(body.min_coverage)),
-            score_scale_max=body.score_scale_max,
-            comparator_limit=body.comparator_limit,
-            run_spend_cap_eur=(
-                None if body.run_spend_cap_eur is None else Decimal(str(body.run_spend_cap_eur))
-            ),
-            refetch_older_than_days=body.refetch_older_than_days,
-        )
+    replacement = Settings(
+        min_coverage=None if body.min_coverage is None else Decimal(str(body.min_coverage)),
+        score_scale_max=body.score_scale_max,
+        comparator_limit=body.comparator_limit,
+        run_spend_cap_eur=(
+            None if body.run_spend_cap_eur is None else Decimal(str(body.run_spend_cap_eur))
+        ),
+        refetch_older_than_days=body.refetch_older_than_days,
     )
+
+    def refuse(stored: Settings, highest: HighestAnchor | None) -> None:
+        if body.score_scale_max is not None and body.score_scale_max != stored.score_scale_max:
+            _refuse_a_range_below(body.score_scale_max, highest)
+
+    await criteria.replace_settings_over_the_anchors(replacement, refuse)
     return await get_settings(households)
 
 
-class _Anchor(NamedTuple):
-    """A score some criterion anchors a figure to, and where."""
-
-    score: int
-    criteria_set: str
-    attribute: str
-
-
-async def _refuse_a_range_below_an_anchor(score_scale_max: int, criteria: CriteriaStore) -> None:
+def _refuse_a_range_below(score_scale_max: int, highest: HighestAnchor | None) -> None:
     """409 when an anchor scores above this top, naming the lowest top that every one fits."""
-    highest = max(await _every_anchor(criteria), key=attrgetter("score"), default=None)
     if highest is None or highest.score <= score_scale_max:
         return
     raise HTTPException(
@@ -123,20 +115,8 @@ async def _refuse_a_range_below_an_anchor(score_scale_max: int, criteria: Criter
             ),
             "details": {
                 "minimum": highest.score,
-                "criteria_set": highest.criteria_set,
-                "attribute": highest.attribute,
+                "criteria_set": str(highest.criteria_set),
+                "attribute": str(highest.attribute),
             },
         },
     )
-
-
-async def _every_anchor(criteria: CriteriaStore) -> list[_Anchor]:
-    """Every set's anchors, at every level: one range scores them all (`reqs.md` 3.10)."""
-    anchors: list[_Anchor] = []
-    for criteria_set_id, _ in await criteria.read_criteria_set_summaries():
-        for criterion in (await criteria.read_criteria_set(criteria_set_id)).criteria:
-            anchors.extend(
-                _Anchor(anchor.score, str(criteria_set_id), str(criterion.attribute))
-                for anchor in criterion.scale_anchors
-            )
-    return anchors

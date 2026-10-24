@@ -44,6 +44,7 @@ from starnest.criteria.store import (
     CriteriaSetExistsError,
     CriteriaSetInUseError,
     CriteriaStore,
+    HighestAnchor,
     MatchRuleResultStore,
     UnknownCriteriaSetError,
 )
@@ -70,6 +71,7 @@ __all__ = [
     "Criterion",
     "CriterionDeclarationError",
     "Goal",
+    "HighestAnchor",
     "LabelThreshold",
     "MatchRuleResultStore",
     "MatchingThreshold",

@@ -115,3 +115,31 @@ SET min_coverage            = EXCLUDED.min_coverage,
     comparator_limit        = EXCLUDED.comparator_limit,
     run_spend_cap_eur       = EXCLUDED.run_spend_cap_eur,
     refetch_older_than_days = EXCLUDED.refetch_older_than_days;
+
+-- name: ensure_settings()!
+-- The settings row, all NULL, where none is stored yet -- which reads as exactly what no row
+-- reads as -- so the two locks below always have a row to take (PL-006).
+INSERT INTO settings (id)
+VALUES (1)
+ON CONFLICT (id) DO NOTHING;
+
+-- name: share_settings()^
+-- The score range, held against a change until this transaction commits: an anchor written under
+-- it is checked against the range that stays (PL-006). Shared, so anchor edits do not queue on
+-- one another -- only on a range being changed.
+SELECT s.score_scale_max
+FROM   settings AS s
+WHERE  s.id = 1
+FOR    SHARE;
+
+-- name: lock_settings()^
+-- Every setting, held until this transaction commits, so a changed range is checked against the
+-- anchors as they stand when it is written: an anchor edit waits on `share_settings` (PL-006).
+SELECT s.min_coverage,
+       s.score_scale_max,
+       s.comparator_limit,
+       s.run_spend_cap_eur,
+       s.refetch_older_than_days
+FROM   settings AS s
+WHERE  s.id = 1
+FOR    UPDATE;

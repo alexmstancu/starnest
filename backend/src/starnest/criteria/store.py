@@ -23,10 +23,12 @@ candidate, modelled where findings are.
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from typing import NamedTuple
 
 from starnest.criteria.criteria_set import CriteriaSet
 from starnest.criteria.identifiers import CriteriaSetId
-from starnest.data import MatchRuleResult
+from starnest.data import AttributeId, MatchRuleResult
+from starnest.household import Settings
 
 
 class CriteriaSetExistsError(ValueError):
@@ -76,6 +78,14 @@ class CriteriaSetInUseError(ValueError):
     A state conflict, so the API answers 409 -- the request was well formed and is refused by
     what exists, which is exactly the distinction `LookupError` above draws for 404.
     """
+
+
+class HighestAnchor(NamedTuple):
+    """The highest score any live set anchors a figure to, and where: the least a range can be."""
+
+    score: int
+    criteria_set: CriteriaSetId
+    attribute: AttributeId
 
 
 class CriteriaStore(ABC):
@@ -145,6 +155,34 @@ class CriteriaStore(ABC):
 
         Live sets only: `UnknownCriteriaSetError` for a deleted one, and for an edit that waited
         on a deletion. A rename to another live set's name raises `CriteriaSetNameTakenError`.
+        """
+
+    @abstractmethod
+    async def edit_criteria_set_under_the_score_scale(
+        self,
+        criteria_set: CriteriaSetId | str,
+        mutate: Callable[[CriteriaSet, int | None], CriteriaSet],
+    ) -> CriteriaSet:
+        """`edit_criteria_set`, with the score range `mutate` checks anchors against held too.
+
+        **The range is read inside the edit, and held until it commits** (PL-006), so it cannot
+        change between the check and the write: a range being changed waits for the edit, and
+        then meets the anchors it wrote -- see `replace_settings_over_the_anchors`. `None` when
+        no range is set.
+        """
+
+    @abstractmethod
+    async def replace_settings_over_the_anchors(
+        self,
+        settings: Settings,
+        refuse: Callable[[Settings, HighestAnchor | None], None],
+    ) -> None:
+        """Store the settings whole, unless `refuse` raises over the stored ones and the anchors.
+
+        **One transaction, holding the settings against every anchor edit** (PL-006): `refuse`
+        sees the settings as stored and the highest anchor as it stands, and nothing can anchor
+        higher before the new range commits. Here rather than on `HouseholdStore` because the
+        anchors are a criteria set's, and `household/` knows nothing of them.
         """
 
     @abstractmethod

@@ -32,6 +32,7 @@ from starnest.criteria import (
     CriteriaStore,
     Criterion,
     Goal,
+    HighestAnchor,
     LabelThreshold,
     MatchingThreshold,
     NormalisationMethod,
@@ -43,8 +44,10 @@ from starnest.criteria import (
     UnknownCriteriaSetError,
 )
 from starnest.criteria.store import CriteriaSetNameTakenError
-from starnest.data import UnknownAttributeError, ValueType
+from starnest.data import AttributeId, UnknownAttributeError, ValueType
+from starnest.household import Settings
 from starnest.storage.connections import acquire
+from starnest.storage.household_store import settings_from, write_settings
 from starnest.storage.queries import load_queries
 
 NAME_IS_UNIQUE = "criteria_set_name_is_unique"
@@ -145,23 +148,63 @@ class PostgresCriteriaStore(CriteriaStore):
         name the same set.
         """
         async with acquire(self._pool) as connection:
-            locked = await self._queries.lock_criteria_set(
-                connection, criteria_set=str(criteria_set)
+            return await self._edit(connection, criteria_set, mutate)
+
+    async def edit_criteria_set_under_the_score_scale(
+        self,
+        criteria_set: CriteriaSetId | str,
+        mutate: Callable[[CriteriaSet, int | None], CriteriaSet],
+    ) -> CriteriaSet:
+        """The settings row is shared before the set is locked, as `replace_settings_over_the_
+        anchors` takes it before reading anchors, so the two never wait on each other in a cycle.
+        """
+        async with acquire(self._pool) as connection:
+            await self._queries.ensure_settings(connection)
+            held = await self._queries.share_settings(connection)
+            return await self._edit(
+                connection, criteria_set, lambda current: mutate(current, held.score_scale_max)
             )
-            if locked is None:
-                raise UnknownCriteriaSetError(
-                    f"there is no criteria set called {criteria_set!r} to edit"
-                )
-            row = await self._queries.select_criteria_set(
-                connection, criteria_set=str(criteria_set), level=None, include_deleted=False
+
+    async def replace_settings_over_the_anchors(
+        self,
+        settings: Settings,
+        refuse: Callable[[Settings, HighestAnchor | None], None],
+    ) -> None:
+        async with acquire(self._pool) as connection:
+            await self._queries.ensure_settings(connection)
+            stored = await self._queries.lock_settings(connection)
+            highest = await self._queries.select_highest_anchor(connection)
+            refuse(
+                settings_from(stored),
+                None
+                if highest is None
+                else HighestAnchor(
+                    highest.score,
+                    CriteriaSetId(highest.criteria_set),
+                    AttributeId(highest.attribute),
+                ),
             )
-            changed = mutate(_criteria_set_from(row))
-            await self._write_name(connection, changed)
-            await self._queries.delete_criteria_set_contents(
-                connection, criteria_set=str(criteria_set)
+            await write_settings(self._queries, connection, settings)
+
+    async def _edit(
+        self,
+        connection: AsyncConnection,
+        criteria_set: CriteriaSetId | str,
+        mutate: Callable[[CriteriaSet], CriteriaSet],
+    ) -> CriteriaSet:
+        locked = await self._queries.lock_criteria_set(connection, criteria_set=str(criteria_set))
+        if locked is None:
+            raise UnknownCriteriaSetError(
+                f"there is no criteria set called {criteria_set!r} to edit"
             )
-            await self._write_contents(connection, changed)
-            return changed
+        row = await self._queries.select_criteria_set(
+            connection, criteria_set=str(criteria_set), level=None, include_deleted=False
+        )
+        changed = mutate(_criteria_set_from(row))
+        await self._write_name(connection, changed)
+        await self._queries.delete_criteria_set_contents(connection, criteria_set=str(criteria_set))
+        await self._write_contents(connection, changed)
+        return changed
 
     async def discard_criteria_set(self, criteria_set: CriteriaSetId | str) -> None:
         """One column set, nothing else touched (PL-033); waits for an edit holding the lock."""

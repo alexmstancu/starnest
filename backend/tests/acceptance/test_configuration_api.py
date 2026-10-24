@@ -5,8 +5,13 @@ A weight change is sent as one number and answered with what the rebalance made 
 beside it, so the screen prints an outcome it did not compute.
 """
 
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+
 import httpx
 import pytest
+from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
 pytestmark = pytest.mark.acceptance
@@ -406,6 +411,102 @@ class TestAScoreRangeBelowAnAnchor:
         )
 
         assert response.status_code == 200
+
+    async def test_a_range_changed_while_an_anchor_is_written_is_refused_after_it(
+        self, api: httpx.AsyncClient, database_url: str, a_scratch_criteria_set: str
+    ) -> None:
+        """Two tabs (review of PL-006): the anchor is written under the old range, so the range
+        that commits after it has to meet it. Unserialised, the anchor read 200, the range wrote
+        100 meanwhile, both answered 200 and Rank met a set it could not score."""
+        await api.put("/v1/settings", json={"score_scale_max": 200})
+
+        async with _two_writers(database_url) as (hold, writers_waiting):
+            await hold(
+                "SELECT id FROM criteria_set WHERE id = %s FOR UPDATE", (a_scratch_criteria_set,)
+            )
+            anchor = asyncio.create_task(_anchor_overburden_up_to(api, a_scratch_criteria_set, 150))
+            assert await writers_waiting(1, anchor), "the anchor never waited for its set"
+            scale = asyncio.create_task(api.put("/v1/settings", json={"score_scale_max": 100}))
+            await writers_waiting(2, scale)
+
+        anchored, rescaled = await asyncio.gather(anchor, scale)
+        assert anchored.status_code == 200
+        assert (rescaled.status_code, rescaled.json().get("details")) == (
+            409,
+            {"minimum": 150, "criteria_set": a_scratch_criteria_set, "attribute": OVERBURDEN},
+        )
+        assert (await api.get("/v1/settings")).json()["score_scale_max"] == 200
+
+    async def test_an_anchor_written_while_the_range_changes_is_refused_after_it(
+        self, api: httpx.AsyncClient, database_url: str, a_scratch_criteria_set: str
+    ) -> None:
+        """The other order: the range is checked against the anchors as they stand, so the
+        anchor that commits after it has to meet the new range."""
+        await api.put("/v1/settings", json={"score_scale_max": 200})
+        before = await _the_anchors_of_overburden(api, a_scratch_criteria_set)
+
+        async with _two_writers(database_url) as (hold, writers_waiting):
+            await hold("SELECT id FROM settings WHERE id = 1 FOR UPDATE", ())
+            scale = asyncio.create_task(api.put("/v1/settings", json={"score_scale_max": 100}))
+            assert await writers_waiting(1, scale), "the range never waited for the settings"
+            anchor = asyncio.create_task(_anchor_overburden_up_to(api, a_scratch_criteria_set, 150))
+            await writers_waiting(2, anchor)
+
+        rescaled, anchored = await asyncio.gather(scale, anchor)
+        assert rescaled.status_code == 200
+        assert (anchored.status_code, anchored.json().get("details")) == (
+            422,
+            {
+                "reason": "anchor_above_scale",
+                "attribute": OVERBURDEN,
+                "anchor_score": 150,
+                "score_scale_max": 100,
+            },
+        )
+        assert await _the_anchors_of_overburden(api, a_scratch_criteria_set) == before
+
+
+PATIENCE_SECONDS = 5
+
+
+@asynccontextmanager
+async def _two_writers(database_url: str) -> AsyncIterator[tuple[Callable, Callable]]:
+    """A transaction holding one row while two writers queue, released when the block exits.
+
+    `hold` takes the row the first writer needs, so it stops partway; `writers_waiting(n, task)`
+    is true once `n` connections wait on a lock, false if `task` finishes first or never waits.
+    """
+    async with AsyncConnectionPool(database_url, min_size=2, max_size=2, open=False) as pool:
+        await pool.open(wait=True)
+        async with pool.connection() as holder, pool.connection() as observer:
+
+            async def hold(statement: str, parameters: tuple) -> None:
+                await holder.execute(statement, parameters)
+
+            async def writers_waiting(count: int, task: asyncio.Task) -> bool:
+                return await _until_waiting(observer, count, task)
+
+            try:
+                yield hold, writers_waiting
+            finally:
+                await holder.rollback()
+
+
+async def _until_waiting(observer: AsyncConnection, count: int, task: Awaitable) -> bool:
+    for _ in range(PATIENCE_SECONDS * 50):
+        waiting = await (
+            await observer.execute(
+                "SELECT count(DISTINCT l.pid) FROM pg_locks AS l"
+                " JOIN pg_stat_activity AS a ON a.pid = l.pid"
+                " WHERE NOT l.granted AND a.datname = current_database()"
+            )
+        ).fetchone()
+        if waiting is not None and waiting[0] >= count:
+            return True
+        if isinstance(task, asyncio.Task) and task.done():
+            return False
+        await asyncio.sleep(0.02)
+    return False
 
 
 async def _the_highest_anchor_of(api: httpx.AsyncClient, named: dict) -> int:
