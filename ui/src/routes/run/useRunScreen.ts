@@ -144,8 +144,14 @@ export interface RunScreenState {
   open: (run: Run) => void;
 }
 
-/** `levelId` is the level on screen: an armed scope at any other level is no longer the reader's. */
-export function useRunScreen(levelId: string | null): RunScreenState {
+/**
+ * `levelId` is the level on screen: an armed scope at any other level is no longer the reader's.
+ * `onStarted` hears of every run the server accepted, so the shell can watch it at once (PL-132).
+ */
+export function useRunScreen(
+  levelId: string | null,
+  onStarted: () => void = () => undefined,
+): RunScreenState {
   const [plan, setPlan] = useState<RunPlan | null>(null);
   const [planOrigin, setPlanOrigin] = useState<GapKind | null>(null);
   const { current, claim, reclaim, isCurrent, show, clear, unclaimed } =
@@ -357,6 +363,7 @@ export function useRunScreen(levelId: string | null): RunScreenState {
           const started = await startRun({ level: levelId }).catch((refused: unknown) =>
             giveTheCardBack(ticket, onCard, refused),
           );
+          onStarted();
           setPlan(null);
           setPlanOrigin(null);
           await watch(ticket, started.id);
@@ -403,6 +410,7 @@ export function useRunScreen(levelId: string | null): RunScreenState {
             ...armed.scope,
             accept_uncapped_spend: armed.commitment.uncapped,
           }).catch((refused: unknown) => giveTheCardBack(ticket, onCard, refused));
+          onStarted();
           setArmed(null);
           await watch(ticket, started.id);
           focusCardOf(ticket, started.id);

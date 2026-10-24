@@ -4334,3 +4334,47 @@ describe("a change of level", () => {
     expect(result.current.armed).toBeNull();
   });
 });
+
+/**
+ * PL-132. **A run started here is the shell's to watch at once**: its watch looks every thirty
+ * seconds while idle, so the progress strip met a run up to half a minute after it began.
+ */
+describe("a run started on Acquire", () => {
+  /** How many times the shell has looked for the newest run. */
+  function countShellLooks(): { count: number } {
+    const looks = { count: 0 };
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, ({ request }) => {
+        if (new URL(request.url).searchParams.get("limit") === "1") looks.count += 1;
+      }),
+    );
+    return looks;
+  }
+
+  it("has the shell look for it at once", async () => {
+    const looks = countShellLooks();
+    renderShell("/acquire");
+    await estimate();
+    const before = looks.count;
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /start this acquisition/i }),
+    );
+
+    await waitFor(() => expect(looks.count).toBeGreaterThan(before));
+  });
+
+  it("has the shell look for one started from a confirmation too", async () => {
+    const looks = countShellLooks();
+    renderShell("/acquire");
+    await userEvent.click(
+      await screen.findByRole("button", { name: /^retry 1 failed$/i }),
+    );
+    const yes = await screen.findByRole("button", { name: /yes, start it/i });
+    const before = looks.count;
+
+    await userEvent.click(yes);
+
+    await waitFor(() => expect(looks.count).toBeGreaterThan(before));
+  });
+});

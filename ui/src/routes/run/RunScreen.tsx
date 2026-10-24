@@ -55,8 +55,8 @@ import {
  * `useRunScreen.ts`; the grouping and the counting are `failureGroups.ts`.
  */
 export function RunScreen({ route }: { route: RouteDefinition }) {
-  const { levelId } = useSelection();
-  const run = useRunScreen(levelId);
+  const { levelId, noteAcquisitionStarted } = useSelection();
+  const run = useRunScreen(levelId, noteAcquisitionStarted);
   // **Where Not yet hands focus back** (PL-128): the control that opened the strip, which
   // stays on screen when the strip goes.
   const opener = useRef<Element | null>(null);
