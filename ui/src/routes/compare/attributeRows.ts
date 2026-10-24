@@ -19,6 +19,12 @@ import { EURO } from "../../format/figure";
 import { maxAbsDelta } from "./divergingBar";
 import { rankInPillar } from "./ordering";
 
+/** Where a figure came from, already in words, and the mark it wears where it is shown. */
+export interface Provenance {
+  description: string;
+  mark: string | null;
+}
+
 /**
  * One attribute as the drill-down receives it, already reduced to numbers and display strings
  * by the caller.
@@ -37,6 +43,8 @@ export interface AttributeSource {
   focusRaw: number | null;
   /** The focus's figure in words, already formatted. */
   focusFigure: string;
+  /** Where the focus's figure came from, or null where it has none. */
+  focusProvenance?: Provenance | null;
   /** The unit the server's raw gaps are in when it is not the figure's own: EUR for money,
    *  since the comparison subtracts euro equivalents. Null for every other type. */
   gapUnit: string | null;
@@ -50,6 +58,7 @@ export interface AttributeSource {
     /** What the score gap is worth to the focus's total, as the server computed it. */
     worth?: number | null;
     figure: string;
+    provenance?: Provenance | null;
   }[];
 }
 
@@ -72,6 +81,7 @@ export interface AttributeCell {
   /** What the gap is worth to the focus's total, comparator minus focus; null where unknown. */
   worth: number | null;
   figure: string;
+  provenance: Provenance | null;
 }
 
 export interface AttributeRow {
@@ -80,6 +90,7 @@ export interface AttributeRow {
   focusScore: number | null;
   focusRaw: number | null;
   focusFigure: string;
+  focusProvenance: Provenance | null;
   gapUnit: string | null;
   /** What the attribute counted for in the focus's total, as a percentage, or null. */
   weight: number | null;
@@ -187,6 +198,7 @@ export function attributeGroups(
         rawBar: rawBarOf(rawDelta, scoreDelta),
         worth: found?.worth ?? null,
         figure: found?.figure ?? "",
+        provenance: found?.provenance ?? null,
       };
     });
 
@@ -196,6 +208,7 @@ export function attributeGroups(
       focusScore: source.focusScore,
       focusRaw: source.focusRaw,
       focusFigure: source.focusFigure,
+      focusProvenance: source.focusProvenance ?? null,
       gapUnit: source.gapUnit,
       weight: source.weight ?? null,
       // Filled once the pillar's rows are all in, as are the rulers shared across them.

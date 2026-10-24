@@ -21,8 +21,12 @@ import {
   rawGapText,
   rawGapUnit,
   type AttributeRow,
+  type Provenance,
 } from "./attributeRows";
 import type { Measure } from "./pillarMatrix";
+import { StatusChip } from "./StatusChip";
+import { describeProvenance, provenanceMark } from "./provenance";
+import { useSourceNames } from "../../api/useSourceNames";
 
 /**
  * The focus against its comparators, pillar by pillar, with each pillar opening to its figures.
@@ -60,6 +64,11 @@ export function ComparisonMatrix({
   const comparators = comparison.comparators ?? [];
   const pillarNames = usePillarNames();
   const attributeNames = useAttributeNames();
+  const sourceNames = useSourceNames();
+  const provenanceOf = (value: Parameters<typeof describeProvenance>[0] | undefined) =>
+    value === undefined
+      ? null
+      : { description: describeProvenance(value, sourceNames), mark: provenanceMark(value) };
   const [open, setOpen] = useState<string | null>(null);
 
   const rows = pillarMatrix(comparison.focus, comparators, measure, (pillar) =>
@@ -86,6 +95,7 @@ export function ComparisonMatrix({
       focusScore: row.focus?.normalised_score ?? null,
       focusRaw: payloadMagnitude(row.focus?.value),
       focusFigure: row.focus?.value ? describeFigure(row.focus.value) : ABSENT,
+      focusProvenance: provenanceOf(row.focus?.value),
       gapUnit: rawGapUnit(row.focus?.value),
       // The server sends 0 where the focus has no figure; that is no weight, not a light one.
       weight:
@@ -96,6 +106,7 @@ export function ComparisonMatrix({
         rawDelta: cell.delta ?? null,
         worth: cell.weighted_contribution ?? null,
         figure: cell.value ? describeFigure(cell.value) : ABSENT,
+        provenance: provenanceOf(cell.value),
       })),
     })),
     comparators.map((each) => each.candidate),
@@ -120,10 +131,14 @@ export function ComparisonMatrix({
             >
               Weight
             </th>
-            <th scope="col">{comparison.focus.name} (focus)</th>
+            <th scope="col">
+              {comparison.focus.name} (focus)
+              <StatusChip result={comparison.focus} />
+            </th>
             {comparators.map((each) => (
               <th key={each.candidate} scope="col">
                 {each.name}
+                <StatusChip result={each} />
               </th>
             ))}
           </tr>
@@ -325,6 +340,7 @@ function AttributeRowView({
       <td className="matrix__weight">{formatPercentage(row.weight, 1)}</td>
       <FocusCell
         text={raw ? row.focusFigure || ABSENT : formatScore(row.focusScore)}
+        provenance={row.focusProvenance}
         compact
       />
       {row.cells.map((cell) => {
@@ -340,6 +356,7 @@ function AttributeRowView({
             key={cell.candidate}
             bar={bar}
             compact
+            provenance={cell.provenance}
             scoreText={raw ? cell.figure || ABSENT : formatScore(cell.score)}
             deltaText={
               impact
@@ -367,9 +384,21 @@ function rawNote(row: AttributeRow): string {
 }
 
 /** The baseline column: the line everything else is measured from, so it carries no bar. */
-function FocusCell({ text, compact }: { text: string; compact?: boolean }) {
+function FocusCell({
+  text,
+  compact,
+  provenance,
+}: {
+  text: string;
+  compact?: boolean;
+  provenance?: Provenance | null;
+}) {
   return (
-    <td className={compact ? "matrix__cell matrix__cell--focus matrix__cell--compact" : "matrix__cell matrix__cell--focus"}>
+    <td
+      className={compact ? "matrix__cell matrix__cell--focus matrix__cell--compact" : "matrix__cell matrix__cell--focus"}
+      title={provenance?.description}
+    >
+      <ProvenanceNote provenance={provenance} />
       <div className="matrix__cell-head">
         <span className="matrix__score">{text}</span>
         <span className="matrix__delta matrix__delta--faint">baseline</span>
@@ -391,12 +420,15 @@ function Cell({
   scoreText,
   deltaText,
   compact,
+  provenance,
 }: {
   /** Null when the comparison carried no scale: the figures print, with no track, tint or bar. */
   bar: Divergence | null;
   scoreText: string;
   deltaText: string;
   compact?: boolean;
+  /** Where the figure came from; absent on a pillar row, null where there is no figure. */
+  provenance?: Provenance | null;
 }) {
   const cellClass =
     `matrix__cell${compact ? " matrix__cell--compact" : ""}` +
@@ -407,7 +439,8 @@ function Cell({
     : "matrix__delta";
 
   return (
-    <td className={cellClass}>
+    <td className={cellClass} title={provenance?.description}>
+      <ProvenanceNote provenance={provenance} />
       {bar && bar.alpha > 0 && (
         <svg
           className="matrix__tint"
@@ -453,6 +486,21 @@ function Cell({
         </div>
       )}
     </td>
+  );
+}
+
+/**
+ * A figure's provenance where it is shown (PL-096): read in full by a screen reader, and marked
+ * in sight when the figure is borrowed or of low confidence. The cell's title carries the same
+ * sentence for a mouse.
+ */
+function ProvenanceNote({ provenance }: { provenance?: Provenance | null }) {
+  if (!provenance) return null;
+  return (
+    <>
+      <span className="visually-hidden">{provenance.description}</span>
+      {provenance.mark !== null && <span className="matrix__mark">{provenance.mark}</span>}
+    </>
   );
 }
 

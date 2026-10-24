@@ -467,6 +467,178 @@ describe("an attribute row's weight and worth", () => {
   });
 });
 
+/** PL-095. A candidate that does not match, or cannot be scored, says so where it is named. */
+describe("a candidate's status", () => {
+  /** The candidate's column header, found by the name it starts with. */
+  async function headerOf(name: string): Promise<HTMLElement> {
+    const table = await screen.findByRole("table", { name: /every pillar/i });
+    return within(table)
+      .getAllByRole("columnheader")
+      .find((header) => (header.textContent ?? "").startsWith(name))!;
+  }
+
+  it("marks a comparator that does not match, with its reason", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Spain");
+
+    for (const place of [await headerOf("Spain"), await cardOf("Spain")]) {
+      const tag = within(place).getByText("Not matching");
+      expect(tag).toHaveAttribute("title", "No visa route this household qualifies for.");
+      expect(tag).toHaveTextContent("No visa route this household qualifies for.");
+      expect(tag).toHaveAttribute("tabindex", "0");
+    }
+  });
+
+  it("marks a candidate that cannot be scored, and why", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Estonia");
+
+    for (const place of [await headerOf("Estonia"), await cardOf("Estonia")]) {
+      expect(within(place).getByText("Insufficient data")).toHaveAttribute(
+        "title",
+        "only 41% of the scored weight was answered, against a floor of 60%",
+      );
+    }
+  });
+
+  it("marks the focus too", async () => {
+    renderShell("/compare");
+    await compare("Spain", "Portugal");
+
+    expect(within(await headerOf("Spain")).getByText("Not matching")).toBeInTheDocument();
+  });
+
+  it("marks nothing on a matching candidate", async () => {
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+
+    expect(await headerOf("Netherlands")).toHaveTextContent(/^Netherlands$/);
+    expect((await cardOf("Netherlands")).querySelector(".chip--matching")).toBeNull();
+  });
+});
+
+/** PL-096. Every figure Compare shows says where it came from. */
+describe("a figure's provenance on Compare", () => {
+  function figure(
+    magnitude: number,
+    source: string,
+    confidence: string,
+    quote: string | null = null,
+  ) {
+    return {
+      data_source: source,
+      payload: { magnitude, unit: "index_eu27_100" },
+      reference_period: { start: "2025-01-01", end: "2025-12-31" },
+      retrieval_date: "2026-09-11T08:00:00Z",
+      confidence_level: confidence,
+      quote,
+    };
+  }
+
+  function serveProvenance() {
+    const drawn = missingFigureComparison();
+    const spain = { ...drawn.comparators[0]!, candidate: "country.spain", name: "Spain" };
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, () =>
+        HttpResponse.json({
+          ...drawn,
+          comparators: [drawn.comparators[0], spain],
+          attributes: drawn.attributes.map((row) => ({
+            ...row,
+            focus: {
+              normalised_score: 82,
+              value: figure(
+                92.1,
+                "stand_in",
+                "low",
+                "Switzerland's figure, standing in for Portugal.",
+              ),
+            },
+            comparators: [
+              {
+                candidate: "country.netherlands",
+                normalised_score: 41,
+                delta: 13.4,
+                value: figure(105.5, "eurostat_estimate", "low"),
+              },
+              {
+                candidate: "country.spain",
+                normalised_score: 70,
+                delta: 4,
+                value: figure(96.1, "eurostat", "high"),
+              },
+            ],
+          })),
+        }),
+      ),
+    );
+  }
+
+  async function openTheFigures() {
+    serveProvenance();
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Spain" }));
+    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+    await openPillar("Economy");
+    return screen.findByRole("row", { name: /cost of living index/i });
+  }
+
+  /** Every figure cell in the row: the focus's and each comparator's. */
+  function figureCells(row: HTMLElement): HTMLElement[] {
+    return [...row.querySelectorAll<HTMLElement>(".matrix__cell")];
+  }
+
+  it.each(["score", "raw"] as const)(
+    "gives every figure its source, both dates and its confidence, read as a %s",
+    async (shownAs) => {
+      const row = await openTheFigures();
+      if (shownAs === "raw") {
+        await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+      }
+
+      const cells = figureCells(row);
+      expect(cells).toHaveLength(3);
+      for (const cell of cells) {
+        const said = cell.getAttribute("title") ?? "";
+        expect(said).toMatch(/^Source: .+\. Describes .+ to .+\. Fetched .+\. \w+ confidence\./);
+        expect(within(cell).getByText(said)).toHaveClass("visually-hidden");
+      }
+    },
+  );
+
+  it("marks a borrowed figure and says whose it is", async () => {
+    const [focus] = figureCells(await openTheFigures());
+
+    expect(within(focus!).getByText("Borrowed")).toBeInTheDocument();
+    expect(focus).toHaveAttribute(
+      "title",
+      expect.stringContaining("Switzerland's figure, standing in for Portugal."),
+    );
+  });
+
+  it("marks a low-confidence figure, and nothing on a measured one", async () => {
+    const [, netherlands, spain] = figureCells(await openTheFigures());
+
+    expect(within(netherlands!).getByText("Low confidence")).toBeInTheDocument();
+    expect(spain!.querySelector(".matrix__mark")).toBeNull();
+  });
+
+  it("claims no provenance for a cell with no figure", async () => {
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, () => HttpResponse.json(missingFigureComparison())),
+    );
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    await openPillar("Economy");
+
+    const row = await screen.findByRole("row", { name: /cost of living index/i });
+    const [, netherlands] = figureCells(row);
+    expect(netherlands).not.toHaveAttribute("title");
+  });
+});
+
 describe("the attribute figures inside a pillar", () => {
   it("shows scores until asked for figures", async () => {
     serveFigures("country.spain", "Spain");

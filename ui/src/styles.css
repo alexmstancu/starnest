@@ -4582,3 +4582,50 @@ select.field__control {
 .matrix__attr-name .matrix__priority {
   margin-left: 6px;
 }
+
+/* ── Compare's status tags and provenance marks (C07 U7) ──────────────────────────────
+   A candidate that does not match, or cannot be scored, is tagged where it is named; the
+   reason is hidden until the tag is hovered (its title) or reached by keyboard. */
+.compare-status {
+  position: relative;
+  margin-left: 6px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.compare-status__reason {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.compare-status:focus-visible .compare-status__reason {
+  top: 100%;
+  left: 0;
+  z-index: 2;
+  width: max-content;
+  max-width: 240px;
+  height: auto;
+  margin-top: 4px;
+  padding: 6px 8px;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-small);
+  background: var(--colour-surface);
+  box-shadow: var(--shadow-raised);
+  font-weight: var(--weight-normal);
+  color: var(--colour-text);
+}
+
+/* A borrowed or low-confidence figure says so above the number it qualifies. */
+.matrix__mark {
+  font-size: 9.5px;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.02em;
+  color: var(--colour-warning);
+}

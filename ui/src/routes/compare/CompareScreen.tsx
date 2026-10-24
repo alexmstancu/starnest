@@ -6,6 +6,7 @@ import type { Measure } from "./pillarMatrix";
 import { droppedByLimit, withinLimit } from "./comparatorLimit";
 import { requestFor, type ComparisonRequest } from "./comparisonRequest";
 import { pillarPriority, pillarWeightsAt } from "./ordering";
+import { StatusChip } from "./StatusChip";
 import {
   fetchCandidates,
   fetchComparison,
@@ -396,11 +397,13 @@ function SynthesisCard({
   const pillarNames = usePillarNames();
   const naming = (pillar: string) => pillarName(pillarNames, pillar);
   const comparable = pair.score_delta !== null;
+  const theirs = (comparison.comparators ?? []).find((each) => each.candidate === pair.comparator);
 
   return (
     <section className="panel synthesis__card">
       <div className="panel__head">
         <h4 className="synthesis__name">{nameOf(comparison, pair.comparator)}</h4>
+        {theirs && <StatusChip result={theirs} />}
         <span
           // **Three states, because there are three** (P83): a gap nobody can measure is muted,
           // never coloured as a lead.
