@@ -255,7 +255,7 @@ describe("a household nobody has recorded yet", () => {
     renderShell("/configure");
 
     expect(
-      await screen.findByText("The household could not be loaded"),
+      await (await panel()).findByText("The household could not be loaded"),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Save household" }),

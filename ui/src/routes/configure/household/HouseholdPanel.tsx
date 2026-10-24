@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { isApiError } from "../../../api/ApiError";
+import { hasErrorCode } from "../../../api/ApiError";
 import { fetchHousehold, type Household } from "../../../api/endpoints";
 import { useRead } from "../../../api/useRead";
 import type { Read } from "../../../api/read";
@@ -62,7 +62,7 @@ function HouseholdBody({
   // **Nothing recorded yet is the opening state, not a failure.** This is the screen where the
   // household is first written (`reqs.md` 3.9), so a 404 here means "start here" -- and a
   // failure card with a Try again button would be a dead end on the first thing anyone does.
-  if (read.state === "failed" && isNotConfigured(read.error)) {
+  if (read.state === "failed" && hasErrorCode(read.error, "household_not_configured")) {
     return (
       <HouseholdFields
         household={NOTHING_RECORDED}
@@ -81,12 +81,6 @@ function HouseholdBody({
       {(household) => <HouseholdFields household={household} />}
     </LoadedRegion>
   );
-}
-
-const HOUSEHOLD_NOT_CONFIGURED = "household_not_configured";
-
-function isNotConfigured(error: unknown): boolean {
-  return isApiError(error) && error.code === HOUSEHOLD_NOT_CONFIGURED;
 }
 
 function HouseholdFields({
