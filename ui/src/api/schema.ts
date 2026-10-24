@@ -214,7 +214,15 @@ export interface paths {
          *     an early estimate is captured so a real dataset can supersede it later without deleting
          *     anything.
          *
-         *     Rejected with `409 manual_entry_not_permitted` when the attribute does not allow it.
+         *     Rejected with `409 manual_entry_not_permitted` when the attribute does not allow it, and
+         *     with `409 conflicting_observation` when another figure is already on record under the
+         *     same candidate, attribute, breakdown, period and retrieval date: a correction is a new
+         *     observation with its own retrieval date. Its `details` name the observation that stands:
+         *     `value_id`, `candidate`, `attribute`, `data_source`, `breakdown_option` (only where it
+         *     has one), `reference_period` (`start`, `end`) and `retrieval_date`. Of two submissions
+         *     racing for one observation, the one whose figure was not stored is refused the same way.
+         *     Resubmitting the same figure, whatever its quote or pages, returns the value already
+         *     stored.
          */
         post: operations["enterValueManually"];
         delete?: never;
@@ -880,7 +888,7 @@ export interface components {
          * @description Every refusal this API makes, by code. A client words each one and branches on it; `message` is for a person reading the API directly and may change.
          * @enum {string}
          */
-        ErrorCode: "not_found" | "candidate_not_found" | "household_not_configured" | "weights_all_locked" | "criteria_set_exists" | "criteria_set_in_use" | "nothing_to_retry" | "nothing_to_ask_again" | "spend_cap_not_set" | "nothing_to_fetch" | "run_already_in_flight" | "llm_not_configured" | "manual_entry_not_permitted" | "invalid_value" | "answer_recorded_by_a_person" | "score_scale_not_set" | "score_scale_below_anchors" | "comparator_limit_not_set" | "comparator_limit_exceeded" | "invalid_comparison" | "invalid_criteria_set" | "invalid_criterion" | "unknown_place" | "invalid_reference_period" | "invalid_request" | "cannot_be_scored" | "cannot_be_ranked" | "invalid_match_rule_result" | "unknown_data_source" | "unknown_scope";
+        ErrorCode: "not_found" | "candidate_not_found" | "household_not_configured" | "weights_all_locked" | "criteria_set_exists" | "criteria_set_name_taken" | "no_default_criteria_set" | "nothing_to_retry" | "nothing_to_ask_again" | "spend_cap_not_set" | "nothing_to_fetch" | "run_already_in_flight" | "llm_not_configured" | "manual_entry_not_permitted" | "invalid_value" | "conflicting_observation" | "answer_recorded_by_a_person" | "score_scale_not_set" | "score_scale_below_anchors" | "comparator_limit_not_set" | "comparator_limit_exceeded" | "invalid_comparison" | "invalid_criteria_set" | "invalid_criterion" | "unknown_place" | "invalid_reference_period" | "invalid_request" | "cannot_be_scored" | "cannot_be_ranked" | "invalid_match_rule_result" | "unknown_data_source" | "unknown_scope";
         /** @description The span the data describes. Start equals end for a single day. */
         ReferencePeriod: {
             /** Format: date */
@@ -1895,7 +1903,7 @@ export interface operations {
                     "application/json": components["schemas"]["Value"];
                 };
             };
-            /** @description The attribute does not permit manual entry, or the value failed validation. */
+            /** @description The attribute does not permit manual entry, the value failed validation, or another figure is already on record for the same observation (`conflicting_observation`, with that observation's id and natural key in `details`). */
             409: {
                 headers: {
                     [name: string]: unknown;
