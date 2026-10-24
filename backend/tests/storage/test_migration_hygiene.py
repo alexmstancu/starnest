@@ -10,6 +10,8 @@ looked.
 """
 
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import psycopg
@@ -474,3 +476,232 @@ def test_the_copy_rule_reads_sql_as_a_migration_writes_it(sql: str, unlocked: se
 )
 def test_the_refusal_rule_reads_sql_as_a_migration_writes_it(sql: str, unlocked: set[str]) -> None:
     assert unlocked_refusal_reads(sql) == unlocked
+
+
+#: A `DO $$` block's body, found as the refusal check above finds it.
+DO_BLOCK = re.compile(r"\bdo\s+\$\$(.*?)\$\$", re.I | re.S)
+
+
+def anywhere(code: str) -> str:
+    return code
+
+
+def outside_do_blocks(code: str) -> str:
+    return DO_BLOCK.sub(" ", code)
+
+
+def inside_do_blocks(code: str) -> str:
+    return "\n".join(DO_BLOCK.findall(code))
+
+
+@dataclass(frozen=True)
+class Unreadable:
+    """A shape of SQL the two lock checks above cannot read, and the form to write instead.
+
+    `pattern` is searched only in what `searched_in` keeps of the code, so a shape can be
+    refused in a plain statement and allowed in a `DO` block, or the other way round.
+    """
+
+    name: str
+    pattern: str
+    searched_in: Callable[[str], str]
+    instead: str
+
+    def is_in(self, code: str) -> bool:
+        return re.search(self.pattern, self.searched_in(code), re.I) is not None
+
+
+#: The fail-closed list: every shape of SQL known to slip past the two lock checks above.
+UNREADABLE: tuple[Unreadable, ...] = (
+    Unreadable(
+        name="DO not followed by $$",
+        # `DO NOTHING` and `DO UPDATE` end an upsert; they open no block.
+        pattern=r"\bdo\b(?!\s+\$\$|\s+(?:nothing|update)\b)",
+        searched_in=anywhere,
+        instead="write `DO $$ ... $$`, with no tag and no LANGUAGE: plpgsql is the default",
+    ),
+    Unreadable(
+        name="RAISE with no level or no message",
+        # With no level a RAISE refuses, and the refusal check knows one only as RAISE EXCEPTION.
+        pattern=r"\braise\b(?!\s+(?:debug|log|info|notice|warning|exception)\s+'')",
+        searched_in=anywhere,
+        instead="name the level, then give the message as text: `RAISE EXCEPTION '<message>'`",
+    ),
+    Unreadable(
+        name="ASSERT",
+        pattern=r"\bassert\b",
+        searched_in=anywhere,
+        instead="write `IF NOT (<condition>) THEN RAISE EXCEPTION '<message>'; END IF;`",
+    ),
+    Unreadable(
+        name="a statement starting with WITH",
+        pattern=r"(?:\A|;)\s*with\b",
+        searched_in=anywhere,
+        instead="lift the rows with `CREATE TEMP TABLE ... AS SELECT`, then copy them from it "
+        "with `INSERT ... SELECT`",
+    ),
+    Unreadable(
+        name="SELECT INTO outside a DO block",
+        # Inside one, `SELECT ... INTO` fills a variable, not a table.
+        pattern=r"(?:\A|;)\s*select\b[^;]*\binto\b",
+        searched_in=outside_do_blocks,
+        instead="write `CREATE TEMP TABLE ... AS SELECT`",
+    ),
+    Unreadable(
+        name="CREATE UNLOGGED",
+        pattern=r"\bcreate\s+unlogged\b",
+        searched_in=anywhere,
+        instead="write `CREATE TEMP TABLE ... AS SELECT`, or `CREATE TABLE`",
+    ),
+    Unreadable(
+        name="a write inside a DO block",
+        pattern=r"\b(?:insert|update|delete|merge|truncate|create)\b",
+        searched_in=inside_do_blocks,
+        instead="write it as a statement of its own, outside the block: a DO block only checks",
+    ),
+)
+
+
+def unreadable_in(sql: str) -> list[Unreadable]:
+    code = code_of(sql)
+    return [shape for shape in UNREADABLE if shape.is_in(code)]
+
+
+@pytest.mark.parametrize("script", sorted(MIGRATIONS.glob("*.sql")), ids=lambda p: p.stem)
+def test_a_migration_holds_nothing_the_lock_checks_cannot_read(script: Path) -> None:
+    """**What the lock checks cannot read, they refuse** (P98, RE-9).
+
+    The two checks above are readers: they know a refusal by `DO $$ ... RAISE EXCEPTION ... $$`
+    and a copy by a statement that starts `INSERT INTO` or `CREATE TABLE`, and they take
+    anything else for no refusal and no copy at all. A refusal in a `DO $r$` block, or a copy
+    that starts with `WITH`, would pass them unlocked -- the very failure they exist to stop.
+    Teaching them each shape would leave the next one open, so every shape known to slip past
+    them is refused here instead, in a forward migration or a rollback alike, and the message
+    names the form they do read.
+    """
+    unreadable = unreadable_in(script.read_text())
+
+    assert unreadable == [], (
+        f"{script.name} is written in a shape the lock checks above cannot read, so a refusal "
+        "or a copy written that way would pass them unlocked. "
+        + " ".join(f"For {shape.name}, {shape.instead}." for shape in unreadable)
+    )
+
+
+RAISES = "RAISE EXCEPTION 'restore from the backup'"
+
+
+def refusal(raising: str, opened: str = "DO $$", closed: str = "$$") -> str:
+    """A refusal as the shipped rollbacks write one, opened, raised and closed as given."""
+    return f"{opened} BEGIN IF EXISTS (SELECT 1 FROM value) THEN {raising}; END IF; END {closed};\n"
+
+
+@pytest.mark.parametrize(
+    ("sql", "refused_as"),
+    [
+        pytest.param(
+            refusal(RAISES, opened="DO $r$", closed="$r$"), ["DO not followed by $$"], id="DO $tag$"
+        ),
+        pytest.param(
+            refusal(RAISES, opened="DO LANGUAGE plpgsql $$"),
+            ["DO not followed by $$"],
+            id="DO LANGUAGE",
+        ),
+        pytest.param(refusal(RAISES), [], id="DO $$"),
+        pytest.param(
+            "INSERT INTO unit (id) VALUES ('x') ON CONFLICT DO NOTHING;\n"
+            "INSERT INTO unit (id) VALUES ('x') ON CONFLICT (id) DO UPDATE SET id = excluded.id;\n",
+            [],
+            id="an upsert's DO",
+        ),
+        pytest.param(
+            refusal("RAISE 'restore from the backup'"),
+            ["RAISE with no level or no message"],
+            id="RAISE 'message'",
+        ),
+        pytest.param(
+            refusal("RAISE USING MESSAGE = 'restore from the backup'"),
+            ["RAISE with no level or no message"],
+            id="RAISE USING",
+        ),
+        pytest.param(
+            refusal("RAISE SQLSTATE 'P0001'"),
+            ["RAISE with no level or no message"],
+            id="RAISE SQLSTATE",
+        ),
+        pytest.param(
+            refusal("RAISE EXCEPTION USING MESSAGE = 'restore from the backup'"),
+            ["RAISE with no level or no message"],
+            id="RAISE EXCEPTION USING",
+        ),
+        pytest.param(refusal(RAISES + " USING ERRCODE = 'P0001'"), [], id="RAISE EXCEPTION '...'"),
+        pytest.param(refusal("RAISE NOTICE 'nothing to restore'"), [], id="RAISE NOTICE"),
+        pytest.param(
+            "DO $$ BEGIN ASSERT NOT EXISTS (SELECT 1 FROM value), 'restore from the backup'; "
+            "END $$;\n",
+            ["ASSERT"],
+            id="ASSERT",
+        ),
+        pytest.param(
+            "WITH kept AS (SELECT * FROM criterion WHERE attribute = 'a')\n"
+            "INSERT INTO criterion (attribute) SELECT 'b' FROM kept;\n"
+            "DELETE FROM criterion WHERE attribute = 'a';\n",
+            ["a statement starting with WITH"],
+            id="a copy starting with WITH",
+        ),
+        pytest.param(
+            "CREATE TEMP TABLE kept AS SELECT * FROM criterion WHERE attribute = 'a';\n"
+            "INSERT INTO criterion (attribute) SELECT 'b' FROM kept;\n"
+            "DELETE FROM criterion WHERE attribute = 'a';\n",
+            [],
+            id="a temp table, then INSERT ... SELECT",
+        ),
+        pytest.param(
+            "SELECT * INTO TEMP kept FROM criterion WHERE attribute = 'a';\n"
+            "DELETE FROM criterion WHERE attribute = 'a';\n",
+            ["SELECT INTO outside a DO block"],
+            id="SELECT INTO TEMP",
+        ),
+        pytest.param(LIFT_AND_RESTORE, [], id="CREATE TEMP TABLE AS"),
+        pytest.param(
+            "DO $$ DECLARE stored integer; frozen integer; BEGIN\n"
+            "SELECT count(*) INTO stored FROM value;\n"
+            "SELECT count(*) INTO frozen FROM evaluation;\n"
+            "IF stored + frozen > 0 THEN RAISE EXCEPTION 'restore from the backup'; END IF;\n"
+            "END $$;\n",
+            [],
+            id="SELECT INTO a variable in DO $$",
+        ),
+        pytest.param(
+            "CREATE UNLOGGED TABLE kept AS SELECT * FROM criterion WHERE attribute = 'a';\n"
+            "DELETE FROM criterion WHERE attribute = 'a';\n",
+            ["CREATE UNLOGGED"],
+            id="CREATE UNLOGGED TABLE AS",
+        ),
+        pytest.param(
+            "CREATE TABLE kept AS SELECT * FROM criterion WHERE attribute = 'a';\n"
+            "DELETE FROM criterion WHERE attribute = 'a';\n",
+            [],
+            id="CREATE TABLE AS",
+        ),
+        pytest.param(
+            "DO $$ BEGIN INSERT INTO kept SELECT * FROM criterion WHERE attribute = 'a';\n"
+            "DELETE FROM criterion WHERE attribute = 'a'; END $$;\n",
+            ["a write inside a DO block"],
+            id="a copy inside DO",
+        ),
+        pytest.param(
+            "INSERT INTO kept SELECT * FROM criterion WHERE attribute = 'a';\n"
+            "DELETE FROM criterion WHERE attribute = 'a';\n",
+            [],
+            id="the copy as statements of its own",
+        ),
+    ],
+)
+def test_the_fail_closed_rule_reads_sql_as_a_migration_writes_it(
+    sql: str, refused_as: list[str]
+) -> None:
+    """Each shape is refused, and the form its message names instead is not -- nor are the
+    three that only look like one: an upsert's `DO`, `RAISE NOTICE`, and a `SELECT ... INTO`
+    a variable."""
+    assert [shape.name for shape in unreadable_in(sql)] == refused_as
