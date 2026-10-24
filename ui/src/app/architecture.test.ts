@@ -454,10 +454,43 @@ describe("a checkbox is drawn with its words in one place", () => {
     "routes/configure/proposals/ProposalsPanel.tsx": "C02 U3 (PL-027)",
   };
 
+  /**
+   * Whether the source has a checkbox inside a `<label>` whose classes include `field`, however
+   * the class is written. A tag is read with its braces balanced, since `=>` holds a `>`.
+   */
+  function wrapsACheckboxInAFieldLabel(text: string): boolean {
+    return [...text.matchAll(/<label\b/g)].some((match) => {
+      let depth = 0;
+      let end = match.index ?? 0;
+      while (end < text.length && !(text[end] === ">" && depth === 0)) {
+        if (text[end] === "{") depth++;
+        if (text[end] === "}") depth--;
+        end++;
+      }
+      const tag = text.slice(match.index, end);
+      const classes = /className=(?:"([^"]*)"|\{([^}]*(?:\{[^}]*\}[^}]*)*)\})/.exec(tag);
+      const tokens = (classes?.[1] ?? classes?.[2] ?? "").split(/[\s"'`{}$]+/);
+      const body = text.slice(end, text.indexOf("</label>", end));
+      return tokens.includes("field") && /type=\{?["'`]checkbox["'`]/.test(body);
+    });
+  }
+
+  it.each([
+    ['<label className="field"><input type="checkbox" />Words</label>', true],
+    ['<label className="field field--inline wide" htmlFor="x">\n  <input id="x" type="checkbox" />\n</label>', true],
+    ["<label htmlFor={id} className={`field ${open ? \"field--open\" : \"\"}`}><input type='checkbox' /></label>", true],
+    ['<label className="field" onClick={() => go()}><input type={"checkbox"} /></label>', true],
+    ['<label className="toggle"><input type="checkbox" />Germany</label>', false],
+    ['<label className="field"><input type="text" /></label><input type="checkbox" />', false],
+    ['<label className="field-grid"><input type="checkbox" /></label>', false],
+  ])("finds a checkbox in a hand-made field label: %s", (source, found) => {
+    expect(wrapsACheckboxInAFieldLabel(source)).toBe(found);
+  });
+
   it("is CheckboxField, unless the ledger names who moves it", () => {
     const writingTheirOwn = productFiles()
       .filter((path) => !path.endsWith("shell/CheckboxField.tsx"))
-      .filter((path) => productSource(path).includes('className="field field--inline"'))
+      .filter((path) => wrapsACheckboxInAFieldLabel(productSource(path)))
       .map((path) => path.replace(`${SOURCE}/`, ""));
 
     expect(againstLedger(writingTheirOwn, LEDGER)).toEqual({ unlisted: [], stale: [] });

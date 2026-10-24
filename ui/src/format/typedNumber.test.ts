@@ -13,6 +13,7 @@ const DECIMAL: NumberRule = { kind: "decimal", optional: false };
 const WHOLE: NumberRule = { kind: "whole", optional: false };
 const SIGNED: NumberRule = { kind: "decimal", signed: true, optional: false };
 const OPTIONAL: NumberRule = { kind: "decimal", optional: true };
+const SIGNED_MONEY: NumberRule = { kind: "money", signed: true, optional: false };
 const COVERAGE: NumberRule = { kind: "decimal", minimum: 0, maximum: 100, optional: true };
 
 const refused = (refusal: object): Reading =>
@@ -35,6 +36,8 @@ describe("readNumber", () => {
     ["72.000", DECIMAL, { kind: "number", value: 72 }],
     ["-5", SIGNED, { kind: "number", value: -5 }],
     ["\u22125", SIGNED, { kind: "number", value: -5 }],
+    // One significant digit: the zeros before it place the point, they are not digits kept.
+    ["0.0000000000000001", DECIMAL, { kind: "number", value: 1e-16 }],
     ["", OPTIONAL, { kind: "blank" }],
     ["   ", OPTIONAL, { kind: "blank" }],
     [".", DECIMAL, { kind: "incomplete" }],
@@ -67,6 +70,8 @@ describe("readNumber", () => {
     ["12.", WHOLE, { code: "fraction" }],
     ["72.000", MONEY, { code: "too_many_decimals", grouped: 72000 }],
     ["1.2345", MONEY, { code: "too_many_decimals" }],
+    ["-72.000", SIGNED_MONEY, { code: "too_many_decimals", grouped: -72000 }],
+    ["\u221272.000", SIGNED_MONEY, { code: "too_many_decimals", grouped: -72000 }],
     ["9".repeat(400), DECIMAL, { code: "too_long" }],
     ["1234567890123456", DECIMAL, { code: "too_long" }],
     ["1000000000000000000000", DECIMAL, { code: "too_long" }],
@@ -74,6 +79,10 @@ describe("readNumber", () => {
     ["-1", { ...COVERAGE, signed: true }, { code: "below", limit: 0 }],
   ])("refuses %j", (typed, rule, refusal) => {
     expect(readNumber(typed, rule)).toEqual(refused(refusal));
+  });
+
+  it("refuses a figure too small for a float to hold, rather than store it as 0", () => {
+    expect(readNumber(`0.${"0".repeat(400)}1`, DECIMAL)).toEqual(refused({ code: "too_long" }));
   });
 
   it("never offers a reading the field would itself refuse", () => {
@@ -148,6 +157,11 @@ describe("describeRefusal", () => {
       "Euros and cents take at most two decimals. If the point separated thousands, type 72000.",
     ],
     ["1.2345", MONEY, "Euros and cents take at most two decimals."],
+    [
+      "\u221272.000",
+      SIGNED_MONEY,
+      "Euros and cents take at most two decimals. If the point separated thousands, type -72000.",
+    ],
     ["-5", DECIMAL, "This figure cannot be negative."],
     ["1e9", DECIMAL, "Write the figure out in digits: 1000000000."],
     ["1e400", DECIMAL, "Write the figure out in digits."],

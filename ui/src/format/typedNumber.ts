@@ -64,16 +64,21 @@ export function readNumber(typed: string, rule: NumberRule): Reading {
 }
 
 function readDigits(text: string, rule: NumberRule): Reading {
+  const sign = MINUS.test(text) ? "-" : "";
   const [whole = "", fraction = ""] = text.replace(MINUS, "").split(".");
   if (rule.kind === "whole" && text.includes(".")) return refuse({ code: "fraction" });
-  if (significantDigits(whole, fraction) > MOST_SIGNIFICANT_DIGITS) {
+  const value = Number(sign + whole + "." + fraction);
+  if (
+    significantDigits(whole, fraction) > MOST_SIGNIFICANT_DIGITS ||
+    exactDigits(plainDigits(Math.abs(value))) !== exactDigits(`${whole}.${fraction}`)
+  ) {
     return refuse({ code: "too_long" });
   }
   if (rule.kind === "money" && fraction.length > 2) {
-    const grouped = fraction.length === 3 ? acceptable(Number(whole + fraction), rule) : undefined;
+    const grouped =
+      fraction.length === 3 ? acceptable(Number(sign + whole + fraction), rule) : undefined;
     return refuse({ code: "too_many_decimals", ...(grouped !== undefined && { grouped }) });
   }
-  const value = Number(text.replace(MINUS, "-"));
   if (rule.minimum !== undefined && value < rule.minimum) {
     return refuse({ code: "below", limit: rule.minimum });
   }
@@ -83,8 +88,15 @@ function readDigits(text: string, rule: NumberRule): Reading {
   return { kind: "number", value };
 }
 
+/** Zeros that only place the point, before the first digit or after the last, are not kept. */
 function significantDigits(whole: string, fraction: string): number {
-  return whole.replace(/^0+/, "").length + fraction.replace(/0+$/, "").length;
+  return (whole + fraction.replace(/0+$/, "")).replace(/^0+/, "").length;
+}
+
+/** The figure with the zeros that say nothing removed, so "0.50" and ".5" compare equal. */
+function exactDigits(digits: string): string {
+  const [whole = "", fraction = ""] = digits.split(".");
+  return `${whole.replace(/^0+/, "")}.${fraction.replace(/0+$/, "")}`;
 }
 
 /** Why text outside the grammar was not read, with the readings it could have meant. */

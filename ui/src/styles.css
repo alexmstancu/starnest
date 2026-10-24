@@ -693,6 +693,15 @@ a:hover {
   gap: var(--space-quarter);
 }
 
+/* A checkbox and its words (PL-027): one line, only as wide as they are, so a click beside them
+   in the card ticks nothing. */
+.field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-half);
+  width: fit-content;
+}
+
 .field__label {
   font-size: 11.5px;
   font-weight: var(--weight-strong);

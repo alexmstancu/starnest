@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CheckboxField } from "./CheckboxField";
 
 /**
@@ -59,5 +61,30 @@ describe("a checkbox field", () => {
     expect(box).toHaveFocus();
     expect(box).not.toBeChecked();
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The box and its words on one line, no wider than they are. `.field` is a column that fills its
+ * card, so a modifier that only styled the held box left the words under the box and the whole
+ * card clickable. jsdom cascades the real stylesheet, so this reads what the browser computes.
+ */
+describe("a checkbox field's layout", () => {
+  const sheet = document.createElement("style");
+  beforeAll(() => {
+    sheet.textContent = readFileSync(join(__dirname, "../styles.css"), "utf8");
+    document.head.append(sheet);
+  });
+  afterAll(() => sheet.remove());
+
+  it("sets the box and its words side by side, as wide as they are", () => {
+    render(<Controlled />);
+    const label = screen.getByText("Accept an uncapped spend for this pass");
+    const style = getComputedStyle(label);
+
+    expect(style.display).toBe("flex");
+    expect(style.flexDirection).toBe("row");
+    expect(style.alignItems).toBe("center");
+    expect(style.width).toBe("fit-content");
   });
 });

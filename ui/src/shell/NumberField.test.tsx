@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { NumberRule } from "../format/typedNumber";
 import { NumberField } from "./NumberField";
 
@@ -171,5 +173,29 @@ describe("a number field", () => {
       "placeholder",
       "Not set",
     );
+  });
+});
+
+/**
+ * C02-S8: the box itself is marked, not only its note. jsdom cascades the real stylesheet, so
+ * deleting the refused-box rule, or writing it above `.field__control`, turns this red.
+ */
+describe("a refused number field's look", () => {
+  const sheet = document.createElement("style");
+  beforeAll(() => {
+    sheet.textContent = readFileSync(join(__dirname, "../styles.css"), "utf8");
+    document.head.append(sheet);
+  });
+  afterAll(() => sheet.remove());
+
+  // jsdom drops a `var()` border shorthand from its cascade, so the fill is what is read.
+  it.each([
+    ["72,000", "var(--colour-invalid-surface)"],
+    ["72000", "var(--colour-surface)"],
+  ])("fills %j with the ground of its state", (initial, fill) => {
+    render(<Controlled initial={initial} />);
+    const box = screen.getByRole("textbox", { name: "Net income" });
+
+    expect(getComputedStyle(box).getPropertyValue("background")).toBe(fill);
   });
 });
