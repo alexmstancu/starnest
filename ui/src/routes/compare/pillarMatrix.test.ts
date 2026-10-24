@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pillarMatrix, pillarPriority, type Compared } from "./pillarMatrix";
+import { pillarMatrix, type Compared } from "./pillarMatrix";
 
 const focus: Compared = {
   candidate: "country.portugal",
@@ -90,37 +90,6 @@ describe("the comparison matrix", () => {
   });
 });
 
-describe("which pillars the matrix marks as priorities", () => {
-  const weighted: Compared = {
-    candidate: "country.portugal",
-    name: "Portugal",
-    score: 83,
-    pillar_scores: [
-      { pillar: "economics", score: 78, weight: 25 },
-      { pillar: "housing", score: 80, weight: 10 },
-      { pillar: "safety", score: 64, weight: 18 },
-      { pillar: "career", score: 70, weight: 12 },
-    ],
-  };
-
-  it("ranks the heaviest few, heaviest first", () => {
-    const priority = pillarPriority(weighted, 3);
-    expect(priority.get("economics")).toBe(0);
-    expect(priority.get("safety")).toBe(1);
-    expect(priority.get("career")).toBe(2);
-  });
-
-  it("leaves the lighter pillars unranked rather than placing them last", () => {
-    const priority = pillarPriority(weighted, 3);
-    // Housing, at 10%, is outside the top three, so it is absent rather than ranked fourth.
-    expect(priority.has("housing")).toBe(false);
-  });
-
-  it("ranks nothing when the focus was scored on no pillar", () => {
-    expect(pillarPriority({ ...weighted, pillar_scores: null }).size).toBe(0);
-  });
-});
-
 describe("what a difference is measured in", () => {
   const weighted: Compared = {
     candidate: "country.portugal",
@@ -167,6 +136,21 @@ describe("what a difference is measured in", () => {
       pillar_scores: [{ pillar: "economics", score: 78, weight: 14 }],
     };
     expect(pillarMatrix(bare, [other], "impact")[1]?.focus).toBeNull();
+  });
+
+  /**
+   * PL-099. **A pillar nobody scored put nothing in, and that is not a measured zero.** The
+   * server sends its contribution as 0; read as an impact it printed "0.0", a gap of nothing
+   * where the card says the pillar cannot be compared.
+   */
+  it("says nothing for the impact of a pillar that was not scored", () => {
+    const unscored: Compared = {
+      ...weighted,
+      pillar_scores: [{ pillar: "economics", score: null, weight: 14, contribution: 0 }],
+    };
+    const [, economics] = pillarMatrix(unscored, [other], "impact");
+    expect(economics?.focus).toBeNull();
+    expect(economics?.cells[0]?.delta).toBeNull();
   });
 
   /** The total row is the total either way: it is already the sum of the contributions. */

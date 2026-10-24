@@ -259,6 +259,13 @@ const COUNTRY_RESULTS: CandidateResult[] = [
     coverage: 88,
     match_status: "matching",
     parent_not_matching: false,
+    // Comparators carry their pillars as the server sends them, so a comparison's pillar lines
+    // are drawn from real contributions rather than all left uncomparable (C07 U5).
+    pillar_scores: [
+      { pillar: "economics", score: 74, weight: 25, contribution: 18.5 },
+      { pillar: "safety", score: 70, weight: 12, contribution: 8.4 },
+      { pillar: "family", score: 60, weight: 4, contribution: 2.4 },
+    ],
   },
   {
     candidate: "country.spain",
@@ -268,6 +275,12 @@ const COUNTRY_RESULTS: CandidateResult[] = [
     coverage: 81.5,
     match_status: "not_matching",
     parent_not_matching: false,
+    // Behind the focus on every pillar both scored, so its "Ahead on" list is empty.
+    pillar_scores: [
+      { pillar: "economics", score: 60, weight: 25, contribution: 15 },
+      { pillar: "safety", score: 50, weight: 12, contribution: 6 },
+      { pillar: "family", score: 70, weight: 4, contribution: 2.8 },
+    ],
     non_match_reasons: [
       {
         match_rule: "country.visa_route_exists",
@@ -283,6 +296,8 @@ const COUNTRY_RESULTS: CandidateResult[] = [
     coverage: 41,
     match_status: "insufficient_data",
     parent_not_matching: false,
+    // In the server's words (`ranking.py`), from the coverage above and the settings' floor.
+    insufficient_reason: "only 41% of the scored weight was answered, against a floor of 60%",
   },
 ];
 
@@ -545,8 +560,8 @@ function againstFocus(focus: number | null, theirs: number | null): number | nul
  * sides scored is worth the comparator's contribution minus the focus's, and any other cannot be
  * compared. At most three lines a side, most worth first, and none when either total is missing.
  *
- * **Derived rather than written out**, because this fixture's comparators carry no pillar scores:
- * lines written for today's data would turn wrong, in silence, the day one gains some.
+ * **Derived rather than written out**, so the lines cannot drift from the pillar scores they
+ * restate when a fixture's scores change.
  */
 export function pillarLines(
   focus: CandidateResult,

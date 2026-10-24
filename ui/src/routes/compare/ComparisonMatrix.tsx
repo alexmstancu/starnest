@@ -14,7 +14,7 @@ import { isScale, scoreRange } from "../../format/scoreScale";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { usePillarNames } from "../../api/usePillarNames";
 import { divergingBar, maxAbsDelta, type Divergence } from "./divergingBar";
-import { pillarMatrix, pillarPriority, type MatrixCell } from "./pillarMatrix";
+import { pillarMatrix, type MatrixCell } from "./pillarMatrix";
 import {
   attributeGroups,
   payloadMagnitude,
@@ -45,11 +45,17 @@ export function ComparisonMatrix({
   comparison,
   measure,
   shownAs,
+  pillarWeights,
+  priority,
 }: {
   comparison: Comparison;
   measure: Measure;
   /** How the attribute rows read: the normalised score, or the figure in its own unit. */
   shownAs: "score" | "raw";
+  /** The set's configured weight for each pillar at this level (PL-104). */
+  pillarWeights: ReadonlyMap<string, number>;
+  /** Each priority pillar's place, from `pillarPriority`, shared with the cards. */
+  priority: ReadonlyMap<string, number>;
 }) {
   const comparators = comparison.comparators ?? [];
   const pillarNames = usePillarNames();
@@ -64,7 +70,6 @@ export function ComparisonMatrix({
   // being a different quantity from the pillars that make it.
   const pillarScale = maxAbsDelta(pillarRows.flatMap((row) => row.cells));
   const totalScale = maxAbsDelta(totalRow?.cells ?? []);
-  const priority = pillarPriority(comparison.focus);
   // On the comparison's own scale (PL-062), which is the live setting and not always 100.
   // **No scale, no bar**: the scores print, and nothing is drawn or tinted against a top
   // nobody sent.
@@ -105,7 +110,12 @@ export function ComparisonMatrix({
         <thead>
           <tr>
             <th scope="col">Pillar</th>
-            <th scope="col">Weight</th>
+            <th
+              scope="col"
+              title="The criteria set's weight for each pillar. A candidate missing data has that weight moved to its other pillars, so what a pillar adds to its total can differ."
+            >
+              Weight
+            </th>
             <th scope="col">{comparison.focus.name} (focus)</th>
             {comparators.map((each) => (
               <th key={each.candidate} scope="col">
@@ -121,7 +131,7 @@ export function ComparisonMatrix({
                 {totalRow.label}
               </th>
               <td className="matrix__weight">
-                {formatPercentage(totalRow.weight, 0)}
+                {formatPercentage(totalRow.weight, 1)}
               </td>
               <FocusCell text={formatScore(totalRow.focus)} />
               {totalRow.cells.map((cell) => (
@@ -143,7 +153,7 @@ export function ComparisonMatrix({
               <PillarGroup
                 key={row.label}
                 label={row.label}
-                weight={row.weight}
+                weight={row.pillar === null ? null : (pillarWeights.get(row.pillar) ?? null)}
                 focusText={readingText(row.focus, measure)}
                 place={place}
                 open={isOpen}
@@ -235,7 +245,7 @@ function PillarGroup({
             </span>
           )}
         </th>
-        <td className="matrix__weight">{formatPercentage(weight, 0)}</td>
+        <td className="matrix__weight">{formatPercentage(weight, 1)}</td>
         <FocusCell text={focusText} />
         {cells.map((cell) => (
           <Cell

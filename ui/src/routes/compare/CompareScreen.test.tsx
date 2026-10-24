@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -43,6 +43,19 @@ async function compareWithNoLimit(): Promise<HTMLElement> {
   renderShell("/compare");
   await compare("Portugal", "Netherlands");
   return screen.findByRole("alert");
+}
+
+/** The synthesis card headed by this comparator's name. */
+async function cardOf(comparator: string): Promise<HTMLElement> {
+  return (await screen.findByRole("heading", { name: comparator })).closest("section")!;
+}
+
+/** The lines of one list on a card, each as its text. */
+function linesUnder(card: HTMLElement, label: string): string[] {
+  const list = within(card).getByText(label).parentElement!;
+  return within(list)
+    .getAllByRole("listitem")
+    .map((line) => line.textContent ?? "");
 }
 
 /** Open a pillar row to reveal the attributes beneath it. The pillar name is the button. */
@@ -161,51 +174,75 @@ describe("the comparison", () => {
     // 71 against Portugal's 78 is seven behind, as its column in the matrix reads (PL-091).
     const card = (await screen.findByRole("heading", { name: "Netherlands" }))
       .closest("section")!;
-    expect(within(card).getByText("\u22127")).toBeInTheDocument();
-  });
-
-  it("prints the synthesis the server templated, in its order", async () => {
-    renderShell("/compare");
-
-    await compare("Portugal", "Netherlands");
-
-    // The sentence is its own element inside the line, because a line may also carry the
-    // place its gap takes across both lists. Matched whole and in place, so a screen that
-    // reworded a sentence or reordered a list still fails. Read from the comparator's side:
-    // what the Netherlands leads Portugal on, then what it trails on, costliest first -- each a
-    // row of the mock's own comparison, which `fixtures.test.ts` holds to that (PL-091).
-    const lists = {
-      "Ahead on": ["Total effective tax rate: 56 against 48, worth +2.2 points"],
-      "Behind on": ["Cost of living index: 41 against 73, worth -4.0 points"],
-    };
-    for (const [label, sentences] of Object.entries(lists)) {
-      const list = await screen.findByText(label);
-      const lines = within(list.parentElement!).getAllByRole("listitem");
-      expect(lines).toHaveLength(sentences.length);
-      sentences.forEach((sentence, at) => {
-        expect(within(lines[at]!).getByText(sentence)).toBeInTheDocument();
-      });
-    }
+    expect(within(card).getByText("\u22127 points")).toBeInTheDocument();
   });
 
   /**
-   * The two lists arrive ordered separately, so neither says whether the largest disadvantage
-   * outweighs the best advantage. These tags are the only thing the screen adds to the
-   * synthesis, and they add no number: the fixture's own figures put the disadvantage worth
-   * -4.0 ahead of the advantage worth +2.2.
+   * PL-100. **A card's lines are pillars**, each worth the comparator's pillar contribution
+   * minus the focus's, as the server sends them: the Netherlands puts 8.4 into its total from
+   * safety against Portugal's 7.68, and 18.5 from economics against 20.25.
    */
-  it("marks the three gaps that move the total most, across both lists", async () => {
+  it("lists the pillars the comparator leads and trails on, with what each is worth", async () => {
     renderShell("/compare");
 
     await compare("Portugal", "Netherlands");
 
-    const advantages = await screen.findByText(/ahead on/i);
-    const ahead = within(advantages.parentElement!).getAllByRole("listitem");
-    expect(ahead[0]).toHaveTextContent("#2");
+    const card = await cardOf("Netherlands");
+    expect(linesUnder(card, "Ahead on")).toEqual(["Safety+0.7#3 priority"]);
+    expect(linesUnder(card, "Behind on")).toEqual(["Economy\u22121.8#1 priority"]);
+  });
 
-    const disadvantages = screen.getByText(/behind on/i);
-    const behind = within(disadvantages.parentElement!).getAllByRole("listitem");
-    expect(behind[0]).toHaveTextContent("#1");
+  /** PL-107. Spain trails Portugal on every pillar both scored. */
+  it("says Nothing under an empty list", async () => {
+    renderShell("/compare");
+
+    await compare("Portugal", "Spain");
+
+    const card = await cardOf("Spain");
+    expect(linesUnder(card, "Ahead on")).toEqual(["Nothing"]);
+    expect(linesUnder(card, "Behind on")).toHaveLength(2);
+  });
+
+  /** PL-099. Portugal has no family score, so no comparator can be compared with it there. */
+  it("names the pillars it could not compare, and lists none of them", async () => {
+    renderShell("/compare");
+
+    await compare("Portugal", "Netherlands");
+
+    const card = await cardOf("Netherlands");
+    expect(card).toHaveTextContent("Not comparable, no data: Family");
+    expect(within(card).queryByText(/^Family/)).toBeNull();
+  });
+
+  /** PL-099, C07-F. Estonia has no total, so there is no total for any line to add up to. */
+  it("lists nothing against a missing total, and says why", async () => {
+    renderShell("/compare");
+
+    await compare("Portugal", "Estonia");
+
+    const card = await cardOf("Estonia");
+    expect(within(card).getByText("No comparable score")).toBeInTheDocument();
+    expect(card).toHaveTextContent(
+      "Estonia: only 41% of the scored weight was answered, against a floor of 60%",
+    );
+    expect(within(card).queryByText("Ahead on")).toBeNull();
+    expect(within(card).queryByText("Behind on")).toBeNull();
+    expect(card).toHaveTextContent("Not comparable, no data: Economy, Safety, Family");
+  });
+
+  it("tags no line when the criteria set cannot be read", async () => {
+    mockServer.use(
+      http.get(`${BASE}/criteria-sets/:id`, () =>
+        HttpResponse.json({ code: "internal_error", message: "broke" }, { status: 500 }),
+      ),
+    );
+    renderShell("/compare");
+
+    await compare("Portugal", "Netherlands");
+
+    const card = await cardOf("Netherlands");
+    expect(linesUnder(card, "Behind on")).toEqual(["Economy\u22121.8"]);
+    expect(screen.queryByText(/priority/)).toBeNull();
   });
 
   it("reports a refusal from the server rather than showing an empty table", async () => {
@@ -242,14 +279,31 @@ describe("the comparison", () => {
 });
 
 describe("the pillar matrix", () => {
-  it("names the heaviest pillars as priorities, by weight", async () => {
+  it("names the heaviest pillars as priorities, by the set's weights", async () => {
     renderShell("/compare");
 
     await compare("Portugal", "Netherlands");
 
-    // Economics carries the most weight in the fixture (25%), so its row is marked first.
+    // Economics carries the most weight in the set (40%), so its row is marked first.
     const economy = (await screen.findByRole("button", { name: "Economy" })).closest("tr")!;
     expect(economy).toHaveTextContent("#1 priority");
+  });
+
+  /**
+   * PL-104. **The set's configured weights, not the focus's.** Portugal's own pillar weights,
+   * redistributed for its missing data, are 25 and 12; the set says 40 and 25.
+   */
+  it("shows the set's pillar weights to one decimal, whatever the focus", async () => {
+    renderShell("/compare");
+
+    await compare("Portugal", "Netherlands");
+
+    const table = await screen.findByRole("table", { name: /every pillar/i });
+    const weightOf = (pillar: string) =>
+      within(table).getByRole("row", { name: new RegExp(pillar) }).querySelector(".matrix__weight");
+    await waitFor(() => expect(weightOf("Economy")).toHaveTextContent("40.0%"));
+    expect(weightOf("Safety")).toHaveTextContent("25.0%");
+    expect(weightOf("Total score")).toHaveTextContent("100.0%");
   });
 
   it("draws a bar for a real gap between the totals", async () => {
@@ -312,7 +366,8 @@ describe("opening a pillar to its attributes", () => {
 
     // Safety is a pillar the focus was scored on, but the fixture gives it no attributes, so
     // there is nothing to open and no button -- the name is there as a label only.
-    expect(await screen.findByText("Safety")).toBeInTheDocument();
+    const table = await screen.findByRole("table", { name: /every pillar/i });
+    expect(within(table).getByText("Safety")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Safety" })).toBeNull();
   });
 
@@ -640,10 +695,9 @@ describe("when a comparison cannot be drawn", () => {
     const table = await screen.findByRole("table", { name: /every pillar/i });
     const total = within(table).getByRole("row", { name: /total score/i });
     expect(within(total).getAllByText("—").length).toBeGreaterThan(0);
-    const card = screen
-      .getByRole("heading", { name: "Netherlands" })
-      .closest("section")!;
-    expect(within(card).getAllByText("—").length).toBeGreaterThan(0);
+    const card = await cardOf("Netherlands");
+    expect(within(card).getByText("No comparable score")).toBeInTheDocument();
+    expect(card).toHaveTextContent("Not comparable, no data: Economy");
   });
 });
 

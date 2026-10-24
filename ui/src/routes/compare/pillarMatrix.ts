@@ -109,8 +109,10 @@ export function pillarMatrix(
   // Which number each cell carries. **The server's either way**: `contribution` is
   // `score x weight / 100`, computed by `evaluation/` and sent with the comparison, so
   // switching the measure changes which figure is read rather than doing arithmetic here.
+  // A pillar nobody scored is sent with a contribution of 0, which is no measurement: its
+  // impact is as absent as its score (PL-099).
   const readingOf = (pillar: PillarScore | undefined): number | null =>
-    pillar === undefined
+    pillar === undefined || scoreOf(pillar.score) === null
       ? null
       : measure === "impact"
         ? scoreOf(pillar.contribution)
@@ -135,26 +137,4 @@ export function pillarMatrix(
   });
 
   return [total, ...rows];
-}
-
-/** How many pillars the design marks as priorities, by weight. */
-const PRIORITY_COUNT = 3;
-
-/**
- * The heaviest pillars, ranked, so the matrix can mark the few the household weighted most.
- *
- * **Weight is the one number the reader set most deliberately** (`reqs.md` Q82), so the rows
- * carrying the most of it are the ones to foreground. Returns a map from pillar id to its place
- * (0 for the heaviest), holding only the top few; everything else is absent rather than ranked.
- * Ties are broken by the order the pillars arrived, which is the catalog's.
- */
-export function pillarPriority(
-  focus: Compared,
-  count: number = PRIORITY_COUNT,
-): ReadonlyMap<string, number> {
-  const ranked = (focus.pillar_scores ?? [])
-    .map((pillar) => ({ pillar: pillar.pillar, weight: pillar.weight }))
-    .sort((a, b) => b.weight - a.weight)
-    .slice(0, count);
-  return new Map(ranked.map((entry, place) => [entry.pillar, place]));
 }

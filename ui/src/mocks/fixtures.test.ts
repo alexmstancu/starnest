@@ -15,8 +15,7 @@ type CandidateResult = components["schemas"]["CandidateResult"];
 
 /**
  * **The mock draws a pair's pillar lines by the server's rule** (`comparison.py`, PL-099,
- * PL-100), so a card tested against it cannot pass on a line the server would never send. The
- * fixture's own comparators carry no pillar scores, so these are the only lines it draws.
+ * PL-100), so a card tested against it cannot pass on a line the server would never send.
  */
 
 /** A candidate with a total and, per pillar, its score and what it put into the total. */

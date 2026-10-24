@@ -5,17 +5,19 @@ import { ViewChoices } from "./ViewChoices";
 import type { Measure } from "./pillarMatrix";
 import { droppedByLimit, withinLimit } from "./comparatorLimit";
 import { requestFor, type ComparisonRequest } from "./comparisonRequest";
-import { tagByImpact, type TaggedLine } from "./synthesisImpact";
+import { pillarPriority, pillarWeightsAt } from "./ordering";
 import {
   fetchCandidates,
   fetchComparison,
+  fetchCriteriaSet,
   fetchSettings,
   type Candidate,
   type Comparison,
 } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
+import { usePillarNames } from "../../api/usePillarNames";
 import type { RouteDefinition } from "../../navigation/routes";
-import { deltaTone, formatSigned } from "../../format/display";
+import { deltaTone, formatSigned, pillarName } from "../../format/display";
 import { UnsetSetting } from "../../shell/UnsetSetting";
 import { useSelection } from "../../shell/SelectionContext";
 
@@ -81,6 +83,20 @@ function TheComparison({
   );
   const settings = useResource(
     useCallback((signal: AbortSignal) => fetchSettings({ signal }), []),
+  );
+  // **The set's configured pillar weights** (PL-104), read as Rank reads them: what the Weight
+  // column shows and what "#N priority" ranks, so neither moves when only the focus changes. A
+  // failure is silence -- the comparison stands without its weights and tags.
+  const criteriaSet = useResource(
+    useCallback(
+      (signal: AbortSignal) => fetchCriteriaSet(criteriaSetId ?? "", { signal }),
+      [criteriaSetId],
+    ),
+    criteriaSetId !== null,
+  );
+  const pillarWeights = pillarWeightsAt(
+    criteriaSet.resource.status === "ready" ? criteriaSet.resource.data : null,
+    levelId,
   );
 
   const comparison = useResource(
@@ -177,6 +193,7 @@ function TheComparison({
           comparison={comparison.resource.data}
           shownAs={shownAs}
           measure={measure}
+          pillarWeights={pillarWeights}
         />
       )}
     </>
@@ -306,12 +323,16 @@ function ComparisonTable({
   comparison,
   shownAs,
   measure,
+  pillarWeights,
 }: {
   comparison: Comparison;
   shownAs: "score" | "raw";
   measure: Measure;
+  pillarWeights: ReadonlyMap<string, number>;
 }) {
   const comparators = comparison.comparators ?? [];
+  // One priority for the cards and the matrix, so "#N" means one thing on the screen (PL-100).
+  const priority = pillarPriority(pillarWeights);
   return (
     <>
       <h3 className="panel__heading">
@@ -329,8 +350,9 @@ function ComparisonTable({
       {(comparison.synthesis ?? []).map((pair, at) => (
         <SynthesisCard
           key={`${pair.comparator}-${at}`}
-          name={nameOf(comparison, pair.comparator)}
+          comparison={comparison}
           pair={pair}
+          priority={priority}
         />
       ))}
       </div>
@@ -344,86 +366,135 @@ function ComparisonTable({
         comparison={comparison}
         measure={measure}
         shownAs={shownAs}
+        pillarWeights={pillarWeights}
+        priority={priority}
       />
     </>
   );
 }
 
+type SynthesisPair = NonNullable<Comparison["synthesis"]>[number];
+type SynthesisLine = SynthesisPair["ahead"][number];
+
 /**
- * One comparator's synthesis: the score gap, then what made it, ordered by what each gap is
- * worth.
+ * One comparator's synthesis: the total gap in points, then the pillars it leads and trails on,
+ * each worth what the server says its gap adds to the total (PL-100).
  *
- * **The three tags are the only thing here this screen decides, and they decide nothing.**
- * They mark which lines the server's own numbers put first when both lists are read together
- * -- see `tagByImpact`, which withholds every tag rather than guess at one.
+ * **Lines only where both totals exist** (PL-099, C07-F): a line is a share of the total gap,
+ * and with either total missing there is no gap for it to be a share of. What either side left
+ * unscored is named in the footnote rather than listed as a gap of nothing.
  */
 function SynthesisCard({
-  name,
+  comparison,
   pair,
+  priority,
 }: {
-  name: string;
-  pair: NonNullable<Comparison["synthesis"]>[number];
+  comparison: Comparison;
+  pair: SynthesisPair;
+  priority: ReadonlyMap<string, number>;
 }) {
-  const ranked = tagByImpact(pair.advantages, pair.disadvantages);
+  const pillarNames = usePillarNames();
+  const naming = (pillar: string) => pillarName(pillarNames, pillar);
+  const comparable = pair.score_delta !== null;
 
   return (
     <section className="panel synthesis__card">
       <div className="panel__head">
-        <h4 className="synthesis__name">{name}</h4>
+        <h4 className="synthesis__name">{nameOf(comparison, pair.comparator)}</h4>
         <span
-          // **Three states, because there are three** (P83). A null delta fell into the
-          // `else` and was coloured as an advantage, so "—" rendered green: the screen
-          // claiming a lead where it has nothing to compare. The ranked table's own
-          // `deltaTone` already keeps a level state for exactly this.
+          // **Three states, because there are three** (P83): a gap nobody can measure is muted,
+          // never coloured as a lead.
           className={`synthesis__delta synthesis__delta--${deltaTone(pair.score_delta)}`}
         >
-          {formatSigned(pair.score_delta, 0)}
+          {comparable ? `${formatSigned(pair.score_delta, 0)} points` : "No comparable score"}
         </span>
       </div>
-      <p className="synthesis__lead">
-        By impact on the total, not by how large the gap looks.
-      </p>
-      {/* Stacked, not label-and-value: a list is not a figure, and pushing it to the
-          right of its own label left a column of text hard against the card's edge. The
-          design colours the two labels instead -- ahead in the success green, behind in
-          the danger red -- so the direction is readable before the words are. */}
-      <dl className="stat-list stat-list--stacked">
-        <div className="stat stat--ahead">
-          <dt className="stat__label">Ahead on</dt>
-          <dd className="stat__value">
-            <ImpactLines lines={ranked.advantages} />
-          </dd>
-        </div>
-        <div className="stat stat--behind">
-          <dt className="stat__label">Behind on</dt>
-          <dd className="stat__value">
-            <ImpactLines lines={ranked.disadvantages} />
-          </dd>
-        </div>
-      </dl>
+      {comparable ? (
+        <>
+          <p className="synthesis__lead">
+            By impact on the total, in points: what each pillar&apos;s gap adds to it.
+          </p>
+          {/* Stacked, not label-and-value: a list is not a figure. The design colours the two
+              labels, so the direction is readable before the words are. */}
+          <dl className="stat-list stat-list--stacked">
+            <div className="stat stat--ahead">
+              <dt className="stat__label">Ahead on</dt>
+              <dd className="stat__value">
+                <PillarLines lines={pair.ahead} priority={priority} naming={naming} />
+              </dd>
+            </div>
+            <div className="stat stat--behind">
+              <dt className="stat__label">Behind on</dt>
+              <dd className="stat__value">
+                <PillarLines lines={pair.behind} priority={priority} naming={naming} />
+              </dd>
+            </div>
+          </dl>
+        </>
+      ) : (
+        <p className="synthesis__lead">{whyNotComparable(comparison, pair.comparator)}</p>
+      )}
+      {pair.not_comparable.length > 0 && (
+        <p className="synthesis__lead synthesis__footnote">
+          Not comparable, no data: {pair.not_comparable.map(naming).join(", ")}
+        </p>
+      )}
     </section>
   );
 }
 
 /**
- * The sentences of one list, each with its place across both lists where it has one.
- *
- * **The tag leads the line rather than trailing it.** Every sentence ends in the number it was
- * ranked on, and a "#1" after that number reads as part of the arithmetic.
+ * One list's pillars, each with what its gap is worth and, for one of the set's heaviest, the
+ * same "#N priority" the matrix row carries. An empty list says so rather than showing a label
+ * over nothing (PL-107).
  */
-function ImpactLines({ lines }: { lines: readonly TaggedLine[] }) {
+function PillarLines({
+  lines,
+  priority,
+  naming,
+}: {
+  lines: readonly SynthesisLine[];
+  priority: ReadonlyMap<string, number>;
+  naming: (pillar: string) => string;
+}) {
+  if (lines.length === 0) {
+    return (
+      <ul className="line-list">
+        <li>Nothing</li>
+      </ul>
+    );
+  }
   return (
     <ul className="line-list">
-      {lines.map((each, at) => (
-        <li key={`${at}-${each.line}`}>
-          {each.tag !== null && (
-            <span className="line-list__tag">{each.tag}</span>
-          )}
-          <span className="line-list__line">{each.line}</span>
-        </li>
-      ))}
+      {lines.map((line) => {
+        const place = priority.get(line.pillar);
+        return (
+          <li key={line.pillar} className="synthesis__line">
+            <span className="line-list__line">{naming(line.pillar)}</span>
+            <span className="synthesis__worth">{formatSigned(line.worth, 1)}</span>
+            {place !== undefined && (
+              <span className="chip chip--accent">#{place + 1} priority</span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
+}
+
+/** Whose total is missing, in the server's words where it gave them. */
+function whyNotComparable(comparison: Comparison, comparator: string): string {
+  const theirs = (comparison.comparators ?? []).find((each) => each.candidate === comparator);
+  const missing = [comparison.focus, theirs].filter(
+    (side): side is Comparison["focus"] => side !== undefined && typeof side.score !== "number",
+  );
+  return missing
+    .map((side) =>
+      side.insufficient_reason
+        ? `${side.name}: ${side.insufficient_reason}`
+        : `${side.name} has no total score.`,
+    )
+    .join(" ");
 }
 
 function nameOf(comparison: Comparison, candidate: string): string {
@@ -432,4 +503,3 @@ function nameOf(comparison: Comparison, candidate: string): string {
       ?.name ?? candidate
   );
 }
-

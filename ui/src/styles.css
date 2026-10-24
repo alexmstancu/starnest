@@ -4557,3 +4557,23 @@ select.field__control {
   border-color: var(--colour-invalid-border);
   background: var(--colour-invalid-surface);
 }
+
+/* ── Compare's pillar lines (C07 U5) ──────────────────────────────────────────────────
+   A card's line is a pillar, what its gap adds to the total, and -- for one of the set's
+   heaviest -- the same priority pill the matrix row carries. */
+.synthesis__line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.synthesis__worth {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-strong);
+  color: var(--colour-text-strong);
+}
+
+.synthesis__footnote {
+  padding-top: 6px;
+  border-top: var(--border-width) solid var(--colour-border);
+}
