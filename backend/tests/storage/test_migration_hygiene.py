@@ -625,6 +625,21 @@ UNREADABLE: tuple[Unreadable, ...] = (
         instead="write `CREATE TEMP TABLE ... AS SELECT`, or `CREATE TABLE`",
     ),
     Unreadable(
+        name="a copy written without SELECT",
+        # `TABLE t` is `SELECT * FROM t`, and the copy check knows a copy only by its SELECT.
+        pattern=r"(?:(?:\A|;)\s*|\bas\s+|\binto\s+\"?\w+\"?(?:\s*\([^)]*\))?\s+)table\b",
+        searched_in=anywhere,
+        instead="write `SELECT * FROM <table>`",
+    ),
+    Unreadable(
+        name="a function, procedure or trigger",
+        # Its body is a string until it runs, so the checks read neither its refusal nor its copy.
+        pattern=r"\bcreate\s+(?:or\s+replace\s+)?(?:constraint\s+)?"
+        r"(?:function|procedure|trigger)\b",
+        searched_in=anywhere,
+        instead="check in a `DO $$ ... $$` block and write with statements of their own",
+    ),
+    Unreadable(
         name="a write, DDL or dynamic SQL inside a DO block",
         pattern=r"\b(?:insert|update|delete|merge|truncate|create|alter|drop|execute)\b",
         searched_in=inside_do_blocks,
@@ -792,6 +807,40 @@ WITH_COPY = (
             "ALTER TABLE criterion ADD COLUMN note text;\nDROP TABLE kept;\n",
             [],
             id="DDL as statements of its own",
+        ),
+        pytest.param(
+            "CREATE TEMP TABLE kept AS TABLE criterion;\nDELETE FROM criterion;\n",
+            ["a copy written without SELECT"],
+            id="CREATE TABLE AS TABLE",
+        ),
+        pytest.param(
+            "INSERT INTO kept (attribute) TABLE criterion;\nDELETE FROM criterion;\n",
+            ["a copy written without SELECT"],
+            id="INSERT INTO ... TABLE",
+        ),
+        pytest.param(
+            "TABLE criterion;\nLOCK TABLE criterion;\nCOMMENT ON TABLE criterion IS 'x';\n"
+            "TRUNCATE TABLE kept;\n",
+            ["a copy written without SELECT"],
+            id="a TABLE statement among TABLE keywords",
+        ),
+        pytest.param(
+            "CREATE FUNCTION refuse() RETURNS void AS $f$ BEGIN "
+            "IF EXISTS (SELECT 1 FROM value) THEN RAISE EXCEPTION 'from the backup'; END IF; "
+            "END $f$ LANGUAGE plpgsql;\nSELECT refuse();\n",
+            ["a function, procedure or trigger"],
+            id="a refusal in a function",
+        ),
+        pytest.param(
+            "CREATE OR REPLACE PROCEDURE copy() AS $$ DELETE FROM criterion $$ LANGUAGE sql;\n"
+            "CALL copy();\n",
+            ["a function, procedure or trigger"],
+            id="a procedure",
+        ),
+        pytest.param(
+            "CREATE TRIGGER t AFTER DELETE ON criterion FOR EACH ROW EXECUTE FUNCTION f();\n",
+            ["a function, procedure or trigger"],
+            id="a trigger",
         ),
     ],
 )
