@@ -1092,6 +1092,10 @@ components:
         id:
           title: Id
           type: integer
+        leader:
+          anyOf:
+          - $ref: '#/components/schemas/LeaderBody'
+          - type: 'null'
         level:
           title: Level
           type: string
@@ -1304,6 +1308,19 @@ components:
       - label
       - containment_rule
       title: LabelThresholdBody
+      type: object
+    LeaderBody:
+      properties:
+        candidate:
+          title: Candidate
+          type: string
+        name:
+          title: Name
+          type: string
+      required:
+      - candidate
+      - name
+      title: LeaderBody
       type: object
     LevelBody:
       properties:
@@ -3778,7 +3795,7 @@ paths:
       - catalog
   /v1/evaluations:
     get:
-      description: The kept results, newest first.
+      description: The kept results, newest first, each naming who led it (PL-145).
       operationId: listEvaluations
       responses:
         '200':
@@ -3833,6 +3850,34 @@ paths:
       tags:
       - evaluation
   /v1/evaluations/{evaluation_id}:
+    delete:
+      description: 'Discard a kept ranking with its whole tree (D47). Raises a 404
+        naming an id nobody kept.
+
+
+        The values and gate answers it cited stay: they belong to the candidates.'
+      operationId: deleteEvaluation
+      parameters:
+      - in: path
+        name: evaluation_id
+        required: true
+        schema:
+          title: Evaluation Id
+          type: integer
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+          description: The request is malformed, or names something the domain will
+            not accept; `code` says which. `invalid_request` is a malformed request,
+            with each offending location in `details.errors`.
+      summary: Delete Evaluation
+      tags:
+      - evaluation
     get:
       description: 'A kept ranking, in the order every ranking is shown (`in_display_order`).
         Raises a

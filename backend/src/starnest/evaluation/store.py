@@ -21,7 +21,11 @@ from starnest.evaluation.results import CandidateResult
 
 
 class UnknownEvaluationError(LookupError):
-    """No evaluation has that identifier."""
+    """No evaluation has that identifier. `details` names what was asked for."""
+
+    def __init__(self, message: str, *, details: dict[str, object] | None = None) -> None:
+        super().__init__(message)
+        self.details = details or {}
 
 
 class UnsavableEvidenceError(ValueError):
@@ -48,6 +52,8 @@ class SavedEvaluation:
     computed_at: datetime
     score_scale_max: int
     note: str | None = None
+    leader: str | None = None
+    """The candidate ranked first, or None when nobody was ranked (PL-145)."""
 
 
 class EvaluationStore(ABC):
@@ -91,12 +97,17 @@ class EvaluationStore(ABC):
         """One candidate with its per-attribute detail: the drill-down behind a total."""
 
     @abstractmethod
+    async def delete(self, evaluation: int) -> None:
+        """Discard a kept ranking and its whole tree (D47); what it cited stays. One statement,
+        so two discards at once discard it once. Raises `UnknownEvaluationError`."""
+
+    @abstractmethod
     async def sweep_test_evaluations(self) -> int:
         """Discard the evaluations a test saved, and return how many. Called once, at boot.
 
         **The one kind of saved evaluation nobody chose.** Everything else here exists because
-        a human decided a ranking was worth keeping, which is why there is no delete in the
-        contract. The browser suite saves one per run to prove that saving works; left alone
+        a human decided a ranking was worth keeping, and only that human discards it
+        (`delete`). The browser suite saves one per run to prove that saving works; left alone
         they accumulate under a count that means "rankings I kept" and they pin their criteria
         set for ever, since a frozen-criteria row holds it by foreign key.
         """

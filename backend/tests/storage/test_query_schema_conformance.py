@@ -111,10 +111,9 @@ QUERIES_NOTHING_CALLS_YET = {
     "select_criterion": "the PATCH path reads the set, not one criterion",
     "clear_criterion_thresholds": "`delete_criteria_set_contents` clears them with everything else",
     # **Waiting for an operation the contract does not have.** `openapi.yaml` is deliberately
-    # ahead of the code, and these are behind even that: no operation deletes a criterion, an
-    # evaluation or renames a candidate. Each is one endpoint away from being live.
+    # ahead of the code, and these are behind even that: no operation deletes a criterion or
+    # renames a candidate. Each is one endpoint away from being live.
     "delete_criterion": "no operation detaches a criterion; `openapi.yaml` does not name one",
-    "delete_evaluation": "no operation discards a kept evaluation",
     "update_candidate_name": "no operation corrects a display name",
     # **Waiting for a feature that is planned and not built.** The run planner does not yet
     # consider what is already fresh, and the acquisition screen does not yet report catalog

@@ -5,6 +5,8 @@ worth keeping is the frozen criteria beside it: the set stays editable, so witho
 the numbers would drift out of meaning the next time a weight moved.
 """
 
+import asyncio
+
 import httpx
 import psycopg
 import pytest
@@ -572,3 +574,58 @@ class TestASavedRankingShowsItsEvidence:
         reasons = detail.json()["non_match_reasons"]
         assert len(reasons) == 2
         assert all(r["gate_answer"] is None and r["inputs"] == [] for r in reasons)
+
+
+class TestALeaderAndADiscard:
+    """PL-145: a saved ranking names its leader, and can be discarded (D47)."""
+
+    async def test_the_summary_names_who_led(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        kept = await _keep_one(api)
+
+        (listed,) = (await api.get("/v1/evaluations")).json()["items"]
+
+        assert kept["leader"] == {"candidate": PORTUGAL, "name": "Portugal"}
+        assert listed["leader"] == kept["leader"]
+
+    async def test_a_ranking_with_nobody_ranked_has_no_leader(self, api: httpx.AsyncClient) -> None:
+        put = await api.put("/v1/settings", json={"score_scale_max": 100})
+        assert put.status_code == 200
+
+        kept = await _keep_one(api)
+
+        assert kept["leader"] is None
+
+    async def test_a_discarded_ranking_is_gone_from_every_read(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        kept = await _keep_one(api)
+
+        discarded = await api.delete(f"/v1/evaluations/{kept['id']}")
+
+        assert discarded.status_code == 204
+        for path in ("", "/criteria", f"/candidates/{PORTUGAL}"):
+            assert (await api.get(f"/v1/evaluations/{kept['id']}{path}")).status_code == 404
+        assert (await api.get("/v1/evaluations")).json()["items"] == []
+
+    async def test_discarding_one_nobody_kept_is_a_404_naming_it(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        refused = await api.delete("/v1/evaluations/999999")
+
+        assert refused.status_code == 404
+        assert refused.json()["code"] == "not_found"
+        assert refused.json()["details"] == {"evaluation": 999999}
+
+    async def test_two_discards_at_once_discard_it_once(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        kept = await _keep_one(api)
+
+        both = await asyncio.gather(
+            api.delete(f"/v1/evaluations/{kept['id']}"),
+            api.delete(f"/v1/evaluations/{kept['id']}"),
+        )
+
+        assert sorted(response.status_code for response in both) == [204, 404]

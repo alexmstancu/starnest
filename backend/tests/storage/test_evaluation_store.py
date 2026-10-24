@@ -920,3 +920,93 @@ class TestWhatAKeptRankingStillKnowsWhenItIsReopened:
                 score_scale_max=100,
                 computed_at=COMPUTED_AT,
             )
+
+
+class TestALeaderAndADiscard:
+    """PL-145: a kept ranking names who led it, and a person may discard one (D47)."""
+
+    async def test_the_header_names_the_candidate_ranked_first(self, kept) -> None:
+        store, saved = kept
+
+        listed = await store.read_evaluations()
+
+        assert [saved.leader, (await store.read_evaluation(saved.id)).leader] == [PORTUGAL] * 2
+        assert [header.leader for header in listed] == [PORTUGAL]
+
+    async def test_a_ranking_nobody_was_ranked_in_has_no_leader(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        store = PostgresEvaluationStore(pool)
+
+        saved = await store.save(
+            criteria=criteria,
+            level=COUNTRY,
+            results=[a_result(GREECE, None, None)],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+        )
+
+        assert saved.leader is None
+        assert (await store.read_evaluation(saved.id)).leader is None
+
+    async def test_discarding_one_takes_its_whole_tree_and_leaves_its_evidence(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """Every table under the evaluation goes with it (G-S9); the value rows and the gate
+        answer it cited are nobody's to discard but their own."""
+        (figure,) = await PostgresValueStore(pool).append([a_zone(2024, "Csa")])
+        refusal = await a_recorded_refusal(pool)
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        store = PostgresEvaluationStore(pool)
+        saved = await store.save(
+            criteria=criteria.model_copy(update={"enforced_match_rules": frozenset({GATE})}),
+            level=COUNTRY,
+            results=[
+                a_result(
+                    PORTUGAL,
+                    71,
+                    None,
+                    match_status=MatchStatus.NOT_MATCHING,
+                    non_match_reasons=(refusal,),
+                    warnings=(
+                        RuleWarning(
+                            compound_rule="cheap_but_taxed",
+                            detail="cheap and taxed",
+                            input_values=(figure.id,),
+                        ),
+                    ),
+                )
+            ],
+            score_scale_max=100,
+            computed_at=COMPUTED_AT,
+        )
+
+        await store.delete(saved.id)
+
+        with pytest.raises(UnknownEvaluationError):
+            await store.read_evaluation(saved.id)
+        async with acquire(pool) as connection:
+            for table in (
+                "evaluation",
+                "evaluation_criterion",
+                "evaluation_scale_anchor",
+                "evaluation_match_rule",
+                "candidate_result",
+                "candidate_attribute_score",
+                "candidate_warning",
+                "candidate_warning_input",
+                "non_match_reason",
+            ):
+                left = await connection.execute(f"SELECT count(*) FROM {table}")
+                assert (await left.fetchone())[0] == 0, f"{table} kept a row"
+            kept_evidence = await connection.execute(
+                "SELECT (SELECT count(*) FROM value WHERE id = %s) AS figures,"
+                " (SELECT count(*) FROM match_rule_answer WHERE id = %s) AS answers",
+                (figure.id, refusal.gate_answer.id),
+            )
+            assert await kept_evidence.fetchone() == (1, 1)
+
+    async def test_discarding_one_nobody_kept_is_refused(self, pool: AsyncConnectionPool) -> None:
+        with pytest.raises(UnknownEvaluationError):
+            await PostgresEvaluationStore(pool).delete(999_999)

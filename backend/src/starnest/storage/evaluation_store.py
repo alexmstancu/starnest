@@ -252,6 +252,7 @@ class PostgresEvaluationStore(EvaluationStore):
             computed_at=computed_at,
             score_scale_max=score_scale_max,
             note=note,
+            leader=_leader_of(results),
         )
 
     async def read_evaluations(self) -> tuple[SavedEvaluation, ...]:
@@ -263,8 +264,14 @@ class PostgresEvaluationStore(EvaluationStore):
         async with acquire(self._pool) as connection:
             row = await self._queries.select_evaluation(connection, evaluation=evaluation)
         if row is None:
-            raise UnknownEvaluationError(f"there is no evaluation numbered {evaluation}")
+            raise _unknown(evaluation)
         return _saved(row)
+
+    async def delete(self, evaluation: int) -> None:
+        async with acquire(self._pool) as connection:
+            row = await self._queries.delete_evaluation(connection, evaluation=evaluation)
+        if row is None:
+            raise _unknown(evaluation)
 
     async def read_results(self, evaluation: int) -> tuple[CandidateResult, ...]:
         """Each candidate with its contributions, so its pillars derive as the live ones do
@@ -356,6 +363,20 @@ class PostgresEvaluationStore(EvaluationStore):
                 connection, marker=TEST_EVALUATION_MARKER
             )
         return int(row.discarded)
+
+
+def _unknown(evaluation: int) -> UnknownEvaluationError:
+    return UnknownEvaluationError(
+        f"there is no evaluation numbered {evaluation}", details={"evaluation": evaluation}
+    )
+
+
+def _leader_of(results: Sequence[CandidateResult]) -> str | None:
+    """The first ranked, ties broken by identifier, as the read statements choose it."""
+    ranked = sorted(
+        (result.rank, str(result.candidate)) for result in results if result.rank is not None
+    )
+    return ranked[0][1] if ranked else None
 
 
 def _refuse_evidence_that_does_not_fit(candidate: CandidateId, reason: NonMatch) -> None:
@@ -485,6 +506,7 @@ def _saved(row: Any) -> SavedEvaluation:
         computed_at=row.computed_at,
         score_scale_max=row.score_scale_max,
         note=row.note,
+        leader=row.leader,
     )
 
 

@@ -212,7 +212,7 @@ FROM   unnest(:compound_rules::text[]) AS compound_rule;
 -- Reading a saved evaluation back.
 
 -- name: select_evaluations()
--- The list of kept results, newest first.
+-- The list of kept results, newest first, each naming who led it (PL-145).
 SELECT e.id,
        e.criteria_set,
        e.level,
@@ -220,7 +220,10 @@ SELECT e.id,
        -- The scale the scores are on, frozen with them (0107). Without it a score of 71 means
        -- nothing later: settings.score_scale_max is the user's and may since have changed.
        e.score_scale_max,
-       e.note
+       e.note,
+       (SELECT r.candidate FROM candidate_result AS r
+        WHERE  r.evaluation = e.id AND r.rank IS NOT NULL
+        ORDER  BY r.rank, r.candidate LIMIT 1) AS leader
 FROM   evaluation AS e
 ORDER  BY e.computed_at DESC, e.id DESC;
 
@@ -233,7 +236,11 @@ SELECT e.id,
        -- The scale the scores are on, frozen with them (0107). Without it a score of 71 means
        -- nothing later: settings.score_scale_max is the user's and may since have changed.
        e.score_scale_max,
-       e.note
+       e.note,
+       -- The same leader as the list's: the first ranked, ties broken by identifier.
+       (SELECT r.candidate FROM candidate_result AS r
+        WHERE  r.evaluation = e.id AND r.rank IS NOT NULL
+        ORDER  BY r.rank, r.candidate LIMIT 1) AS leader
 FROM   evaluation AS e
 WHERE  e.id = :evaluation;
 
@@ -522,35 +529,14 @@ WHERE  r.evaluation = :evaluation
   AND  (:candidate::text IS NULL OR r.candidate = :candidate)
 ORDER  BY r.candidate, frozen_pillar.display_order NULLS LAST, s.attribute;
 
--- name: delete_evaluation(evaluation)!
--- A kept result may be discarded. One statement, children first, for the same reason
--- delete_criteria_set is one statement: the referential-integrity checks fire at the end of it,
--- by which time every CTE has run.
-WITH targeted_results AS (
-    SELECT id FROM candidate_result WHERE evaluation = :evaluation
-),
-cleared_scores AS (
-    DELETE FROM candidate_attribute_score
-    WHERE  candidate_result IN (SELECT id FROM targeted_results)
-),
-cleared_reasons AS (
-    DELETE FROM non_match_reason
-    WHERE  candidate_result IN (SELECT id FROM targeted_results)
-),
-cleared_warnings AS (
-    DELETE FROM candidate_warning
-    WHERE  candidate_result IN (SELECT id FROM targeted_results)
-),
-cleared_results AS (
-    DELETE FROM candidate_result WHERE evaluation = :evaluation
-),
-cleared_anchors AS (
-    DELETE FROM evaluation_scale_anchor WHERE evaluation = :evaluation
-),
-cleared_criteria AS (
-    DELETE FROM evaluation_criterion WHERE evaluation = :evaluation
-)
-DELETE FROM evaluation WHERE id = :evaluation;
+-- name: delete_evaluation(evaluation)<!
+-- A kept result discarded by the person who kept it (D47), and the id it had, or no row when
+-- nobody kept one by that id. **One statement, children by the schema**: `0482` and its
+-- successors made every foreign key into the evaluation tree cascade (G-S9), so a child table
+-- added later goes with it without this statement knowing its name. The values and gate
+-- answers it cited are referenced *from* the tree and stay.
+DELETE FROM evaluation WHERE id = :evaluation
+RETURNING id;
 
 -- name: sweep_test_evaluations(marker)<!
 -- Discard the evaluations a test saved, and say how many.

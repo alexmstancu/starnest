@@ -1052,6 +1052,23 @@ paths:
             application/json: { schema: { $ref: "#/components/schemas/Ranking" } }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/InvalidRequest" }
+    delete:
+      tags: [evaluation]
+      summary: Discard a kept ranking
+      description: |
+        Deletes the ranking with its whole tree -- the frozen criteria, the results, every
+        contribution, refusal and warning and the evidence links they hold (D47). The values and
+        gate answers it cited stay: they belong to the candidate, not to the ranking. Once
+        discarded it cannot be brought back, and the criteria set it was computed from is no
+        longer held by it.
+      operationId: deleteEvaluation
+      parameters: [ { $ref: "#/components/parameters/EvaluationId" } ]
+      responses:
+        "204": { description: Discarded }
+        "404":
+          description: "`not_found`: nobody kept an evaluation with this id. `details.evaluation` names it."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /evaluations/{evaluationId}/candidates/{candidateId}:
     get:
@@ -2128,6 +2145,18 @@ components:
             The top of the score range this evaluation used, frozen with it. Read scores
             against this rather than against the current setting, which may since have changed.
         note: { type: [string, "null"] }
+        leader:
+          description: >-
+            The candidate ranked first, with the roster's name for it -- a candidate that has
+            since left the roster reads as its identifier made into words. Null when nobody was
+            ranked.
+          oneOf:
+            - type: object
+              required: [candidate, name]
+              properties:
+                candidate: { type: string }
+                name: { type: string }
+            - type: "null"
 
     AttributeScore:
       type: object

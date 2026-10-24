@@ -8,9 +8,10 @@ The drill-down here is the provenance chain end to end: a total, the attributes 
 one's effective weight after redistribution, and the exact stored value it was computed from.
 """
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict
 
 from starnest.api.criteria import CriterionBody, _criterion_body
@@ -40,8 +41,14 @@ from starnest.evaluation import (
     declared_weights,
     in_display_order,
 )
+from starnest.evaluation.wording import readable_identifier
 
 router = APIRouter(tags=["evaluation"])
+
+
+class LeaderBody(BaseModel):
+    candidate: str
+    name: str
 
 
 class EvaluationSummaryBody(BaseModel):
@@ -51,6 +58,7 @@ class EvaluationSummaryBody(BaseModel):
     computed_at: datetime
     score_scale_max: int
     note: str | None = None
+    leader: LeaderBody | None = None
 
 
 class EvaluationsBody(BaseModel):
@@ -80,10 +88,11 @@ class EvaluationCriteriaBody(BaseModel):
 
 
 @router.get("/evaluations", operation_id="listEvaluations", response_model=EvaluationsBody)
-async def list_evaluations(evaluations: Evaluations) -> EvaluationsBody:
-    """The kept results, newest first."""
+async def list_evaluations(evaluations: Evaluations, candidates: Candidates) -> EvaluationsBody:
+    """The kept results, newest first, each naming who led it (PL-145)."""
+    names = await _roster_names(candidates)
     return EvaluationsBody(
-        items=tuple(_summary(saved) for saved in await evaluations.read_evaluations())
+        items=tuple(_summary(saved, names) for saved in await evaluations.read_evaluations())
     )
 
 
@@ -126,7 +135,7 @@ async def save_evaluation(
         computed_at=datetime.now(UTC),
         note=body.note,
     )
-    return _summary(saved)
+    return _summary(saved, {str(candidate.id): candidate.name for candidate in ranking.roster})
 
 
 @router.get(
@@ -165,6 +174,20 @@ async def get_evaluation(
             _result_body(result, names, evidence) for result in in_display_order(results)
         ),
     )
+
+
+@router.delete(
+    "/evaluations/{evaluation_id}",
+    operation_id="deleteEvaluation",
+    status_code=204,
+    response_class=Response,
+)
+async def delete_evaluation(evaluation_id: int, evaluations: Evaluations) -> None:
+    """Discard a kept ranking with its whole tree (D47). Raises a 404 naming an id nobody kept.
+
+    The values and gate answers it cited stay: they belong to the candidates.
+    """
+    await evaluations.delete(evaluation_id)
 
 
 @router.get(
@@ -235,7 +258,11 @@ async def _against_saved_home(
     return against_home((result, home_result), home)[0]
 
 
-def _summary(saved: SavedEvaluation) -> EvaluationSummaryBody:
+async def _roster_names(candidates: Candidates) -> dict[str, str]:
+    return {str(candidate.id): candidate.name for candidate in await candidates.read_candidates()}
+
+
+def _summary(saved: SavedEvaluation, names: Mapping[str, str]) -> EvaluationSummaryBody:
     return EvaluationSummaryBody(
         id=saved.id,
         criteria_set=saved.criteria_set,
@@ -243,4 +270,12 @@ def _summary(saved: SavedEvaluation) -> EvaluationSummaryBody:
         computed_at=saved.computed_at,
         score_scale_max=saved.score_scale_max,
         note=saved.note,
+        leader=(
+            None
+            if saved.leader is None
+            else LeaderBody(
+                candidate=saved.leader,
+                name=names.get(saved.leader) or readable_identifier(saved.leader),
+            )
+        ),
     )
