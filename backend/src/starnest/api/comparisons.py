@@ -23,7 +23,7 @@ from starnest.api.dependencies import (
     MatchRuleResults,
     Values,
 )
-from starnest.api.rankings import CandidateResultBody, _result_body, the_ranking
+from starnest.api.rankings import CandidateResultBody, _result_body, evidence_for, the_ranking
 from starnest.api.values import ValueBody, _value_body
 from starnest.comparison import (
     AttributeComparison,
@@ -142,12 +142,13 @@ async def get_comparison(
     names = {str(candidate.id): candidate.name for candidate in ranking.roster}
     active = _active_values(ranking.values)
     stale = ranking.stale_values
+    evidence = await evidence_for((drawn.focus, *drawn.comparators), values)
     return ComparisonBody(
         criteria_set=criteria_set,
         level=level,
         score_scale_max=ranking.score_scale_max,
-        focus=_result_body(drawn.focus, names),
-        comparators=tuple(_result_body(result, names) for result in drawn.comparators),
+        focus=_result_body(drawn.focus, names, evidence),
+        comparators=tuple(_result_body(result, names, evidence) for result in drawn.comparators),
         attributes=tuple(
             _row_body(row, str(drawn.focus.candidate), active, stale) for row in drawn.attributes
         ),

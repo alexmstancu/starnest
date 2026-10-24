@@ -25,6 +25,7 @@ from starnest.evaluation.magnitudes import (
 from starnest.evaluation.normalisation import NormalisationError, scores_for
 from starnest.evaluation.ranking import (
     RankingError,
+    against_home,
     declared_weights,
     in_display_order,
     rank_candidates,
@@ -67,6 +68,7 @@ __all__ = [
     "UnsavableEvidenceError",
     "UnscoreableValueError",
     "WeightingError",
+    "against_home",
     "confidence_split",
     "contribution_of",
     "coverage_of",

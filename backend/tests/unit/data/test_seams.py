@@ -77,7 +77,14 @@ class InMemoryValueStore(ValueStore):
         )
 
     async def read_values(
-        self, *, candidate=None, attribute=None, include_superseded=True, limit=None, offset=0
+        self,
+        *,
+        candidate=None,
+        attribute=None,
+        include_superseded=True,
+        ids=None,
+        limit=None,
+        offset=0,
     ):
         # A rejected value never becomes active, which is the only part of the rule a fake
         # holding one attribute's values can honestly answer (`arch.md` 4, rule 1).

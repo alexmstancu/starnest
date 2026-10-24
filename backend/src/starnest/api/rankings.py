@@ -28,6 +28,9 @@ from starnest.api.dependencies import (
     MatchRuleResults,
     Values,
 )
+from starnest.api.rules import MatchRuleResultBody
+from starnest.api.rules import _result_body as _gate_answer_body
+from starnest.api.values import ValueBody, _value_body
 from starnest.candidates import Candidate
 from starnest.criteria import CriteriaSet
 from starnest.data import Attribute, MatchRule, MatchRuleResult, Value, ValueType
@@ -53,9 +56,16 @@ class ConfidenceSplitBody(BaseModel):
     low: float
 
 
+EVIDENCE_INPUTS = (
+    "The figures the rule read, each with its source and both dates, in the order the rule names "
+    "them (D46). Empty when the ranking was saved before its evidence was kept."
+)
+
+
 class WarningBody(BaseModel):
     compound_rule: str
     detail: str
+    inputs: tuple[ValueBody, ...] = Field(default=(), description=EVIDENCE_INPUTS)
 
 
 class NonMatchReasonBody(BaseModel):
@@ -65,6 +75,20 @@ class NonMatchReasonBody(BaseModel):
     criterion: str | None = None
     match_rule: str | None = None
     compound_rule: str | None = None
+    gate_answer: MatchRuleResultBody | None = Field(
+        default=None,
+        description=(
+            "The answer a gate's refusal read, as it stood then. Null for any other reason, and "
+            "for a refusal saved before its evidence was kept."
+        ),
+    )
+    inputs: tuple[ValueBody, ...] = Field(
+        default=(),
+        description=(
+            "The figure a threshold judged, or a compound rule's inputs. Empty for a gate. "
+            + EVIDENCE_INPUTS
+        ),
+    )
 
 
 class PillarScoreBody(BaseModel):
@@ -114,6 +138,10 @@ class AttributeScoreBody(BaseModel):
     )
     effective_weight: float
     contribution: float
+    value: ValueBody | None = Field(
+        default=None,
+        description="The exact figure scored, with its provenance. Null when there was none.",
+    )
 
 
 ScoreScaleMax = Annotated[
@@ -265,13 +293,14 @@ async def get_ranking(
         criteria_set, level, criteria, candidates, values, households, catalog, match_rule_results
     )
     names = {str(candidate.id): candidate.name for candidate in ranking.roster}
+    evidence = await evidence_for(ranking.results, values)
     return RankingBody(
         criteria_set=criteria_set,
         level=level,
         computed_at=datetime.now(UTC),
         score_scale_max=ranking.score_scale_max,
         candidates=tuple(
-            _result_body(result, names) for result in in_display_order(ranking.results)
+            _result_body(result, names, evidence) for result in in_display_order(ranking.results)
         ),
     )
 
@@ -319,18 +348,71 @@ async def get_ranked_candidate_detail(
             },
         )
     names = {str(candidate.id): candidate.name for candidate in ranking.roster}
-    weights = declared_weights(ranking.criteria, level)
-    return CandidateScoreDetailBody(
-        **_result_body(result, names).model_dump(),
+    return score_detail_body(
+        result,
+        names,
+        declared=declared_weights(ranking.criteria, level),
         score_scale_max=ranking.score_scale_max,
+        evidence=await evidence_for((result,), values, contributions=True),
+    )
+
+
+Evidence = Mapping[int, ValueBody]
+"""The stored values a set of results cites, by id, each with its provenance (D46)."""
+
+
+async def evidence_for(
+    results: Sequence[CandidateResult], values: Values, *, contributions: bool = False
+) -> Evidence:
+    """Read once every value these results cite: what each refusal and warning read, and with
+    `contributions` the figure each contribution scored.
+
+    **One read for live and saved alike**, by id, so a figure reads the same whichever path
+    shows it and the live == saved comparison reaches its provenance. A cited id with no row
+    is simply absent, and its place reads as having no evidence, never as a 500.
+    """
+    cited = {
+        value
+        for result in results
+        for value in (
+            *(cited for flag in result.warnings for cited in flag.input_values),
+            *(cited for reason in result.non_match_reasons for cited in reason.input_values),
+            *(
+                row.used_value
+                for row in (result.attribute_scores if contributions else ())
+                if row.used_value is not None
+            ),
+        )
+    }
+    if not cited:
+        return {}
+    return {
+        listing.value.id: _value_body(listing)
+        for listing in await values.read_values(ids=sorted(cited))
+        if listing.value.id is not None
+    }
+
+
+def score_detail_body(
+    result: CandidateResult,
+    names: dict[str, str],
+    *,
+    declared: Mapping[str, Decimal],
+    score_scale_max: int,
+    evidence: Evidence,
+) -> CandidateScoreDetailBody:
+    """A drill-down, built once for the live ranking and the saved one alike."""
+    return CandidateScoreDetailBody(
+        **_result_body(result, names, evidence).model_dump(),
+        score_scale_max=score_scale_max,
         attribute_scores=tuple(
-            _attribute_score_body(row, weights) for row in result.attribute_scores
+            _attribute_score_body(row, declared, evidence) for row in result.attribute_scores
         ),
     )
 
 
 def _attribute_score_body(
-    row: AttributeScore, declared: Mapping[str, Decimal]
+    row: AttributeScore, declared: Mapping[str, Decimal], evidence: Evidence
 ) -> AttributeScoreBody:
     """One row of a drill-down, its two weights on one basis (PL-063, D21).
 
@@ -344,6 +426,7 @@ def _attribute_score_body(
         weight=float(declared[str(row.attribute)]),
         effective_weight=float(row.effective_weight),
         contribution=float(row.contribution),
+        value=None if row.used_value is None else evidence.get(row.used_value),
     )
 
 
@@ -378,7 +461,13 @@ async def _home_country(households: Households) -> str | None:
     return str(household.home_country_candidate)
 
 
-def _result_body(result: CandidateResult, names: dict[str, str]) -> CandidateResultBody:
+def _cited(ids: Sequence[int], evidence: Evidence) -> tuple[ValueBody, ...]:
+    return tuple(evidence[value] for value in ids if value in evidence)
+
+
+def _result_body(
+    result: CandidateResult, names: dict[str, str], evidence: Evidence
+) -> CandidateResultBody:
     return CandidateResultBody(
         candidate=str(result.candidate),
         name=names.get(str(result.candidate)) or readable_identifier(str(result.candidate)),
@@ -403,7 +492,11 @@ def _result_body(result: CandidateResult, names: dict[str, str]) -> CandidateRes
         match_status=str(result.match_status),
         insufficient_reason=result.insufficient_reason,
         warnings=tuple(
-            WarningBody(compound_rule=str(flag.compound_rule), detail=flag.detail)
+            WarningBody(
+                compound_rule=str(flag.compound_rule),
+                detail=flag.detail,
+                inputs=_cited(flag.input_values, evidence),
+            )
             for flag in result.warnings
         ),
         non_match_reasons=tuple(
@@ -412,6 +505,10 @@ def _result_body(result: CandidateResult, names: dict[str, str]) -> CandidateRes
                 criterion=None if reason.criterion is None else str(reason.criterion),
                 match_rule=None if reason.match_rule is None else str(reason.match_rule),
                 compound_rule=(None if reason.compound_rule is None else str(reason.compound_rule)),
+                gate_answer=(
+                    None if reason.gate_answer is None else _gate_answer_body(reason.gate_answer)
+                ),
+                inputs=_cited(reason.input_values, evidence),
             )
             for reason in result.non_match_reasons
         ),

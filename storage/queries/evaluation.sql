@@ -146,15 +146,20 @@ INSERT INTO non_match_reason (candidate_result, evaluation, attribute, match_rul
                               compound_rule, reason_detail, match_rule_answer, used_value)
 SELECT reason.candidate_result, parent.evaluation, reason.attribute, reason.match_rule,
        reason.compound_rule, reason.reason_detail, reason.match_rule_answer, reason.used_value
-FROM   jsonb_to_recordset(:reasons::jsonb) AS reason(
+FROM   ROWS FROM (jsonb_to_recordset(:reasons::jsonb) AS (
            candidate_result  bigint,
            attribute         text,
            match_rule        text,
            compound_rule     text,
            reason_detail     text,
            match_rule_answer bigint,
-           used_value        bigint)
-JOIN   candidate_result AS parent ON parent.id = reason.candidate_result;
+           used_value        bigint))
+       WITH ORDINALITY AS reason(candidate_result, attribute, match_rule, compound_rule,
+                                 reason_detail, match_rule_answer, used_value, ordinal)
+JOIN   candidate_result AS parent ON parent.id = reason.candidate_result
+-- In the order the ranking gave them, which the read restores by id: the join alone may
+-- reorder them, and a reopened ranking then listed its reasons in another order (PL-144).
+ORDER  BY reason.ordinal;
 
 -- name: insert_candidate_warnings(warnings)!
 -- A warning flags without ruling anything out. It never changes the score and never makes a
@@ -470,6 +475,8 @@ WHERE  r.evaluation = :evaluation
 -- name: select_candidate_attribute_scores(evaluation, candidate)
 -- Why this candidate scored what it scored: every attribute's normalised score, its effective
 -- weight after redistribution, its contribution, and the provenance of the exact value used.
+-- A null :candidate reads every candidate's at once, which is what derives a whole saved
+-- ranking's pillars in one statement rather than one per row (PL-144).
 --
 -- The value's payload is not joined here. Pass the returned used_value ids to
 -- select_value_payloads (values.sql) rather than repeating the ten-way CASE a third time; this
@@ -484,7 +491,8 @@ WHERE  r.evaluation = :evaluation
 -- to reshuffle it. Order is presentation, never a frozen figure -- a later reordering of the
 -- pillars re-sorts an old drill-down, which is wanted, because the alternative is one screen
 -- disagreeing with the other.
-SELECT s.attribute,
+SELECT r.candidate,
+       s.attribute,
        ec.pillar,
        ec.weight,
        s.normalised_score,
@@ -511,8 +519,8 @@ LEFT   JOIN evaluation_criterion AS ec
 LEFT   JOIN pillar AS frozen_pillar ON frozen_pillar.id = ec.pillar
 LEFT   JOIN value AS used ON used.id = s.used_value
 WHERE  r.evaluation = :evaluation
-  AND  r.candidate = :candidate
-ORDER  BY frozen_pillar.display_order NULLS LAST, s.attribute;
+  AND  (:candidate::text IS NULL OR r.candidate = :candidate)
+ORDER  BY r.candidate, frozen_pillar.display_order NULLS LAST, s.attribute;
 
 -- name: delete_evaluation(evaluation)!
 -- A kept result may be discarded. One statement, children first, for the same reason

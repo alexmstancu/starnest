@@ -1061,6 +1061,14 @@ paths:
         The drill-down. Every attribute's normalised score, its effective weight after
         redistribution, its contribution, and **the exact value used**, with that value's source
         and dates. This is the provenance chain end to end.
+
+        A refusal carries the gate answer or the figure it read, and a warning its inputs, as
+        they were when the ranking was saved (D46). A ranking saved before its evidence was kept
+        serves none: a null gate answer and empty inputs.
+
+        **`delta_vs_home` is taken against the household's current home country.** A saved
+        ranking freezes its criteria and its score scale but not the household, so the
+        difference is between saved scores, anchored on today's home.
       operationId: getCandidateScoreDetail
       parameters:
         - { $ref: "#/components/parameters/EvaluationId" }
@@ -1991,6 +1999,13 @@ components:
       properties:
         compound_rule: { type: string }
         detail: { type: string, description: "In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved." }
+        inputs:
+          type: array
+          description: >-
+            The figures the rule read, each with its source and both dates, in the order the
+            rule names them -- for a saved ranking, the rows it read when it was saved, never
+            today's (D46). Empty when the ranking was saved before its evidence was kept.
+          items: { $ref: "#/components/schemas/Value" }
 
     NonMatchReason:
       type: object
@@ -2001,6 +2016,21 @@ components:
         match_rule: { type: [string, "null"] }
         compound_rule: { type: [string, "null"] }
         reason_detail: { type: string, description: "In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved. A gate's own recorded reason is served as it was written." }
+        gate_answer:
+          description: >-
+            The answer a gate's refusal read, as it stood then: a saved ranking keeps the version
+            it read however the gate is answered later (D46). Null for any other reason, and for
+            a refusal saved before its evidence was kept.
+          oneOf:
+            - $ref: "#/components/schemas/MatchRuleResult"
+            - type: "null"
+        inputs:
+          type: array
+          description: >-
+            The figure a threshold judged, or a compound rule's inputs in the order it names
+            them, each with its source and both dates (D46). Empty for a gate, which reads no
+            figure, and for a refusal saved before its evidence was kept.
+          items: { $ref: "#/components/schemas/Value" }
 
     CandidateResult:
       type: object
@@ -2039,6 +2069,8 @@ components:
             "stay put" stays measurable beside every alternative. Null for the home country
             itself, and null when either score is absent -- a difference against an unscoreable
             candidate is not zero, it is unanswerable.
+            A saved ranking takes it between its own saved scores, against the household's
+            current home country, which the ranking does not record.
         coverage_by_confidence:
           type: [object, "null"]
           description: >-
@@ -2107,7 +2139,13 @@ components:
         weight: { type: number, minimum: 0, maximum: 100, description: "Percentage of the whole level, 0-100, as configured: the criterion's share of its pillar times its pillar's share of the level, after excluded criteria are taken out and before any redistribution for missing data. The scored criteria's weights sum to 100. A saved evaluation's are computed from its frozen criteria." }
         effective_weight: { type: number, minimum: 0, maximum: 100, description: "Percentage of the whole level, 0-100, after the weight of every criterion with no figure was spread proportionally over every criterion that has one (reqs.md 5.3). Zero for a criterion with no figure. contribution = exact score x effective_weight / 100." }
         contribution: { type: number }
-        value: { $ref: "#/components/schemas/Value" }
+        value:
+          description: >-
+            The exact figure scored, with its source and both dates -- for a saved evaluation,
+            the row it scored when it was saved (D46). Null when no figure was available.
+          oneOf:
+            - $ref: "#/components/schemas/Value"
+            - type: "null"
         alternative_values:
           type: array
           description: Every other stored value for this attribute — superseded, rejected, from other sources.

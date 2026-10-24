@@ -145,10 +145,10 @@ def rank_candidates(
         )
         for candidate in sorted(values)
     )
-    return _ranked(_against_home(results, home_candidate))
+    return _ranked(against_home(results, home_candidate))
 
 
-def _against_home(
+def against_home(
     results: Sequence[CandidateResult], home_candidate: str | None
 ) -> tuple[CandidateResult, ...]:
     """Attach each candidate's difference from home, once home's own score is known.
@@ -157,6 +157,9 @@ def _against_home(
     being computed, so it cannot be known while the candidates are scored one at a time. Home
     not being in this ranking -- a different level, or a household that named a country nobody
     fetched -- leaves every difference null rather than measuring against nothing.
+
+    Public because a saved ranking stores its scores and not the difference: reopening one
+    derives it from those scores here, so the two paths cannot disagree (PL-144).
     """
     if home_candidate is None:
         return tuple(results)

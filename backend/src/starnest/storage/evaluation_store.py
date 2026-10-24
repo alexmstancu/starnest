@@ -267,6 +267,8 @@ class PostgresEvaluationStore(EvaluationStore):
         return _saved(row)
 
     async def read_results(self, evaluation: int) -> tuple[CandidateResult, ...]:
+        """Each candidate with its contributions, so its pillars derive as the live ones do
+        (PL-144): a saved ranking that lost them read as a different ranking."""
         await self.read_evaluation(evaluation)
         async with acquire(self._pool) as connection:
             rows = [
@@ -275,7 +277,14 @@ class PostgresEvaluationStore(EvaluationStore):
                     connection, evaluation=evaluation
                 )
             ]
-        return tuple(_result_from(row) for row in rows)
+            scores: dict[str, list[AttributeScore]] = {}
+            async for row in self._queries.select_candidate_attribute_scores(
+                connection, evaluation=evaluation, candidate=None
+            ):
+                scores.setdefault(row.candidate, []).append(_attribute_score_from(row))
+        return tuple(
+            _result_from(row, attribute_scores=tuple(scores.get(row.candidate, ()))) for row in rows
+        )
 
     async def read_criteria(self, evaluation: int) -> CriteriaSet:
         saved = await self.read_evaluation(evaluation)

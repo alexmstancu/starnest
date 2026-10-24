@@ -574,6 +574,28 @@ async def test_a_page_of_values_is_counted_apart_from_being_read(
     assert await values.count_values(attribute=A_COUNT_ATTRIBUTE) == 3
 
 
+async def test_values_are_read_by_the_ids_a_ranking_cites(values: PostgresValueStore) -> None:
+    """PL-144: the rows a ranking cites, with their payloads, whether or not they are active --
+    and none at all for an empty list, rather than every row."""
+    stored = await values.append(
+        [
+            a_value(attribute=A_COUNT_ATTRIBUTE, payload=Count(count=n), data_source=source)
+            for n, source in enumerate((A_BETTER_SOURCE, A_WORSE_SOURCE))
+        ]
+    )
+    cited = stored[1].id
+    assert cited is not None
+
+    (listed,) = await values.read_values(ids=[cited])
+
+    assert (listed.value.id, listed.value.payload, listed.is_active) == (
+        cited,
+        Count(count=1),
+        False,
+    )
+    assert await values.read_values(ids=[]) == ()
+
+
 async def test_a_candidate_nobody_has_fetched_anything_for_has_no_values_at_all(
     values: PostgresValueStore,
 ) -> None:

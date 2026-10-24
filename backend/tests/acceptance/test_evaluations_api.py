@@ -6,7 +6,10 @@ the numbers would drift out of meaning the next time a weight moved.
 """
 
 import httpx
+import psycopg
 import pytest
+
+from .conftest import A_HOUSEHOLD
 
 pytestmark = pytest.mark.acceptance
 
@@ -422,3 +425,150 @@ async def _store_overcrowding(database_url: str, figures: dict[str, str]) -> Non
                 )
             ]
         )
+
+
+GREECE = "country.greece"
+OVERCROWDING = "country.overcrowding_rate"
+A_GATE = "not_manually_excluded"
+
+
+async def _greece_refused_twice(api: httpx.AsyncClient, criteria_set: str) -> None:
+    """Greece ruled out by a gate somebody answered and by a threshold its figure crosses:
+    the two refusals whose evidence a saved ranking has to keep (FU-A3, FU-A4)."""
+    enforced = await api.put(
+        f"/v1/criteria-sets/{criteria_set}/match-rules/{A_GATE}", json={"is_enforced": True}
+    )
+    answered = await api.put(
+        f"/v1/match-rule-results/{A_GATE}/{GREECE}",
+        json={
+            "match_result": "not_matching",
+            "reason": "Ruled out by hand",
+            "citations": ["https://example.org/why"],
+        },
+    )
+    threshold = await api.patch(
+        f"/v1/criteria-sets/{criteria_set}/criteria/{OVERCROWDING}",
+        json={"matching_threshold": {"max_value": 20}},
+    )
+    assert [enforced.status_code, answered.status_code, threshold.status_code] == [204, 200, 200]
+
+
+async def _keep(api: httpx.AsyncClient, criteria_set: str) -> int:
+    kept = await api.post("/v1/evaluations", json={"criteria_set": criteria_set, "level": COUNTRY})
+    assert kept.status_code == 201
+    return kept.json()["id"]
+
+
+class TestASavedRankingShowsItsEvidence:
+    """D46: a saved ranking serves what each number was read from, frozen with it (PL-144).
+
+    Every figure on screen carries its source and both dates; a refusal names the gate answer
+    or the figure it judged, a warning its inputs; and the pillars and the difference from home
+    are derived from the saved contributions, so the reopened ranking reads as the live one did.
+    """
+
+    async def test_the_saved_ranking_reads_as_the_live_one_did(
+        self, api: httpx.AsyncClient, stored_figures: None, a_scratch_criteria_set: str
+    ) -> None:
+        await _greece_refused_twice(api, a_scratch_criteria_set)
+        home = await api.put(
+            "/v1/household", json={**A_HOUSEHOLD, "home_country_candidate": PORTUGAL}
+        )
+        assert home.status_code == 200
+        params = {"criteria_set": a_scratch_criteria_set, "level": COUNTRY}
+        live = (await api.get("/v1/rankings", params=params)).json()
+
+        saved = (
+            await api.get(f"/v1/evaluations/{await _keep(api, a_scratch_criteria_set)}")
+        ).json()
+
+        assert saved["candidates"] == live["candidates"]
+        greece = next(c for c in saved["candidates"] if c["candidate"] == GREECE)
+        assert greece["pillar_scores"], "pillars derive from the saved contributions"
+        assert greece["delta_vs_home"] is not None
+
+    async def test_the_drill_downs_agree_on_the_evidence_too(
+        self, api: httpx.AsyncClient, stored_figures: None, a_scratch_criteria_set: str
+    ) -> None:
+        """`live == saved` over a candidate with both kinds of refusal, so the comparison
+        reaches the evidence and its provenance rather than empty lists."""
+        await _greece_refused_twice(api, a_scratch_criteria_set)
+        params = {"criteria_set": a_scratch_criteria_set, "level": COUNTRY}
+        live = (await api.get(f"/v1/rankings/candidates/{GREECE}", params=params)).json()
+
+        evaluation = await _keep(api, a_scratch_criteria_set)
+        saved = (await api.get(f"/v1/evaluations/{evaluation}/candidates/{GREECE}")).json()
+
+        assert len(saved["non_match_reasons"]) == 2
+        assert live == saved
+
+    async def test_each_contribution_names_the_value_it_used_with_its_provenance(
+        self, api: httpx.AsyncClient, stored_figures: None
+    ) -> None:
+        kept = await _keep_one(api)
+
+        detail = (await api.get(f"/v1/evaluations/{kept['id']}/candidates/{PORTUGAL}")).json()
+
+        by_attribute = {row["attribute"]: row for row in detail["attribute_scores"]}
+        used = by_attribute[OVERCROWDING]["value"]
+        assert (used["candidate"], used["attribute"], used["payload"]["value"]) == (
+            PORTUGAL,
+            OVERCROWDING,
+            9,
+        )
+        assert used["data_source"] == "eurostat"
+        assert used["reference_period"] == {"start": "2025-01-01", "end": "2025-12-31"}
+        assert used["retrieval_date"]
+        missing = [row for row in detail["attribute_scores"] if row["normalised_score"] is None]
+        assert missing, "the minimal set has a criterion stored_figures does not answer"
+        assert all(row["value"] is None for row in missing)
+
+    async def test_a_refusal_names_the_gate_answer_or_the_figure_it_judged(
+        self, api: httpx.AsyncClient, stored_figures: None, a_scratch_criteria_set: str
+    ) -> None:
+        await _greece_refused_twice(api, a_scratch_criteria_set)
+        evaluation = await _keep(api, a_scratch_criteria_set)
+        # The answer changes after the save; the saved refusal keeps the one it read.
+        await api.put(
+            f"/v1/match-rule-results/{A_GATE}/{GREECE}",
+            json={"match_result": "not_matching", "reason": "A later answer"},
+        )
+
+        saved = (await api.get(f"/v1/evaluations/{evaluation}")).json()
+
+        greece = next(c for c in saved["candidates"] if c["candidate"] == GREECE)
+        by_kind = {
+            ("gate" if reason["match_rule"] else "threshold"): reason
+            for reason in greece["non_match_reasons"]
+        }
+        gate, threshold = by_kind["gate"], by_kind["threshold"]
+        assert gate["gate_answer"]["reason"] == "Ruled out by hand"
+        assert gate["gate_answer"]["citations"] == ["https://example.org/why"]
+        assert gate["inputs"] == []
+        (judged,) = threshold["inputs"]
+        assert (judged["attribute"], judged["payload"]["value"]) == (OVERCROWDING, 27)
+        assert judged["data_source"] == "eurostat"
+        assert threshold["gate_answer"] is None
+
+    async def test_a_ranking_saved_before_its_evidence_was_kept_still_opens(
+        self,
+        api: httpx.AsyncClient,
+        stored_figures: None,
+        a_scratch_criteria_set: str,
+        database_url: str,
+    ) -> None:
+        """Rankings saved before `0510` hold no refusal evidence. They open, with none."""
+        await _greece_refused_twice(api, a_scratch_criteria_set)
+        evaluation = await _keep(api, a_scratch_criteria_set)
+        async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as db:
+            await db.execute(
+                "UPDATE non_match_reason SET match_rule_answer = NULL, used_value = NULL"
+            )
+
+        ranking = await api.get(f"/v1/evaluations/{evaluation}")
+        detail = await api.get(f"/v1/evaluations/{evaluation}/candidates/{GREECE}")
+
+        assert [ranking.status_code, detail.status_code] == [200, 200]
+        reasons = detail.json()["non_match_reasons"]
+        assert len(reasons) == 2
+        assert all(r["gate_answer"] is None and r["inputs"] == [] for r in reasons)

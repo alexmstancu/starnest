@@ -126,6 +126,12 @@ components:
         pillar:
           title: Pillar
           type: string
+        value:
+          anyOf:
+          - $ref: '#/components/schemas/ValueBody'
+          - type: 'null'
+          description: The exact figure scored, with its provenance. Null when there
+            was none.
         weight:
           description: 'Its share of the level as configured, after exclusions and
             before redistribution: the same basis as effective_weight (PL-063).'
@@ -1580,6 +1586,22 @@ components:
           - type: string
           - type: 'null'
           title: Criterion
+        gate_answer:
+          anyOf:
+          - $ref: '#/components/schemas/MatchRuleResultBody'
+          - type: 'null'
+          description: The answer a gate's refusal read, as it stood then. Null for
+            any other reason, and for a refusal saved before its evidence was kept.
+        inputs:
+          default: []
+          description: The figure a threshold judged, or a compound rule's inputs.
+            Empty for a gate. The figures the rule read, each with its source and
+            both dates, in the order the rule names them (D46). Empty when the ranking
+            was saved before its evidence was kept.
+          items:
+            $ref: '#/components/schemas/ValueBody'
+          title: Inputs
+          type: array
         match_rule:
           anyOf:
           - type: string
@@ -2587,6 +2609,15 @@ components:
         detail:
           title: Detail
           type: string
+        inputs:
+          default: []
+          description: The figures the rule read, each with its source and both dates,
+            in the order the rule names them (D46). Empty when the ranking was saved
+            before its evidence was kept.
+          items:
+            $ref: '#/components/schemas/ValueBody'
+          title: Inputs
+          type: array
       required:
       - compound_rule
       - detail
@@ -3804,9 +3835,21 @@ paths:
   /v1/evaluations/{evaluation_id}:
     get:
       description: 'A kept ranking, in the order every ranking is shown (`in_display_order`).
+        Raises a
+
+        404 for an evaluation nobody kept.
 
 
-        Raises a 404 for an evaluation nobody kept.'
+        **Read as the live ranking reads** (PL-144, D46): pillars derive from the
+        saved
+
+        contributions, each refusal and warning carries the evidence it read, and
+        the difference
+
+        from home is taken between saved scores. Only the anchor is today''s: the
+        household''s home
+
+        country, which a saved ranking does not record.'
       operationId: getEvaluation
       parameters:
       - in: path
@@ -3835,7 +3878,11 @@ paths:
       - evaluation
   /v1/evaluations/{evaluation_id}/candidates/{candidate_id}:
     get:
-      description: Why this candidate scored what it scored, attribute by attribute.
+      description: 'Why this candidate scored what it scored, attribute by attribute,
+        each figure with its
+
+        source and dates (D46). The difference from home is taken as the saved ranking
+        takes it.'
       operationId: getCandidateScoreDetail
       parameters:
       - in: path

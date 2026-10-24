@@ -26,11 +26,20 @@ from starnest.api.dependencies import (
 from starnest.api.rankings import (
     CandidateScoreDetailBody,
     RankingBody,
-    _attribute_score_body,
+    _home_country,
     _result_body,
+    evidence_for,
+    score_detail_body,
     the_ranking,
 )
-from starnest.evaluation import SavedEvaluation, declared_weights, in_display_order
+from starnest.evaluation import (
+    CandidateResult,
+    SavedEvaluation,
+    UnknownEvaluationError,
+    against_home,
+    declared_weights,
+    in_display_order,
+)
 
 router = APIRouter(tags=["evaluation"])
 
@@ -124,24 +133,37 @@ async def save_evaluation(
     "/evaluations/{evaluation_id}", operation_id="getEvaluation", response_model=RankingBody
 )
 async def get_evaluation(
-    evaluation_id: int, evaluations: Evaluations, candidates: Candidates
+    evaluation_id: int,
+    evaluations: Evaluations,
+    candidates: Candidates,
+    values: Values,
+    households: Households,
 ) -> RankingBody:
-    """A kept ranking, in the order every ranking is shown (`in_display_order`).
+    """A kept ranking, in the order every ranking is shown (`in_display_order`). Raises a
+    404 for an evaluation nobody kept.
 
-    Raises a 404 for an evaluation nobody kept.
+    **Read as the live ranking reads** (PL-144, D46): pillars derive from the saved
+    contributions, each refusal and warning carries the evidence it read, and the difference
+    from home is taken between saved scores. Only the anchor is today's: the household's home
+    country, which a saved ranking does not record.
     """
     saved = await evaluations.read_evaluation(evaluation_id)
-    results = await evaluations.read_results(evaluation_id)
+    results = against_home(
+        await evaluations.read_results(evaluation_id), await _home_country(households)
+    )
     names = {
         str(candidate.id): candidate.name
         for candidate in await candidates.read_candidates(level=saved.level)
     }
+    evidence = await evidence_for(results, values)
     return RankingBody(
         criteria_set=saved.criteria_set,
         level=saved.level,
         computed_at=saved.computed_at,
         score_scale_max=saved.score_scale_max,
-        candidates=tuple(_result_body(result, names) for result in in_display_order(results)),
+        candidates=tuple(
+            _result_body(result, names, evidence) for result in in_display_order(results)
+        ),
     )
 
 
@@ -174,23 +196,43 @@ async def get_evaluation_criteria(
     response_model=CandidateScoreDetailBody,
 )
 async def get_candidate_score_detail(
-    evaluation_id: int, candidate_id: str, evaluations: Evaluations, candidates: Candidates
+    evaluation_id: int,
+    candidate_id: str,
+    evaluations: Evaluations,
+    candidates: Candidates,
+    values: Values,
+    households: Households,
 ) -> CandidateScoreDetailBody:
-    """Why this candidate scored what it scored, attribute by attribute."""
+    """Why this candidate scored what it scored, attribute by attribute, each figure with its
+    source and dates (D46). The difference from home is taken as the saved ranking takes it."""
     saved = await evaluations.read_evaluation(evaluation_id)
     result = await evaluations.read_candidate(evaluation_id, candidate_id)
     names = {
         str(candidate.id): candidate.name
         for candidate in await candidates.read_candidates(level=saved.level)
     }
-    weights = declared_weights(await evaluations.read_criteria(evaluation_id), saved.level)
-    return CandidateScoreDetailBody(
-        **_result_body(result, names).model_dump(),
+    result = await _against_saved_home(evaluations, evaluation_id, result, households)
+    return score_detail_body(
+        result,
+        names,
+        declared=declared_weights(await evaluations.read_criteria(evaluation_id), saved.level),
         score_scale_max=saved.score_scale_max,
-        attribute_scores=tuple(
-            _attribute_score_body(row, weights) for row in result.attribute_scores
-        ),
+        evidence=await evidence_for((result,), values, contributions=True),
     )
+
+
+async def _against_saved_home(
+    evaluations: Evaluations, evaluation_id: int, result: CandidateResult, households: Households
+) -> CandidateResult:
+    """One candidate's difference from home, against home's saved score."""
+    home = await _home_country(households)
+    if home is None or home == str(result.candidate):
+        return against_home((result,), home)[0]
+    try:
+        home_result = await evaluations.read_candidate(evaluation_id, home)
+    except UnknownEvaluationError:
+        return result
+    return against_home((result, home_result), home)[0]
 
 
 def _summary(saved: SavedEvaluation) -> EvaluationSummaryBody:

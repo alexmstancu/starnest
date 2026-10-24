@@ -116,6 +116,7 @@ class PostgresValueStore(ValueStore):
         attribute: str | None = None,
         data_acquisition_run: int | None = None,
         include_superseded: bool = True,
+        ids: Sequence[int] | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> tuple[ValueListing, ...]:
@@ -135,6 +136,7 @@ class PostgresValueStore(ValueStore):
                     attribute=attribute,
                     data_acquisition_run=data_acquisition_run,
                     include_superseded=include_superseded,
+                    value_ids=None if ids is None else list(ids),
                     limit_rows=limit,
                     offset_rows=offset,
                 )

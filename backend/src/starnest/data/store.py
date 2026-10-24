@@ -91,10 +91,14 @@ class ValueStore(ABC):
         attribute: str | None = None,
         data_acquisition_run: int | None = None,
         include_superseded: bool = True,
+        ids: Sequence[int] | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> tuple[ValueListing, ...]:
         """Every stored value, superseded and rejected ones included, for the drill-down.
+
+        `ids` narrows to the rows a ranking cites -- the figure each contribution used and the
+        evidence each refusal or warning read -- with the provenance any listing carries.
 
         Nothing is discarded, and the point of the screen is to show that: the figure that
         lost, the figure that was rejected and why, and the one being used, together.

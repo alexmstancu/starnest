@@ -812,6 +812,28 @@ class TestTheWarningTheHouseholdDecided:
         assert not AN_IDENTIFIER.search(warning["detail"])
         assert "to any" not in warning["detail"]
 
+    async def test_the_warning_names_its_inputs_and_a_saved_one_keeps_them(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """D46: the figures a warning read, each with its source and dates, served live and
+        kept by a saved ranking exactly as the live one showed them (PL-144)."""
+        await self.figures_for(database_url, self.THE_ROSTER)
+        (live,) = (await self.ranked(api))["country.romania"]["warnings"]
+
+        kept = await api.post(
+            "/v1/evaluations", json={"criteria_set": "local_employment", "level": COUNTRY}
+        )
+        assert kept.status_code == 201
+        saved = (await api.get(f"/v1/evaluations/{kept.json()['id']}")).json()
+        romania = next(c for c in saved["candidates"] if c["candidate"] == "country.romania")
+
+        assert [(i["attribute"], i["data_source"]) for i in live["inputs"]] == [
+            ("country.cost_of_living_index", "eurostat"),
+            ("country.total_tax_rate_effective", "eurostat"),
+        ]
+        assert all(i["reference_period"] and i["retrieval_date"] for i in live["inputs"])
+        assert romania["warnings"] == [live]
+
     async def test_a_blocking_criterion_nobody_answered_is_named_not_keyed(
         self, api: httpx.AsyncClient, database_url: str
     ) -> None:
