@@ -66,8 +66,8 @@ def _published_figure(payload: Index) -> Decimal:
     providers'. They cancel out only while there is one provider; `normalisation` now reads each
     figure as a fraction of its own scale, which changes nothing when there is.
 
-    Under `as_is` the figure is read as published here and rescaled by `normalisation`, from
-    the bounds this returns. Decided 2026-09-05 (`docs/d6-scale-anchors.md`): rescaling from
+    Under `as_is` the figure is read as published here and rescaled by `normalisation`, from the
+    bounds `figure_of` attaches. Decided 2026-09-05 (`docs/d6-scale-anchors.md`): rescaling from
     bounds the PUBLISHER declared invents nothing, which is what separates it from `fixed` --
     `fixed` interpolates between anchor points somebody chooses, and this reads a mapping the
     source already published. Ten of the shipped set's criteria turned on it.
@@ -100,12 +100,13 @@ zero.
 
 @dataclass(frozen=True)
 class PublishedFigure:
-    """A figure, and the scale its publisher put it on if it declared one.
+    """A figure, and the scale it was published or assigned on if it declares one.
 
     **The bounds travel with the figure rather than with the attribute**, because two candidates
     can legitimately hold values from different providers for the same attribute -- that is what
-    the multi-source design is for -- and each must be read on the scale it was published on. A
-    bound taken from the attribute would silently apply one provider's scale to another's number.
+    the multi-source design is for -- and two judgements may be given on different ranges. Each
+    must be read on its own scale; a bound taken from the attribute would silently apply one
+    figure's scale to another's number.
     """
 
     magnitude: Decimal
@@ -137,15 +138,31 @@ def magnitude_of(value: Value) -> Decimal:
 
 
 def figure_of(value: Value) -> PublishedFigure:
-    """The comparable figure, with the scale it was published on where there is one.
+    """The comparable figure, with the scale it was put on where its type declares one.
 
-    Only an `Index` declares bounds, and it always does -- `scale_min` and `scale_max` are
-    required fields, because an index means nothing without them: 72 on Numbeo's 0-100 safety
-    index and 0.72 on the World Bank's -2.5 to 2.5 governance scale are not comparable, and only
-    the declared bounds say so.
+    An `Index` declares its publisher's scale, an `AssignedScore` the range it was assigned on,
+    a `Ratio` the 0 to 100 every share sits on (`Payload.declared_scale`). **Asked of the
+    payload, not decided here**: this decided it once, for an `Index` alone, and an assigned
+    score's range reached storage only to be dropped at this line (PL-083, UF-071).
     """
     magnitude = magnitude_of(value)
-    payload = value.payload
-    if isinstance(payload, Index):
-        return PublishedFigure(magnitude, (payload.scale_min, payload.scale_max))
-    return PublishedFigure(magnitude)
+    assert value.payload is not None, "magnitude_of refuses a value that holds nothing"
+    return PublishedFigure(magnitude, value.payload.declared_scale())
+
+
+def share_of_its_scale(figure: PublishedFigure) -> Decimal | None:
+    """How far up the scale it declares the figure sits: 0 at the bottom, 1 at the top.
+
+    None where it declares no scale to be read on: none at all, or one that does not run from
+    low to high -- which no payload can declare, and which `scores_for`, being public, can still
+    be handed. Reading it would divide by nothing or turn the scale upside down.
+
+    The one place this is computed, so `as_is` and `percentile` cannot disagree about where a
+    figure sits.
+    """
+    if figure.published_bounds is None:
+        return None
+    lowest, highest = figure.published_bounds
+    if highest <= lowest:
+        return None
+    return (figure.magnitude - lowest) / (highest - lowest)

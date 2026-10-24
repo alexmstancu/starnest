@@ -290,6 +290,47 @@ def test_the_criterion_guard_notices_a_second_set_that_does_not_sum(
     assert [(row[0], row[1], row[3]) for row in off] == [(A_SECOND_SET, "economics", 60)]
 
 
+# --- an assigned score's scale is its own, so the catalog cannot bound it (C06-S7) ----------
+
+
+def _assigned_scores_with_an_allowed_range(connection: psycopg.Connection) -> list[tuple]:
+    return connection.execute(
+        """
+        SELECT a.id, r.min_value, r.max_value
+        FROM   attribute AS a
+        JOIN   attribute_allowed_range AS r ON r.attribute = a.id
+        WHERE  a.value_type = 'AssignedScore'
+        ORDER  BY 1
+        """
+    ).fetchall()
+
+
+def test_no_assigned_score_attribute_declares_an_allowed_range(
+    connection: psycopg.Connection,
+) -> None:
+    """**An allowed range bounds the raw figure** (`Attribute`'s `_number_carried_by`), and an
+    assigned score's figure is a position on a scale it carries itself (PL-083). 7 on 0-10 and
+    70 on 0-100 are one judgement: a range of 0-100 would pass the first as though it meant 7
+    of 100 and refuse 700 on 0-1000 outright. The scale is per figure, so there is nothing for
+    the catalog to bound."""
+    assert _assigned_scores_with_an_allowed_range(connection) == []
+
+
+def test_the_assigned_score_guard_notices_an_allowed_range(
+    connection: psycopg.Connection,
+) -> None:
+    """The guard above, shown able to fail: the shipped catalog declares no such range, so
+    without this it passes for two reasons that look identical."""
+    connection.execute(
+        "INSERT INTO attribute_allowed_range (attribute, min_value, max_value)"
+        " VALUES ('country.residency_admin_ease', 0, 100)"
+    )
+
+    found = _assigned_scores_with_an_allowed_range(connection)
+
+    assert [row[0] for row in found] == ["country.residency_admin_ease"]
+
+
 # --- max_age, against reqs.md 7.1 itself (known-issues D7) ----------------------------------
 
 NO_HORIZON = "—"

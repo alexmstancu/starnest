@@ -8,11 +8,12 @@ so real values alone are enough. Nothing has to be invented, and `devplan.md` 0.
 is never approached.
 
 **`as_is` takes the figure as the score**, and refuses one that is not on the scale -- unless
-its publisher declared the scale it *is* on, in which case it is mapped across. Decided
-2026-09-05 (`docs/d6-scale-anchors.md`): rescaling from bounds the source published invents
+the figure declares the scale it *is* on, in which case it is mapped across: an index its
+publisher's, an assigned score the range it was given on, a share its 0 to 100. Decided for the
+index 2026-09-05 (`docs/d6-scale-anchors.md`): rescaling from a scale the source stated invents
 nothing, and it is what separates this from `fixed`, which interpolates between anchor points
 somebody chooses. Without it, a World Bank governance figure of 0.72 and a Numbeo index of 72
-mean similar things and score forty-fold apart.
+mean similar things and score forty-fold apart -- and 7 on 0-10 scored 7 out of 100 (PL-083).
 
 Where no bounds are declared the refusal stands, and it is still the greater part of the
 method's value: a figure that is neither on the score scale nor on a stated one of its own is a
@@ -36,7 +37,7 @@ from decimal import Decimal
 from itertools import pairwise
 
 from starnest.criteria import Goal, NormalisationMethod, ScaleAnchor, TargetRange
-from starnest.evaluation.magnitudes import PublishedFigure
+from starnest.evaluation.magnitudes import PublishedFigure, share_of_its_scale
 
 
 class NormalisationError(ValueError):
@@ -180,7 +181,7 @@ def _on_the_anchored_scale(
     """Where the figure falls between the user's anchors, as a score.
 
     Read off the figure's own magnitude, in the attribute's unit -- the anchors are written in
-    that unit ("20% scores 10"), so a published scale an index carries is not consulted here.
+    that unit ("20% scores 10"), so a scale the figure declares is not consulted here.
     """
     if not anchors:
         raise NormalisationError(
@@ -203,7 +204,7 @@ def _on_the_anchored_scale(
 
 
 def _already_a_score(figure: PublishedFigure, *, goal: Goal, score_scale_max: int) -> Decimal:
-    """The figure as a score, mapped from its published scale where it declares one.
+    """The figure as a score, mapped from the scale it declares where it declares one.
 
     Refusing an out-of-range figure rather than clamping it: clamping turns a source that
     disagrees with the declared scale into a plausible score at the boundary, and every
@@ -211,11 +212,7 @@ def _already_a_score(figure: PublishedFigure, *, goal: Goal, score_scale_max: in
     """
     on_the_score_scale = _mapped(figure, score_scale_max)
     if not 0 <= on_the_score_scale <= score_scale_max:
-        raise NormalisationError(
-            f"{figure.magnitude} is not a score on a scale of 0 to {score_scale_max} and "
-            "declares no scale of its own; `as_is` is for a figure that is already a score, "
-            "and choosing where one sits is what `fixed` is for"
-        )
+        raise NormalisationError(_why_it_is_not_a_score(figure, score_scale_max))
     return (
         on_the_score_scale
         if goal is Goal.MAXIMISE
@@ -223,28 +220,39 @@ def _already_a_score(figure: PublishedFigure, *, goal: Goal, score_scale_max: in
     )
 
 
-def _mapped(figure: PublishedFigure, score_scale_max: int) -> Decimal:
-    """A published figure moved onto the score scale, or left alone where it declares none.
+def _why_it_is_not_a_score(figure: PublishedFigure, score_scale_max: int) -> str:
+    """The refusal, naming the scale the figure declared where it declared one (C06-S6)."""
+    if figure.published_bounds is None:
+        return (
+            f"{figure.magnitude} is not a score on a scale of 0 to {score_scale_max} and "
+            "declares no scale of its own; `as_is` is for a figure that is already a score, "
+            "and choosing where one sits is what `fixed` is for"
+        )
+    low, high = figure.published_bounds
+    return (
+        f"{figure.magnitude} is not a score on the scale {low} to {high} it declares; a figure "
+        "that contradicts its own scale is refused rather than clamped"
+    )
 
-    Linear between the publisher's own bounds, so the bottom of their scale is 0 and the top is
+
+def _mapped(figure: PublishedFigure, score_scale_max: int) -> Decimal:
+    """A figure moved onto the score scale from the scale it declares, or left alone where it
+    declares none it can be read on (`share_of_its_scale`).
+
+    Linear between the bounds of its own scale, so the bottom of that scale is 0 and the top is
     the whole of ours.
 
     **A figure outside the bounds it declares needs no guard here**, which is worth stating
     because the obvious one was written and then removed: the mapping is monotonic, so anything
-    below the publisher's floor maps below 0 and anything above their ceiling maps above the
-    score scale, and `_already_a_score` refuses both. A guard that cannot change an outcome
-    reads as a case that happens. `Index` also refuses to construct a value outside the scale it
-    declares, so the source would have to contradict itself twice.
-
-    Inverted bounds are a different matter and are checked: they would divide by a negative and
-    turn the whole scale upside down without ever leaving the range.
+    below its floor maps below 0 and anything above its ceiling maps above the score scale, and
+    `_already_a_score` refuses both. A guard that cannot change an outcome reads as a case that
+    happens. Every payload that declares a scale also refuses a figure outside it, so the source
+    would have to contradict itself twice.
     """
-    if figure.published_bounds is None:
+    share = share_of_its_scale(figure)
+    if share is None:
         return figure.magnitude
-    lowest, highest = figure.published_bounds
-    if highest <= lowest:
-        return figure.magnitude
-    return (figure.magnitude - lowest) / (highest - lowest) * Decimal(score_scale_max)
+    return share * Decimal(score_scale_max)
 
 
 def _comparable_across_publishers(
@@ -281,19 +289,21 @@ def _comparable_across_publishers(
 
 
 def _as_a_fraction_of_its_own_scale(figure: PublishedFigure) -> Decimal:
-    """Where the figure sits between the bounds its publisher declared.
+    """Where the figure sits on the scale it declares (`share_of_its_scale`).
 
-    A scale of zero width is the publisher's own contradiction rather than this column's, and
-    `Index` refuses one on the way in; the guard is here so a division cannot be the way it is
-    discovered.
+    A scale that does not run from low to high is the publisher's own contradiction rather than
+    this column's, and every payload refuses one on the way in; it is refused here too, so a
+    division cannot be the way it is discovered.
     """
     assert figure.published_bounds is not None
-    low, high = figure.published_bounds
-    if high == low:
+    share = share_of_its_scale(figure)
+    if share is None:
+        low, high = figure.published_bounds
         raise NormalisationError(
-            f"a figure published on the scale {low} to {high} has no width to be read against"
+            f"a figure published on the scale {low} to {high} has no width to be read against; "
+            "a scale runs from low to high"
         )
-    return (figure.magnitude - low) / (high - low)
+    return share
 
 
 def _by_standing(

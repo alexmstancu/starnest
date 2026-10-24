@@ -14,7 +14,9 @@ from the list is simply unconstrained, silently -- so the claim is compared here
 packages that actually exist, which is what turns it into a check.
 """
 
+import ast
 import tomllib
+from collections.abc import Iterator
 from pathlib import Path
 
 import grimp
@@ -242,4 +244,77 @@ def test_both_sides_agree_on_what_marks_a_test_made_evaluation() -> None:
     assert f'"{TEST_EVALUATION_MARKER}"' in spec, (
         f"the browser suite no longer writes {TEST_EVALUATION_MARKER!r}, so the boot sweep in "
         f"main.py would discard nothing and saved test rankings would accumulate for ever"
+    )
+
+
+# --- every reader of a figure says what it makes of a declared scale (C06, G2) ---------------
+
+FIGURE_READERS = frozenset(
+    {"figure_of", "magnitude_of", "declared_scale", "share_of_its_scale", "threshold_reading"}
+)
+"""What hands out a value's figure, or the scale that figure sits on."""
+
+THE_READER = "attaches the scale the payload declares"
+MAPPED = "scored: mapped from the scale the figure declares"
+A_SHARE_OF_ITS_SCALE = "ranked: by its share of the scale it declares"
+PROBE = "probe: asks only whether there is a figure"
+RAW_PENDING_THRESHOLDS = "raw, pending C06-S1: compares the magnitude, whatever its scale"
+RAW_PENDING_COMPARE = "raw, pending C06-S2: subtracts magnitudes, whatever their scales"
+
+READERS_OF_A_FIGURE = {
+    ("starnest.evaluation.magnitudes", "figure_of"): THE_READER,
+    ("starnest.evaluation.normalisation", "_mapped"): MAPPED,
+    ("starnest.evaluation.normalisation", "_as_a_fraction_of_its_own_scale"): A_SHARE_OF_ITS_SCALE,
+    ("starnest.evaluation.ranking", "_readings_by_criterion"): MAPPED,
+    ("starnest.evaluation.ranking", "_figure_sources_of"): PROBE,
+    ("starnest.evaluation.ranking", "_magnitudes_of"): RAW_PENDING_THRESHOLDS,
+    ("starnest.evaluation.rules", "_crosses"): RAW_PENDING_THRESHOLDS,
+    ("starnest.api.comparisons", "_magnitudes"): RAW_PENDING_COMPARE,
+}
+"""Every function that reads a figure, and what it does with a scale the figure declares."""
+
+
+def _owners_in(tree: ast.Module) -> Iterator[tuple[str, ast.AST]]:
+    """Each top-level function and method by its qualified name, anything else as `<module>`."""
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            yield node.name, node
+        elif isinstance(node, ast.ClassDef):
+            for member in node.body:
+                named = isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef)
+                yield (f"{node.name}.{member.name}" if named else node.name), member
+        else:
+            yield "<module>", node
+
+
+def _names_a_reader(node: ast.AST) -> bool:
+    return (isinstance(node, ast.Name) and node.id in FIGURE_READERS) or (
+        isinstance(node, ast.Attribute) and node.attr in FIGURE_READERS
+    )
+
+
+def _readers_of_a_figure() -> set[tuple[str, str]]:
+    found: set[tuple[str, str]] = set()
+    for path in sorted(SOURCE.rglob("*.py")):
+        module = ".".join(path.relative_to(SOURCE.parent).with_suffix("").parts)
+        for owner, node in _owners_in(ast.parse(path.read_text(encoding="utf-8"))):
+            if any(_names_a_reader(each) for each in ast.walk(node)):
+                found.add((module.removesuffix(".__init__"), owner))
+    return found
+
+
+def test_every_reader_of_a_figure_says_what_it_makes_of_a_declared_scale() -> None:
+    """**UF-071 was a reader nobody had listed.** An assigned score's range reached storage and
+    was dropped by the one function that decided which figures carry a scale, and nothing knew
+    every place a figure is read -- so nothing asked whether each one honoured its scale.
+
+    A new reader fails here until somebody writes down what it makes of a declared scale, which
+    is the moment to decide it. Three read the raw magnitude today and say so; the commits that
+    fix them (C06-S1, C06-S2) change their rows rather than adding a reader nobody reviewed.
+    """
+    found = _readers_of_a_figure()
+
+    assert found == READERS_OF_A_FIGURE.keys(), (
+        f"read a figure and are not listed: {sorted(found - READERS_OF_A_FIGURE.keys())}; "
+        f"listed and no longer read one: {sorted(READERS_OF_A_FIGURE.keys() - found)}"
     )

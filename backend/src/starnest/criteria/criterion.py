@@ -256,9 +256,10 @@ class Criterion(BaseModel):
         """`reqs.md` 3.3a fixes which normalisation methods each value type may wear.
 
         A `Monetary` figure has no natural score scale, so only an explicit `fixed` one reads
-        it; an `Index` is already on a 0-100 scale, so `as_is` reads it and `percentile` ranks
-        it, but `fixed` would re-anchor a number that needs no anchoring; an `AssignedScore` is a
-        score already, so only `as_is` leaves it alone. Enforced here rather than left to the
+        it; an `Index` declares the scale its publisher put it on, so `as_is` maps it from there
+        and `percentile` ranks it, but `fixed` would re-anchor a number its publisher already
+        placed; an `AssignedScore` declares the range it was assigned on, so `as_is` maps it from
+        that range and nothing else reads it. Enforced here rather than left to the
         convention `0104` follows, so a set edited through the API cannot save a combination that
         would silently misread the figure -- a `Monetary` rent ranked by `percentile`, say, which
         is the kind of plausible wrong number `reqs.md` 10 forbids.

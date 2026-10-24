@@ -141,10 +141,10 @@ def test_a_method_illegal_for_the_value_type_is_refused(
     """`reqs.md` 3.3a fixes which normalisation methods each value type may wear.
 
     A `Monetary` figure has no natural score scale, so only an explicit `fixed` one reads it; an
-    `Index` is already 0-100, so `fixed` would re-anchor a number that needs none; an
-    `AssignedScore` is a score already, so only `as_is` leaves it alone. Enforced here rather
-    than left to the convention `0104` follows, so a set edited through the API cannot save a
-    combination that silently misreads the figure.
+    `Index` declares its publisher's scale, so `fixed` would re-anchor a number already placed;
+    an `AssignedScore` declares the range it was assigned on, so only `as_is` reads it, mapped
+    from that range. Enforced here rather than left to the convention `0104` follows, so a set
+    edited through the API cannot save a combination that silently misreads the figure.
     """
     with pytest.raises(ValueError, match="does not permit"):
         criterion(

@@ -9,8 +9,11 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from pydantic import ValidationError
 
+from starnest.criteria import Goal, NormalisationMethod
 from starnest.data import (
+    PAYLOAD_CLASSES,
     AssignedScore,
     Assigner,
     Boolean,
@@ -18,6 +21,7 @@ from starnest.data import (
     Index,
     LabelSet,
     Monetary,
+    Payload,
     Quantity,
     Ratio,
     ValueType,
@@ -27,9 +31,10 @@ from starnest.evaluation import (
     figure_of,
     is_scoreable,
     magnitude_of,
+    scores_for,
 )
 
-from .builders import a_value
+from .builders import a_criterion, a_value
 
 
 class TestTheSixTypesThatCarryAFigure:
@@ -204,19 +209,37 @@ class TestTheScaleAFigureWasPublishedOn:
         assert figure_of(numbeo).published_bounds == (Decimal(0), Decimal(100))
         assert figure_of(world_bank).published_bounds == (Decimal("-2.5"), Decimal("2.5"))
 
+    def test_an_assigned_score_carries_the_range_it_was_assigned_on(self) -> None:
+        """PL-083 (UF-071). **A judgement means nothing without its scale**, exactly as an index
+        does: the hand-entry form asks for the range because 7 on 0-10 and 7 on 0-100 are
+        different judgements. The range reached storage and was dropped here, so 7 on 0-10
+        scored 7 out of 100."""
+        judged = AssignedScore(
+            value=Decimal(7),
+            range_min=Decimal(0),
+            range_max=Decimal(10),
+            assigned_by=Assigner.HUMAN,
+        )
+
+        figure = figure_of(a_value(value_type=ValueType.ASSIGNED_SCORE, payload=judged))
+
+        assert (figure.magnitude, figure.published_bounds) == (7, (Decimal(0), Decimal(10)))
+
     @pytest.mark.parametrize(
         ("value_type", "payload"),
         [
             (ValueType.QUANTITY, Quantity(magnitude=Decimal("17.5"), unit="percent")),
             (ValueType.COUNT, Count(count=12, basis="airports")),
-            (ValueType.RATIO, Ratio(value=Decimal("31.2"), basis="of land area")),
+            (ValueType.MONETARY, Monetary.in_euro(Decimal("1410"))),
         ],
     )
     def test_nothing_else_claims_a_published_scale(
         self, value_type: ValueType, payload: object
     ) -> None:
-        """**Only an `Index` declares bounds**, and inventing them for a Quantity would make
-        `as_is` rescale a figure nobody put on a scale."""
+        """**A measurement in a unit sits on no scale its type declares**, and inventing one for
+        a Quantity would make `as_is` rescale a figure nobody put on a scale. An index, an
+        assigned score and a share each declare theirs; rent, a count and a temperature do
+        not."""
         value = a_value(value_type=value_type, payload=payload)
 
         assert figure_of(value).published_bounds is None
@@ -230,3 +253,126 @@ class TestTheScaleAFigureWasPublishedOn:
 
         with pytest.raises(UnscoreableValueError):
             figure_of(value)
+
+
+AT_THE_MIDDLE_OF_ITS_SCALE: dict[ValueType, Payload] = {
+    ValueType.INDEX: Index(
+        value=Decimal(0),
+        provider="World Bank WGI",
+        scale_min=Decimal("-2.5"),
+        scale_max=Decimal("2.5"),
+    ),
+    ValueType.ASSIGNED_SCORE: AssignedScore(
+        value=Decimal(5),
+        range_min=Decimal(0),
+        range_max=Decimal(10),
+        assigned_by=Assigner.HUMAN,
+    ),
+    ValueType.RATIO: Ratio(value=Decimal(50), basis="of land area"),
+}
+"""One figure half way up its own scale, for every type that declares one. No scale here is the
+score scale the test reads it onto, so mapping is the only way to land on the middle of ours."""
+
+
+def _declares_its_scale(payload_class: type[Payload]) -> bool:
+    """Whether a payload type says what scale its figure is on, rather than inheriting None."""
+    return payload_class.declared_scale is not Payload.declared_scale
+
+
+def _scale_fields_of(payload_class: type[Payload]) -> set[str]:
+    """Every `<stem>_min`/`<stem>_max` pair a payload type carries: a scale, by its shape."""
+    fields = payload_class.model_fields
+    return {
+        name.removesuffix("_min")
+        for name in fields
+        if name.endswith("_min") and f"{name.removesuffix('_min')}_max" in fields
+    }
+
+
+def _criteria_permit_as_is(value_type: ValueType) -> bool:
+    """Asked of `Criterion`, the authority on which methods a type may wear (`reqs.md` 3.3a)."""
+    try:
+        a_criterion(value_type=value_type, normalisation_method=NormalisationMethod.AS_IS)
+    except ValidationError as refusal:
+        if "does not permit" not in str(refusal):
+            raise
+        return False
+    return True
+
+
+class TestEveryDeclaredScaleTravels:
+    """**A figure is read on the scale it declares, whatever its type** (PL-083, UF-071).
+
+    The rule was written as an `Index` special case -- `isinstance(payload, Index)` -- because an
+    assigned score was believed to be "a score already". It is a judgement on a scale its
+    assigner states, and that scale reached storage and was dropped at scoring: 7 on 0-10 scored
+    7 out of 100, and 700 on 0-1000 emptied the criterion for every candidate. The belief lived
+    in docstrings and no test crossed the seam, so these hold the rule by type, not by example.
+    """
+
+    def test_every_payload_that_declares_a_scale_is_read_on_it(self) -> None:
+        """G1a. A `<stem>_min`/`<stem>_max` pair is a scale the payload carries, and carrying
+        one is not enough: `declared_scale` is the one place scoring looks for it."""
+        carrying_a_scale = {
+            value_type: payload_class
+            for value_type, payload_class in PAYLOAD_CLASSES.items()
+            if _scale_fields_of(payload_class)
+        }
+        assert carrying_a_scale, "no payload carries a scale, so this guard would pass vacuously"
+
+        dropped = sorted(
+            str(value_type)
+            for value_type, payload_class in carrying_a_scale.items()
+            if not _declares_its_scale(payload_class)
+        )
+
+        assert dropped == [], f"these carry a scale that scoring never reads: {dropped}"
+
+    @pytest.mark.parametrize("value_type", list(AT_THE_MIDDLE_OF_ITS_SCALE))
+    def test_the_middle_of_a_declared_scale_scores_the_middle_of_the_score_scale(
+        self, value_type: ValueType
+    ) -> None:
+        """G1b. Half way up its own scale is half way up ours, through the two steps the ranking
+        takes. A top of 150 rather than 100, so a figure scored raw, or mapped onto a hardcoded
+        100, cannot land on 75 by accident."""
+        payload = AT_THE_MIDDLE_OF_ITS_SCALE[value_type]
+        figure = figure_of(a_value(value_type=value_type, payload=payload))
+
+        scored = scores_for(
+            [figure],
+            method=NormalisationMethod.AS_IS,
+            goal=Goal.MAXIMISE,
+            score_scale_max=150,
+        )
+
+        assert scored == (75,)
+
+    def test_every_type_that_declares_a_scale_is_scored_at_its_middle(self) -> None:
+        """The guard above is only as wide as its table, so the table must name every type that
+        declares a scale -- a new one cannot arrive unscored."""
+        declaring = {
+            value_type
+            for value_type, payload_class in PAYLOAD_CLASSES.items()
+            if _declares_its_scale(payload_class)
+        }
+
+        assert set(AT_THE_MIDDLE_OF_ITS_SCALE) == declaring
+
+    def test_every_type_as_is_may_read_declares_its_scale(self) -> None:
+        """G1c. `as_is` reads a figure as a position on its scale, so every type it may read has
+        to declare one. Without it the bare magnitude is taken as the score -- which is how a
+        homicide rate of 1.12 per 100,000 once scored 99 (`0442`)."""
+        readable_as_is = {
+            value_type
+            for value_type in ValueType
+            if is_scoreable(value_type) and _criteria_permit_as_is(value_type)
+        }
+        assert readable_as_is, "as_is reads no type at all, so this guard would pass vacuously"
+
+        on_no_scale = sorted(
+            str(value_type)
+            for value_type in readable_as_is
+            if not _declares_its_scale(PAYLOAD_CLASSES[value_type])
+        )
+
+        assert on_no_scale == [], f"as_is may read these, and they declare no scale: {on_no_scale}"

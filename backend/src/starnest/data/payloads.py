@@ -93,6 +93,15 @@ class Payload(BaseModel):
 
     value_type: ValueType
 
+    def declared_scale(self) -> tuple[Decimal, Decimal] | None:
+        """The scale this figure was put on, low to high, where its type carries one.
+
+        None for a measurement in a unit -- rent in euros, a count of airports -- which sits on
+        no scale. A payload carrying a scale must say so here: it is the one place scoring
+        reads it, and a scale carried but not declared is silently dropped (PL-083).
+        """
+        return None
+
 
 class Monetary(Payload):
     """An amount of money, as issued, with its EUR equivalent and the rate that produced it.
@@ -227,6 +236,10 @@ class Ratio(Payload):
     value: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     basis: str = Field(min_length=1, description="What the share is of: `total_employment`.")
 
+    def declared_scale(self) -> tuple[Decimal, Decimal]:
+        """The 0 to 100 every share is bounded to, so 50% is half way up any score scale (N1)."""
+        return (Decimal(0), Decimal(100))
+
 
 class Index(Payload):
     """A published index, carrying the scale it is published on.
@@ -243,6 +256,9 @@ class Index(Payload):
     provider: str = Field(min_length=1, description="Who publishes the index.")
     scale_min: Decimal = Field(allow_inf_nan=False)
     scale_max: Decimal = Field(allow_inf_nan=False)
+
+    def declared_scale(self) -> tuple[Decimal, Decimal]:
+        return (self.scale_min, self.scale_max)
 
     @model_validator(mode="after")
     def _reject_a_value_outside_the_scale_it_declares(self) -> "Index":
@@ -349,6 +365,10 @@ class AssignedScore(Payload):
     range_max: Decimal = Field(allow_inf_nan=False)
     assigned_by: Assigner
     rationale: str | None = None
+
+    def declared_scale(self) -> tuple[Decimal, Decimal]:
+        """The range it was assigned on: 7 on 0-10 is seven tenths of the way up, not 7."""
+        return (self.range_min, self.range_max)
 
     @model_validator(mode="after")
     def _reject_a_score_outside_the_range_it_declares(self) -> "AssignedScore":

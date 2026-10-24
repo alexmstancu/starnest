@@ -196,6 +196,48 @@ class TestTypingAValue:
         assert response.status_code == 404
 
 
+ADMIN_EASE = "country.residency_admin_ease"
+"""An AssignedScore that declares manual entry, scored `as_is` by the shipped `local_employment`."""
+
+SEVEN_ON_ZERO_TO_TEN = A_TYPED_VALUE | {
+    "attribute": ADMIN_EASE,
+    "payload": {
+        "value": 7,
+        "range_min": 0,
+        "range_max": 10,
+        "assigned_by": "human",
+        "rationale": "Permits are applied for online; registration is one office visit",
+    },
+    "quote": "AIMA: residence permits are requested through the online portal",
+}
+
+
+class TestATypedScoreIsScoredOnItsOwnScale:
+    """PL-083 (UF-071), along the whole path a reader takes: the API, storage, and the drill-down.
+
+    The range survived the first two and was dropped at scoring, so a review typed 7 on 0-10 for
+    Portugal and read back a score of 7, and Portugal's governance fell for a figure that should
+    have raised it.
+    """
+
+    async def test_seven_on_zero_to_ten_reads_seventy_in_the_drill_down(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        await api.put("/v1/settings", json={"score_scale_max": 100})
+        stored = await api.post("/v1/values/manual", json=SEVEN_ON_ZERO_TO_TEN)
+        assert stored.status_code == 201
+
+        detail = await api.get(
+            "/v1/rankings/candidates/country.portugal",
+            params={"criteria_set": "local_employment", "level": COUNTRY},
+        )
+
+        assert detail.status_code == 200
+        rows = detail.json()["attribute_scores"]
+        (row,) = [row for row in rows if row["attribute"] == ADMIN_EASE]
+        assert row["normalised_score"] == 70
+
+
 class TestTheGates:
     async def test_every_gate_comes_back_and_one_is_asked_at_every_level(
         self, api: httpx.AsyncClient

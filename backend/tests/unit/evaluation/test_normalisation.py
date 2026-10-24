@@ -288,7 +288,8 @@ class TestAnIndexIsReadOnTheScaleItsPublisherDeclared:
         assert as_is_published([numbeo, world_bank]) == (5, 5)
 
     def test_a_figure_with_no_declared_scale_is_still_taken_as_it_stands(self) -> None:
-        """The behaviour every other value type keeps: only an Index declares bounds."""
+        """The behaviour a measurement in a unit keeps: rent, a count and a temperature declare
+        no scale, so `as_is` can only take the figure as it is."""
         assert as_is_published([published("7")]) == (7,)
 
     def test_a_figure_outside_the_bounds_it_declares_is_refused(self) -> None:
@@ -296,6 +297,16 @@ class TestAnIndexIsReadOnTheScaleItsPublisherDeclared:
         to smooth over by clamping."""
         with pytest.raises(NormalisationError, match="not a score"):
             as_is_published([published("140", bounds=("0", "100"))])
+
+    def test_the_refusal_names_the_scale_a_figure_declared(self) -> None:
+        """C06-S6. The refusal said the figure "declares no scale of its own" while it carried
+        one, which sends the reader looking for a scale that was there all along -- and every
+        assigned score carries one. It names the scale it was given instead."""
+        with pytest.raises(NormalisationError) as refused:
+            as_is_published([published("3", bounds=("-2.5", "2.5"))])
+
+        assert "declares no scale" not in str(refused.value)
+        assert "-2.5 to 2.5" in str(refused.value)
 
     def test_minimising_reflects_the_mapped_figure(self) -> None:
         """A cost index of 72 on 0-100, read as "lower is better", is 2.8 out of 10 (unrounded)."""

@@ -25,6 +25,8 @@ from starnest.criteria import (
     ScaleAnchor,
 )
 from starnest.data import (
+    AssignedScore,
+    Assigner,
     CompoundRule,
     CompoundRuleCondition,
     CompoundRuleShape,
@@ -867,6 +869,90 @@ class TestATargetRangeCriterion:
 
         assert found["country.portugal"].score == 100
         assert found["country.sweden"].score == 50
+
+
+ADMIN_EASE = "country.residency_admin_ease"
+GOVERNANCE = "governance"
+
+
+def an_assigned_score(candidate: str, score: str, *, on: tuple[str, str]):
+    """`score` on the range `on`, judged by a person, as the hand-entry form stores it."""
+    return a_value(
+        candidate=candidate,
+        attribute=ADMIN_EASE,
+        value_type=ValueType.ASSIGNED_SCORE,
+        data_source="manual",
+        payload=AssignedScore(
+            value=Decimal(score),
+            range_min=Decimal(on[0]),
+            range_max=Decimal(on[1]),
+            assigned_by=Assigner.HUMAN,
+        ),
+    )
+
+
+def admin_ease_as_is(goal: Goal = Goal.MAXIMISE):
+    """The shipped shape: an assigned score, `as_is`, the whole of its pillar."""
+    judged = a_criterion(
+        attribute=ADMIN_EASE,
+        value_type=ValueType.ASSIGNED_SCORE,
+        pillar=GOVERNANCE,
+        goal=goal,
+        normalisation_method=NormalisationMethod.AS_IS,
+    )
+    return a_set([judged], [a_pillar_weight(pillar=GOVERNANCE)])
+
+
+def admin_ease_scores(results) -> dict[str, int | None]:
+    return {
+        str(result.candidate): result.attribute_scores[0].normalised_score for result in results
+    }
+
+
+class TestAnAssignedScore:
+    """**A judgement is scored on the scale it was given on** (PL-083, UF-071).
+
+    Typed by hand as 7 on 0-10, it was scored 7 out of 100: the range reached storage and was
+    dropped at scoring, because an assigned score was believed to be "a score already". The
+    scale here is set per test, and never to the top of the range being read, because a top
+    equal to the range is the one case where reading the figure raw gives the right answer.
+    """
+
+    @pytest.mark.parametrize(("scale", "expected"), [(100, 70), (150, 105)])
+    def test_seven_on_a_scale_of_ten_scores_seventy(self, scale: int, expected: int) -> None:
+        """The same judgement given on two ranges is the same score, on whatever scale the
+        household set."""
+        values = {
+            "country.portugal": (an_assigned_score("country.portugal", "7", on=("0", "10")),),
+            "country.spain": (an_assigned_score("country.spain", "70", on=("0", "100")),),
+        }
+
+        scores = admin_ease_scores(rank(admin_ease_as_is(), values, scale=scale))
+
+        assert scores == {"country.portugal": expected, "country.spain": expected}
+
+    def test_a_range_wider_than_the_score_scale_is_scored_not_dropped(self) -> None:
+        """**Worse than filed.** 700 on 0-1000 read raw is off a scale of 100, so the column was
+        refused -- and one hand-typed figure took the criterion away from every candidate,
+        silently, in their coverage."""
+        values = {
+            "country.portugal": (an_assigned_score("country.portugal", "700", on=("0", "1000")),),
+            "country.spain": (an_assigned_score("country.spain", "40", on=("0", "100")),),
+        }
+
+        scores = admin_ease_scores(rank(admin_ease_as_is(), values, scale=100))
+
+        assert scores == {"country.portugal": 70, "country.spain": 40}
+
+    def test_minimising_reflects_the_score_on_its_own_scale(self) -> None:
+        """Seven tenths of the way up, read as "lower is better", is three tenths of ours."""
+        values = {
+            "country.portugal": (an_assigned_score("country.portugal", "7", on=("0", "10")),),
+        }
+
+        scores = admin_ease_scores(rank(admin_ease_as_is(Goal.MINIMISE), values, scale=100))
+
+        assert scores == {"country.portugal": 30}
 
 
 class TestEachContributionNamesTheValueBehindIt:
