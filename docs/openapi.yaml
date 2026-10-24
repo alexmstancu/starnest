@@ -306,8 +306,12 @@ paths:
         Rejected with `409 manual_entry_not_permitted` when the attribute does not allow it, and
         with `409 conflicting_observation` when another figure is already on record under the
         same candidate, attribute, breakdown, period and retrieval date: a correction is a new
-        observation with its own retrieval date. Resubmitting the same figure, whatever its
-        quote or pages, returns the value already stored.
+        observation with its own retrieval date. Its `details` name the observation that stands:
+        `value_id`, `candidate`, `attribute`, `data_source`, `breakdown_option` (only where it
+        has one), `reference_period` (`start`, `end`) and `retrieval_date`. Of two submissions
+        racing for one observation, the one whose figure was not stored is refused the same way.
+        Resubmitting the same figure, whatever its quote or pages, returns the value already
+        stored.
       operationId: enterValueManually
       requestBody:
         required: true
@@ -321,7 +325,8 @@ paths:
         "409":
           description: >-
             The attribute does not permit manual entry, the value failed validation, or another
-            figure is already on record for the same observation.
+            figure is already on record for the same observation (`conflicting_observation`,
+            with that observation's id and natural key in `details`).
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }

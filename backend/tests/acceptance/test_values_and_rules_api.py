@@ -5,11 +5,19 @@ served; `reqs.md` 6.5 that a value may be typed only where its attribute says so
 3.7 that a gate's answer carry its sources and an audited override.
 """
 
-from typing import ClassVar
+import asyncio
+from collections.abc import Sequence
+from datetime import datetime
+from typing import Any, ClassVar
 
 import httpx
 import pytest
+from psycopg_pool import AsyncConnectionPool
 
+from starnest.data import Value
+from starnest.storage import PostgresValueStore
+
+from .conftest import a_stub_source, an_api
 from .contract import response_schema, validate
 
 pytestmark = pytest.mark.acceptance
@@ -30,6 +38,36 @@ A_TYPED_VALUE = {
     "quote": "Lei da Nacionalidade, art. 6: five years of legal residence",
     "citations": ["https://www.pgdlisboa.pt/leis/lei_mostra_articulado.php?nid=614"],
 }
+
+
+class _HeldBeforeAppending(PostgresValueStore):
+    """Holds each `append` until a second request reaches it too, so two submissions have both
+    finished whatever they read before either writes."""
+
+    def __init__(self, pool: AsyncConnectionPool) -> None:
+        super().__init__(pool)
+        self._both_here = asyncio.Barrier(2)
+
+    async def append(self, values: Sequence[Value]) -> tuple[Value, ...]:
+        async with asyncio.timeout(10):
+            await self._both_here.wait()
+        return await super().append(values)
+
+
+def _identity_of(value: dict[str, Any]) -> dict[str, Any]:
+    """What names one stored observation: its id and its natural key."""
+    return {
+        "value_id": value["id"],
+        "candidate": value["candidate"],
+        "attribute": value["attribute"],
+        "data_source": value["data_source"],
+        "reference_period": value["reference_period"],
+        "retrieval_date": datetime.fromisoformat(value["retrieval_date"]),
+    }
+
+
+def _identity_in(details: dict[str, Any]) -> dict[str, Any]:
+    return details | {"retrieval_date": datetime.fromisoformat(details["retrieval_date"])}
 
 
 class TestThePageBounds:
@@ -172,6 +210,7 @@ class TestTypingAValue:
         assert refused.status_code == 409
         assert refused.json()["code"] == "conflicting_observation"
         validate("enterValueManually", refused.json(), status=409)
+        assert _identity_in(refused.json()["details"]) == _identity_of(first.json())
         stored = (
             await api.get(
                 "/v1/values",
@@ -179,6 +218,35 @@ class TestTypingAValue:
             )
         ).json()["items"]
         assert [value["payload"]["magnitude"] for value in stored] == [5]
+
+    async def test_of_two_figures_submitted_at_once_for_one_observation_one_is_refused(
+        self, database_url: str
+    ) -> None:
+        """Both requests read nothing on record, then both append on their own connection: the
+        loser's insert is a no-op, and it used to answer 201 showing the winner's figure. Held
+        together just before the append, the way the reviewer reproduced it."""
+        async with an_api(database_url, (a_stub_source(),), values=_HeldBeforeAppending) as api:
+            answers = await asyncio.gather(
+                api.post("/v1/values/manual", json=A_TYPED_VALUE),
+                api.post(
+                    "/v1/values/manual",
+                    json=A_TYPED_VALUE | {"payload": {"magnitude": 6, "unit": "years"}},
+                ),
+            )
+            stored = (
+                await api.get(
+                    "/v1/values",
+                    params={"candidate": A_TYPED_VALUE["candidate"], "attribute": NATURALISATION},
+                )
+            ).json()["items"]
+
+        stored_figure = stored[0]["payload"]["magnitude"]
+        by_status = {answer.status_code: answer.json() for answer in answers}
+        assert sorted(by_status) == [201, 409]
+        assert by_status[201]["payload"]["magnitude"] == stored_figure
+        assert by_status[409]["code"] == "conflicting_observation"
+        assert _identity_in(by_status[409]["details"]) == _identity_of(stored[0])
+        assert len(stored) == 1
 
     async def test_a_manual_figure_resubmitted_with_new_words_is_still_the_same_one(
         self, api: httpx.AsyncClient

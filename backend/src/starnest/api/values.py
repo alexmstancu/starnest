@@ -153,13 +153,19 @@ async def enter_value_manually(
     # is now present, so a re-submit returns the stored value rather than crashing on an empty
     # result -- the same idempotency the acquisition path relies on. **Only when it restates the
     # one on record** (NEW-23): another figure under the same key used to answer 201 with the old.
-    for on_record in await values.read_observations([value]):
-        if not restates(on_record, value):
-            raise ConflictingObservationError(
-                "another figure is already on record for this candidate, attribute, period and "
-                "retrieval date; a correction is a new observation, with its own retrieval date"
-            )
+    #
+    # Compared *after* the append, never before: a stored observation is never edited, and the
+    # insert waits on a concurrent one under the same key until it commits, so what the read
+    # returns is the observation that won. Two submissions racing for one key then agree on it,
+    # and the one it does not restate is refused -- a read before the append let both through.
     await values.append([value])
+    (on_record,) = await values.read_observations([value])
+    if not restates(on_record, value):
+        raise ConflictingObservationError(
+            "another figure is already on record for this candidate, attribute, period and "
+            "retrieval date; a correction is a new observation, with its own retrieval date",
+            details=_identity_of(on_record),
+        )
     listing = next(
         found
         for found in await values.read_values(
@@ -168,6 +174,24 @@ async def enter_value_manually(
         if _is_the_same_measurement(found.value, value)
     )
     return _value_body(listing)
+
+
+def _identity_of(stored: Value) -> dict[str, Any]:
+    """The observation a refusal points at: its id and its natural key, as a `Value` names them."""
+    identity: dict[str, Any] = {
+        "value_id": stored.id,
+        "candidate": str(stored.candidate),
+        "attribute": str(stored.attribute),
+        "data_source": str(stored.data_source),
+        "reference_period": {
+            "start": stored.reference_period.start.isoformat(),
+            "end": stored.reference_period.end.isoformat(),
+        },
+        "retrieval_date": stored.retrieval_date.isoformat(),
+    }
+    if stored.breakdown_option is not None:
+        identity["breakdown_option"] = str(stored.breakdown_option)
+    return identity
 
 
 def _is_the_same_measurement(stored: Value, submitted: Value) -> bool:

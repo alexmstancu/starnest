@@ -15,6 +15,7 @@ only lifecycle state a value stores is its rejection, which is decided once at i
 changes because another value appeared.
 """
 
+from collections.abc import Mapping
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -163,7 +164,15 @@ class Value(BaseModel):
 
 
 class ConflictingObservationError(ValueError):
-    """A figure under a natural key already on record with a different figure or verdict."""
+    """A figure under a natural key already on record with a different figure or verdict.
+
+    `details` names the observation that stands -- its id and its natural key -- so a client can
+    point at it without parsing the sentence.
+    """
+
+    def __init__(self, message: str, *, details: Mapping[str, object] | None = None) -> None:
+        super().__init__(message)
+        self.details = details
 
 
 def restates(stored: Value, fetched: Value) -> bool:

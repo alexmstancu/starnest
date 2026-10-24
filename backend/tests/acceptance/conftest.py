@@ -87,11 +87,13 @@ async def an_api(
     database_url: str,
     adapters: tuple[SourceAdapter, ...],
     researcher: object | None = None,
+    values: Callable[[AsyncConnectionPool], PostgresValueStore] = PostgresValueStore,
 ) -> AsyncIterator[httpx.AsyncClient]:
     """The application over the sources given, emptied of what the test wrote when it closes.
 
     `researcher` is the gate-research seam (`reqs.md` 6.10 use 3). `None` is the shipped state --
-    no model configured -- and the endpoint answers 501 rather than an empty success.
+    no model configured -- and the endpoint answers 501 rather than an empty success. `values`
+    builds the value store on the pool, so a race test can hold two requests at one point.
     """
     async with AsyncConnectionPool(database_url, min_size=1, max_size=4, open=False) as pool:
         await pool.open(wait=True)
@@ -99,7 +101,7 @@ async def an_api(
             households=PostgresHouseholdStore(pool),
             criteria_store=PostgresCriteriaStore(pool),
             candidates=PostgresCandidateStore(pool),
-            values=PostgresValueStore(pool),
+            values=values(pool),
             catalog_store=PostgresCatalogStore(pool),
             run_store=PostgresRunStore(pool),
             match_rule_results=PostgresMatchRuleResultStore(pool),
