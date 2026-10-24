@@ -294,3 +294,89 @@ class TestANewSetCopiesTheDefault:
         assert (refused.status_code, refused.json()["code"]) == (409, "no_default_criteria_set")
         assert (await api.get("/v1/criteria-sets")).json() == listed
         assert (await api.get(f"/v1/criteria-sets/{A_NEW_SET['id']}")).status_code == 404
+
+
+async def _anchor_overburden_to(api: httpx.AsyncClient, criteria_set: str, score: int) -> None:
+    anchored = await api.patch(
+        f"/v1/criteria-sets/{criteria_set}/criteria/{OVERBURDEN}",
+        json={
+            "normalisation_method": "fixed",
+            "scale_anchors": [
+                {"input_value": 0, "score": score},
+                {"input_value": 50, "score": 0},
+            ],
+        },
+    )
+    assert anchored.status_code == 200, "the arrangement needs the anchor stored"
+
+
+async def _deleted_with_an_anchor_at_150_then_rescaled(
+    api: httpx.AsyncClient, criteria_set: str, score_scale_max: int
+) -> None:
+    """Anchored under a range of 200, deleted, then the range lowered: the check reads live sets
+    only, so the lower range is accepted while the set is deleted."""
+    assert (await api.put("/v1/settings", json={"score_scale_max": 200})).status_code == 200
+    await _anchor_overburden_to(api, criteria_set, 150)
+    assert (await api.delete(f"/v1/criteria-sets/{criteria_set}")).status_code == 204
+    rescaled = await api.put("/v1/settings", json={"score_scale_max": score_scale_max})
+    assert rescaled.status_code == 200
+
+
+class TestASetCannotComeBackAboveTheScoreRange:
+    """PL-006 meets PL-033: a range lowered while a set was deleted is checked when the set, or a
+    copy of it, comes back -- not left for Rank to refuse as `anchor_above_scale`."""
+
+    async def test_restoring_it_is_refused_naming_the_anchor_and_it_stays_deleted(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        await _deleted_with_an_anchor_at_150_then_rescaled(api, a_scratch_criteria_set, 100)
+
+        refused = await api.post(f"/v1/criteria-sets/{a_scratch_criteria_set}/restore")
+
+        assert (refused.status_code, refused.json()["code"]) == (409, "score_scale_below_anchors")
+        assert refused.json()["details"] == {
+            "minimum": 150,
+            "criteria_set": a_scratch_criteria_set,
+            "attribute": OVERBURDEN,
+        }
+        assert (await api.get(f"/v1/criteria-sets/{a_scratch_criteria_set}")).status_code == 404
+
+    @pytest.mark.parametrize("score_scale_max", [150, None], ids=["reaching it", "unset"])
+    async def test_restoring_it_under_a_range_that_reaches_it_is_allowed(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str, score_scale_max: int | None
+    ) -> None:
+        await _deleted_with_an_anchor_at_150_then_rescaled(
+            api, a_scratch_criteria_set, score_scale_max
+        )
+
+        restored = await api.post(f"/v1/criteria-sets/{a_scratch_criteria_set}/restore")
+
+        assert restored.status_code == 200
+
+    @pytest.mark.parametrize(
+        ("score_scale_max", "status"), [(100, 409), (150, 201)], ids=["refused", "allowed"]
+    )
+    async def test_copying_it_as_the_deleted_default_is_held_to_the_range(
+        self,
+        api: httpx.AsyncClient,
+        a_scratch_criteria_set: str,
+        database_url: str,
+        purged_afterwards: list[str],
+        score_scale_max: int,
+        status: int,
+    ) -> None:
+        purged_afterwards.append(A_NEW_SET["id"])
+        await _set_default(database_url, a_scratch_criteria_set)
+        try:
+            await _deleted_with_an_anchor_at_150_then_rescaled(
+                api, a_scratch_criteria_set, score_scale_max
+            )
+            created = await api.post("/v1/criteria-sets", json=A_NEW_SET)
+        finally:
+            await _set_default(database_url, DEFAULT)
+
+        assert created.status_code == status
+        if status == 409:
+            assert created.json()["code"] == "score_scale_below_anchors"
+            assert created.json()["details"]["minimum"] == 150
+            assert (await api.get(f"/v1/criteria-sets/{A_NEW_SET['id']}")).status_code == 404

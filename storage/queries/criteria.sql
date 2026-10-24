@@ -706,3 +706,16 @@ JOIN   criteria_set AS s ON s.id = c.criteria_set
 WHERE  s.deleted_at IS NULL
 ORDER  BY anchor.score DESC, c.criteria_set, c.attribute
 LIMIT  1;
+
+-- name: select_highest_anchor_of_set(criteria_set)^
+-- The highest score one set anchors a figure to, deleted or not: what a restore or a copy would
+-- bring back, checked against the range held by `share_settings` (PL-006, PL-033). Ties go to the
+-- attribute by id, as in `select_highest_anchor`.
+SELECT anchor.score,
+       c.criteria_set,
+       c.attribute
+FROM   criterion_scale_anchor AS anchor
+JOIN   criterion AS c ON c.id = anchor.criterion
+WHERE  c.criteria_set = :criteria_set
+ORDER  BY anchor.score DESC, c.attribute
+LIMIT  1;

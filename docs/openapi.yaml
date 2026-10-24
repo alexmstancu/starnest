@@ -358,8 +358,10 @@ paths:
         deleted, when the list no longer shows it.
         409 `criteria_set_exists` when a set, live or deleted, already holds the `id` given: identifiers
         are never reused. 409 `criteria_set_name_taken` when a live set already has this name
-        (`CriteriaSetName`). 409 `no_default_criteria_set` when no set is the default. A refused
-        request writes nothing.
+        (`CriteriaSetName`). 409 `no_default_criteria_set` when no set is the default.
+        409 `score_scale_below_anchors` when the default anchors a figure above the score range
+        -- it was deleted before the range was lowered, say -- with `details` as
+        `PUT /settings` gives them. A refused request writes nothing.
       requestBody:
         required: true
         content:
@@ -436,7 +438,9 @@ paths:
         and every read holding everything it held when it was deleted. Idempotent: a set that is
         not deleted is answered unchanged, because an identifier names one set for ever.
         409 `criteria_set_name_taken` when a live set has taken its name since it was deleted
-        (`CriteriaSetName`); nothing is changed. 404 when no set, live or deleted, has this
+        (`CriteriaSetName`); nothing is changed. 409 `score_scale_below_anchors` when the score
+        range was lowered below one of its anchors while it was deleted, with `details` as
+        `PUT /settings` gives them; it stays deleted. 404 when no set, live or deleted, has this
         identifier.
       operationId: restoreCriteriaSet
       parameters: [ { $ref: "#/components/parameters/CriteriaSetId" } ]
@@ -455,7 +459,8 @@ paths:
         live set has this identifier: a deleted set cannot be copied until it is restored.
         409 `criteria_set_exists` when a set, live or deleted, already holds the `id` given: identifiers
         are never reused. 409 `criteria_set_name_taken` when a live set already has this name
-        (`CriteriaSetName`). A refused request writes nothing.
+        (`CriteriaSetName`). 409 `score_scale_below_anchors` when the set anchors a figure above
+        the score range, which only a migration can leave. A refused request writes nothing.
       operationId: duplicateCriteriaSet
       parameters: [ { $ref: "#/components/parameters/CriteriaSetId" } ]
       requestBody:

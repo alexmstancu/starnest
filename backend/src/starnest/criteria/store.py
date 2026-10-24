@@ -97,6 +97,35 @@ class HighestAnchor(NamedTuple):
     attribute: AttributeId
 
 
+class ScoreScaleBelowAnchorsError(ValueError):
+    """A set would come back, or be copied, with an anchor above the score range (PL-006, PL-033).
+
+    The range is checked against live sets only, so it may have been lowered while a set was
+    deleted. Restoring or copying that set would bring back an anchor no score can reach, and
+    Rank would refuse the set; refused here instead, where the request that caused it is.
+    """
+
+    def __init__(self, refused: str, score_scale_max: int, highest: HighestAnchor) -> None:
+        super().__init__(
+            f"{refused}: {highest.criteria_set} anchors {highest.attribute} to a score of "
+            f"{highest.score}, above the score range's top of {score_scale_max}"
+        )
+        self.details = {
+            "minimum": highest.score,
+            "criteria_set": str(highest.criteria_set),
+            "attribute": str(highest.attribute),
+        }
+
+
+def refuse_anchors_above(
+    refused: str, score_scale_max: int | None, highest: HighestAnchor | None
+) -> None:
+    """Raise `ScoreScaleBelowAnchorsError` when `highest` scores above the range; an unset range
+    has no top."""
+    if score_scale_max is not None and highest is not None and highest.score > score_scale_max:
+        raise ScoreScaleBelowAnchorsError(refused, score_scale_max, highest)
+
+
 class HeaviestPillar(NamedTuple):
     """The pillar a set weighs most at one level, a tie going to the pillar shown first (PL-040)."""
 
@@ -161,6 +190,9 @@ class CriteriaStore(ABC):
 
         Raises `CriteriaSetExistsError` when the identifier is held by any set, deleted ones
         included, and `CriteriaSetNameTakenError` when another live set has the name.
+        Raises `ScoreScaleBelowAnchorsError` when the set anchors a figure above the score range,
+        read and held in the same transaction -- a copy of a set deleted before the range was
+        lowered, say.
         """
 
     @abstractmethod
@@ -233,7 +265,8 @@ class CriteriaStore(ABC):
 
         Idempotent on a live set. Raises `UnknownCriteriaSetError` when no set ever held the
         identifier, and `CriteriaSetNameTakenError` when another live set took its name while it
-        was deleted (P1-35) -- it then stays deleted.
+        was deleted (P1-35) -- it then stays deleted. Raises `ScoreScaleBelowAnchorsError` when
+        the range was lowered below one of its anchors while it was deleted, and it stays deleted.
         """
 
     @abstractmethod

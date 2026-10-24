@@ -296,7 +296,8 @@ async def start_up(
     # **The one saved evaluation nobody chose.** Everything else in that table is there because
     # somebody decided a ranking was worth keeping, which is why the contract has no delete for
     # one. The browser suite saves one per run to prove saving works; left alone they pile up
-    # under a count that means "rankings I kept", and each pins its criteria set for ever.
+    # under a count that means "rankings I kept", and each keeps its criteria set from being
+    # purged -- a deletion it no longer stops (PL-035), but the row stays for as long as it does.
     discarded = 0 if evaluations is None else await evaluations.sweep_test_evaluations()
     if discarded:
         boot.info("%d evaluation(s) a test saved were discarded", discarded)

@@ -47,6 +47,7 @@ from starnest.criteria import (
     ScaleAnchor,
     ShareThreshold,
     UnknownCriteriaSetError,
+    refuse_anchors_above,
 )
 from starnest.data import AttributeId, PillarId, UnknownAttributeError, ValueType
 from starnest.household import Settings
@@ -101,13 +102,25 @@ class PostgresCriteriaStore(CriteriaStore):
         The conflict arrives as a driver error and is translated here: `psycopg` types belong to
         this module, and one that reached `api/` would become a 500 for a request that was
         merely asking for something taken. Which of the two was taken is the index's name.
+
+        **The score range is shared first**, as an anchor edit shares it, and the new set's
+        anchors are checked against it before the transaction commits: the range is held to live
+        sets only, so a copy of a set deleted before it was lowered could otherwise bring an
+        anchor back above it (PL-006).
         """
         try:
             async with acquire(self._pool) as connection:
+                score_scale_max = await self._share_the_score_scale(connection)
                 await self._queries.insert_criteria_set(
                     connection, criteria_set=str(criteria_set.id), name=criteria_set.name
                 )
                 await self._write_contents(connection, criteria_set)
+                await self._refuse_anchors_above(
+                    connection,
+                    criteria_set.id,
+                    score_scale_max,
+                    f"the criteria set {str(criteria_set.id)!r} cannot be made",
+                )
         except UniqueViolation as taken:
             if taken.diag.constraint_name == NAME_IS_UNIQUE:
                 raise CriteriaSetNameTakenError(
@@ -177,10 +190,9 @@ class PostgresCriteriaStore(CriteriaStore):
         anchors` takes it before reading anchors, so the two never wait on each other in a cycle.
         """
         async with acquire(self._pool) as connection:
-            await self._queries.ensure_settings(connection)
-            held = await self._queries.share_settings(connection)
+            score_scale_max = await self._share_the_score_scale(connection)
             return await self._edit(
-                connection, criteria_set, lambda current: mutate(current, held.score_scale_max)
+                connection, criteria_set, lambda current: mutate(current, score_scale_max)
             )
 
     async def replace_settings_over_the_anchors(
@@ -194,15 +206,29 @@ class PostgresCriteriaStore(CriteriaStore):
             highest = await self._queries.select_highest_anchor(connection)
             refuse(
                 settings_from(stored),
-                None
-                if highest is None
-                else HighestAnchor(
-                    highest.score,
-                    CriteriaSetId(highest.criteria_set),
-                    AttributeId(highest.attribute),
-                ),
+                None if highest is None else _highest_anchor_from(highest),
             )
             await write_settings(self._queries, connection, settings)
+
+    async def _share_the_score_scale(self, connection: AsyncConnection) -> int | None:
+        await self._queries.ensure_settings(connection)
+        return (await self._queries.share_settings(connection)).score_scale_max
+
+    async def _refuse_anchors_above(
+        self,
+        connection: AsyncConnection,
+        criteria_set: CriteriaSetId | str,
+        score_scale_max: int | None,
+        refused: str,
+    ) -> None:
+        highest = await self._queries.select_highest_anchor_of_set(
+            connection, criteria_set=str(criteria_set)
+        )
+        refuse_anchors_above(
+            refused,
+            score_scale_max,
+            None if highest is None else _highest_anchor_from(highest),
+        )
 
     async def _edit(
         self,
@@ -242,8 +268,13 @@ class PostgresCriteriaStore(CriteriaStore):
         can meet an edit in flight; read first, it answered with the set as it stood before that
         edit committed. The lock's row carries the name, because a refusal over the name must say
         which name and the driver's message gives it folded to lower case.
+
+        **The score range is shared before the set is locked**, the order an anchor edit takes
+        them in, so the two never wait on each other in a cycle; a range lowered while the set
+        was deleted is checked against its anchors here (PL-006, PL-033).
         """
         async with acquire(self._pool) as connection:
+            score_scale_max = await self._share_the_score_scale(connection)
             held = await self._queries.lock_criteria_set_live_or_deleted(
                 connection, criteria_set=str(criteria_set)
             )
@@ -251,6 +282,12 @@ class PostgresCriteriaStore(CriteriaStore):
                 raise UnknownCriteriaSetError(
                     f"there is no criteria set called {criteria_set!r} to restore"
                 )
+            await self._refuse_anchors_above(
+                connection,
+                criteria_set,
+                score_scale_max,
+                f"the criteria set {str(criteria_set)!r} cannot be restored",
+            )
             try:
                 await self._queries.restore_criteria_set(connection, criteria_set=str(criteria_set))
             except UniqueViolation as taken:
@@ -557,3 +594,7 @@ def _pillar_weight_from(entry: dict[str, Any]) -> PillarWeight:
 def _decimal_or_none(figure: Any) -> Decimal | None:
     """Money and weights never become floats (`arch.md` 9.6), and JSON gives us floats."""
     return None if figure is None else Decimal(str(figure))
+
+
+def _highest_anchor_from(row: Any) -> HighestAnchor:
+    return HighestAnchor(row.score, CriteriaSetId(row.criteria_set), AttributeId(row.attribute))

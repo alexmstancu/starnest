@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 import pytest
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, errors
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.criteria import CriteriaSet
@@ -482,6 +482,75 @@ class TestAScoreRangeBelowAnAnchor:
             },
         )
         assert await _the_anchors_of_overburden(api, a_scratch_criteria_set) == before
+
+    async def test_a_range_changed_while_a_set_is_restored_is_refused_after_it(
+        self, api: httpx.AsyncClient, database_url: str, a_scratch_criteria_set: str
+    ) -> None:
+        """A restore shares the range before it locks its set (PL-006, PL-033), so a range
+        changed meanwhile waits for it, and then meets the anchors it brought back.
+
+        Each step waits on a barrier the database itself reports, never on time: the restore is
+        let go only once it is seen holding the range and the range change is seen waiting."""
+        await api.put("/v1/settings", json={"score_scale_max": 200})
+        assert (await _anchor_overburden_up_to(api, a_scratch_criteria_set, 150)).status_code == 200
+        assert (await api.delete(f"/v1/criteria-sets/{a_scratch_criteria_set}")).status_code == 204
+
+        async with await AsyncConnection.connect(database_url) as holder:
+            await holder.execute(
+                "SELECT id FROM criteria_set WHERE id = %s FOR UPDATE", (a_scratch_criteria_set,)
+            )
+            restore = asyncio.create_task(
+                api.post(f"/v1/criteria-sets/{a_scratch_criteria_set}/restore")
+            )
+            assert await _until(database_url, _THE_RANGE_IS_HELD, restore), (
+                "the restore never held the range"
+            )
+            assert await _until(database_url, _waiting_on_a_lock(1), restore), (
+                "the restore never waited for its set"
+            )
+            scale = asyncio.create_task(api.put("/v1/settings", json={"score_scale_max": 100}))
+            assert await _until(database_url, _waiting_on_a_lock(2), scale), (
+                "the range never waited for the restore"
+            )
+            await holder.rollback()
+
+        restored, rescaled = await asyncio.gather(restore, scale)
+        assert restored.status_code == 200
+        assert (rescaled.status_code, rescaled.json().get("details")) == (
+            409,
+            {"minimum": 150, "criteria_set": a_scratch_criteria_set, "attribute": OVERBURDEN},
+        )
+        assert (await api.get("/v1/settings")).json()["score_scale_max"] == 200
+
+
+_THE_RANGE_IS_HELD = "SELECT 1 FROM settings WHERE id = 1 FOR UPDATE NOWAIT"
+"""Refused at once while another transaction holds the settings row, `FOR SHARE` included."""
+
+
+def _waiting_on_a_lock(count: int) -> str:
+    return (
+        f"SELECT count(DISTINCT l.pid) >= {count} FROM pg_locks AS l"
+        " JOIN pg_stat_activity AS a ON a.pid = l.pid"
+        " WHERE NOT l.granted AND a.datname = current_database()"
+    )
+
+
+async def _until(database_url: str, probe: str, task: asyncio.Task) -> bool:
+    """Poll `probe` on a fresh autocommit connection each time, so every read sees the server
+    as it is now: inside one transaction `pg_stat_activity` is a snapshot taken at its first
+    read, which is what made a waiter that arrived later invisible. False once `task` ends."""
+    for _ in range(PATIENCE_SECONDS * 50):
+        async with await AsyncConnection.connect(database_url, autocommit=True) as probing:
+            try:
+                seen = await (await probing.execute(probe)).fetchone()
+            except errors.LockNotAvailable:
+                return probe == _THE_RANGE_IS_HELD
+        if probe != _THE_RANGE_IS_HELD and seen is not None and seen[0]:
+            return True
+        if task.done():
+            return False
+        await asyncio.sleep(0.02)
+    return False
 
 
 PATIENCE_SECONDS = 5

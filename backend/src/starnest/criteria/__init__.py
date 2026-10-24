@@ -50,7 +50,9 @@ from starnest.criteria.store import (
     HighestAnchor,
     MatchRuleResultStore,
     NoDefaultCriteriaSetError,
+    ScoreScaleBelowAnchorsError,
     UnknownCriteriaSetError,
+    refuse_anchors_above,
 )
 from starnest.criteria.thresholds import (
     NUMERIC_TYPES,
@@ -88,6 +90,7 @@ __all__ = [
     "RangeThreshold",
     "ReducerMode",
     "ScaleAnchor",
+    "ScoreScaleBelowAnchorsError",
     "ShareThreshold",
     "TargetRange",
     "ThresholdShapeError",
@@ -97,4 +100,5 @@ __all__ = [
     "WeightsAllLockedError",
     "identifiers_from",
     "rebalance",
+    "refuse_anchors_above",
 ]
