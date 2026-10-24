@@ -4645,3 +4645,16 @@ select.field__control {
 .weight-row[data-open="true"] {
   background: var(--colour-accent-surface);
 }
+
+/* PL-134. How many attributes a source answers, and what switching it off would cost. */
+.source-row__reach {
+  font-size: 11.5px;
+  color: var(--colour-text-muted);
+  white-space: nowrap;
+}
+
+.source-row__cost {
+  flex-basis: 100%;
+  font-size: 11.5px;
+  color: var(--colour-warning);
+}

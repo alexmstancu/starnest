@@ -334,6 +334,17 @@ export function unsourcedShareByPillar(
   return shares;
 }
 
+/** The attributes a set requires: scored, and blocking a score when their figure is missing. */
+export function requiredAttributes(
+  criteria: readonly { attribute: string; is_scored?: boolean; blocks_if_missing?: boolean }[],
+): Set<string> {
+  return new Set(
+    criteria
+      .filter((criterion) => criterion.is_scored !== false && criterion.blocks_if_missing === true)
+      .map((criterion) => criterion.attribute),
+  );
+}
+
 /** The line under a pillar's name: how many attributes, and how much of it is unsourced. */
 export function describePillarCount(count: number, unsourcedShare?: number): string {
   const attributes = count === 1 ? "1 attribute" : `${String(count)} attributes`;

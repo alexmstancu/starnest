@@ -18,7 +18,7 @@ import { Stage } from "./Stage";
 import { useAttributeCatalog } from "./useAttributeCatalog";
 import { useChangeHistory } from "./useChangeHistory";
 import { useCriteriaEditor } from "./useCriteriaEditor";
-import { countByPillar, unsourcedShareByPillar } from "./weights";
+import { countByPillar, requiredAttributes, unsourcedShareByPillar } from "./weights";
 
 /**
  * Everything that is a judgement rather than a measurement, on one screen (`reqs.md` 8.2).
@@ -166,7 +166,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
             )}
           </Stage>
 
-          <DataSourcesPanel />
+          <DataSourcesPanel catalog={catalog} required={requiredAttributes(editor.criteria)} />
           <SettingsPanel />
         </div>
 

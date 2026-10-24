@@ -1250,7 +1250,7 @@ export const DATA_SOURCES: DataSource[] = [
     name: "Eurostat",
     source_kind: "structured",
     default_priority: 10,
-    reliability_tier: "official",
+    reliability_tier: "official_international",
     is_enabled: true,
   },
   {
@@ -1258,7 +1258,7 @@ export const DATA_SOURCES: DataSource[] = [
     name: "Manual entry",
     source_kind: "manual",
     default_priority: 50,
-    reliability_tier: "declared",
+    reliability_tier: "manual",
     is_enabled: true,
   },
   {
@@ -1266,7 +1266,7 @@ export const DATA_SOURCES: DataSource[] = [
     name: "LLM with web search",
     source_kind: "llm",
     default_priority: 90,
-    reliability_tier: "indicative",
+    reliability_tier: "llm",
     is_enabled: false,
   },
 ];

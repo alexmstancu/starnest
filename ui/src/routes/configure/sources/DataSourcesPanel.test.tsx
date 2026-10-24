@@ -278,7 +278,9 @@ async function row(name: string): Promise<HTMLElement> {
 function namesInOrder(
   sources: Awaited<ReturnType<typeof panel>>,
 ): (string | null)[] {
-  return sources
+  return within(
+    sources.getByRole("list", { name: "Every configured source, in priority order" }),
+  )
     .getAllByRole("listitem")
     .map((item) => item.getAttribute("aria-label"));
 }
@@ -972,5 +974,110 @@ describe("the source priority panel while a change is being written", () => {
       expect(eurostat).toHaveFocus();
       expect(eurostat).toHaveAttribute("aria-checked", "true");
     });
+  });
+});
+
+/** PL-134. What each source answers, and what switching it off costs. */
+describe("what each source row says it answers", () => {
+  async function row(name: string) {
+    const sources = await panel();
+    return within(await sources.findByRole("listitem", { name }));
+  }
+
+  it("counts the attributes a consulted source can answer, from the catalog", async () => {
+    renderShell("/configure");
+    const eurostat = await row("Eurostat");
+    expect(await eurostat.findByText(/1 attribute/)).toBeInTheDocument();
+    expect(eurostat.getByText(/published dataset/)).toBeInTheDocument();
+    // Hand entry answers what the catalog lets a person type.
+    expect(await (await row("Manual entry")).findByText(/3 attributes/)).toBeInTheDocument();
+  });
+
+  it("says a consulted source that answers nothing yet does", async () => {
+    mockServer.use(
+      http.get("/v1/data-sources", () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: "numbeo",
+              name: "Numbeo",
+              source_kind: "structured",
+              default_priority: 60,
+              reliability_tier: "crowdsourced",
+              is_enabled: true,
+            },
+          ],
+        }),
+      ),
+    );
+    renderShell("/configure");
+    expect(await (await row("Numbeo")).findByText(/answers nothing yet/)).toBeInTheDocument();
+  });
+
+  it("claims no count while the catalog cannot be read", async () => {
+    mockServer.use(
+      http.get("/v1/attributes", () =>
+        HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 }),
+      ),
+    );
+    renderShell("/configure");
+    const eurostat = await row("Eurostat");
+    await eurostat.findByText(/published dataset/);
+    expect(eurostat.queryByText(/attribute|answers nothing/)).not.toBeInTheDocument();
+  });
+
+  it("names the required attribute only it can fetch, and what switching it off does", async () => {
+    mockServer.use(
+      http.get("/v1/criteria-sets/:id", ({ params }) =>
+        HttpResponse.json({
+          id: String(params["id"]),
+          name: "Default",
+          pillar_weights: [
+            { pillar: "economics", level: "country", weight: 100, weight_locked: false },
+          ],
+          criteria: [
+            {
+              attribute: "country.cost_of_living_index",
+              pillar: "economics",
+              weight: 100,
+              goal: "minimise",
+              normalisation_method: "percentile",
+              blocks_if_missing: true,
+            },
+          ],
+        }),
+      ),
+    );
+    renderShell("/configure");
+    expect(
+      await (await row("Eurostat")).findByText(
+        /Only source of Cost of living index, which is required: switched off, a candidate without that figure gets no score/,
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+/** PL-135. Attributes with their own order are listed, read-only, with their maximum age. */
+describe("attributes that name their own source order", () => {
+  it("lists them, with the sources they put first and their maximum age", async () => {
+    renderShell("/configure");
+    const sources = await panel();
+    const list = await sources.findByRole("list", {
+      name: "Attributes that name their own source order",
+    });
+    const items = within(list).getAllByRole("listitem");
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent(
+      "International employers: LLM with web search first, then the order above; refetched after 24 months",
+    );
+  });
+
+  it("says what the order decides, and that some attributes name their own", async () => {
+    renderShell("/configure");
+    const sources = await panel();
+    expect(
+      sources.getByText(/unless the attribute names its own order/i),
+    ).toBeInTheDocument();
+    expect(sources.queryByText(/Which source wins when two answer/)).not.toBeInTheDocument();
   });
 });
