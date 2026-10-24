@@ -114,7 +114,7 @@ export const IDENTIFIER_LEDGER = {
   ],
   "Configure, nothing set": [...COMPOUND_RULES, ...GATE_PROPOSALS, COVERAGE_FLOOR],
   "Configure, no criteria set": [COVERAGE_FLOOR],
-  "Configure, the server unreachable": [SERVER_UNREACHABLE],
+  "Configure, the server unreachable": [],
 
   "Acquire, a run card with its gaps open, a diff chosen and hand entry open": [MANUAL_SOURCE],
   "Acquire, a run stopped by hand": [

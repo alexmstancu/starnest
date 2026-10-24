@@ -2226,6 +2226,19 @@ describe("the six stages", () => {
     expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
   });
 
+  it("says in stage 3 that the criteria sets could not be read, rather than asking for a choice", async () => {
+    mockServer.use(failing("/v1/criteria-sets"));
+    renderShell("/configure");
+
+    const weights = within(await screen.findByRole("region", { name: "Pillar weights" }));
+    expect(
+      await weights.findByText("The criteria sets could not be loaded"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Choose a criteria set to see its criteria."),
+    ).not.toBeInTheDocument();
+  });
+
   it("never shows the old set's weights while the newly chosen set is read", async () => {
     const user = userEvent.setup();
     renderShell("/configure");
@@ -2382,5 +2395,48 @@ describe("a criterion that is not scored", () => {
     const row = within(screen.getByRole("group", { name: TAX }));
     expect(row.getByText("Required")).toBeInTheDocument();
     expect(slider).not.toHaveAttribute("aria-disabled");
+  });
+});
+
+/** PL-113. **A pillar says how much of its weight no source can fetch.** */
+describe("the unsourced share of a pillar", () => {
+  it("is named on the pillar's row, from the catalog and the weights", async () => {
+    mockServer.use(
+      http.get("/v1/criteria-sets/:id", ({ params }) =>
+        HttpResponse.json({
+          id: String(params["id"]),
+          name: "Default",
+          pillar_weights: [
+            { pillar: "family", level: "country", weight: 100, weight_locked: false },
+          ],
+          criteria: [
+            {
+              attribute: "country.nobody_measures_this",
+              pillar: "family",
+              weight: 40,
+              goal: "maximise",
+              normalisation_method: "percentile",
+            },
+            {
+              attribute: "country.cost_of_living_index",
+              pillar: "family",
+              weight: 60,
+              goal: "minimise",
+              normalisation_method: "percentile",
+            },
+          ],
+        }),
+      ),
+    );
+    renderShell("/configure");
+
+    const family = await screen.findByRole("group", { name: "Family" });
+    await waitFor(() =>
+      expect(family).toHaveTextContent("2 attributes, 40% of the weight unsourced"),
+    );
+    await weightSlider(UNSOURCED_ATTRIBUTE);
+    expect(screen.getByRole("group", { name: UNSOURCED_ATTRIBUTE })).toHaveTextContent(
+      "Weight redistributed",
+    );
   });
 });

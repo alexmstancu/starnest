@@ -11,6 +11,8 @@ import {
   weightedPillars,
   weightFrom,
   weightReading,
+  describePillarCount,
+  unsourcedShareByPillar,
   type WeightedItem,
 } from "./weights";
 
@@ -538,5 +540,49 @@ describe("the criteria as the screen is showing them", () => {
     expect(
       previewedCriteria([{ attribute: "country.rent", pillar: "housing" }], new Map()),
     ).toEqual([{ pillar: "housing", weight: undefined }]);
+  });
+});
+
+/** PL-113. What share of a pillar's weight no source can fetch, so the pillar row can say it. */
+describe("the unsourced share of each pillar", () => {
+  const catalog = new Map([
+    ["a.unsourced", { id: "a.unsourced", answerable_by: [] as string[] }],
+    ["a.sourced", { id: "a.sourced", answerable_by: ["eurostat"] }],
+  ]);
+
+  it("sums the weights of the criteria nothing can fetch, per pillar", () => {
+    const shares = unsourcedShareByPillar(
+      [
+        { attribute: "a.unsourced", pillar: "family", weight: 44 },
+        { attribute: "a.sourced", pillar: "family", weight: 56 },
+        { attribute: "a.sourced", pillar: "health", weight: 100 },
+      ],
+      catalog,
+    );
+    expect(shares.get("family")).toBe(44);
+    expect(shares.has("health")).toBe(false);
+  });
+
+  it("counts nothing a criterion that is not scored, or one the catalog has not answered for", () => {
+    const shares = unsourcedShareByPillar(
+      [
+        { attribute: "a.unsourced", pillar: "family", weight: 30, is_scored: false },
+        { attribute: "a.unknown", pillar: "family", weight: 70 },
+      ],
+      catalog,
+    );
+    expect(shares.size).toBe(0);
+  });
+
+  it("says nothing from an empty catalog", () => {
+    expect(
+      unsourcedShareByPillar([{ attribute: "a.unsourced", pillar: "family", weight: 50 }], new Map())
+        .size,
+    ).toBe(0);
+  });
+
+  it("words the pillar's line with the share, and without it when there is none", () => {
+    expect(describePillarCount(6, 44.4)).toBe("6 attributes, 44% of the weight unsourced");
+    expect(describePillarCount(1, undefined)).toBe("1 attribute");
   });
 });

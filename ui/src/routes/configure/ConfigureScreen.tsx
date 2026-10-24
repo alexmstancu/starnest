@@ -18,7 +18,7 @@ import { Stage } from "./Stage";
 import { useAttributeCatalog } from "./useAttributeCatalog";
 import { useChangeHistory } from "./useChangeHistory";
 import { useCriteriaEditor } from "./useCriteriaEditor";
-import { countByPillar } from "./weights";
+import { countByPillar, unsourcedShareByPillar } from "./weights";
 
 /**
  * Everything that is a judgement rather than a measurement, on one screen (`reqs.md` 8.2).
@@ -33,7 +33,8 @@ import { countByPillar } from "./weights";
  * the panels send one change at a time and render the answer (`arch.md` 8.1).
  */
 export function ConfigureScreen({ route }: { route: RouteDefinition }) {
-  const { criteriaSetId, levelId } = useSelection();
+  const selection = useSelection();
+  const { criteriaSetId, levelId } = selection;
   const history = useChangeHistory();
   // **An undo waits for a pillar's write as it does for a criterion's** (D41): the pillar panel
   // keeps its own write, so it says when one is in flight.
@@ -99,6 +100,8 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
               <SetNotRead
                 read={editor.read}
                 onRetry={editor.reload}
+                lists={selection.read}
+                onRetryLists={selection.reloadAndWait}
                 idleNote="Choose a criteria set to see its criteria."
                 prominence="screen"
               />
@@ -111,6 +114,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                 key={editor.criteriaSet.id}
                 criteriaSet={editor.criteriaSet}
                 criteriaCounts={countByPillar(editor.criteria)}
+                unsourcedShares={unsourcedShareByPillar(editor.criteria, catalog.catalog)}
                 history={history}
                 onSaving={setPillarSaving}
                 catalog={catalog}
@@ -131,6 +135,8 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                 <SetNotRead
                   read={editor.read}
                   onRetry={editor.reload}
+                  lists={selection.read}
+                  onRetryLists={selection.reloadAndWait}
                   idleNote="Once a criteria set is chosen, the rules it lets act are listed here."
                   prominence="region"
                 />
@@ -196,15 +202,33 @@ const RULES_STAGE = {
 function SetNotRead({
   read,
   onRetry,
+  lists,
+  onRetryLists,
   idleNote,
   prominence,
 }: {
   read: Read<CriteriaSet> | Idle;
   onRetry: () => Promise<void>;
+  /** The lists a set is chosen from: until they are read, "choose a set" is not yet true. */
+  lists: Read<unknown>;
+  onRetryLists: () => Promise<void>;
   idleNote: string;
   /** The full card once, in stage 3; stage 4 says the same in a line (N4). */
   prominence: "screen" | "region";
 }) {
+  if (read.state === "idle" && lists.state !== "ready") {
+    return (
+      <LoadedRegion
+        read={lists}
+        what="The criteria sets"
+        skeleton="configure-stage"
+        onRetry={onRetryLists}
+        prominence={prominence}
+      >
+        {() => null}
+      </LoadedRegion>
+    );
+  }
   if (read.state === "idle") return <p className="screen__note">{idleNote}</p>;
   return (
     <LoadedRegion

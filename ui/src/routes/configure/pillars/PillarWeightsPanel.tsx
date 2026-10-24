@@ -21,6 +21,7 @@ import {
   weightFrom,
   weightReading,
   lockTitle,
+  describePillarCount,
 } from "../weights";
 import { LockIcon } from "../LockIcon";
 import { ReadFailureCard } from "../../../shell/ReadFailureCard";
@@ -44,6 +45,7 @@ type PillarWeight = components["schemas"]["PillarWeight"];
 export function PillarWeightsPanel({
   criteriaSet,
   criteriaCounts,
+  unsourcedShares,
   criteriaFor,
   history,
   onSaving,
@@ -61,6 +63,8 @@ export function PillarWeightsPanel({
   onSaving?: (saving: boolean) => void;
   /** How many criteria each pillar holds, for the line under its name. */
   criteriaCounts?: ReadonlyMap<string, number>;
+  /** How much of each pillar's weight no source can fetch, where any is (PL-113). */
+  unsourcedShares?: ReadonlyMap<string, number>;
   /**
    * The attributes inside one pillar, rendered under it when it is opened.
    *
@@ -187,6 +191,7 @@ export function PillarWeightsPanel({
               ceiling={ceiling}
               saving={held}
               count={criteriaCounts?.get(weight.pillar)}
+              unsourcedShare={unsourcedShares?.get(weight.pillar)}
               open={open === weight.pillar}
               onOpen={
                 criteriaFor === undefined
@@ -214,6 +219,7 @@ function PillarRow({
   ceiling,
   saving,
   count,
+  unsourcedShare,
   open,
   onOpen,
   onDrag,
@@ -234,6 +240,7 @@ function PillarRow({
   /** A pillar write is in flight, so this row may start none of its own. */
   saving: boolean;
   count?: number;
+  unsourcedShare?: number;
   open: boolean;
   onOpen?: () => void;
   /** The pointer has moved this weight, to the value the slider now holds. */
@@ -330,9 +337,7 @@ function PillarRow({
       ? weight.weight_locked
         ? "held at this weight"
         : "moves on a rebalance"
-      : count === 1
-        ? "1 attribute"
-        : `${String(count)} attributes`;
+      : describePillarCount(count, unsourcedShare);
 
   return (
     <>

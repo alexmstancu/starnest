@@ -183,6 +183,8 @@ export function chipsFor(
       tone: "warning",
       to: linkTo("/acquire", UNSOURCED),
     });
+    // PL-113. With nothing to score it, its weight is shared among the rest of the pillar.
+    chips.push({ key: "redistributed", text: "Weight redistributed", tone: "neutral" });
   }
 
   return chips;

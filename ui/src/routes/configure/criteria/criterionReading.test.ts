@@ -220,6 +220,17 @@ describe("the chips on a row", () => {
       "/acquire?show=unsourced",
     );
     expect(hasNoSource(nothingCanFetch)).toBe(true);
+    // PL-113. Its weight is shared among the rest of the pillar, said in a neutral pill.
+    expect(chips.find((chip) => chip.key === "redistributed")).toMatchObject({
+      text: "Weight redistributed",
+      tone: "neutral",
+    });
+  });
+
+  it("says no weight is redistributed for an attribute a source can fetch", () => {
+    expect(chipsFor(criterion(), eurostatCanFetch).map((chip) => chip.key)).not.toContain(
+      "redistributed",
+    );
   });
 
   /**

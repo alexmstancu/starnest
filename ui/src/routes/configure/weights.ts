@@ -1,3 +1,4 @@
+import { hasNoSource, type AttributeCatalog } from "./criteria/criterionReading";
 /**
  * Reading a weight, and what moving one would do to its siblings. Shared by the two levels of
  * weighting, and by neither's markup.
@@ -302,6 +303,43 @@ export function countByPillar(
     counts.set(criterion.pillar, (counts.get(criterion.pillar) ?? 0) + 1);
   }
   return counts;
+}
+
+/**
+ * How much of each pillar's weight no source can fetch (PL-113), from the catalog and the
+ * weights the server sent. Only pillars with some: a pillar that is fully sourced says nothing.
+ *
+ * **A criterion that is not scored is left out** -- its weight counts for nothing -- and so is
+ * one the catalog has not answered for: an empty catalog is not a pillar with no sources.
+ */
+export function unsourcedShareByPillar(
+  criteria: readonly {
+    attribute: string;
+    pillar: string;
+    weight?: number;
+    is_scored?: boolean;
+  }[],
+  catalog: AttributeCatalog,
+): Map<string, number> {
+  const shares = new Map<string, number>();
+  for (const criterion of criteria) {
+    if (criterion.is_scored === false) continue;
+    if (!hasNoSource(catalog.get(criterion.attribute))) continue;
+    shares.set(
+      criterion.pillar,
+      (shares.get(criterion.pillar) ?? 0) + (criterion.weight ?? 0),
+    );
+  }
+  for (const [pillar, share] of shares) if (share <= 0) shares.delete(pillar);
+  return shares;
+}
+
+/** The line under a pillar's name: how many attributes, and how much of it is unsourced. */
+export function describePillarCount(count: number, unsourcedShare?: number): string {
+  const attributes = count === 1 ? "1 attribute" : `${String(count)} attributes`;
+  return unsourcedShare === undefined
+    ? attributes
+    : `${attributes}, ${String(Math.round(unsourcedShare))}% of the weight unsourced`;
 }
 
 /** What a lock says it does, pillar or criterion alike: one sentence for each state. */
