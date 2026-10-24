@@ -289,6 +289,12 @@ fieldset {
   color: var(--colour-text-muted);
 }
 
+/* The design's amber line where a count needs a score the server cannot give yet (PL-005): a
+   state to set, not a fault, so amber text rather than a red alert. */
+.sidebar__note--warning {
+  color: var(--colour-warning);
+}
+
 /* The household card, first and loudest: teal on teal. Every attribute default, warning and
    gate reads the household, so the rest of the sidebar is relative to it. */
 .panel--household .stat {
@@ -357,7 +363,8 @@ fieldset {
   cursor: default;
 }
 
-.level-group__option:disabled {
+.level-group__option:disabled,
+.level-group__option[aria-disabled="true"] {
   cursor: not-allowed;
 }
 

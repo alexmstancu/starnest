@@ -17,7 +17,7 @@
 
 import { useCallback, useMemo } from "react";
 import { type Candidate, fetchCandidates } from "./endpoints";
-import { useResource, type Resource } from "./useResource";
+import { useRead } from "./useRead";
 
 export type CandidateNames = ReadonlyMap<string, string>;
 
@@ -80,7 +80,7 @@ export function useCandidateRoster(): readonly Candidate[] {
 export interface CandidateRosterState {
   /** Empty until the list has arrived, and empty if it failed. */
   roster: readonly Candidate[];
-  status: Resource<readonly Candidate[]>["status"];
+  status: "loading" | "ready" | "error";
   error: unknown;
   /** Asks again. A failure is never remembered, so this is a real second request. */
   reload: () => void;
@@ -95,14 +95,14 @@ export interface CandidateRosterState {
  * a screen choosing from the roster reads this and says which it is.
  */
 export function useCandidateRosterState(): CandidateRosterState {
-  const { resource, reload } = useResource(
-    useCallback((signal: AbortSignal) => readThem(signal), []),
-  );
+  const { read, reload } = useRead(useCallback((signal: AbortSignal) => readThem(signal), []));
+  // `void`, as the callers' Try again buttons expect; stable, as `reload` is.
+  const askAgain = useCallback(() => void reload(), [reload]);
   return {
     // One empty array, not a new one each render, or every consumer re-renders while it loads.
-    roster: resource.status === "ready" ? resource.data : NOBODY,
-    status: resource.status,
-    error: resource.error,
-    reload,
+    roster: read.state === "ready" ? read.data : NOBODY,
+    status: read.state === "ready" ? "ready" : read.state === "failed" ? "error" : "loading",
+    error: read.state === "failed" ? read.error : null,
+    reload: askAgain,
   };
 }

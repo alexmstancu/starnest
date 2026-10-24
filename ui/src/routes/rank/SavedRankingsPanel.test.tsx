@@ -223,9 +223,10 @@ describe("saved rankings", () => {
     mockServer.use(http.get("/v1/evaluations", () => HttpResponse.error()));
     renderShell("/rank");
 
+    // The sidebar's card says it in words, quietly (N4), and never prints the code.
     const list = within(await savedList());
-    expect(await list.findByRole("alert")).toHaveTextContent(
-      "client.unreachable",
-    );
+    expect(await list.findByText(/saved rankings could not be loaded/i)).toBeInTheDocument();
+    expect(list.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+    expect(list.queryByText("client.unreachable")).toBeNull();
   });
 });

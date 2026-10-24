@@ -28,12 +28,6 @@ const SERVER_UNREACHABLE: KnownOffender = {
   removedBy: "PL-003 (C01)",
 };
 
-const SCORE_RANGE_REFUSED: KnownOffender = {
-  identifier: "score_scale_not_set",
-  where: "the code under the sidebar's Candidates card",
-  removedBy: "PL-003 (C01)",
-};
-
 const RULE_EDITOR: readonly KnownOffender[] = [
   {
     identifier: "target_range",
@@ -138,9 +132,9 @@ export const IDENTIFIER_LEDGER = {
   "Rank, a row open on a pillar, an attribute drilled into and a saved ranking open": [
     SET_ID_IN_THE_HEADER,
   ],
-  "Rank, the score range unset": [SCORE_RANGE_REFUSED],
+  "Rank, the score range unset": [],
   "Rank, nothing ranked": [SET_ID_IN_THE_HEADER],
-  "Rank, the server unreachable": [SERVER_UNREACHABLE],
+  "Rank, the server unreachable": [],
 
   "Compare, drawn as scores": [],
   "Compare, drawn as raw figures": [],
@@ -156,9 +150,9 @@ export const IDENTIFIER_LEDGER = {
       removedBy: "PL-003 (C01)",
     },
   ],
-  "Compare, the score range unset": [SCORE_RANGE_REFUSED],
+  "Compare, the score range unset": [],
   "Compare, nothing compared yet": [],
-  "Compare, the server unreachable": [SERVER_UNREACHABLE],
+  "Compare, the server unreachable": [],
 } satisfies Record<string, readonly KnownOffender[]>;
 
 export type ScreenState = keyof typeof IDENTIFIER_LEDGER;

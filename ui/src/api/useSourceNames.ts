@@ -12,7 +12,7 @@
 
 import { useCallback } from "react";
 import { fetchDataSources } from "./endpoints";
-import { useResource } from "./useResource";
+import { useRead } from "./useRead";
 
 export type SourceNames = ReadonlyMap<string, string>;
 
@@ -46,8 +46,8 @@ export function forgetSourceNames(): void {
 const NONE: SourceNames = new Map();
 
 export function useSourceNames(): SourceNames {
-  const { resource } = useResource(
+  const { read } = useRead(
     useCallback((signal: AbortSignal) => readThem(signal), []),
   );
-  return resource.status === "ready" ? resource.data : NONE;
+  return read.state === "ready" ? read.data : NONE;
 }

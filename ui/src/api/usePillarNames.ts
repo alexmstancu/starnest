@@ -17,7 +17,7 @@
 
 import { useCallback } from "react";
 import { fetchPillars } from "./endpoints";
-import { useResource } from "./useResource";
+import { useRead } from "./useRead";
 
 export type PillarNames = ReadonlyMap<string, string>;
 
@@ -60,10 +60,10 @@ export function forgetPillarNames(): void {
 const NONE: PillarNames = new Map();
 
 export function usePillarNames(): PillarNames {
-  const { resource } = useResource(
+  const { read } = useRead(
     useCallback((signal: AbortSignal) => readThem(signal), []),
   );
   // **One empty map, not a new one each render.** A fresh `new Map()` on every render of a
   // loading or failed screen is a new object identity for every consumer downstream.
-  return resource.status === "ready" ? resource.data : NONE;
+  return read.state === "ready" ? read.data : NONE;
 }

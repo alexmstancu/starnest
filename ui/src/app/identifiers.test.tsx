@@ -251,7 +251,8 @@ const ARRANGEMENTS: Record<ScreenState, () => Promise<void>> = {
   "Rank, the server unreachable": async () => {
     serverUnreachable();
     renderShell("/rank");
-    await screen.findAllByRole("alert");
+    // The sidebar's regions fail quietly (N4), so wait for their words, not for an alert.
+    await screen.findAllByText(/could not be loaded/i);
   },
 
   "Compare, drawn as scores": async () => {
@@ -285,7 +286,8 @@ const ARRANGEMENTS: Record<ScreenState, () => Promise<void>> = {
   "Compare, the server unreachable": async () => {
     serverUnreachable();
     renderShell("/compare");
-    await screen.findAllByRole("alert");
+    // The sidebar's regions fail quietly (N4), so wait for their words, not for an alert.
+    await screen.findAllByText(/could not be loaded/i);
   },
 };
 

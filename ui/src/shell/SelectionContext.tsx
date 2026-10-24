@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fetchCriteriaSets, fetchLevels, type CriteriaSetSummary, type Level } from "../api/endpoints";
-import { useResource, type Resource } from "../api/useResource";
+import { combine, map, type Read } from "../api/read";
+import { useRead } from "../api/useRead";
 
 /**
  * What the user currently has selected: one criteria set and one level.
@@ -22,9 +23,16 @@ export interface Selection {
   criteriaSetId: string | null;
   selectLevel: (levelId: string) => void;
   selectCriteriaSet: (criteriaSetId: string | null) => void;
-  status: "loading" | "ready" | "error";
-  error: unknown;
+  /**
+   * The two lists as one read (PL-009): what a screen draws first, so a list still coming or
+   * one that failed never reads as "there are none". `levels` and `criteriaSets` above are its
+   * data once it is ready, and empty until then.
+   */
+  read: Read<SelectionLists>;
+  /** Reads both lists again, keeping them on screen meanwhile. */
   reload: () => void;
+  /** `reload`, settling once both lists have landed: for a caller that must wait for them. */
+  reloadAndWait: () => Promise<void>;
   /**
    * Bumped whenever a ranking is saved.
    *
@@ -47,13 +55,29 @@ export interface Selection {
   noteAcquisitionEnded: () => void;
 }
 
+export interface SelectionLists {
+  levels: Level[];
+  criteriaSets: CriteriaSetSummary[];
+}
+
 const SelectionContext = createContext<Selection | null>(null);
+const NO_LEVELS: Level[] = [];
+const NO_SETS: CriteriaSetSummary[] = [];
+const PENDING: Read<never> = { state: "pending" };
 
 export function SelectionProvider({ children }: { children: ReactNode }) {
-  const levels = useResource(useCallback((signal: AbortSignal) => fetchLevels({ signal }), []));
-  const criteriaSets = useResource(
+  const levels = useRead(useCallback((signal: AbortSignal) => fetchLevels({ signal }), []));
+  const criteriaSets = useRead(
     useCallback((signal: AbortSignal) => fetchCriteriaSets({ signal }), []),
   );
+  // Never idle: both are always asked for, so the narrowing only satisfies the type.
+  const levelsRead: Read<{ items: Level[] }> = levels.read.state === "idle" ? PENDING : levels.read;
+  const setsRead: Read<{ items: CriteriaSetSummary[] }> =
+    criteriaSets.read.state === "idle" ? PENDING : criteriaSets.read;
+  // The data, not the read: a re-read makes a new read object around the same data, and only a
+  // new answer should move what depends on it.
+  const levelsData = levelsRead.state === "ready" ? levelsRead.data : null;
+  const setsData = setsRead.state === "ready" ? setsRead.data : null;
 
   const [levelId, setLevelId] = useState<string | null>(null);
   const [criteriaSetId, setCriteriaSetId] = useState<string | null>(null);
@@ -69,16 +93,15 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
   );
 
   const orderedLevels = useMemo(
-    () => [...(levels.resource.data?.items ?? [])].sort((a, b) => a.depth_order - b.depth_order),
-    [levels.resource.data],
+    () =>
+      levelsData === null
+        ? NO_LEVELS
+        : [...levelsData.items].sort((a, b) => a.depth_order - b.depth_order),
+    [levelsData],
   );
-  // Memoised for the same reason `orderedLevels` is: `?? []` builds a new array on every
-  // render, and this one is a dependency of the effect below -- so without this the effect
-  // re-ran on every render for as long as the fetch had not landed.
-  const availableCriteriaSets = useMemo(
-    () => criteriaSets.resource.data?.items ?? [],
-    [criteriaSets.resource.data],
-  );
+  // One empty array, not a new one each render: this is a dependency of the effect below, and
+  // a fresh `[]` re-ran it on every render for as long as the fetch had not landed.
+  const availableCriteriaSets = setsData === null ? NO_SETS : setsData.items;
 
   // The shallowest level and the first criteria set are the opening view. Adopting a default
   // only while nothing is chosen means a reload never overrides a deliberate choice.
@@ -97,7 +120,7 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
   // the first existing set. A set that was in the list and has left it is the real event, and it
   // covers a set deleted from anywhere, not only from the panel below.
   const lastSeenCriteriaSets = useRef<string[]>([]);
-  const criteriaSetsReady = criteriaSets.resource.status === "ready";
+  const criteriaSetsReady = setsData !== null;
   useEffect(() => {
     // **A list that has not arrived is a reload in flight**, so it is not recorded: recording
     // it forgot that the discarded set had ever been there, and the correction below then had
@@ -116,26 +139,30 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     }
   }, [criteriaSetsReady, criteriaSetId, availableCriteriaSets]);
 
-  // **Depends on the two `reload` functions, not on the resources that carry them.**
-  // `useResource` returns a fresh object every render, so `[levels, criteriaSets]` changed on
-  // every render and the `useCallback` memoised nothing -- which in turn made the context
-  // value below new every render. No consumer puts it in a dependency array today; the one
-  // that did would re-run its effect for ever, which is the shape behind the 137,316-request
-  // loop this project has already filed once.
+  // **Depends on the two `reload` functions, not on the reads that carry them.** The hook
+  // returns a fresh object every render, so `[levels, criteriaSets]` would make the context
+  // value below new every render -- and a consumer reading it in a dependency array would
+  // re-run its effect for ever, the shape behind the 137,316-request loop already filed once.
   const reloadLevels = levels.reload;
   const reloadCriteriaSets = criteriaSets.reload;
-  const reload = useCallback(() => {
-    reloadLevels();
-    reloadCriteriaSets();
+  const reloadAndWait = useCallback(async () => {
+    await Promise.all([reloadLevels(), reloadCriteriaSets()]);
   }, [reloadLevels, reloadCriteriaSets]);
+  const reload = useCallback(() => void reloadAndWait(), [reloadAndWait]);
 
   // **Memoised, so the context has a stable identity.** `orderedLevels` and
   // `availableCriteriaSets` are already memoised and `reload` is now genuinely stable, so this
   // object was the last thing making every consumer re-render on every render of the shell --
   // and the only thing standing between a consumer that reads `selection` in a dependency
   // array and an endless effect.
-  const status = combineStatus(levels.resource.status, criteriaSets.resource.status);
-  const error = levels.resource.error ?? criteriaSets.resource.error;
+  const read = useMemo(
+    () =>
+      map(combine(levelsRead, setsRead), ([, sets]) => ({
+        levels: orderedLevels,
+        criteriaSets: sets.items,
+      })),
+    [levelsRead, setsRead, orderedLevels],
+  );
   const value: Selection = useMemo(
     () => ({
       levels: orderedLevels,
@@ -148,9 +175,9 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
       noteSavedRanking,
       acquisitionsEnded,
       noteAcquisitionEnded,
-      status,
-      error,
+      read,
       reload,
+      reloadAndWait,
     }),
     [
       orderedLevels,
@@ -161,9 +188,9 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
       noteSavedRanking,
       acquisitionsEnded,
       noteAcquisitionEnded,
-      status,
-      error,
+      read,
       reload,
+      reloadAndWait,
     ],
   );
 
@@ -174,9 +201,4 @@ export function useSelection(): Selection {
   const selection = useContext(SelectionContext);
   if (!selection) throw new Error("useSelection must be used inside SelectionProvider");
   return selection;
-}
-
-function combineStatus(...statuses: Resource<unknown>["status"][]): Selection["status"] {
-  if (statuses.includes("error")) return "error";
-  return statuses.every((status) => status === "ready") ? "ready" : "loading";
 }

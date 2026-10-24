@@ -524,11 +524,15 @@ describe("when the API fails", () => {
     expect(alerts[0]).toHaveTextContent("client.unreachable");
     expect(alerts[0]).toHaveTextContent(/backend did not answer/i);
 
+    // The sidebar says it once, quietly and without the code, and its own Try again re-reads.
+    const counts = within(await screen.findByRole("region", { name: /candidates/i }));
+    expect(await counts.findByText(/match counts could not be loaded/i)).toBeInTheDocument();
+    expect(counts.queryByText("client.unreachable")).toBeNull();
+
     mockServer.resetHandlers();
     const user = userEvent.setup();
-    await user.click(within(alerts[0]!).getByRole("button", { name: /try again/i }));
+    await user.click(counts.getByRole("button", { name: /try again/i }));
 
-    const counts = within(await screen.findByRole("region", { name: /candidates/i }));
     await waitFor(() => expect(counts.getByText("Matching").nextSibling).toHaveTextContent("2"));
   });
 
@@ -543,8 +547,12 @@ describe("when the API fails", () => {
     );
     renderShell("/rank");
 
-    expect(await screen.findByText("catalog_unavailable")).toBeInTheDocument();
-    expect(await screen.findByText(/catalog is not seeded/i)).toBeInTheDocument();
+    // PL-009: said in words, never as the code and never as "no criteria sets".
+    expect(
+      await screen.findByText(/criteria sets and levels could not be loaded/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("catalog_unavailable")).toBeNull();
+    expect(screen.queryByText("No criteria sets")).toBeNull();
     expect(screen.getByRole("link", { name: "Compare" })).toBeInTheDocument();
   });
 
@@ -560,7 +568,7 @@ describe("when the API fails", () => {
     // With nothing selected there is nothing to fetch, and the sidebar says so rather than
     // showing a spinner for a request it never made.
     const counts = within(await screen.findByRole("region", { name: /candidates/i }));
-    expect(counts.getByText(/choose a criteria set and a level/i)).toBeInTheDocument();
+    expect(counts.getByText(/nothing to count until there is a criteria set/i)).toBeInTheDocument();
     expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
   });
 });

@@ -94,7 +94,8 @@ describe("the acquiring bar", () => {
     renderShell("/rank");
 
     await screen.findByRole("heading", { name: "Rank" });
-    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    // The sidebar's last-run card says it could not read the runs; the strip says nothing.
+    await waitFor(() => expect(screen.queryByText(/acquiring/i)).toBeNull());
   });
 
   /** A run that has not said how much there is to do has not failed to do any of it. */

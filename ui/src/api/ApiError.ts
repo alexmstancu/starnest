@@ -51,6 +51,14 @@ export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
 }
 
+/** A code the server declares (`ErrorCode`), so a misspelt one fails to compile. */
+export type ErrorCode = components["schemas"]["ErrorCode"];
+
+/** Whether the server refused with this code: what a screen branches on, never the prose. */
+export function hasErrorCode(error: unknown, code: ErrorCode): boolean {
+  return isApiError(error) && error.code === code;
+}
+
 /**
  * Turns an unsuccessful response into an `ApiError`.
  *

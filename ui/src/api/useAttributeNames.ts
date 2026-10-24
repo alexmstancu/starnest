@@ -17,7 +17,7 @@
 
 import { useCallback } from "react";
 import { fetchAttributes } from "./endpoints";
-import { useResource } from "./useResource";
+import { useRead } from "./useRead";
 
 export type AttributeNames = ReadonlyMap<string, string>;
 
@@ -58,9 +58,9 @@ export function forgetAttributeNames(): void {
 const NONE: AttributeNames = new Map();
 
 export function useAttributeNames(): AttributeNames {
-  const { resource } = useResource(
+  const { read } = useRead(
     useCallback((signal: AbortSignal) => readThem(signal), []),
   );
   // One empty map, not a new one each render, or every consumer re-renders while it loads.
-  return resource.status === "ready" ? resource.data : NONE;
+  return read.state === "ready" ? read.data : NONE;
 }
