@@ -377,7 +377,7 @@ function SynthesisCard({
           // `deltaTone` already keeps a level state for exactly this.
           className={`synthesis__delta synthesis__delta--${deltaTone(pair.score_delta)}`}
         >
-          {formatSigned(pair.score_delta)}
+          {formatSigned(pair.score_delta, 0)}
         </span>
       </div>
       <p className="synthesis__lead">

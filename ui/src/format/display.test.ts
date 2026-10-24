@@ -208,21 +208,43 @@ describe("which way a difference goes", () => {
 });
 
 describe("a delta, signed", () => {
-  it("writes a plus on a gain, because a signed number reads as a direction", () => {
-    expect(formatSigned(3.5)).toBe("+3.5");
+  // **One formatter for every signed number on every screen** (PL-080): the true minus sign,
+  // the figure's own precision, and never a signed zero.
+  it.each([
+    // value, precision, printed
+    [3.5, 1, "+3.5"],
+    [-3.5, 1, "\u22123.5"],
+    [4, 1, "+4.0"],
+    [4, 2, "+4.00"],
+    [11, 0, "+11"],
+    [-8, 0, "\u22128"],
+    [1234.5, 1, "+1,234.5"],
+    // Zero, and anything that rounds to it, reads as neither direction.
+    [0, 1, "0.0"],
+    [0, 0, "0"],
+    [-0, 0, "0"],
+    [-0.04, 1, "0.0"],
+    [0.04, 1, "0.0"],
+    [-0.3, 0, "0"],
+    // Half away from zero on both sides, so a gain and a loss of one size read alike.
+    [0.25, 1, "+0.3"],
+    [-0.25, 1, "\u22120.3"],
+    // A figure's own precision: up to two decimals, trailing zeros dropped, as a figure reads.
+    [130, "figure", "+130"],
+    [13.4, "figure", "+13.4"],
+    [-0.03, "figure", "\u22120.03"],
+    [1.036, "figure", "+1.04"],
+    [-0.004, "figure", "0"],
+  ] as const)("prints %s at %s as %s", (value, precision, printed) => {
+    expect(formatSigned(value, precision)).toBe(printed);
   });
 
-  it("keeps the minus a negative already has, rather than adding a second", () => {
-    expect(formatSigned(-3.5)).toBe("-3.5");
+  it("takes one decimal when no precision is named", () => {
+    expect(formatSigned(-3.5)).toBe("\u22123.5");
   });
 
-  it("gives zero no sign, because it is neither direction", () => {
-    expect(formatSigned(0)).toBe("0.0");
-  });
-
-  it("keeps the decimal place, so a column of deltas lines up", () => {
-    expect(formatSigned(4)).toBe("+4.0");
-    expect(formatSigned(4, 2)).toBe("+4.00");
+  it("never uses the hyphen-minus, which is narrower than the plus", () => {
+    expect(formatSigned(-2, 0)).not.toContain("-");
   });
 
   it("marks an absent delta rather than printing a zero for it", () => {
@@ -230,6 +252,7 @@ describe("a delta, signed", () => {
     expect(formatSigned(null)).toBe(ABSENT);
     expect(formatSigned(undefined)).toBe(ABSENT);
     expect(formatSigned(Number.NaN)).toBe(ABSENT);
+    expect(formatSigned(Number.POSITIVE_INFINITY)).toBe(ABSENT);
   });
 });
 

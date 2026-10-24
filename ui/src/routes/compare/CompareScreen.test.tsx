@@ -161,7 +161,7 @@ describe("the comparison", () => {
     // 71 against Portugal's 78 is seven behind, as its column in the matrix reads (PL-091).
     const card = (await screen.findByRole("heading", { name: "Netherlands" }))
       .closest("section")!;
-    expect(within(card).getByText("-7.0")).toBeInTheDocument();
+    expect(within(card).getByText("\u22127")).toBeInTheDocument();
   });
 
   it("prints the synthesis the server templated, in its order", async () => {
@@ -420,7 +420,7 @@ describe("the attribute figures inside a pillar", () => {
 
     const row = screen.getByRole("row", { name: /median rent/i });
     expect(row).toHaveTextContent("gaps in EUR");
-    expect(within(row).getByText("+100.0 EUR")).not.toHaveClass("matrix__delta--faint");
+    expect(within(row).getByText("+100 EUR")).not.toHaveClass("matrix__delta--faint");
     // Both operands are on screen in euros, so the gap can be checked (RC-1, `reqs.md` 5.5).
     expect(row).toHaveTextContent("2500 RON (500 EUR)");
     expect(row).toHaveTextContent("600 EUR");
@@ -894,3 +894,93 @@ function rentComparison(focus: { normalised_score: number | null } = ROMANIAN_RE
     synthesis: [],
   };
 }
+
+/**
+ * PL-093 (UF-126). **A gap is printed as precisely as the figures it is between.** An impact is
+ * a pillar's share of the total, often under a point, and rounding it whole printed a real gap
+ * as "+0" beside a coloured bar; a raw gap rounded to one decimal did the same to figures read
+ * to two.
+ */
+describe("a small gap", () => {
+  function smallGapComparison() {
+    const index = (magnitude: number) => ({
+      data_source: "eurostat",
+      payload: { magnitude, unit: "index_eu27_100" },
+      retrieval_date: "2026-01-01",
+    });
+    return {
+      criteria_set: "default",
+      level: "country",
+      focus: {
+        candidate: "country.romania",
+        name: "Romania",
+        score: 74,
+        coverage: 90,
+        match_status: "matching",
+        pillar_scores: [{ pillar: "economics", score: 81, weight: 25, contribution: 20.25 }],
+      },
+      comparators: [
+        {
+          candidate: "country.spain",
+          name: "Spain",
+          score: 74,
+          coverage: 90,
+          match_status: "matching",
+          pillar_scores: [{ pillar: "economics", score: 80, weight: 25, contribution: 20 }],
+        },
+      ],
+      attributes: [
+        {
+          attribute: "country.cost_of_living_index",
+          pillar: "economics",
+          effective_weight: 12.5,
+          focus: { normalised_score: 82, value: index(92.12) },
+          comparators: [
+            {
+              candidate: "country.spain",
+              normalised_score: 81,
+              delta: 0.03,
+              value: index(92.15),
+            },
+          ],
+        },
+      ],
+      synthesis: [],
+    };
+  }
+
+  async function compareTheSmallGap() {
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, () => HttpResponse.json(smallGapComparison())),
+    );
+    renderShell("/compare");
+    await compare("Romania", "Spain");
+  }
+
+  it("reads an impact and its gap to one decimal", async () => {
+    await compareTheSmallGap();
+    await userEvent.click(await screen.findByRole("radio", { name: /weighted impact/i }));
+
+    const row = await screen.findByRole("row", { name: /economy/i });
+    expect(row).toHaveTextContent("20.3");
+    expect(row).toHaveTextContent("20.0");
+    expect(within(row).getByText("\u22120.3")).toBeInTheDocument();
+  });
+
+  it("keeps scores and their gaps whole in points", async () => {
+    await compareTheSmallGap();
+
+    const row = await screen.findByRole("row", { name: /economy/i });
+    expect(within(row).getByText("\u22121")).toBeInTheDocument();
+  });
+
+  it("reads a raw gap to the figures' own precision", async () => {
+    await compareTheSmallGap();
+    await openPillar("Economy");
+    await screen.findByRole("row", { name: /cost of living/i });
+    await userEvent.click(screen.getByRole("radio", { name: /raw figures/i }));
+
+    const row = screen.getByRole("row", { name: /cost of living/i });
+    expect(within(row).getByText("+0.03")).toBeInTheDocument();
+  });
+});

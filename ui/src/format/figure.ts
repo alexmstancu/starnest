@@ -6,7 +6,7 @@
  * types gets dragged along by the next contract change. Callers pass their `StoredValue`
  * unchanged; this only ever reads the payload.
  */
-import { ABSENT, formatIdentifier } from "./display";
+import { ABSENT, FIGURE_FRACTION_DIGITS, formatIdentifier } from "./display";
 
 export interface HasPayload {
   payload: unknown;
@@ -56,7 +56,7 @@ export function readableNumber(raw: unknown): string {
   const value = Number(raw);
   if (!Number.isFinite(value)) return String(raw);
   if (Number.isInteger(value)) return String(value);
-  const rounded = Number(value.toFixed(2));
+  const rounded = Number(value.toFixed(FIGURE_FRACTION_DIGITS));
   return String(rounded);
 }
 

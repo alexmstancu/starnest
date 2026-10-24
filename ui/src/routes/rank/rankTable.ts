@@ -262,17 +262,6 @@ export function confidenceReadings(
     });
 }
 
-/** The difference from home, signed, or a dash when there is nothing to compare against. */
-export function formatDelta(delta: number | null | undefined): string {
-  if (typeof delta !== "number" || Number.isNaN(delta)) {
-    return "—";
-  }
-  if (delta === 0) return "0";
-  // **U+2212, not a hyphen.** A hyphen is narrower than a plus at the same size, so a column
-  // of signed deltas does not line up on it -- and this screen is a column of signed deltas.
-  return delta > 0 ? `+${round(delta)}` : `\u2212${round(Math.abs(delta))}`;
-}
-
 /** A candidate as the band below needs to see one: only whether it matches. */
 export interface Judged {
   match_status: string;

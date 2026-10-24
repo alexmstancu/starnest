@@ -12,6 +12,7 @@ import {
   formatMatchStatus,
   formatPercentage,
   formatScore,
+  formatSigned,
 } from "../../format/display";
 import {
   type ConfidenceSplit,
@@ -21,7 +22,6 @@ import {
   confidenceReadings,
   coverageBar,
   excludedBand,
-  formatDelta,
   pillarBars,
 } from "./rankTable";
 import { type OpenCandidate, type OpenRow, chosenPillarOf, isOpen } from "./openRows";
@@ -348,7 +348,7 @@ function CandidateRow({
           missing, and a dash says so -- a zero here would read as "the same", which is a
           measurement nobody made. */}
       <td className={`col--right table__delta table__delta--${deltaTone(result.delta_vs_home)}`}>
-        {formatDelta(result.delta_vs_home)}
+        {formatSigned(result.delta_vs_home, 0)}
       </td>
       <td className="col--pillars">
         <PillarChart

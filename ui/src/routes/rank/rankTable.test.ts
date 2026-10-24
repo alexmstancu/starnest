@@ -7,7 +7,6 @@ import {
   confidenceReadings,
   coverageBar,
   excludedBand,
-  formatDelta,
   homeCandidates,
   pillarBars,
 } from "./rankTable";
@@ -210,22 +209,6 @@ describe("the pillar chart", () => {
     expect(pillarBars([])).toEqual([]);
     expect(pillarBars(null)).toEqual([]);
   });
-});
-
-describe("the difference from home", () => {
-  it("signs the number the way the design does", () => {
-    expect(formatDelta(11)).toBe("+11");
-    // U+2212, not a hyphen: a hyphen is narrower than a plus at the same size, so a column
-    // of signed deltas would not line up on it.
-    expect(formatDelta(-8)).toBe("\u22128");
-  });
-
-  it("says nothing rather than zero when there is nothing to compare against", () => {
-    expect(formatDelta(null)).toBe("—");
-    expect(formatDelta(undefined)).toBe("—");
-  });
-
-  
 });
 
 describe("where the ranking stops", () => {

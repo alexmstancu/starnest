@@ -39,7 +39,7 @@ describe("what each attribute put into the total", () => {
     ]);
 
     expect(readings.get("a")?.pointsAdded).toBe("+4.9");
-    expect(readings.get("b")?.pointsAdded).toBe("-2.3");
+    expect(readings.get("b")?.pointsAdded).toBe("\u22122.3");
   });
 
   it("says nothing about a figure the row left out", () => {

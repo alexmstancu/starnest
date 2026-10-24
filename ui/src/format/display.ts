@@ -39,19 +39,47 @@ export function formatScore(value: number | null | undefined): string {
 }
 
 /**
- * A delta, signed, because a signed number reads as a direction -- which is what a delta is.
- *
- * It lived in `CompareScreen.tsx` until the markup and the arithmetic were separated: a
- * `toFixed` among the JSX is formatting in the wrong place, and this is the file formatting
- * lives in.
+ * How many decimals a figure is read to: two, with trailing zeros dropped (`format/figure`).
+ * A gap between two figures is printed to the same, or it claims a precision they never had.
  */
-export function formatSigned(value: number | null | undefined, fractionDigits = 1): string {
+export const FIGURE_FRACTION_DIGITS = 2;
+
+/** A fixed number of decimals, or `"figure"`: a figure's own precision, as above. */
+export type SignedPrecision = number | "figure";
+
+/** U+2212. A hyphen is narrower than a plus, so a column of signed numbers would not line up. */
+const MINUS = "\u2212";
+
+/**
+ * A signed number: a delta, a gap, a contribution. **Every signed number on every screen goes
+ * through here** (PL-080), because a signed number reads as a direction and two screens that
+ * spell a direction differently look like two different kinds of number.
+ *
+ * **Never a signed zero.** The sign is decided after rounding: a gap that prints as zero is
+ * neither direction, and "+0.0" beside "0.0" claims a lead the figure cannot show.
+ */
+export function formatSigned(
+  value: number | null | undefined,
+  precision: SignedPrecision = 1,
+): string {
   if (!isFiniteNumber(value)) return ABSENT;
-  const formatted = new Intl.NumberFormat(DISPLAY_LOCALE, {
+  const [minimum, maximum] =
+    precision === "figure" ? [0, FIGURE_FRACTION_DIGITS] : [precision, precision];
+  const magnitude = new Intl.NumberFormat(DISPLAY_LOCALE, {
+    minimumFractionDigits: minimum,
+    maximumFractionDigits: maximum,
+  }).format(Math.abs(value));
+  if (!/[1-9]/.test(magnitude)) return magnitude;
+  return `${value > 0 ? "+" : MINUS}${magnitude}`;
+}
+
+/** An unsigned number to a fixed number of decimals, such as an impact on the total. */
+export function formatDecimal(value: number | null | undefined, fractionDigits: number): string {
+  if (!isFiniteNumber(value)) return ABSENT;
+  return new Intl.NumberFormat(DISPLAY_LOCALE, {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   }).format(value);
-  return value > 0 ? `+${formatted}` : formatted;
 }
 
 export function formatCount(value: number | null | undefined): string {

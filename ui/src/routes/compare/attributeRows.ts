@@ -112,9 +112,12 @@ export function rawGapUnit(value: { payload?: unknown } | null | undefined): str
   return typeof euros === "number" && Number.isFinite(euros) ? EURO : null;
 }
 
-/** A raw gap as printed: signed, with its unit where it has one, and absent as absent. */
+/**
+ * A raw gap as printed: signed, at the figures' own precision (PL-093), with its unit where it
+ * has one, and absent as absent.
+ */
 export function rawGapText(delta: number | null, unit: string | null): string {
-  const text = formatSigned(delta);
+  const text = formatSigned(delta, "figure");
   return unit === null || delta === null || !Number.isFinite(delta) ? text : `${text} ${unit}`;
 }
 

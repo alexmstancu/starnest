@@ -61,9 +61,11 @@ describe("a monetary gap", () => {
   });
 
   it("prints its unit beside the number, and nothing beside an absent gap", () => {
-    expect(rawGapText(130, "EUR")).toBe("+130.0 EUR");
+    expect(rawGapText(130, "EUR")).toBe("+130 EUR");
     expect(rawGapText(null, "EUR")).toBe(ABSENT);
     expect(rawGapText(13.4, null)).toBe("+13.4");
+    expect(rawGapText(-0.03, null)).toBe("\u22120.03");
+    expect(rawGapText(-0.004, "EUR")).toBe("0 EUR");
   });
 
   it("travels with its row", () => {

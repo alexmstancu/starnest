@@ -3,12 +3,13 @@ import type { Comparison } from "../../api/endpoints";
 import {
   ABSENT,
   attributeName,
+  formatDecimal,
   formatPercentage,
   formatScore,
+  formatSigned,
   pillarName,
 } from "../../format/display";
 import { describeFigure } from "../../format/figure";
-import { formatDelta } from "../rank/rankTable";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { usePillarNames } from "../../api/usePillarNames";
 import { divergingBar, maxAbsDelta, type Divergence } from "./divergingBar";
@@ -134,7 +135,7 @@ export function ComparisonMatrix({
                 key={row.label}
                 label={row.label}
                 weight={row.weight}
-                focusText={formatScore(row.focus)}
+                focusText={readingText(row.focus, measure)}
                 place={place}
                 open={isOpen}
                 canOpen={attributes.length > 0}
@@ -144,8 +145,8 @@ export function ComparisonMatrix({
                 cells={row.cells.map((cell) => ({
                   candidate: cell.candidate,
                   bar: divergingBar(cell.delta, pillarScale, row.focus),
-                  scoreText: formatScore(cell.score),
-                  deltaText: deltaText(cell),
+                  scoreText: readingText(cell.score, measure),
+                  deltaText: deltaText(cell, measure),
                 }))}
                 attributes={attributes}
                 shownAs={shownAs}
@@ -277,7 +278,7 @@ function AttributeRowView({
             compact
             scoreText={raw ? cell.figure || ABSENT : formatScore(cell.score)}
             deltaText={
-              raw ? rawGapText(cell.rawDelta, row.gapUnit) : formatDelta(cell.scoreDelta)
+              raw ? rawGapText(cell.rawDelta, row.gapUnit) : formatSigned(cell.scoreDelta, 0)
             }
           />
         );
@@ -382,7 +383,21 @@ function Cell({
   );
 }
 
+/**
+ * How many decimals a matrix reading takes. Scores are whole points; an impact is a pillar's
+ * share of the total, often under one point, so rounding it whole printed real gaps as "+0"
+ * beside a coloured bar (PL-093).
+ */
+function decimalsFor(measure: Measure): number {
+  return measure === "impact" ? 1 : 0;
+}
+
+/** A pillar reading: a score, or an impact on the total to one decimal. */
+function readingText(value: number | null, measure: Measure): string {
+  return measure === "impact" ? formatDecimal(value, decimalsFor(measure)) : formatScore(value);
+}
+
 /** A comparator cell's delta text: a dash where there is nothing to compare, signed otherwise. */
-function deltaText(cell: MatrixCell): string {
-  return cell.delta === null ? ABSENT : formatDelta(cell.delta);
+function deltaText(cell: MatrixCell, measure: Measure = "points"): string {
+  return formatSigned(cell.delta, decimalsFor(measure));
 }
