@@ -1,7 +1,10 @@
 import { useCallback } from "react";
 import { fetchRun, fetchSettings, type Run } from "../../api/endpoints";
-import { useResource } from "../../api/useResource";
+import { combine, type Read } from "../../api/read";
+import { useRead } from "../../api/useRead";
 import { formatCount, formatDateTime, formatMoney } from "../../format/display";
+import { LoadedRegion } from "../../shell/LoadedRegion";
+import { alwaysAsked } from "./alwaysAsked";
 import {
   filledOf,
   newestRun,
@@ -22,59 +25,73 @@ import {
  * (`items_completed`, `items_failed` and `items_unanswered` sum to `items_total`, derived in
  * SQL rather than stored, Q217); what has been spent this month is an addition of costs the
  * server recorded against each run.
+ *
+ * **Every figure waits for the read it comes from** (PL-001). A history, a detail or a setting
+ * still on its way is a skeleton, and one that never came is said to have failed -- never "0 of
+ * 0", never "no cap is set". Read again, the figures stay, marked busy (PL-010).
  */
-export function DatabaseHoldsPanel({ runs }: { runs: readonly Run[] }) {
-  const newest = newestRun(runs);
-  const running = runningNow(runs);
-  const newestId = newest?.id;
-
+export function DatabaseHoldsPanel({
+  history,
+  onRetry,
+}: {
+  history: Read<readonly Run[]>;
+  onRetry: () => Promise<void>;
+}) {
   return (
     <section className="panel" aria-labelledby="database-holds">
       <div className="panel__head">
         <h2 id="database-holds" className="panel__heading">
           What the database holds
         </h2>
-        <dl className="meta-row">
-          <Meta
-            label="Last filled by"
-            value={
-              newest === undefined ? "Nothing yet" : `Acquisition ${newest.id}`
-            }
-          />
-          <Meta
-            label="Finished"
-            value={
-              newest?.finished_at == null
-                ? "—"
-                : formatDateTime(newest.finished_at)
-            }
-          />
-          {/* **One at a time**, which the API enforces rather than this screen: starting a
-              second acquisition while one is in flight is refused. */}
-          <Meta
-            label="Running now"
-            value={
-              running === undefined
-                ? "None — one at a time"
-                : `Acquisition ${running.id}`
-            }
-          />
-        </dl>
+        {/* Drawn only from a history that has answered; its failure is said once, below. */}
+        {history.state === "ready" && <LastAcquisitions runs={history.data} />}
       </div>
-
-      {/* **Keyed by the acquisition it reads.** The figures belong to one run, so a newer one
-          starts them again rather than leaving the previous run's counts on screen while the
-          new ones arrive. Rendered only when there has been one, so the fetch never has to
-          ask about a run that does not exist. */}
-      {newestId === undefined ? (
-        <p className="panel__hint">
-          Nothing has been acquired yet, so the database holds no values. An
-          estimate below says what a first acquisition would fetch.
-        </p>
-      ) : (
-        <Figures key={newestId} runId={newestId} runs={runs} />
-      )}
+      <LoadedRegion
+        read={history}
+        what="What the database holds"
+        skeleton="acquire-stats"
+        onRetry={onRetry}
+      >
+        {(runs) => {
+          const newestId = newestRun(runs)?.id;
+          // **Keyed by the acquisition it reads.** The figures belong to one run, so a newer
+          // one starts them again rather than leaving the previous run's counts on screen
+          // while the new ones arrive. Rendered only when there has been one, so the fetch
+          // never has to ask about a run that does not exist.
+          return newestId === undefined ? (
+            <p className="panel__hint">
+              Nothing has been acquired yet, so the database holds no values. An
+              estimate below says what a first acquisition would fetch.
+            </p>
+          ) : (
+            <Figures key={newestId} runId={newestId} runs={runs} />
+          );
+        }}
+      </LoadedRegion>
     </section>
+  );
+}
+
+function LastAcquisitions({ runs }: { runs: readonly Run[] }) {
+  const newest = newestRun(runs);
+  const running = runningNow(runs);
+  return (
+    <dl className="meta-row">
+      <Meta
+        label="Last filled by"
+        value={newest === undefined ? "Nothing yet" : `Acquisition ${newest.id}`}
+      />
+      <Meta
+        label="Finished"
+        value={newest?.finished_at == null ? "—" : formatDateTime(newest.finished_at)}
+      />
+      {/* **One at a time**, which the API enforces rather than this screen: starting a
+          second acquisition while one is in flight is refused. */}
+      <Meta
+        label="Running now"
+        value={running === undefined ? "None — one at a time" : `Acquisition ${running.id}`}
+      />
+    </dl>
   );
 }
 
@@ -86,55 +103,60 @@ export function DatabaseHoldsPanel({ runs }: { runs: readonly Run[] }) {
  * React compiler wants cannot survive that.
  */
 function Figures({ runId, runs }: { runId: number; runs: readonly Run[] }) {
-  const detail = useResource(
+  const detail = useRead(
     useCallback(
       (signal: AbortSignal) => fetchRun(runId, { signal }),
       [runId],
     ),
   );
-  const settings = useResource(
+  const settings = useRead(
     useCallback((signal: AbortSignal) => fetchSettings({ signal }), []),
   );
-
-  const progress =
-    detail.resource.status === "ready" ? detail.resource.data.progress : null;
-  const { filled, asked } = filledOf(progress);
-  const cap =
-    settings.resource.status === "ready"
-      ? settings.resource.data.run_spend_cap_eur
-      : null;
-
   return (
-      <div className="big-stats">
-        <BigStat
-          label="Values filled"
-          value={formatCount(filled)}
-          note={`of ${formatCount(asked)} the last acquisition asked for`}
-        />
-        <BigStat
-          label="Nobody answered"
-          value={formatCount(progress?.items_unanswered ?? 0)}
-          note="every source was asked and none had a row"
-          tone={
-            (progress?.items_unanswered ?? 0) > 0 ? "warning" : undefined
-          }
-        />
-        <BigStat
-          label="Failed"
-          value={formatCount(progress?.items_failed ?? 0)}
-          note="a source broke, so these are worth retrying"
-          tone={(progress?.items_failed ?? 0) > 0 ? "danger" : undefined}
-        />
-        <BigStat
-          label="Spent this month"
-          value={formatMoney(spentThisMonth(runs, new Date()), "EUR")}
-          note={
-            cap == null
-              ? "no cap is set, so an acquisition that would spend refuses"
-              : `the cap is ${formatMoney(cap, "EUR")} per acquisition`
-          }
-        />
-      </div>
+    <LoadedRegion
+      read={combine(alwaysAsked(detail.read), alwaysAsked(settings.read))}
+      what="The last acquisition's figures"
+      skeleton="acquire-stats"
+      prominence="region"
+      onRetry={async () => {
+        await Promise.all([detail.reload(), settings.reload()]);
+      }}
+    >
+      {/* A detail with no progress is a run that has reported none, which is none of none. */}
+      {([{ progress = {} }, { run_spend_cap_eur: cap }]) => {
+        const { filled, asked } = filledOf(progress);
+        return (
+          <div className="big-stats">
+            <BigStat
+              label="Values filled"
+              value={formatCount(filled)}
+              note={`of ${formatCount(asked)} the last acquisition asked for`}
+            />
+            <BigStat
+              label="Nobody answered"
+              value={formatCount(progress.items_unanswered ?? 0)}
+              note="every source was asked and none had a row"
+              tone={(progress.items_unanswered ?? 0) > 0 ? "warning" : undefined}
+            />
+            <BigStat
+              label="Failed"
+              value={formatCount(progress.items_failed ?? 0)}
+              note="a source broke, so these are worth retrying"
+              tone={(progress.items_failed ?? 0) > 0 ? "danger" : undefined}
+            />
+            <BigStat
+              label="Spent this month"
+              value={formatMoney(spentThisMonth(runs, new Date()), "EUR")}
+              note={
+                cap == null
+                  ? "no cap is set, so an acquisition that would spend refuses"
+                  : `the cap is ${formatMoney(cap, "EUR")} per acquisition`
+              }
+            />
+          </div>
+        );
+      }}
+    </LoadedRegion>
   );
 }
 

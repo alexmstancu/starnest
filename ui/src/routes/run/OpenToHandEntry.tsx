@@ -1,10 +1,12 @@
 import { useCallback, useId, useState } from "react";
 import { fetchAttributes } from "../../api/endpoints";
 import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
-import { useResource } from "../../api/useResource";
+import { map } from "../../api/read";
+import { useRead } from "../../api/useRead";
 import { useSourceNames } from "../../api/useSourceNames";
 import { pillarName } from "../../format/display";
-import { ErrorNotice } from "../../shell/ErrorNotice";
+import { LoadedRegion } from "../../shell/LoadedRegion";
+import { alwaysAsked } from "./alwaysAsked";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 import { handEnterable } from "./unsourced";
 
@@ -31,22 +33,17 @@ export function OpenToHandEntry({ level }: { level: string }) {
   const pillars = usePillarNames();
   const sourceNames = useSourceNames();
 
-  const attributes = useResource(
+  const attributes = useRead(
     useCallback(
       (signal: AbortSignal) => fetchAttributes(level, { signal }),
       [level],
     ),
   );
-
-  if (attributes.resource.status === "error") {
-    return (
-      <ErrorNotice error={attributes.resource.error} onRetry={attributes.reload} />
-    );
-  }
-  if (attributes.resource.status !== "ready") return null;
-
-  const open_to = handEnterable(attributes.resource.data.items, sourceNames);
-  if (open_to.length === 0) return null;
+  const openTo = map(alwaysAsked(attributes.read), (read) =>
+    handEnterable(read.items, sourceNames),
+  );
+  // Drawn while the catalog is read, so its state is said; gone once it says there is none.
+  if (openTo.state === "ready" && openTo.data.length === 0) return null;
 
   return (
     <section className="panel" aria-labelledby={headingId}>
@@ -60,34 +57,44 @@ export function OpenToHandEntry({ level }: { level: string }) {
         underneath.
       </p>
 
-      <div className="table-card">
-        <table className="table" aria-label="Attributes open to hand entry">
-          <thead>
-            <tr>
-              <th scope="col">Attribute</th>
-              <th scope="col">Pillar</th>
-              <th scope="col">What else would answer it</th>
-              <th scope="col">&nbsp;</th>
-            </tr>
-          </thead>
-          <tbody>
-            {open_to.map((attribute) => (
-              <Row
-                key={attribute.id}
-                attribute={attribute}
-                pillars={pillars}
-                level={level}
-                open={open === attribute.id}
-                onToggle={() =>
-                  setOpen((current) =>
-                    current === attribute.id ? null : attribute.id,
-                  )
-                }
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <LoadedRegion
+        read={openTo}
+        what="The attributes open to hand entry"
+        skeleton="lines"
+        prominence="region"
+        onRetry={attributes.reload}
+      >
+        {(enterable) => (
+          <div className="table-card">
+            <table className="table" aria-label="Attributes open to hand entry">
+              <thead>
+                <tr>
+                  <th scope="col">Attribute</th>
+                  <th scope="col">Pillar</th>
+                  <th scope="col">What else would answer it</th>
+                  <th scope="col">&nbsp;</th>
+                </tr>
+              </thead>
+              <tbody>
+                {enterable.map((attribute) => (
+                  <Row
+                    key={attribute.id}
+                    attribute={attribute}
+                    pillars={pillars}
+                    level={level}
+                    open={open === attribute.id}
+                    onToggle={() =>
+                      setOpen((current) =>
+                        current === attribute.id ? null : attribute.id,
+                      )
+                    }
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </LoadedRegion>
     </section>
   );
 }

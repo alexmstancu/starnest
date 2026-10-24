@@ -113,9 +113,13 @@ describe("what an acquisition filled", () => {
     });
   });
 
-  /** A run with no progress yet reads as nothing of nothing, never as undefined. */
-  it("reads an absent progress as nothing rather than as a blank", () => {
-    expect(filledOf(null)).toEqual({ filled: 0, asked: 0 });
+  /**
+   * A run that has reported progress and no counts in it yet has filled nothing of nothing.
+   * **No progress at all is not this**: a detail still being read is the caller's to draw as
+   * pending, never as zeros (PL-001), so `filledOf` takes no null.
+   */
+  it("reads a count the run has not reported yet as none", () => {
+    expect(filledOf({})).toEqual({ filled: 0, asked: 0 });
   });
 });
 

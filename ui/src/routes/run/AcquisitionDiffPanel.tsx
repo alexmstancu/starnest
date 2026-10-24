@@ -2,7 +2,7 @@ import { useCallback, useId, useState } from "react";
 import { type Run, fetchValuesFromRun } from "../../api/endpoints";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { useCandidateNames } from "../../api/useCandidateNames";
-import { useResource } from "../../api/useResource";
+import { useRead } from "../../api/useRead";
 import { useSourceNames } from "../../api/useSourceNames";
 import {
   attributeName,
@@ -11,7 +11,7 @@ import {
   formatDateTime,
   sourceName,
 } from "../../format/display";
-import { ErrorNotice } from "../../shell/ErrorNotice";
+import { LoadedRegion } from "../../shell/LoadedRegion";
 import { diffAcquisitions, progressOf, runIdFrom } from "./acquisitionDiff";
 import { useVersionOf } from "./useVersionOf";
 
@@ -39,7 +39,7 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
   const historyReads = useVersionOf(runs);
   const freshness = useVersionOf(progressOf(runs, [earlier, later], historyReads));
 
-  const values = useResource(
+  const values = useRead(
     useCallback(
       async (signal: AbortSignal) => {
         if (earlier === null || later === null) throw new Error("no pair chosen");
@@ -53,8 +53,7 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
       },
       [earlier, later],
     ),
-    earlier !== null && later !== null,
-    freshness,
+    { enabled: earlier !== null && later !== null, freshness },
   );
 
   return (
@@ -107,96 +106,98 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
         </label>
       </div>
 
-      {values.resource.status === "idle" && (
+      {values.read.state === "idle" ? (
         <p className="screen__note">Choose two acquisitions to compare.</p>
-      )}
-      {values.resource.status === "loading" && (
-        <p className="screen__note">Loading…</p>
-      )}
-      {values.resource.status === "error" && (
-        <ErrorNotice error={values.resource.error} onRetry={values.reload} />
-      )}
+      ) : (
+        <LoadedRegion
+          read={values.read}
+          what="The comparison"
+          skeleton="lines"
+          prominence="region"
+          onRetry={values.reload}
+        >
+          {(diff) => (
+            <>
+              {/* **Four counts, not three.** "Refreshed" used to mean both "the figure moved" and
+                  "the same figure came back", which are different answers to the only question
+                  this panel asks. A run that re-fetched a thousand figures and moved none of them
+                  cost something and changed nothing, and one count hid exactly that. */}
+              <dl className="tiles">
+                <Tile
+                  label="Newly acquired"
+                  value={formatCount(diff.newlyAcquired)}
+                  note="No figure for that pair before this run"
+                />
+                <Tile
+                  label="Refreshed"
+                  value={formatCount(diff.refreshed)}
+                  note="A figure that moved"
+                />
+                <Tile
+                  label="Unchanged"
+                  value={formatCount(diff.unchanged)}
+                  note="Re-fetched and identical"
+                />
+                <Tile
+                  label="Went missing"
+                  value={formatCount(diff.wentMissing)}
+                  note="The later run produced none — the earlier figure is still stored"
+                />
+              </dl>
 
-      {values.resource.status === "ready" && (
-        <>
-          {/* **Four counts, not three.** "Refreshed" used to mean both "the figure moved" and
-              "the same figure came back", which are different answers to the only question
-              this panel asks. A run that re-fetched a thousand figures and moved none of them
-              cost something and changed nothing, and one count hid exactly that. */}
-          <dl className="tiles">
-            <Tile
-              label="Newly acquired"
-              value={formatCount(values.resource.data.newlyAcquired)}
-              note="No figure for that pair before this run"
-            />
-            <Tile
-              label="Refreshed"
-              value={formatCount(values.resource.data.refreshed)}
-              note="A figure that moved"
-            />
-            <Tile
-              label="Unchanged"
-              value={formatCount(values.resource.data.unchanged)}
-              note="Re-fetched and identical"
-            />
-            <Tile
-              label="Went missing"
-              value={formatCount(values.resource.data.wentMissing)}
-              note="The later run produced none — the earlier figure is still stored"
-            />
-          </dl>
-
-          {values.resource.data.rows.length === 0 ? (
-            <p className="screen__note">
-              Neither acquisition produced a figure for any candidate, so there
-              is nothing to compare. Two runs that produced the same pairs are
-              not empty — every pair reads as refreshed or unchanged.
-            </p>
-          ) : (
-            <div className="table-card">
-              <table className="table" aria-label="What changed">
-                <thead>
-                  <tr>
-                    <th scope="col">Candidate</th>
-                    <th scope="col">Attribute</th>
-                    <th scope="col">Source</th>
-                    {/* The two figures themselves, which is what makes the verdict in the
-                        last column checkable rather than something to take on trust. */}
-                    <th scope="col" className="col--right">
-                      Earlier
-                    </th>
-                    <th scope="col" className="col--right">
-                      Later
-                    </th>
-                    <th scope="col">What happened</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {values.resource.data.rows.map((row) => (
-                    <tr key={`${row.candidate}-${row.attribute}-${row.change}`}>
-                      <th scope="row">
-                        {candidateName(candidates, row.candidate)}
-                      </th>
-                      <td>{attributeName(attributes, row.attribute)}</td>
-                      <td>
-                        {row.data_source == null
-                          ? "—"
-                          : sourceName(sources, row.data_source)}
-                      </td>
-                      <td className="col--right">{row.earlier ?? "—"}</td>
-                      <td className="col--right">{row.later ?? "—"}</td>
-                      <td>
-                        <span className={`chip ${chipFor(row.change)}`}>
-                          {row.change}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+              {diff.rows.length === 0 ? (
+                <p className="screen__note">
+                  Neither acquisition produced a figure for any candidate, so there
+                  is nothing to compare. Two runs that produced the same pairs are
+                  not empty — every pair reads as refreshed or unchanged.
+                </p>
+              ) : (
+                <div className="table-card">
+                  <table className="table" aria-label="What changed">
+                    <thead>
+                      <tr>
+                        <th scope="col">Candidate</th>
+                        <th scope="col">Attribute</th>
+                        <th scope="col">Source</th>
+                        {/* The two figures themselves, which is what makes the verdict in the
+                            last column checkable rather than something to take on trust. */}
+                        <th scope="col" className="col--right">
+                          Earlier
+                        </th>
+                        <th scope="col" className="col--right">
+                          Later
+                        </th>
+                        <th scope="col">What happened</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {diff.rows.map((row) => (
+                        <tr key={`${row.candidate}-${row.attribute}-${row.change}`}>
+                          <th scope="row">
+                            {candidateName(candidates, row.candidate)}
+                          </th>
+                          <td>{attributeName(attributes, row.attribute)}</td>
+                          <td>
+                            {row.data_source == null
+                              ? "—"
+                              : sourceName(sources, row.data_source)}
+                          </td>
+                          <td className="col--right">{row.earlier ?? "—"}</td>
+                          <td className="col--right">{row.later ?? "—"}</td>
+                          <td>
+                            <span className={`chip ${chipFor(row.change)}`}>
+                              {row.change}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
-        </>
+        </LoadedRegion>
       )}
     </section>
   );

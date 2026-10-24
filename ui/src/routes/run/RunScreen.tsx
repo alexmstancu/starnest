@@ -13,6 +13,7 @@ import {
 } from "../../format/display";
 import type { RouteDefinition } from "../../navigation/routes";
 import { ErrorNotice } from "../../shell/ErrorNotice";
+import { LoadedRegion } from "../../shell/LoadedRegion";
 import { useSelection } from "../../shell/SelectionContext";
 import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
@@ -120,9 +121,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           `run.close`. The failures live in the card below that can act on them. */}
       {report}
 
-      {run.history.status === "ready" && (
-        <DatabaseHoldsPanel runs={run.history.data.items} />
-      )}
+      <DatabaseHoldsPanel history={run.history} onRetry={run.reloadHistory} />
 
       {/* ── What you can do about the gaps ───────────────────────────────────────────
           **Three cards, side by side, and the same shape each.** A failure, an item nobody
@@ -285,25 +284,25 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           honestly in both lists, and its form is here (UI-32). */}
       {levelId !== null && <OpenToHandEntry level={levelId} />}
 
-      {/* **From the runs as last read, not from the history's state** (NEW-11): every act reads
-          the history again, and drawn only while it was ready the diff left the screen for each
-          re-read and came back with nothing chosen. */}
-      {run.runs !== null && <AcquisitionDiffPanel runs={run.runs} />}
+      {/* **Kept through a re-read of the history** (NEW-11, PL-010): every act reads it again,
+          and the diff left the screen for each re-read and came back with nothing chosen. Not
+          drawn before the first answer, so nothing can be chosen from a list nobody has read. */}
+      {run.history.state === "ready" && <AcquisitionDiffPanel runs={run.history.data} />}
 
-      <h2 className="panel__heading">Every acquisition so far</h2>
-      {run.history.status === "loading" && (
-        <p className="screen__note">Loading…</p>
-      )}
-      {run.history.status === "error" && (
-        <ErrorNotice error={run.history.error} onRetry={run.reloadHistory} />
-      )}
-      {run.history.status === "ready" && (
-        <RunHistory
-          runs={run.history.data.items}
-          held={run.starting}
-          onOpen={run.open}
-        />
-      )}
+      <section aria-labelledby="every-acquisition">
+        <h2 id="every-acquisition" className="panel__heading">
+          Every acquisition so far
+        </h2>
+        <LoadedRegion
+          read={run.history}
+          what="The acquisition history"
+          skeleton="lines"
+          prominence="region"
+          onRetry={run.reloadHistory}
+        >
+          {(runs) => <RunHistory runs={runs} held={run.starting} onOpen={run.open} />}
+        </LoadedRegion>
+      </section>
     </section>
   );
 }

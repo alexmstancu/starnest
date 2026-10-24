@@ -1457,7 +1457,12 @@ describe("the two acquisitions chosen in the diff", () => {
     await estimate();
     await waitFor(() => expect(waiting).toBe(true));
 
-    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    // The history says it is reading by being busy, over the list it read last (PL-010).
+    expect(
+      screen.getByRole("region", { name: /every acquisition so far/i }).querySelector(
+        '[aria-busy="true"]',
+      ),
+    ).not.toBeNull();
     expectFiveAgainstSeven();
 
     answer.release();
@@ -1483,8 +1488,11 @@ describe("the two acquisitions chosen in the diff", () => {
 
     await estimate();
 
+    // Said over the list it kept, which is dated rather than dropped (N3).
     expect(
-      await screen.findByText("the history could not be read"),
+      await within(
+        screen.getByRole("region", { name: /every acquisition so far/i }),
+      ).findByText(/could not be refreshed/i),
     ).toBeInTheDocument();
     expectFiveAgainstSeven();
   });
@@ -3336,7 +3344,7 @@ describe("how much of a gap there is", () => {
       }),
     );
 
-    expect(card.getByText(/attributes? affected/)).toBeInTheDocument();
+    expect(await card.findByText(/attributes? affected/)).toBeInTheDocument();
   });
 
   it("agrees with the number of rows it draws", async () => {

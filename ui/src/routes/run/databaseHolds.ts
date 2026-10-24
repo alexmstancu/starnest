@@ -66,14 +66,18 @@ export function spentThisMonth(
   }, 0);
 }
 
-/** How many of the items a run asked about it came back with a figure for. */
-export function filledOf(progress: RunProgress | null | undefined): {
+/**
+ * How many of the items a run asked about it came back with a figure for. **Never given a
+ * missing progress**: a run whose detail has not been read has filled nothing anybody knows of,
+ * which is not zero, so that case is the caller's to draw as pending (PL-001).
+ */
+export function filledOf(progress: RunProgress): {
   filled: number;
   asked: number;
 } {
   return {
-    filled: progress?.items_completed ?? 0,
-    asked: progress?.items_total ?? 0,
+    filled: progress.items_completed ?? 0,
+    asked: progress.items_total ?? 0,
   };
 }
 

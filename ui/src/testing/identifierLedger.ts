@@ -121,7 +121,7 @@ export const IDENTIFIER_LEDGER = {
   ],
   "Acquire, no spend cap set": [MANUAL_SOURCE],
   "Acquire, nothing acquired yet": [MANUAL_SOURCE],
-  "Acquire, the server unreachable": [SERVER_UNREACHABLE],
+  "Acquire, the server unreachable": [],
 
   "Rank, a row open on a pillar, an attribute drilled into and a saved ranking open": [],
   "Rank, the score range unset": [],

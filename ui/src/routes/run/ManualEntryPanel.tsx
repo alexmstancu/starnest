@@ -1,8 +1,10 @@
 import { useCallback, useId } from "react";
 import { fetchCandidates } from "../../api/endpoints";
-import { useResource } from "../../api/useResource";
+import { useRead } from "../../api/useRead";
 import { useSourceNames } from "../../api/useSourceNames";
 import { ErrorNotice } from "../../shell/ErrorNotice";
+import { LoadedRegion } from "../../shell/LoadedRegion";
+import { alwaysAsked } from "./alwaysAsked";
 import { candidateName, sourceName } from "../../format/display";
 import { describeFigure } from "../../format/figure";
 import type { ManualDraft, ManualKind } from "./manualEntry";
@@ -36,25 +38,21 @@ export function ManualEntryPanel({
   const headingId = useId();
   const entry = useManualEntry(attribute, kind);
   const sources = useSourceNames();
-  const candidates = useResource(
+  const candidates = useRead(
     useCallback(
       (signal: AbortSignal) => fetchCandidates(level, { signal }),
       [level],
     ),
   );
+  const roster = alwaysAsked(candidates.read);
 
   // **Read off the list this panel already fetched**, rather than asking `useCandidateNames`
   // for the same rows a second time: the select below needs every candidate anyway, and the
   // confirmation underneath needs one of their names. Empty while that request is in flight,
   // which makes the name fall back to the id made readable rather than to the id.
   const named =
-    candidates.resource.status === "ready"
-      ? new Map(
-          candidates.resource.data.items.map((candidate) => [
-            candidate.id,
-            candidate.name,
-          ]),
-        )
+    roster.state === "ready"
+      ? new Map(roster.data.items.map((candidate) => [candidate.id, candidate.name]))
       : new Map<string, string>();
 
   return (
@@ -68,43 +66,36 @@ export function ManualEntryPanel({
         stays visible underneath.
       </p>
 
-      {/* **Why the candidate list below is empty** (UI-27). Only a failed store was ever
-          reported, so a list that could not be read offered nothing with nothing said. */}
-      {candidates.resource.status === "loading" && (
-        <p className="screen__note">Loading the candidates…</p>
-      )}
-      {candidates.resource.status === "error" && (
-        <>
-          <p className="screen__note">
-            The candidates could not be read, so there is nobody to give a
-            figure to until they are.
-          </p>
-          <ErrorNotice
-            error={candidates.resource.error}
-            onRetry={candidates.reload}
-          />
-        </>
-      )}
-
       <div className="field-grid">
         <div className="field">
           <label className="field__label" htmlFor={`${headingId}-candidate`}>
             Candidate
           </label>
-          <select
-            id={`${headingId}-candidate`}
-            className="field__control"
-            value={entry.draft.candidate}
-            onChange={(event) => entry.change("candidate", event.target.value)}
+          {/* **No list until the candidates are read** (UI-27, PL-001): an empty select said
+              there was nobody to give a figure to, which a list not yet read cannot say. */}
+          <LoadedRegion
+            read={roster}
+            what="The candidates"
+            skeleton="lines"
+            prominence="region"
+            onRetry={candidates.reload}
           >
-            <option value="">Choose one</option>
-            {candidates.resource.status === "ready" &&
-              candidates.resource.data.items.map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.name}
-                </option>
-              ))}
-          </select>
+            {({ items }) => (
+              <select
+                id={`${headingId}-candidate`}
+                className="field__control"
+                value={entry.draft.candidate}
+                onChange={(event) => entry.change("candidate", event.target.value)}
+              >
+                <option value="">Choose one</option>
+                {items.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </LoadedRegion>
         </div>
 
         {kind === "LabelSet" ? (

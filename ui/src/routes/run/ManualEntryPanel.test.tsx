@@ -4,6 +4,8 @@ import { HttpResponse, http } from "msw";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 import { mockServer } from "../../mocks/server";
+import { AppConfigProvider } from "../../config/AppConfigContext";
+import { TEST_CONFIG } from "../../testing/renderShell";
 import {
   expectHeld,
   expectNotHeld,
@@ -22,15 +24,18 @@ import { ManualEntryPanel } from "./ManualEntryPanel";
 const EMPLOYERS = "country.international_employers";
 
 function renderEntry() {
+  // In the provider because a read that failed names the product when it says why.
   return render(
-    <MemoryRouter>
-      <ManualEntryPanel
-        attribute={EMPLOYERS}
-        attributeName="International employers"
-        kind="LabelSet"
-        level="country"
-      />
-    </MemoryRouter>,
+    <AppConfigProvider config={TEST_CONFIG}>
+      <MemoryRouter>
+        <ManualEntryPanel
+          attribute={EMPLOYERS}
+          attributeName="International employers"
+          kind="LabelSet"
+          level="country"
+        />
+      </MemoryRouter>
+    </AppConfigProvider>,
   );
 }
 
@@ -239,7 +244,7 @@ describe("storing a figure from the keyboard", () => {
  * read left that choice empty with nothing said: only a failed store was ever reported.
  */
 describe("the hand-entry form when the candidates are not there", () => {
-  it("says the candidates could not be read, and reads them again when asked", async () => {
+  it("says the candidates could not be loaded, and reads them again when asked", async () => {
     const user = userEvent.setup();
     let failing = true;
     mockServer.use(
@@ -255,9 +260,10 @@ describe("the hand-entry form when the candidates are not there", () => {
     renderEntry();
 
     expect(
-      await screen.findByText(/candidates could not be read/i),
+      await screen.findByText("The candidates could not be loaded"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("the roster is down");
+    // Nobody to choose is not the same as nobody there: no list is offered at all.
+    expect(screen.queryByRole("combobox", { name: "Candidate" })).toBeNull();
 
     failing = false;
     await user.click(screen.getByRole("button", { name: "Try again" }));
@@ -265,10 +271,10 @@ describe("the hand-entry form when the candidates are not there", () => {
     expect(
       await screen.findByRole("option", { name: "Portugal" }),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/candidates could not be read/i)).toBeNull();
+    expect(screen.queryByText(/could not be loaded/i)).toBeNull();
   });
 
-  it("says the candidates are loading while they load", async () => {
+  it("marks the candidate list busy, and offers none, while it loads", async () => {
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -278,17 +284,18 @@ describe("the hand-entry form when the candidates are not there", () => {
         await held;
       }),
     );
-    renderEntry();
+    const { container } = renderEntry();
 
-    expect(
-      await screen.findByText("Loading the candidates…"),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(container.querySelector('[aria-busy="true"]')).not.toBeNull(),
+    );
+    expect(screen.queryByRole("combobox", { name: "Candidate" })).toBeNull();
 
     release();
 
     expect(
       await screen.findByRole("option", { name: "Portugal" }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Loading the candidates…")).toBeNull();
+    expect(container.querySelector('[aria-busy="true"]')).toBeNull();
   });
 });

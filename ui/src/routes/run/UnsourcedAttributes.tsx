@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useId, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { fetchAttributes, fetchCriteriaSet } from "../../api/endpoints";
-import { usePillarNames } from "../../api/usePillarNames";
-import { useResource } from "../../api/useResource";
+import { combine, map, type Read } from "../../api/read";
+import { type PillarNames, usePillarNames } from "../../api/usePillarNames";
+import { useRead } from "../../api/useRead";
 import { formatPercentage, pillarName } from "../../format/display";
-import { ErrorNotice } from "../../shell/ErrorNotice";
-import { useSelection } from "../../shell/SelectionContext";
+import { LoadedRegion } from "../../shell/LoadedRegion";
+import { useSelection, type Selection } from "../../shell/SelectionContext";
 import { highlighted, UNSOURCED } from "../../navigation/highlight";
-import { unsourcedAttributes } from "./unsourced";
+import { alwaysAsked } from "./alwaysAsked";
+import {
+  type CatalogAttribute,
+  type UnsourcedAttribute,
+  unsourcedAttributes,
+} from "./unsourced";
 
 /**
  * Attributes no source can fetch at all, and what each gap costs.
@@ -27,29 +33,37 @@ import { unsourcedAttributes } from "./unsourced";
  */
 export function UnsourcedAttributes({ level }: { level: string }) {
   const headingId = useId();
-  const { criteriaSetId } = useSelection();
+  const selection = useSelection();
+  const { criteriaSetId } = selection;
 
   const pillars = usePillarNames();
-  const attributes = useResource(
+  const attributes = useRead(
     useCallback(
       (signal: AbortSignal) => fetchAttributes(level, { signal }),
       [level],
     ),
   );
-  const set = useResource(
+  const set = useRead(
     useCallback(
       (signal: AbortSignal) => fetchCriteriaSet(criteriaSetId ?? "", { signal }),
       [criteriaSetId],
     ),
-    criteriaSetId !== null,
+    { enabled: criteriaSetId !== null },
   );
+  const catalog = alwaysAsked(attributes.read);
+  // The weights come from the set: without one, from the selection that says there is none.
+  const gaps: Read<UnsourcedAttribute[]> =
+    set.read.state === "idle"
+      ? withoutASet(catalog, selection)
+      : map(combine(catalog, set.read), ([read, chosen]) =>
+          unsourcedAttributes(read.items, chosen.criteria ?? []),
+        );
 
   // **Arrived at from Configure's "No source yet →".** The route carries which card was asked
   // for, so the reader lands on a long screen with the one they came for marked -- and the mark
   // is in the URL, so a reload and a copied link both keep it.
   const asked = highlighted(useLocation().search) === UNSOURCED;
   const card = useRef<HTMLElement>(null);
-  const ready = attributes.resource.status === "ready";
 
   /**
    * **Following a link moves the reader, not just the scrollbar.** A jump that only tinted a
@@ -58,30 +72,13 @@ export function UnsourcedAttributes({ level }: { level: string }) {
    * says "here"; the tint is for the eye that is already on the page.
    */
   useEffect(() => {
-    // **Waits for the card to exist.** The catalog is still in flight on the first render, so
-    // the section is not there yet and a focus call would land on nothing -- and `asked` never
-    // changes afterwards, so nothing would bring the effect back.
+    // The card is drawn from the first render, its rows following when they are read.
     if (!asked || card.current === null) return;
     card.current.focus();
     // Not in jsdom, and not worth a shim: the scroll is a courtesy and the focus is the thing
     // that actually moves the reader.
     card.current.scrollIntoView?.({ block: "start", behavior: "smooth" });
-  }, [asked, ready]);
-
-  if (attributes.resource.status === "error") {
-    return (
-      <ErrorNotice
-        error={attributes.resource.error}
-        onRetry={attributes.reload}
-      />
-    );
-  }
-  if (attributes.resource.status !== "ready") return null;
-
-  const gaps = unsourcedAttributes(
-    attributes.resource.data.items,
-    set.resource.status === "ready" ? (set.resource.data.criteria ?? []) : [],
-  );
+  }, [asked]);
 
   return (
     <section
@@ -98,60 +95,92 @@ export function UnsourcedAttributes({ level }: { level: string }) {
         </h2>
         {/* The count as a badge, which is what the design puts here: the heading says what the
             card is, and this says how much of it there is before the table is read. */}
-        {gaps.length > 0 && (
+        {gaps.state === "ready" && gaps.data.length > 0 && (
           <span className="chip chip--warning">
-            {gaps.length === 1
+            {gaps.data.length === 1
               ? "1 attribute affected"
-              : `${String(gaps.length)} attributes affected`}
+              : `${String(gaps.data.length)} attributes affected`}
           </span>
         )}
       </div>
 
-      {gaps.length === 0 ? (
-        <p className="panel__hint">
-          {/* "Unless it is switched off" because `answerable_by` names what can fetch an
-              attribute whatever the switch says (Q235), and a source switched off is not asked. */}
-          Every attribute at this level has at least one source that would be
-          asked, unless it is switched off.
-        </p>
-      ) : (
-        <>
-          <p className="panel__hint">
-            Nobody would be asked about these, so a run cannot fill them and
-            retrying one changes nothing. They are a missing adapter, not a
-            missing figure.
-          </p>
-          <div className="table-card">
-            <table className="table" aria-label="Attributes with no source">
-              <thead>
-                <tr>
-                  <th scope="col">Attribute</th>
-                  <th scope="col">Pillar</th>
-                  <th scope="col">Weight in pillar</th>
-                  <th scope="col">What would fill it</th>
-                </tr>
-              </thead>
-              <tbody>
-                {gaps.map((gap) => (
-                  <tr key={gap.id}>
-                    <th scope="row">{gap.name}</th>
-                    {/* The catalog's pillar name, never the id: the catalog says "Economy"
-                        where the id says `economics`, and a title-cased id is this screen
-                        guessing at a name somebody already chose. */}
-                    <td>{pillarName(pillars, gap.pillar)}</td>
-                    <td>
-                      {gap.weight === null
-                        ? "not scored here"
-                        : formatPercentage(gap.weight)}
-                    </td>
-                    <td>{gap.remedy}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <LoadedRegion
+        read={gaps}
+        what="The attributes with no source"
+        skeleton="lines"
+        prominence="region"
+        onRetry={async () => {
+          selection.reload();
+          await Promise.all([attributes.reload(), set.reload()]);
+        }}
+      >
+        {(unsourced) => <Gaps gaps={unsourced} pillars={pillars} />}
+      </LoadedRegion>
     </section>
+  );
+}
+
+/**
+ * The weights when no set is chosen: none, once the selection has said there is no set to
+ * choose -- and not before, since a set still being read would weigh them.
+ */
+function withoutASet(
+  catalog: Read<{ items: readonly CatalogAttribute[] }>,
+  selection: Selection,
+): Read<UnsourcedAttribute[]> {
+  return map(combine(catalog, selection.read), ([read]) => unsourcedAttributes(read.items, []));
+}
+
+function Gaps({
+  gaps,
+  pillars,
+}: {
+  gaps: readonly UnsourcedAttribute[];
+  pillars: PillarNames;
+}) {
+  return gaps.length === 0 ? (
+    <p className="panel__hint">
+      {/* "Unless it is switched off" because `answerable_by` names what can fetch an
+          attribute whatever the switch says (Q235), and a source switched off is not asked. */}
+      Every attribute at this level has at least one source that would be
+      asked, unless it is switched off.
+    </p>
+  ) : (
+    <>
+      <p className="panel__hint">
+        Nobody would be asked about these, so a run cannot fill them and
+        retrying one changes nothing. They are a missing adapter, not a
+        missing figure.
+      </p>
+      <div className="table-card">
+        <table className="table" aria-label="Attributes with no source">
+          <thead>
+            <tr>
+              <th scope="col">Attribute</th>
+              <th scope="col">Pillar</th>
+              <th scope="col">Weight in pillar</th>
+              <th scope="col">What would fill it</th>
+            </tr>
+          </thead>
+          <tbody>
+            {gaps.map((gap) => (
+              <tr key={gap.id}>
+                <th scope="row">{gap.name}</th>
+                {/* The catalog's pillar name, never the id: the catalog says "Economy"
+                    where the id says `economics`, and a title-cased id is this screen
+                    guessing at a name somebody already chose. */}
+                <td>{pillarName(pillars, gap.pillar)}</td>
+                <td>
+                  {gap.weight === null
+                    ? "not scored here"
+                    : formatPercentage(gap.weight)}
+                </td>
+                <td>{gap.remedy}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

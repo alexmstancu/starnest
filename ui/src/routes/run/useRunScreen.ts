@@ -31,7 +31,9 @@ import {
 import { newestRun } from "./databaseHolds";
 import { type Commitment, describeCommitment } from "./spendCommitment";
 import { UNCLAIMED, useWatchedRun } from "./useWatchedRun";
-import { useResource, type Resource } from "../../api/useResource";
+import type { Read } from "../../api/read";
+import { useRead } from "../../api/useRead";
+import { alwaysAsked } from "./alwaysAsked";
 
 export type RunAct = "planning" | "running" | "opening" | "stopping";
 /**
@@ -103,13 +105,12 @@ export interface RunScreenState {
    */
   starting: boolean;
   failure: unknown;
-  history: Resource<{ items: Run[]; total: number }>;
   /**
-   * Every run as last read: kept while the history is read again, so what is drawn from it --
-   * and what the reader chose there -- stays on screen (NEW-11). Null until the first read.
+   * Every run there has been. **Read again, it keeps the list it had** (PL-010), so what is
+   * drawn from it -- and what the reader chose there -- stays on screen (NEW-11).
    */
-  runs: Run[] | null;
-  reloadHistory: () => void;
+  history: Read<Run[]>;
+  reloadHistory: () => Promise<void>;
   dismissFailure: () => void;
   estimate: (levelId: string) => void;
   start: (levelId: string) => void;
@@ -194,10 +195,15 @@ export function useRunScreen(levelId: string | null): RunScreenState {
 
   // Every run, not the newest ten: the history, the diff's choices and the month's spend all
   // read this list as every run there has been (UI-17).
-  const history = useResource(
-    useCallback((signal: AbortSignal) => fetchEveryRun({ signal }), []),
+  const history = useRead(
+    useCallback(
+      async (signal: AbortSignal) => (await fetchEveryRun({ signal })).items,
+      [],
+    ),
   );
+  const historyRead = alwaysAsked(history.read);
 
+  const reloadHistory = history.reload;
   const act = useCallback(
     async (what: RunAct, action: () => Promise<void>) => {
       const mine = { what };
@@ -206,7 +212,7 @@ export function useRunScreen(levelId: string | null): RunScreenState {
       setFailure(null);
       try {
         await action();
-        history.reload();
+        void reloadHistory();
       } catch (error) {
         setFailure(error);
       } finally {
@@ -214,7 +220,7 @@ export function useRunScreen(levelId: string | null): RunScreenState {
         setBusy(going.current.at(-1)?.what ?? null);
       }
     },
-    [history],
+    [reloadHistory],
   );
 
   /** Reads an estimate for one card, naming that card for as long as the read lasts. */
@@ -291,7 +297,7 @@ export function useRunScreen(levelId: string | null): RunScreenState {
    * is skipped; and anything clicked while it is still reading outranks its answer.
    */
   const opened = useRef(false);
-  const runs = history.resource.status === "ready" ? history.resource.data.items : null;
+  const runs = historyRead.state === "ready" ? historyRead.data : null;
   useEffect(() => {
     if (opened.current || runs === null) return;
     opened.current = true;
@@ -302,16 +308,6 @@ export function useRunScreen(levelId: string | null): RunScreenState {
     // the history is an act, and that one reports.
     void watch(UNCLAIMED, newest.id).catch(() => undefined);
   }, [runs, watch, unclaimed]);
-
-  /**
-   * **The runs as last read, kept while they are read again** (NEW-11). Every act reads the
-   * history again as it ends, and a re-read has no list until it answers -- so the diff, drawn
-   * from the list, left the screen and came back with nothing chosen. A run is never deleted, so
-   * the list read last stays true until the next one lands; the history table still says it is
-   * reading, and still reports a re-read that failed.
-   */
-  const [lastRuns, setLastRuns] = useState<Run[] | null>(null);
-  if (runs !== null && runs !== lastRuns) setLastRuns(runs);
 
   return {
     plan,
@@ -324,9 +320,8 @@ export function useRunScreen(levelId: string | null): RunScreenState {
     isStopping: (runId) => stopsAsked.has(runId),
     starting,
     failure,
-    history: history.resource,
-    runs: runs ?? lastRuns,
-    reloadHistory: history.reload,
+    history: historyRead,
+    reloadHistory,
     dismissFailure: () => setFailure(null),
     estimate: (levelId) =>
       void estimateFor("everything", async () => {
