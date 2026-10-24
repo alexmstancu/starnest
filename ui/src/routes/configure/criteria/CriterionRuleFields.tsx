@@ -22,8 +22,11 @@ export function CriterionRuleFields({
   form,
   attribute,
   title,
+  scored = true,
 }: {
   form: RuleForm;
+  /** Whether the criterion is scored; the blocking box acts only on one that is (PL-111). */
+  scored?: boolean;
   /**
    * The attribute's id, which appears only in `id` and `htmlFor` attributes.
    *
@@ -99,6 +102,12 @@ export function CriterionRuleFields({
           />
           Missing figure blocks scoring
         </label>
+        {!scored && (
+          <p className="field__note">
+            This criterion is not scored, so the box takes effect once this criterion is
+            scored.
+          </p>
+        )}
       </div>
 
       <fieldset className="rule-form__group" aria-disabled={whileSaving}>

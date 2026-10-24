@@ -162,7 +162,14 @@ export function chipsFor(
     });
   }
 
-  if (criterion.blocks_if_missing === true) {
+  // **A criterion that is not scored only matches** (PL-111, D31): its weight counts for
+  // nothing, and "Required" -- a missing figure blocks the score -- is about a score it never
+  // enters, so it is said only of a scored criterion.
+  const scored = criterion.is_scored !== false;
+  if (!scored) {
+    chips.push({ key: "not-scored", text: "Not scored, matching only", tone: "neutral" });
+  }
+  if (scored && criterion.blocks_if_missing === true) {
     chips.push({ key: "required", text: "Required", tone: "required" });
   }
 

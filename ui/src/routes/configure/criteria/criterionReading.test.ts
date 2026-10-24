@@ -178,6 +178,19 @@ describe("the chips on a row", () => {
     expect(chips.map((chip) => chip.text)).toContain("Required");
   });
 
+  it("says a criterion that is not scored counts for matching only, and never Required", () => {
+    const texts = chipsFor(
+      criterion({ is_scored: false, blocks_if_missing: true }),
+    ).map((chip) => chip.text);
+    expect(texts).toContain("Not scored, matching only");
+    expect(texts).not.toContain("Required");
+  });
+
+  it("says nothing about matching only for a scored criterion", () => {
+    const texts = chipsFor(criterion({ is_scored: true })).map((chip) => chip.text);
+    expect(texts).not.toContain("Not scored, matching only");
+  });
+
   it("leaves the mark off a criterion that does not block", () => {
     const chips = chipsFor(criterion({ blocks_if_missing: false }));
     expect(chips.map((chip) => chip.text)).not.toContain("Required");

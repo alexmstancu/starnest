@@ -2,8 +2,9 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { fetchCriteriaSet, fetchLevels } from "../../api/endpoints";
+import { fetchCriteriaSet, fetchLevels, type Criterion } from "../../api/endpoints";
 import { answeredWrites } from "../../api/setWrites";
+import { makeCriteriaSetDetails } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import {
   expectHeld,
@@ -2308,5 +2309,78 @@ describe("when the attribute catalog cannot be read", () => {
     expect(
       screen.queryByText("The attribute catalog could not be loaded"),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * PL-111. **A criterion that is not scored is a matching rule, not a weight.** Its slider moved
+ * a share that counts for nothing, and its "Required" said a missing figure blocks a score it
+ * never enters.
+ */
+describe("a criterion that is not scored", () => {
+  /** The default set served with the tax criterion changed as `change` says. */
+  function withTax(change: Partial<Criterion>) {
+    const set = makeCriteriaSetDetails()["default"];
+    if (set === undefined) throw new Error("the fixtures lost the default set");
+    const criteria = (set.criteria ?? []).map((each) =>
+      each.attribute === "country.total_tax_rate_effective" ? { ...each, ...change } : each,
+    );
+    mockServer.use(
+      http.get("/v1/criteria-sets/default", () => HttpResponse.json({ ...set, criteria })),
+    );
+  }
+
+  function withTaxNotScored() {
+    withTax({ is_scored: false, blocks_if_missing: true });
+  }
+
+  it("is marked matching only, with its slider held and no Required", async () => {
+    withTaxNotScored();
+    renderShell("/configure");
+
+    const slider = await weightSlider(TAX);
+    const row = within(screen.getByRole("group", { name: TAX }));
+    expect(row.getByText("Not scored, matching only")).toBeInTheDocument();
+    expect(row.queryByText("Required")).not.toBeInTheDocument();
+    expectHeld(slider);
+  });
+
+  it("sends no weight when its held slider is moved", async () => {
+    withTaxNotScored();
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.patch("/v1/criteria-sets/:id/criteria/:attribute", async ({ request }) => {
+        sent.push(await request.json());
+        return HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 });
+      }),
+    );
+    renderShell("/configure");
+
+    const slider = await weightSlider(TAX);
+    fireEvent.change(slider, { target: { value: "10" } });
+    fireEvent.pointerUp(slider);
+    await settled();
+    expect(sent).toEqual([]);
+  });
+
+  it("says the blocking box takes effect once the criterion is scored", async () => {
+    withTaxNotScored();
+    renderShell("/configure");
+    await weightSlider(TAX);
+
+    await userEvent.click(screen.getByRole("button", { name: `Edit the rule for ${TAX}` }));
+    expect(
+      screen.getByText(/takes effect once this criterion is scored/i),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a scored criterion's slider live and its Required", async () => {
+    withTax({ blocks_if_missing: true });
+    renderShell("/configure");
+
+    const slider = await weightSlider(TAX);
+    const row = within(screen.getByRole("group", { name: TAX }));
+    expect(row.getByText("Required")).toBeInTheDocument();
+    expect(slider).not.toHaveAttribute("aria-disabled");
   });
 });

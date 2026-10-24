@@ -317,7 +317,7 @@ function CriterionRow({
     // A release with no movement before it, or the same release arriving again -- its answer
     // ends the gesture, so this does not -- or one while a write is in flight, which no gesture
     // can have started: the slider takes no movement then.
-    if (!unreleased.current || held) return;
+    if (!unreleased.current || sliderHeld) return;
     unreleased.current = false;
     setMoving(false);
     // A range input always holds a number, so this never fires -- it is here because
@@ -349,6 +349,10 @@ function CriterionRow({
   const typeLine = describeValueType(attribute?.value_type, attribute?.unit);
   const title = titleOf(criterion.attribute, attribute);
   const locked = criterion.weight_locked ?? false;
+  // **Held, not live, when the criterion is not scored** (PL-111): its weight counts for nothing,
+  // so moving it would change nothing a ranking reads.
+  const notScored = criterion.is_scored === false;
+  const sliderHeld = held || notScored;
 
   return (
     /* **Named for the attribute, never by its id.** The design bars programmatic identifiers
@@ -377,10 +381,11 @@ function CriterionRow({
             max={ceiling}
             step={CRITERION_SLIDER.step}
             value={typed}
-            aria-disabled={held || undefined}
+            aria-disabled={sliderHeld || undefined}
             aria-label={`Weight for ${title}`}
+            title={notScored ? "Not scored: this criterion only decides matching" : undefined}
             onChange={(event) => {
-              if (held) return;
+              if (sliderHeld) return;
               unreleased.current = true;
               setMoving(true);
               setTyped(event.target.value);
@@ -476,6 +481,7 @@ function CriterionRow({
           form={rule}
           attribute={criterion.attribute}
           title={title}
+          scored={!notScored}
         />
       )}
     </div>
