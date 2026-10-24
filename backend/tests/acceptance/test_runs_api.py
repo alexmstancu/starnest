@@ -777,11 +777,14 @@ def _a_source_misreading(candidate_id: str) -> SourceAdapter:
     return MisreadingSource()
 
 
-def _a_transcribed_table(portugal_reads: tuple[str, ...]) -> SourceAdapter:
+def _a_transcribed_table(
+    portugal_reads: tuple[str, ...], *, portugal_again: str | None = None
+) -> SourceAdapter:
     """A transcribed table: every figure stamped with one fixed `transcribed_on`, as
     `published_tables` stamps them, so each read is the same observation. Portugal's figure is
     the next of `portugal_reads` each time the table is read -- a correction typed in without a
-    new date (NEW-23)."""
+    new date (NEW-23). `portugal_again` is a second row for Portugal in the same read, as a table
+    with a duplicated country row carries it."""
     from collections.abc import Sequence
     from datetime import UTC, date, datetime
     from decimal import Decimal
@@ -804,6 +807,12 @@ def _a_transcribed_table(portugal_reads: tuple[str, ...]) -> SourceAdapter:
         async def fetch(self, attribute: Attribute, candidates: Sequence[Candidate]) -> Acquired:
             assert attribute.quantity_parameters is not None
             portugal = next(readings)
+            rows = [(candidate, portugal) for candidate in candidates]
+            rows += [
+                (candidate, portugal_again)
+                for candidate in candidates
+                if portugal_again is not None and str(candidate.id) == THE_STUB_DECLINES_FOR
+            ]
             measuring = Measurements(
                 attribute=attribute,
                 data_source="open_meteo",
@@ -815,13 +824,13 @@ def _a_transcribed_table(portugal_reads: tuple[str, ...]) -> SourceAdapter:
                         candidate=candidate,
                         payload=Quantity(
                             magnitude=Decimal(
-                                portugal if str(candidate.id) == THE_STUB_DECLINES_FOR else "15"
+                                reading if str(candidate.id) == THE_STUB_DECLINES_FOR else "15"
                             ),
                             unit=attribute.quantity_parameters.unit,
                         ),
                         period=ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 12, 31)),
                     )
-                    for candidate in candidates
+                    for candidate, reading in rows
                 )
             )
 
@@ -859,6 +868,29 @@ class TestATableCorrectedUnderItsOldDate:
             31,
             1,
         )
+        assert [value["payload"]["magnitude"] for value in stored] == [16]
+
+    async def test_two_figures_for_one_new_observation_in_one_read_are_reported_failed(
+        self, database_url: str
+    ) -> None:
+        """Nothing was on record before the read, so only the batch itself can tell: the first
+        row is stored and the second, different one is the conflict -- never a silent drop."""
+        a_temperature_run = {"level": COUNTRY, "attributes": [TEMPERATURE]}
+        async with an_api(
+            database_url, (_a_transcribed_table(("16",), portugal_again="17"),)
+        ) as api:
+            run = await api.post("/v1/data-acquisition-runs", json=a_temperature_run)
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run.json()['id']}")).json()
+            stored = (
+                await api.get(
+                    "/v1/values",
+                    params={"candidate": THE_STUB_DECLINES_FOR, "attribute": TEMPERATURE},
+                )
+            ).json()["items"]
+
+        (failure,) = detail["failures"]
+        assert failure["candidate"] == THE_STUB_DECLINES_FOR
+        assert "a different figure is already on record" in failure["error_message"]
         assert [value["payload"]["magnitude"] for value in stored] == [16]
 
     async def test_a_table_read_again_unchanged_is_re_confirmed(self, database_url: str) -> None:

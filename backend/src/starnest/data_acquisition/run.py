@@ -293,13 +293,19 @@ _CONTRADICTION = (
 
 
 async def _contradicting(fetched: Sequence[Value], values: ValueStore) -> tuple[Value, ...]:
-    """The fetched figures whose natural key is on record with another figure or verdict."""
+    """The fetched figures whose natural key is on record with another figure or verdict.
+
+    **The batch's own first figure under a key counts as on record**: the read sees only what
+    was stored before the batch, and the append that follows keeps the first figure under each
+    key and skips the rest, so a later, different one would otherwise vanish unreported.
+    """
     on_record = {value.natural_key: value for value in await values.read_observations(fetched)}
-    return tuple(
-        value
-        for value in fetched
-        if value.natural_key in on_record and not restates(on_record[value.natural_key], value)
-    )
+    contradicting: list[Value] = []
+    for value in fetched:
+        standing = on_record.setdefault(value.natural_key, value)
+        if not restates(standing, value):
+            contradicting.append(value)
+    return tuple(contradicting)
 
 
 def _candidates_settled_by(acquired: Acquired, candidates: Sequence[Candidate]) -> set[str]:

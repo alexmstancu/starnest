@@ -103,7 +103,8 @@ class RecordingValueStore:
     `already_holds` lets a test say which figures are already on record, so `append` returns one
     sharing their natural key as a no-op the way the real store does for a re-read transcribed
     figure (ST-09), and `read_observations` hands back the figure on record -- which is what a
-    run compares the re-read with (NEW-23)."""
+    run compares the re-read with (NEW-23). What `append` stores is on record from then on, as
+    it is in the database, so a later read in the same run sees it."""
 
     def __init__(self, already_holds: Sequence[Value] = ()) -> None:
         self.appended: list[Value] = []
@@ -112,7 +113,11 @@ class RecordingValueStore:
         self._on_record = {value.natural_key: value for value in already_holds}
 
     async def append(self, values):
-        newly = [v for v in values if v.natural_key not in self._on_record]
+        newly = []
+        for value in values:
+            if value.natural_key not in self._on_record:
+                self._on_record[value.natural_key] = value
+                newly.append(value)
         self.appended.extend(newly)
         return tuple(newly)
 
@@ -1089,3 +1094,46 @@ class TestAReReadThatContradictsTheStoredFigure:
             "country.spain",
         ]
         assert any(CONTRADICTION in failure.reason for failure in written.committed)
+
+    async def test_two_figures_under_one_new_key_in_one_batch_are_a_conflict(self) -> None:
+        """The batch's own figures are on record too, once the first is appended: the read
+        before the append cannot see them, so a second, different figure under a key nothing
+        held was dropped as a no-op and the run reported no failure at all."""
+        first = a_value()
+        store = RecordingValueStore()
+
+        outcome = await acquire(
+            adapter=StubAdapter(
+                {OVERBURDEN: Acquired(values=(first, a_corrected_value(first)))},
+                declares=(OVERBURDEN,),
+            ),
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=store,
+            run=5,
+        )
+
+        assert [value.payload for value in store.appended] == [first.payload]
+        assert [CONTRADICTION in failure.reason for failure in outcome.failures] == [True]
+        assert store.reused == []
+
+    async def test_the_same_figure_twice_in_one_batch_is_stored_once_and_no_conflict(
+        self,
+    ) -> None:
+        """The control: a figure restated within its own batch is the same observation."""
+        first = a_value()
+        store = RecordingValueStore()
+
+        outcome = await acquire(
+            adapter=StubAdapter(
+                {OVERBURDEN: Acquired(values=(first, first.model_copy(update={"quote": "again"})))},
+                declares=(OVERBURDEN,),
+            ),
+            attributes=[an_attribute()],
+            candidates=[PORTUGAL],
+            values=store,
+            run=5,
+        )
+
+        assert [value.payload for value in store.appended] == [first.payload]
+        assert outcome.failures == ()
