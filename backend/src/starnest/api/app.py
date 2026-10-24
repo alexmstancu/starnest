@@ -16,6 +16,7 @@ from starnest.api import (
     comparisons,
     criteria,
     evaluations,
+    holdings,
     household,
     rankings,
     rules,
@@ -105,6 +106,7 @@ def build_app(
         evaluations.router,
         comparisons.router,
         runs.router,
+        holdings.router,
         # Imported under another name: `values` is also this function's value store.
         value_endpoints.router,
         rules.router,

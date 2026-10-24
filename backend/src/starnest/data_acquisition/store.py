@@ -21,6 +21,7 @@ from enum import StrEnum
 
 from starnest.data import DataSourceId
 from starnest.data_acquisition.adapter import AcquisitionFailure
+from starnest.data_acquisition.holdings import Holdings
 from starnest.data_acquisition.research import ResearchSpend
 
 
@@ -175,7 +176,27 @@ class RunStore(ABC):
         Research writes gate answers rather than values, so it is not a run (`reqs.md` 3.8)
         and has no run row to accrue on; this is its ledger instead, beside the runs' own spend.
         One row per billed call, so a pass that dies -- or a response nobody received -- keeps
-        the record of what it paid for. **Write-only**: nothing reads it back through the API.
+        the record of what it paid for. **Its rows are never read back one by one**: only their
+        monthly sum is, through `read_holdings` (C04-N1, revisiting Q236).
+        """
+
+    @abstractmethod
+    async def read_holdings(
+        self,
+        *,
+        level: str,
+        askable_attributes: Sequence[str],
+        stand_in_pairs: Sequence[tuple[str, str]],
+        since: datetime,
+        refetch_older_than_days: int | None,
+    ) -> Holdings:
+        """What the database holds at `level`, in one statement so its figures add up.
+
+        The pairs are every candidate at the level against `askable_attributes`, the
+        `stand_in_pairs` a declared stand-in can lend, and any pair already holding a value in
+        use. Which attributes a switched-on source can fetch is the adapters' declaration, which
+        the database does not hold, so the caller passes it (Q235). Spend counts runs started and
+        research ledgered at or after `since`.
         """
 
     @abstractmethod

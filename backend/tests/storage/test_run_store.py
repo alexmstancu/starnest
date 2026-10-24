@@ -1388,8 +1388,8 @@ def a_spend(gate: str, candidate: str, cost: str, *, calls: int = 1) -> Research
 
 
 async def _the_ledger(pool: AsyncConnectionPool) -> list[tuple]:
-    """The ledger as the table holds it. Read directly, because nothing reads it through the
-    API: it is write-only by decision (BE-34)."""
+    """The ledger as the table holds it. Read directly, because the API serves only its monthly
+    sum, never its rows (BE-34, C04-N1)."""
     async with pool.connection() as connection:
         cursor = await connection.execute(
             "SELECT match_rule, candidate, data_source, llm_call_count, cost_eur, researched_at "

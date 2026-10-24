@@ -34,6 +34,7 @@ from starnest.data_acquisition import (
     AcquisitionFailure,
     CostMeter,
     Estimate,
+    Holdings,
     NothingToFetchError,
     Run,
     RunningSpend,
@@ -210,6 +211,9 @@ class RecordingRunStore(RunStore):
     async def record_research_spend(self, spend) -> None:  # type: ignore[no-untyped-def]
         """No gate is researched by a retry. Implemented because the port declares it."""
         return None
+
+    async def read_holdings(self, **_: object) -> Holdings:
+        raise AssertionError("a retry never reads what the database holds")
 
     async def read_run(self, run: int) -> Run:
         return self._answers_with

@@ -122,8 +122,8 @@ ON CONFLICT ON CONSTRAINT data_acquisition_run_reuse_pkey DO NOTHING;
 -- What one gate-research call billed (BE-34). Research writes gate answers, not values, so it is
 -- not a run (reqs.md 3.8) and its spend has no run row to accrue on; this is its ledger. Written
 -- per call as the call returns, so a pass that dies keeps the record of every call it paid for.
--- `researched_at` is the database's clock: the moment the record was kept. Nothing reads this
--- back through the API -- the ledger is write-only by decision.
+-- `researched_at` is the database's clock: the moment the record was kept. The API never reads
+-- the rows back; select_holdings serves their monthly sum (C04-N1, revisiting Q236).
 INSERT INTO match_rule_research_spend (match_rule, candidate, data_source, llm_call_count, cost_eur)
 VALUES (:match_rule, :candidate, :data_source, :llm_call_count, :cost_eur);
 
@@ -391,6 +391,134 @@ WHERE  v.rejection_reason IS NULL
   AND  (:attributes::text[] IS NULL OR v.attribute = ANY(:attributes))
 GROUP  BY v.candidate, v.attribute
 ORDER  BY v.candidate, v.attribute;
+
+-- name: select_holdings(level, askable_attributes, stand_in_pairs, since, refetch_days)^
+-- What the database holds at a level, not what one run did (PL-051, PL-054). **One statement**,
+-- so values stored plus the three gap lists is the pairs total in every snapshot (map-C04 2.3).
+--
+-- The pairs are the level's candidates against the attributes a switched-on source declares
+-- (the caller passes them: adapters declare, the database does not), the pairs a stand-in can
+-- lend, and any pair already holding a value in use. Retired attributes are not counted.
+--
+-- A gap is a pair with no value in use, classified by the LATEST run whose items include it,
+-- never by the newest run overall. `failed`: that run has a failure row for it, or stored a
+-- figure that cannot be used (rejected, or from a source since switched off). `unanswered`:
+-- that run completed and nobody had a row. `not_reached`: it did not complete -- with no record
+-- of which sources finished, a halted run cannot say nobody had a row (C04-N6) -- or no run has
+-- ever asked (`data_acquisition_run` null).
+--
+-- Spend is every run started and every research call ledgered at or after `since`, the reader's
+-- month start (C04-N10): the ledger's sum is served, never its rows (C04-N1).
+WITH attribute_here AS (
+    SELECT a.id
+    FROM   attribute AS a
+    WHERE  a.level = :level
+      AND  a.lifecycle_status = 'active'
+),
+in_use AS (
+    SELECT av.candidate, av.attribute, bool_or(NOT av.is_fresh) AS is_past_allowed_age
+    FROM   active_value AS av
+    JOIN   candidate AS c ON c.id = av.candidate AND c.level = :level
+    JOIN   attribute_here AS a ON a.id = av.attribute
+    GROUP  BY av.candidate, av.attribute
+),
+pair AS (
+    SELECT c.id AS candidate, a.id AS attribute
+    FROM   candidate AS c
+    CROSS  JOIN attribute_here AS a
+    WHERE  c.level = :level
+      AND  a.id = ANY(:askable_attributes::text[])
+    UNION
+    SELECT lent.candidate, lent.attribute
+    FROM   jsonb_to_recordset(:stand_in_pairs::jsonb) AS lent(candidate text, attribute text)
+    JOIN   candidate AS c ON c.id = lent.candidate AND c.level = :level
+    JOIN   attribute_here AS a ON a.id = lent.attribute
+    UNION
+    SELECT candidate, attribute FROM in_use
+),
+gap AS (
+    SELECT pair.candidate, pair.attribute
+    FROM   pair
+    LEFT   JOIN in_use USING (candidate, attribute)
+    WHERE  in_use.candidate IS NULL
+),
+latest AS (
+    SELECT DISTINCT ON (item.candidate, item.attribute)
+           item.candidate, item.attribute, item.data_acquisition_run, r.run_status
+    FROM   data_acquisition_run_item AS item
+    JOIN   gap USING (candidate, attribute)
+    JOIN   data_acquisition_run AS r ON r.id = item.data_acquisition_run
+    ORDER  BY item.candidate, item.attribute, item.data_acquisition_run DESC
+),
+-- Each source's reason once: its failure row where it has one, else why its figure is unusable.
+cause AS (
+    SELECT DISTINCT ON (latest.candidate, latest.attribute, said.data_source)
+           latest.candidate, latest.attribute, said.data_source, said.error_message
+    FROM   latest
+    CROSS  JOIN LATERAL (
+        SELECT 1 AS precedence, f.data_source, f.error_message
+        FROM   data_acquisition_failure AS f
+        WHERE  (f.data_acquisition_run, f.candidate, f.attribute)
+               = (latest.data_acquisition_run, latest.candidate, latest.attribute)
+        UNION ALL
+        SELECT 2, v.data_source, COALESCE(v.rejection_reason, 'its source is switched off')
+        FROM   value AS v
+        JOIN   data_source AS s ON s.id = v.data_source
+        WHERE  (v.data_acquisition_run, v.candidate, v.attribute)
+               = (latest.data_acquisition_run, latest.candidate, latest.attribute)
+          AND  (v.rejection_reason IS NOT NULL OR NOT s.is_enabled)
+        UNION ALL
+        SELECT 2, reuse.data_source, 'its source is switched off'
+        FROM   data_acquisition_run_reuse AS reuse
+        JOIN   data_source AS s ON s.id = reuse.data_source
+        WHERE  (reuse.data_acquisition_run, reuse.candidate, reuse.attribute)
+               = (latest.data_acquisition_run, latest.candidate, latest.attribute)
+          AND  NOT s.is_enabled
+    ) AS said
+    ORDER  BY latest.candidate, latest.attribute, said.data_source, said.precedence
+),
+classified AS (
+    SELECT gap.candidate,
+           gap.attribute,
+           latest.data_acquisition_run,
+           CASE WHEN failures.listed IS NOT NULL THEN 'failed'
+                WHEN latest.run_status = 'completed' THEN 'unanswered'
+                ELSE 'not_reached'
+           END AS outcome,
+           failures.listed AS failures
+    FROM   gap
+    LEFT   JOIN latest USING (candidate, attribute)
+    LEFT   JOIN (SELECT candidate, attribute,
+                        jsonb_agg(jsonb_build_object('data_source', data_source,
+                                                     'error_message', error_message)
+                                  ORDER BY data_source) AS listed
+                 FROM   cause
+                 GROUP  BY candidate, attribute) AS failures USING (candidate, attribute)
+)
+SELECT (SELECT count(*) FROM pair)                                       AS pairs_total,
+       (SELECT count(*) FROM in_use)                                     AS values_stored,
+       (SELECT count(*) FROM in_use WHERE is_past_allowed_age)           AS values_past_allowed_age,
+       CASE WHEN :refetch_days::integer IS NOT NULL THEN
+           (SELECT count(*)
+            FROM   in_use
+            WHERE  (SELECT max(v.retrieval_date)
+                    FROM   value AS v
+                    JOIN   data_source AS s ON s.id = v.data_source
+                    WHERE  (v.candidate, v.attribute) = (in_use.candidate, in_use.attribute)
+                      AND  v.rejection_reason IS NULL
+                      AND  s.is_enabled)
+                   <= now() - make_interval(days => :refetch_days::integer))
+       END                                                               AS values_older_than_refetch_age,
+       (SELECT COALESCE(sum(r.cost_eur), 0)
+        FROM   data_acquisition_run AS r
+        WHERE  r.started_at >= :since)                                   AS runs_eur,
+       (SELECT COALESCE(sum(spend.cost_eur), 0)
+        FROM   match_rule_research_spend AS spend
+        WHERE  spend.researched_at >= :since)                            AS research_eur,
+       COALESCE(
+           (SELECT jsonb_agg(to_jsonb(classified) ORDER BY candidate, attribute)
+            FROM   classified),
+           '[]'::jsonb)                                                  AS gaps;
 
 -- name: select_run_in_flight()^
 -- The run that is currently going, if one is. At most one row by design: nothing else starts a

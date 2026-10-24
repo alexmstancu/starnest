@@ -67,8 +67,8 @@ class ResearchLedger(Protocol):
     response lost to a timeout, or a pass that died, took the only record of the spend with it.
 
     Declared here rather than imported for the reason `ProposalStore` is -- one method is all
-    this needs, and the run store satisfies it by shape. **Write-only**: nothing here, and
-    nothing in the API, reads it back.
+    this needs, and the run store satisfies it by shape. Nothing here reads it back, and the API
+    serves only its monthly sum, never its rows (`RunStore.read_holdings`, C04-N1).
     """
 
     async def record_research_spend(self, spend: ResearchSpend) -> None: ...

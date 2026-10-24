@@ -45,6 +45,11 @@ A_REQUEST_FOR = {
     "listDataSources": ("get", "/v1/data-sources", {}),
     "getAttribute": ("get", "/v1/attributes/country.cost_of_living_index", {}),
     "getCandidate": ("get", "/v1/candidates/country.portugal", {}),
+    "getHoldings": (
+        "get",
+        "/v1/holdings",
+        {"level": COUNTRY, "since": "2026-10-01T00:00:00+03:00"},
+    ),
     # The live drill-down needs nothing to exist first: it computes the ranking it drills into,
     # which is the whole difference between it and `getCandidateScoreDetail` below.
     "getRankedCandidateDetail": (

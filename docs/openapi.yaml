@@ -950,6 +950,31 @@ paths:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
 
+  /holdings:
+    get:
+      tags: [data acquisition]
+      summary: What the database holds at a level, and what this month has cost
+      description: |
+        Database facts rather than one run's accounting: the values stored, how many have aged
+        past what their attribute allows, the month's spend over runs and gate research, and the
+        gaps, each with the latest acquisition that asked about it. Computed in one read, so the
+        figures and the gaps always add up: values_stored plus the three gap lists equals
+        pairs_total.
+      operationId: getHoldings
+      parameters:
+        - { name: level, in: query, required: true, schema: { type: string } }
+        - name: since
+          in: query
+          required: true
+          description: The start of "this month" as the reader's clock has it. Spend recorded at or after it is summed.
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Holdings" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
+
   /rankings:
     get:
       tags: [evaluation]
@@ -2026,6 +2051,64 @@ components:
                   candidate: { type: string }
                   attribute: { type: string }
                   error_message: { type: string }
+
+    Holdings:
+      type: object
+      required: [level, pairs_total, values_stored, values_past_allowed_age, values_older_than_refetch_age, spent, gaps]
+      properties:
+        level: { type: string }
+        pairs_total:
+          type: integer
+          description: >-
+            Candidate and attribute pairs at the level that a switched-on source can fetch, that a
+            declared stand-in can lend, or that already hold a figure.
+        values_stored: { type: integer, description: "Of those, the pairs with a value in use (the active value)." }
+        values_past_allowed_age:
+          type: integer
+          description: "Pairs whose value in use has a reference period older than their attribute's maximum age: the ones the active-value rule calls stale. Counted per pair, as values_stored is."
+        values_older_than_refetch_age:
+          type: [integer, "null"]
+          description: "Pairs whose last accepted figure was retrieved longer ago than the refetch setting. Null while the setting is unset."
+        spent:
+          type: object
+          required: [since, runs_eur, research_eur, total_eur]
+          properties:
+            since: { type: string, format: date-time }
+            runs_eur: { type: number, description: "What acquisitions started at or after `since` cost." }
+            research_eur: { type: number, description: "What gate research ledgered at or after `since` cost." }
+            total_eur: { type: number }
+        gaps:
+          type: object
+          required: [failed, unanswered, not_reached]
+          properties:
+            failed:
+              type: array
+              items:
+                type: object
+                required: [candidate, attribute, data_acquisition_run, failures]
+                properties:
+                  candidate: { type: string }
+                  attribute: { type: string }
+                  data_acquisition_run: { type: integer, description: "The latest acquisition that asked about the pair." }
+                  failures:
+                    type: array
+                    items:
+                      type: object
+                      required: [data_source, error_message]
+                      properties: { data_source: { type: string }, error_message: { type: string } }
+            unanswered:
+              type: array
+              items:
+                type: object
+                required: [candidate, attribute, data_acquisition_run]
+                properties: { candidate: { type: string }, attribute: { type: string }, data_acquisition_run: { type: integer } }
+            not_reached:
+              type: array
+              description: "Pairs the latest acquisition that included them never reached, or that no acquisition has asked about (data_acquisition_run null)."
+              items:
+                type: object
+                required: [candidate, attribute, data_acquisition_run]
+                properties: { candidate: { type: string }, attribute: { type: string }, data_acquisition_run: { type: [integer, "null"] } }
 
     Warning:
       type: object

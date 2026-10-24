@@ -22,6 +22,9 @@ from psycopg_pool import AsyncConnectionPool
 from starnest.data import DataSourceId
 from starnest.data_acquisition import (
     AcquisitionFailure,
+    Gap,
+    Holdings,
+    MonthlySpend,
     ResearchSpend,
     Run,
     RunAlreadyInFlightError,
@@ -170,6 +173,45 @@ class PostgresRunStore(RunStore):
                 cost_eur=spend.cost_eur,
             )
 
+    async def read_holdings(
+        self,
+        *,
+        level: str,
+        askable_attributes: Sequence[str],
+        stand_in_pairs: Sequence[tuple[str, str]],
+        since: datetime,
+        refetch_older_than_days: int | None,
+    ) -> Holdings:
+        async with acquire(self._pool) as connection:
+            row = await self._queries.select_holdings(
+                connection,
+                level=level,
+                askable_attributes=list(askable_attributes),
+                stand_in_pairs=json.dumps(
+                    [{"candidate": c, "attribute": a} for c, a in stand_in_pairs]
+                ),
+                since=since,
+                refetch_days=refetch_older_than_days,
+            )
+        gaps: dict[str, list[Gap]] = {"failed": [], "unanswered": [], "not_reached": []}
+        for gap in row.gaps:
+            gaps[gap["outcome"]].append(_gap_from(gap))
+        return Holdings(
+            level=level,
+            pairs_total=int(row.pairs_total),
+            values_stored=int(row.values_stored),
+            values_past_allowed_age=int(row.values_past_allowed_age),
+            values_older_than_refetch_age=row.values_older_than_refetch_age,
+            spent=MonthlySpend(
+                since=since,
+                runs_eur=Decimal(str(row.runs_eur)),
+                research_eur=Decimal(str(row.research_eur)),
+            ),
+            failed=tuple(gaps["failed"]),
+            unanswered=tuple(gaps["unanswered"]),
+            not_reached=tuple(gaps["not_reached"]),
+        )
+
     async def read_run(self, run: int) -> Run:
         """Everything a poll shows, read by one statement and so from one snapshot (ST-11)."""
         async with acquire(self._pool) as connection:
@@ -274,6 +316,23 @@ def _run_from(row: Any) -> Run:
                 items_failed=int(reach["items_failed"]),
             )
             for reach in row.by_source
+        ),
+    )
+
+
+def _gap_from(gap: Mapping[str, Any]) -> Gap:
+    return Gap(
+        candidate=gap["candidate"],
+        attribute=gap["attribute"],
+        data_acquisition_run=gap["data_acquisition_run"],
+        failures=tuple(
+            AcquisitionFailure(
+                attribute=gap["attribute"],
+                candidate=gap["candidate"],
+                reason=failure["error_message"],
+                data_source=DataSourceId(failure["data_source"]),
+            )
+            for failure in gap["failures"] or ()
         ),
     )
 

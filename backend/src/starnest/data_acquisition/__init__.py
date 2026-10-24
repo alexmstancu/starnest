@@ -35,6 +35,7 @@ from starnest.data_acquisition.execution import (
     still_fresh_everywhere,
     switched_on,
 )
+from starnest.data_acquisition.holdings import Gap, Holdings, MonthlySpend
 from starnest.data_acquisition.research import (
     GateResearcher,
     NoResearcherConfiguredError,
@@ -70,7 +71,10 @@ __all__ = [
     "AcquisitionFailure",
     "CostMeter",
     "Estimate",
+    "Gap",
     "GateResearcher",
+    "Holdings",
+    "MonthlySpend",
     "NoResearcherConfiguredError",
     "NothingToAskAgainError",
     "NothingToFetchError",

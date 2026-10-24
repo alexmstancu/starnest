@@ -28,6 +28,7 @@ from starnest.data import (
 )
 from starnest.data_acquisition import (
     Acquired,
+    Holdings,
     NothingToAskAgainError,
     Run,
     RunScope,
@@ -157,6 +158,9 @@ class RecordingRunStore(RunStore):
         """No gate is researched by asking a run again. Implemented because the port declares
         it."""
         return None
+
+    async def read_holdings(self, **_: object) -> Holdings:
+        raise AssertionError("asking again never reads what the database holds")
 
     async def read_run(self, run: int) -> Run:
         return self._answers_with

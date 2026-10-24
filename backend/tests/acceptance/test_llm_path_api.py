@@ -7,6 +7,7 @@ reads is `make live-llm`'s question, and that is the only thing in this reposito
 """
 
 from collections.abc import Awaitable, Callable, Sequence
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import httpx
@@ -578,6 +579,24 @@ class TestWhatResearchSpentIsKept:
         ]
         assert sum(cost for *_, cost in ledger) == pytest.approx(Decimal(str(outcome["cost_eur"])))
         assert sum(calls for *_, calls, _cost in ledger) == outcome["calls"]
+
+    async def test_this_months_research_spend_is_served_after_the_pass_ends(
+        self, database_url: str
+    ) -> None:
+        """PL-052. The pass's own response was the only place its cost appeared, so it left
+        "Spent this month" and vanished from every screen once the pass was over (C04-N1)."""
+        since = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+            outcome = (await api.post("/v1/match-rule-research", json={"level": COUNTRY})).json()
+
+            spent = (
+                await api.get("/v1/holdings", params={"level": COUNTRY, "since": since})
+            ).json()["spent"]
+
+        assert spent["research_eur"] == pytest.approx(outcome["cost_eur"]) == 0.06
+        assert spent["total_eur"] == pytest.approx(spent["runs_eur"] + spent["research_eur"])
 
     async def test_an_estimate_spends_nothing_and_so_ledgers_nothing(
         self, database_url: str

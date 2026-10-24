@@ -54,8 +54,7 @@ COVERED_ELSEWHERE = {
         "planMatchRuleResearch reports their count; the MatchRule body is unchanged"
     ),
     "MATCH_RULE_RESEARCH_SPEND": (
-        "deliberately not exposed: the research spend ledger is write-only by decision (Q236), "
-        "and each researchMatchRules response reports its own cost_eur and calls"
+        "not exposed row by row: Holdings.spent.research_eur is its monthly sum (C04-N1)"
     ),
 }
 
