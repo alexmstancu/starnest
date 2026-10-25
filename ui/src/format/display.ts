@@ -238,6 +238,19 @@ export function pillarName(names: ReadonlyMap<string, string>, pillar: string): 
 }
 
 /**
+ * One criteria set's name, from the set list, or its id made readable (PL-070).
+ *
+ * **The list's name, so a rename is followed** the next time the list is read. A set no longer
+ * listed -- deleted since, or the list still loading -- reads as its id in words, hyphens
+ * included, never the raw id.
+ */
+export function criteriaSetName(names: ReadonlyMap<string, string>, set: string): string {
+  const named = names.get(set);
+  if (named !== undefined && named !== "") return named;
+  return formatIdentifier(set.replace(/-/g, "_"));
+}
+
+/**
  * One data source's name, or its id made readable.
  *
  * **The catalog's name, not the id** (RB-4). A plan, a run, a stored value and an outside

@@ -98,7 +98,7 @@ describe("saved rankings", () => {
     await saveOne();
 
     const list = within(await savedList());
-    expect(await list.findByText(/default, country/i)).toBeInTheDocument();
+    expect(await list.findByText("Default, Country")).toBeInTheDocument();
   });
 
   /** The field goes away again, so the next save starts from one button as the first did. */

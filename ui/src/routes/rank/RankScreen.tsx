@@ -12,7 +12,8 @@ import { AttributeDrillDown } from "./AttributeDrillDown";
 import { CandidateDetail } from "./CandidateDetail";
 import { type OpenCandidate, type OpenRow, choosePillar, toggleRow } from "./openRows";
 import { RankingMeta, RankingTable } from "./RankingTable";
-import { codesByCandidate, homeCandidates } from "./rankTable";
+import { codesByCandidate, type HomeRead } from "./rankTable";
+import { hasErrorCode } from "../../api/ApiError";
 import { SaveControl } from "./SaveControl";
 import { SavedRankingsPanel } from "./SavedRankingsPanel";
 import { useSelection } from "../../shell/SelectionContext";
@@ -103,9 +104,15 @@ function TheRanking({
   const household = useResource(
     useCallback((signal: AbortSignal) => fetchHousehold({ signal }), []),
   );
-  const home = homeCandidates(
-    household.resource.status === "ready" ? household.resource.data : null,
-  );
+  const home: HomeRead =
+    household.resource.status === "ready"
+      ? { state: "ready", household: household.resource.data }
+      : household.resource.status === "error" &&
+          hasErrorCode(household.resource.error, "household_not_configured")
+        ? { state: "not_configured" }
+        : { state: "unknown" };
+  const { criteriaSets } = useSelection();
+  const setNames = new Map(criteriaSets.map((set) => [set.id, set.name]));
   // Which candidates' evidence is open. Client state in the sense `arch.md` 8.1 permits: it
   // decides nothing, and the evidence itself is fetched.
   const [open, setOpen] = useState<readonly OpenRow[]>([]);
@@ -139,7 +146,7 @@ function TheRanking({
           </p>
         </div>
         <div className="screen__actions">
-          {resource.status === "ready" && <RankingMeta ranking={resource.data} />}
+          {resource.status === "ready" && <RankingMeta ranking={resource.data} sets={setNames} />}
           {/* **In the header, beside what identifies the ranking.** Saving is an act about
               the whole ranking rather than about anything under the table, and a control for
               it below 32 rows is a control nobody finds. */}
@@ -172,7 +179,7 @@ function TheRanking({
           open={open}
           onToggle={toggle}
           codes={codes}
-          home={home}
+          household={home}
           onChoosePillar={choose}
           detail={(row) => (
             <CandidateDetail

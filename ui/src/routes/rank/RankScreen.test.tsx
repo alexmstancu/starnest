@@ -2,7 +2,12 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { HOUSEHOLD, STORED_VALUES, makeCriteriaSetDetails } from "../../mocks/fixtures";
+import {
+  HOUSEHOLD,
+  STORED_VALUES,
+  makeCriteriaSetDetails,
+  rankingFor,
+} from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 import { serveSourceNames } from "../../testing/sourceNames";
@@ -123,12 +128,56 @@ describe("the ranking table", () => {
     const rank = within(await screen.findByRole("region", { name: "Rank" }));
     expect(
       (await rank.findByText("Criteria set")).nextSibling,
-    ).toHaveTextContent("default");
+    ).toHaveTextContent(/^Default$/);
     // Capitalised: the catalog ships ids, and a reader is shown a name.
     expect(rank.getByText("Level").nextSibling).toHaveTextContent("Country");
     expect(rank.getByText("Computed").nextSibling).toHaveTextContent(
       "30 Aug 2026, 12:15",
     );
+  });
+});
+
+/**
+ * PL-070. **The set by the name the list gives it, never its id**, and a rename made on
+ * Configure is what Rank says next.
+ */
+describe("the criteria set in the header", () => {
+  it("names the set as the list does, and follows a rename", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+
+    const row = async () =>
+      within(await screen.findByRole("listitem", { name: "Default" }));
+    await user.click((await row()).getByRole("button", { name: "Rename" }));
+    const draft = (await row()).getByRole("textbox", { name: /new name for Default/i });
+    await user.clear(draft);
+    await user.type(draft, "Everyday life");
+    await user.click((await row()).getByRole("button", { name: "Save" }));
+    await screen.findByRole("listitem", { name: "Everyday life" });
+
+    await user.click(screen.getByRole("link", { name: /^Rank/ }));
+
+    const rank = within(await screen.findByRole("region", { name: "Rank" }));
+    await waitFor(() =>
+      expect(rank.getByText("Criteria set").nextSibling).toHaveTextContent(
+        /^Everyday life$/,
+      ),
+    );
+  });
+
+  /** A set the list does not hold reads as its id in words, never the raw id. */
+  it("reads a set the list does not hold as its id in words", async () => {
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        HttpResponse.json(rankingFor("local_employment", "country")),
+      ),
+    );
+    renderShell("/rank");
+
+    const rank = within(await screen.findByRole("region", { name: "Rank" }));
+    expect(
+      (await rank.findByText("Criteria set")).nextSibling,
+    ).toHaveTextContent(/^Local employment$/);
   });
 });
 
@@ -148,6 +197,62 @@ describe("the row the household lives in", () => {
     const pill = await screen.findByText("home");
 
     expect(pill.closest("tr")).toHaveTextContent("Portugal");
+  });
+
+  /** PL-081. Home is the row every difference is measured from, and says so. */
+  it("reads baseline in home's own Δ home cell", async () => {
+    mockServer.use(
+      http.get("/v1/household", () =>
+        HttpResponse.json({ ...HOUSEHOLD, home_country_candidate: "country.portugal" }),
+      ),
+    );
+    renderShell("/rank");
+
+    const homeRow = (await screen.findByText("home")).closest("tr")!;
+    const at = within(screen.getByRole("table", { name: /ranked candidates/i }))
+      .getAllByRole("columnheader")
+      .findIndex((heading) => heading.textContent?.trim() === "Δ home");
+    expect(homeRow.querySelectorAll("th,td")[at]).toHaveTextContent(/^baseline$/);
+    expect(await cell("Spain", "Δ home")).not.toHaveTextContent("baseline");
+  });
+
+  /** PL-081. A column of nothing but dashes says why, once. */
+  it("says why no row has a difference when home is not ranked here", async () => {
+    renderShell("/rank");
+
+    expect(
+      await screen.findByText(/your home is not among the candidates ranked here/i),
+    ).toBeInTheDocument();
+  });
+
+  it("says no home is recorded only on the server's not-configured answer", async () => {
+    mockServer.use(
+      http.get("/v1/household", () =>
+        HttpResponse.json(
+          { code: "household_not_configured", message: "No household has been recorded." },
+          { status: 404 },
+        ),
+      ),
+    );
+    renderShell("/rank");
+
+    expect(await screen.findByText(/no home country is recorded/i)).toBeInTheDocument();
+  });
+
+  /** A failed read says nothing about whether a home was recorded, so the note says nothing. */
+  it("says nothing about the column when the household could not be read", async () => {
+    mockServer.use(
+      http.get("/v1/household", () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "the household could not be read" },
+          { status: 500 },
+        ),
+      ),
+    );
+    renderShell("/rank");
+
+    await screen.findByRole("table", { name: /ranked candidates/i });
+    expect(screen.queryByText(/nothing to measure/i)).toBeNull();
   });
 
   /** The shipped household lives outside the roster, and an unmarked table is the right answer. */
@@ -183,7 +288,7 @@ describe("what the table cannot say inside itself", () => {
     await screen.findByRole("table", { name: /ranked candidates/i });
 
     expect(
-      screen.getByText(/a candidate a gate ruled out has no rank/i),
+      screen.getByText(/a candidate that does not match has no rank and keeps its score/i),
     ).toHaveTextContent("never a zero");
   });
 });

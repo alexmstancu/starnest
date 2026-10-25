@@ -26,6 +26,7 @@ import {
   newestFirst,
   requestedSavedRanking,
   summariseSaved,
+  type SetNames,
 } from "../format/savedRanking";
 import { HOUSEHOLD_LABELS } from "../format/vocabulary";
 import { ROUTES } from "../navigation/routes";
@@ -442,7 +443,8 @@ function LastAcquisitionCard({ summary }: { summary: ShellSummary }) {
 function SavedRankingsCard() {
   // Re-read when Rank says it has saved one: the two live in different subtrees, and a list
   // that only refreshes on a reload would tell the reader their save did not happen.
-  const { savedRankingsVersion } = useSelection();
+  const { savedRankingsVersion, criteriaSets } = useSelection();
+  const sets = new Map(criteriaSets.map((set) => [set.id, set.name]));
   const { read, reload } = useRead(
     useCallback((signal: AbortSignal) => fetchEvaluations({ signal }), []),
     { freshness: savedRankingsVersion },
@@ -465,13 +467,19 @@ function SavedRankingsCard() {
         prominence="region"
         onRetry={reload}
       >
-        {(answer) => <SavedRankingsList saved={newestFirst(answer.items)} />}
+        {(answer) => <SavedRankingsList saved={newestFirst(answer.items)} sets={sets} />}
       </LoadedRegion>
     </section>
   );
 }
 
-function SavedRankingsList({ saved }: { saved: readonly EvaluationSummary[] }) {
+function SavedRankingsList({
+  saved,
+  sets,
+}: {
+  saved: readonly EvaluationSummary[];
+  sets: SetNames;
+}) {
   // **Only the ranking that is open is the current page** (PL-021). A `NavLink` matched the
   // path alone, so on Rank every saved row claimed to be where the reader already was.
   const { pathname } = useLocation();
@@ -494,8 +502,8 @@ function SavedRankingsList({ saved }: { saved: readonly EvaluationSummary[] }) {
             title="Open this saved ranking"
             aria-current={entry.id === open ? "page" : undefined}
           >
-            <span className="saved-list__name">{describeSaved(entry)}</span>
-            <span className="saved-list__meta">{summariseSaved(entry)}</span>
+            <span className="saved-list__name">{describeSaved(entry, sets)}</span>
+            <span className="saved-list__meta">{summariseSaved(entry, sets)}</span>
           </Link>
         </li>
       ))}

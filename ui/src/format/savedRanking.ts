@@ -1,4 +1,4 @@
-import { formatDate, formatDateTime } from "./display";
+import { criteriaSetName, formatDate, formatDateTime, formatIdentifier } from "./display";
 
 /**
  * The wording and the ordering behind a saved ranking, wherever one is listed.
@@ -32,17 +32,23 @@ export function newestFirst<T extends SavedRankingLike>(items: readonly T[]): T[
 }
 
 /**
+ * The criteria sets' names by id, as `useSelection().criteriaSets` carries them, so a saved
+ * ranking is listed under its set's current name rather than its id (PL-070).
+ */
+export type SetNames = ReadonlyMap<string, string>;
+
+/**
  * What a saved ranking is called in the list.
  *
  * The note leads when there is one, because a note is the reason it was kept and the rest is
  * bookkeeping. Without one, the criteria set and the moment are all there is to go on.
  */
-export function describeSaved(saved: SavedRankingLike): string {
+export function describeSaved(saved: SavedRankingLike, sets: SetNames): string {
   // **Not `??`.** An empty string is not nullish, so `note ?? fallback` would keep a note of
   // spaces -- a note that says nothing while looking like one that does.
   const note = saved.note?.trim();
   return note === undefined || note === ""
-    ? `${saved.criteria_set}, ${saved.level}`
+    ? `${criteriaSetName(sets, saved.criteria_set)}, ${formatIdentifier(saved.level)}`
     : note;
 }
 
@@ -53,8 +59,9 @@ export function describeSaved(saved: SavedRankingLike): string {
  * barred outright (`CLAUDE.md`), and the fix that matters is not a different character -- it
  * is saying the thing in words, which reads as a sentence and needs no separator at all.
  */
-export function detailOf(saved: SavedRankingLike): string {
-  return `${saved.criteria_set} at ${saved.level} level, saved ${formatDateTime(saved.computed_at)}`;
+export function detailOf(saved: SavedRankingLike, sets: SetNames): string {
+  const level = formatIdentifier(saved.level).toLowerCase();
+  return `${criteriaSetName(sets, saved.criteria_set)} at ${level} level, saved ${formatDateTime(saved.computed_at)}`;
 }
 
 /**
@@ -63,8 +70,8 @@ export function detailOf(saved: SavedRankingLike): string {
  * The date alone, without the time: in a card listing several, what distinguishes them is
  * which day they were kept, and the minute is noise until two share a day.
  */
-export function summariseSaved(saved: SavedRankingLike): string {
-  return `${saved.criteria_set}, ${formatDate(saved.computed_at)}`;
+export function summariseSaved(saved: SavedRankingLike, sets: SetNames): string {
+  return `${criteriaSetName(sets, saved.criteria_set)}, ${formatDate(saved.computed_at)}`;
 }
 
 /**

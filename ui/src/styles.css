@@ -3327,6 +3327,12 @@ select.field__control {
   color: var(--colour-text-muted);
 }
 
+/* PL-081: home's own cell, the row every difference is measured from. */
+.table__delta--baseline {
+  font-weight: 400;
+  color: var(--colour-text-muted);
+}
+
 /* The pillar contribution cards: the same figures the row's chart draws, said in words. */
 .pillar-cards {
   list-style: none;

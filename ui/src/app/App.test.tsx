@@ -170,7 +170,7 @@ describe("the sidebar selectors", () => {
     // followed the selection, not merely that the dropdown changed.
     const rank = within(screen.getByRole("region", { name: "Rank" }));
     await waitFor(() =>
-      expect(rank.getByText("Criteria set").nextSibling).toHaveTextContent("remote-only"),
+      expect(rank.getByText("Criteria set").nextSibling).toHaveTextContent("Remote only"),
     );
   });
 });
@@ -490,7 +490,7 @@ describe("what the sidebar reads again", () => {
     await sidebarHasRead();
     const rank = within(screen.getByRole("region", { name: "Rank" }));
     await waitFor(() =>
-      expect(rank.getByText("Criteria set").nextSibling).toHaveTextContent("default"),
+      expect(rank.getByText("Criteria set").nextSibling).toHaveTextContent("Default"),
     );
     const kept = await screen.findByRole("link", { name: /before the gates/i });
     const before = { households: households.count, rankings: rankings.count };

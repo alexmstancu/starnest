@@ -273,9 +273,14 @@ export function confidenceReadings(
     });
 }
 
-/** A candidate as the band below needs to see one: only whether it matches. */
+/** A candidate as the band below needs to see one: whether it matches, and why not. */
 export interface Judged {
   match_status: string;
+  non_match_reasons?: readonly {
+    criterion?: string | null;
+    match_rule?: string | null;
+    compound_rule?: string | null;
+  }[];
 }
 
 /**
@@ -286,9 +291,11 @@ export interface Judged {
  * between makes the ranking look as though it simply continues. The band is what says the list
  * has changed meaning -- above it is an order, below it is a set.
  *
- * **Two ways to be below it, and they are not the same problem.** A gate ruled a candidate out;
- * insufficient data means nobody could score it. One is a decision and the other is a gap, so
- * the sentence counts them separately.
+ * **Counted by cause, from the reasons the server gave** (PL-067, N2). A threshold the
+ * household set, a gate and a compound rule are three different decisions, and insufficient
+ * data is a gap rather than a decision; only the causes that occur are named. One candidate
+ * can be below for several reasons, and then the sentence says so rather than letting the
+ * counts outrun the total unexplained.
  */
 export function excludedBand(
   candidates: readonly Judged[],
@@ -299,19 +306,55 @@ export function excludedBand(
   if (at === -1) return null;
 
   const below = candidates.length - at;
-  const gated = candidates.filter(
-    (candidate) => candidate.match_status === "not_matching",
-  ).length;
-  const unscored = below - gated;
+  const counted = BELOW_CAUSES.map((cause) => ({
+    words: cause.words,
+    count: candidates.filter(cause.applies).length,
+  })).filter((cause) => cause.count > 0);
+
+  const causes = counted
+    .map((cause, index) =>
+      index === 0 && cause.words.startsWith("by ")
+        ? `${round(cause.count)} ruled out ${cause.words}`
+        : `${round(cause.count)} ${cause.words}`,
+    )
+    .join(", ");
+  const overlap = counted.reduce((sum, cause) => sum + cause.count, 0) > below;
 
   return {
     at,
     reading:
-      `${round(below)} ${below === 1 ? "candidate" : "candidates"} below — ` +
-      `${round(gated)} ruled out by a gate, ` +
-      `${round(unscored)} without enough data to score`,
+      `${round(below)} ${below === 1 ? "candidate" : "candidates"} below — ${causes}` +
+      (overlap ? " (some for more than one reason)" : ""),
   };
 }
+
+const REASON_KINDS = ["criterion", "match_rule", "compound_rule"] as const;
+
+function ruledOutBy(
+  kind: (typeof REASON_KINDS)[number],
+): (candidate: Judged) => boolean {
+  return (candidate) =>
+    candidate.match_status === "not_matching" &&
+    (candidate.non_match_reasons ?? []).some((reason) => Boolean(reason[kind]));
+}
+
+const BELOW_CAUSES: readonly { words: string; applies: (candidate: Judged) => boolean }[] = [
+  { words: "by a threshold you set", applies: ruledOutBy("criterion") },
+  { words: "by a gate", applies: ruledOutBy("match_rule") },
+  { words: "by a compound rule", applies: ruledOutBy("compound_rule") },
+  {
+    words: "with no reason given",
+    applies: (candidate) =>
+      candidate.match_status === "not_matching" &&
+      !(candidate.non_match_reasons ?? []).some((reason) =>
+        REASON_KINDS.some((kind) => Boolean(reason[kind])),
+      ),
+  },
+  {
+    words: "without enough data to score",
+    applies: (candidate) => candidate.match_status === "insufficient_data",
+  },
+];
 
 /** A candidate as the catalog serves one, for the flag beside its name. */
 export interface Coded {
@@ -362,4 +405,56 @@ export function homeCandidates(
     if (candidate) home.add(candidate);
   }
   return home;
+}
+
+/**
+ * What is known about the household's home, as the Δ home note needs it (PL-081).
+ *
+ * `not_configured` only on the server's own `household_not_configured`; any other failure is
+ * `unknown`, because a read that failed says nothing about whether a home was recorded.
+ */
+export type HomeRead =
+  | { state: "ready"; household: AtHome }
+  | { state: "not_configured" }
+  | { state: "unknown" };
+
+/** A ranked row as the Δ home note reads one. */
+export interface Measured {
+  candidate: string;
+  score: number | null;
+  delta_vs_home?: number | null;
+}
+
+const NOTHING_TO_MEASURE = "so Δ home has nothing to measure against.";
+
+/**
+ * Why no row has a difference against home, or null where some row has one or the reason is
+ * not known.
+ *
+ * **Said once, under the table, and only when the whole column is a dash** (PL-081). A single
+ * dash is answered by its own row -- home itself, or a candidate with no score -- but a column
+ * of nothing but dashes reads as a broken column unless something says why.
+ */
+export function emptyDeltaNote(
+  candidates: readonly Measured[],
+  home: HomeRead,
+): string | null {
+  if (candidates.length === 0) return null;
+  if (candidates.some((candidate) => typeof candidate.delta_vs_home === "number")) {
+    return null;
+  }
+  if (home.state === "not_configured") {
+    return "No home country is recorded, so there is nothing to measure Δ home against.";
+  }
+  if (home.state === "unknown") return null;
+
+  const homes = homeCandidates(home.household);
+  const homeRow = candidates.find((candidate) => homes.has(candidate.candidate));
+  if (homeRow === undefined) {
+    return `Your home is not among the candidates ranked here, ${NOTHING_TO_MEASURE}`;
+  }
+  if (homeRow.score === null) {
+    return `Your home has no score under this criteria set, ${NOTHING_TO_MEASURE}`;
+  }
+  return null;
 }

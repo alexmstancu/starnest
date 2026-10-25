@@ -16,6 +16,7 @@ import {
   attributeName,
   candidateName,
   pillarName,
+  criteriaSetName,
   safeHttpUrl,
   sourceName,
 } from "./display";
@@ -395,5 +396,24 @@ describe("naming a candidate", () => {
     expect(candidateName(new Map([["country.malta", ""]]), "country.malta")).toBe(
       "Malta",
     );
+  });
+});
+
+/** PL-070. A criteria set by the name the list gives it, never its id. */
+describe("a criteria set's name", () => {
+  it("reads the name the set list holds, so a rename is followed", () => {
+    expect(criteriaSetName(new Map([["default", "Everyday life"]]), "default")).toBe(
+      "Everyday life",
+    );
+  });
+
+  /** The list can be loading, or the set deleted since; the id then reads as words. */
+  it("falls back to the id made readable, hyphens and underscores alike", () => {
+    expect(criteriaSetName(new Map(), "remote-only")).toBe("Remote only");
+    expect(criteriaSetName(new Map(), "local_employment")).toBe("Local employment");
+  });
+
+  it("does not take an empty name for a name", () => {
+    expect(criteriaSetName(new Map([["default", ""]]), "default")).toBe("Default");
   });
 });

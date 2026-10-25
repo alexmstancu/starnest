@@ -89,12 +89,6 @@ const MANUAL_SOURCE: KnownOffender = {
   removedBy: "unassigned",
 };
 
-const SET_ID_IN_THE_HEADER: KnownOffender = {
-  identifier: "default",
-  where: "the ranking's header: the criteria set",
-  removedBy: "PL-070 (C05)",
-};
-
 export const IDENTIFIER_LEDGER = {
   "Configure, a pillar and a rule editor open": [
     ...RULE_EDITOR,
@@ -129,11 +123,9 @@ export const IDENTIFIER_LEDGER = {
   "Acquire, nothing acquired yet": [MANUAL_SOURCE],
   "Acquire, the server unreachable": [SERVER_UNREACHABLE],
 
-  "Rank, a row open on a pillar, an attribute drilled into and a saved ranking open": [
-    SET_ID_IN_THE_HEADER,
-  ],
+  "Rank, a row open on a pillar, an attribute drilled into and a saved ranking open": [],
   "Rank, the score range unset": [],
-  "Rank, nothing ranked": [SET_ID_IN_THE_HEADER],
+  "Rank, nothing ranked": [],
   "Rank, the server unreachable": [],
 
   "Compare, drawn as scores": [],

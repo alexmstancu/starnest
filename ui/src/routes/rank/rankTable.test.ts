@@ -6,6 +6,7 @@ import {
   confidenceLabel,
   confidenceReadings,
   coverageBar,
+  emptyDeltaNote,
   excludedBand,
   homeCandidates,
   pillarBars,
@@ -254,7 +255,18 @@ describe("the pillar chart", () => {
 
 describe("where the ranking stops", () => {
   const matching = { match_status: "matching" };
-  const gated = { match_status: "not_matching" };
+  const threshold = {
+    match_status: "not_matching",
+    non_match_reasons: [{ criterion: "country.rent", reason_detail: "Rent is too high" }],
+  };
+  const gated = {
+    match_status: "not_matching",
+    non_match_reasons: [{ match_rule: "country.visa", reason_detail: "Visa answered not matching" }],
+  };
+  const compound = {
+    match_status: "not_matching",
+    non_match_reasons: [{ compound_rule: "cheap_but_taxed", reason_detail: "Cheap but taxed" }],
+  };
   const unscored = { match_status: "insufficient_data" };
 
   it("marks the first candidate that is not in the ranking", () => {
@@ -271,24 +283,106 @@ describe("where the ranking stops", () => {
   });
 
   /**
-   * A gate is a decision and insufficient data is a gap, so the sentence counts them apart --
-   * one is answered by changing a rule and the other by acquiring a figure.
+   * PL-067, N2. **A threshold, a gate and a compound rule are three different decisions**, and
+   * insufficient data is a gap; counting every non-match as a gate blamed a gate for what a
+   * threshold the household set had done.
    */
-  it("counts what a gate ruled out apart from what could not be scored", () => {
-    expect(excludedBand([matching, gated, gated, unscored])?.reading).toBe(
-      "3 candidates below — 2 ruled out by a gate, 1 without enough data to score",
+  it("counts thresholds, gates and rules apart, and the gap apart from all three", () => {
+    expect(
+      excludedBand([matching, threshold, threshold, gated, compound, unscored])?.reading,
+    ).toBe(
+      "5 candidates below — 2 ruled out by a threshold you set, 1 by a gate, " +
+        "1 by a compound rule, 1 without enough data to score",
+    );
+  });
+
+  /** Only the causes that occur: "0 ruled out by a gate" names a gate that did nothing. */
+  it("names only the causes that occur", () => {
+    expect(excludedBand([matching, gated, gated])?.reading).toBe(
+      "2 candidates below — 2 ruled out by a gate",
     );
   });
 
   it("says candidate rather than candidates when there is one", () => {
     expect(excludedBand([matching, unscored])?.reading).toBe(
-      "1 candidate below — 0 ruled out by a gate, 1 without enough data to score",
+      "1 candidate below — 1 without enough data to score",
     );
+  });
+
+  /** One candidate can fail a threshold and a gate at once, so the counts can outrun the total. */
+  it("says so when a candidate is below for more than one reason", () => {
+    const both = {
+      match_status: "not_matching",
+      non_match_reasons: [...threshold.non_match_reasons, ...gated.non_match_reasons],
+    };
+    expect(excludedBand([both, gated])?.reading).toBe(
+      "2 candidates below — 1 ruled out by a threshold you set, 2 by a gate " +
+        "(some for more than one reason)",
+    );
+  });
+
+  /** A non-match the server gave no reason for is counted, not silently dropped. */
+  it("counts a non-match that carries no reason as one with no reason given", () => {
+    expect(
+      excludedBand([{ match_status: "not_matching" }, threshold])?.reading,
+    ).toBe("2 candidates below — 1 ruled out by a threshold you set, 1 with no reason given");
   });
 
   /** The whole list can be below the line, and then the band is the first row. */
   it("marks the top when nothing matches at all", () => {
     expect(excludedBand([gated, unscored])?.at).toBe(0);
+  });
+});
+
+/**
+ * PL-081. **Why the whole Δ home column is a dash, said once.** Only on the server's own
+ * "not configured" does it say nothing is recorded; a household read that failed says nothing,
+ * because a note claiming no home on a failed read would be false.
+ */
+describe("why no row has a difference against home", () => {
+  const portugal = { candidate: "country.portugal", score: 78, delta_vs_home: null };
+  const spain = { candidate: "country.spain", score: 64, delta_vs_home: null };
+  const atHome = (candidate: string) => ({
+    state: "ready" as const,
+    household: { home_country_candidate: candidate },
+  });
+
+  it("says no home is recorded only when the server says the household is not configured", () => {
+    expect(emptyDeltaNote([portugal, spain], { state: "not_configured" })).toBe(
+      "No home country is recorded, so there is nothing to measure Δ home against.",
+    );
+  });
+
+  it("says nothing when the household could not be read", () => {
+    expect(emptyDeltaNote([portugal, spain], { state: "unknown" })).toBeNull();
+  });
+
+  it("says home is not ranked here when no row is home", () => {
+    expect(emptyDeltaNote([portugal, spain], atHome("country.romania"))).toBe(
+      "Your home is not among the candidates ranked here, so Δ home has nothing to measure against.",
+    );
+  });
+
+  it("says home has no score under this set when its row has none", () => {
+    expect(
+      emptyDeltaNote(
+        [portugal, { ...spain, score: null }],
+        atHome("country.spain"),
+      ),
+    ).toBe("Your home has no score under this criteria set, so Δ home has nothing to measure against.");
+  });
+
+  it("says nothing once any row has a difference", () => {
+    expect(
+      emptyDeltaNote(
+        [{ ...portugal, delta_vs_home: 14 }, spain],
+        atHome("country.spain"),
+      ),
+    ).toBeNull();
+  });
+
+  it("says nothing about an empty ranking", () => {
+    expect(emptyDeltaNote([], { state: "not_configured" })).toBeNull();
   });
 });
 

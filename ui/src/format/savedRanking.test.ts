@@ -18,6 +18,9 @@ interface Entry extends SavedRankingLike {
   id: number;
 }
 
+/** The set list's names, as `useSelection().criteriaSets` carries them. */
+const SETS = new Map([["local_employment", "Working locally"]]);
+
 function saved(over: Partial<Entry> = {}): Entry {
   return {
     id: 1,
@@ -53,37 +56,46 @@ describe("the saved rankings list", () => {
 
   /** The note is the reason it was kept, so it leads. */
   it("calls a saved ranking by its note", () => {
-    expect(describeSaved(saved({ note: "before I raised housing" }))).toBe(
+    expect(describeSaved(saved({ note: "before I raised housing" }), SETS)).toBe(
       "before I raised housing",
     );
   });
 
-  it("falls back to the criteria set and level when there is no note", () => {
-    expect(describeSaved(saved())).toBe("local_employment, country");
-    expect(describeSaved(saved({ note: null }))).toBe(
-      "local_employment, country",
+  /** PL-070. The set by its name from the list, the level in words: never either id. */
+  it("falls back to the criteria set and level, named in words, when there is no note", () => {
+    expect(describeSaved(saved(), SETS)).toBe("Working locally, Country");
+    expect(describeSaved(saved({ note: null }), SETS)).toBe(
+      "Working locally, Country",
+    );
+  });
+
+  /** A set no longer listed -- deleted, or the list still loading -- reads as its id in words. */
+  it("names a set the list does not hold by its id made readable", () => {
+    expect(describeSaved(saved({ criteria_set: "remote-only" }), SETS)).toBe(
+      "Remote only, Country",
     );
   });
 
   /** A note of spaces is a note that says nothing while looking like one that does. */
   it("treats a blank note as no note", () => {
-    expect(describeSaved(saved({ note: "   " }))).toBe(
-      "local_employment, country",
+    expect(describeSaved(saved({ note: "   " }), SETS)).toBe(
+      "Working locally, Country",
     );
   });
 
   it("states the provenance in words, with no separator character", () => {
-    const detail = detailOf(saved());
-    expect(detail).toContain("local_employment");
-    expect(detail).toContain("country");
+    const detail = detailOf(saved(), SETS);
+    expect(detail).toContain("Working locally at country level");
+    expect(detail).not.toContain("local_employment");
     expect(detail).toMatch(/saved /);
     expect(detail).not.toContain("·");
   });
 
   /** The sidebar is 262px wide, so the summary drops the time and keeps the day. */
   it("summarises a saved ranking short enough for the sidebar", () => {
-    const summary = summariseSaved(saved());
-    expect(summary).toContain("local_employment");
+    const summary = summariseSaved(saved(), SETS);
+    expect(summary).toContain("Working locally");
+    expect(summary).not.toContain("local_employment");
     expect(summary).not.toMatch(/\d\d:\d\d/);
   });
 });

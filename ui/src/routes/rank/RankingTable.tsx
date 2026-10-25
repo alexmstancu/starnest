@@ -2,6 +2,7 @@ import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "re
 import { type CandidateResult, type Ranking } from "../../api/endpoints";
 import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
 import {
+  criteriaSetName,
   deltaTone,
   pillarName,
 } from "../../format/display";
@@ -21,8 +22,11 @@ import {
   confidenceBands,
   confidenceReadings,
   coverageBar,
+  emptyDeltaNote,
   excludedBand,
+  homeCandidates,
   pillarBars,
+  type HomeRead,
 } from "./rankTable";
 import { type OpenCandidate, type OpenRow, chosenPillarOf, isOpen } from "./openRows";
 import { barReachedBy, tabStopOf } from "./pillarChartFocus";
@@ -50,7 +54,7 @@ export function RankingTable({
   onChoosePillar,
   detail,
   codes,
-  home,
+  household = { state: "unknown" },
 }: {
   ranking: Ranking;
   open?: readonly OpenRow[];
@@ -77,16 +81,19 @@ export function RankingTable({
    */
   codes?: ReadonlyMap<string, string>;
   /**
-   * The candidates the household already lives in (`reqs.md` 1.1).
-   *
-   * **A set rather than one id**, because home is a candidate at every level and this table
-   * draws one level at a time -- see `homeCandidates`.
+   * What is known about the household's home (`reqs.md` 1.1): which rows are home, and why
+   * the Δ home column may be empty. **Omitted by a saved ranking**, which says nothing then.
    */
-  home?: ReadonlySet<string>;
+  household?: HomeRead;
 }) {
   const names = usePillarNames();
   // Where the ranking stops and the set below it starts. Null when everything matches.
   const band = excludedBand(ranking.candidates);
+  // **A set rather than one id**, because home is a candidate at every level and this table
+  // draws one level at a time -- see `homeCandidates`.
+  const home =
+    household.state === "ready" ? homeCandidates(household.household) : NO_HOME;
+  const deltaNote = emptyDeltaNote(ranking.candidates, household);
 
   if (ranking.candidates.length === 0) {
     return (
@@ -153,7 +160,7 @@ export function RankingTable({
                 onChoosePillar={onChoosePillar}
                 detail={detail}
                 code={codes?.get(result.candidate)}
-                atHome={home?.has(result.candidate) === true}
+                atHome={home.has(result.candidate)}
               />
             </Fragment>
           ))}
@@ -164,9 +171,10 @@ export function RankingTable({
         once they have met a row that has them -- an empty rank cell, and a score cell that
         says "No score" -- and neither is a caveat about the ranking as a whole. */}
     <p className="table-note">
-      A candidate a gate ruled out has no rank and keeps its score. One with
-      insufficient data shows no score at all — never a zero.
+      A candidate that does not match has no rank and keeps its score. One
+      with insufficient data shows no score at all — never a zero.
     </p>
+    {deltaNote !== null && <p className="table-note">{deltaNote}</p>}
     </>
   );
 }
@@ -178,15 +186,24 @@ export function RankingTable({
  * Exported because the design puts them in the page header rather than above the table, and
  * the header belongs to the screen.
  */
-export function RankingMeta({ ranking }: { ranking: Ranking }) {
+export function RankingMeta({
+  ranking,
+  sets,
+}: {
+  ranking: Ranking;
+  /** The set list's names by id, so the set reads as its current name (PL-070). */
+  sets: ReadonlyMap<string, string>;
+}) {
   return (
     <dl className="meta-row">
-      <Meta label="Criteria set" value={ranking.criteria_set} />
+      <Meta label="Criteria set" value={criteriaSetName(sets, ranking.criteria_set)} />
       <Meta label="Level" value={formatIdentifier(ranking.level)} />
       <Meta label="Computed" value={formatDateTime(ranking.computed_at)} />
     </dl>
   );
 }
+
+const NO_HOME: ReadonlySet<string> = new Set();
 
 function Meta({ label, value }: { label: string; value: string }) {
   return (
@@ -341,19 +358,22 @@ function CandidateRow({
         ) : (
           result.name
         )}
-        {/* **Beside the name, not in the delta column.** Home is the row every other row is
-            measured against, and a reader who has not found it cannot read a single delta on
-            the screen. The dash in its own delta cell says what it is, only after you know
-            which row it is. */}
+        {/* **Beside the name, not only in the delta column.** Home is the row every other row
+            is measured against, and a reader who has not found it cannot read a single delta
+            on the screen. */}
         {atHome && <span className="chip chip--home">home</span>}
       </th>
       <ScoreCell result={result} />
-      {/* Against staying put (`reqs.md` 1.2). Null for home itself and wherever a score is
-          missing, and a dash says so -- a zero here would read as "the same", which is a
+      {/* Against staying put (`reqs.md` 1.2). Home itself is the baseline (PL-081); a
+          missing score is a dash -- a zero here would read as "the same", which is a
           measurement nobody made. */}
-      <td className={`col--right table__delta table__delta--${deltaTone(result.delta_vs_home)}`}>
-        {formatSigned(result.delta_vs_home, 0)}
-      </td>
+      {atHome && result.delta_vs_home == null ? (
+        <td className="col--right table__delta table__delta--baseline">baseline</td>
+      ) : (
+        <td className={`col--right table__delta table__delta--${deltaTone(result.delta_vs_home)}`}>
+          {formatSigned(result.delta_vs_home, 0)}
+        </td>
+      )}
       <td className="col--pillars">
         <PillarChart
           names={names}
