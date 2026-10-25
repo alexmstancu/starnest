@@ -25,7 +25,7 @@ import { LoadedRegion } from "../../shell/LoadedRegion";
 import { NothingSelected } from "../../shell/NothingSelected";
 import { SCORE_SCALE_NOT_SET } from "../../shell/refusalRemedy";
 import { NO_COMPARATOR_LIMIT, UnsetSetting } from "../../shell/UnsetSetting";
-import { useFocusWhenLost } from "../../shell/useFocusWhenLost";
+import { type FocusRegion, useFocusRegion, useFocusWhenLost } from "../../shell/useFocusWhenLost";
 import { type SelectionLists, useSelection } from "../../shell/SelectionContext";
 
 /**
@@ -41,9 +41,11 @@ import { type SelectionLists, useSelection } from "../../shell/SelectionContext"
  */
 export function CompareScreen({ route }: { route: RouteDefinition }) {
   const { criteriaSetId, levelId } = useSelection();
+  const focusRegion = useFocusRegion();
 
   return (
-    <section className="screen" aria-labelledby="screen-heading">
+    // The region a notice inherits focus from, when it replaces the Compare that was pressed.
+    <section className="screen" aria-labelledby="screen-heading" onFocus={focusRegion.claim}>
       <header className="screen__header">
         <h1 id="screen-heading" className="screen__heading">
           {route.label}
@@ -62,6 +64,7 @@ export function CompareScreen({ route }: { route: RouteDefinition }) {
         key={`${criteriaSetId}-${levelId}`}
         criteriaSetId={criteriaSetId}
         levelId={levelId}
+        focusRegion={focusRegion}
       />
     </section>
   );
@@ -70,9 +73,11 @@ export function CompareScreen({ route }: { route: RouteDefinition }) {
 function TheComparison({
   criteriaSetId,
   levelId,
+  focusRegion,
 }: {
   criteriaSetId: string | null;
   levelId: string | null;
+  focusRegion: FocusRegion;
 }) {
   const selection = useSelection();
   const [focus, setFocus] = useState<string | null>(null);
@@ -141,9 +146,9 @@ function TheComparison({
   const refusedForTheRange =
     comparisonFailure !== null && hasErrorCode(comparisonFailure, "score_scale_not_set");
   if (settings.read.state === "ready" && settings.read.data.score_scale_max === null) {
-    return <NothingToCompare error={UNSET_SCORE_RANGE} replacing={false} />;
+    return <NothingToCompare error={UNSET_SCORE_RANGE} region={focusRegion} />;
   }
-  if (refusedForTheRange) return <NothingToCompare error={comparisonFailure} replacing />;
+  if (refusedForTheRange) return <NothingToCompare error={comparisonFailure} region={focusRegion} />;
 
   // The comparison's own failure, or the weights' if it is theirs: Try again reads what failed.
   const weights = map(asRead(criteriaSet.read), (set) => pillarWeightsAt(set, levelId));
@@ -237,10 +242,11 @@ function TheComparison({
 
 /**
  * "Nothing to compare", in place of the whole comparison. **When it replaces the Compare the
- * reader pressed** it takes the focus that button had, rather than leaving it on the page.
+ * reader pressed** it takes the focus that button had, rather than leaving it on the page; drawn
+ * from the settings before anything was pressed, it takes none.
  */
-function NothingToCompare({ error, replacing }: { error: unknown; replacing: boolean }) {
-  const notice = useFocusWhenLost<HTMLDivElement>(replacing);
+function NothingToCompare({ error, region }: { error: unknown; region: FocusRegion }) {
+  const notice = useFocusWhenLost<HTMLDivElement>(region);
   return (
     <div ref={notice} tabIndex={-1}>
       <UnsetSetting error={error} title="Nothing to compare" detail={UNSET_DETAIL} />

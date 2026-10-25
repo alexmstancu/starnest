@@ -36,7 +36,7 @@ import { useSelection } from "./SelectionContext";
 import { Skeleton } from "./Skeleton";
 import { levelsWithCandidates, noRankingBecause } from "./candidateCounts";
 import { useScreenChanges } from "./useScreenChanges";
-import { useFocusWhenLost } from "./useFocusWhenLost";
+import { type FocusRegion, useFocusRegion, useFocusWhenLost } from "./useFocusWhenLost";
 import { useShellSummary, type ShellSummary } from "./useShellSummary";
 
 /**
@@ -315,9 +315,15 @@ function HouseholdCard({ freshness }: { freshness: number }) {
 function CandidateCountsCard({ summary }: { summary: ShellSummary }) {
   const { read: selection } = useSelection();
   const { total, counts } = summary;
+  // The region a reason inherits focus from, when it replaces the Try again that was pressed.
+  const focusRegion = useFocusRegion();
 
   return (
-    <section className="panel" aria-labelledby="candidate-counts-heading">
+    <section
+      className="panel"
+      aria-labelledby="candidate-counts-heading"
+      onFocus={focusRegion.claim}
+    >
       <h2 id="candidate-counts-heading" className="panel__heading">
         Candidates
       </h2>
@@ -338,7 +344,7 @@ function CandidateCountsCard({ summary }: { summary: ShellSummary }) {
           )}
         </LoadedRegion>
       )}
-      <MatchCountsRegion counts={counts} onRetry={summary.reloadCounts} />
+      <MatchCountsRegion counts={counts} onRetry={summary.reloadCounts} region={focusRegion} />
     </section>
   );
 }
@@ -359,9 +365,11 @@ function NothingSelected({ selection }: { selection: Read<unknown> }) {
 function MatchCountsRegion({
   counts,
   onRetry,
+  region,
 }: {
   counts: ShellSummary["counts"];
   onRetry: () => Promise<void>;
+  region: FocusRegion;
 }) {
   if (counts.state === "idle") return null;
   // **A re-read refused for an unset range takes the shown counts with it**: they cannot be
@@ -375,7 +383,7 @@ function MatchCountsRegion({
         : null;
   const unranked = noRankingBecause(failure);
   if (unranked !== null) {
-    return <NoRankingNote reason={unranked} replacing={counts.state === "ready"} />;
+    return <NoRankingNote reason={unranked} region={region} />;
   }
 
   return (
@@ -404,11 +412,12 @@ function MatchCountsRegion({
 }
 
 /**
- * Why there are no counts. **When it replaces counts that were shown** -- a Try again refused
- * for an unset range -- it takes the focus their region held, rather than leaving it on the page.
+ * Why there are no counts. **When it replaces the Try again that was pressed** -- a retry
+ * refused for an unset range, whether counts had been shown or never loaded -- it takes the
+ * focus that button had, rather than leaving it on the page.
  */
-function NoRankingNote({ reason, replacing }: { reason: string; replacing: boolean }) {
-  const note = useFocusWhenLost<HTMLParagraphElement>(replacing);
+function NoRankingNote({ reason, region }: { reason: string; region: FocusRegion }) {
+  const note = useFocusWhenLost<HTMLParagraphElement>(region);
   return (
     <p ref={note} tabIndex={-1} className="sidebar__note sidebar__note--warning">
       {reason}

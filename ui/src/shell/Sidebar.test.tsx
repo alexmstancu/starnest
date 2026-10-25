@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, delay, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -86,6 +86,14 @@ describe("PL-005: the candidates card while the score range is unset", () => {
   });
 
   /**
+   * A server that answered and failed. **Not a 503 with no body**, which is a server that did not
+   * answer: the shell's card says that once and reads it again by itself (PL-002).
+   */
+  function serverFault(): Response {
+    return HttpResponse.json({ code: "internal_error", message: "The server failed." }, { status: 500 });
+  }
+
+  /**
    * From review. Try again on counts that could not be refreshed held focus in their region,
    * and the reason that replaced the region took it away: focus fell to the page.
    */
@@ -93,7 +101,7 @@ describe("PL-005: the candidates card while the score range is unset", () => {
     renderShell("/acquire");
     const counts = within(await screen.findByRole("region", { name: /^candidates$/i }));
     await counts.findByText("Matching");
-    mockServer.use(http.get(`${BASE}/rankings`, () => new HttpResponse(null, { status: 503 })));
+    mockServer.use(http.get(`${BASE}/rankings`, () => serverFault()));
     const user = userEvent.setup();
     await user.click(screen.getByRole("link", { name: "Compare" }));
     const retry = await counts.findByRole("button", { name: /try again/i });
@@ -105,6 +113,65 @@ describe("PL-005: the candidates card while the score range is unset", () => {
     const reason = await counts.findByText(/depend on a score/i);
     await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     expect(document.activeElement).toBe(reason);
+  });
+
+  /** From review: a first read that failed, then a retry refused for an unset range. */
+  it("puts focus on the reason when a retry of counts that never loaded is refused", async () => {
+    mockServer.use(http.get(`${BASE}/rankings`, () => serverFault()));
+    renderShell("/acquire");
+    const counts = within(await screen.findByRole("region", { name: /^candidates$/i }));
+    const retry = await counts.findByRole("button", { name: /try again/i });
+
+    mockServer.resetHandlers();
+    await replaceSettings({ ...SETTINGS, score_scale_max: null });
+    await userEvent.setup().click(retry);
+
+    const reason = await counts.findByText(/depend on a score/i);
+    await waitFor(() => expect(reason).toHaveFocus());
+  });
+
+  /**
+   * From review. Two refusals landing together: the sidebar's re-read and the comparison the
+   * reader pressed. Only the notice that replaced the pressed Compare may take its focus.
+   */
+  it("leaves the focus a refused Compare had to Compare's own notice", async () => {
+    const released: (() => void)[] = [];
+    const refusal = () =>
+      HttpResponse.json(
+        { code: "score_scale_not_set", message: "score_scale_max is not set." },
+        { status: 409 },
+      );
+    const holdLater = (path: string) => {
+      let asked = 0;
+      mockServer.use(
+        http.get(`${BASE}${path}`, async () => {
+          asked += 1;
+          if (path === "/rankings" && asked === 1) return undefined;
+          await new Promise<void>((resolve) => released.push(resolve));
+          return refusal();
+        }),
+      );
+    };
+    holdLater("/rankings");
+    holdLater("/comparisons");
+    renderShell("/acquire");
+    const counts = within(await screen.findByRole("region", { name: /^candidates$/i }));
+    await counts.findByText("Matching");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("link", { name: "Compare" }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: /focus/i }),
+      await screen.findByRole("option", { name: "Portugal" }),
+    );
+    await user.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
+    await user.click(screen.getByRole("button", { name: /^compare$/i }));
+    await waitFor(() => expect(released).toHaveLength(2));
+
+    act(() => released.forEach((release) => release()));
+
+    const nothing = await screen.findByRole("region", { name: "Nothing to compare" });
+    await counts.findByText(/depend on a score/i);
+    await waitFor(() => expect(document.activeElement).toContainElement(nothing));
   });
 
   it("says the set cannot be ranked, in words, when the server says so", async () => {
