@@ -135,11 +135,15 @@ it at 40, which is four and a half times an even share of eleven pillars -- righ
 wrong for three, where it silently clamps a weight the server would accept. The floor is still
 40, so the eleven-pillar case is drawn exactly as designed.
 
-**Cell tints in the comparison matrix are the design's continuous ramp** (updated 2026-10-25).
-This entry once recorded three bands, because a continuous alpha seemed to need an inline style.
-Since 2026-09-23 the tint is an SVG layer: its hue is a class in `styles.css` and its alpha is
-the `fill-opacity` attribute (`divergingBar.ts`), ramping from 0.09 at 5% to 0.42 at 30%, as
-the design draws it. Nothing here diverges from the design any more.
+**Cell tints in the comparison matrix grow with the bar, not with the gap's share of the focus**
+(a divergence, 2026-10-25, at the user's call). The design ramps the tint from 0.09 at a gap of
+5% of the focus's own figure to 0.42 at 30%, while the bar is measured against the largest gap
+on screen. With two rulers they disagreed: a gap of 17 on a focus of 61 drew a third of a bar
+under a near-full tint. The tint's strength now follows the bar's reach (0.09 plus 0.33 times
+the share of the largest gap, `divergingBar.ts`), so the strongest tint is always the longest
+bar, and only the longest bars (60% of the ruler and over) take the border. The design's 5%-of-
+the-focus floor still decides whether a cell is tinted at all. The hue is a class in
+`styles.css` and the alpha the SVG `fill-opacity` attribute, as before.
 
 **A level is offered as soon as it holds a candidate.** The design disables City outright.
 Which levels exist and which hold candidates are catalog rows, so the condition is read off

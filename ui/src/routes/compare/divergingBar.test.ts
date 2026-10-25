@@ -82,25 +82,37 @@ describe("the diverging bar", () => {
     expect(divergingBar(4.99, ANY_SCALE, 100).faint).toBe(true);
   });
 
-  it("tints more strongly the larger the gap is relative to the focus, without steps", () => {
-    const gentle = divergingBar(10, ANY_SCALE, 100).alpha;
-    const firmer = divergingBar(20, ANY_SCALE, 100).alpha;
-    expect(gentle).toBeGreaterThan(0);
-    expect(firmer).toBeGreaterThan(gentle);
-    expect(divergingBar(13, ANY_SCALE, 100).alpha).not.toBe(firmer);
+  /**
+   * **The tint grows with the bar, never ahead of it.** A gap of 17 on a focus of 61, against a
+   * largest gap of 50, drew a third of a bar under a near-full tint: the colour said "huge" where
+   * the bar said "middling".
+   */
+  it("tints as strongly as its bar reaches, and no more", () => {
+    const middling = divergingBar(-17, 50, 61);
+
+    expect(middling.width).toBeCloseTo((17 / 50) * 50, 5);
+    expect(middling.alpha).toBeCloseTo(0.09 + (17 / 50) * 0.33, 5);
   });
 
-  it("never tints past the strongest the design goes to", () => {
-    // 30% of the focus and beyond is the strongest; 0.09 + 0.33 = 0.42.
-    expect(divergingBar(30, ANY_SCALE, 100).alpha).toBeCloseTo(0.42, 5);
-    expect(divergingBar(90, ANY_SCALE, 100).alpha).toBeCloseTo(0.42, 5);
+  it("tints more strongly the longer its bar, without steps", () => {
+    const shorter = divergingBar(10, 40, 100);
+    const longer = divergingBar(20, 40, 100);
+
+    expect(longer.width).toBeGreaterThan(shorter.width);
+    expect(longer.alpha).toBeGreaterThan(shorter.alpha);
+    expect(divergingBar(13, 40, 100).alpha).not.toBe(shorter.alpha);
   });
 
-  it("adds an edge only where the gap is a large share of the focus", () => {
-    // Below 60% of the ramp: no edge. 10% of the focus is a fifth of the way up.
-    expect(divergingBar(10, ANY_SCALE, 100).edge).toBe(false);
-    // 24% of the focus is past 60% of the ramp.
-    expect(divergingBar(24, ANY_SCALE, 100).edge).toBe(true);
+  it("gives the strongest tint to the longest bar on screen, and never more", () => {
+    // 0.09 + 0.33 = 0.42, the strongest the design goes to.
+    expect(divergingBar(50, 50, 100).alpha).toBeCloseTo(0.42, 5);
+    expect(divergingBar(90, 50, 100).alpha).toBeCloseTo(0.42, 5);
+  });
+
+  it("adds an edge only to the longest bars", () => {
+    // Below 60% of the ruler: no edge, however large the gap is for its focus.
+    expect(divergingBar(20, 50, 30).edge).toBe(false);
+    expect(divergingBar(35, 50, 100).edge).toBe(true);
   });
 
   it("cannot tint when there is no focus value to measure against", () => {

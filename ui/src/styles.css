@@ -2067,10 +2067,10 @@ select.field__control {
   fill: var(--colour-danger-bar);
 }
 
-/* **The tint starts at a gap worth noticing.** Below five points a difference is noise, and
-   colouring it would claim otherwise; from there it ramps to the design's strongest at thirty.
-   The hue is here and the opacity is data on the rect, which is what lets it be continuous
-   without design leaving this file.
+/* **The tint starts at a gap worth noticing** -- a twentieth of the focus's own figure; below
+   that a difference is noise -- **and grows with the bar**, to the strongest on the longest bar
+   on screen (`divergingBar.ts`). The hue is here and the opacity is data on the rect, which is
+   what lets it be continuous without design leaving this file.
 
    A layer rather than a background, so it sits under the number without tinting the text. */
 .matrix__tint {

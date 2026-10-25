@@ -7,11 +7,13 @@
  * left can only show size -- the sign has to be read off a minus in the text, one cell at a
  * time. Anchored in the middle, a column of them reads as a shape.
  *
- * **Two denominators, two jobs.** The bar's reach is measured against the largest gap *on the
- * screen* (`scale`), so a column of bars shows which differences are big relative to the rest
- * -- the same five-point gap looks large in a table of small gaps and small in a table of large
- * ones, which is what a reader comparing places actually wants. The tint, in contrast, is
- * measured against the *focus's own value* (`focusValue`): a five-point gap on a figure of ten
+ * **One ruler for size, one floor for noise.** The bar's reach is measured against the largest gap
+ * *on the screen* (`scale`), so a column of bars shows which differences are big relative to the
+ * rest, and **the tint grows with that same reach**: a longer bar is always a stronger tint, and
+ * the strongest tint is the longest bar. The two used to have rulers of their own -- the tint
+ * measured against the focus's value -- and a gap of 17 on a focus of 61 drew a short bar under a
+ * near-full tint, the colour shouting a size the bar contradicted. **Whether to tint at all** is
+ * still judged against the *focus's own value* (`focusValue`): a five-point gap on a figure of ten
  * is half of it, on a figure of ninety it is noise, and only the first is worth colouring.
  *
  * A `.tsx` under `routes/` may not call `Number` (`CLAUDE.md`), so the arithmetic is here.
@@ -54,12 +56,10 @@ export interface Divergence {
 
 /** Below this share of the focus's value a difference is noise, and a tint would claim it is not. */
 const NOTICEABLE = 0.05;
-/** Where the tint stops getting stronger, as a share of the focus's value. */
-const FULL = 0.3;
-/** The faintest tint worth drawing, and the span it ramps across to the strongest. */
+/** The faintest tint worth drawing, and the span it ramps across, with the bar, to the strongest. */
 const FAINT_ALPHA = 0.09;
 const RAMP_ALPHA = 0.33;
-/** Past this much of the tint's ramp the cell takes a border as well. */
+/** Past this much of the ruler the cell takes a border as well: the longest bars only. */
 const EMPHATIC = 0.6;
 /** The smallest bar drawn for a non-zero gap, so a real difference is never invisible. */
 const MIN_WIDTH = 1.5;
@@ -87,7 +87,7 @@ function isFiniteNumber(value: number | null | undefined): value is number {
  * `scale` is the largest absolute delta the whole set of cells carries, so every bar is drawn
  * against the same ruler and one column is comparable with the next. `focusValue` is what the
  * focus itself reads on this row, against which the gap's *relative* size -- and so the tint --
- * is judged.
+ * is judged -- whether to tint, never how strongly.
  */
 export function divergingBar(
   delta: number | null | undefined,
@@ -105,17 +105,15 @@ export function divergingBar(
   const barOpacity = reach < SHORT ? SHORT_OPACITY : 1;
 
   const anchor = isFiniteNumber(focusValue) ? Math.abs(focusValue) : 0;
-  const relative = anchor > 0 ? size / anchor : 0;
-  const lit = relative >= NOTICEABLE;
-  const ramp = lit ? Math.min(1, (relative - NOTICEABLE) / (FULL - NOTICEABLE)) : 0;
+  const lit = anchor > 0 && size / anchor >= NOTICEABLE;
 
   return {
     direction,
     width,
     left,
     barOpacity,
-    alpha: lit ? FAINT_ALPHA + ramp * RAMP_ALPHA : 0,
-    edge: lit && ramp >= EMPHATIC,
+    alpha: lit ? FAINT_ALPHA + reach * RAMP_ALPHA : 0,
+    edge: lit && reach >= EMPHATIC,
     faint: !lit,
   };
 }
