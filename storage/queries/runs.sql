@@ -22,16 +22,17 @@
 -- explicit. A run whose scope rows were never written reports no planned work, which is honest
 -- and visibly wrong rather than quietly approximate.
 
--- name: insert_run(started_at, triggered_by, run_status, level, plan_recorded_at, estimate_ceiling_eur, spend_cap_eur, accepted_uncapped)<!
+-- name: insert_run(started_at, triggered_by, run_status, level, plan_recorded_at, estimate_ceiling_eur, spend_cap_eur, accepted_uncapped, purpose)<!
 -- Open a run. It starts `running` and with zero spend; both are advanced by the statements
 -- below as the work proceeds, so a run being watched shows real progress rather than a status
 -- that jumps at the end. Its ceiling, cap and uncapped acceptance are recorded as they stand now
--- (0512, D17): all null, with plan_recorded_at, only for a run recorded the old way.
+-- (0512, D17): all null, with plan_recorded_at, only for a run recorded the old way. Its purpose
+-- is the request's (0524, PL-127).
 INSERT INTO data_acquisition_run (started_at, triggered_by, run_status, level,
                                   plan_recorded_at, estimate_ceiling_eur, spend_cap_eur,
-                                  accepted_uncapped)
+                                  accepted_uncapped, purpose)
 VALUES (:started_at, :triggered_by, :run_status, :level,
-        :plan_recorded_at, :estimate_ceiling_eur, :spend_cap_eur, :accepted_uncapped)
+        :plan_recorded_at, :estimate_ceiling_eur, :spend_cap_eur, :accepted_uncapped, :purpose)
 RETURNING id;
 
 -- name: insert_run_candidates(data_acquisition_run, candidates)!
@@ -192,6 +193,7 @@ SELECT r.id,
        r.cost_eur,
        r.level,
        r.stop_requested_at,
+       r.purpose,
        (SELECT count(*) FROM data_acquisition_run_candidate AS scope
         WHERE  scope.data_acquisition_run = r.id) AS scope_candidates,
        (SELECT count(*) FROM data_acquisition_run_attribute AS scope
@@ -432,6 +434,7 @@ SELECT r.id,
        r.estimate_ceiling_eur,
        r.spend_cap_eur,
        r.accepted_uncapped,
+       r.purpose,
        COALESCE(
            (SELECT jsonb_agg(scope.candidate ORDER BY scope.candidate)
             FROM   data_acquisition_run_candidate AS scope

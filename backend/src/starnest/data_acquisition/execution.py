@@ -41,7 +41,14 @@ from starnest.data_acquisition.freshness import still_fresh_everywhere
 from starnest.data_acquisition.run import acquire
 from starnest.data_acquisition.spend import CostMeter, refuse_unless_capped
 from starnest.data_acquisition.stand_in import STAND_IN, declarations_in_scope, stand_in
-from starnest.data_acquisition.store import Run, RunPlan, RunScope, RunStatus, RunStore
+from starnest.data_acquisition.store import (
+    Run,
+    RunPlan,
+    RunPurpose,
+    RunScope,
+    RunStatus,
+    RunStore,
+)
 
 _log = logging.getLogger("starnest.acquisition")
 """The narrative behind a run record (`arch.md` 9.4): started, what each source produced, what
@@ -329,6 +336,7 @@ async def open_run(
     pairs: tuple[tuple[str, str], ...] | None = None,
     refetch_older_than: timedelta | None = None,
     now: datetime | None = None,
+    purpose: RunPurpose = RunPurpose.SWEEP,
 ) -> "OpenedRun":
     """Settle every refusal, write the run row, and hand back what the fetching will need.
 
@@ -394,7 +402,7 @@ async def open_run(
         spend_cap_eur=spend_cap_eur,
         uncapped_is_accepted=uncapped_is_accepted,
     )
-    run = await runs.start_run(settled.scope, triggered_by=triggered_by, plan=plan)
+    run = await runs.start_run(settled.scope, triggered_by=triggered_by, plan=plan, purpose=purpose)
     _log.info(
         "run %d started by %s over %d candidates and %d attributes, from %d source(s)",
         run,
@@ -967,6 +975,7 @@ async def retry_run[Outcome](
         # adapter, so a run whose only failures came from borrowing narrows the source list to
         # nothing -- and the borrow is exactly what the household asked to go back to.
         may_borrow_alone=any(failure.data_source == STAND_IN for failure in reachable),
+        purpose=RunPurpose.RETRY,
     )
 
 
@@ -1230,4 +1239,5 @@ async def ask_again[Outcome](
         # anything it reaches a paid source more readily than a retry does.
         spend_cap_eur=spend_cap_eur,
         uncapped_is_accepted=uncapped_is_accepted,
+        purpose=RunPurpose.ASK_AGAIN,
     )

@@ -2408,6 +2408,16 @@ components:
           default: 0
           title: Llm Call Count
           type: integer
+        purpose:
+          anyOf:
+          - enum:
+            - sweep
+            - retry
+            - ask_again
+            - scoped
+            type: string
+          - type: 'null'
+          title: Purpose
         run_status:
           title: Run Status
           type: string
@@ -2504,6 +2514,16 @@ components:
           type: boolean
         progress:
           $ref: '#/components/schemas/ProgressBody'
+        purpose:
+          anyOf:
+          - enum:
+            - sweep
+            - retry
+            - ask_again
+            - scoped
+            type: string
+          - type: 'null'
+          title: Purpose
         reconfirmed:
           default: []
           items:

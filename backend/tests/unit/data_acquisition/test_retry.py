@@ -39,6 +39,7 @@ from starnest.data_acquisition import (
     Run,
     RunningSpend,
     RunPlan,
+    RunPurpose,
     RunScope,
     RunStatus,
     RunStore,
@@ -189,11 +190,18 @@ class RecordingRunStore(RunStore):
         self._answers_with = answers_with
         self.opened: list[RunScope] = []
         self.plans: list[RunPlan | None] = []
+        self.purposes: list[RunPurpose | None] = []
         self.marked: list[tuple[str, str]] = []
 
     async def start_run(
-        self, scope: RunScope, *, triggered_by: str, plan: RunPlan | None = None
+        self,
+        scope: RunScope,
+        *,
+        triggered_by: str,
+        plan: RunPlan | None = None,
+        purpose: RunPurpose | None = None,
     ) -> int:
+        self.purposes.append(purpose)
         self.opened.append(scope)
         self.plans.append(plan)
         return 900 + len(self.opened)

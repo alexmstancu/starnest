@@ -2332,6 +2332,16 @@ components:
             will stop when the source in flight finishes -- which is a different thing to tell
             a reader than "running".
         triggered_by: { type: string }
+        purpose:
+          type: [string, "null"]
+          enum: [sweep, retry, ask_again, scoped, null]
+          description: >-
+            What the request that opened the run was for: `sweep` (the whole level), `retry`
+            (another run's failures), `ask_again` (another run's unanswered or not-reached
+            items) or `scoped` (named candidates, attributes or pairs). With `items_total` and
+            `scope_candidates` a history words a pair-scoped run as "N items over C candidates"
+            rather than as the rectangle its lists span. Null for a run opened before purposes
+            were recorded: not recorded, never a guess.
         started_at: { type: string, format: date-time }
         finished_at: { type: [string, "null"], format: date-time }
         llm_call_count: { type: integer }

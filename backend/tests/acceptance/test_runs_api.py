@@ -1546,6 +1546,48 @@ class TestARetryBorrowsOnlyForItsOwnPairs:
 NO_SOURCE_COVERS = "country.liechtenstein"
 
 
+class TestWhatARunWasFor:
+    """PL-127 (D34). A run records its purpose as it opens, so the history can say a retry of
+    two items was two items, and which runs swept the level."""
+
+    async def test_each_way_of_opening_a_run_records_its_purpose(self, database_url: str) -> None:
+        nobody_has_greece = (a_stub_source(no_row_for=("country.greece",)),)
+        async with an_api(database_url, nobody_has_greece) as api:
+            sweep = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            retry = await api.post(f"/v1/data-acquisition-runs/{sweep['id']}/retry")
+            again = await api.post(
+                f"/v1/data-acquisition-runs/{sweep['id']}/retry", json={"items": "unanswered"}
+            )
+            scoped = await api.post(
+                "/v1/data-acquisition-runs",
+                json={"level": COUNTRY, "candidates": ["country.spain"]},
+            )
+            listed = (await api.get("/v1/data-acquisition-runs")).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{retry.json()['id']}")).json()
+
+        validate("listRuns", listed)
+        validate("getRun", detail)
+        by_id = {run["id"]: run["purpose"] for run in listed["items"]}
+        assert [
+            by_id[sweep["id"]],
+            by_id[retry.json()["id"]],
+            by_id[again.json()["id"]],
+            by_id[scoped.json()["id"]],
+        ] == ["sweep", "retry", "ask_again", "scoped"]
+        assert detail["purpose"] == "retry"
+
+    async def test_a_run_opened_without_one_reads_as_not_recorded(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """What every run from before 0524 looks like: null, never a guessed "sweep"."""
+        earlier = await TestOnlyOneRunAtATime.a_run_left_in_flight(database_url)
+
+        detail = (await api.get(f"/v1/data-acquisition-runs/{earlier}")).json()
+
+        validate("getRun", detail)
+        assert detail["purpose"] is None
+
+
 class TestHowBigThePassWas:
     async def test_the_detail_and_the_list_agree_on_the_scope(self, database_url: str) -> None:
         """A detail that reported a scope of nothing while listing its candidates by name would

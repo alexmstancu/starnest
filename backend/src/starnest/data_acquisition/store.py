@@ -44,6 +44,19 @@ class RunStatus(StrEnum):
     FAILED = "failed"
 
 
+class RunPurpose(StrEnum):
+    """What the request that opened a run was for (PL-127, D34), as the schema spells it.
+
+    A fact of the request, never derived from what the run stored: a sweep and a run naming
+    every candidate store the same lists, and a retry and an ask-again both store exact pairs.
+    """
+
+    SWEEP = "sweep"
+    RETRY = "retry"
+    ASK_AGAIN = "ask_again"
+    SCOPED = "scoped"
+
+
 @dataclass(frozen=True)
 class RunScope:
     """What a run was asked to cover.
@@ -193,6 +206,8 @@ class Run:
     estimate_ceiling_eur: Decimal | None = None
     spend_cap_eur: Decimal | None = None
     accepted_uncapped: bool | None = None
+    # What it was for (0524); `None` for a run opened before it was recorded, never a guess.
+    purpose: RunPurpose | None = None
 
 
 class RunStore(ABC):
@@ -200,9 +215,14 @@ class RunStore(ABC):
 
     @abstractmethod
     async def start_run(
-        self, scope: RunScope, *, triggered_by: str, plan: RunPlan | None = None
+        self,
+        scope: RunScope,
+        *,
+        triggered_by: str,
+        plan: RunPlan | None = None,
+        purpose: RunPurpose | None = None,
     ) -> int:
-        """Open a run over an expanded scope, with its plan, and return its id.
+        """Open a run over an expanded scope, with its plan and its purpose, and return its id.
 
         Opened before anything is fetched, so a run that dies mid-flight is still visible as one
         that started and never finished -- which is what `arch.md` 9.2's abandoned-run sweep

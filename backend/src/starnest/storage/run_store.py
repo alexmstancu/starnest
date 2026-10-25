@@ -35,6 +35,7 @@ from starnest.data_acquisition import (
     Run,
     RunAlreadyInFlightError,
     RunPlan,
+    RunPurpose,
     RunScope,
     RunStatus,
     RunStore,
@@ -54,7 +55,12 @@ class PostgresRunStore(RunStore):
         self._queries = load_queries()
 
     async def start_run(
-        self, scope: RunScope, *, triggered_by: str, plan: RunPlan | None = None
+        self,
+        scope: RunScope,
+        *,
+        triggered_by: str,
+        plan: RunPlan | None = None,
+        purpose: RunPurpose | None = None,
     ) -> int:
         """Open the run and write its scope and its plan, in one transaction.
 
@@ -69,7 +75,7 @@ class PostgresRunStore(RunStore):
             )
         started_at = datetime.now(tz=UTC)
         try:
-            return await self._open(scope, triggered_by, plan, started_at)
+            return await self._open(scope, triggered_by, plan, purpose, started_at)
         except UniqueViolation as clash:
             # Another run won the race to the one `running` slot the `0498` partial unique
             # index allows (ST-01). The caller's own `run_in_flight` check may have passed --
@@ -88,7 +94,12 @@ class PostgresRunStore(RunStore):
             ) from outside
 
     async def _open(
-        self, scope: RunScope, triggered_by: str, plan: RunPlan | None, started_at: datetime
+        self,
+        scope: RunScope,
+        triggered_by: str,
+        plan: RunPlan | None,
+        purpose: RunPurpose | None,
+        started_at: datetime,
     ) -> int:
         async with acquire(self._pool) as connection:
             row = await self._queries.insert_run(
@@ -101,6 +112,7 @@ class PostgresRunStore(RunStore):
                 estimate_ceiling_eur=None if plan is None else plan.estimate_ceiling_eur,
                 spend_cap_eur=None if plan is None else plan.spend_cap_eur,
                 accepted_uncapped=None if plan is None else plan.accepted_uncapped,
+                purpose=None if purpose is None else str(purpose),
             )
             await self._queries.insert_run_candidates(
                 connection, data_acquisition_run=row.id, candidates=list(scope.candidates)
@@ -344,6 +356,7 @@ def _run_from(row: Any) -> Run:
         estimate_ceiling_eur=_money(row.estimate_ceiling_eur),
         spend_cap_eur=_money(row.spend_cap_eur),
         accepted_uncapped=row.accepted_uncapped,
+        purpose=_purpose(row.purpose),
         failures=tuple(
             AcquisitionFailure(
                 attribute=failure["attribute"],
@@ -440,4 +453,10 @@ def _run_header_from(row: Any) -> Run:
         # On the history row too: a run still `running` with a stop asked for is one the list
         # should not describe as simply running.
         stop_requested_at=row.stop_requested_at,
+        purpose=_purpose(row.purpose),
     )
+
+
+def _purpose(stored: str | None) -> RunPurpose | None:
+    """A run's recorded purpose, or `None` for one opened before 0524 recorded it."""
+    return None if stored is None else RunPurpose(stored)

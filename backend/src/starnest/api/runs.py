@@ -34,6 +34,7 @@ from starnest.candidates import LevelHierarchy
 from starnest.data_acquisition import (
     Run,
     RunAlreadyInFlightError,
+    RunPurpose,
     RunStatus,
     SettledScope,
     ask_again,
@@ -146,6 +147,9 @@ class RunBody(ContractBody):
     # A run still `running` with this set will stop when the source in flight finishes, which
     # is a different thing to tell a reader than "running".
     stop_requested_at: datetime | None = None
+    # What it was for (PL-127), so a history can word a retry of two items as two items rather
+    # than as the rectangle its lists span. Null for a run opened before 0524 recorded it.
+    purpose: Literal["sweep", "retry", "ask_again", "scoped"] | None = None
 
 
 class ProgressBody(BaseModel):
@@ -314,6 +318,13 @@ def _plan_body(settled: SettledScope) -> RunPlanBody:
     )
 
 
+def _purpose_of(scope: RunScopeRequestBody) -> RunPurpose:
+    """A start over the whole level is a sweep; one naming anything is scoped (PL-127)."""
+    if scope.candidates is None and scope.attributes is None and scope.pairs is None:
+        return RunPurpose.SWEEP
+    return RunPurpose.SCOPED
+
+
 def _names_attributes(scope: RunScopeRequestBody) -> bool:
     """Whether the scope names what it wants, which is when a paid source may be asked."""
     return scope.attributes is not None or scope.pairs is not None
@@ -392,6 +403,7 @@ async def start_run(
         spend_cap_eur=cap,
         uncapped_is_accepted=scope.accept_uncapped_spend,
         pairs=pairs,
+        purpose=_purpose_of(scope),
         # Read per run like the cap, so a threshold set after a refusal takes effect on the
         # next request rather than at the next restart.
         refetch_older_than=_refetch_age(settings.refetch_older_than_days),
@@ -773,6 +785,7 @@ def _run_body(run: Run) -> RunBody:
         items_completed=run.items_completed,
         items_failed=run.items_failed,
         stop_requested_at=run.stop_requested_at,
+        purpose=None if run.purpose is None else str(run.purpose),  # type: ignore[arg-type]
     )
 
 
