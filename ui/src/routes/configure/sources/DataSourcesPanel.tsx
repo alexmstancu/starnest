@@ -60,7 +60,7 @@ export function DataSourcesPanel({
   // started meanwhile would be computed from the order before it. **Held, never disabled** (NEW-34): Chromium throws focus off
   // a control the moment it is disabled, so a switch or arrow pressed from the keyboard put the
   // reader back on the page. A held one keeps focus, says so, and the hook refuses the press.
-  const held = sources.saving !== null;
+  const held = sources.held;
   const drag = useSourceDrag(sources.sources, sources.reorder, held);
   const arrows = useArrowFocus(sources.sources, !held);
 

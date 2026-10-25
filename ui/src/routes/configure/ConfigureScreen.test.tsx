@@ -979,6 +979,113 @@ describe("what this session changed", () => {
 });
 
 /**
+ * PL-138: every Configure edit is listed in Recent changes with the request that reverses it --
+ * a criterion's rule and the source priority among them, not only weights, locks and sets.
+ */
+describe("the Configure edits Recent changes records", () => {
+  /** The bodies of the requests sent to one endpoint, in the order they were sent. */
+  function bodiesSent(method: string, path: RegExp): unknown[] {
+    const bodies: unknown[] = [];
+    const listen = ({ request }: { request: Request }) => {
+      if (request.method === method && path.test(new URL(request.url).pathname)) {
+        void request.clone().json().then((body: unknown) => bodies.push(body));
+      }
+    };
+    mockServer.events.on("request:start", listen);
+    onTestFinished(() => {
+      mockServer.events.removeListener("request:start", listen);
+    });
+    return bodies;
+  }
+
+  it("records a criterion's rule, and its undo sends the rule as it was", async () => {
+    const user = userEvent.setup();
+    const rules = bodiesSent("PATCH", /\/criteria\/country\.total_tax_rate_effective$/);
+    renderShell("/configure");
+    await settled();
+    await openThePillarOf(TAX);
+    await user.click(screen.getByRole("button", { name: `Edit the rule for ${TAX}` }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Goal" }), "maximise");
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+
+    const panel = await historyPanel();
+    const entry = await panel.findByText(
+      `Rule for ${TAX}: goal minimise to maximise, in Default`,
+    );
+    const item = within(entry.closest("li") as HTMLElement);
+    expect(item.getByText("Pillar weights")).toBeInTheDocument();
+
+    await user.click(item.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() => expect(panel.getByText("No changes yet.")).toBeInTheDocument());
+    expect(rules).toHaveLength(2);
+    expect(rules[1]).toMatchObject({ goal: "minimise" });
+  });
+
+  it("records a move in the source priority, and its undo puts the order back", async () => {
+    const user = userEvent.setup();
+    const orders = bodiesSent("PUT", /\/data-sources\/order$/);
+    renderShell("/configure");
+    await settled();
+    const sources = within(screen.getByRole("region", { name: "Source priority" }));
+    const order = () =>
+      sources.getAllByRole("listitem").map((item) => item.getAttribute("aria-label"));
+
+    await user.click(sources.getByRole("button", { name: "Move Manual entry up" }));
+
+    const panel = await historyPanel();
+    const entry = await panel.findByText("Moved Manual entry from position 2 to 1");
+    const item = within(entry.closest("li") as HTMLElement);
+    expect(item.getByText("Source priority")).toBeInTheDocument();
+    expect(order()[0]).toBe("Manual entry");
+
+    await user.click(item.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() => expect(order()[0]).toBe("Eurostat"));
+    expect(orders).toHaveLength(2);
+    expect((orders[1] as { order: string[] }).order[0]).toBe("eurostat");
+    expect(panel.getByText("No changes yet.")).toBeInTheDocument();
+  });
+
+  it("records a source switched off, and its undo switches it on again", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    const eurostat = () => screen.getByRole("listitem", { name: "Eurostat" });
+
+    await user.click(screen.getByRole("switch", { name: "Consult Eurostat" }));
+    const panel = await historyPanel();
+    const entry = await panel.findByText("Switched off Eurostat");
+    await waitFor(() => expect(eurostat()).toHaveTextContent("not consulted"));
+
+    await user.click(
+      within(entry.closest("li") as HTMLElement).getByRole("button", { name: "Undo this" }),
+    );
+
+    await waitFor(() => expect(eurostat()).not.toHaveTextContent("not consulted"));
+    expect(screen.getByRole("switch", { name: "Consult Eurostat" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+  });
+
+  it("holds the sources while another Configure write is in flight", async () => {
+    renderShell("/configure");
+    await settled();
+    const writes = holdCriterionWrites();
+
+    await saveWeight(COST_OF_LIVING, "40");
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+    expectHeld(screen.getByRole("switch", { name: "Consult Eurostat" }));
+    writes.release();
+    await waitFor(() =>
+      expectNotHeld(screen.getByRole("switch", { name: "Consult Eurostat" })),
+    );
+  });
+});
+
+/**
  * PL-138a. **A pillar's weight and lock are recorded as a criterion's are**, with the request
  * that reverses them: they are the decision the user sets most deliberately, and they were the
  * one weighting Recent changes never listed, so "Back to where I started" left them changed.

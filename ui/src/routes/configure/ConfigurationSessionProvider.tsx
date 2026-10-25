@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import type { Criterion } from "../../api/endpoints";
 import type { components } from "../../api/schema";
 import { useAnswers } from "./useAnswers";
@@ -12,9 +12,17 @@ export function ConfigurationSessionProvider({ children }: { children: ReactNode
   const history = useChangeHistory();
   const pillarAnswers = useAnswers<PillarWeight[]>();
   const criteriaAnswers = useAnswers<Criterion[]>();
+  const [sourcesVersion, setSourcesVersion] = useState(0);
+  const noteSourcesChanged = useCallback(() => setSourcesVersion((version) => version + 1), []);
   const session = useMemo(
-    () => ({ history, pillarAnswers, criteriaAnswers }),
-    [history, pillarAnswers, criteriaAnswers],
+    () => ({
+      history,
+      pillarAnswers,
+      criteriaAnswers,
+      sourcesVersion,
+      noteSourcesChanged,
+    }),
+    [history, pillarAnswers, criteriaAnswers, sourcesVersion, noteSourcesChanged],
   );
   return (
     <ConfigurationSessionContext.Provider value={session}>

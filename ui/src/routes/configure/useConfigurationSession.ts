@@ -20,6 +20,12 @@ export interface ConfigurationSession {
   history: ChangeHistory;
   pillarAnswers: Answers<PillarWeight[]>;
   criteriaAnswers: Answers<Criterion[]>;
+  /**
+   * Moves whenever the source priority or a source's switch was written (PL-138): the sources
+   * are not a set's, so their stage reads them again rather than taking an answer.
+   */
+  sourcesVersion: number;
+  noteSourcesChanged: () => void;
 }
 
 export const ConfigurationSessionContext = createContext<ConfigurationSession | null>(null);

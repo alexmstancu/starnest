@@ -16,6 +16,7 @@ import {
   undoCanRestore,
 } from "./changeHistory";
 import { titleOf, type AttributeCatalog } from "./criteria/criterionReading";
+import { holdsCriterionRule, ruleBefore, ruleChangeWords } from "./criteria/ruleChange";
 import type { Answers } from "./useAnswers";
 import type { ChangeHistory, RecordedChange } from "./useChangeHistory";
 import { pendingEntry, settled, UnconfirmedWrite } from "./unknownOutcome";
@@ -328,18 +329,57 @@ export function useCriteriaEditor(
       setSavingAttribute(attribute);
       setSavingRuleFor(attribute);
       setSaveFailure(null);
+      const named = titleOf(attribute, catalog?.get(attribute));
+      const inSet = setName ?? sentFor;
+      const before = ruleBefore(
+        criteria.find((each) => each.attribute === attribute),
+        rule,
+      );
 
-      return updateCriterionRule(sentFor, attribute, rule)
+      // **Recorded like a weight** (PL-138): the reverse sends the fields the change sent, as
+      // they were.
+      const entry: ChangeEntry = {
+        target: `rule:${sentFor}:${attribute}`,
+        stage: "Pillar weights",
+        label: `Rule for ${named}: ${ruleChangeWords(before, rule)}, in ${inSet}`,
+        before,
+        after: rule,
+        reverse: async (back) => {
+          const answer = await updateCriterionRule(sentFor, attribute, back as CriterionRule);
+          deliver(sentFor, answer.criteria);
+        },
+        undoes: { criteriaSetId: sentFor, by: "write" },
+      };
+
+      return settled(
+        () => updateCriterionRule(sentFor, attribute, rule),
+        (signal) =>
+          criteriaIf(
+            sentFor,
+            attribute,
+            (criterion) => holdsCriterionRule(criterion, rule),
+            signal,
+          ),
+      )
         .then(
           (changed) => {
             // The same response shape as a weight change, and applied the same way: the screen
             // shows what the server decided rather than what was typed at it.
             deliver(sentFor, changed.criteria);
+            history?.note(entry);
             return null;
           },
-          // **A refused rule is the rule form's to report** (PL-026), field by field inside it,
-          // never the pillar's weight refusal -- and only while its set is the one on screen.
-          (error: unknown) => (shownSet.current === sentFor ? error : null),
+          (error: unknown) => {
+            // Unknown, it is listed unconfirmed with Check again, never reported as refused.
+            if (error instanceof UnconfirmedWrite) {
+              const show = (read: RebalancedPillar) => deliver(sentFor, read.criteria);
+              history?.note({ ...entry, ...pendingEntry(error, show) });
+              return null;
+            }
+            // **A refused rule is the rule form's to report** (PL-026), field by field inside
+            // it, never the pillar's weight refusal -- and only while its set is on screen.
+            return shownSet.current === sentFor ? error : null;
+          },
         )
         .finally(() => {
           inFlight.current = false;
@@ -348,7 +388,7 @@ export function useCriteriaEditor(
           setSavingRuleFor(null);
         });
     },
-    [criteriaSetId, history, undoing, deliver],
+    [criteriaSetId, criteria, history, undoing, catalog, setName, deliver],
   );
 
   const saveErrorFor = useCallback(
