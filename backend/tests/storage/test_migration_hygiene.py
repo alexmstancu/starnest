@@ -87,6 +87,14 @@ def test_the_predecessor_named_is_a_migration_that_exists(migration: Path) -> No
         )
 
 
+#: A whole `CREATE [CONSTRAINT] TRIGGER` statement, up to the function it executes.
+TRIGGER_DEFINITION = re.compile(
+    r"\bcreate\s+(?:or\s+replace\s+)?(?:constraint\s+)?trigger\b.*?\bexecute\s+"
+    r"(?:function|procedure)\b[^;]*",
+    re.I | re.S,
+)
+
+
 def tables_written_by(sql: str) -> set[str]:
     """Every table the statement writes to, by name.
 
@@ -94,6 +102,9 @@ def tables_written_by(sql: str) -> set[str]:
     tables in prose, and a comment is not a write.
     """
     without_comments = re.sub(r"^\s*--.*$", "", sql, flags=re.M)
+    # A trigger's `AFTER INSERT OR UPDATE OF x OR DELETE ON t` names the writes it answers, and
+    # writes nothing; dropping it is what a rollback owes, which the test after this one holds.
+    without_comments = TRIGGER_DEFINITION.sub(" ", without_comments)
     # `DO UPDATE SET` inside an upsert is not a write to a table called "set", and `UPDATE` as
     # a bare keyword appears there too -- so the upsert clause goes before anything is matched.
     without_upserts = re.sub(
@@ -225,6 +236,9 @@ LOCK_STATEMENT = re.compile(
 #: What opens a dollar-quoted string: `$$`, or a tag spelled like a name between two dollars.
 DOLLAR_QUOTE = re.compile(r"\$(?:[^\W\d]\w*)?\$")
 
+#: What a `$$` body follows when it is code rather than a string: `DO`, or a function's `AS`.
+OPENS_A_BODY = re.compile(r"(?:\bdo|\bcreate\s+(?:or\s+replace\s+)?function\b[^;]*\bas)\s+\Z", re.I)
+
 #: What carries a string on to its next quote: a newline, with only spaces and comments about it.
 CONTINUATION = re.compile(r"(?:[ \t\f]|--[^\n\r]*)*[\n\r](?:\s|--[^\n\r]*[\n\r])*'")
 
@@ -235,8 +249,9 @@ def code_of(sql: str) -> str:
     **A table named in prose is not a table read.** Comments run to whole paragraphs here, and a
     refusal's message says "restore from the backup", which a reader of `FROM <name>` takes for a
     table called `the`. A `DO $$` block's body stays: it is code, and it is the code a refusal
-    decides with. Every other dollar quote is a string, and is emptied like one -- a block opened
-    any other way is refused below, whatever its body holds.
+    decides with. So does a function's `AS $$` body (`0519`), which runs inside every write the
+    trigger calling it answers. Every other dollar quote is a string, and is emptied like one --
+    a block or a body opened any other way is refused below, whatever it holds.
 
     **A literal ends where PostgreSQL ends it** (P98). A quote inside `$$...$$` ends nothing, nor
     does a backslashed one in `E'...'`, nor one in a quoted name: taken for an end, each turned
@@ -263,7 +278,7 @@ def code_of(sql: str) -> str:
         elif (dollars := dollar_quote_at(sql, at)) is not None:
             closing = sql.find(dollars, at + len(dollars))
             closing = len(sql) if closing < 0 else closing
-            if dollars == "$$" and re.search(r"\bdo\s+\Z", "".join(kept), re.I):
+            if dollars == "$$" and OPENS_A_BODY.search("".join(kept)):
                 kept.append(f"$${code_of(sql[at + 2 : closing])}$$")
             else:
                 kept.append("''")
@@ -396,6 +411,85 @@ def migrations_that_copy_then_change() -> list[Path]:
     return sorted(
         p for p in MIGRATIONS.glob("*.sql") if copied_then_changed(code_of(p.read_text()))
     )
+
+
+#: What a migration creates that is no table: `(kind, name)` for each function and trigger.
+CREATED_ROUTINE = re.compile(
+    r"\bcreate\s+(?:or\s+replace\s+)?(?:constraint\s+)?(function|trigger)\s+\"?([a-z_]\w*)",
+    re.I,
+)
+DROPPED_ROUTINE = re.compile(
+    r"\bdrop\s+(function|trigger)\s+(?:if\s+exists\s+)?\"?([a-z_]\w*)", re.I
+)
+
+
+def routines_created_by(sql: str) -> set[tuple[str, str]]:
+    return {(kind.lower(), name.lower()) for kind, name in CREATED_ROUTINE.findall(code_of(sql))}
+
+
+def routines_dropped_by(sql: str) -> set[tuple[str, str]]:
+    return {(kind.lower(), name.lower()) for kind, name in DROPPED_ROUTINE.findall(code_of(sql))}
+
+
+def migrations_that_create_routines() -> list[Path]:
+    return [p for p in forward_migrations() if routines_created_by(p.read_text())]
+
+
+def test_there_are_migrations_that_create_functions_and_triggers() -> None:
+    """Guards the test below, which a pattern that matched nothing would pass silently."""
+    assert len(migrations_that_create_routines()) >= 1
+
+
+@pytest.mark.parametrize("migration", migrations_that_create_routines(), ids=lambda p: p.stem)
+def test_a_rollback_drops_every_function_and_trigger_its_migration_created(
+    migration: Path,
+) -> None:
+    """**A function or trigger is schema a table count never sees** (D60, `0519`).
+
+    The check above reads the tables a migration writes; a trigger left behind by a rollback
+    writes nothing and goes on refusing writes the schema it was rolled back to allows, and a
+    function left behind blocks the migration's own re-apply with "already exists".
+    """
+    rollback = migration.with_name(f"{migration.stem}.rollback.sql")
+    if not rollback.exists():
+        return
+
+    left = routines_created_by(migration.read_text()) - routines_dropped_by(rollback.read_text())
+
+    assert left == set(), (
+        f"{migration.name} creates {sorted(left)} and its rollback never drops "
+        f"{'them' if len(left) > 1 else 'it'}."
+    )
+
+
+@pytest.mark.parametrize(
+    ("sql", "created", "written"),
+    [
+        pytest.param(
+            "CREATE FUNCTION is_whole() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN "
+            "RETURN NULL; END $$;\n"
+            "CREATE CONSTRAINT TRIGGER whole AFTER INSERT OR UPDATE OF reason OR DELETE ON value "
+            "DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION is_whole();\n",
+            {("function", "is_whole"), ("trigger", "whole")},
+            set(),
+            id="a constraint trigger and its function",
+        ),
+        pytest.param(
+            "CREATE OR REPLACE TRIGGER whole AFTER UPDATE ON value FOR EACH ROW "
+            "EXECUTE PROCEDURE is_whole();\nUPDATE value SET reason = NULL;\n",
+            {("trigger", "whole")},
+            {"value"},
+            id="a trigger, then a real write",
+        ),
+        pytest.param("SELECT 'CREATE FUNCTION f';\n", set(), set(), id="inside a literal"),
+    ],
+)
+def test_the_routine_rule_reads_sql_as_a_migration_writes_it(
+    sql: str, created: set[tuple[str, str]], written: set[str]
+) -> None:
+    """A trigger's event list writes nothing, and a routine named in a literal is not created."""
+    assert routines_created_by(sql) == created
+    assert tables_written_by(sql) == written
 
 
 def test_there_are_rollbacks_that_refuse_and_migrations_that_copy() -> None:
@@ -553,16 +647,28 @@ def test_the_refusal_rule_reads_sql_as_a_migration_writes_it(sql: str, unlocked:
 DO_BLOCK = re.compile(r"\bdo\s+\$\$(.*?)\$\$", re.I | re.S)
 
 
+#: A function's `AS $$` body, kept as code by `code_of`.
+FUNCTION_BODY = re.compile(
+    r"\bcreate\s+(?:or\s+replace\s+)?function\b[^;]*?\bas\s+\$\$(.*?)\$\$", re.I | re.S
+)
+
+
 def anywhere(code: str) -> str:
     return code
 
 
 def outside_do_blocks(code: str) -> str:
-    return DO_BLOCK.sub(" ", code)
+    """The code with every `DO` block's body and every function's body taken out: in either,
+    `SELECT ... INTO` fills a variable."""
+    return FUNCTION_BODY.sub(" ", DO_BLOCK.sub(" ", code))
 
 
 def inside_do_blocks(code: str) -> str:
     return "\n".join(DO_BLOCK.findall(code))
+
+
+def inside_function_bodies(code: str) -> str:
+    return "\n".join(FUNCTION_BODY.findall(code))
 
 
 @dataclass(frozen=True)
@@ -613,7 +719,7 @@ UNREADABLE: tuple[Unreadable, ...] = (
     ),
     Unreadable(
         name="SELECT INTO outside a DO block",
-        # Inside one, `SELECT ... INTO` fills a variable, not a table.
+        # Inside one, or inside a function, `SELECT ... INTO` fills a variable, not a table.
         pattern=r"(?:\A|;)\s*select\b[^;]*\binto\b",
         searched_in=outside_do_blocks,
         instead="write `CREATE TEMP TABLE ... AS SELECT`",
@@ -634,10 +740,11 @@ UNREADABLE: tuple[Unreadable, ...] = (
         instead="write `SELECT * FROM <table>`",
     ),
     Unreadable(
-        name="a function, procedure or trigger",
+        name="a procedure",
         # Its body is a string until it runs, so the checks read neither its refusal nor its copy.
-        pattern=r"\bcreate\s+(?:or\s+replace\s+)?(?:constraint\s+)?"
-        r"(?:function|procedure|trigger)\b",
+        # A function written `AS $$` is read, and refused below if it writes; a trigger only
+        # names the function it calls.
+        pattern=r"\bcreate\s+(?:or\s+replace\s+)?procedure\b",
         searched_in=anywhere,
         instead="check in a `DO $$ ... $$` block and write with statements of their own",
     ),
@@ -647,6 +754,22 @@ UNREADABLE: tuple[Unreadable, ...] = (
         searched_in=inside_do_blocks,
         instead="write it as a statement of its own, outside the block and never through "
         "EXECUTE: a DO block only checks",
+    ),
+    Unreadable(
+        name="a function body not written AS $$",
+        # `code_of` empties any other body to `''`, so nothing here could read what it does.
+        pattern=r"\bcreate\s+(?:or\s+replace\s+)?function\b[^;]*\bas\s+''",
+        searched_in=anywhere,
+        instead="write the body as `AS $$ ... $$`, with no tag",
+    ),
+    Unreadable(
+        name="a write, DDL or dynamic SQL inside a function",
+        # A trigger's function runs inside the write it answers; one that wrote would be a copy
+        # or a change no rollback here could see.
+        pattern=r"\b(?:insert|update|delete|merge|truncate|create|alter|drop|execute)\b",
+        searched_in=inside_function_bodies,
+        instead="keep a function to checks and reads: a write belongs in a migration's own "
+        "statements, where these checks read it",
     ),
 )
 
@@ -850,19 +973,48 @@ WITH_COPY = (
             "CREATE FUNCTION refuse() RETURNS void AS $f$ BEGIN "
             "IF EXISTS (SELECT 1 FROM value) THEN RAISE EXCEPTION 'from the backup'; END IF; "
             "END $f$ LANGUAGE plpgsql;\nSELECT refuse();\n",
-            ["a function, procedure or trigger"],
+            ["a function body not written AS $$"],
             id="a refusal in a function",
         ),
         pytest.param(
             "CREATE OR REPLACE PROCEDURE copy() AS $$ DELETE FROM criterion $$ LANGUAGE sql;\n"
             "CALL copy();\n",
-            ["a function, procedure or trigger"],
+            ["a procedure"],
             id="a procedure",
         ),
         pytest.param(
             "CREATE TRIGGER t AFTER DELETE ON criterion FOR EACH ROW EXECUTE FUNCTION f();\n",
-            ["a function, procedure or trigger"],
+            [],
             id="a trigger",
+        ),
+        pytest.param(
+            "CREATE FUNCTION f() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF EXISTS "
+            "(SELECT 1 FROM value) THEN RAISE EXCEPTION 'no'; END IF; RETURN NULL; END $$;\n",
+            [],
+            id="a function AS $$",
+        ),
+        pytest.param(
+            "CREATE FUNCTION f() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN "
+            "DELETE FROM criterion; RETURN NULL; END $f$;\n",
+            ["a function body not written AS $$"],
+            id="a function AS $tag$",
+        ),
+        pytest.param(
+            "CREATE FUNCTION f() RETURNS boolean LANGUAGE sql AS 'SELECT true';\n",
+            ["a function body not written AS $$"],
+            id="a function AS '...'",
+        ),
+        pytest.param(
+            "CREATE FUNCTION f() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN "
+            "DELETE FROM criterion; RETURN NULL; END $$;\n",
+            ["a write, DDL or dynamic SQL inside a function"],
+            id="a write inside a function",
+        ),
+        pytest.param(
+            "CREATE FUNCTION f() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN "
+            "RAISE 'no'; RETURN NULL; END $$;\n",
+            ["RAISE with no level or no message"],
+            id="RAISE 'message' inside a function",
         ),
     ],
 )

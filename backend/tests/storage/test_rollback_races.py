@@ -126,11 +126,26 @@ class Refusal:
 
 
 def a_figure_for(attribute: str) -> str:
+    """An accepted figure and its payload, written together: `0519` refuses either alone."""
     return (
+        "DO $$ DECLARE figure bigint; BEGIN "
         "INSERT INTO value (candidate, attribute, value_type, data_source, "
         "reference_period_start, reference_period_end, retrieval_date, confidence_level) "
         f"VALUES ('country.romania', '{attribute}', 'Quantity', 'oecd', '2022-01-01', "
-        "'2022-12-31', now(), 'high')"
+        "'2022-12-31', now(), 'high') RETURNING id INTO figure; "
+        "INSERT INTO value_quantity (value_id, value_type, magnitude, unit) "
+        "SELECT figure, 'Quantity', 1, unit FROM attribute_quantity_parameter "
+        f"WHERE attribute = '{attribute}'; END $$"
+    )
+
+
+def a_figure_undone(attribute: str) -> str:
+    """Its payload first, then the figure, in one transaction."""
+    return (
+        "DO $$ BEGIN "
+        "DELETE FROM value_quantity WHERE value_id IN "
+        f"(SELECT id FROM value WHERE attribute = '{attribute}'); "
+        f"DELETE FROM value WHERE attribute = '{attribute}'; END $$"
     )
 
 
@@ -170,6 +185,8 @@ A_RESULT = (
 RANKING_UNDONE = (
     "DO $$ BEGIN "
     f"DELETE FROM evaluation WHERE note = '{HISTORY}'; "
+    "DELETE FROM value_quantity WHERE value_id IN (SELECT id FROM value "
+    "WHERE data_source = 'oecd' AND reference_period_start = '2021-01-01'); "
     f"DELETE FROM value WHERE data_source = 'oecd' AND reference_period_start = '2021-01-01'; "
     "END $$"
 )
@@ -234,13 +251,13 @@ REFUSALS = (
     Refusal(
         migration="0492-child-benefit-is-a-share-of-the-wage",
         write=a_figure_for("country.child_benefit_policy"),
-        undo="DELETE FROM value WHERE attribute = 'country.child_benefit_policy'",
+        undo=a_figure_undone("country.child_benefit_policy"),
         says="cannot roll back 0492: 1 figures are stored",
     ),
     Refusal(
         migration="0478-school-quality-is-a-quantity",
         write=a_figure_for("country.school_system_quality"),
-        undo="DELETE FROM value WHERE attribute = 'country.school_system_quality'",
+        undo=a_figure_undone("country.school_system_quality"),
         says="cannot roll back 0478: 1 figures are stored",
     ),
     # A gate another set still enforces: `0494`'s rollback disarms only `local_employment`'s, so
@@ -285,7 +302,7 @@ REFUSALS = (
     Refusal(
         migration="0444-house-price-ratio-stops-blocking",
         write=a_figure_for("country.house_price_to_income_ratio"),
-        undo="DELETE FROM value WHERE attribute = 'country.house_price_to_income_ratio'",
+        undo=a_figure_undone("country.house_price_to_income_ratio"),
         says="cannot roll back 0444: 1 figures are stored",
     ),
     # A saved ranking's frozen rule list is recorded history 0507's rollback would drop (FU-A5).
@@ -340,12 +357,18 @@ REFUSALS = (
         "reference_period_start, reference_period_end, retrieval_date, confidence_level) "
         "VALUES ('country.romania', 'country.homicide_rate', 'Quantity', 'eurostat', "
         "'2022-01-01', '2022-12-31', now(), 'high') RETURNING id INTO figure; "
+        "INSERT INTO value_quantity (value_id, value_type, magnitude, unit) "
+        "SELECT figure, 'Quantity', 1, unit FROM attribute_quantity_parameter "
+        "WHERE attribute = 'country.homicide_rate'; "
         "INSERT INTO data_acquisition_run_reuse "
         "(data_acquisition_run, data_source, candidate, attribute, value) "
         "VALUES (run_id, 'eurostat', 'country.romania', 'country.homicide_rate', figure); END $$",
         undo="DO $$ BEGIN "
         "DELETE FROM data_acquisition_run_reuse WHERE data_acquisition_run IN "
         "(SELECT id FROM data_acquisition_run WHERE triggered_by = 'PL-049 race row'); "
+        "DELETE FROM value_quantity WHERE value_id IN (SELECT id FROM value "
+        "WHERE attribute = 'country.homicide_rate' AND candidate = 'country.romania' "
+        "AND data_source = 'eurostat'); "
         "DELETE FROM value WHERE attribute = 'country.homicide_rate' "
         "AND candidate = 'country.romania' AND data_source = 'eurostat'; "
         "DELETE FROM data_acquisition_run WHERE triggered_by = 'PL-049 race row'; END $$",
@@ -390,6 +413,9 @@ REFUSALS = (
             "reference_period_start, reference_period_end, retrieval_date, confidence_level) "
             "VALUES ('country.romania', 'country.homicide_rate', 'Quantity', 'oecd', "
             "'2021-01-01', '2021-12-31', now(), 'high') RETURNING id INTO figure;",
+            "INSERT INTO value_quantity (value_id, value_type, magnitude, unit) "
+            "SELECT figure, 'Quantity', 1, unit FROM attribute_quantity_parameter "
+            "WHERE attribute = 'country.homicide_rate';",
             "INSERT INTO candidate_warning_input (candidate_result, compound_rule, value_id) "
             "VALUES (result, 'cheap_but_taxed', figure);",
         ),

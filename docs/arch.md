@@ -181,7 +181,8 @@ value          id            surrogate PK
 value_monetary value_id      PRIMARY KEY, FK → value.id
 ```
 
-Exactly one payload row per value — see section 3.3b for why, and for what enforces it.
+Exactly one payload row per value of a scalar type, and at least one for `LabelSet` and
+`ShareComposition` — see section 3.3b for why, and for what enforces it.
 
 A composite key therefore reads as `city.portugal.lisbon` × `city.rent_centre` — both
 halves legible without a lookup.
@@ -318,7 +319,7 @@ count is the bare number 2900, with no currency, so the EUR conversion never run
 then compares 2900 against Lisbon's 1410 and reports a gap that is simply wrong — with every
 provenance field correctly filled in and nothing looking broken.
 
-Three constraints close it, and they need no triggers:
+Three constraints close it, and type agreement needs no triggers:
 
 ```sql
 -- 1. the catalog's declaration becomes referenceable
@@ -355,6 +356,24 @@ given a numeric range, and exactly one threshold kind can exist.
 `x > 0` admit it. Each numeric column therefore carries a `<table>_<column>_is_finite` check,
 unless a bound on both sides already refuses all three; `test_finite_figures_behaviour` holds
 every numeric column in the schema to one or the other.
+
+**That a figure carries a payload at all is a trigger's to enforce** (`0519`, decision D60). The
+chain above says *which* payload may attach, never that one does, and the share sum spans a
+composition's rows: neither a foreign key nor a CHECK can say either. So the schema has its only
+functions and triggers here, as **deferred constraint triggers** judged at COMMIT, when a
+writer's payload, written as a second statement, is visible:
+
+- an accepted value (`rejection_reason IS NULL`) has its payload -- one row for the eight scalar
+  types, at least one for `LabelSet` and `ShareComposition` -- judged when a value is inserted or
+  re-accepted, and when a payload row is deleted or moved away from it;
+- every stored composition, accepted or rejected, sums to 100 within 0.5, which is
+  `SHARE_SUM_TOLERANCE` in `data/payloads.py`; the boundary test reads that constant, so the
+  two cannot drift.
+
+Two habits change with them. **A figure and its payload go in one transaction**: in `psql`'s
+autocommit, the parent alone is refused. **A migration that writes figures and then alters
+`value`, or drops a key referencing it, flushes the pending checks first** with `SET CONSTRAINTS
+ALL IMMEDIATE`: PostgreSQL will not alter a table with trigger events still pending.
 
 ### 3.4 Never discarding, and why only rejection is stored
 
@@ -1112,6 +1131,11 @@ LLM-sourced values would cost money again, and **manually entered values — vis
 research, exclusion reasons — cannot be re-fetched at all.** They exist in one place. That is what
 is being protected.
 
+**Restore whole, or in one transaction.** A full `pg_restore` creates the completeness triggers
+of section 3.3b after the data, so nothing fires. A `--data-only` restore without
+`--single-transaction` commits `value` before its payloads, and every accepted figure is then
+refused; no target here restores that way.
+
 ### 9.6 Time
 
 `timestamptz` for every moment the system records — run timestamps, retrieval dates, evaluation
@@ -1253,8 +1277,9 @@ city, not millions.
 
 ### 10.7 Auditing is the database's own statement log
 
-**No audit tables, no triggers, no changelog of ours.** PostgreSQL's built-in statement logging
-records what happened; the application adds nothing.
+**No audit tables, no audit triggers, no changelog of ours.** PostgreSQL's built-in statement
+logging records what happened; the application adds nothing. (The schema's only triggers refuse
+an incomplete figure, section 3.3b; they record nothing.)
 
 ```
 log_statement = 'mod'          # every INSERT, UPDATE, DELETE and DDL

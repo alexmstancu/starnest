@@ -49,7 +49,17 @@ def _a_figure(
         (candidate, OVERBURDEN, source, f"{period_year}-01-01", f"{period_year}-12-31", retrieved),
     ).fetchone()
     assert row is not None
-    return int(row[0])
+    figure = int(row[0])
+    connection.execute(
+        "INSERT INTO value_ratio (value_id, value_type, value, basis) "
+        "VALUES (%s, 'Ratio', 8.2, 'population')",
+        (figure,),
+    )
+    # Judged now rather than at COMMIT (0519): a rollback that drops a key on `value` cannot run
+    # while a figure's completeness check is still pending.
+    connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
+    connection.execute("SET CONSTRAINTS ALL DEFERRED")
+    return figure
 
 
 @pytest.fixture
