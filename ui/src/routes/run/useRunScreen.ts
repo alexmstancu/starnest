@@ -16,7 +16,14 @@
  * followed without a click** (`useFollowedRun.ts`), by looks that take no ticket and are no act.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   fetchEveryRun,
   fetchHoldings,
@@ -34,6 +41,15 @@ import {
 } from "../../api/endpoints";
 import { newestRun, startOfLocalMonth } from "./databaseHolds";
 import { type Commitment, describeCommitment } from "./spendCommitment";
+import {
+  beginStart,
+  endStart,
+  leaveStartOutcome,
+  startInFlight,
+  startOutcomeLeft,
+  subscribeToStarts,
+  takeStartOutcome,
+} from "./pendingStart";
 import { useFollowedRun } from "./useFollowedRun";
 import { UNCLAIMED, useWatchedRun } from "./useWatchedRun";
 import type { Idle, Read } from "../../api/read";
@@ -261,8 +277,17 @@ export function useRunScreen(
   // **Whether a start is in flight** (NEW-57), apart from `busy` for the reason Stop is: a
   // refresh sent while a start went out took the label, and every way to start was let go -- so
   // a second start could be sent, which the database refuses, and its claim took the card from
-  // the run that did start.
-  const [starting, setStarting] = useState(false);
+  // the run that did start. **Kept by the page** (P94, `pendingStart.ts`), so an Acquire mounted
+  // again while it is in flight holds every way to start as well.
+  const starting = useSyncExternalStore(subscribeToStarts, startInFlight);
+  // Whether this screen is still mounted, for a start to know whether anybody saw it end.
+  const alive = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   const [cardFocus, setCardFocus] = useState<CardFocus | null>(null);
   const [estimating, setEstimating] = useState<GapKind | null>(null);
   /** Takes the reader to the card, once the act's own read is the one on it. */
@@ -365,13 +390,16 @@ export function useRunScreen(
     [act],
   );
 
-  /** Runs one start with every way to start held until it has ended, however it ends. */
+  /**
+   * Runs one start with every way to start held until it has ended, however it ends -- on every
+   * Acquire in the page, and cleared in the `finally` whatever became of the screen.
+   */
   const holdingStarts = useCallback(async (action: () => Promise<void>) => {
-    setStarting(true);
+    beginStart();
     try {
       await action();
     } finally {
-      setStarting(false);
+      endStart();
     }
   }, []);
 
@@ -409,6 +437,28 @@ export function useRunScreen(
       throw refused;
     },
     [claim, isCurrent, watch],
+  );
+
+  /**
+   * The run a start began, or null once its outcome has been left for another screen (P94):
+   * **a start whose screen has gone** leaves what became of it in `pendingStart.ts`, for the
+   * next Acquire to show or to report. Refused while this screen is still here, the card is
+   * handed back and the refusal thrown, as before.
+   */
+  const startedOrLeft = useCallback(
+    async (request: Promise<Run>, ticket: number, onCard: number | undefined) => {
+      try {
+        const started = await request;
+        onStarted();
+        if (alive.current) return started;
+        leaveStartOutcome({ started: started.id });
+      } catch (refused) {
+        if (alive.current) return giveTheCardBack(ticket, onCard, refused);
+        leaveStartOutcome({ refused });
+      }
+      return null;
+    },
+    [onStarted, giveTheCardBack],
   );
 
   /**
@@ -478,6 +528,31 @@ export function useRunScreen(
     );
   }
 
+  // **What became of a start sent from an Acquire since left** (P94, D33): the run it began is
+  // shown, and a refusal reported here once, the card keeping the newest run.
+  const takeWhatBecameOfAStart = useEffectEvent(() => {
+    const outcome = takeStartOutcome();
+    if (outcome === null) return;
+    if ("started" in outcome) {
+      void readBack(outcome.started, { focus: true });
+    } else {
+      setFailure({ what: "running", error: outcome.refused, resend: null, runId: null });
+    }
+  });
+  useEffect(() => {
+    let mounted = true;
+    const takeIfLeft = () => {
+      if (mounted && startOutcomeLeft()) takeWhatBecameOfAStart();
+    };
+    // Left before this screen was mounted, or while it is.
+    queueMicrotask(takeIfLeft);
+    const unsubscribe = subscribeToStarts(takeIfLeft);
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
   return {
     // Read during the render: every act claims inside a handler that also sets state.
     opening:
@@ -525,10 +600,8 @@ export function useRunScreen(
       const onCard = current?.id;
       void act("running", () =>
         holdingStarts(async () => {
-          const started = await startRun({ level: levelId }).catch((refused: unknown) =>
-            giveTheCardBack(ticket, onCard, refused),
-          );
-          onStarted();
+          const started = await startedOrLeft(startRun({ level: levelId }), ticket, onCard);
+          if (started === null) return;
           setPlan(null);
           setPlanOrigin(null);
           await watch(ticket, started.id);
@@ -581,16 +654,18 @@ export function useRunScreen(
           // Going uncapped is only ever accepted because the strip said so in as many words.
           const accept_uncapped_spend = armed.commitment.uncapped;
           const { proposal } = armed;
-          const started = await (
+          const started = await startedOrLeft(
             proposal.via === "retry"
               ? retryRun(proposal.runId, {
                   items: proposal.items,
                   pairs: proposal.pairs,
                   accept_uncapped_spend,
                 })
-              : startRun({ ...proposal.scope, accept_uncapped_spend })
-          ).catch((refused: unknown) => giveTheCardBack(ticket, onCard, refused));
-          onStarted();
+              : startRun({ ...proposal.scope, accept_uncapped_spend }),
+            ticket,
+            onCard,
+          );
+          if (started === null) return;
           setArmed(null);
           await watch(ticket, started.id);
           focusCardOf(ticket, started.id);

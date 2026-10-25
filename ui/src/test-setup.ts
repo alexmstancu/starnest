@@ -11,6 +11,7 @@ import { forgetFailedReads } from "./api/reachability";
 import { resetMockData } from "./mocks/handlers";
 import { forgetStoredSession } from "./shell/sessionState";
 import { followEvery } from "./routes/run/useFollowedRun";
+import { forgetPendingStart } from "./routes/run/pendingStart";
 import { mockServer } from "./mocks/server";
 
 // Every wait in the suite is for a mocked request that resolves in milliseconds. The default
@@ -67,6 +68,7 @@ afterEach(() => {
   // `cleanup()`, which unmounts it.
   forgetStoredSession();
   followEvery(FOLLOW_ONLY_WHEN_ASKED);
+  forgetPendingStart();
   // Last, so the resets above happen whether or not this throws.
   failOnAnythingWrittenToConsoleError();
 });
