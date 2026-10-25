@@ -2,6 +2,15 @@
 
 > Written on 2026-10-14 by a read-only planning agent against `c943761`, before the scope rule of 2026-10-15. It is the step-by-step detail behind [copilot-remediation-plan.md](../copilot-remediation-plan.md). Where the two differ (scope, decisions, order), the main plan wins.
 
+> **Correction, 2026-10-25 (PL-182, G-S8).** This plan relies on a shared answers resource, `routes/configure/useGateAnswers.ts`, owned by `ConfigureScreen` and passed down to the rules, the proposals and the answers form (UI-01, UI-12, UI-29, BE-36, UI-13). **That resource was never built.** What was built, checked at `738a3ec`:
+> - **No shared resource is passed down.** `ConfigureScreen.tsx` owns a counter, `answersVersion`, and `noteAnswered`, which bumps it whenever a gate answer is written anywhere on the screen (a confirm, a research pass, the answers form). Each panel that shows answers gets it as `answersFreshness` and reads `fetchMatchRuleResults` itself, again whenever it moves.
+> - **The rules panel** reads the answers in `routes/configure/rules/useRuleToggles.ts`, and the rest of what its cost lines need -- the live ranking, the household's citizenships and whether the roster has placed the answers at a level -- through `routes/configure/rules/useGateEvidence.ts` (PL-156, PL-164).
+> - **The proposals** read them in `routes/configure/proposals/useProposals.ts`.
+> - **A hook named `useGateAnswers` does exist, at `routes/configure/answers/useGateAnswers.ts`** (PL-152, 2026-10-25), but it is the gate-answers area's own: its read of the answers at one level, the recorded list, and the form that records, corrects or rules out an answer, one write at a time. Nothing outside `answers/` imports it.
+> - **The research pass is the screen's**, as UI-01 step 4 planned: `ConfigureScreen.tsx` owns `useResearchPass`, so a set switch does not end a pass.
+>
+> The passages below that name the shared hook are kept as written, with a note at each, so the history of the plan stays readable.
+
 I've written plans for all 17 findings. 16 are still fully present at HEAD, and UI-01 is partly fixed: nothing under `ui/src/routes/configure/` has changed since the baseline. Five need a decision from you: UI-01, UI-09, UI-12, UI-13 and UI-29. The questions are at the end of each section. Paths below are relative to `ui/src/` unless they start with `ui/`, `backend/`, `storage/` or `docs/`; the "Files touched" bullets give full paths.
 
 ### UI-01 [High] Gate research is one long request that the proxy can still cut off
@@ -24,6 +33,7 @@ I've written plans for all 17 findings. 16 are still fully present at HEAD, and 
      - Re-read the answers once at the end, not after every request: `useResource.reload` blanks the list.
      - Abort on unmount. Stop takes effect after the question in flight.
   4. `routes/configure/ConfigureScreen.tsx`: own the pass and a new shared answers resource, `routes/configure/useGateAnswers.ts`, and pass both down. This way switching criteria set (which remounts RulesPanel and its children) does not abort a pass.
+     - *As built (2026-10-25, PL-182):* the screen owns the pass, but not an answers resource. It passes down `answersFreshness`, a counter `noteAnswered` bumps, and each panel reads the answers itself. See the correction at the top.
   5. `useProposals.ts`: drop `research` and `refusals`, and read answers from the shared resource. `ProposalsPanel.tsx`: progress, a "Stop after this question" button, and Estimate/Research/Confirm disabled while a pass runs (see (c)2: a proposal in flight can overwrite a confirmation).
   6. Keep the nginx block and its guard. Update the nginx comment: each request is now one question, and the ceiling covers one slow call with SDK retries.
 - **Tests first:** in `routes/configure/proposals/ProposalsPanel.test.tsx`:
@@ -46,6 +56,7 @@ I've written plans for all 17 findings. 16 are still fully present at HEAD, and 
   - `docs/design-brief.md`: progress, Stop and outcome have no design yet.
   - `ui/nginx.conf`: comment only.
 - **Files touched:** `ui/src/api/endpoints.ts`, `ui/src/routes/configure/useGateAnswers.ts` (new), `ui/src/routes/configure/ConfigureScreen.tsx`, `ui/src/routes/configure/proposals/researchPass.ts`(+`.test.ts`, new), `ui/src/routes/configure/proposals/useResearchPass.ts` (new), `ui/src/routes/configure/proposals/useProposals.ts`, `ui/src/routes/configure/proposals/ProposalsPanel.tsx`(+`.test.tsx`), `ui/nginx.conf`, plus the three docs above.
+  - *As built (2026-10-25, PL-182):* `ui/src/routes/configure/useGateAnswers.ts` was never created. The answers are read in `rules/useRuleToggles.ts` and `proposals/useProposals.ts`, re-read through `ConfigureScreen`'s `answersFreshness`; see the correction at the top.
 - **Behaviour change & risks:**
   - You see per-question progress and can stop.
   - The pass never starts a question once spending has reached the cap, so it ends at most one call past it, the same bound the server's meter gives a single request. That only holds as far as the server reports billed cost; BE-17 still under-reports billed failures.
@@ -242,6 +253,7 @@ I've written plans for all 17 findings. 16 are still fully present at HEAD, and 
 - **Fix:**
   1. `ruleEffect.ts`: only confirmed `not_matching` answers count as removals. Proposals are mentioned separately ("1 proposed answer awaits confirmation and rules nobody out until then"). The wording keeps "Removes " and "rules nobody out" so the e2e regex at `ui/e2e/sanity.spec.ts:378-395` still matches.
   2. `useRuleToggles.ts`: read the shared `useGateAnswers` (from UI-01), passed down by `ConfigureScreen` through `RulesPanel`, so confirming or answering updates the sentence. Show "Reading the answers…" while loading.
+     - *As built (2026-10-25, PL-182):* no shared hook. `useRuleToggles.ts` reads the answers itself and reads them again when `ConfigureScreen`'s `answersFreshness` moves, which `RulesPanel` passes in; "Reading the answers…" is shown while they load. The cost lines' other inputs (the live ranking, the household's citizenships, the roster) come from `rules/useGateEvidence.ts`.
   3. `RulesPanel.tsx`, compound rows: "Applied. Who it flags right now is shown on Rank." or "Not applied, so it flags nobody." Drop the null fallback.
 - **Tests first:**
   - `rules/ruleEffect.test.ts`, "does not count a proposal as removing anyone". Fails today.
@@ -250,8 +262,10 @@ I've written plans for all 17 findings. 16 are still fully present at HEAD, and 
   - Follow-ups: confirmed and proposed answers mixed; the loading state; the sentence updates after a confirmation without a page reload.
 - **Migration / contract / docs:** None.
 - **Files touched:** `ui/src/routes/configure/rules/ruleEffect.ts`(+test), `.../rules/RulesPanel.tsx`(+test), `.../rules/useRuleToggles.ts`, `ui/src/routes/configure/ConfigureScreen.tsx`, `ui/src/routes/configure/useGateAnswers.ts`.
+  - *As built (2026-10-25, PL-182):* the last file was never created; `ui/src/routes/configure/rules/useGateEvidence.ts` was added instead, for the cost lines' ranking, citizenships and roster (PL-156, PL-164).
 - **Behaviour change & risks:** The rule rows stop claiming exclusions that are not happening. The e2e regex compatibility needs to be flagged to the e2e agent.
 - **Depends on / conflicts with:** UI-01 (`useGateAnswers`); UI-29 and BE-36 (same commit).
+  - *As built (2026-10-25, PL-182):* the dependency on UI-01 is on `ConfigureScreen`'s `answersFreshness` signal, not on a shared `useGateAnswers`.
 - **Effort:** S–M.
 - **Needs a user decision?** Yes, what should compound rows say?
   - (a) **Recommended:** honest pointer to Rank (S).
