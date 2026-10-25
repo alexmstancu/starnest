@@ -1,4 +1,4 @@
-import { useCallback, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ComparisonMatrix } from "./ComparisonMatrix";
 import { ViewChoices } from "./ViewChoices";
@@ -6,8 +6,9 @@ import type { Measure } from "./pillarMatrix";
 import { useCompareSelection } from "./useCompareSelection";
 import { knownLimit } from "./comparatorLimit";
 import { canAdd, type CompareSelection } from "./compareSelection";
-import { asksTheSame, requestFor, type ComparisonRequest } from "./comparisonRequest";
-import { pillarPriority, pillarWeightsAt } from "./ordering";
+import { describesSelection, requestFor, type ComparisonRequest } from "./comparisonRequest";
+import { useSettledRequest } from "./useSettledRequest";
+import { inScoreOrder, pillarPriority, pillarWeightsAt } from "./ordering";
 import { StatusChip } from "./StatusChip";
 import {
   fetchCandidates,
@@ -91,12 +92,23 @@ function TheComparison({
   const settings = useRead(
     useCallback((signal: AbortSignal) => fetchSettings({ signal }), []),
   );
-  const chosen = useCompareSelection(
-    candidates.read.state === "ready" ? candidates.read.data.items : null,
-    settings.read.state === "ready" ? knownLimit(settings.read.data.comparator_limit) : null,
-  );
-  const { asked } = chosen;
+  const chosen = useCompareSelection({
+    roster: candidates.read.state === "ready" ? candidates.read.data.items : null,
+    limit:
+      settings.read.state === "ready" ? knownLimit(settings.read.data.comparator_limit) : null,
+    criteriaSetId,
+    levelId,
+  });
   const { shownAs, measure } = chosen.selection;
+  // **The comparison of the selection on screen** (PL-094): derived from it, asked for once it
+  // has been still for a moment, and asked again when an acquisition ends.
+  // Asked for only once the roster and the limit are read, so a restored selection is pruned and
+  // trimmed before anything is sent.
+  const reconciled = candidates.read.state === "ready" && settings.read.state === "ready";
+  const request = reconciled
+    ? requestFor(chosen.selection.focus, chosen.selection.comparators)
+    : null;
+  const settled = useSettledRequest(request);
   // **The set's configured pillar weights** (PL-104), read as Rank reads them: what the Weight
   // column shows and what "#N priority" ranks, so neither moves when only the focus changes.
   // **A read like the others** (PL-001): the comparison is drawn once they are read, and says
@@ -112,20 +124,28 @@ function TheComparison({
   const comparison = useRead(
     useCallback(
       async (signal: AbortSignal): Promise<Comparison> => {
-        if (!criteriaSetId || !levelId || !asked)
+        if (!criteriaSetId || !levelId || !settled)
           throw new Error("nothing asked for");
         return fetchComparison(
           criteriaSetId,
           levelId,
-          asked.focus,
-          asked.comparators,
+          settled.focus,
+          settled.comparators,
           { signal },
         );
       },
-      [criteriaSetId, levelId, asked],
+      [criteriaSetId, levelId, settled],
     ),
-    { enabled: asked !== null },
+    { enabled: settled !== null, freshness: selection.acquisitionsEnded },
   );
+  const drawnRead = useLastDrawing(comparison.read, request);
+  // **Never presented as the current one** (C07-C): a drawing of an earlier selection stays on
+  // screen dimmed, under its own heading, until the answer -- and **a failure keeps it** (PL-010),
+  // marked "could not be refreshed" with a Try again, rather than taking it away.
+  const current = drawnRead !== null && describesSelection(drawnRead.data, request);
+  const refreshFailed = drawnRead !== null && typeof drawnRead.refresh === "object";
+  const updating =
+    drawnRead !== null && !refreshFailed && (!current || drawnRead.refresh === "running");
 
   // Names for a refusal that lists candidates (PL-007), from the roster once it is read.
   const rosterNames = new Map(
@@ -186,16 +206,12 @@ function TheComparison({
             }
             onFocus={chosen.chooseFocus}
             onToggleComparator={chosen.toggleComparator}
-            onCompare={(request) => {
-              if (asksTheSame(request, asked)) void comparison.reload();
-              else chosen.ask(request);
-            }}
           />
           )
         }
       </LoadedRegion>
 
-      {comparison.read.state === "failed" && (
+      {comparison.read.state === "failed" && drawnRead === null && (
         <UnsetSetting
           error={comparison.read.error}
           title="Nothing to compare"
@@ -204,23 +220,35 @@ function TheComparison({
           names={{ candidate: (id) => rosterNames.get(id) }}
         />
       )}
-      {(comparison.read.state === "pending" || comparison.read.state === "ready") && (
-        <LoadedRegion
-          read={combine(comparison.read, weights)}
-          what={weightsFailed ? "The criteria set's weights" : "The comparison"}
-          skeleton="rank-table"
-          onRetry={weightsFailed ? criteriaSet.reload : comparison.reload}
-        >
-          {([drawn, pillarWeights]) => (
-            <ComparisonTable
-              comparison={drawn}
-              shownAs={shownAs}
-              measure={measure}
-              pillarWeights={pillarWeights}
-              openPillar={chosen.selection.openPillar}
-              onOpenPillar={chosen.openPillar}
-            />
+      {drawnRead !== null && (
+        <div className={current ? undefined : "refreshing"} aria-busy={updating}>
+          {updating && (
+            <p className="screen__note" role="status">
+              Updating…
+            </p>
           )}
+          <LoadedRegion
+            read={combine(drawnRead, weights)}
+            what={weightsFailed ? "The criteria set's weights" : "The comparison"}
+            skeleton="rank-table"
+            onRetry={weightsFailed ? criteriaSet.reload : comparison.reload}
+          >
+            {([drawn, pillarWeights]) => (
+              <ComparisonTable
+                comparison={drawn}
+                shownAs={shownAs}
+                measure={measure}
+                pillarWeights={pillarWeights}
+                openPillar={chosen.selection.openPillar}
+                onOpenPillar={chosen.openPillar}
+              />
+            )}
+          </LoadedRegion>
+        </div>
+      )}
+      {drawnRead === null && comparison.read.state === "pending" && (
+        <LoadedRegion read={comparison.read} what="The comparison" skeleton="rank-table" onRetry={comparison.reload}>
+          {() => null}
         </LoadedRegion>
       )}
     </>
@@ -246,6 +274,31 @@ function failureOf(read: Read<unknown> | Idle): unknown {
   if (read.state === "failed") return read.error;
   if (read.state === "ready" && typeof read.refresh === "object") return read.refresh.failed;
   return null;
+}
+
+type Drawn = Extract<Read<Comparison>, { state: "ready" }>;
+
+/**
+ * The last comparison drawn, as a read: kept while the next one is read (C07-C), marked busy
+ * meanwhile, and **kept on a failure, marked with it** (PL-010) so its own Try again can read the
+ * comparison again. Gone only when there is nothing to ask.
+ */
+function useLastDrawing(
+  read: Read<Comparison> | Idle,
+  request: ComparisonRequest | null,
+): Drawn | null {
+  const [last, setLast] = useState<{ data: Comparison; readAt: Date } | null>(null);
+  const kept =
+    read.state === "ready"
+      ? { data: read.data, readAt: read.readAt }
+      : request === null
+        ? null
+        : last;
+  if (kept?.data !== last?.data) setLast(kept);
+  if (kept === null) return null;
+  if (read.state === "ready") return read;
+  if (read.state === "failed") return { state: "ready", ...kept, refresh: { failed: read.error } };
+  return { state: "ready", ...kept, refresh: read.state === "pending" ? "running" : "idle" };
 }
 
 /**
@@ -299,7 +352,6 @@ function ComparisonPicker({
   limit,
   onFocus,
   onToggleComparator,
-  onCompare,
   choices,
 }: {
   roster: Candidate[];
@@ -308,12 +360,10 @@ function ComparisonPicker({
   limit: number | null;
   onFocus: (candidate: string | null) => void;
   onToggleComparator: (candidate: string) => void;
-  onCompare: (request: ComparisonRequest) => void;
   /** The two questions about how to read the comparison, answered before it is drawn. */
   choices: ReactNode;
 }) {
   const { focus, comparators, trimmed } = selection;
-  const request = requestFor(focus, comparators);
   const full = !canAdd(selection, limit);
   const limitReason = `Limit reached — remove one of the ${String(limit)} first, or raise the limit in Configure`;
   const nameOf = (id: string) => roster.find((candidate) => candidate.id === id)?.name ?? id;
@@ -409,15 +459,17 @@ function ComparisonPicker({
       </fieldset>
       </div>
 
-      {/* Disabled, and sending, from one answer -- the two used to disagree (UI-25). */}
-      <button
-        type="button"
-        className="button button--primary"
-        disabled={request === null}
-        onClick={request === null ? undefined : () => onCompare(request)}
-      >
-        Compare
-      </button>
+      {/* **No button** (PL-094): the comparison follows the selection, so what is left to
+          say is what to choose. */}
+      {(focus === null || comparators.length === 0) && (
+        <p className="screen__note">
+          {focus === null
+            ? "Choose a candidate to focus on, then who to compare it with."
+            : limit === null
+              ? `Choose who to compare with ${nameOf(focus)}.`
+              : `Choose up to ${String(limit)} to compare with ${nameOf(focus)}.`}
+        </p>
+      )}
     </div>
   );
 }
@@ -442,10 +494,12 @@ function ComparisonTable({
   shownAs: "score" | "raw";
   measure: Measure;
   pillarWeights: ReadonlyMap<string, number>;
-  openPillar: string | null;
-  onOpenPillar: (pillar: string) => void;
+  openPillar: string | null | undefined;
+  onOpenPillar: (pillar: string | null) => void;
 }) {
-  const comparators = comparison.comparators ?? [];
+  // **One order for every column and card** (PL-103): by score, not by the clicks.
+  const ordered = inScoreOrder(comparison);
+  const comparators = ordered.comparators ?? [];
   // One priority for the cards and the matrix, so "#N" means one thing on the screen (PL-100).
   const priority = pillarPriority(pillarWeights);
   return (
@@ -462,10 +516,10 @@ function ComparisonTable({
           Keyed by position as well as by comparator: a key has to be unique among siblings,
           not meaningful. */}
       <div className="synthesis">
-      {(comparison.synthesis ?? []).map((pair, at) => (
+      {(ordered.synthesis ?? []).map((pair, at) => (
         <SynthesisCard
           key={`${pair.comparator}-${at}`}
-          comparison={comparison}
+          comparison={ordered}
           pair={pair}
           priority={priority}
         />
@@ -478,7 +532,7 @@ function ComparisonTable({
           governs, while the pillar rows above them stay in points, having no unit of their
           own (a pillar is a weighted mean of figures measured in different ones). */}
       <ComparisonMatrix
-        comparison={comparison}
+        comparison={ordered}
         measure={measure}
         shownAs={shownAs}
         pillarWeights={pillarWeights}

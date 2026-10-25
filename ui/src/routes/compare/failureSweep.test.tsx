@@ -6,6 +6,7 @@ import { replaceSettings } from "../../api/endpoints";
 import { SETTINGS } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
+import { SETTLE_MS } from "./useSettledRequest";
 
 /**
  * The failure sweep of `map-C01.md` M1 for `/compare` (PL-001, PL-005): every GET the screen
@@ -115,7 +116,8 @@ async function drawPortugalAgainstTheNetherlands(read: SweptRead): Promise<void>
   const option = await screen.findByRole("option", { name: "Portugal" });
   await userEvent.selectOptions(screen.getByRole("combobox", { name: /focus/i }), option);
   await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
-  await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+  // No button (PL-094): the comparison is asked for once the selection has been still a moment.
+  await act(() => new Promise((resolve) => setTimeout(resolve, SETTLE_MS)));
 }
 
 async function settled(): Promise<void> {

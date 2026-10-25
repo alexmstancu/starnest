@@ -4961,3 +4961,9 @@ select.field__control {
 .group__message > .group__items {
   padding-bottom: 4px;
 }
+
+/* A drawing kept on screen while the next one is read (C07-C): dimmed, never presented as the
+   answer to the selection now on screen. */
+.refreshing {
+  opacity: 0.55;
+}

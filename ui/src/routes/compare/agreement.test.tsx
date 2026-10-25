@@ -1,6 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { watchNextComparison } from "../../testing/comparisons";
 import { renderShell } from "../../testing/renderShell";
 
 /**
@@ -22,10 +23,11 @@ interface PrintedGap {
 async function compareAgainst(focus: string, comparators: readonly string[]) {
   const option = await screen.findByRole("option", { name: focus });
   await userEvent.selectOptions(await screen.findByLabelText(/focus/i), option);
+  const drawn = watchNextComparison();
   for (const name of comparators) {
     await userEvent.click(await screen.findByRole("checkbox", { name }));
   }
-  await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+  await drawn();
 }
 
 /** The number an element prints and the way its colour reads. Missing is a failure, not a gap. */

@@ -356,7 +356,7 @@ test.describe("a comparison", () => {
     await page.getByLabel("Focus").selectOption({ label: "Portugal" });
     await page.getByRole("checkbox", { name: "Spain" }).check();
     await page.getByRole("checkbox", { name: "Netherlands" }).check();
-    await page.getByRole("button", { name: "Compare" }).click();
+    // No button (PL-094): the comparison follows the selection.
 
     await expect(page.getByRole("heading", { name: /Portugal against/ })).toBeVisible();
 

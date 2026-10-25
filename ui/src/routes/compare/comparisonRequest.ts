@@ -1,10 +1,9 @@
 /**
- * What Compare would ask the server for, or nothing while there is nothing to ask.
+ * What Compare asks the server for, or nothing while there is nothing to ask.
  *
- * **One answer to both questions: may Compare be pressed, and what does pressing it send.** The
- * button was disabled only for a `null` focus while the click submitted only a truthy one, and
- * the focus picker's placeholder is the empty string -- so clearing the focus left Compare
- * enabled and clicking it did nothing (UI-25).
+ * **Derived from the selection, never stored** (PL-094): the drawing follows every change, so
+ * the request is a function of what is chosen. The focus picker's placeholder is the empty
+ * string, which is no candidate (UI-25).
  */
 
 export interface ComparisonRequest {
@@ -21,17 +20,15 @@ export function requestFor(
 }
 
 /**
- * Whether pressing Compare asks for what is already asked: the same resource, read again, which
- * keeps the comparison on screen while it is (PL-010), rather than another one.
+ * Whether a drawn comparison is the comparison of this request: the same focus, against the
+ * same comparators. The order is not compared, because the drawing puts them in score order.
  */
-export function asksTheSame(
-  request: ComparisonRequest,
-  asked: ComparisonRequest | null,
+export function describesSelection(
+  comparison: { focus: { candidate: string }; comparators?: readonly { candidate: string }[] },
+  request: ComparisonRequest | null,
 ): boolean {
-  return (
-    asked !== null &&
-    request.focus === asked.focus &&
-    request.comparators.length === asked.comparators.length &&
-    request.comparators.every((comparator, at) => comparator === asked.comparators[at])
-  );
+  if (comparison.focus.candidate !== request?.focus) return false;
+  const drawn = (comparison.comparators ?? []).map((each) => each.candidate).sort();
+  const asked = [...request.comparators].sort();
+  return drawn.length === asked.length && drawn.every((each, at) => each === asked[at]);
 }

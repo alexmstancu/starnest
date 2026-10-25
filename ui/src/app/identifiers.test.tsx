@@ -31,6 +31,7 @@ import {
   type Finding,
   type Vocabulary,
 } from "../testing/identifiers";
+import { watchNextComparison } from "../testing/comparisons";
 import { renderShell } from "../testing/renderShell";
 
 /**
@@ -335,13 +336,16 @@ async function openEveryGroupIn(region: RegExp): Promise<void> {
 async function askForAComparison(): Promise<void> {
   const portugal = await screen.findByRole("option", { name: "Portugal" });
   await userEvent.selectOptions(await screen.findByLabelText(/focus/i), portugal);
+  const drawn = watchNextComparison();
   await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
-  await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+  await drawn();
 }
 
 /** The pillar row opens onto its attributes, which is where the figures are drawn. */
 async function openEconomy(): Promise<void> {
-  await userEvent.click(await screen.findByRole("button", { name: "Economy" }));
+  // The first pillar opens with the first drawing (PL-102); opened here only if it is not.
+  const economy = await screen.findByRole("button", { name: "Economy" });
+  if (economy.getAttribute("aria-expanded") !== "true") await userEvent.click(economy);
   await screen.findByRole("row", { name: /cost of living index/i });
 }
 

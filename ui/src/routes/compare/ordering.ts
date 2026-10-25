@@ -61,3 +61,29 @@ function topPlaces(
     .slice(0, PRIORITY_COUNT);
   return new Map(ranked.map((entry, place) => [entry.key, place]));
 }
+
+/**
+ * Comparators in one order for every column and card (PL-103): total score, highest first, no
+ * score last, ties in the order chosen. **The stored selection keeps the click order**, which the
+ * limit's newest-first trim needs; only the drawing is reordered.
+ */
+export function orderByScore<T extends { score?: number | null }>(comparators: readonly T[]): T[] {
+  const scoreOf = (each: T) => (typeof each.score === "number" ? each.score : -Infinity);
+  return [...comparators].sort((one, other) => scoreOf(other) - scoreOf(one));
+}
+
+/** A comparison with its comparators, and the cards that follow them, in score order. */
+export function inScoreOrder<
+  C extends {
+    comparators?: readonly { candidate: string; score?: number | null }[];
+    synthesis?: readonly { comparator: string }[];
+  },
+>(comparison: C): C {
+  const comparators = orderByScore(comparison.comparators ?? []);
+  const place = new Map(comparators.map((each, at) => [each.candidate, at]));
+  const placeOf = (id: string) => place.get(id) ?? comparators.length;
+  const synthesis = comparison.synthesis
+    ? [...comparison.synthesis].sort((one, other) => placeOf(one.comparator) - placeOf(other.comparator))
+    : comparison.synthesis;
+  return { ...comparison, comparators, synthesis };
+}

@@ -18,7 +18,13 @@ export interface CompareSelection {
   /** How the attribute rows read: the normalised score, or the figure in its own unit. */
   shownAs: ShownAs;
   measure: Measure;
-  openPillar: string | null;
+  /**
+   * The pillar open to its attributes: null when the reader closed it, undefined until anyone
+   * chose, when the drawing opens its first (PL-102).
+   */
+  openPillar: string | null | undefined;
+  /** Whether the default focus has been offered at this level: it is offered once (PL-102). */
+  defaulted: boolean;
   /** Who the last lowered limit took out, said once and cleared by the next choice. */
   trimmed: string[];
 }
@@ -30,7 +36,8 @@ export const EMPTY_SELECTION: CompareSelection = {
   comparators: [],
   shownAs: "score",
   measure: "points",
-  openPillar: null,
+  openPillar: undefined,
+  defaulted: false,
   trimmed: [],
 };
 
@@ -83,8 +90,19 @@ export function chooseFocus(state: CompareSelection, focus: string | null): Comp
     ...state,
     focus,
     comparators: state.comparators.filter((each) => each !== focus),
+    defaulted: true,
     trimmed: [],
   };
+}
+
+/**
+ * Offer the default focus, once per level. **A choice the reader made is never replaced**, a
+ * cleared focus included: after the first offer, or any choice, this does nothing.
+ */
+export function applyDefaultFocus(state: CompareSelection, focus: string): CompareSelection {
+  if (state.defaulted) return state;
+  if (state.focus !== null) return { ...state, defaulted: true };
+  return { ...chooseFocus(state, focus), trimmed: state.trimmed };
 }
 
 /**
@@ -122,9 +140,9 @@ export function reconcile(
   return trimTo(roster === null ? state : prune(state, roster), limit);
 }
 
-/** Open one pillar to its attributes, or close it by choosing it again. */
-export function openPillar(state: CompareSelection, pillar: string): CompareSelection {
-  return { ...state, openPillar: state.openPillar === pillar ? null : pillar };
+/** Open one pillar to its attributes, or close every one with null. */
+export function setOpenPillar(state: CompareSelection, pillar: string | null): CompareSelection {
+  return { ...state, openPillar: pillar };
 }
 
 export function setShownAs(state: CompareSelection, shownAs: ShownAs): CompareSelection {
@@ -152,7 +170,8 @@ export function parseSelection(stored: unknown): CompareSelection | undefined {
     comparators: [...new Set(stored["comparators"])].filter((each) => each !== focus),
     shownAs: shownAs === "raw" ? "raw" : "score",
     measure: measure === "impact" ? "impact" : "points",
-    openPillar: typeof pillar === "string" ? pillar : null,
+    openPillar: typeof pillar === "string" || pillar === null ? pillar : undefined,
+    defaulted: stored["defaulted"] === true,
     trimmed: isIdList(trimmed) ? trimmed : [],
   };
 }

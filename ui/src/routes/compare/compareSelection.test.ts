@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_SELECTION,
   chooseFocus,
-  openPillar,
+  applyDefaultFocus,
   parseSelection,
   prune,
   reconcile,
+  setOpenPillar,
   toggleComparator,
   trimTo,
   type CompareSelection,
@@ -84,11 +85,24 @@ describe("the Compare selection", () => {
     expect(reconcile(state, new Set(["pt", "es", "nl", "ee"]), 2)).toBe(state);
   });
 
-  it("opens one pillar, and closes it when chosen again", () => {
-    const open = openPillar(EMPTY_SELECTION, "economics");
+  it("tells a pillar the reader closed from one nobody has chosen yet", () => {
+    expect(EMPTY_SELECTION.openPillar).toBeUndefined();
+    const closed = setOpenPillar(setOpenPillar(EMPTY_SELECTION, "economics"), null);
 
-    expect(open.openPillar).toBe("economics");
-    expect(openPillar(open, "economics").openPillar).toBeNull();
+    expect(closed.openPillar).toBeNull();
+    expect(parseSelection(JSON.parse(JSON.stringify(closed)))?.openPillar).toBeNull();
+    expect(parseSelection(JSON.parse(JSON.stringify(EMPTY_SELECTION)))?.openPillar).toBeUndefined();
+  });
+
+  it("offers the default focus once, and never over a choice the reader made", () => {
+    const opened = applyDefaultFocus(EMPTY_SELECTION, "ro");
+    expect(opened.focus).toBe("ro");
+
+    const cleared = chooseFocus(opened, null);
+    expect(applyDefaultFocus(cleared, "ro").focus).toBeNull();
+
+    const chosen = chooseFocus(EMPTY_SELECTION, "pt");
+    expect(applyDefaultFocus(chosen, "ro")).toBe(chosen);
   });
 
   it("reads a stored selection it recognises, and nothing else", () => {

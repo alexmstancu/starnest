@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pillarPriority, pillarWeightsAt, rankInPillar } from "./ordering";
+import { inScoreOrder, orderByScore, pillarPriority, pillarWeightsAt, rankInPillar } from "./ordering";
 
 describe("the set's pillar weights at one level", () => {
   const set = {
@@ -91,5 +91,30 @@ describe("an attribute's place in its pillar", () => {
     ]);
 
     expect(places.size).toBe(0);
+  });
+});
+
+describe("the comparators' order (PL-103)", () => {
+  it("puts the highest score first and no score last, keeping ties in the order chosen", () => {
+    const chosen = [
+      { candidate: "ee", score: null },
+      { candidate: "es", score: 64 },
+      { candidate: "nl", score: 71 },
+      { candidate: "mt", score: 64 },
+    ];
+
+    expect(orderByScore(chosen).map((each) => each.candidate)).toEqual(["nl", "es", "mt", "ee"]);
+  });
+
+  it("puts each card where its comparator's column is", () => {
+    const comparison = {
+      comparators: [
+        { candidate: "es", score: 64 },
+        { candidate: "nl", score: 71 },
+      ],
+      synthesis: [{ comparator: "es" }, { comparator: "nl" }],
+    };
+
+    expect(inScoreOrder(comparison).synthesis.map((pair) => pair.comparator)).toEqual(["nl", "es"]);
   });
 });

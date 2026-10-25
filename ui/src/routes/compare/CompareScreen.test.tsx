@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, delay, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import { replaceSettings } from "../../api/endpoints";
 import type { components } from "../../api/schema";
 import { ATTRIBUTES, SETTINGS, candidatesForLevel } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
+import { watchNextComparison } from "../../testing/comparisons";
 import { renderShell } from "../../testing/renderShell";
 
 /**
@@ -26,15 +27,17 @@ async function chooseFocus(name: string) {
   // The option, not just the label: the select exists before the candidates arrive, and
   // selecting then would pass for the wrong reason.
   const option = await screen.findByRole("option", { name });
-  await userEvent.selectOptions(await screen.findByLabelText(/focus/i), option);
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Focus" }), option);
 }
 
+/** Choose a focus and one comparator, and wait for the comparison the screen asks for. */
 async function compare(focus: string, comparator: string) {
   await chooseFocus(focus);
+  const drawn = watchNextComparison();
   await userEvent.click(
     await screen.findByRole("checkbox", { name: comparator }),
   );
-  await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+  await drawn();
 }
 
 /** Compare with no comparator limit set, as a fresh installation has, and return the refusal. */
@@ -66,9 +69,13 @@ function linesUnder(card: HTMLElement, label: string): string[] {
     .map((line) => line.textContent ?? "");
 }
 
-/** Open a pillar row to reveal the attributes beneath it. The pillar name is the button. */
+/**
+ * Open a pillar row to reveal the attributes beneath it. The pillar name is the button, and the
+ * first pillar opens with the first drawing (PL-102), so an open one is left as it is.
+ */
 async function openPillar(name: string) {
-  await userEvent.click(await screen.findByRole("button", { name }));
+  const pillar = await screen.findByRole("button", { name });
+  if (pillar.getAttribute("aria-expanded") !== "true") await userEvent.click(pillar);
 }
 
 describe("choosing what to compare", () => {
@@ -100,50 +107,55 @@ describe("choosing what to compare", () => {
 
     // Spain survives, so this is a prune rather than a reset.
     expect(screen.getByRole("checkbox", { name: "Spain" })).toBeChecked();
-    expect(await screen.findByRole("button", { name: /^compare$/i })).toBeEnabled();
-
-    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
 
     // The real assertion: the request the screen builds is one the server accepts.
     expect(
-      await screen.findByRole("table", { name: /pillar/i }),
+      await screen.findByRole("heading", { name: "Portugal against Spain" }),
     ).toBeInTheDocument();
   });
 
-  it("asks for nothing until a focus and a comparator are chosen", async () => {
+  it("asks for nothing until a comparator is chosen, and says what to choose", async () => {
+    let asked = 0;
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, () => {
+        asked += 1;
+        return undefined;
+      }),
+    );
     renderShell("/compare");
 
-    expect(
-      await screen.findByRole("button", { name: /^compare$/i }),
-    ).toBeDisabled();
+    expect(await screen.findByText(/^Choose up to 5 to compare with /)).toBeInTheDocument();
+    expect(asked).toBe(0);
   });
 
   /**
-   * UI-25. The placeholder's value is the empty string, which was kept as the focus: the button
-   * was disabled only for `null` and the click submitted only for a truthy focus, so Compare
-   * stood enabled and clicking it did nothing.
+   * UI-25. The placeholder's value is the empty string, which is no candidate: a cleared focus
+   * asks for nothing and draws nothing.
    */
-  it("disables Compare again when the focus is cleared", async () => {
+  it("draws nothing once the focus is cleared, and says what to choose", async () => {
     renderShell("/compare");
-    await chooseFocus("Portugal");
-    await userEvent.click(await screen.findByRole("checkbox", { name: "Spain" }));
-    expect(screen.getByRole("button", { name: /^compare$/i })).toBeEnabled();
+    await compare("Portugal", "Spain");
+    await screen.findByRole("heading", { name: "Portugal against Spain" });
 
-    await userEvent.selectOptions(screen.getByLabelText(/focus/i), "");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Focus" }), "");
 
-    expect(screen.getByRole("button", { name: /^compare$/i })).toBeDisabled();
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: /against/ })).toBeNull(),
+    );
+    expect(
+      screen.getByText("Choose a candidate to focus on, then who to compare it with."),
+    ).toBeInTheDocument();
   });
 
   it("compares again once a focus is chosen again, keeping the ticked comparators", async () => {
     renderShell("/compare");
     await chooseFocus("Portugal");
     await userEvent.click(await screen.findByRole("checkbox", { name: "Spain" }));
-    await userEvent.selectOptions(screen.getByLabelText(/focus/i), "");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Focus" }), "");
 
     await chooseFocus("Netherlands");
 
     expect(screen.getByRole("checkbox", { name: "Spain" })).toBeChecked();
-    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
     expect(
       await screen.findByRole("heading", { name: /netherlands against spain/i }),
     ).toBeInTheDocument();
@@ -151,7 +163,7 @@ describe("choosing what to compare", () => {
 });
 
 describe("when the level changes underneath", () => {
-  it("clears the focus, the comparators and the comparison", async () => {
+  it("clears the comparators and the comparison, and focuses the new level's default", async () => {
     // P54: `focus`, `comparators` and `asked` survived a level change while the fetcher
     // depended on `levelId`, so the screen immediately re-asked with candidate ids from the
     // old level -- `level=city&focus=country.portugal`, which the contract answers 409
@@ -164,7 +176,11 @@ describe("when the level changes underneath", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "City" }));
 
-    expect(await screen.findByLabelText(/focus/i)).toHaveValue("");
+    // No home at this level, so the top of its ranking (PL-102).
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Focus" })).toHaveValue("city.lisbon"),
+    );
+    expect(screen.getByRole("checkbox", { name: "Porto" })).not.toBeChecked();
     expect(
       screen.queryByRole("table", { name: /every pillar/i }),
     ).toBeNull();
@@ -283,6 +299,233 @@ describe("what Compare remembers", () => {
     expect(screen.getByRole("radio", { name: /raw figures/i })).toBeChecked();
     expect(screen.queryByRole("table", { name: /every pillar/i })).toBeNull();
     expect(comparisonsAsked).toBe(0);
+  });
+});
+
+/** Counts the comparisons asked for, and lets each through to the mock. */
+function countComparisons(): { asked: URLSearchParams[] } {
+  const seen = { asked: [] as URLSearchParams[] };
+  mockServer.use(
+    http.get(`${BASE}/comparisons`, ({ request }) => {
+      seen.asked.push(new URL(request.url).searchParams);
+      return undefined;
+    }),
+  );
+  return seen;
+}
+
+/** PL-094. The drawing is always the comparison of the selection on screen. */
+describe("the comparison follows the selection", () => {
+  it("draws the comparison once a focus and a comparator are chosen, with no button", async () => {
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Portugal against Netherlands" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^compare$/i })).toBeNull();
+  });
+
+  it("follows the selection: unticking redraws without that comparator", async () => {
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Spain" }));
+    await screen.findByRole("heading", { name: "Portugal against Netherlands, Spain" });
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Spain" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Portugal against Netherlands" }),
+    ).toBeInTheDocument();
+  });
+
+  it("sends one request for a burst of ticks", async () => {
+    const seen = countComparisons();
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await screen.findByRole("checkbox", { name: "Netherlands" });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Netherlands" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Spain" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Estonia" }));
+
+    await screen.findByRole("heading", { name: /^Portugal against/ });
+    expect(seen.asked).toHaveLength(1);
+    expect(seen.asked[0]!.getAll("comparators")).toEqual([
+      "country.netherlands",
+      "country.spain",
+      "country.estonia",
+    ]);
+  });
+
+  it("marks a drawing that belongs to the previous selection while the new one loads", async () => {
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
+    await screen.findByRole("heading", { name: "Portugal against Netherlands" });
+    const held: (() => void)[] = [];
+    const release = () => held.splice(0).forEach((resolve) => resolve());
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, async () => {
+        await new Promise<void>((resolve) => held.push(resolve));
+        return undefined;
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Spain" }));
+
+    expect(await screen.findByText("Updating…")).toHaveAttribute("role", "status");
+    const stale = screen.getByRole("heading", { name: "Portugal against Netherlands" });
+    expect(stale.closest('[aria-busy="true"]')).not.toBeNull();
+    // Still marked once the new comparison has been asked for and not yet answered.
+    await waitFor(() => expect(held.length).toBeGreaterThan(0));
+    expect(screen.getByText("Updating…")).toBeInTheDocument();
+
+    release();
+
+    expect(
+      await screen.findByRole("heading", { name: "Portugal against Netherlands, Spain" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Updating…")).toBeNull();
+  });
+
+  it("keeps the drawing when the new one fails, marked could not be refreshed, and Try again reads it", async () => {
+    // PL-010 over C07-C: a failure never takes away what was on screen.
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
+    await screen.findByRole("heading", { name: "Portugal against Netherlands" });
+    mockServer.use(http.get(`${BASE}/comparisons`, () => serverFault()));
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Spain" }));
+
+    const region = within(compareRegion());
+    expect(await region.findByText(/comparison could not be refreshed/i)).toBeInTheDocument();
+    expect(region.getByRole("heading", { name: "Portugal against Netherlands" })).toBeInTheDocument();
+    expect(region.queryByText("Updating…")).toBeNull();
+
+    mockServer.resetHandlers();
+    await userEvent.click(region.getByRole("button", { name: "Try again" }));
+
+    expect(
+      await region.findByRole("heading", { name: "Portugal against Netherlands, Spain" }),
+    ).toBeInTheDocument();
+    expect(region.queryByText(/could not be refreshed/i)).toBeNull();
+  });
+
+  it("redraws when an acquisition ends", async () => {
+    let status = "running";
+    const watched = { id: 8, triggered_by: "user", started_at: "2026-09-21T09:00:00Z", cost_eur: 0 };
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, () =>
+        HttpResponse.json({ items: [{ ...watched, run_status: status }], total: 1 }),
+      ),
+      http.get(`${BASE}/data-acquisition-runs/:runId`, () =>
+        HttpResponse.json({
+          ...watched,
+          run_status: status,
+          progress: { items_total: 96, items_completed: 24 },
+          failures: [],
+        }),
+      ),
+    );
+    const seen = countComparisons();
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
+    await screen.findByRole("heading", { name: "Portugal against Netherlands" });
+    await screen.findByRole("region", { name: /acquisition in progress/i });
+    const before = seen.asked.length;
+
+    status = "completed";
+
+    await waitFor(() => expect(seen.asked.length).toBeGreaterThan(before), { timeout: 8_000 });
+  });
+});
+
+/** PL-103. */
+describe("the order of the comparators", () => {
+  it("orders columns and cards by score, No score last", async () => {
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    for (const name of ["Estonia", "Spain", "Netherlands"]) {
+      await userEvent.click(await screen.findByRole("checkbox", { name }));
+    }
+
+    const matrix = await screen.findByRole("table", { name: /every pillar/i });
+    await waitFor(() =>
+      expect(
+        within(matrix)
+          .getAllByRole("columnheader")
+          .map((header) => header.textContent ?? "")
+          .filter((text) => /Netherlands|Spain|Estonia/.test(text))
+          .map((text) => /Netherlands|Spain|Estonia/.exec(text)![0]),
+      ).toEqual(["Netherlands", "Spain", "Estonia"]),
+    );
+    const cards = screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent);
+    expect(cards.filter((name) => /^(Netherlands|Spain|Estonia)$/.test(name ?? ""))).toEqual([
+      "Netherlands",
+      "Spain",
+      "Estonia",
+    ]);
+  });
+});
+
+/** PL-102. */
+describe("what Compare opens with", () => {
+  it("opens on the home candidate with nothing to compare it with yet", async () => {
+    renderShell("/compare");
+
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Focus" })).toHaveValue("country.romania"),
+    );
+    expect(
+      screen.getByText("Choose up to 5 to compare with Romania."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: /every pillar/i })).toBeNull();
+  });
+
+  it("opens on the top of the ranking where home is not at this level", async () => {
+    mockServer.use(
+      http.get(`${BASE}/household`, () =>
+        HttpResponse.json({ code: "household_not_configured", message: "No household." }, {
+          status: 409,
+        }),
+      ),
+    );
+    renderShell("/compare");
+
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Focus" })).toHaveValue("country.portugal"),
+    );
+  });
+
+  it("does not put a default back over a focus the reader cleared", async () => {
+    renderShell("/compare");
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Focus" })).toHaveValue("country.romania"),
+    );
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Focus" }), "");
+
+    await openTab("Configure");
+    await screen.findByRole("heading", { level: 1, name: "Configure" });
+    await openTab("Compare");
+
+    await screen.findByRole("option", { name: "Portugal" });
+    expect(screen.getByRole("combobox", { name: "Focus" })).toHaveValue("");
+  });
+
+  it("opens the first pillar with the first drawing", async () => {
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
+
+    expect(await screen.findByRole("button", { name: "Economy" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
   });
 });
 
@@ -497,10 +740,10 @@ describe("the pillar matrix", () => {
 });
 
 describe("opening a pillar to its attributes", () => {
-  it("shows the pillar's attributes only once it is opened", async () => {
+  it("shows a pillar's attributes only while it is open", async () => {
     renderShell("/compare");
     await compare("Portugal", "Netherlands");
-    await screen.findByRole("button", { name: "Economy" });
+    await userEvent.click(await screen.findByRole("button", { name: "Economy" }));
 
     expect(screen.queryByRole("row", { name: /cost of living index/i })).toBeNull();
 
@@ -518,7 +761,7 @@ describe("opening a pillar to its attributes", () => {
     await openPillar("Economy");
     await screen.findByRole("row", { name: /cost of living index/i });
 
-    await openPillar("Economy");
+    await userEvent.click(screen.getByRole("button", { name: "Economy" }));
 
     expect(screen.queryByRole("row", { name: /cost of living index/i })).toBeNull();
   });
@@ -754,9 +997,11 @@ describe("a figure's provenance on Compare", () => {
     serveProvenance();
     renderShell("/compare");
     await chooseFocus("Portugal");
+    const drawn = watchNextComparison();
     await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Spain" }));
-    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+    await drawn();
+    await screen.findByRole("heading", { name: "Portugal against Netherlands, Spain" });
     await openPillar("Economy");
     return screen.findByRole("row", { name: /cost of living index/i });
   }
@@ -1120,7 +1365,7 @@ describe("when a comparison cannot be drawn", () => {
     await userEvent.click(netherlands);
 
     expect(netherlands).not.toBeChecked();
-    expect(screen.getByRole("button", { name: /^compare$/i })).toBeDisabled();
+    expect(screen.getByText("Choose up to 5 to compare with Portugal.")).toBeInTheDocument();
   });
 
   /** PL-101. Words where nothing can be shown; a dash only in a gap's place. */
@@ -1585,28 +1830,47 @@ describe("PL-010: a comparison asked for again", () => {
     return { release };
   }
 
-  it("keeps the table on screen, marked busy, while the same comparison is read again", async () => {
+  /** A run the shell sees running, which `end()` completes; its end reads Compare again. */
+  function aRunThatEnds(): { end: () => void } {
+    let status = "running";
+    const watched = { id: 8, triggered_by: "user", started_at: "2026-09-21T09:00:00Z", cost_eur: 0 };
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, () =>
+        HttpResponse.json({ items: [{ ...watched, run_status: status }], total: 1 }),
+      ),
+      http.get(`${BASE}/data-acquisition-runs/:runId`, () =>
+        HttpResponse.json({
+          ...watched,
+          run_status: status,
+          progress: { items_total: 96, items_completed: 24 },
+          failures: [],
+        }),
+      ),
+    );
+    return { end: () => (status = "completed") };
+  }
+
+  /**
+   * No button any more (PL-094): the same comparison is read again when an acquisition ends.
+   * Its table stays, marked busy; a read that fails keeps it, marked could not be refreshed,
+   * and Try again reads it again.
+   */
+  it("keeps the table while the same comparison is read again, and through a failed read", async () => {
+    const run = aRunThatEnds();
     const later = holdLaterComparisons();
     renderShell("/compare");
     await compare("Portugal", "Netherlands");
     const table = await screen.findByRole("table", { name: /every pillar/i });
+    await screen.findByRole("region", { name: /acquisition in progress/i });
 
-    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+    run.end();
 
-    await waitFor(() => expect(table.closest("[aria-busy]")).toHaveAttribute("aria-busy", "true"));
+    await waitFor(
+      () => expect(table.closest("[aria-busy]")).toHaveAttribute("aria-busy", "true"),
+      { timeout: 8_000 },
+    );
     expect(table).toBeInTheDocument();
-    later.release();
-    await waitFor(() => expect(table.closest("[aria-busy]")).toHaveAttribute("aria-busy", "false"));
-  });
-
-  it("keeps it marked could not be refreshed when the read fails, and Try again reads it", async () => {
-    const later = holdLaterComparisons();
-    renderShell("/compare");
-    await compare("Portugal", "Netherlands");
-    await screen.findByRole("table", { name: /every pillar/i });
-
-    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
-    later.release(HttpResponse.error());
+    later.release(serverFault());
 
     const region = within(compareRegion());
     expect(await region.findByText(/comparison could not be refreshed/i)).toBeInTheDocument();
@@ -1658,13 +1922,14 @@ describe("Try again reads what failed", () => {
 });
 
 describe("focus when a refusal takes the pressed control away", () => {
-  it("moves to Nothing to compare when Compare is refused for an unset range", async () => {
+  it("moves to Nothing to compare when the comparison a tick asked for is refused for an unset range", async () => {
     renderShell("/compare");
     await chooseFocus("Portugal");
-    await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
+    await screen.findByRole("checkbox", { name: "Netherlands" });
     await replaceSettings({ ...SETTINGS, score_scale_max: null });
 
-    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+    // No button (PL-094): the tick asks, and the refusal replaces the chip it was made on.
+    await userEvent.click(screen.getByRole("checkbox", { name: "Netherlands" }));
 
     const card = await screen.findByRole("region", { name: "Nothing to compare" });
     await waitFor(() => expect(document.activeElement).not.toBe(document.body));
@@ -1676,7 +1941,7 @@ describe("focus when a refusal takes the pressed control away", () => {
     renderShell("/compare");
 
     await screen.findByRole("region", { name: "Nothing to compare" });
-    await delay(50);
+    await act(() => delay(50));
     expect(document.activeElement).toBe(document.body);
   });
 });

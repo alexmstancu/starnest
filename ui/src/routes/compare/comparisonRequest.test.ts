@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { requestFor } from "./comparisonRequest";
+import { describesSelection, requestFor } from "./comparisonRequest";
 
 describe("what Compare would ask for", () => {
   it("asks for nothing without a focus", () => {
@@ -32,5 +32,29 @@ describe("what Compare would ask for", () => {
     picked.push("country.netherlands");
 
     expect(request?.comparators).toEqual(["country.spain"]);
+  });
+});
+
+describe("whether a drawing is of the selection on screen", () => {
+  const drawing = {
+    focus: { candidate: "country.portugal" },
+    comparators: [{ candidate: "country.netherlands" }, { candidate: "country.spain" }],
+  };
+
+  it("is, whatever order the comparators are drawn in", () => {
+    expect(
+      describesSelection(drawing, {
+        focus: "country.portugal",
+        comparators: ["country.spain", "country.netherlands"],
+      }),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["nothing is asked", null],
+    ["the focus differs", { focus: "country.spain", comparators: ["country.netherlands"] }],
+    ["a comparator was added", { focus: "country.portugal", comparators: ["country.spain", "country.netherlands", "country.estonia"] }],
+  ])("is not when %s", (_what, request) => {
+    expect(describesSelection(drawing, request)).toBe(false);
   });
 });

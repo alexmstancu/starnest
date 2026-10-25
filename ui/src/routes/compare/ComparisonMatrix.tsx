@@ -63,10 +63,13 @@ export function ComparisonMatrix({
   pillarWeights: ReadonlyMap<string, number>;
   /** Each priority pillar's place, from `pillarPriority`, shared with the cards. */
   priority: ReadonlyMap<string, number>;
-  /** The one pillar open to its attributes, kept with the selection so it survives a tab change. */
-  open: string | null;
-  /** Opens a pillar, or closes it when it is the open one. */
-  onOpen: (pillar: string) => void;
+  /**
+   * The one pillar open to its attributes, kept with the selection so it survives a tab change:
+   * null when the reader closed it, undefined until anyone chose -- then the first (PL-102).
+   */
+  open: string | null | undefined;
+  /** Opens a pillar, or closes every one with null. */
+  onOpen: (pillar: string | null) => void;
 }) {
   const comparators = comparison.comparators ?? [];
   const pillarNames = usePillarNames();
@@ -117,6 +120,12 @@ export function ComparisonMatrix({
     })),
     comparators.map((each) => each.candidate),
   );
+  // **The first pillar opens with the first drawing** (PL-102), until the reader opens or closes
+  // one themselves.
+  const firstOpenable =
+    pillarRows.find((row) => row.pillar !== null && (groups.get(row.pillar)?.length ?? 0) > 0)
+      ?.pillar ?? null;
+  const shownOpen = open === undefined ? firstOpenable : open;
 
   return (
     <div className="table-card table-card--matrix">
@@ -172,7 +181,7 @@ export function ComparisonMatrix({
 
           {pillarRows.map((row) => {
             const place = row.pillar === null ? undefined : priority.get(row.pillar);
-            const isOpen = open !== null && open === row.pillar;
+            const isOpen = shownOpen !== null && shownOpen === row.pillar;
             const attributes = row.pillar === null ? [] : (groups.get(row.pillar) ?? []);
             return (
               <PillarGroup
@@ -183,9 +192,7 @@ export function ComparisonMatrix({
                 place={place}
                 open={isOpen}
                 canOpen={attributes.length > 0}
-                onToggle={() => {
-                  if (row.pillar !== null) onOpen(row.pillar);
-                }}
+                onToggle={() => onOpen(isOpen ? null : row.pillar)}
                 cells={row.cells.map((cell) => ({
                   candidate: cell.candidate,
                   bar: scale.drawn ? divergingBar(cell.delta, pillarScale, row.focus) : null,

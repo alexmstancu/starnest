@@ -465,8 +465,7 @@ test.describe("a comparison", () => {
     await comparator.check();
     await expect(comparator).toBeChecked();
 
-    await page.getByRole("button", { name: "Compare", exact: true }).click();
-
+    // No button (PL-094): the comparison follows the selection.
     await expect(page.getByText("Ahead on").first()).toBeVisible();
     await expect(page.getByText("Behind on").first()).toBeVisible();
   });

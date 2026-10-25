@@ -1,21 +1,30 @@
 import { useCallback, useEffect, useMemo } from "react";
-import type { Candidate } from "../../api/endpoints";
-import { isRecord } from "../../shell/sessionState";
+import { fetchHousehold, fetchRanking, type Candidate } from "../../api/endpoints";
+import { useRead } from "../../api/useRead";
 import { useSessionState } from "../../shell/SessionProvider";
-import type { ComparisonRequest } from "./comparisonRequest";
 import {
   EMPTY_SELECTION,
+  applyDefaultFocus,
   chooseFocus,
-  openPillar,
   parseSelection,
   reconcile,
   setMeasure,
+  setOpenPillar,
   setShownAs,
   toggleComparator,
   type CompareSelection,
   type ShownAs,
 } from "./compareSelection";
+import { homeIn, topOfRanking } from "./defaultFocus";
 import type { Measure } from "./pillarMatrix";
+
+interface Known {
+  roster: readonly Candidate[] | null;
+  /** The limit Compare may act on, or null while it is unknown (`knownLimit`). */
+  limit: number | null;
+  criteriaSetId: string | null;
+  levelId: string | null;
+}
 
 /**
  * Compare's selection, kept in the session store (X1, PL-016): it survives a tab change, a set
@@ -23,33 +32,25 @@ import type { Measure } from "./pillarMatrix";
  * another level (P54).
  *
  * **What is drawn is the stored selection made true to what is known now**: pruned to the
- * roster once it is read, trimmed to the limit once it is known (PL-092). The correction is
- * written back, so a trimmed comparator never returns and the trim is said once.
+ * roster once it is read, trimmed to the limit once it is known (PL-092), and given the default
+ * focus on the first visit at a level (PL-102). The correction is written back, so a trimmed
+ * comparator never returns, the trim is said once, and the default is offered once.
  */
-export function useCompareSelection(roster: readonly Candidate[] | null, limit: number | null) {
+export function useCompareSelection({ roster, limit, criteriaSetId, levelId }: Known) {
   const [stored, setStored] = useSessionState("compare/selection", EMPTY_SELECTION, parseSelection);
-  const [storedAsk, setAsked] = useSessionState("compare/asked", null, parseRequest);
 
   const known = useMemo(
     () => (roster === null ? null : new Set(roster.map((candidate) => candidate.id))),
     [roster],
   );
-  const selection = useMemo(() => reconcile(stored, known, limit), [stored, known, limit]);
+  const offered = useDefaultFocus(known, stored.defaulted, criteriaSetId, levelId);
+  const selection = useMemo(() => {
+    const reconciled = reconcile(stored, known, limit);
+    return offered === null ? reconciled : applyDefaultFocus(reconciled, offered);
+  }, [stored, known, limit, offered]);
   useEffect(() => {
     if (selection !== stored) setStored(selection);
   }, [selection, stored, setStored]);
-
-  // Asked again only once the roster says its candidates still exist.
-  const asked = useMemo(
-    () =>
-      storedAsk !== null &&
-      known !== null &&
-      known.has(storedAsk.focus) &&
-      storedAsk.comparators.every((each) => known.has(each))
-        ? storedAsk
-        : null,
-    [storedAsk, known],
-  );
 
   const update = useCallback(
     (change: (current: CompareSelection) => CompareSelection) =>
@@ -63,22 +64,40 @@ export function useCompareSelection(roster: readonly Candidate[] | null, limit: 
         update((current) => toggleComparator(current, candidate, limit).state),
       showAs: (shownAs: ShownAs) => update((current) => setShownAs(current, shownAs)),
       measureBy: (measure: Measure) => update((current) => setMeasure(current, measure)),
-      openPillar: (pillar: string) => update((current) => openPillar(current, pillar)),
-      ask: setAsked,
+      openPillar: (pillar: string | null) => update((current) => setOpenPillar(current, pillar)),
     }),
-    [update, limit, setAsked],
+    [update, limit],
   );
 
-  return { selection, asked, ...actions };
+  return { selection, ...actions };
 }
 
-function isIdList(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((each) => typeof each === "string");
-}
-
-function parseRequest(stored: unknown): ComparisonRequest | null | undefined {
-  if (stored === null) return null;
-  if (!isRecord(stored) || typeof stored["focus"] !== "string") return undefined;
-  if (!isIdList(stored["comparators"]) || stored["comparators"].length === 0) return undefined;
-  return { focus: stored["focus"], comparators: stored["comparators"] };
+/**
+ * The focus Compare opens on, read only while it has not yet been offered at this level: the
+ * household's home, and the ranking only when home is not a candidate here.
+ */
+function useDefaultFocus(
+  roster: ReadonlySet<string> | null,
+  offeredAlready: boolean,
+  criteriaSetId: string | null,
+  levelId: string | null,
+): string | null {
+  const wanted = roster !== null && !offeredAlready && criteriaSetId !== null && levelId !== null;
+  const household = useRead(
+    useCallback((signal: AbortSignal) => fetchHousehold({ signal }), []),
+    { enabled: wanted },
+  );
+  const householdSettled = household.read.state === "ready" || household.read.state === "failed";
+  const home =
+    roster !== null && household.read.state === "ready" ? homeIn(roster, household.read.data) : null;
+  const ranking = useRead(
+    useCallback(
+      (signal: AbortSignal) => fetchRanking(criteriaSetId ?? "", levelId ?? "", { signal }),
+      [criteriaSetId, levelId],
+    ),
+    { enabled: wanted && householdSettled && home === null },
+  );
+  if (!wanted) return null;
+  if (home !== null) return home;
+  return ranking.read.state === "ready" ? topOfRanking(roster, ranking.read.data) : null;
 }

@@ -6,6 +6,7 @@ import { replaceSettings } from "../../api/endpoints";
 import type { Ranking } from "../../api/endpoints";
 import { SETTINGS, comparisonFor, rankingFor } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
+import { watchNextComparison } from "../../testing/comparisons";
 import { renderShell } from "../../testing/renderShell";
 
 /**
@@ -222,9 +223,14 @@ describe("a comparison, on a scale of 150", () => {
     const { container } = renderShell("/compare");
     const option = await screen.findByRole("option", { name: "Portugal" });
     await userEvent.selectOptions(await screen.findByLabelText(/focus/i), option);
+    const drawn = watchNextComparison();
     await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
-    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: "Economy" }));
+    await drawn();
+    // The first pillar opens with the first drawing (PL-102).
+    expect(await screen.findByRole("button", { name: "Economy" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
 
     await waitFor(() =>
       expect(screen.getByRole("row", { name: /cost of living index/i })).toHaveTextContent(
@@ -257,9 +263,14 @@ describe("a comparison that carried no scale", () => {
     const { container } = renderShell("/compare");
     const option = await screen.findByRole("option", { name: "Portugal" });
     await userEvent.selectOptions(await screen.findByLabelText(/focus/i), option);
+    const drawn = watchNextComparison();
     await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
-    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: "Economy" }));
+    await drawn();
+    // The first pillar opens with the first drawing (PL-102).
+    expect(await screen.findByRole("button", { name: "Economy" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
     const row = await screen.findByRole("row", { name: /cost of living index/i });
 
     expect(row).toHaveTextContent("73");

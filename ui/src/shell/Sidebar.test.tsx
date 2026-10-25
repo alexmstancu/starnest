@@ -132,10 +132,11 @@ describe("PL-005: the candidates card while the score range is unset", () => {
 
   /**
    * From review. Two refusals landing together: the sidebar's re-read and the comparison the
-   * reader pressed. Only the notice that replaced the pressed Compare may take its focus.
+   * reader asked for with a tick. Only the notice that replaced the chip may take its focus.
    */
   it("leaves the focus a refused Compare had to Compare's own notice", async () => {
     const released: (() => void)[] = [];
+    const heldPaths = new Set<string>();
     const refusal = () =>
       HttpResponse.json(
         { code: "score_scale_not_set", message: "score_scale_max is not set." },
@@ -147,6 +148,7 @@ describe("PL-005: the candidates card while the score range is unset", () => {
         http.get(`${BASE}${path}`, async () => {
           asked += 1;
           if (path === "/rankings" && asked === 1) return undefined;
+          heldPaths.add(path);
           await new Promise<void>((resolve) => released.push(resolve));
           return refusal();
         }),
@@ -163,9 +165,10 @@ describe("PL-005: the candidates card while the score range is unset", () => {
       await screen.findByRole("combobox", { name: /focus/i }),
       await screen.findByRole("option", { name: "Portugal" }),
     );
+    // No button (PL-094): the tick asks, after a short pause.
     await user.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
-    await user.click(screen.getByRole("button", { name: /^compare$/i }));
-    await waitFor(() => expect(released).toHaveLength(2));
+    // Both held, whichever order and however often the sidebar re-reads meanwhile.
+    await waitFor(() => expect([...heldPaths].sort()).toEqual(["/comparisons", "/rankings"]));
 
     act(() => released.forEach((release) => release()));
 
