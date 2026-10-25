@@ -855,11 +855,47 @@ class TestADomainRefusalIsNot500:
         assert await _gate_answers_recorded(api) == before, "nothing was recorded"
 
     async def test_a_malformed_source_id_is_refused_not_500(self, api: httpx.AsyncClient) -> None:
-        """An id that cannot be one is a malformed request (`arch.md` 7.3), not a server fault."""
+        """An id that cannot be one is a malformed request (`arch.md` 7.3), not a server fault --
+        and it says where, under the name the contract gives the parameter."""
         response = await api.patch("/v1/data-sources/Eurostat", json={"is_enabled": False})
 
-        assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
-        _assert_in_the_one_error_shape("updateDataSource", response.json())
+        _assert_a_malformed_identifier_at("updateDataSource", response, ["path", "dataSourceId"])
+        assert "Eurostat" in _the_problem_at(response, ["path", "dataSourceId"])
+
+    async def test_a_malformed_level_in_the_query_says_where_it_is(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """It answered `cannot_be_ranked` -- "scores nothing at level Ranks" -- which sends the
+        reader to the criteria set when the request was what was wrong."""
+        response = await api.get("/v1/rankings", params={"criteria_set": MINIMAL, "level": "Ranks"})
+
+        _assert_a_malformed_identifier_at("getRanking", response, ["query", "level"])
+
+    async def test_a_well_formed_level_with_no_criteria_is_still_refused_as_before(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """The control: only the shape is the boundary's; a level nothing scores is the
+        ranking's refusal."""
+        await _set_the_score_scale(database_url, 100)
+
+        response = await api.get("/v1/rankings", params={"criteria_set": MINIMAL, "level": "moon"})
+
+        assert (response.status_code, response.json()["code"]) == (422, "cannot_be_ranked")
+
+    async def test_a_malformed_citizenship_in_the_body_says_which_one(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await _the_household(api)
+
+        response = await api.put(
+            "/v1/household",
+            json={**A_VALID_HOUSEHOLD, "citizenships": ["country.romania", "Portugal"]},
+        )
+
+        _assert_a_malformed_identifier_at(
+            "replaceHousehold", response, ["body", "citizenships", "1"]
+        )
+        assert await _the_household(api) == before, "nothing was written"
 
     @A_MALFORMED_SET_ID
     async def test_a_new_set_under_a_malformed_id_is_refused_not_500(
@@ -871,9 +907,8 @@ class TestADomainRefusalIsNot500:
 
         response = await api.post("/v1/criteria-sets", json={"id": malformed, "name": "Mine"})
 
-        assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
-        _assert_in_the_one_error_shape("createCriteriaSet", response.json())
-        assert malformed in response.json()["message"], "the identifier rule's own sentence"
+        _assert_a_malformed_identifier_at("createCriteriaSet", response, ["body", "id"])
+        assert malformed in _the_problem_at(response, ["body", "id"]), "the identifier's sentence"
         assert await _criteria_sets_held(api) == before, "nothing was written"
 
     async def test_a_new_set_under_a_well_formed_id_is_still_created(
@@ -933,6 +968,21 @@ async def _the_anchors_on_overburden(api: httpx.AsyncClient, criteria_set: str) 
 
 async def _runs_recorded(api: httpx.AsyncClient) -> int:
     return (await api.get("/v1/data-acquisition-runs")).json()["total"]
+
+
+def _assert_a_malformed_identifier_at(
+    operation: str, response: httpx.Response, location: list[str]
+) -> None:
+    """A malformed identifier is a malformed request that names where it is, in `details.errors`
+    as the contract's `FieldProblem` -- not a code and a sentence alone."""
+    _assert_refused_naming(operation, response, location)
+    problem = next(e for e in response.json()["details"]["errors"] if e["location"] == location)
+    assert problem["kind"] == "malformed_identifier"
+
+
+def _the_problem_at(response: httpx.Response, location: list[str]) -> str:
+    errors = response.json()["details"]["errors"]
+    return next(error["problem"] for error in errors if error["location"] == location)
 
 
 def _assert_refused_naming(operation: str, response: httpx.Response, location: list[str]) -> None:

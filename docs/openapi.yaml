@@ -1355,9 +1355,9 @@ components:
       type: object
       required: [location, problem, kind]
       properties:
-        location: { type: array, items: { type: string }, description: "Where the offending value is, e.g. [body, comparator_limit], [body, scale_anchors, '0', score] or [query, level]." }
+        location: { type: array, items: { type: string }, description: "Where the offending value is, e.g. [body, comparator_limit], [body, scale_anchors, '0', score], [query, level] or [path, criteriaSetId]. A path parameter is named as this contract names it." }
         problem: { type: string, description: "The validator's or the domain's own sentence, for a developer. A form words the refusal from kind and limit." }
-        kind: { type: string, description: "Stable. The validator's error type (less_than_equal, greater_than_equal, greater_than, int_from_float, int_parsing, float_parsing, finite_number, missing, extra_forbidden, and so on) or invalid_criterion." }
+        kind: { type: string, description: "Stable. The validator's error type (less_than_equal, greater_than_equal, greater_than, int_from_float, int_parsing, float_parsing, finite_number, missing, extra_forbidden, and so on), malformed_identifier for an identifier that cannot be one (lowercase letters, digits and underscores, starting with a letter, in the segments its kind takes), or invalid_criterion." }
         limit: { type: number, description: "The bound that refused the value, present only where kind names a numeric bound." }
 
     ErrorCode:

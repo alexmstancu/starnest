@@ -25,6 +25,7 @@ from starnest.api.dependencies import (
 )
 from starnest.api.rankings import CandidateResultBody, _result_body, evidence_for, the_ranking
 from starnest.api.values import ValueBody, _value_body
+from starnest.candidates import LevelId
 from starnest.comparison import (
     AttributeComparison,
     ComparatorCell,
@@ -93,7 +94,7 @@ class ComparisonBody(BaseModel):
 @router.get("/comparisons", operation_id="getComparison", response_model=ComparisonBody)
 async def get_comparison(
     criteria_set: str,
-    level: str,
+    level: LevelId,
     focus: str,
     criteria: Criteria,
     candidates: Candidates,

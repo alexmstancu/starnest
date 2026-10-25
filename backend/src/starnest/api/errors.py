@@ -352,16 +352,40 @@ def _validation_details(error: RequestValidationError) -> list[dict[str, Any]]:
 
 
 def _field_problem(item: Mapping[str, Any]) -> dict[str, Any]:
-    problem = {
-        "location": [str(part) for part in item.get("loc", ())],
-        "problem": item.get("msg", ""),
-        "kind": item["type"],
-    }
     context = item.get("ctx") or {}
+    problem = {
+        "location": _location_as_the_contract_names_it(item.get("loc", ())),
+        "problem": item.get("msg", ""),
+        "kind": _kind_of(item["type"], context),
+    }
     bounds = [context[key] for key in _NUMERIC_BOUNDS if _is_a_number(context.get(key))]
     if bounds:
         problem["limit"] = float(bounds[0])
     return problem
+
+
+def _location_as_the_contract_names_it(location: Iterable[object]) -> list[str]:
+    """`[path, criteriaSetId]` rather than FastAPI's `[path, criteria_set_id]`.
+
+    A route names a path parameter in Python's case and the contract in its own, and a client
+    reads the contract; a body field and a query parameter are already named alike.
+    """
+    parts = [str(part) for part in location]
+    if len(parts) > 1 and parts[0] == "path":
+        head, *rest = parts[1].split("_")
+        parts[1] = head + "".join(word.capitalize() for word in rest)
+    return parts
+
+
+def _kind_of(validator_kind: str, context: Mapping[str, Any]) -> str:
+    """The validator's kind, except that an identifier that cannot be one says so.
+
+    Pydantic calls every refusal a validator raises `value_error`; a malformed identifier is the
+    one a client words on its own (`arch.md` 7.3), so it gets a kind of its own.
+    """
+    if isinstance(context.get("error"), MalformedIdentifierError):
+        return "malformed_identifier"
+    return validator_kind
 
 
 def _is_a_number(bound: object) -> bool:

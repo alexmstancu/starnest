@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.dependencies import Households
 from starnest.api.errors import built_from_the_request
+from starnest.candidates import CandidateId
 from starnest.household import Household
 
 router = APIRouter(tags=["household"])
@@ -42,11 +43,11 @@ class HouseholdBody(BaseModel):
     net_income: float = Field(ge=0, allow_inf_nan=False)
     number_adults: int = Field(ge=1)
     number_children: int = Field(ge=0, description="Under 18.")
-    home_country_candidate: str = Field(min_length=1)
-    citizenships: tuple[str, ...] = Field(min_length=1)
+    home_country_candidate: CandidateId = Field(min_length=1)
+    citizenships: tuple[CandidateId, ...] = Field(min_length=1)
     target_monthly_spend: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     max_rent: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    home_city_candidate: str | None = None
+    home_city_candidate: CandidateId | None = None
 
 
 @router.get("/household", operation_id="getHousehold", response_model=HouseholdBody)

@@ -381,7 +381,7 @@ async def reorder_data_sources(body: DataSourceOrderInput, catalog: Catalog) -> 
     response_model=DataSourceBody,
 )
 async def update_data_source(
-    data_source_id: str, body: DataSourceInput, catalog: Catalog
+    data_source_id: DataSourceId, body: DataSourceInput, catalog: Catalog
 ) -> DataSourceBody:
     """Switch a source on or off, and set where it stands in the global order.
 
@@ -395,7 +395,7 @@ async def update_data_source(
     still consulted. Nothing is recomputed here and nothing is cached.
     """
     changed = await catalog.set_data_source(
-        DataSourceId(data_source_id),
+        data_source_id,
         is_enabled=body.is_enabled,
         default_priority=body.default_priority,
     )

@@ -35,6 +35,7 @@ from starnest.criteria import (
     CriteriaSet,
     CriteriaSetError,
     CriteriaSetExistsError,
+    CriteriaSetId,
     CriteriaSetNameTakenError,
     CriteriaStore,
     Criterion,
@@ -476,7 +477,7 @@ class DuplicateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str | None = Field(default=None, min_length=1)
+    id: CriteriaSetId | None = Field(default=None, min_length=1)
     name: SetName
 
 
@@ -538,7 +539,7 @@ class NewCriteriaSetBody(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str | None = Field(default=None, min_length=1)
+    id: CriteriaSetId | None = Field(default=None, min_length=1)
     name: SetName
 
 

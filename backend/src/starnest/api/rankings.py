@@ -31,7 +31,7 @@ from starnest.api.dependencies import (
 from starnest.api.rules import MatchRuleResultBody
 from starnest.api.rules import _result_body as _gate_answer_body
 from starnest.api.values import ValueBody, _value_body
-from starnest.candidates import Candidate
+from starnest.candidates import Candidate, LevelId
 from starnest.criteria import CriteriaSet
 from starnest.data import MatchRuleResult, Value
 from starnest.evaluation import (
@@ -275,7 +275,7 @@ async def the_ranking(
 @router.get("/rankings", operation_id="getRanking", response_model=RankingBody)
 async def get_ranking(
     criteria_set: str,
-    level: str,
+    level: LevelId,
     criteria: Criteria,
     candidates: Candidates,
     values: Values,
@@ -313,7 +313,7 @@ async def get_ranking(
 async def get_ranked_candidate_detail(
     candidate_id: str,
     criteria_set: str,
-    level: str,
+    level: LevelId,
     criteria: Criteria,
     candidates: Candidates,
     values: Values,

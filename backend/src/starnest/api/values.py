@@ -80,7 +80,7 @@ class ManualValueBody(BaseModel):
     payload: dict[str, Any]
     reference_period: ReferencePeriodBody
     retrieval_date: datetime
-    breakdown_option: str | None = None
+    breakdown_option: BreakdownOptionId | None = None
     confidence_level: ConfidenceLevel = MANUAL_ENTRY_DEFAULT_CONFIDENCE
     quote: str | None = None
     citations: tuple[str, ...] = ()
@@ -185,9 +185,7 @@ async def enter_value_manually(
         confidence_level=body.confidence_level,
         quote=body.quote,
         citations=body.citations,
-        breakdown_option=BreakdownOptionId(body.breakdown_option)
-        if body.breakdown_option
-        else None,
+        breakdown_option=body.breakdown_option,
     )
     # append is idempotent: it stores the value, or no-ops if this exact manual entry (same
     # natural key, including the client's retrieval_date) was already recorded. Either way the row
