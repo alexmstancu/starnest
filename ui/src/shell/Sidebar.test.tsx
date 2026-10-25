@@ -310,3 +310,54 @@ describe("PL-010: the sidebar keeps what it shows while it reads it again", () =
     );
   });
 });
+
+/** RULES "Focus": a Try again in the sidebar takes itself away; focus stays in its card. */
+describe("focus when the sidebar reads again from the keyboard", () => {
+  it("keeps focus in the levels when the roster is read again and answers", async () => {
+    let failing = true;
+    mockServer.use(
+      http.get(`${BASE}/candidates`, ({ request }) =>
+        failing && !new URL(request.url).searchParams.has("level")
+          ? HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 })
+          : undefined,
+      ),
+    );
+    renderShell("/acquire");
+    const sidebar = screen.getByRole("complementary");
+    const note = await within(sidebar).findByText(/could not check which levels hold candidates/i);
+
+    failing = false;
+    act(() => within(note).getByRole("button", { name: "Try again" }).focus());
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(within(sidebar).queryByText(/could not check which levels/i)).toBeNull(),
+    );
+    expect(document.activeElement).not.toBe(document.body);
+    expect(sidebar).toContainElement(document.activeElement as HTMLElement);
+  });
+
+  it("hands focus to 'not recorded' when the household read again says so", async () => {
+    let failing = true;
+    mockServer.use(
+      http.get(`${BASE}/household`, () =>
+        failing
+          ? HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 })
+          : HttpResponse.json(
+              { code: "household_not_configured", message: "x" },
+              { status: 404 },
+            ),
+      ),
+    );
+    renderShell("/acquire");
+    const card = await screen.findByRole("region", { name: "Household summary" });
+    const retry = await within(card).findByRole("button", { name: "Try again" });
+
+    failing = false;
+    act(() => retry.focus());
+    await userEvent.keyboard("{Enter}");
+
+    const said = await within(card).findByText(/nothing has been recorded about the household/i);
+    await waitFor(() => expect(document.activeElement).toBe(said));
+  });
+});

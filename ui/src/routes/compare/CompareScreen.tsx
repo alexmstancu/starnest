@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ComparisonMatrix } from "./ComparisonMatrix";
 import { ViewChoices } from "./ViewChoices";
@@ -34,6 +34,7 @@ import { isUnsetSetting } from "../../shell/unsetStates";
 import { ReadFailureCard } from "../../shell/ReadFailureCard";
 import { type FocusRegion, useFocusRegion, useFocusWhenLost } from "../../shell/useFocusWhenLost";
 import { useSelection } from "../../shell/SelectionContext";
+import { useRetryFocus } from "../../shell/useRetryFocus";
 
 /**
  * One focus candidate against comparators (`reqs.md` 8.5).
@@ -152,6 +153,11 @@ function TheComparison({
     { enabled: settled !== null, freshness: selection.acquisitionsEnded },
   );
   const drawnRead = useLastDrawing(comparison.read, request);
+  // **Try again takes its own button away** (RULES "Focus"): the comparison's box holds focus
+  // while it is read again, then hands it to what came back -- the drawing, a new Try again or
+  // the refusal, all inside the box.
+  const comparisonBox = useRef<HTMLDivElement>(null);
+  const { retryButton, hold } = useRetryFocus(asRead(comparison.read), comparisonBox);
   // **Never presented as the current one** (C07-C): a drawing of an earlier selection stays on
   // screen dimmed, under its own heading, until the answer -- and **a failure keeps it** (PL-010),
   // marked "could not be refreshed" with a Try again, rather than taking it away.
@@ -232,54 +238,60 @@ function TheComparison({
         }
       </LoadedRegion>
 
-      {comparison.read.state === "failed" &&
-        drawnRead === null &&
-        (isUnsetSetting(comparison.read.error) ? (
-          <UnsetSetting
-            error={comparison.read.error}
-            title="Nothing to compare"
-            detail={UNSET_DETAIL}
-          />
-        ) : (
-          <ReadFailureCard
-            what="The comparison"
-            error={comparison.read.error}
-            onRetry={comparison.reload}
-            prominence="screen"
-            names={{ candidate: (id) => rosterNames.get(id) }}
-          />
-        ))}
-      {drawnRead !== null && (
-        <div className={current ? undefined : "refreshing"} aria-busy={updating}>
-          {updating && (
-            <p className="screen__note" role="status">
-              Updating…
-            </p>
-          )}
-          <LoadedRegion
-            read={combine(drawnRead, weights)}
-            what={weightsFailed ? "The criteria set's weights" : "The comparison"}
-            skeleton="rank-table"
-            onRetry={weightsFailed ? criteriaSet.reload : comparison.reload}
-          >
-            {([drawn, pillarWeights]) => (
-              <ComparisonTable
-                comparison={drawn}
-                shownAs={shownAs}
-                measure={measure}
-                pillarWeights={pillarWeights}
-                openPillar={chosen.selection.openPillar}
-                onOpenPillar={chosen.openPillar}
-              />
+      <div ref={comparisonBox} tabIndex={-1}>
+        {comparison.read.state === "failed" &&
+          drawnRead === null &&
+          (isUnsetSetting(comparison.read.error) ? (
+            <UnsetSetting
+              error={comparison.read.error}
+              title="Nothing to compare"
+              detail={UNSET_DETAIL}
+            />
+          ) : (
+            <ReadFailureCard
+              what="The comparison"
+              error={comparison.read.error}
+              onRetry={() => {
+                hold();
+                void comparison.reload();
+              }}
+              retryRef={retryButton}
+              prominence="screen"
+              names={{ candidate: (id) => rosterNames.get(id) }}
+            />
+          ))}
+        {drawnRead !== null && (
+          <div className={current ? undefined : "refreshing"} aria-busy={updating}>
+            {updating && (
+              <p className="screen__note" role="status">
+                Updating…
+              </p>
             )}
+            <LoadedRegion
+              read={combine(drawnRead, weights)}
+              what={weightsFailed ? "The criteria set's weights" : "The comparison"}
+              skeleton="rank-table"
+              onRetry={weightsFailed ? criteriaSet.reload : comparison.reload}
+            >
+              {([drawn, pillarWeights]) => (
+                <ComparisonTable
+                  comparison={drawn}
+                  shownAs={shownAs}
+                  measure={measure}
+                  pillarWeights={pillarWeights}
+                  openPillar={chosen.selection.openPillar}
+                  onOpenPillar={chosen.openPillar}
+                />
+              )}
+            </LoadedRegion>
+          </div>
+        )}
+        {drawnRead === null && comparison.read.state === "pending" && (
+          <LoadedRegion read={comparison.read} what="The comparison" skeleton="rank-table" onRetry={comparison.reload}>
+            {() => null}
           </LoadedRegion>
-        </div>
-      )}
-      {drawnRead === null && comparison.read.state === "pending" && (
-        <LoadedRegion read={comparison.read} what="The comparison" skeleton="rank-table" onRetry={comparison.reload}>
-          {() => null}
-        </LoadedRegion>
-      )}
+        )}
+      </div>
     </>
   );
 }

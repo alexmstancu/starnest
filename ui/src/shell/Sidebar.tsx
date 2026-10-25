@@ -39,6 +39,7 @@ import { Skeleton } from "./Skeleton";
 import { levelsWithCandidates, noRankingBecause } from "./candidateCounts";
 import { useScreenChanges } from "./useScreenChanges";
 import { type FocusRegion, useFocusRegion, useFocusWhenLost } from "./useFocusWhenLost";
+import { useRetryFocus } from "./useRetryFocus";
 import { useShellSummary, type ShellSummary } from "./useShellSummary";
 
 /**
@@ -140,6 +141,13 @@ function SelectionControls() {
   // every level is held -- `aria-disabled`, so focus stays where it is -- and one the roster
   // could not be read for stays held, with the reason beside it.
   const populated = roster.state === "ready" ? levelsWithCandidates(roster.data.items) : null;
+  // **Its Try again takes itself away** (RULES "Focus"): the levels hold focus while the roster
+  // is read again, and hand it to a new Try again if that fails too.
+  const levelsBox = useRef<HTMLDivElement>(null);
+  const { retryButton: rosterRetry, hold: holdForRoster } = useRetryFocus(
+    roster.state === "idle" ? PENDING_READ : roster,
+    levelsBox,
+  );
   const empty = populated === null ? undefined : levels.find((level) => !populated.has(level.id));
 
   return (
@@ -171,7 +179,7 @@ function SelectionControls() {
         )}
       </div>
 
-      <div className="sidebar__group">
+      <div ref={levelsBox} tabIndex={-1} className="sidebar__group">
         <fieldset className="fieldset">
           <legend className="field__label">Level</legend>
           {/* **Segments, not radios.** The design draws the levels as two buttons sharing the
@@ -218,9 +226,13 @@ function SelectionControls() {
           <p className="sidebar__note">
             Could not check which levels hold candidates.{" "}
             <button
+              ref={rosterRetry}
               type="button"
               className="button button--quiet"
-              onClick={() => void reloadRoster()}
+              onClick={() => {
+                holdForRoster();
+                void reloadRoster();
+              }}
             >
               Try again
             </button>
@@ -252,9 +264,16 @@ function HouseholdCard({ freshness }: { freshness: number }) {
   // card was printing them raw, the same programmatic identifier the rest of the app was
   // taught not to show. The names come from the shared roster, fetched once.
   const candidateNames = useCandidateNames();
+  // What replaces the card's Try again when the household turns out never to have been recorded
+  // takes the focus that button took with it (RULES "Focus").
+  const focusRegion = useFocusRegion();
 
   return (
-    <section className="panel panel--household" aria-labelledby="household-summary-heading">
+    <section
+      className="panel panel--household"
+      aria-labelledby="household-summary-heading"
+      onFocus={focusRegion.claim}
+    >
       <div className="panel__head">
         {/* "Household summary", not "Household": the Configure panel is the household and
             this is a view of it, and two landmarks with one name is ambiguous to a screen
@@ -269,7 +288,7 @@ function HouseholdCard({ freshness }: { freshness: number }) {
         </Link>
       </div>
       {household.state === "failed" && hasErrorCode(household.error, "household_not_configured") ? (
-        <p className="panel__hint">Nothing has been recorded about the household yet.</p>
+        <NotRecorded region={focusRegion} />
       ) : (
         <LoadedRegion
           read={household}
@@ -325,6 +344,17 @@ function HouseholdCard({ freshness }: { freshness: number }) {
     </section>
   );
 }
+
+function NotRecorded({ region }: { region: FocusRegion }) {
+  const said = useFocusWhenLost<HTMLParagraphElement>(region);
+  return (
+    <p ref={said} tabIndex={-1} className="panel__hint">
+      Nothing has been recorded about the household yet.
+    </p>
+  );
+}
+
+const PENDING_READ: Read<never> = { state: "pending" };
 
 /**
  * Total, then how the ranking splits it (PL-005). **Two reads**: Total needs no score, so a

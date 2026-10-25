@@ -2063,3 +2063,51 @@ describe("Compare with nothing stored", () => {
     expect(screen.queryByRole("region", { name: "Nothing to compare yet" })).toBeNull();
   });
 });
+
+/**
+ * RULES "Focus": the comparison's Try again takes itself away. Whatever the retry brings -- the
+ * drawn comparison, a new failure, a refusal -- focus lands on it, never on the page.
+ */
+describe("focus when the comparison is read again from the keyboard", () => {
+  const ANSWERS = {
+    "a drawn comparison": null,
+    "another failure": () =>
+      HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 }),
+    "a refusal": () =>
+      HttpResponse.json(
+        { code: "comparator_limit_not_set", message: "x" },
+        { status: 409 },
+      ),
+  } as const;
+
+  it.each(Object.entries(ANSWERS))("keeps focus off the page when the retry brings %s", async (_case, second) => {
+    let failing = true;
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, () => {
+        if (failing) {
+          return HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 });
+        }
+        return second === null ? undefined : second();
+      }),
+    );
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
+    const region = within(compareRegion());
+    const card = (await region.findByText(/the comparison could not be loaded/i)).closest("div")!;
+
+    failing = false;
+    act(() => within(card).getByRole("button", { name: "Try again" }).focus());
+    await userEvent.keyboard("{Enter}");
+
+    if (second === null) await region.findByRole("table", { name: /every pillar/i });
+    else if (_case === "another failure") {
+      await waitFor(() =>
+        expect(document.activeElement).toHaveAccessibleName("Try again"),
+      );
+    } else await region.findByRole("region", { name: "Nothing to compare" });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(document.activeElement).not.toBe(document.body);
+    expect(compareRegion()).toContainElement(document.activeElement as HTMLElement);
+  });
+});
