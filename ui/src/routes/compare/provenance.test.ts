@@ -13,9 +13,10 @@ const MEASURED = {
 
 /** PL-096. Every figure carries where it came from, what it describes and when it was fetched. */
 describe("a figure's provenance", () => {
+  // 08:00 UTC on the reader's clock, which the tests pin to Europe/Bucharest (PL-020).
   it("names its source, both dates and its confidence", () => {
     expect(describeProvenance(MEASURED, NAMES)).toBe(
-      "Source: Eurostat. Describes 1 Jan 2025 to 31 Dec 2025. Fetched 11 Sept 2026, 08:00. High confidence.",
+      "Source: Eurostat. Describes 1 Jan 2025 to 31 Dec 2025. Fetched 11 Sept 2026, 11:00. High confidence.",
     );
   });
 
@@ -28,7 +29,7 @@ describe("a figure's provenance", () => {
     };
 
     expect(describeProvenance(borrowed, NAMES)).toBe(
-      "Source: Stand in. Describes 1 Jan 2025 to 31 Dec 2025. Fetched 11 Sept 2026, 08:00. " +
+      "Source: Stand in. Describes 1 Jan 2025 to 31 Dec 2025. Fetched 11 Sept 2026, 11:00. " +
         "Low confidence. Switzerland's figure, standing in for Liechtenstein.",
     );
   });

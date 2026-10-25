@@ -897,6 +897,7 @@ export interface components {
          *       "code": "weights_all_locked",
          *       "message": "Every other weight in this pillar is locked.",
          *       "details": {
+         *         "reason": "others_all_locked",
          *         "locked": [
          *           "country.total_tax_rate_effective"
          *         ]
@@ -2212,10 +2213,7 @@ export interface operations {
                     };
                 };
             };
-            /**
-             * @description The change cannot be absorbed — every other weight in the pillar is locked.
-             *     `code: weights_all_locked`, with the blocking locks in `details`.
-             */
+            /** @description `weights_all_locked`: the change cannot be made, and `details.reason` says why, with `details.locked` listing the locks in the way (possibly none). `moved_is_locked`: this weight is itself locked. `only_weight`: it is the only weight in its pillar, so nothing can absorb a change. `others_all_locked`: every other weight in the pillar is locked. `locks_leave_no_room`: the locked weights hold `details.held` between them, so this weight may ask for `details.at_most` and no more. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2258,7 +2256,15 @@ export interface operations {
                     };
                 };
             };
-            409: components["responses"]["Conflict"];
+            /** @description `weights_all_locked`, worded from `details.reason` and `details.locked` exactly as a criterion's weight is (`moved_is_locked`, `only_weight`, `others_all_locked`, or `locks_leave_no_room` with `held` and `at_most`), the weights here being the level's pillars. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             422: components["responses"]["InvalidRequest"];
         };
     };
