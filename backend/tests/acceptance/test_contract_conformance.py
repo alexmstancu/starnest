@@ -222,6 +222,26 @@ async def test_a_stored_household_comes_back_in_the_designed_shape(
     assert undeclared_fields("replaceHousehold", response.json()) == []
 
 
+async def test_a_household_with_no_spend_or_rent_comes_back_in_the_designed_shape(
+    api: httpx.AsyncClient, a_configured_household: str
+) -> None:
+    """The design types spend and rent `number`, so an unset one is left out, never null
+    (NEW-61) -- the shape the fixture above, which sets both, could not reach."""
+    from .conftest import A_HOUSEHOLD
+
+    minimal = {
+        key: value
+        for key, value in A_HOUSEHOLD.items()
+        if key not in {"target_monthly_spend", "max_rent"}
+    }
+    stored = await api.put("/v1/household", json=minimal)
+    read_back = await api.get("/v1/household")
+
+    assert stored.status_code == 200
+    validate("replaceHousehold", stored.json())
+    validate("getHousehold", read_back.json())
+
+
 async def test_the_run_endpoints_match_the_designed_shapes(
     api: httpx.AsyncClient, a_configured_household: str
 ) -> None:

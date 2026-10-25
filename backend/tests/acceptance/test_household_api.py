@@ -51,14 +51,14 @@ class TestStoringOne:
         once (`reqs.md` 3.9). A whole-record write is what makes that one event."""
         await api.put("/v1/household", json=A_HOUSEHOLD)
 
-        await api.put(
-            "/v1/household",
-            json={**A_HOUSEHOLD, "net_income": 7000, "target_monthly_spend": None},
-        )
+        replacement = {
+            key: value for key, value in A_HOUSEHOLD.items() if key != "target_monthly_spend"
+        }
+        await api.put("/v1/household", json={**replacement, "net_income": 7000})
 
         body = (await api.get("/v1/household")).json()
         assert body["net_income"] == 7000
-        assert body["target_monthly_spend"] is None
+        assert "target_monthly_spend" not in body
 
     async def test_the_optional_figures_may_be_left_out(self, api: httpx.AsyncClient) -> None:
         """`target_monthly_spend` and `max_rent` are provisional (`reqs.md` 3.10). Absent is a
@@ -72,7 +72,10 @@ class TestStoringOne:
         response = await api.put("/v1/household", json=minimal)
 
         assert response.status_code == 200
-        assert response.json()["max_rent"] is None
+        assert response.json().keys().isdisjoint({"target_monthly_spend", "max_rent"}), (
+            "an unset figure is left out of the response, never sent as null (NEW-61)"
+        )
+        assert (await api.get("/v1/household")).json() == response.json()
 
 
 class TestWhatAHouseholdMayNotBe:

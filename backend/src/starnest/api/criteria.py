@@ -27,7 +27,7 @@ from typing import Annotated, ClassVar
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from starnest.api.bodies import ContractBody, PartialChangeBody
+from starnest.api.bodies import ContractBody, NullRefusingBody, PartialChangeBody
 from starnest.api.dependencies import Catalog, Criteria
 from starnest.api.errors import built_from_the_request
 from starnest.criteria import (
@@ -480,11 +480,11 @@ _IDENTIFIERS_TRIED = 100
 A bound, not an expectation: the first is free unless the user keeps a hundred sets of one name."""
 
 
-class DuplicateRequest(BaseModel):
+class DuplicateRequest(NullRefusingBody):
     """What the copy will be called, and what to call it; the server derives `id` when it is
-    left out (PL-039)."""
+    left out (PL-039), and refuses a null one, which the design never gives (NEW-61)."""
 
-    model_config = ConfigDict(extra="forbid")
+    not_nullable: ClassVar[frozenset[str]] = frozenset({"id"})
 
     id: CriteriaSetId | None = Field(default=None, min_length=1)
     name: SetName
@@ -543,10 +543,11 @@ async def _create_as_copy(
     )
 
 
-class NewCriteriaSetBody(BaseModel):
-    """The new set's name; the server derives `id` when it is left out (PL-039)."""
+class NewCriteriaSetBody(NullRefusingBody):
+    """The new set's name; the server derives `id` when it is left out (PL-039), and refuses a
+    null one, which the design never gives (NEW-61)."""
 
-    model_config = ConfigDict(extra="forbid")
+    not_nullable: ClassVar[frozenset[str]] = frozenset({"id"})
 
     id: CriteriaSetId | None = Field(default=None, min_length=1)
     name: SetName
@@ -581,15 +582,19 @@ class PillarWeightsBody(BaseModel):
     items: tuple[PillarWeightBody, ...]
 
 
-class EnforcementBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class EnforcementBody(NullRefusingBody):
+    """Left out, the outcome already held is kept; the design gives a null one no meaning."""
+
+    not_nullable: ClassVar[frozenset[str]] = frozenset({"outcome"})
 
     is_enforced: bool
     outcome: RuleOutcome | None = None
 
 
-class ApplicationBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class ApplicationBody(NullRefusingBody):
+    """Left out, the outcome already held is kept; the design gives a null one no meaning."""
+
+    not_nullable: ClassVar[frozenset[str]] = frozenset({"outcome"})
 
     is_applied: bool
     outcome: RuleOutcome | None = None

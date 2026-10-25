@@ -1146,7 +1146,7 @@ paths:
               properties:
                 criteria_set: { type: string }
                 level: { type: string }
-                note: { type: string, description: Why this one was kept }
+                note: { type: string, description: "Why this one was kept. Left out when there is none; null is refused." }
       responses:
         "201":
           description: Created
@@ -1351,7 +1351,7 @@ components:
       properties:
         code: { $ref: "#/components/schemas/ErrorCode", description: "Stable and machine-readable. Branch on this, never on the message." }
         message: { type: string, description: "For a person reading the API; an interface words `code` and `details` and never shows this. It names things rather than printing their ids where a name is known, and carries no driver or SQL text." }
-        details: { type: object, additionalProperties: true }
+        details: { type: object, additionalProperties: true, description: "Left out when the refusal has nothing to add, never null." }
       examples:
         - { code: weights_all_locked, message: "Every other weight in this pillar is locked.", details: { reason: others_all_locked, locked: ["country.total_tax_rate_effective"] } }
 
@@ -1702,8 +1702,8 @@ components:
         net_income: { type: number, minimum: 0 }
         number_adults: { type: integer, minimum: 1 }
         number_children: { type: integer, minimum: 0, description: Under 18. }
-        target_monthly_spend: { type: number, minimum: 0 }
-        max_rent: { type: number, minimum: 0 }
+        target_monthly_spend: { type: number, minimum: 0, description: "Left out while unset, never null." }
+        max_rent: { type: number, minimum: 0, description: "Left out while unset, never null." }
         home_country_candidate: { type: string }
         home_city_candidate: { type: [string, "null"] }
         citizenships:
@@ -1875,6 +1875,7 @@ components:
         `set_2026_plan`, "Ελλάδα" `set` -- and the first of `<stem>`, `<stem>_2`, `<stem>_3`...
         that no set, live or deleted, has ever held. Given, it is used as it is, and refused with
         409 `criteria_set_exists` when a set, live or deleted, holds it.
+        Never null: leave it out to have it derived.
 
     CriteriaSetSummary:
       type: object
@@ -1963,7 +1964,7 @@ components:
           oneOf:
             - $ref: "#/components/schemas/ReferencePeriod"
             - type: "null"
-        retrieval_date: { type: string, format: date-time, description: "When the gate was checked. Defaults to now." }
+        retrieval_date: { type: string, format: date-time, description: "When the gate was checked. Left out, it is now; null is refused." }
         override_reason: { type: [string, "null"], description: "An override is audited: the server records the moment it was given as override_date." }
         citations:
           type: array

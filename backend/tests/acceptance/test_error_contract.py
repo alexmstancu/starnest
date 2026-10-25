@@ -583,6 +583,49 @@ class TestANullTheDesignGivesNoMeaning:
 
         _assert_refused_naming("updateDataSource", response, ["body", "is_enabled"])
 
+    # NEW-61: the bodies that replace or create a record, where left out has a meaning of its own.
+
+    @pytest.mark.parametrize("field", ["target_monthly_spend", "max_rent"])
+    async def test_a_null_spend_or_rent_is_refused_and_the_household_is_unchanged(
+        self, api: httpx.AsyncClient, field: str
+    ) -> None:
+        await api.put("/v1/household", json={**A_VALID_HOUSEHOLD, field: 2500})
+
+        response = await api.put("/v1/household", json={**A_VALID_HOUSEHOLD, field: None})
+
+        _assert_refused_naming("replaceHousehold", response, ["body", field])
+        assert (await _the_household(api))[1][field] == 2500
+
+    async def test_a_null_note_is_refused_and_nothing_is_kept(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        await _set_the_score_scale(database_url, 100)
+
+        response = await api.post("/v1/evaluations", json={**A_RANKING, "note": None})
+
+        _assert_refused_naming("saveEvaluation", response, ["body", "note"])
+        assert (await api.get("/v1/evaluations")).json()["items"] == [], "nothing was kept"
+
+    async def test_a_null_retrieval_date_is_refused_and_nothing_is_recorded(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await _gate_answers_recorded(api)
+
+        response = await api.put(
+            A_GATE_ANSWER_PATH, json={"match_result": "matching", "retrieval_date": None}
+        )
+
+        _assert_refused_naming("putMatchRuleResult", response, ["body", "retrieval_date"])
+        assert await _gate_answers_recorded(api) == before, "nothing was recorded"
+
+    async def test_a_gate_answer_with_its_date_left_out_is_dated_now(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        response = await api.put(A_GATE_ANSWER_PATH, json={"match_result": "matching"})
+
+        assert response.status_code == 200, response.text[:200]
+        assert response.json()["retrieval_date"]
+
 
 class TestAQueryParameterNobodyDeclared:
     """BE-23. FastAPI ignores a query parameter no route declares, so a misspelled one answered

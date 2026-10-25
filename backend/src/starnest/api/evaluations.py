@@ -10,10 +10,12 @@ one's effective weight after redistribution, and the exact stored value it was c
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from typing import ClassVar
 
 from fastapi import APIRouter, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
+from starnest.api.bodies import NullRefusingBody
 from starnest.api.criteria import CriterionBody, _criterion_body
 from starnest.api.dependencies import (
     Candidates,
@@ -65,8 +67,10 @@ class EvaluationsBody(BaseModel):
     items: tuple[EvaluationSummaryBody, ...]
 
 
-class SaveEvaluationBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class SaveEvaluationBody(NullRefusingBody):
+    """A note is kept or left out; the design gives a null note no meaning (NEW-61)."""
+
+    not_nullable: ClassVar[frozenset[str]] = frozenset({"note"})
 
     criteria_set: str
     level: str

@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from starnest.api.bodies import ContractBody
 from starnest.api.document import as_yaml, served_schema
 
 DOCS = Path(__file__).resolve().parents[3] / "docs"
@@ -226,6 +227,45 @@ def _lax_objects(
     return lax
 
 
+#: Request fields that take a null the design does not type, each with its reason.
+NULLS_THE_DESIGN_HAS_NOT_SETTLED = {
+    # Null removes a reducer (`api/criteria.py`); the design documents it and types none (D65).
+    "updateCriterion.reducer_mode",
+}
+
+
+def _properties(schema: dict, document: dict, *, seen: frozenset[str] = frozenset()) -> dict:
+    """Every property one body schema declares, by name, following `$ref` and `allOf`."""
+    reference = schema.get("$ref")
+    if reference:
+        if reference in seen:
+            return {}
+        return _properties(_resolved(schema, document), document, seen=seen | {reference})
+    found = dict(schema.get("properties", {}))
+    for part in schema.get("allOf", []):
+        found |= _properties(part, document, seen=seen)
+    return found
+
+
+def _admits_null(schema: dict, document: dict) -> bool:
+    """Whether a property's schema takes null: typed so, or in any branch of a choice."""
+    schema = _resolved(schema, document)
+    typed = schema.get("type")
+    if typed == "null" or (isinstance(typed, list) and "null" in typed):
+        return True
+    return any(
+        _admits_null(branch, document)
+        for branch in [*schema.get("anyOf", []), *schema.get("oneOf", [])]
+    )
+
+
+def _every_subclass(base: type) -> list[type]:
+    found = []
+    for subclass in base.__subclasses__():
+        found += [subclass, *_every_subclass(subclass)]
+    return found
+
+
 def _resolved(parameter: dict, document: dict) -> dict:
     """A parameter, following a `$ref` into the document's own components if it is one.
 
@@ -407,6 +447,65 @@ class TestNothingIsServedThatWasNotDesigned:
             f"{undeclared}. A client generated from docs/openapi.yaml types them optional, "
             "omits them, and is answered 422."
         )
+
+    def test_no_request_field_takes_a_null_the_design_does_not_give(
+        self, served: dict, designed: dict
+    ) -> None:
+        """**A null the design never gives is refused, not taken** (NEW-61, decision D65).
+
+        A field typed `number` and left out of `required` means "leave it out when there is
+        nothing to say"; a server that also takes null accepts a request no generated client
+        sends, and describes a type the interface never sees. `reducer_mode` is the one field
+        that takes a null the design does not type: null is how a reducer is removed
+        (`api/criteria.py`), and the design's own decision on it is still open.
+        """
+        designed_bodies = _request_body_schemas(designed)
+        taken = {
+            f"{name}.{field}"
+            for name, schema in _request_body_schemas(served).items()
+            for field, served_field in _properties(schema, served).items()
+            if _admits_null(served_field, served)
+            and not _admits_null(
+                _properties(designed_bodies.get(name, {}), designed).get(field, {}), designed
+            )
+        }
+
+        assert taken - NULLS_THE_DESIGN_HAS_NOT_SETTLED == set(), (
+            f"these request fields take a null docs/openapi.yaml never gives: {sorted(taken)}. "
+            "Name them in the body's `not_nullable`, or type null in the design."
+        )
+
+    def test_no_field_left_out_when_absent_is_described_as_nullable(
+        self, served: dict, recorded: dict
+    ) -> None:
+        """**A response field the server leaves out is never described as null** (NEW-62).
+
+        Python holds such a field as `None`, which Pydantic describes as "or null" unless
+        `ContractBody` takes that branch out; `ErrorBody.details` and four other fields were
+        described as nullable while never sent as null.
+        """
+        bodies = _every_subclass(ContractBody)  # `served` imported every route module
+        described = {
+            f"{body.__name__}.{field}"
+            for body in bodies
+            if body.__name__ in recorded["components"]["schemas"]
+            for field in body.omit_when_absent
+            if _admits_null(
+                _properties(recorded["components"]["schemas"][body.__name__], recorded).get(
+                    field, {}
+                ),
+                recorded,
+            )
+        }
+
+        assert any(body.__name__ == "ErrorBody" for body in bodies)
+        assert described == set(), f"described as nullable, never sent as null: {described}"
+
+    def test_the_error_body_describes_details_as_an_object(self, recorded: dict) -> None:
+        details = recorded["components"]["schemas"]["ErrorBody"]["properties"]["details"]
+
+        assert details["type"] == "object"
+        assert "anyOf" not in details
 
     def test_every_request_body_refuses_a_field_it_does_not_declare(self, served: dict) -> None:
         """**A misspelled field dropped is a request answered for something nobody asked**

@@ -11,10 +11,12 @@ endpoints record and read the answers.
 """
 
 from datetime import UTC, date, datetime
+from typing import ClassVar
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
+from starnest.api.bodies import NullRefusingBody
 from starnest.api.dependencies import (
     Candidates,
     Catalog,
@@ -67,8 +69,10 @@ class ReferencePeriodBody(BaseModel):
     end: date
 
 
-class MatchRuleResultInputBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class MatchRuleResultInputBody(NullRefusingBody):
+    """Left out, the retrieval date is now; the design gives a null one no meaning (NEW-61)."""
+
+    not_nullable: ClassVar[frozenset[str]] = frozenset({"retrieval_date"})
 
     match_result: MatchResult
     reason: str | None = None

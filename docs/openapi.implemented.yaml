@@ -21,14 +21,14 @@ components:
       type: object
     ApplicationBody:
       additionalProperties: false
+      description: Left out, the outcome already held is kept; the design gives a
+        null one no meaning.
       properties:
         is_applied:
           title: Is Applied
           type: boolean
         outcome:
-          anyOf:
-          - $ref: '#/components/schemas/RuleOutcome'
-          - type: 'null'
+          $ref: '#/components/schemas/RuleOutcome'
       required:
       - is_applied
       title: ApplicationBody
@@ -62,10 +62,8 @@ components:
           - type: 'null'
           title: Breakdown Scheme
         description:
-          anyOf:
-          - type: string
-          - type: 'null'
           title: Description
+          type: string
         effective_source_priority:
           default: []
           items:
@@ -389,9 +387,7 @@ components:
           - type: 'null'
           title: Normalised Score
         value:
-          anyOf:
-          - $ref: '#/components/schemas/ValueBody'
-          - type: 'null'
+          $ref: '#/components/schemas/ValueBody'
         weighted_contribution:
           anyOf:
           - type: number
@@ -482,9 +478,7 @@ components:
           - type: 'null'
           title: Normalised Score
         value:
-          anyOf:
-          - $ref: '#/components/schemas/ValueBody'
-          - type: 'null'
+          $ref: '#/components/schemas/ValueBody'
       title: ComparisonSideBody
       type: object
     CompoundRuleBody:
@@ -746,10 +740,8 @@ components:
           title: Pillar
           type: string
         reducer_mode:
-          anyOf:
-          - type: string
-          - type: 'null'
           title: Reducer Mode
+          type: string
         scale_anchors:
           default: []
           items:
@@ -991,14 +983,12 @@ components:
       description: 'What the copy will be called, and what to call it; the server
         derives `id` when it is
 
-        left out (PL-039).'
+        left out (PL-039), and refuses a null one, which the design never gives (NEW-61).'
       properties:
         id:
-          anyOf:
-          - minLength: 1
-            type: string
-          - type: 'null'
+          minLength: 1
           title: Id
+          type: string
         name:
           maxLength: 60
           minLength: 1
@@ -1010,30 +1000,29 @@ components:
       type: object
     EnforcementBody:
       additionalProperties: false
+      description: Left out, the outcome already held is kept; the design gives a
+        null one no meaning.
       properties:
         is_enforced:
           title: Is Enforced
           type: boolean
         outcome:
-          anyOf:
-          - $ref: '#/components/schemas/RuleOutcome'
-          - type: 'null'
+          $ref: '#/components/schemas/RuleOutcome'
       required:
       - is_enforced
       title: EnforcementBody
       type: object
     ErrorBody:
-      description: The shape every failure takes, whatever went wrong.
+      description: The shape every failure takes, whatever went wrong. `details` is
+        left out, never null.
       properties:
         code:
           $ref: '#/components/schemas/ErrorCode'
           description: Stable and machine-readable. Branch on this, never on prose.
         details:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - type: 'null'
+          additionalProperties: true
           title: Details
+          type: object
         message:
           title: Message
           type: string
@@ -1387,24 +1376,17 @@ components:
       title: HoldingsBody
       type: object
     HouseholdBody:
-      additionalProperties: false
-      description: '`HouseholdInput` from the contract, which `Household` is defined
-        as.
+      description: 'The stored household, which leaves an unset spend or rent out
+        rather than sending null.
 
 
-        **The bounds mirror the domain `Household`** (BE-21): the three money fields
-        are `>= 0` and
+        **A body of its own, not the request''s** (NEW-61): the request refuses a
+        null, and this one
 
-        forbid NaN/Infinity, so an out-of-range or non-finite figure is a 422 raised
-        at the boundary
+        is built from a household that may have no spend, so sharing one class made
+        every read of
 
-        rather than a `ValidationError` escaping `Household(...)` into a 500. `extra=''forbid''`
-        matches
-
-        the domain too, so a misspelled field in this whole-replace PUT is refused
-        rather than falling
-
-        to its default and quietly changing the stored household (BE-23).'
+        such a household a 500.'
       properties:
         citizenships:
           items:
@@ -1422,11 +1404,9 @@ components:
           title: Home Country Candidate
           type: string
         max_rent:
-          anyOf:
-          - minimum: 0.0
-            type: number
-          - type: 'null'
+          minimum: 0.0
           title: Max Rent
+          type: number
         net_income:
           minimum: 0.0
           title: Net Income
@@ -1441,11 +1421,9 @@ components:
           title: Number Children
           type: integer
         target_monthly_spend:
-          anyOf:
-          - minimum: 0.0
-            type: number
-          - type: 'null'
+          minimum: 0.0
           title: Target Monthly Spend
+          type: number
       required:
       - net_income
       - number_adults
@@ -1453,6 +1431,60 @@ components:
       - home_country_candidate
       - citizenships
       title: HouseholdBody
+      type: object
+    HouseholdInputBody:
+      additionalProperties: false
+      description: 'The whole-replace PUT''s body. A misspelled field is refused rather
+        than falling to its
+
+        default and quietly changing the stored household (BE-23), and a null spend
+        or rent is
+
+        refused: an unset figure is one left out.'
+      properties:
+        citizenships:
+          items:
+            type: string
+          minItems: 1
+          title: Citizenships
+          type: array
+        home_city_candidate:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Home City Candidate
+        home_country_candidate:
+          minLength: 1
+          title: Home Country Candidate
+          type: string
+        max_rent:
+          minimum: 0.0
+          title: Max Rent
+          type: number
+        net_income:
+          minimum: 0.0
+          title: Net Income
+          type: number
+        number_adults:
+          minimum: 1.0
+          title: Number Adults
+          type: integer
+        number_children:
+          description: Under 18.
+          minimum: 0.0
+          title: Number Children
+          type: integer
+        target_monthly_spend:
+          minimum: 0.0
+          title: Target Monthly Spend
+          type: number
+      required:
+      - net_income
+      - number_adults
+      - number_children
+      - home_country_candidate
+      - citizenships
+      title: HouseholdInputBody
       type: object
     LabelThresholdBody:
       additionalProperties: false
@@ -1676,6 +1708,8 @@ components:
       type: object
     MatchRuleResultInputBody:
       additionalProperties: false
+      description: Left out, the retrieval date is now; the design gives a null one
+        no meaning (NEW-61).
       properties:
         citations:
           default: []
@@ -1705,11 +1739,9 @@ components:
           - $ref: '#/components/schemas/ReferencePeriodBody'
           - type: 'null'
         retrieval_date:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
+          format: date-time
           title: Retrieval Date
+          type: string
       required:
       - match_result
       title: MatchRuleResultInputBody
@@ -1738,15 +1770,15 @@ components:
       type: object
     NewCriteriaSetBody:
       additionalProperties: false
-      description: The new set's name; the server derives `id` when it is left out
-        (PL-039).
+      description: 'The new set''s name; the server derives `id` when it is left out
+        (PL-039), and refuses a
+
+        null one, which the design never gives (NEW-61).'
       properties:
         id:
-          anyOf:
-          - minLength: 1
-            type: string
-          - type: 'null'
+          minLength: 1
           title: Id
+          type: string
         name:
           maxLength: 60
           minLength: 1
@@ -1851,10 +1883,8 @@ components:
     PillarBody:
       properties:
         description:
-          anyOf:
-          - type: string
-          - type: 'null'
           title: Description
+          type: string
         display_order:
           title: Display Order
           type: integer
@@ -2532,6 +2562,8 @@ components:
       type: object
     SaveEvaluationBody:
       additionalProperties: false
+      description: A note is kept or left out; the design gives a null note no meaning
+        (NEW-61).
       properties:
         criteria_set:
           title: Criteria Set
@@ -2540,10 +2572,8 @@ components:
           title: Level
           type: string
         note:
-          anyOf:
-          - type: string
-          - type: 'null'
           title: Note
+          type: string
       required:
       - criteria_set
       - level
@@ -4522,7 +4552,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/HouseholdBody'
+              $ref: '#/components/schemas/HouseholdInputBody'
         required: true
       responses:
         '200':

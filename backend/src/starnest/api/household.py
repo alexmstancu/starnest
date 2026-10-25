@@ -16,10 +16,12 @@ every affordability figure quietly wrong.
 """
 
 from decimal import Decimal
+from typing import ClassVar
 
 from fastapi import APIRouter
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
+from starnest.api.bodies import ContractBody, NullRefusingBody
 from starnest.api.dependencies import Households
 from starnest.api.errors import built_from_the_request
 from starnest.candidates import CandidateId
@@ -28,17 +30,13 @@ from starnest.household import Household
 router = APIRouter(tags=["household"])
 
 
-class HouseholdBody(BaseModel):
+class _HouseholdFields(BaseModel):
     """`HouseholdInput` from the contract, which `Household` is defined as.
 
     **The bounds mirror the domain `Household`** (BE-21): the three money fields are `>= 0` and
     forbid NaN/Infinity, so an out-of-range or non-finite figure is a 422 raised at the boundary
-    rather than a `ValidationError` escaping `Household(...)` into a 500. `extra='forbid'` matches
-    the domain too, so a misspelled field in this whole-replace PUT is refused rather than falling
-    to its default and quietly changing the stored household (BE-23).
+    rather than a `ValidationError` escaping `Household(...)` into a 500.
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     net_income: float = Field(ge=0, allow_inf_nan=False)
     number_adults: int = Field(ge=1)
@@ -50,6 +48,29 @@ class HouseholdBody(BaseModel):
     home_city_candidate: CandidateId | None = None
 
 
+#: The design types these `number`, never null: unset is said by leaving them out (NEW-61).
+_UNSET_WHEN_LEFT_OUT = frozenset({"target_monthly_spend", "max_rent"})
+
+
+class HouseholdInputBody(_HouseholdFields, NullRefusingBody):
+    """The whole-replace PUT's body. A misspelled field is refused rather than falling to its
+    default and quietly changing the stored household (BE-23), and a null spend or rent is
+    refused: an unset figure is one left out."""
+
+    not_nullable: ClassVar[frozenset[str]] = _UNSET_WHEN_LEFT_OUT
+
+
+class HouseholdBody(_HouseholdFields, ContractBody):
+    """The stored household, which leaves an unset spend or rent out rather than sending null.
+
+    **A body of its own, not the request's** (NEW-61): the request refuses a null, and this one
+    is built from a household that may have no spend, so sharing one class made every read of
+    such a household a 500.
+    """
+
+    omit_when_absent: ClassVar[frozenset[str]] = _UNSET_WHEN_LEFT_OUT
+
+
 @router.get("/household", operation_id="getHousehold", response_model=HouseholdBody)
 async def get_household(households: Households) -> HouseholdBody:
     """Raises `HouseholdNotConfiguredError` -- a 404 -- when nothing has been recorded yet."""
@@ -57,7 +78,7 @@ async def get_household(households: Households) -> HouseholdBody:
 
 
 @router.put("/household", operation_id="replaceHousehold", response_model=HouseholdBody)
-async def replace_household(household: HouseholdBody, households: Households) -> HouseholdBody:
+async def replace_household(household: HouseholdInputBody, households: Households) -> HouseholdBody:
     """Store the household whole, and return what was stored.
 
     Returning it rather than a bare 200: the domain normalises what it accepts -- citizenships

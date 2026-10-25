@@ -14,7 +14,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
+from typing import Any, ClassVar
 
 from fastapi import HTTPException, Request
 from fastapi.dependencies.models import Dependant
@@ -23,8 +23,9 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import Field, ValidationError
 
+from starnest.api.bodies import ContractBody
 from starnest.candidates import MalformedIdentifierError, UnknownCandidateError
 from starnest.comparison import ComparatorLimitExceededError, ComparisonError
 from starnest.criteria import (
@@ -109,8 +110,10 @@ class ErrorCode(StrEnum):
     INVALID_SOURCE_ORDER = "invalid_source_order"
 
 
-class ErrorBody(BaseModel):
-    """The shape every failure takes, whatever went wrong."""
+class ErrorBody(ContractBody):
+    """The shape every failure takes, whatever went wrong. `details` is left out, never null."""
+
+    omit_when_absent: ClassVar[frozenset[str]] = frozenset({"details"})
 
     code: ErrorCode = Field(
         description="Stable and machine-readable. Branch on this, never on prose."

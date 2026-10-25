@@ -11,11 +11,23 @@ from decimal import Decimal
 from typing import Any, ClassVar
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from starnest.api.bodies import PartialChangeBody
+from starnest.api.bodies import ContractBody, PartialChangeBody
 from starnest.api.catalog import DataSourceInput
-from starnest.api.criteria import CriterionInput, PillarWeightInput, ThresholdBody
+from starnest.api.criteria import (
+    ApplicationBody,
+    CriterionInput,
+    DuplicateRequest,
+    EnforcementBody,
+    NewCriteriaSetBody,
+    PillarWeightInput,
+    ThresholdBody,
+)
+from starnest.api.errors import ErrorBody
+from starnest.api.evaluations import SaveEvaluationBody
+from starnest.api.household import HouseholdBody, HouseholdInputBody
+from starnest.api.rules import MatchRuleResultInputBody
 
 
 class AChange(PartialChangeBody):
@@ -29,7 +41,7 @@ class AChange(PartialChangeBody):
     bound: Decimal | None = None
 
 
-def _refusal(body: type[PartialChangeBody], sent: dict[str, Any]) -> list[tuple]:
+def _refusal(body: type[BaseModel], sent: dict[str, Any]) -> list[tuple]:
     with pytest.raises(ValidationError) as refused:
         body.model_validate(sent)
     return [(problem["type"], problem["loc"]) for problem in refused.value.errors()]
@@ -137,3 +149,106 @@ class TestTheBodiesThatChangePartOfARecord:
         assert _refusal(CriterionInput, {"matching_threshold": {"required_value": None}}) == [
             ("null_not_allowed", ("matching_threshold", "required_value"))
         ]
+
+
+A_HOUSEHOLD = {
+    "net_income": 5000,
+    "number_adults": 2,
+    "number_children": 0,
+    "home_country_candidate": "country.romania",
+    "citizenships": ["country.romania"],
+}
+
+#: What each whole-replace or create body needs besides the field under test.
+THE_REST_OF_THE_BODY: dict[type[BaseModel], dict[str, Any]] = {
+    HouseholdInputBody: A_HOUSEHOLD,
+    SaveEvaluationBody: {"criteria_set": "minimal", "level": "country"},
+    MatchRuleResultInputBody: {"match_result": "matching"},
+    NewCriteriaSetBody: {"name": "Partner"},
+    DuplicateRequest: {"name": "Partner"},
+    EnforcementBody: {"is_enforced": True},
+    ApplicationBody: {"is_applied": True},
+}
+
+NULLS_A_WHOLE_BODY_REFUSES = pytest.mark.parametrize(
+    ("body", "field"),
+    [
+        (HouseholdInputBody, "target_monthly_spend"),
+        (HouseholdInputBody, "max_rent"),
+        (SaveEvaluationBody, "note"),
+        (MatchRuleResultInputBody, "retrieval_date"),
+        (NewCriteriaSetBody, "id"),
+        (DuplicateRequest, "id"),
+        (EnforcementBody, "outcome"),
+        (ApplicationBody, "outcome"),
+    ],
+)
+"""The fields the design types without null on bodies that replace or create a record (NEW-61).
+Left out, each keeps its documented meaning: unset, no note, now, an id derived from the name,
+the outcome already held."""
+
+
+class TestTheBodiesThatReplaceOrCreate:
+    @NULLS_A_WHOLE_BODY_REFUSES
+    def test_a_null_is_refused_as_a_null(self, body: type[BaseModel], field: str) -> None:
+        sent = {**THE_REST_OF_THE_BODY[body], field: None}
+
+        assert _refusal(body, sent) == [("null_not_allowed", (field,))]
+
+    @NULLS_A_WHOLE_BODY_REFUSES
+    def test_left_out_still_means_unset(self, body: type[BaseModel], field: str) -> None:
+        taken = body.model_validate(THE_REST_OF_THE_BODY[body])
+
+        assert getattr(taken, field) is None
+        assert field not in taken.model_fields_set
+
+    @NULLS_A_WHOLE_BODY_REFUSES
+    def test_the_generated_contract_does_not_describe_the_null(
+        self, body: type[BaseModel], field: str
+    ) -> None:
+        described = body.model_json_schema()["properties"][field]
+
+        assert "anyOf" not in described
+        assert described.get("type") != "null"
+
+
+class TestWhatAHouseholdResponseCarries:
+    """The response is a body of its own: a null-refusing request body built from a household
+    with no spend made every read of it a 500."""
+
+    def test_an_unset_spend_and_rent_are_left_out_rather_than_sent_as_null(self) -> None:
+        stored = HouseholdBody(**A_HOUSEHOLD, target_monthly_spend=None, max_rent=None)
+
+        assert stored.model_dump().keys().isdisjoint({"target_monthly_spend", "max_rent"})
+
+    def test_a_set_spend_is_carried(self) -> None:
+        stored = HouseholdBody(**A_HOUSEHOLD, target_monthly_spend=2500)
+
+        assert stored.model_dump()["target_monthly_spend"] == 2500
+
+
+class AResponse(ContractBody):
+    """A response with a field left out when absent, and one that is required and nullable."""
+
+    omit_when_absent: ClassVar[frozenset[str]] = frozenset({"note"})
+
+    score: int | None
+    note: str | None = None
+
+
+class TestWhatAContractBodyDescribes:
+    def test_a_field_left_out_when_absent_is_not_described_as_nullable(self) -> None:
+        assert AResponse.model_json_schema()["properties"]["note"]["type"] == "string"
+
+    def test_a_field_sent_as_null_still_says_so(self) -> None:
+        described = AResponse.model_json_schema()["properties"]["score"]
+
+        assert {"type": "null"} in described["anyOf"]
+
+    def test_both_are_served_as_described(self) -> None:
+        assert AResponse(score=None).model_dump() == {"score": None}
+
+    def test_a_refusal_with_nothing_to_add_carries_no_details(self) -> None:
+        refusal = ErrorBody(code="not_found", message="No such candidate.")
+
+        assert refusal.model_dump() == {"code": "not_found", "message": "No such candidate."}
