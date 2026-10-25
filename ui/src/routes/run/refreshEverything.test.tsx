@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { HOLDINGS_GAPS, HOLDINGS_PAIRS_TOTAL } from "../../mocks/fixtures";
+import { HOLDINGS_GAPS, HOLDINGS_PAIRS_TOTAL, RUN_PLAN } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -73,7 +73,11 @@ describe("refreshing everything", () => {
     ).toBeInTheDocument();
   });
 
-  it("says it re-asks only what the refetch age leaves, once one is set", async () => {
+  /**
+   * The stale-pair count and the estimate differ, as they do on the server: three stale figures
+   * make their attributes due, and the estimate re-asks those attributes whole, and the gaps.
+   */
+  it("words a refetch age as the attributes it leaves due, beside an estimate that differs", async () => {
     mockServer.use(
       http.get(`${BASE}/holdings`, () =>
         HttpResponse.json({
@@ -81,18 +85,25 @@ describe("refreshing everything", () => {
           pairs_total: 1152,
           values_stored: 1152 - HOLDINGS_GAPS.failed.length - HOLDINGS_GAPS.unanswered.length,
           values_past_allowed_age: 0,
-          values_older_than_refetch_age: 544,
+          values_older_than_refetch_age: 3,
           spent: { since: "2026-10-01T00:00:00+02:00", runs_eur: 0, research_eur: 0, total_eur: 0 },
           gaps: HOLDINGS_GAPS,
         }),
+      ),
+      http.post(`${BASE}/data-acquisition-runs/plan`, () =>
+        HttpResponse.json({ ...RUN_PLAN, items_total: 544 }),
       ),
     );
     renderShell("/acquire");
     const card = await theRefreshCard();
 
     expect(
-      await card.findByText(/^Re-asks the 544 values fetched longer ago than the refetch setting allows/),
+      await card.findByText(/re-asks whole every attribute holding a figure older than it -- 3 figures are --/),
     ).toBeInTheDocument();
-    expect(card.queryByText(/fresh ones included/)).toBeNull();
+    expect(card.queryByText(/left alone|fresh ones included/)).toBeNull();
+
+    await userEvent.click(card.getByRole("button", { name: /estimate an acquisition/i }));
+    expect(await card.findByText("544")).toBeInTheDocument();
+    expect(card.getByText(/re-asks whole every attribute holding a figure older than it/)).toBeInTheDocument();
   });
 });

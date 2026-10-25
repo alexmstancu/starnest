@@ -232,9 +232,24 @@ describe("what refreshing everything re-asks", () => {
     );
   });
 
-  it("re-asks only what the refetch age leaves, once one is set", () => {
-    expect(describeRefresh({ ...holdings, values_older_than_refetch_age: 544 })).toBe(
-      "Re-asks the 544 values fetched longer ago than the refetch setting allows; fresher ones are left alone. 37 in use are past their allowed age. The estimate first: what would be fetched, and what it would cost, before anything is.",
+  /**
+   * A sweep skips an attribute only when every candidate's figure for it is fresh, so it re-asks
+   * the fresh figures of a partly stale attribute and every gap: the stale-pair count is what
+   * makes an attribute due, never what is re-asked (finding 2).
+   */
+  it("says which attributes a refetch age leaves due, never that it re-asks only the stale figures", () => {
+    const said = describeRefresh({ ...holdings, values_older_than_refetch_age: 544 });
+    expect(said).toBe(
+      "With a refetch age set, re-asks whole every attribute holding a figure older than it -- 544 figures are -- or a gap, fresh figures included. 37 in use are past their allowed age. The estimate first: what would be fetched, and what it would cost, before anything is.",
+    );
+    expect(said).not.toMatch(/left alone/);
+  });
+
+  it("says no attribute is due when no figure is older than the refetch age, though attributes with a gap are", () => {
+    expect(
+      describeRefresh({ ...holdings, values_older_than_refetch_age: 0, values_past_allowed_age: 0 }),
+    ).toBe(
+      "With a refetch age set, no figure is older than it, so only attributes with a gap are asked, whole. The estimate first: what would be fetched, and what it would cost, before anything is.",
     );
   });
 
@@ -247,7 +262,7 @@ describe("what refreshing everything re-asks", () => {
   it("says one value in the singular", () => {
     expect(
       describeRefresh({ ...holdings, values_older_than_refetch_age: 1, values_past_allowed_age: 1 }),
-    ).toMatch(/^Re-asks the 1 value fetched .*\. 1 in use is past its allowed age\./);
+    ).toMatch(/-- 1 figure is -- .*\. 1 in use is past its allowed age\./);
   });
 
   it("claims no count before the holdings are read", () => {

@@ -213,9 +213,12 @@ const ESTIMATE_FIRST =
 /**
  * What refreshing every value at a level would re-ask (PL-121), from the holdings.
  *
- * **Worded from the refetch setting.** With none set a refresh re-asks everything, fresh values
- * included; with one set it re-asks only what was fetched longer ago, which the holdings count --
- * so "re-asks everything" over an estimate of half the values is never said.
+ * **Worded from what the server does with the refetch setting.** With none set a refresh
+ * re-asks everything, fresh values included. With one set, a sweep skips an attribute only when
+ * every candidate's figure for it is fresh: an attribute holding any figure older than the age is
+ * re-asked whole, its fresh figures included, and so is an attribute with a gap (`freshness.py`). The
+ * holdings count the stale figures, which say whether any attribute is due -- never how many
+ * items are re-asked, which only the estimate counts.
  */
 export function describeRefresh(
   holdings: {
@@ -227,16 +230,20 @@ export function describeRefresh(
 ): string {
   if (holdings === null) return `Re-asks every value at this level. ${ESTIMATE_FIRST}`;
   const older = holdings.values_older_than_refetch_age;
-  const reasks =
-    older === null
-      ? `Re-asks all ${formatCount(holdings.pairs_total)} ${valuesWord(holdings.pairs_total)} at ${holdings.level} level, fresh ones included`
-      : `Re-asks the ${formatCount(older)} ${valuesWord(older)} fetched longer ago than the refetch setting allows; fresher ones are left alone`;
   const aged = holdings.values_past_allowed_age;
-  if (aged <= 0) return `${reasks}. ${ESTIMATE_FIRST}`;
-  const agedSentence = `${formatCount(aged)} in use ${aged === 1 ? "is past its" : "are past their"} allowed age.`;
-  return older === null
-    ? `${reasks}; ${agedSentence} ${ESTIMATE_FIRST}`
-    : `${reasks}. ${agedSentence} ${ESTIMATE_FIRST}`;
+  const agedSentence =
+    aged > 0
+      ? `${formatCount(aged)} in use ${aged === 1 ? "is past its" : "are past their"} allowed age.`
+      : "";
+  if (older === null) {
+    const all = `Re-asks all ${formatCount(holdings.pairs_total)} ${valuesWord(holdings.pairs_total)} at ${holdings.level} level, fresh ones included`;
+    return aged > 0 ? `${all}; ${agedSentence} ${ESTIMATE_FIRST}` : `${all}. ${ESTIMATE_FIRST}`;
+  }
+  const reasks =
+    older === 0
+      ? "With a refetch age set, no figure is older than it, so only attributes with a gap are asked, whole."
+      : `With a refetch age set, re-asks whole every attribute holding a figure older than it -- ${formatCount(older)} ${older === 1 ? "figure is" : "figures are"} -- or a gap, fresh figures included.`;
+  return [reasks, agedSentence, ESTIMATE_FIRST].filter((part) => part !== "").join(" ");
 }
 
 function valuesWord(count: number): string {
