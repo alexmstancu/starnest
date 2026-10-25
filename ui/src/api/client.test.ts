@@ -331,6 +331,23 @@ describe("a body holding a number JSON cannot carry", () => {
     expect(reached).toEqual([]);
   });
 
+  /** PL-033 round 10: refused before it was sent, it leaves no write counted in flight. */
+  it("leaves the set's reads free once it has refused to send one", async () => {
+    await expect(
+      patchJson(
+        "/criteria-sets/{criteriaSetId}/criteria/{attributeId}",
+        { weight: Number.POSITIVE_INFINITY },
+        { pathParams: { criteriaSetId: "default", attributeId: "country.x" } },
+      ),
+    ).rejects.toBeInstanceOf(ApiError);
+
+    const read = getJson("/criteria-sets/{criteriaSetId}", undefined, {
+      pathParams: { criteriaSetId: "default" },
+    }).then(() => "answered");
+    const stillWaiting = new Promise((resolve) => setTimeout(() => resolve("held"), 500));
+    expect(await Promise.race([read, stillWaiting])).toBe("answered");
+  });
+
   it("finds one however deep in the body it sits", async () => {
     const reached = recordWrites();
 

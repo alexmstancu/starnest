@@ -8,15 +8,13 @@
  * set and not to the rule.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchCompoundRules,
   fetchCriteriaSet,
   fetchMatchRuleResults,
   fetchMatchRules,
   fetchRanking,
-  setCompoundRuleApplication,
-  setMatchRuleEnforcement,
   type CompoundRule,
   type CriteriaSet,
   type MatchRule,
@@ -29,8 +27,13 @@ import { useRead } from "../../../api/useRead";
 import { useCandidateRosterState } from "../../../api/useCandidateRoster";
 import type { CandidateNames } from "../../../api/useCandidateNames";
 import { useConfigurationSession } from "../useConfigurationSession";
-import { outcomeUnknown, settled as settledWrite, UnconfirmedWrite } from "../unknownOutcome";
+import { pendingEntry, settled as settledWrite, UnconfirmedWrite } from "../unknownOutcome";
+import { holdsRule, ruleChangeLabel, sendRule, type RuleState } from "./ruleSwitches";
+
 import { answersAtLevel } from "./ruleEffect";
+
+/** Where a change to a rule is made: the stage's name, as Recent changes says it. */
+const RULES_STAGE = "Match rules & gates";
 
 export interface RuleToggles {
   matchRules: Read<{ items: MatchRule[] }>;
@@ -129,8 +132,6 @@ export function useRuleToggles(
     criteriaSet.compound_rule_outcomes ?? {},
   );
   const [failure, setFailure] = useState<unknown>(null);
-  // A rule's write the client stopped waiting for and that has not settled yet (PL-033).
-  const [unsettled, setUnsettled] = useState(false);
   const [accepted, setAccepted] = useState(0);
 
   const ranking = useRead(
@@ -142,69 +143,92 @@ export function useRuleToggles(
     { enabled: applied.length > 0, freshness: answersFreshness + accepted },
   );
 
+  // **A rule's state is shown as a write or its undo left it**, in whichever panel shows its set
+  // then (PL-138): an undo can land after this panel was remounted, or after Configure was left.
+  const { history, ruleAnswers } = useConfigurationSession();
+  const show = useCallback((state: RuleState) => {
+    const remember = state.kind === "gate" ? setEnforced : setApplied;
+    const rememberOutcome = state.kind === "gate" ? setGateOutcomes : setCompoundOutcomes;
+    remember((current) =>
+      state.on
+        ? current.includes(state.id)
+          ? current
+          : [...current, state.id]
+        : current.filter((each) => each !== state.id),
+    );
+    // Switched off, a rule drops its outcome on the server, so switched on again it starts from
+    // its default rather than from what it was before (D56).
+    rememberOutcome((current) =>
+      state.on && state.outcome !== null
+        ? { ...current, [state.id]: state.outcome }
+        : withoutOutcome(current, state.id),
+    );
+    setAccepted((count) => count + 1);
+  }, []);
+  useEffect(() => ruleAnswers.listen(criteriaSet.id, show), [ruleAnswers, criteriaSet.id, show]);
+
+  const stateOf = (kind: RuleState["kind"], id: string): RuleState => {
+    const on = (kind === "gate" ? enforced : applied).includes(id);
+    const outcome = (kind === "gate" ? gateOutcomes : compoundOutcomes)[id];
+    return { kind, id, on, outcome: on && outcome !== undefined ? outcome : null };
+  };
+  const nameOf = (kind: RuleState["kind"], id: string): string => {
+    const read = kind === "gate" ? matchRules.read : compoundRules.read;
+    const rules: readonly { id: string; name: string }[] =
+      read.state === "ready" ? read.data.items : [];
+    return rules.find((rule) => rule.id === id)?.name ?? id;
+  };
+
   /**
    * **The screen changes only once the server has accepted the change.** A switch that ticked
    * itself optimistically and then failed would leave the screen claiming a gate is enforced
    * when it is not -- the one thing this panel must never do, because a gate decides whether a
    * candidate can be ranked at all. The same holds for a gate softened to a warning.
+   *
+   * **Configure's one write in flight** (PL-033): a rule's switch or kind changes the set, so it
+   * takes the slot every other set write takes, and an answer lost on the way is read back. It
+   * is **listed in Recent changes with the request that reverses it** (PL-138): the rule as it
+   * was, sent again.
    */
-  //
-  // **Configure's one write in flight** (PL-033): a rule's switch or kind changes the set, so it
-  // takes the slot every other set write takes, and an answer lost on the way is read back.
-  const { history } = useConfigurationSession();
-  const save = useCallback(
-    async (
-      write: () => Promise<void>,
-      accepted: () => void,
-      tookEffect: (stored: CriteriaSet) => boolean,
-    ) => {
-      const done = history.begin(criteriaSet.id);
-      if (done === null) return;
-      setFailure(null);
-      const took = () => {
-        accepted();
-        setAccepted((count) => count + 1);
-      };
-      try {
-        await settledWrite(
-          () => write().then(() => true as const),
-          async (signal) =>
-            tookEffect(await fetchCriteriaSet(criteriaSet.id, { signal })) ? true : null,
-        );
-        took();
-      } catch (error) {
-        if (error instanceof UnconfirmedWrite && error.settles !== undefined) {
-          // **Still running, so not refused** (PL-033): the rules wait for it, and its own
-          // settlement says what it did -- never a read taken while it could still land.
-          void decideWhenSettled(error, took, setFailure, setUnsettled);
-        } else setFailure(error);
-      } finally {
-        done();
-      }
-    },
-    [history, criteriaSet.id],
-  );
-
-  const toggle = (
-    id: string,
-    wanted: boolean,
-    write: (wanted: boolean) => Promise<void>,
-    remember: (change: (current: string[]) => string[]) => void,
-    rememberOutcome: (change: (current: Outcomes) => Outcomes) => void,
-    stored: (set: CriteriaSet) => string[] | undefined,
-  ) =>
-    void save(
-      () => write(wanted),
-      () => {
-        remember((current) =>
-          wanted ? [...current, id] : current.filter((each) => each !== id),
-        );
-        // Switched off, a rule drops its outcome on the server, so switched on again it starts
-        // from its default rather than from what it was before (D56).
-        if (!wanted) rememberOutcome((current) => withoutOutcome(current, id));
+  const write = (after: RuleState) => {
+    const sentFor = criteriaSet.id;
+    const before = stateOf(after.kind, after.id);
+    const done = history.begin(sentFor);
+    if (done === null) return;
+    setFailure(null);
+    const entry = {
+      target: `${after.kind}:${sentFor}:${after.id}`,
+      stage: RULES_STAGE,
+      label: `${ruleChangeLabel(nameOf(after.kind, after.id), before, after)}, in ${criteriaSet.name}`,
+      before,
+      after,
+      reverse: async (back: unknown) => {
+        const state = back as RuleState;
+        await sendRule(sentFor, state);
+        ruleAnswers.deliver(sentFor, state);
       },
-      (set) => (stored(set) ?? []).includes(id) === wanted,
-    );
+      undoes: { criteriaSetId: sentFor, by: "write" as const },
+    };
+    void settledWrite(
+      () => sendRule(sentFor, after).then(() => true as const),
+      async (signal) =>
+        holdsRule(await fetchCriteriaSet(sentFor, { signal }), after) ? true : null,
+    )
+      .then(() => {
+        ruleAnswers.deliver(sentFor, after);
+        history.note(entry);
+      })
+      .catch((error: unknown) => {
+        // Unknown, it is listed unconfirmed and holds the set's writes until it is known.
+        if (error instanceof UnconfirmedWrite) {
+          history.note({
+            ...entry,
+            ...pendingEntry(error, () => ruleAnswers.deliver(sentFor, after)),
+          });
+        } else setFailure(error);
+      })
+      .finally(done);
+  };
 
   return {
     matchRules: settled(matchRules.read),
@@ -223,45 +247,20 @@ export function useRuleToggles(
     reloadMatchRules: matchRules.reload,
     reloadCompoundRules: compoundRules.reload,
     failure,
-    held: history.busy || history.waitsFor(criteriaSet.id) || unsettled,
+    held: history.busy || history.waitsFor(criteriaSet.id),
     isEnforced: (matchRuleId) => enforced.includes(matchRuleId),
     isApplied: (compoundRuleId) => applied.includes(compoundRuleId),
     enforce: (matchRuleId, wanted) =>
-      toggle(
-        matchRuleId,
-        wanted,
-        (value) => setMatchRuleEnforcement(criteriaSet.id, matchRuleId, value),
-        setEnforced,
-        setGateOutcomes,
-        (set) => set.enforced_match_rules,
-      ),
+      write({ kind: "gate", id: matchRuleId, on: wanted, outcome: null }),
     apply: (compoundRuleId, wanted) =>
-      toggle(
-        compoundRuleId,
-        wanted,
-        (value) =>
-          setCompoundRuleApplication(criteriaSet.id, compoundRuleId, value),
-        setApplied,
-        setCompoundOutcomes,
-        (set) => set.applied_compound_rules,
-      ),
+      write({ kind: "compound", id: compoundRuleId, on: wanted, outcome: null }),
     // A gate newly enforced is a gate, as the server makes it.
     outcomeOfGate: (matchRuleId) => gateOutcomes[matchRuleId] ?? "not_matching",
     outcomeOfCompoundRule: (rule) => compoundOutcomes[rule.id] ?? rule.outcome,
     holdGateAs: (matchRuleId, outcome) =>
-      void save(
-        () => setMatchRuleEnforcement(criteriaSet.id, matchRuleId, true, outcome),
-        () => setGateOutcomes((current) => ({ ...current, [matchRuleId]: outcome })),
-        (set) => set.match_rule_outcomes?.[matchRuleId] === outcome,
-      ),
+      write({ kind: "gate", id: matchRuleId, on: true, outcome }),
     holdCompoundRuleAs: (compoundRuleId, outcome) =>
-      void save(
-        () =>
-          setCompoundRuleApplication(criteriaSet.id, compoundRuleId, true, outcome),
-        () =>
-          setCompoundOutcomes((current) => ({ ...current, [compoundRuleId]: outcome })),
-        (set) => set.compound_rule_outcomes?.[compoundRuleId] === outcome,
-      ),
+      write({ kind: "compound", id: compoundRuleId, on: true, outcome }),
   };
 }
 
@@ -277,32 +276,4 @@ function settled<T>(read: Read<T> | Idle): Read<T> {
 function statusOf(read: Read<unknown> | Idle): RuleToggles["matchRuleResultsStatus"] {
   if (read.state === "ready") return "ready";
   return read.state === "failed" ? "error" : "loading";
-}
-
-/**
- * A rule's write still running when the client stopped waiting: held until it settles, then
- * decided from what it did -- shown if it took effect, refused if it did not, and said if it is
- * still not known.
- */
-async function decideWhenSettled(
-  error: UnconfirmedWrite,
-  took: () => void,
-  refuse: (error: unknown) => void,
-  hold: (held: boolean) => void,
-): Promise<void> {
-  hold(true);
-  // Refused, its own refusal says why; answered or lost, a read taken now says what it did.
-  const refusal = await error.settles?.then(
-    () => null,
-    (failure: unknown) => (outcomeUnknown(failure) ? null : failure),
-  );
-  try {
-    if (refusal !== null && refusal !== undefined) refuse(refusal);
-    else if ((await error.readAgain()) !== null) took();
-    else refuse(error);
-  } catch (stillUnknown) {
-    refuse(stillUnknown);
-  } finally {
-    hold(false);
-  }
 }

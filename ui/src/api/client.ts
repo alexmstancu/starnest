@@ -314,7 +314,9 @@ async function sendWrite<Result>(
   const keys = setWriteKeys(path, pathParams, body);
   if (keys.length === 0) return send(signal);
   const settle = beginSetWrite(keys);
-  const sending = send(signal);
+  // **Started inside a promise**, so a body refused before it is sent -- thrown, not rejected --
+  // settles the write like any other failure rather than leaving it counted in flight (PL-033).
+  const sending = new Promise<Result>((resolve) => resolve(send(signal)));
   let timer: ReturnType<typeof setTimeout> | undefined;
   let overdue = false;
   const bound = new Promise<never>((_, reject) => {

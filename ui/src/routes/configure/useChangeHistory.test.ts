@@ -8,7 +8,7 @@
  */
 
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useChangeHistory } from "./useChangeHistory";
 
 describe("an undo while another is on its way", () => {
@@ -102,5 +102,33 @@ describe("a set with an unconfirmed change", () => {
       other = result.current.begin("remote_only");
     });
     expect(other).not.toBeNull();
+  });
+});
+
+/** PL-033 round 10. A request may settle before its entry is rendered; it is resolved all the same. */
+describe("a change whose request settles before it is rendered", () => {
+  it("is checked once it is, rather than left unconfirmed", async () => {
+    const readBack = vi.fn(() => Promise.resolve(true));
+    const { result } = renderHook(() => useChangeHistory());
+
+    await act(async () => {
+      result.current.note({
+        target: "lock:default:economics",
+        stage: "Pillar weights",
+        label: "Locked the Economy pillar, in Default",
+        before: false,
+        after: true,
+        reverse: () => undefined,
+        undoes: { criteriaSetId: "default", by: "write" },
+        unconfirmed: readBack,
+        settles: Promise.resolve(),
+      });
+      // The settlement is heard before React renders the note.
+      await Promise.resolve();
+    });
+
+    await vi.waitFor(() => expect(readBack).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(result.current.changes[0]?.unconfirmed).toBeUndefined());
+    expect(result.current.waitsFor("default")).toBe(false);
   });
 });

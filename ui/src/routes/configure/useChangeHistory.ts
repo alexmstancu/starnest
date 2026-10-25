@@ -75,9 +75,9 @@ export function useChangeHistory(): ChangeHistory {
   // The changes as last rendered, for what is decided outside a render: a write about to be
   // sent, and an unconfirmed change resolved when its request settles.
   const recorded = useRef<RecordedChange[]>([]);
-  useEffect(() => {
-    recorded.current = changes;
-  }, [changes]);
+  // Every id the history has rendered, so a settlement heard before its change is rendered is
+  // kept for when it is, and one about a change since removed is let go.
+  const rendered = useRef(new Set<number>());
   // Unconfirmed changes whose request has settled, resolved as soon as nothing is in flight.
   const settledMeanwhile = useRef(new Set<number>());
   const checkRef = useRef<(change: RecordedChange, quietly: boolean) => Promise<void>>(
@@ -86,14 +86,22 @@ export function useChangeHistory(): ChangeHistory {
   const resolveSettled = useCallback(() => {
     if (inFlight.current) return;
     for (const id of settledMeanwhile.current) {
-      settledMeanwhile.current.delete(id);
       const change = recorded.current.find((each) => each.id === id);
+      // **Not rendered yet, it waits for its render** (PL-033): a request can settle before the
+      // change it resolves is in the history, and that settlement must not be lost.
+      if (change === undefined && !rendered.current.has(id)) continue;
+      settledMeanwhile.current.delete(id);
       if (change?.unconfirmed !== undefined) {
         void checkRef.current(change, true);
         return;
       }
     }
   }, []);
+  useEffect(() => {
+    recorded.current = changes;
+    for (const { id } of changes) rendered.current.add(id);
+    resolveSettled();
+  }, [changes, resolveSettled]);
 
   const note = useCallback(
     (entry: Omit<RecordedChange, "id" | "at">) => {

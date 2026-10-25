@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import type { Criterion } from "../../api/endpoints";
 import type { components } from "../../api/schema";
+import type { RuleState } from "./rules/ruleSwitches";
 import type { Answers } from "./useAnswers";
 import type { ChangeHistory } from "./useChangeHistory";
 
@@ -20,6 +21,8 @@ export interface ConfigurationSession {
   history: ChangeHistory;
   pillarAnswers: Answers<PillarWeight[]>;
   criteriaAnswers: Answers<Criterion[]>;
+  /** A rule's state in a set, as a write or its undo left it (PL-138). */
+  ruleAnswers: Answers<RuleState>;
   /**
    * Moves whenever the source priority or a source's switch was written (PL-138): the sources
    * are not a set's, so their stage reads them again rather than taking an answer.

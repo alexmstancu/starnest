@@ -1912,6 +1912,163 @@ describe("a set read and a write it overlaps (PL-142)", () => {
   });
 });
 
+/**
+ * PL-033 round 10. **A rule's switch is a write the session holds**, as a lock is: its hold, its
+ * entry and its late answer outlive the panel that sent it.
+ */
+describe("a rule's write the session holds (PL-033 round 10)", () => {
+  const FREE_MOVEMENT = "Enforce Free movement applies";
+
+  async function leaveAndReturn(user: UserEvent): Promise<void> {
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+    await screen.findByRole("heading", { name: "Rank", level: 1 });
+    await user.click(screen.getByRole("link", { name: "Configure" }));
+    await settledScreen();
+  }
+
+  const enforcedNow = async () =>
+    (await fetchCriteriaSet("default")).enforced_match_rules ?? [];
+
+  it("keeps a rule it stopped waiting for held across Configure opened again, and shows where it lands", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderShell("/configure");
+    await settledScreen();
+    const enforce = holdRequests("put", "/v1/criteria-sets/:criteriaSetId/match-rules/:matchRuleId");
+    await user.click(await screen.findByRole("switch", { name: FREE_MOVEMENT }));
+    await waitFor(() => expect(enforce.sent).toHaveLength(1));
+    act(() => {
+      vi.advanceTimersByTime(WRITE_PATIENCE_MS);
+    });
+
+    await leaveAndReturn(user);
+    const gate = screen.getByRole("switch", { name: FREE_MOVEMENT });
+    expectHeld(gate);
+    await user.click(gate);
+    await user.click(gate);
+    expect(enforce.sent).toHaveLength(1);
+    enforce.release();
+
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: FREE_MOVEMENT })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      ),
+    );
+    expect(await enforcedNow()).toContain("country.eu_free_movement");
+  });
+
+  it("lists a rule whose answer was lost and could not be read back as unconfirmed, never as refused", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settledScreen();
+    mockServer.use(
+      http.put(
+        "/v1/criteria-sets/:criteriaSetId/match-rules/:matchRuleId",
+        async ({ request }) => {
+          await getResponse(handlers, request);
+          mockServer.use(
+            http.get(
+              "/v1/criteria-sets/default",
+              () =>
+                HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+              { once: true },
+            ),
+          );
+          return HttpResponse.error();
+        },
+        { once: true },
+      ),
+    );
+
+    await user.click(await screen.findByRole("switch", { name: FREE_MOVEMENT }));
+
+    const history = await historyPanel();
+    const entry = (await history.findByText("Enforced Free movement applies, in Default"))
+      .closest("li")!;
+    expect(within(entry).getByText(/not confirmed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/did not go through/)).toBeNull();
+    expectHeld(screen.getByRole("switch", { name: FREE_MOVEMENT }));
+    await user.click(within(entry).getByRole("button", { name: "Check again" }));
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: FREE_MOVEMENT })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      ),
+    );
+    expect(within(entry).queryByText(/not confirmed/i)).toBeNull();
+    expect(await enforcedNow()).toContain("country.eu_free_movement");
+  });
+
+  it("puts focus on the change's Undo when its own settlement confirms it under Check again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderShell("/configure");
+    await settledScreen();
+    const lock = holdRequests("put", "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId");
+    await user.click(await screen.findByRole("button", { name: "Lock Economy" }));
+    await waitFor(() => expect(lock.sent).toHaveLength(1));
+    act(() => {
+      vi.advanceTimersByTime(WRITE_PATIENCE_MS);
+    });
+    const entry = (await (await historyPanel()).findByText("Locked the Economy pillar, in Default"))
+      .closest("li")!;
+    const check = within(entry).getByRole("button", { name: "Check again" });
+    await user.click(check);
+    await waitFor(() => expectNotHeld(check));
+    expect(check).toHaveFocus();
+
+    lock.release();
+
+    await waitFor(() => expect(within(entry).queryByText(/not confirmed/i)).toBeNull());
+    // Moved by an effect, which may run after the render that took the button away.
+    await waitFor(() =>
+      expect(within(entry).getByRole("button", { name: "Undo this" })).toHaveFocus(),
+    );
+  });
+
+  it("keeps following a focused Check again through another change and the window losing focus", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderShell("/configure");
+    await settledScreen();
+    const lock = holdRequests("put", "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId");
+    await user.click(await screen.findByRole("button", { name: "Lock Economy" }));
+    await waitFor(() => expect(lock.sent).toHaveLength(1));
+    act(() => {
+      vi.advanceTimersByTime(WRITE_PATIENCE_MS);
+    });
+    const history = await historyPanel();
+    const entry = (await history.findByText("Locked the Economy pillar, in Default")).closest("li")!;
+    const check = within(entry).getByRole("button", { name: "Check again" });
+    check.focus();
+    // Another set's change lands meanwhile, pressed without moving focus, and the window loses
+    // focus while the reader waits: neither is the reader leaving Check again.
+    const remove = (await row("Remote only")).getByRole("button", { name: "Delete" });
+    await waitFor(() => expectNotHeld(remove));
+    fireEvent.click(remove);
+    await history.findByText("Deleted Remote only");
+    fireEvent.blur(check);
+    expect(check).toHaveFocus();
+
+    lock.release();
+
+    await waitFor(() => expect(within(entry).queryByText(/not confirmed/i)).toBeNull());
+    await waitFor(() =>
+      expect(within(entry).getByRole("button", { name: /^Undo this/ })).toHaveFocus(),
+    );
+  });
+});
+
 /** The last panel on the screen has arrived, so every read before it has too. */
 async function settledScreen(): Promise<void> {
   await screen.findByRole("region", { name: "Source priority" });

@@ -64,18 +64,21 @@ export function RecentChanges({
     history.undoThrough(id);
   };
   const resetHeld = heldFor(history.changes);
-  // **Check again takes its own button away** once the change is confirmed, so focus goes to the
-  // change's own undo -- or, if it turned out not to have happened, to the heading.
+  // **Check again takes its own button away** once the change is resolved -- by a press, or by
+  // its request settling on its own (PL-033) -- so focus on it goes to the change's own undo, or,
+  // if it turned out not to have happened, to the heading. Followed by focus rather than by the
+  // press: a settlement can take the button away long after the check it pressed came back.
   const undoIdOf = (id: number) => `${headingId}-undo-${String(id)}`;
-  const checked = useRef<number | null>(null);
+  const checkFocused = useRef<number | null>(null);
   useEffect(() => {
-    const id = checked.current;
-    if (id === null || history.writing) return;
-    checked.current = null;
+    const id = checkFocused.current;
+    if (id === null) return;
+    if (history.changes.find((each) => each.id === id)?.unconfirmed !== undefined) return;
+    checkFocused.current = null;
     refocusIfLost(document.getElementById(undoIdOf(id)), heading.current);
     // `undoIdOf` is derived from `headingId`, which never changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history.changes, history.writing]);
+  }, [history.changes]);
   const reset = () => {
     if (resetHeld) return;
     focus.pressed();
@@ -209,9 +212,16 @@ export function RecentChanges({
                         type="button"
                         className="action"
                         aria-disabled={held || undefined}
+                        onFocus={() => {
+                          checkFocused.current = change.id;
+                        }}
+                        onBlur={(event) => {
+                          // Moved on by the reader, not lost: a button taken away has nowhere
+                          // it went, and some browsers say so with a blur.
+                          if (event.relatedTarget !== null) checkFocused.current = null;
+                        }}
                         onClick={() => {
                           if (held) return;
-                          checked.current = change.id;
                           history.confirm(change.id);
                         }}
                       >
