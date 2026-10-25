@@ -1392,6 +1392,13 @@ export interface components {
                 items_stored: number;
                 items_failed: number;
             }[];
+            /** @description Pairs a source answered with a figure already on record for the same observation, so no new row carries this run. `value` is the stored figure it restated; null where that is not known -- a pair that restated more than one stored row, in one batch or across several, or a re-confirmation recorded before runs named the figure, with more than one row it could have restated. A null is never evidence that a figure is unchanged. */
+            reconfirmed?: {
+                data_source: string;
+                candidate: string;
+                attribute: string;
+                value: number | null;
+            }[];
             failures?: {
                 /** @description Which source failed. Two may answer one attribute, and a retry asks only the one that failed. */
                 data_source: string;
@@ -1974,6 +1981,8 @@ export interface operations {
             query?: {
                 /** @description Narrow to the values one acquisition produced. A value keeps the run that produced it for the life of the row, so this is what makes comparing two acquisitions two requests rather than a walk of the whole corpus. */
                 data_acquisition_run?: number;
+                /** @description Narrow to the stored values one acquisition re-confirmed: re-read as the same observation, so no new row carries that run. Exactly the values the run's `reconfirmed` names, for its own items only. Together with data_acquisition_run, it is what the run produced. Values a run re-confirmed before it recorded which are not listed. Refused with 422 alongside data_acquisition_run. */
+                reconfirmed_by_run?: number;
                 candidate?: string;
                 attribute?: string;
                 include_superseded?: boolean;
