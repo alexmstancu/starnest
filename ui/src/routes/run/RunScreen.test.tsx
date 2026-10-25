@@ -149,6 +149,101 @@ describe("estimating a run", () => {
   });
 });
 
+/**
+ * PL-004, P1-14: **every refusal can be dismissed, and Try again sends the same request again**
+ * -- offered for an estimate, which costs nothing, and never for a start, which could begin a
+ * second paid run.
+ */
+describe("a refused act", () => {
+  function plansRefused(times: number): { asked: number } {
+    const plans = { asked: 0 };
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, () => {
+        plans.asked += 1;
+        if (plans.asked > times) return undefined;
+        return new HttpResponse("Internal Server Error", { status: 500 });
+      }),
+    );
+    return plans;
+  }
+
+  async function theRefusal() {
+    return within(await screen.findByRole("alert"));
+  }
+
+  it("can be dismissed, and is gone", async () => {
+    plansRefused(1);
+    renderShell("/acquire");
+    await estimate();
+
+    await userEvent.click((await theRefusal()).getByRole("button", { name: "Dismiss" }));
+
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("sends a failed estimate again on Try again, and shows it", async () => {
+    const plans = plansRefused(1);
+    renderShell("/acquire");
+    await estimate();
+    const refusal = await theRefusal();
+    expect(refusal.getByText(/the estimate did not go through/i)).toBeInTheDocument();
+
+    await userEvent.click(refusal.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByText("At most")).toBeInTheDocument();
+    expect(plans.asked).toBe(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says so again when the estimate sent again fails too", async () => {
+    const plans = plansRefused(2);
+    renderShell("/acquire");
+    await estimate();
+
+    await userEvent.click((await theRefusal()).getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(plans.asked).toBe(2));
+    expect(await theRefusal()).toBeTruthy();
+    expect(screen.getByText(/the estimate did not go through/i)).toBeInTheDocument();
+    expect(screen.queryByText("At most")).toBeNull();
+  });
+
+  it("offers Dismiss and no Try again when a start was refused", async () => {
+    let starts = 0;
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs`, () => {
+        starts += 1;
+        return HttpResponse.json(
+          { code: "run_already_in_flight", message: "Another run is in flight." },
+          { status: 409 },
+        );
+      }),
+    );
+    renderShell("/acquire");
+    await estimate();
+    await userEvent.click(screen.getByRole("button", { name: /start this acquisition/i }));
+
+    const refusal = await theRefusal();
+    expect(refusal.getByText(/the start did not go through/i)).toBeInTheDocument();
+    expect(refusal.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+    expect(refusal.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(starts).toBe(1);
+  });
+
+  it("says it is not known whether a start that got no answer began", async () => {
+    mockServer.use(http.post(`${BASE}/data-acquisition-runs`, () => HttpResponse.error()));
+    renderShell("/acquire");
+    await estimate();
+    await userEvent.click(screen.getByRole("button", { name: /start this acquisition/i }));
+
+    const refusal = await theRefusal();
+    expect(
+      refusal.getByText(/not known whether the run began; the history will show it/i),
+    ).toBeInTheDocument();
+    expect(refusal.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+});
+
 describe("running and retrying", () => {
   it("shows the run's progress and what it could not answer", async () => {
     serveSourceNames({ oecd: "OECD" });
@@ -2248,7 +2343,7 @@ describe("stopping a run", () => {
       card.getByRole("button", { name: /stop — keep what completed/i }),
     );
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("internal_error");
+    expect(await screen.findByRole("alert")).toHaveTextContent("the run could not be read");
     expectHeld(card.getByRole("button", { name: "Stopping…" }));
   });
 
@@ -2276,7 +2371,7 @@ describe("stopping a run", () => {
       screen.getByRole("button", { name: /stop — keep what completed/i }),
     );
 
-    expect(await screen.findByText(/run_not_found/)).toBeInTheDocument();
+    expect(await screen.findByText(/the stop did not go through/i)).toBeInTheDocument();
   });
 });
 
@@ -2655,7 +2750,7 @@ describe("whose failure the screen reports", () => {
     refusal.release();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "run_already_in_flight",
+      "The start did not go through",
     );
     expect(
       screen.getByRole("region", { name: /acquisition 7/i }),
@@ -2821,7 +2916,7 @@ describe("a stop a refused start overtook", () => {
 
     await userEvent.click(startIt);
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "run_already_in_flight",
+      "The start did not go through",
     );
     stop.release();
 
@@ -2837,7 +2932,7 @@ describe("a stop a refused start overtook", () => {
     refusal.release();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "run_already_in_flight",
+      "The start did not go through",
     );
     await waitFor(() => expectTheStopOnTheCard());
   });
@@ -3578,7 +3673,7 @@ describe("acting from the keyboard", () => {
     starts.release();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "run_already_in_flight",
+      "The start did not go through",
     );
     await waitFor(() => expectNotHeld(startIt));
     expect(startIt).toHaveFocus();
@@ -3621,9 +3716,9 @@ describe("acting from the keyboard", () => {
 
     starts.release();
 
-    // By its code: the confirmation it refused is an alert too.
+    // By its title: the confirmation it refused is an alert too.
     expect(
-      await screen.findByText("run_already_in_flight"),
+      await screen.findByText("The start did not go through"),
     ).toBeInTheDocument();
     await waitFor(() => expectNotHeld(yes));
     expect(yes).toHaveFocus();
@@ -3652,9 +3747,9 @@ describe("acting from the keyboard", () => {
 
     starts.release();
 
-    // By its code: the confirmation it refused is an alert too.
+    // By its title: the confirmation it refused is an alert too.
     expect(
-      await screen.findByText("run_already_in_flight"),
+      await screen.findByText("The start did not go through"),
     ).toBeInTheDocument();
     await waitFor(() => expectNotHeld(notYet));
     expect(notYet).toHaveFocus();
@@ -4088,7 +4183,7 @@ describe("opening an acquisition from the history", () => {
 
     await openFromHistory("6");
 
-    expect(await screen.findByText("internal_error")).toBeInTheDocument();
+    expect(await screen.findByText("Reading the run did not go through")).toBeInTheDocument();
     const number = screen.getByRole("rowheader", { name: "6" });
     expect(within(number).getByRole("button", { name: "6" })).toHaveFocus();
     expect(scrolled).toEqual([]);
@@ -4329,7 +4424,7 @@ describe("a change of level", () => {
     plan.release();
     await waitFor(() => expect(result.current.busy).toBeNull());
 
-    expect(result.current.failure).toBeNull();
+    expect(result.current.refusal).toBeNull();
   });
 
   it("reports no refusal of a proposal still being read when the level changed", async () => {
@@ -4343,7 +4438,7 @@ describe("a change of level", () => {
     plan.release();
     await waitFor(() => expect(result.current.busy).toBeNull());
 
-    expect(result.current.failure).toBeNull();
+    expect(result.current.refusal).toBeNull();
   });
 
   it("still reports the refusal of an estimate for the level on screen", async () => {
@@ -4355,7 +4450,7 @@ describe("a change of level", () => {
     plan.release();
     await waitFor(() => expect(result.current.busy).toBeNull());
 
-    expect(result.current.failure).not.toBeNull();
+    expect(result.current.refusal).not.toBeNull();
   });
 
   it("clears an armed start rather than hiding it until the level comes back", async () => {

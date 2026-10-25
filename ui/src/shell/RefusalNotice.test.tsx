@@ -58,6 +58,35 @@ describe("a refusal", () => {
     expect(onResend).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["Dismiss", "Try again"])(
+    "gives focus back to the control that was pressed on %s, never to the page",
+    async (button) => {
+      const { rerender } = render(<button type="button">Estimate</button>);
+      screen.getByRole("button", { name: "Estimate" }).focus();
+      const notice = (
+        <RefusalNotice
+          act="The estimate"
+          error={REFUSED}
+          onDismiss={() => rerender(<button type="button">Estimate</button>)}
+          onResend={() => {
+            rerender(<button type="button">Estimate</button>);
+            return Promise.resolve();
+          }}
+        />
+      );
+      rerender(
+        <>
+          <button type="button">Estimate</button>
+          {notice}
+        </>,
+      );
+
+      await userEvent.click(screen.getByRole("button", { name: button }));
+
+      expect(screen.getByRole("button", { name: "Estimate" })).toHaveFocus();
+    },
+  );
+
   it("cannot be drawn without a way to dismiss it", () => {
     // @ts-expect-error -- every refusal can be dismissed (PL-004), so leaving it out is an error
     const notice = <RefusalNotice act="The save" error={REFUSED} />;

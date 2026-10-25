@@ -12,8 +12,8 @@ import {
   sourceName,
 } from "../../format/display";
 import type { RouteDefinition } from "../../navigation/routes";
-import { ErrorNotice } from "../../shell/ErrorNotice";
 import { LoadedRegion } from "../../shell/LoadedRegion";
+import { RefusalNotice } from "../../shell/RefusalNotice";
 import { useSelection } from "../../shell/SelectionContext";
 import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
@@ -122,9 +122,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
         </p>
       </header>
 
-      {run.failure !== null && (
-        <ErrorNotice error={run.failure} onRetry={run.dismissFailure} />
-      )}
+      {run.refusal !== null && <RefusalNotice {...run.refusal} onDismiss={run.dismissFailure} />}
 
       {/* **The card leads whenever there is a run, and the design settles why.** It was a
           full-size report with a table of every failure in it, which is what made leading with

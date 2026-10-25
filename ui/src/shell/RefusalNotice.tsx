@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import { presentError } from "../api/errorPresentation";
 
 /**
@@ -11,26 +12,55 @@ import { presentError } from "../api/errorPresentation";
 export function RefusalNotice({
   act,
   error,
+  note,
   onDismiss,
   onResend,
 }: {
   /** What was attempted, as the subject of a sentence: "The estimate". */
   act: string;
   error: unknown;
+  /** What the refusal leaves unknown, where it matters: whether a start began. */
+  note?: string;
   onDismiss: () => void;
   onResend?: () => Promise<void>;
 }) {
+  // **Dismiss and Try again take their own buttons away**, so focus goes back to the control
+  // whose act was refused -- held when the refusal appeared -- rather than falling to the page.
+  const pressed = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const focused = document.activeElement;
+    pressed.current = focused instanceof HTMLElement && focused !== document.body ? focused : null;
+  }, []);
+  const giveFocusBack = () => {
+    if (pressed.current?.isConnected) pressed.current.focus();
+  };
+
   return (
     <div className="failure-card" role="alert">
       <p className="failure-card__title">{act} did not go through</p>
       <p>{presentError(error).message}</p>
+      {note !== undefined && <p>{note}</p>}
       <div className="failure-card__acts">
         {onResend && (
-          <button type="button" className="button" onClick={() => void onResend()}>
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              giveFocusBack();
+              void onResend();
+            }}
+          >
             Try again
           </button>
         )}
-        <button type="button" className="button" onClick={onDismiss}>
+        <button
+          type="button"
+          className="button"
+          onClick={() => {
+            giveFocusBack();
+            onDismiss();
+          }}
+        >
           Dismiss
         </button>
       </div>

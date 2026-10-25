@@ -34,6 +34,7 @@ import { UNCLAIMED, useWatchedRun } from "./useWatchedRun";
 import type { Read } from "../../api/read";
 import { useRead } from "../../api/useRead";
 import { alwaysAsked } from "./alwaysAsked";
+import { isUnreachable } from "../../api/reachability";
 
 export type RunAct = "planning" | "running" | "opening" | "stopping";
 /**
@@ -106,7 +107,8 @@ export interface RunScreenState {
    * (NEW-57). Every way to start is held on it.
    */
   starting: boolean;
-  failure: unknown;
+  /** The last act that did not go through, ready for `RefusalNotice` (PL-004). */
+  refusal: Refusal | null;
   /**
    * The read of the run the screen opens by itself, while it has not answered and the reader has
    * not acted: null once it has, or once they have (PL-001). Failed, it is said with Try again.
@@ -153,6 +155,32 @@ export interface RunScreenState {
 }
 
 /**
+ * An act that did not go through, as `RefusalNotice` draws it (PL-004, P1-14). **`onResend` is
+ * there only for an estimate**, which costs nothing to send again; a start, stop or read-back
+ * is dismissed, never resent -- a start sent twice could begin a second paid run.
+ */
+export interface Refusal {
+  act: string;
+  error: unknown;
+  note?: string;
+  onResend?: () => Promise<void>;
+}
+
+/** What each act is called in a refusal, as the subject of a sentence. */
+const ACT_NAMES: Record<RunAct, string> = {
+  planning: "The estimate",
+  running: "The start",
+  opening: "Reading the run",
+  stopping: "The stop",
+};
+
+interface Failure {
+  what: RunAct;
+  error: unknown;
+  resend: (() => Promise<void>) | null;
+}
+
+/**
  * `levelId` is the level on screen: an armed scope at any other level is no longer the reader's.
  * `onStarted` hears of every run the server accepted, so the shell can watch it at once (PL-132).
  */
@@ -165,7 +193,7 @@ export function useRunScreen(
   const { current, claim, reclaim, isCurrent, show, clear, unclaimed } =
     useWatchedRun();
   const [busy, setBusy] = useState<RunAct | null>(null);
-  const [failure, setFailure] = useState<unknown>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
   const [armedState, setArmed] = useState<ArmedRun | null>(null);
   // **Derived, not cleared by an effect** (PL-116): an effect runs after the paint, and a "Yes"
   // pressed in between would still start the scope the card has just left. Dismiss is covered
@@ -234,7 +262,7 @@ export function useRunScreen(
 
   const reloadHistory = history.reload;
   const act = useCallback(
-    async (what: RunAct, action: () => Promise<void>) => {
+    async (what: RunAct, action: () => Promise<void>, resend?: () => Promise<void>) => {
       const mine = { what };
       going.current = [...going.current, mine];
       setBusy(what);
@@ -243,7 +271,7 @@ export function useRunScreen(
         await action();
         void reloadHistory();
       } catch (error) {
-        setFailure(error);
+        setFailure({ what, error, resend: resend ?? null });
       } finally {
         going.current = going.current.filter((each) => each !== mine);
         setBusy(going.current.at(-1)?.what ?? null);
@@ -258,17 +286,25 @@ export function useRunScreen(
    * left would stand over the one on screen, as its answer would (PL-116).
    */
   const estimateFor = useCallback(
-    (origin: GapKind, stillAsked: () => boolean, read: () => Promise<void>) =>
-      act("planning", async () => {
-        setEstimating(origin);
-        try {
-          await read();
-        } catch (refused) {
-          if (stillAsked()) throw refused;
-        } finally {
-          setEstimating((now) => (now === origin ? null : now));
-        }
-      }),
+    (origin: GapKind, stillAsked: () => boolean, read: () => Promise<void>) => {
+      // Try again sends this very estimate again: it spends nothing (P1-14).
+      const attempt = (): Promise<void> =>
+        act(
+          "planning",
+          async () => {
+            setEstimating(origin);
+            try {
+              await read();
+            } catch (refused) {
+              if (stillAsked()) throw refused;
+            } finally {
+              setEstimating((now) => (now === origin ? null : now));
+            }
+          },
+          attempt,
+        );
+      return attempt();
+    },
     [act],
   );
 
@@ -393,7 +429,7 @@ export function useRunScreen(
     busy,
     isStopping: (runId) => stopsAsked.has(runId),
     starting,
-    failure,
+    refusal: failure === null ? null : refusalOf(failure),
     history: historyRead,
     reloadHistory,
     dismissFailure: () => setFailure(null),
@@ -523,5 +559,19 @@ export function useRunScreen(
         focusCardOf(ticket, run.id);
       });
     },
+  };
+}
+
+function refusalOf({ what, error, resend }: Failure): Refusal {
+  return {
+    act: ACT_NAMES[what],
+    error,
+    // **A start nobody answered may have begun all the same** (P1-14): it is not sent again,
+    // and the history is where the reader learns whether it did.
+    note:
+      what === "running" && isUnreachable(error)
+        ? "It is not known whether the run began; the history will show it."
+        : undefined,
+    onResend: resend ?? undefined,
   };
 }
