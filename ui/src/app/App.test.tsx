@@ -524,8 +524,9 @@ describe("what the sidebar reads again", () => {
     await sidebarHasRead();
     await screen.findByRole("region", { name: "Household" });
 
-    // One for the sidebar and one for the panel on Configure.
-    expect(households.count).toBe(2);
+    // One for the sidebar, one for the panel on Configure, and one for the rules' citizenships
+    // (PL-164).
+    expect(households.count).toBe(3);
   });
 });
 

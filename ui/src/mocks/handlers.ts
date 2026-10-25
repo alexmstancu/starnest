@@ -521,7 +521,7 @@ export const handlers = [
   }),
 
   http.get(`${BASE}/match-rule-results`, () =>
-    HttpResponse.json({ items: matchRuleResults }),
+    HttpResponse.json({ items: matchRuleResults.map(withRecheck) }),
   ),
 
   http.post(`${BASE}/match-rule-research/plan`, () =>
@@ -576,7 +576,10 @@ export const handlers = [
       ...matchRuleResults.filter(
         (stored) => !asked.some((finding) => isSameAnswer(stored, finding)),
       ),
-      ...asked.map((finding) => ({ ...finding })),
+      ...asked.map((finding) => ({
+        ...finding,
+        assumed_citizenships: [...household.citizenships],
+      })),
     ];
     const researchedAt = new Date().toISOString();
     researchSpend = [
@@ -645,6 +648,8 @@ export const handlers = [
         recorded_at: now,
         // Recording an answer is what takes a pending proposal: it is pending no longer.
         pending_proposal: null,
+        // The household's citizenships as they stand, copied (Q239).
+        assumed_citizenships: [...household.citizenships],
       };
       matchRuleResults = [
         ...matchRuleResults.filter((each) => !isSameAnswer(each, pair)),
@@ -2004,6 +2009,21 @@ function rebalancePillarWeights(
 }
 
 /** The rules a set turns on as it stands now, edits included; none for a set that is not there. */
+/**
+ * An answer as the server serves it (Q239): flagged for a re-check when the household's
+ * citizenships differ from those it assumed, or when it assumed none on record while the
+ * household holds any.
+ */
+function withRecheck(answer: MatchRuleResult): MatchRuleResult {
+  const assumed = answer.assumed_citizenships ?? null;
+  const held = household.citizenships;
+  const differs =
+    assumed === null
+      ? held.length > 0
+      : assumed.length !== held.length || assumed.some((each) => !held.includes(each));
+  return { ...answer, assumed_citizenships: assumed, needs_recheck: differs };
+}
+
 /** What the gates read besides the set, as stored now: the household and the answers. */
 function gateEvidence(): GateEvidence {
   return { citizenships: household.citizenships, answers: matchRuleResults };

@@ -85,6 +85,7 @@ export function GateAnswersPanel({
           <RecordedAnswersTable
             recorded={inReadingOrder(answers.recorded, today, names)}
             names={names}
+            citizenshipName={(candidate) => candidateName(candidateNames, candidate)}
             today={today}
             now={now}
             held={tableHeld}

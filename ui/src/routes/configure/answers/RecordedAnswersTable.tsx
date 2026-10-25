@@ -13,6 +13,7 @@ import type { PendingProposal } from "./gateAnswerForm";
 export function RecordedAnswersTable({
   recorded,
   names,
+  citizenshipName,
   today,
   now,
   held,
@@ -22,6 +23,8 @@ export function RecordedAnswersTable({
   /** In reading order already: ended periods first. */
   recorded: readonly MatchRuleResult[];
   names: (answer: MatchRuleResult) => [gate: string, candidate: string];
+  /** A citizenship by its country's name, never its id. */
+  citizenshipName: (candidate: string) => string;
   today: string;
   now: Date;
   /** A write is in flight or the list is outdated: the buttons keep focus and do nothing. */
@@ -62,6 +65,7 @@ export function RecordedAnswersTable({
               gate={gate}
               candidate={candidate}
               ended={periodHasEnded(answer.reference_period, today)}
+              citizenshipName={citizenshipName}
               now={now}
               held={held}
               onChange={() => onChange(answer)}
@@ -88,6 +92,7 @@ function AnswerRow({
   gate,
   candidate,
   ended,
+  citizenshipName,
   now,
   held,
   onChange,
@@ -96,6 +101,7 @@ function AnswerRow({
   gate: string;
   candidate: string;
   ended: boolean;
+  citizenshipName: (candidate: string) => string;
   now: Date;
   held: boolean;
   onChange: () => void;
@@ -117,6 +123,7 @@ function AnswerRow({
       </td>
       <td>
         {recordedAt === undefined ? "Not known" : `${formatDate(recordedAt)}, ${describeAge(recordedAt, now)}`}
+        <CitizenshipsAssumed answer={answer} citizenshipName={citizenshipName} />
       </td>
       <td>
         {answer.override_reason == null ? (
@@ -145,6 +152,45 @@ function AnswerRow({
       </td>
     </tr>
   );
+}
+
+/**
+ * Which citizenships the answer assumed when it was recorded, and whether it needs checking
+ * again because the household's differ (Q239). A flag only: the answer still applies.
+ */
+function CitizenshipsAssumed({
+  answer,
+  citizenshipName,
+}: {
+  answer: MatchRuleResult;
+  citizenshipName: (candidate: string) => string;
+}) {
+  const assumed = answer.assumed_citizenships;
+  return (
+    <>
+      {assumed != null && (
+        <p className="screen__note">
+          {assumed.length === 0
+            ? "Recorded with no household."
+            : `Assumed citizenship of ${namesInASentence(assumed.map(citizenshipName))}.`}
+        </p>
+      )}
+      {answer.needs_recheck === true && (
+        <p className="answer-row__ended">
+          {assumed == null
+            ? "Recorded before citizenships were kept: check it again."
+            : "Recorded for a different citizenship: check it again."}
+        </p>
+      )}
+    </>
+  );
+}
+
+function namesInASentence(names: readonly string[]): string {
+  const sorted = [...names].sort();
+  return sorted.length <= 1
+    ? (sorted[0] ?? "")
+    : `${sorted.slice(0, -1).join(", ")} and ${sorted[sorted.length - 1]}`;
 }
 
 function PendingRow({

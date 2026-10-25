@@ -9,6 +9,7 @@ import {
 import type { Read } from "../../../api/read";
 import type { CandidateRosterState } from "../../../api/useCandidateNames";
 import { useCandidateRosterState } from "../../../api/useCandidateRoster";
+import { useRankingInputsVersion } from "../../../api/rankingInputs";
 import { useRead } from "../../../api/useRead";
 import {
   emptyDraft,
@@ -65,9 +66,12 @@ export function useGateAnswers(
   /** Told after a save, so everything describing the answers re-reads. */
   onAnswered: () => void,
 ): GateAnswers {
+  // Read again when the household is saved too: a citizenship change is what flags an answer
+  // for a re-check (Q239), and both only ever grow, so their sum moves with either.
+  const inputs = useRankingInputsVersion();
   const answers = useRead(
     useCallback((signal: AbortSignal) => fetchMatchRuleResults({ signal }), []),
-    { freshness: answersFreshness },
+    { freshness: answersFreshness + inputs },
   );
   const read = answers.read.state === "idle" ? PENDING : answers.read;
   const gates = useRead(

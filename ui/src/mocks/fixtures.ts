@@ -1640,6 +1640,8 @@ const VISA_ROUTE_PROPOSAL: MatchRuleResult = {
   reason: "The official page lists no route for these citizenships.",
   citations: ["https://example.gov/skilled-worker"],
   is_proposal: true,
+  // Recorded with the household as it stands, so nothing asks for a re-check (Q239).
+  assumed_citizenships: ["country.romania"],
 };
 
 /**
@@ -1658,6 +1660,7 @@ export const MATCH_RULE_RESULTS: MatchRuleResult[] = [
     retrieval_date: "2026-09-10T09:00:00Z",
     reason: "Checked the treaty text.",
     is_proposal: false,
+    assumed_citizenships: ["country.romania"],
     // When it was stored, which the server serves on every answer (D54).
     recorded_at: "2026-09-10T09:00:00Z",
   },

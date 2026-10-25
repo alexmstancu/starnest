@@ -434,3 +434,63 @@ describe("the recorded answers", () => {
     });
   });
 });
+
+/**
+ * PL-164 (Q239). **An answer names the citizenships it assumed**, and says when the household's
+ * have changed since -- or were never kept -- so it should be checked again. It still applies.
+ */
+describe("the citizenships an answer assumed", () => {
+  it("names the citizenships it assumed, by country name", async () => {
+    serveAnswers([{ ...RECORDED, assumed_citizenships: ["country.romania"], needs_recheck: false }]);
+    renderShell("/configure");
+    await settled();
+
+    const row = await theAnswers().findByRole("row", { name: /UK Skilled Worker route/ });
+    expect(row).toHaveTextContent("Assumed citizenship of Romania.");
+    expect(row).not.toHaveTextContent(/check it again/);
+    expect(row).not.toHaveTextContent("country.");
+  });
+
+  it("asks for a re-check of one recorded for a different citizenship", async () => {
+    serveAnswers([
+      { ...RECORDED, assumed_citizenships: ["country.united_kingdom"], needs_recheck: true },
+    ]);
+    renderShell("/configure");
+    await settled();
+
+    const row = await theAnswers().findByRole("row", { name: /UK Skilled Worker route/ });
+    expect(row).toHaveTextContent("Assumed citizenship of United Kingdom.");
+    expect(row).toHaveTextContent("Recorded for a different citizenship: check it again.");
+  });
+
+  it("asks for a re-check of one recorded before citizenships were kept", async () => {
+    serveAnswers([{ ...RECORDED, assumed_citizenships: null, needs_recheck: true }]);
+    renderShell("/configure");
+    await settled();
+
+    const row = await theAnswers().findByRole("row", { name: /UK Skilled Worker route/ });
+    expect(row).toHaveTextContent("Recorded before citizenships were kept: check it again.");
+    expect(row).not.toHaveTextContent(/Assumed citizenship/);
+  });
+
+  it("flags an answer once the household's citizenships change, without remounting", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    // The mock's own answer, recorded with the household as it stands.
+    const row = await theAnswers().findByRole("row", { name: /Free movement applies/ });
+    expect(row).toHaveTextContent("Assumed citizenship of Romania.");
+    expect(row).not.toHaveTextContent(/check it again/);
+
+    const passports = screen.getByRole("combobox", { name: "Passports held" });
+    await user.click(passports);
+    await user.type(passports, "Port");
+    await user.tab();
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("button", { name: "Save household" }));
+
+    await waitFor(() =>
+      expect(row).toHaveTextContent("Recorded for a different citizenship: check it again."),
+    );
+  });
+});
