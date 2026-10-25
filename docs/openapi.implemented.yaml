@@ -1797,6 +1797,20 @@ components:
       - as_is
       title: NormalisationMethod
       type: string
+    NotReachedBody:
+      description: An item a planned source has not been asked about yet -- see `store.NotReachedItem`.
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        candidate:
+          title: Candidate
+          type: string
+      required:
+      - candidate
+      - attribute
+      title: NotReachedBody
+      type: object
     NotReachedGapBody:
       properties:
         attribute:
@@ -1950,6 +1964,9 @@ components:
         items_failed:
           title: Items Failed
           type: integer
+        items_not_reached:
+          title: Items Not Reached
+          type: integer
         items_total:
           title: Items Total
           type: integer
@@ -1961,6 +1978,7 @@ components:
       - items_completed
       - items_failed
       - items_unanswered
+      - items_not_reached
       title: ProgressBody
       type: object
     RankingBody:
@@ -2249,6 +2267,11 @@ components:
       type: object
     RunDetailBody:
       properties:
+        accepted_uncapped:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Accepted Uncapped
         by_source:
           default: []
           items:
@@ -2259,6 +2282,11 @@ components:
           default: 0
           title: Cost Eur
           type: number
+        estimate_ceiling_eur:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Estimate Ceiling Eur
         failures:
           default: []
           items:
@@ -2290,6 +2318,16 @@ components:
           default: 0
           title: Llm Call Count
           type: integer
+        not_reached:
+          default: []
+          items:
+            $ref: '#/components/schemas/NotReachedBody'
+          title: Not Reached
+          type: array
+        plan_recorded:
+          default: false
+          title: Plan Recorded
+          type: boolean
         progress:
           anyOf:
           - $ref: '#/components/schemas/ProgressBody'
@@ -2315,6 +2353,11 @@ components:
           default: 0
           title: Scope Candidates
           type: integer
+        spend_cap_eur:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Spend Cap Eur
         started_at:
           format: date-time
           title: Started At
@@ -2568,15 +2611,27 @@ components:
       title: SettingsBody
       type: object
     SourceReachBody:
-      description: How far one source got. Derived from the value and failure rows,
-        never stored.
+      description: 'How far one source got. Derived from the value and failure rows,
+        never stored; its plan
+
+        counts are null for a run that recorded no plan, never zero.'
       properties:
         data_source:
           title: Data Source
           type: string
+        items_asked:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Items Asked
         items_failed:
           title: Items Failed
           type: integer
+        items_planned:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Items Planned
         items_stored:
           title: Items Stored
           type: integer
@@ -2584,6 +2639,8 @@ components:
       - data_source
       - items_stored
       - items_failed
+      - items_planned
+      - items_asked
       title: SourceReachBody
       type: object
     SpentBody:
@@ -3860,10 +3917,11 @@ paths:
         \ one resource**, because both create a\nrun over a subset of an earlier one's\
         \ scope:\n\n- `failed` (the default) asks only the sources that failed, only\
         \ about what they failed on.\n- `unanswered` asks again about the items that\
-        \ produced neither a figure nor a failure.\n  There is no source to narrow\
-        \ to -- none failed -- so every source that can answer those\n  attributes\
-        \ is asked.\n\nA run with nothing of the kind asked for is refused with 409:\
-        \ a run over an empty scope\nwould be a no-op recorded as though it were work."
+        \ produced neither a figure nor a failure:\n  those nobody had a row for,\
+        \ and those the run never reached.\n  There is no source to narrow to -- none\
+        \ failed -- so every source that can answer those\n  attributes is asked.\n\
+        \nA run with nothing of the kind asked for is refused with 409: a run over\
+        \ an empty scope\nwould be a no-op recorded as though it were work."
       operationId: retryRun
       parameters:
       - in: path

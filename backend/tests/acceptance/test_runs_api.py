@@ -721,7 +721,13 @@ class TestWhatAFailureRecords:
 
         validate("getRun", detail)
         assert detail["by_source"] == [
-            {"data_source": "open_meteo", "items_stored": 32 - 1, "items_failed": 1}
+            {
+                "data_source": "open_meteo",
+                "items_stored": 32 - 1,
+                "items_failed": 1,
+                "items_planned": 32,
+                "items_asked": 32,
+            }
         ]
 
 
@@ -1383,7 +1389,8 @@ class TestWhichSourceGotItThere:
 
         assert detail["by_source"]
         assert all(
-            set(entry) == {"data_source", "items_stored", "items_failed"}
+            set(entry)
+            == {"data_source", "items_stored", "items_failed", "items_planned", "items_asked"}
             for entry in detail["by_source"]
         )
 
@@ -1442,6 +1449,26 @@ class TestWhatNobodyAnswered:
 
         assert detail["progress"]["items_unanswered"] == 1
         assert [item["attribute"] for item in detail["unanswered"]] == [OVERBURDEN]
+
+    async def test_a_completed_run_serves_its_plan_and_nothing_not_reached(
+        self, database_url: str
+    ) -> None:
+        """PL-050, PL-055, PL-056. The four counts sum to the total, every source asked is shown
+        against its plan, and the ceiling and cap are the ones the run started with."""
+        omitting = a_stub_source(silent_about=(), no_row_for=(NO_SOURCE_COVERS,))
+        async with an_api(database_url, (omitting,)) as api:
+            run = (await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})).json()
+            detail = (await api.get(f"/v1/data-acquisition-runs/{run['id']}")).json()
+
+        validate("getRun", detail)
+        progress = detail["progress"]
+        assert (progress["items_unanswered"], progress["items_not_reached"]) == (2, 0)
+        assert detail["not_reached"] == []
+        assert [(r["items_planned"], r["items_asked"]) for r in detail["by_source"]] == [
+            (32 * 2, 32 * 2)
+        ]
+        assert detail["plan_recorded"] is True
+        assert detail["estimate_ceiling_eur"] == 0
 
     async def test_a_failure_is_not_counted_as_unanswered(self, api: httpx.AsyncClient) -> None:
         """The default stub declines for Portugal, which is a failure and nothing else."""

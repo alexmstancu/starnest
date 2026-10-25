@@ -958,8 +958,8 @@ class _AskedOnlyAbout(SourceAdapter):
 
 
 class NothingToAskAgainError(ValueError):
-    """A run where every item was either answered or failed. There is nothing unanswered to ask
-    about, and a new run over an empty scope would be a no-op recorded as work."""
+    """A run where every item was either answered or failed. There is nothing unanswered or not
+    reached to ask about, and a new run over an empty scope would be a no-op recorded as work."""
 
 
 async def ask_again(
@@ -976,7 +976,11 @@ async def ask_again(
     uncapped_is_accepted: bool = False,
     execute: "Callable[..., Awaitable[Run]]" = execute_run,
 ) -> Run:
-    """A new run asking again about the items nobody answered (`reqs.md` Q217).
+    """A new run asking again about the items nobody answered or the run never reached (Q217).
+
+    **Both, because both are what a run left empty** (C04-N6). A stopped run's never-asked items
+    were once counted unanswered, and this read that list; reading only `unanswered` now would
+    silently stop asking about everything a stopped run never reached.
 
     `execute` is the same seam `retry_run` has: the endpoint passes one that dispatches the fetch
     to the background and returns 202 at once, rather than blocking (BE-12).
@@ -990,26 +994,26 @@ async def ask_again(
     **The old run is untouched**, as it is for a retry: it keeps its account of what it asked and
     what came back.
     """
-    if not run.unanswered or run.scope is None:
+    empty = (*run.unanswered, *run.not_reached)
+    if not empty or run.scope is None:
         raise NothingToAskAgainError(
-            f"run {run.id} has no unanswered items, so there is nothing to ask again about"
+            f"run {run.id} has no unanswered or not-reached items, so there is nothing to ask "
+            "again about"
         )
 
-    wanted_candidates = {item.candidate for item in run.unanswered}
-    wanted_attributes = {item.attribute for item in run.unanswered}
+    wanted_candidates = {item.candidate for item in empty}
+    wanted_attributes = {item.attribute for item in empty}
     # **Every source, but only about the unanswered pairs** (BE-11). No source *failed*, so none is
     # narrowed away; but a pair that was answered is not unanswered, and asking a source about it
     # again -- a paid source most of all -- pays a second time for an answer already in hand. The
     # unanswered items are exact pairs, so each source is wrapped to just them, the same mechanism a
     # retry uses for a source's own failures.
-    unanswered = _FailedOn(
-        pairs=frozenset((item.attribute, item.candidate) for item in run.unanswered)
-    )
+    unanswered = _FailedOn(pairs=frozenset((item.attribute, item.candidate) for item in empty))
     return await execute(
         adapters=[_AskedOnlyAbout(adapter, unanswered) for adapter in adapters],
         attributes=[a for a in attributes if str(a.id) in wanted_attributes],
         candidates=[c for c in candidates if str(c.id) in wanted_candidates],
-        pairs=tuple(dict.fromkeys((item.candidate, item.attribute) for item in run.unanswered)),
+        pairs=tuple(dict.fromkeys((item.candidate, item.attribute) for item in empty)),
         values=values,
         runs=runs,
         level=run.scope.level,

@@ -26,6 +26,7 @@ from starnest.data_acquisition import (
     Gap,
     Holdings,
     MonthlySpend,
+    NotReachedItem,
     Reconfirmation,
     ResearchSpend,
     Run,
@@ -322,7 +323,12 @@ def _run_from(row: Any) -> Run:
         items_completed=int(row.items_completed),
         items_failed=int(row.items_failed),
         items_unanswered=int(row.items_unanswered),
+        items_not_reached=int(row.items_not_reached),
         stop_requested_at=row.stop_requested_at,
+        plan_recorded=bool(row.plan_recorded),
+        estimate_ceiling_eur=_money(row.estimate_ceiling_eur),
+        spend_cap_eur=_money(row.spend_cap_eur),
+        accepted_uncapped=row.accepted_uncapped,
         failures=tuple(
             AcquisitionFailure(
                 attribute=failure["attribute"],
@@ -336,11 +342,17 @@ def _run_from(row: Any) -> Run:
             UnansweredItem(candidate=item["candidate"], attribute=item["attribute"])
             for item in row.unanswered
         ),
+        not_reached=tuple(
+            NotReachedItem(candidate=item["candidate"], attribute=item["attribute"])
+            for item in row.not_reached
+        ),
         by_source=tuple(
             SourceReach(
                 data_source=DataSourceId(reach["data_source"]),
                 items_stored=int(reach["items_stored"]),
                 items_failed=int(reach["items_failed"]),
+                items_planned=_count(reach["items_planned"]),
+                items_asked=_count(reach["items_asked"]),
             )
             for reach in row.by_source
         ),
@@ -354,6 +366,15 @@ def _run_from(row: Any) -> Run:
             for reconfirmed in row.reconfirmed
         ),
     )
+
+
+def _money(amount: Any) -> Decimal | None:
+    return None if amount is None else Decimal(str(amount))
+
+
+def _count(count: Any) -> int | None:
+    """A per-source plan count, `None` where the run recorded no plan -- never read as zero."""
+    return None if count is None else int(count)
 
 
 def _gap_from(gap: Mapping[str, Any]) -> Gap:

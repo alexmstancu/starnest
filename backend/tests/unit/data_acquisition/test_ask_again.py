@@ -9,6 +9,7 @@ second run poses, not how any publisher answers one.
 """
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -30,6 +31,7 @@ from starnest.data_acquisition import (
     Acquired,
     Holdings,
     NothingToAskAgainError,
+    NotReachedItem,
     Run,
     RunPlan,
     RunScope,
@@ -278,6 +280,39 @@ class TestWhatItAsks:
 
         assert runs.opened[0].candidates == ("country.liechtenstein",)
         assert runs.opened[0].attributes == (OVERBURDEN,)
+
+    async def test_asking_again_includes_what_a_stopped_run_never_reached(self) -> None:
+        """C04-N6. A stopped run's never-asked items were once listed unanswered, and this read
+        that list; they are not reached now, and reading `unanswered` alone would silently stop
+        asking about them. Mutation: read `unanswered` only."""
+        stopped = replace(
+            a_run(unanswered=(UnansweredItem("country.liechtenstein", OVERBURDEN),)),
+            status=RunStatus.HALTED_BY_USER,
+            not_reached=(NotReachedItem("country.portugal", OVERCROWDING),),
+        )
+        eurostat = a_source()
+
+        runs, _ = await asking_again(stopped, (eurostat,))
+
+        assert runs.opened[0].pairs == (
+            ("country.liechtenstein", OVERBURDEN),
+            ("country.portugal", OVERCROWDING),
+        )
+        assert sorted(eurostat.asked) == [
+            (OVERBURDEN, ("country.liechtenstein",)),
+            (OVERCROWDING, ("country.portugal",)),
+        ]
+
+    async def test_a_run_with_only_items_it_never_reached_is_asked_about_them(self) -> None:
+        stopped = replace(
+            a_run(unanswered=()),
+            status=RunStatus.FAILED,
+            not_reached=(NotReachedItem("country.portugal", OVERCROWDING),),
+        )
+
+        runs, _ = await asking_again(stopped, (a_source(),))
+
+        assert runs.opened[0].pairs == (("country.portugal", OVERCROWDING),)
 
     async def test_every_source_that_can_answer_the_attribute_is_asked(self) -> None:
         """**The difference from a retry.** No source failed, so there is none to narrow to: the

@@ -13,6 +13,7 @@ and attributes are bounded by the catalog and come back whole (`arch.md` 7.6).
 """
 
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Query
@@ -114,10 +115,12 @@ class ProgressBody(BaseModel):
     items_total: int
     items_completed: int
     items_failed: int
-    # The three sum to `items_total`. Before Q217 they did not: an item every source answered
+    # The four sum to `items_total`. Before Q217 they did not: an item every source answered
     # without having a row for that candidate belonged to none of them, and the run reported
     # nothing failed about a run that learned nothing.
     items_unanswered: int
+    # Empty, with a planned source not yet asked (C04-N6): never "nobody had a row".
+    items_not_reached: int
 
 
 class FailureBody(BaseModel):
@@ -129,6 +132,13 @@ class FailureBody(BaseModel):
 
 class UnansweredBody(BaseModel):
     """An item nobody answered. No source, because none failed -- see `store.UnansweredItem`."""
+
+    candidate: str
+    attribute: str
+
+
+class NotReachedBody(BaseModel):
+    """An item a planned source has not been asked about yet -- see `store.NotReachedItem`."""
 
     candidate: str
     attribute: str
@@ -150,11 +160,14 @@ class RetryBody(BaseModel):
 
 
 class SourceReachBody(BaseModel):
-    """How far one source got. Derived from the value and failure rows, never stored."""
+    """How far one source got. Derived from the value and failure rows, never stored; its plan
+    counts are null for a run that recorded no plan, never zero."""
 
     data_source: str
     items_stored: int
     items_failed: int
+    items_planned: int | None
+    items_asked: int | None
 
 
 class ReconfirmedBody(BaseModel):
@@ -171,11 +184,18 @@ class RunDetailBody(RunBody):
     progress: ProgressBody | None = None
     failures: tuple[FailureBody, ...] = ()
     unanswered: tuple[UnansweredBody, ...] = ()
+    not_reached: tuple[NotReachedBody, ...] = ()
     # Source by source. A run's totals say how far it got; this says which source got it there,
     # which is the question behind every retry.
     by_source: tuple[SourceReachBody, ...] = ()
     # What the run re-confirmed rather than stored: with its values, what it produced (PL-049).
     reconfirmed: tuple[ReconfirmedBody, ...] = ()
+    # The plan, ceiling and cap the run recorded as it started (0512); the three are null for a
+    # run from before, which `plan_recorded` says rather than reading as zero.
+    plan_recorded: bool = False
+    estimate_ceiling_eur: float | None = None
+    spend_cap_eur: float | None = None
+    accepted_uncapped: bool | None = None
 
 
 class RunsBody(BaseModel):
@@ -382,7 +402,8 @@ async def retry(
     run over a subset of an earlier one's scope:
 
     - `failed` (the default) asks only the sources that failed, only about what they failed on.
-    - `unanswered` asks again about the items that produced neither a figure nor a failure.
+    - `unanswered` asks again about the items that produced neither a figure nor a failure:
+      those nobody had a row for, and those the run never reached.
       There is no source to narrow to -- none failed -- so every source that can answer those
       attributes is asked.
 
@@ -493,6 +514,7 @@ async def get_run(run_id: int, runs: Runs) -> RunDetailBody:
             items_completed=run.items_completed,
             items_failed=run.items_failed,
             items_unanswered=run.items_unanswered,
+            items_not_reached=run.items_not_reached,
         ),
         failures=tuple(
             FailureBody(
@@ -507,11 +529,17 @@ async def get_run(run_id: int, runs: Runs) -> RunDetailBody:
             UnansweredBody(candidate=item.candidate, attribute=item.attribute)
             for item in run.unanswered
         ),
+        not_reached=tuple(
+            NotReachedBody(candidate=item.candidate, attribute=item.attribute)
+            for item in run.not_reached
+        ),
         by_source=tuple(
             SourceReachBody(
                 data_source=str(reach.data_source),
                 items_stored=reach.items_stored,
                 items_failed=reach.items_failed,
+                items_planned=reach.items_planned,
+                items_asked=reach.items_asked,
             )
             for reach in run.by_source
         ),
@@ -524,7 +552,15 @@ async def get_run(run_id: int, runs: Runs) -> RunDetailBody:
             )
             for reconfirmed in run.reconfirmed
         ),
+        plan_recorded=run.plan_recorded,
+        estimate_ceiling_eur=_euros(run.estimate_ceiling_eur),
+        spend_cap_eur=_euros(run.spend_cap_eur),
+        accepted_uncapped=run.accepted_uncapped,
     )
+
+
+def _euros(amount: Decimal | None) -> float | None:
+    return None if amount is None else float(amount)
 
 
 async def _scope_targets(

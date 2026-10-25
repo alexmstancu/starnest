@@ -42,6 +42,7 @@ from starnest.data_acquisition import (
     OpenedRun,
     ResearchSpend,
     RunAlreadyInFlightError,
+    RunPlan,
     RunScope,
     RunStatus,
     SourceAdapter,
@@ -145,13 +146,15 @@ class TestWhatNobodyAnswered:
 
     @pytest.fixture
     async def a_wider_run(self, pool: AsyncConnectionPool) -> int:
-        return await PostgresRunStore(pool).start_run(
+        """A completed run with no recorded plan: every source it had was asked, so an empty item
+        is unanswered (C04-N6's fallback). A run still going would read it "not reached"."""
+        return await a_completed_run(
+            pool,
             RunScope(
                 level="country",
                 candidates=("country.liechtenstein", "country.portugal"),
                 attributes=(OVERBURDEN, OVERCROWDING),
             ),
-            triggered_by="test",
         )
 
     async def test_the_three_counts_sum_to_the_total(
@@ -225,15 +228,11 @@ class TestWhatNobodyAnswered:
         """A stored figure answers the run that fetched it. Without the run in the condition,
         every gap would be hidden by whatever an earlier run happened to store.
 
-        **This run finishes before the next one starts**, because one household runs one pass at
+        **This run finished before the next one started**, because one household runs one pass at
         a time (ST-01, `0498`): "another run" is necessarily a different, non-overlapping run, and
-        its figure must still not retroactively fill this one's gaps. Finishing changes none of
-        the derived counts, which read the scope against the values and failures, not the status.
+        its figure must still not retroactively fill this one's gaps.
         """
         store = PostgresRunStore(pool)
-        await store.finish_run(
-            a_wider_run, status=RunStatus.COMPLETED, finished_at=datetime.now(UTC)
-        )
         earlier = await store.start_run(
             RunScope(
                 level="country", candidates=("country.liechtenstein",), attributes=(OVERBURDEN,)
@@ -391,7 +390,8 @@ class TestARunScopedToExactPairs:
     @pytest.fixture
     async def a_retry_of_two_pairs(self, pool: AsyncConnectionPool) -> int:
         # The two lists span four corners; the run asks about only two of them.
-        return await PostgresRunStore(pool).start_run(
+        return await a_completed_run(
+            pool,
             RunScope(
                 level="country",
                 candidates=("country.liechtenstein", "country.portugal"),
@@ -401,7 +401,6 @@ class TestARunScopedToExactPairs:
                     ("country.liechtenstein", OVERCROWDING),
                 ),
             ),
-            triggered_by="test",
         )
 
     async def test_the_total_is_the_pairs_not_the_rectangle(
@@ -475,6 +474,15 @@ class TestARunScopedToExactPairs:
             ("country.liechtenstein", OVERCROWDING)
         ]
         assert run.items_completed + run.items_failed + run.items_unanswered == run.items_total
+
+
+async def a_completed_run(pool: AsyncConnectionPool, scope: RunScope) -> int:
+    """A run opened the old way, with no plan, and closed `completed`: its empty items read
+    unanswered by the status rule (C04-N6), whatever is written for it afterwards."""
+    runs = PostgresRunStore(pool)
+    run = await runs.start_run(scope, triggered_by="test")
+    await runs.finish_run(run, status=RunStatus.COMPLETED, finished_at=datetime.now(UTC))
+    return run
 
 
 def a_figure(run: int | None, candidate: str, attribute: str, source: str = "eurostat") -> Value:
@@ -969,16 +977,16 @@ class TestOnePollIsOneSnapshot:
 
     @pytest.fixture
     async def a_run_half_answered(self, pool: AsyncConnectionPool) -> int:
-        """Four items: Portugal's overburden answered, its overcrowding failed, and both of
-        Liechtenstein's unanswered."""
+        """Four items of a completed run: Portugal's overburden answered, its overcrowding failed,
+        and both of Liechtenstein's unanswered."""
         runs = PostgresRunStore(pool)
-        run = await runs.start_run(
+        run = await a_completed_run(
+            pool,
             RunScope(
                 level="country",
                 candidates=("country.liechtenstein", "country.portugal"),
                 attributes=(OVERBURDEN, OVERCROWDING),
             ),
-            triggered_by="test",
         )
         await PostgresValueStore(pool).append([a_figure(run, "country.portugal", OVERBURDEN)])
         await runs.record_failures(
@@ -1046,7 +1054,8 @@ class TestOnePollIsOneSnapshot:
         pair then source, the unanswered by pair, the sources by name. The items and failures are
         written in the reverse of each order, so arriving as written is not arriving in order."""
         runs = PostgresRunStore(pool)
-        run = await runs.start_run(
+        run = await a_completed_run(
+            pool,
             RunScope(
                 level="country",
                 candidates=("country.portugal", "country.liechtenstein"),
@@ -1058,7 +1067,6 @@ class TestOnePollIsOneSnapshot:
                     ("country.liechtenstein", OVERBURDEN),
                 ),
             ),
-            triggered_by="test",
         )
         await runs.record_failures(
             run,
@@ -1407,7 +1415,7 @@ class TestWhatAKilledRunLeavesForARetry:
         """The stand-in step's failures were held until the run ended, so a kill while its copies
         were written lost them and a pair with nothing to borrow read as unanswered. Switzerland
         lends its overburden rate, has no overcrowding rate to lend, and the kill lands on the
-        copy."""
+        copy -- so the overburden rate it never lent is not reached, not unanswered (C04-N6)."""
         runs, values = PostgresRunStore(pool), PostgresValueStore(pool)
         await values.append([a_figure(None, "country.switzerland", OVERBURDEN)])
         run = await runs.start_run(
@@ -1417,6 +1425,12 @@ class TestWhatAKilledRunLeavesForARetry:
                 attributes=(OVERBURDEN, OVERCROWDING),
             ),
             triggered_by="test",
+            plan=RunPlan(
+                items_planned={(STAND_IN, OVERBURDEN): 1, (STAND_IN, OVERCROWDING): 1},
+                estimate_ceiling_eur=Decimal(0),
+                spend_cap_eur=None,
+                accepted_uncapped=False,
+            ),
         )
 
         with pytest.raises(ProcessKilled):
@@ -1441,8 +1455,11 @@ class TestWhatAKilledRunLeavesForARetry:
         await runs.sweep_abandoned_runs(finished_at=datetime.now(UTC))
 
         swept = await runs.read_run(run)
-        assert (swept.items_failed, swept.items_unanswered) == (1, 1)
+        assert (swept.items_failed, swept.items_unanswered, swept.items_not_reached) == (1, 0, 1)
         assert [(f.data_source, f.attribute) for f in swept.failures] == [(STAND_IN, OVERCROWDING)]
+        assert [(item.candidate, item.attribute) for item in swept.not_reached] == [
+            (str(LIECHTENSTEIN.id), OVERBURDEN)
+        ]
 
 
 class TestAskingARunToStop:

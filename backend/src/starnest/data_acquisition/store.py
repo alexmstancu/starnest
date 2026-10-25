@@ -102,6 +102,19 @@ class UnansweredItem:
 
 
 @dataclass(frozen=True)
+class NotReachedItem:
+    """One candidate and one attribute a run has not finished asking about (C04-N6).
+
+    **Not unanswered.** Some source planned to answer the attribute has not been asked about it:
+    the run is still going, or stopped, halted or failed first. Saying "nobody had a row" would
+    claim an answer nobody gave -- and "retrying changes nothing" about a question never posed.
+    """
+
+    candidate: str
+    attribute: str
+
+
+@dataclass(frozen=True)
 class Reconfirmation:
     """A pair a source answered with a figure already on record, so no new row carries the run.
 
@@ -128,6 +141,10 @@ class SourceReach:
     data_source: DataSourceId
     items_stored: int
     items_failed: int
+    items_planned: int | None = None
+    """What the run planned to ask this source about; `None` where no plan was recorded."""
+    items_asked: int | None = None
+    """How many of those it has been asked about; `None` where no plan was recorded."""
 
 
 @dataclass(frozen=True)
@@ -151,12 +168,15 @@ class Run:
     # Items some source failed on and no source answered -- never `len(failures)`, which counts
     # each source's failure and so overlaps `items_completed` wherever a second source answered.
     items_failed: int = 0
-    # Asked about, and neither answered nor failed: every source asked had nothing for that
-    # candidate. `items_completed + items_failed + items_unanswered == items_total`, which is
-    # the arithmetic that did not close before Q217.
+    # Neither answered nor failed, once every source planned for the attribute was asked: none
+    # had anything for that candidate.
     items_unanswered: int = 0
+    # Neither answered nor failed, with a planned source not yet asked (C04-N6). The four counts
+    # sum to `items_total`, which is the arithmetic that did not close before Q217.
+    items_not_reached: int = 0
     failures: tuple[AcquisitionFailure, ...] = field(default=())
     unanswered: tuple[UnansweredItem, ...] = field(default=())
+    not_reached: tuple[NotReachedItem, ...] = field(default=())
     # Source by source, for a run being read back. Empty on a history row, which reports the
     # pass's size rather than its makeup.
     by_source: tuple[SourceReach, ...] = field(default=())
@@ -165,6 +185,12 @@ class Run:
     # When somebody asked it to stop. A run still `running` with this set is one that will stop
     # at its next item -- which is a different thing to tell a reader than "running".
     stop_requested_at: datetime | None = None
+    # Whether the run recorded its plan, ceiling and cap as it opened (0512). False for a run
+    # from before, whose three money fields are then `None`: "not recorded", never zero.
+    plan_recorded: bool = False
+    estimate_ceiling_eur: Decimal | None = None
+    spend_cap_eur: Decimal | None = None
+    accepted_uncapped: bool | None = None
 
 
 class RunStore(ABC):

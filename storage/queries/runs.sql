@@ -248,12 +248,16 @@ SELECT count(*) FROM data_acquisition_run;
 -- OECD's failure is still in `failures`, source and all, because it is still worth retrying --
 -- that list is the scope of a retry, which asks only these sources about these items.
 --
--- items_unanswered closes the arithmetic (reqs.md Q217): an item with neither. Eurostat answers
--- with a whole indicator and simply omits Liechtenstein, so the adapter records no figure and,
--- rightly, no failure either. Derived, not stored: a table recording that absence could disagree
--- with the rows themselves. `unanswered` lists them so the household can ask again, with no
--- source because none failed: asking again asks whoever can answer the attribute, which the
--- adapters declare and the database does not.
+-- An item with neither is unanswered or not reached, and the two close the arithmetic (reqs.md
+-- Q217, C04-N6). Eurostat answers with a whole indicator and simply omits Liechtenstein, so the
+-- adapter records no figure and, rightly, no failure either: unanswered. But a source that was
+-- never asked leaves the same absence, so an empty item is **unanswered only once its attribute
+-- is settled** -- it has at least one plan row (0512) and every one is finished, never vacuously
+-- -- and **not reached** otherwise. A run from before 0512 (`plan_recorded_at` null) has no plan
+-- to read: its empty items are unanswered if it completed and not reached if it did not. Derived,
+-- not stored: a table recording that absence could disagree with the rows themselves. Both are
+-- listed so the household can ask again, with no source because none failed: asking again asks
+-- whoever can answer the attribute, which the adapters declare and the database does not.
 --
 -- `by_source` is what each source stored and failed on, derived like the rest, and it lists every
 -- source with either: one that only failed is the one a reader came looking for. Its two counts
@@ -266,10 +270,32 @@ SELECT count(*) FROM data_acquisition_run;
 -- source failed on it too, as a re-read rejection does: stored and failed at once is the double
 -- count `85d545d` removed.
 --
+-- Once the plan was recorded, `by_source` also lists every source the run planned to ask, with
+-- `items_planned` and `items_asked` (PL-055): an attribute it finished counts all its planned
+-- items, one it did not counts the items it stored or failed on, capped at the plan. Both are null
+-- for a run from before 0512, whose plan nobody recorded -- never zero.
+--
 -- `reconfirmed` lists the run's re-confirmations, each naming the stored value it restated, or
 -- null where the run did not record which (PL-049): with the run's own values, it is what the
 -- run produced, which the acquisition diff compares.
-WITH item AS (
+WITH run AS (
+    SELECT r.plan_recorded_at IS NOT NULL AS plan_recorded,
+           r.run_status = 'completed'      AS is_completed
+    FROM   data_acquisition_run AS r
+    WHERE  r.id = :data_acquisition_run
+),
+plan AS (
+    SELECT p.data_source, p.attribute, p.items_planned, p.finished_at
+    FROM   data_acquisition_run_plan AS p
+    WHERE  p.data_acquisition_run = :data_acquisition_run
+),
+settled AS (
+    SELECT plan.attribute
+    FROM   plan
+    GROUP  BY plan.attribute
+    HAVING bool_and(plan.finished_at IS NOT NULL)
+),
+item AS (
     SELECT candidate, attribute
     FROM   data_acquisition_run_item
     WHERE  data_acquisition_run = :data_acquisition_run
@@ -293,22 +319,35 @@ item_state AS (
     SELECT item.candidate,
            item.attribute,
            answered.candidate IS NOT NULL AS is_answered,
-           failed.candidate IS NOT NULL   AS has_failed
+           failed.candidate IS NOT NULL   AS has_failed,
+           CASE WHEN run.plan_recorded THEN settled.attribute IS NOT NULL
+                ELSE run.is_completed
+           END                            AS is_settled
     FROM   item
+    CROSS  JOIN run
     LEFT   JOIN answered USING (candidate, attribute)
     LEFT   JOIN (SELECT DISTINCT candidate, attribute FROM failure) AS failed
            USING (candidate, attribute)
+    LEFT   JOIN settled ON settled.attribute = item.attribute
 ),
 progress AS (
     SELECT count(*)                                                AS items_total,
            count(*) FILTER (WHERE is_answered)                     AS items_completed,
            count(*) FILTER (WHERE has_failed AND NOT is_answered)  AS items_failed,
-           count(*) FILTER (WHERE NOT (is_answered OR has_failed)) AS items_unanswered,
+           count(*) FILTER (WHERE NOT (is_answered OR has_failed) AND is_settled)
+                                                                   AS items_unanswered,
+           count(*) FILTER (WHERE NOT (is_answered OR has_failed OR is_settled))
+                                                                   AS items_not_reached,
            COALESCE(
                jsonb_agg(jsonb_build_object('candidate', candidate, 'attribute', attribute)
                          ORDER BY candidate, attribute)
-                   FILTER (WHERE NOT (is_answered OR has_failed)),
-               '[]'::jsonb)                                        AS unanswered
+                   FILTER (WHERE NOT (is_answered OR has_failed) AND is_settled),
+               '[]'::jsonb)                                        AS unanswered,
+           COALESCE(
+               jsonb_agg(jsonb_build_object('candidate', candidate, 'attribute', attribute)
+                         ORDER BY candidate, attribute)
+                   FILTER (WHERE NOT (is_answered OR has_failed OR is_settled)),
+               '[]'::jsonb)                                        AS not_reached
     FROM   item_state
 ),
 stored AS (
@@ -333,15 +372,41 @@ failed_on AS (
     WHERE  v.data_acquisition_run = :data_acquisition_run
       AND  v.rejection_reason IS NOT NULL
 ),
-reach AS (
-    SELECT outcome.data_source,
-           count(*) FILTER (WHERE outcome.is_stored)     AS items_stored,
-           count(*) FILTER (WHERE NOT outcome.is_stored) AS items_failed
+outcome AS (
+    SELECT evidence.*
     FROM   (SELECT stored.*, true AS is_stored FROM stored
             UNION ALL
-            SELECT failed_on.*, false FROM failed_on) AS outcome
+            SELECT failed_on.*, false FROM failed_on) AS evidence
     JOIN   item USING (candidate, attribute)
-    GROUP  BY outcome.data_source
+),
+asked AS (
+    SELECT plan.data_source,
+           sum(plan.items_planned) AS items_planned,
+           sum(CASE WHEN plan.finished_at IS NOT NULL THEN plan.items_planned
+                    ELSE LEAST(plan.items_planned,
+                               (SELECT count(DISTINCT outcome.candidate)
+                                FROM   outcome
+                                WHERE  outcome.data_source = plan.data_source
+                                  AND  outcome.attribute = plan.attribute))
+               END)                AS items_asked
+    FROM   plan
+    GROUP  BY plan.data_source
+),
+reach AS (
+    SELECT data_source,
+           COALESCE(counted.items_stored, 0) AS items_stored,
+           COALESCE(counted.items_failed, 0) AS items_failed,
+           CASE WHEN run.plan_recorded THEN COALESCE(asked.items_planned, 0) END
+                                             AS items_planned,
+           CASE WHEN run.plan_recorded THEN COALESCE(asked.items_asked, 0) END
+                                             AS items_asked
+    FROM   (SELECT outcome.data_source,
+                   count(*) FILTER (WHERE outcome.is_stored)     AS items_stored,
+                   count(*) FILTER (WHERE NOT outcome.is_stored) AS items_failed
+            FROM   outcome
+            GROUP  BY outcome.data_source) AS counted
+    FULL   JOIN asked USING (data_source)
+    CROSS  JOIN run
 )
 SELECT r.id,
        r.run_status,
@@ -352,6 +417,10 @@ SELECT r.id,
        r.cost_eur,
        r.level,
        r.stop_requested_at,
+       r.plan_recorded_at IS NOT NULL AS plan_recorded,
+       r.estimate_ceiling_eur,
+       r.spend_cap_eur,
+       r.accepted_uncapped,
        COALESCE(
            (SELECT jsonb_agg(scope.candidate ORDER BY scope.candidate)
             FROM   data_acquisition_run_candidate AS scope
@@ -366,7 +435,9 @@ SELECT r.id,
        progress.items_completed,
        progress.items_failed,
        progress.items_unanswered,
+       progress.items_not_reached,
        progress.unanswered,
+       progress.not_reached,
        COALESCE(
            (SELECT jsonb_agg(to_jsonb(failure)
                              ORDER BY failure.candidate, failure.attribute, failure.data_source)

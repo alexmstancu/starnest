@@ -58,6 +58,7 @@ from starnest.data_acquisition.spend import (
 )
 from starnest.data_acquisition.stand_in import STAND_IN, figures_standing_in, stand_in
 from starnest.data_acquisition.store import (
+    NotReachedItem,
     Reconfirmation,
     Run,
     RunPlan,
@@ -81,6 +82,7 @@ __all__ = [
     "Holdings",
     "MonthlySpend",
     "NoResearcherConfiguredError",
+    "NotReachedItem",
     "NothingToAskAgainError",
     "NothingToFetchError",
     "NothingToRetryError",

@@ -977,8 +977,9 @@ paths:
         the scope is recorded as two lists, and every pair in it is asked of at least one source.
 
         `items: unanswered` asks again about the items that produced neither a figure nor a
-        failure. There is no source to narrow to, because no source failed: every source that
-        can answer those attributes is asked. For a country a dataset simply does not cover this
+        failure -- the unanswered ones and the ones the run never reached. There is no source to
+        narrow to, because no source failed: every source that can answer those attributes is
+        asked. For a country a dataset simply does not cover this
         will change nothing, which is why it is a separate request rather than part of a retry.
       operationId: retryRun
       parameters: [ { name: runId, in: path, required: true, schema: { type: integer } } ]
@@ -2091,39 +2092,81 @@ components:
             scope: { $ref: "#/components/schemas/RunScope" }
             progress:
               type: object
+              required: [items_total, items_completed, items_failed, items_unanswered, items_not_reached]
               properties:
                 items_total: { type: integer }
                 items_completed: { type: integer }
                 items_failed: { type: integer, description: "Items some source failed on and no source answered. An item OECD failed on and the estimate answered is complete; the failure is still listed." }
-                items_unanswered: { type: integer, description: "Items asked about that produced neither a figure nor a failure: every source asked answered, and none of them had a row for that candidate. The three counts sum to items_total." }
+                items_unanswered: { type: integer, description: "Items with neither a figure nor a failure, once every source planned to answer them has been asked: none of them had a row for that candidate. For a run started before plans were recorded, only a completed run has any." }
+                items_not_reached: { type: integer, description: "Items with neither a figure nor a failure that some source planned to answer has not been asked about yet: the run is still going, or stopped first. Always 0 for a completed run. The four counts sum to items_total." }
             unanswered:
               type: array
               description: >-
                 The items nobody answered, so they can be asked again. Derived rather than
-                stored: an unanswered item is the absence of a value row and of a failure row,
-                and a second record of that absence could disagree with the first.
+                stored: an unanswered item is the absence of a value row and of a failure row
+                once every planned source has been asked, and a second record of that absence
+                could disagree with the first.
               items:
                 type: object
                 required: [candidate, attribute]
                 properties:
                   candidate: { type: string }
                   attribute: { type: string }
+            not_reached:
+              type: array
+              description: >-
+                The items no figure or failure answered yet because a source planned to answer
+                them was never asked about them -- a run still going, or one stopped, halted on
+                its cap or failed first. Asking again (`items: unanswered`) asks about these too.
+              items:
+                type: object
+                required: [candidate, attribute]
+                properties:
+                  candidate: { type: string }
+                  attribute: { type: string }
+            plan_recorded:
+              type: boolean
+              description: >-
+                Whether the run recorded its plan, ceiling and cap when it started. False for a run
+                started before they were recorded: its by_source has no planned or asked counts,
+                its ceiling and cap are null, and its empty items are unanswered only if it
+                completed. Never read as zero.
+            estimate_ceiling_eur:
+              type: [number, "null"]
+              description: "What the run's plan was estimated to cost at most when it started, priced as planRun prices it. Null when the plan was not recorded."
+            spend_cap_eur:
+              type: [number, "null"]
+              description: "The cap the run was held to, as it stood when the run started. Null with plan_recorded true: no cap was set."
+            accepted_uncapped:
+              type: [boolean, "null"]
+              description: "Whether the request that started the run accepted spending with no cap. Null when the plan was not recorded."
             by_source:
               type: array
               description: >-
                 What each source contributed: the items it stored a figure for, and the items
-                it failed on. Derived from the value and failure rows rather than stored, for
+                it failed on; and, once the plan was recorded, every source the run planned to
+                ask, with how far it got. Derived from the value and failure rows rather than stored, for
                 the reason Q217 settled for items_unanswered -- a second record of the same
                 arithmetic can disagree with the first. The two counts are independent and do
                 not sum to anything: a source may fail on an item another source then answers,
                 and both are true of that run.
               items:
                 type: object
-                required: [data_source, items_stored, items_failed]
+                required: [data_source, items_stored, items_failed, items_planned, items_asked]
                 properties:
                   data_source: { type: string }
                   items_stored: { type: integer }
                   items_failed: { type: integer }
+                  items_planned:
+                    type: [integer, "null"]
+                    description: "The items this source was planned to be asked about. Null when the run's plan was not recorded."
+                  items_asked:
+                    type: [integer, "null"]
+                    description: >-
+                      Of those, the items it has been asked about: all of an attribute it got
+                      through, else the items it stored or failed on. Never more than
+                      items_planned; 0 for a source the run never reached. Null when the plan
+                      was not recorded.
             reconfirmed:
               type: array
               description: >-
