@@ -12,6 +12,8 @@ import {
   replaceSettings,
   reorderDataSources,
   researchMatchRules,
+  setCompoundRuleApplication,
+  setMatchRuleEnforcement,
   updateCriterionRule,
   updateDataSource,
   type CriterionRule,
@@ -399,6 +401,38 @@ describe("the mock's refusal of a rule", () => {
  * the `since` it is given over runs and the research ledger, and refuses what `api/holdings.py`
  * refuses: a parameter left out, a time with no zone, a level that does not exist.
  */
+/** D56, as `criteria_set.py` holds it: only a rule that is on holds an outcome. */
+describe("the mock's outcome of a rule", () => {
+  it.each([
+    ["a gate", () => setMatchRuleEnforcement("default", "country.visa_route_exists", false, "warning")],
+    ["a compound rule", () =>
+      setCompoundRuleApplication("default", "country.rent_within_budget", false, "warning")],
+  ])("refuses an outcome sent for %s being switched off", async (_kind, write) => {
+    const error = (await write().catch((thrown: unknown) => thrown)) as ApiError;
+
+    expect(error.status).toBe(422);
+    expect(error.code).toBe("invalid_criteria_set");
+  });
+
+  it("drops a gate's outcome with the gate, so enforced again it is a gate", async () => {
+    await setMatchRuleEnforcement("default", "country.visa_route_exists", true, "warning");
+    await setMatchRuleEnforcement("default", "country.visa_route_exists", false);
+    await setMatchRuleEnforcement("default", "country.visa_route_exists", true);
+
+    expect((await fetchCriteriaSet("default")).match_rule_outcomes).toEqual({
+      "country.visa_route_exists": "not_matching",
+    });
+  });
+
+  it("gives a compound rule newly applied the catalog's outcome", async () => {
+    await setCompoundRuleApplication("default", "country.mild_and_connected", true);
+
+    expect((await fetchCriteriaSet("default")).compound_rule_outcomes).toEqual({
+      "country.mild_and_connected": "not_matching",
+    });
+  });
+});
+
 describe("the mock's holdings", () => {
   const SINCE = "2026-08-01T00:00:00+02:00";
 

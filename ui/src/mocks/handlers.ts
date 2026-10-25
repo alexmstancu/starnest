@@ -58,6 +58,7 @@ type Household = components["schemas"]["HouseholdInput"];
 type EvaluationSummary = components["schemas"]["EvaluationSummary"];
 type CandidateResult = components["schemas"]["CandidateResult"];
 type DataSource = components["schemas"]["DataSource"];
+type RuleOutcome = components["schemas"]["RuleOutcome"];
 
 const BASE = "/v1";
 
@@ -234,6 +235,8 @@ export const handlers = [
       criteria: [],
       enforced_match_rules: [],
       applied_compound_rules: [],
+      match_rule_outcomes: {},
+      compound_rule_outcomes: {},
     };
     criteriaSetDetails[body.id] = created;
     criteriaSetSummaries = [
@@ -316,11 +319,23 @@ export const handlers = [
     async ({ params, request }) => {
       const set = criteriaSetDetails[String(params["criteriaSetId"])];
       if (!set) return notFound(String(params["criteriaSetId"]));
-      const body = (await request.json()) as { is_enforced: boolean };
+      const body = (await request.json()) as {
+        is_enforced: boolean;
+        outcome?: RuleOutcome;
+      };
+      const gate = String(params["matchRuleId"]);
+      if (!body.is_enforced && body.outcome !== undefined) return outcomeForARuleOff(gate);
       set.enforced_match_rules = withMembership(
         set.enforced_match_rules ?? [],
-        String(params["matchRuleId"]),
+        gate,
         body.is_enforced,
+      );
+      // As the server holds them (D56): one outcome per gate that is on, a gate newly enforced
+      // is a gate, and a gate released drops its outcome.
+      set.match_rule_outcomes = withOutcome(
+        set.match_rule_outcomes ?? {},
+        gate,
+        body.is_enforced ? (body.outcome ?? set.match_rule_outcomes?.[gate] ?? "not_matching") : null,
       );
       return new HttpResponse(null, { status: 204 });
     },
@@ -331,11 +346,23 @@ export const handlers = [
     async ({ params, request }) => {
       const set = criteriaSetDetails[String(params["criteriaSetId"])];
       if (!set) return notFound(String(params["criteriaSetId"]));
-      const body = (await request.json()) as { is_applied: boolean };
+      const body = (await request.json()) as {
+        is_applied: boolean;
+        outcome?: RuleOutcome;
+      };
+      const ruleId = String(params["compoundRuleId"]);
+      if (!body.is_applied && body.outcome !== undefined) return outcomeForARuleOff(ruleId);
       set.applied_compound_rules = withMembership(
         set.applied_compound_rules ?? [],
-        String(params["compoundRuleId"]),
+        ruleId,
         body.is_applied,
+      );
+      // A rule newly applied takes the catalog's outcome.
+      const catalog = COMPOUND_RULES.find((rule) => rule.id === ruleId)?.outcome ?? "warning";
+      set.compound_rule_outcomes = withOutcome(
+        set.compound_rule_outcomes ?? {},
+        ruleId,
+        body.is_applied ? (body.outcome ?? set.compound_rule_outcomes?.[ruleId] ?? catalog) : null,
       );
       return new HttpResponse(null, { status: 204 });
     },
@@ -1661,6 +1688,29 @@ function rebalancePillarWeights(
   });
 
   return HttpResponse.json({ items: weights });
+}
+
+/** The server's refusal of an outcome sent for a rule being switched off (`criteria_set.py`). */
+function outcomeForARuleOff(rule: string) {
+  return HttpResponse.json(
+    {
+      code: "invalid_criteria_set",
+      message: `${rule} is being switched off, and a rule that is off holds no outcome`,
+    },
+    { status: 422 },
+  );
+}
+
+/** A set's outcomes with one rule's set, or dropped when it is null. */
+function withOutcome(
+  current: Record<string, RuleOutcome>,
+  rule: string,
+  outcome: RuleOutcome | null,
+): Record<string, RuleOutcome> {
+  const rest = Object.fromEntries(
+    Object.entries(current).filter(([held]) => held !== rule),
+  );
+  return outcome === null ? rest : { ...rest, [rule]: outcome };
 }
 
 /** Membership in a list of rule ids, which is what both enforcement toggles amount to. */

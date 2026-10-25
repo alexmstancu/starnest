@@ -692,15 +692,22 @@ export function fetchCompoundRules(
  * A gate belongs to the catalog; **enforcing it is a judgement, so it belongs to the set** --
  * which is why this is addressed under the criteria set and not under the rule.
  */
+export type RuleOutcome = components["schemas"]["RuleOutcome"];
+
+/**
+ * Whether a set enforces a gate, and, while it does, as a gate or as a warning (D56). Left out,
+ * the outcome the set already holds is kept; sent for a gate being switched off, it is refused.
+ */
 export function setMatchRuleEnforcement(
   criteriaSetId: string,
   matchRuleId: string,
   isEnforced: boolean,
+  outcome?: RuleOutcome,
   options?: RequestOptions,
 ): Promise<void> {
   return putJson(
     "/criteria-sets/{criteriaSetId}/match-rules/{matchRuleId}",
-    { is_enforced: isEnforced },
+    outcome === undefined ? { is_enforced: isEnforced } : { is_enforced: isEnforced, outcome },
     { ...options, pathParams: { criteriaSetId, matchRuleId } },
   );
 }
@@ -709,11 +716,12 @@ export function setCompoundRuleApplication(
   criteriaSetId: string,
   compoundRuleId: string,
   isApplied: boolean,
+  outcome?: RuleOutcome,
   options?: RequestOptions,
 ): Promise<void> {
   return putJson(
     "/criteria-sets/{criteriaSetId}/compound-rules/{compoundRuleId}",
-    { is_applied: isApplied },
+    outcome === undefined ? { is_applied: isApplied } : { is_applied: isApplied, outcome },
     { ...options, pathParams: { criteriaSetId, compoundRuleId } },
   );
 }

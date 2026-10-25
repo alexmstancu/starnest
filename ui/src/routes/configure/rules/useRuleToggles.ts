@@ -19,6 +19,7 @@ import {
   type CriteriaSet,
   type MatchRule,
   type MatchRuleResult,
+  type RuleOutcome,
 } from "../../../api/endpoints";
 import type { Idle, Read } from "../../../api/read";
 import { useRead } from "../../../api/useRead";
@@ -40,7 +41,16 @@ export interface RuleToggles {
   isApplied: (compoundRuleId: string) => boolean;
   enforce: (matchRuleId: string, wanted: boolean) => void;
   apply: (compoundRuleId: string, wanted: boolean) => void;
+  /** What a gate does in this set when a candidate fails it; a gate that is off would be a gate. */
+  outcomeOfGate: (matchRuleId: string) => RuleOutcome;
+  /** What a compound rule does in this set when it fires; the catalog's unless the set says. */
+  outcomeOfCompoundRule: (rule: CompoundRule) => RuleOutcome;
+  /** Only for a rule that is on: the server refuses an outcome for one that is off. */
+  holdGateAs: (matchRuleId: string, outcome: RuleOutcome) => void;
+  holdCompoundRuleAs: (compoundRuleId: string, outcome: RuleOutcome) => void;
 }
+
+type Outcomes = Record<string, RuleOutcome>;
 
 export function useRuleToggles(
   criteriaSet: CriteriaSet,
@@ -82,33 +92,51 @@ export function useRuleToggles(
   const [applied, setApplied] = useState<string[]>(
     criteriaSet.applied_compound_rules ?? [],
   );
+  const [gateOutcomes, setGateOutcomes] = useState<Outcomes>(
+    criteriaSet.match_rule_outcomes ?? {},
+  );
+  const [compoundOutcomes, setCompoundOutcomes] = useState<Outcomes>(
+    criteriaSet.compound_rule_outcomes ?? {},
+  );
   const [failure, setFailure] = useState<unknown>(null);
 
   /**
-   * **The list changes only once the server has accepted the change.** A checkbox that ticked
+   * **The screen changes only once the server has accepted the change.** A switch that ticked
    * itself optimistically and then failed would leave the screen claiming a gate is enforced
    * when it is not -- the one thing this panel must never do, because a gate decides whether a
-   * candidate can be ranked at all.
+   * candidate can be ranked at all. The same holds for a gate softened to a warning.
    */
-  const toggle = useCallback(
-    async (
-      id: string,
-      wanted: boolean,
-      write: (wanted: boolean) => Promise<void>,
-      remember: (change: (current: string[]) => string[]) => void,
-    ) => {
+  const save = useCallback(
+    async (write: () => Promise<void>, accepted: () => void) => {
       setFailure(null);
       try {
-        await write(wanted);
-        remember((current) =>
-          wanted ? [...current, id] : current.filter((each) => each !== id),
-        );
+        await write();
+        accepted();
       } catch (error) {
         setFailure(error);
       }
     },
     [],
   );
+
+  const toggle = (
+    id: string,
+    wanted: boolean,
+    write: (wanted: boolean) => Promise<void>,
+    remember: (change: (current: string[]) => string[]) => void,
+    rememberOutcome: (change: (current: Outcomes) => Outcomes) => void,
+  ) =>
+    void save(
+      () => write(wanted),
+      () => {
+        remember((current) =>
+          wanted ? [...current, id] : current.filter((each) => each !== id),
+        );
+        // Switched off, a rule drops its outcome on the server, so switched on again it starts
+        // from its default rather than from what it was before (D56).
+        if (!wanted) rememberOutcome((current) => withoutOutcome(current, id));
+      },
+    );
 
   return {
     matchRules: settled(matchRules.read),
@@ -121,21 +149,42 @@ export function useRuleToggles(
     isEnforced: (matchRuleId) => enforced.includes(matchRuleId),
     isApplied: (compoundRuleId) => applied.includes(compoundRuleId),
     enforce: (matchRuleId, wanted) =>
-      void toggle(
+      toggle(
         matchRuleId,
         wanted,
         (value) => setMatchRuleEnforcement(criteriaSet.id, matchRuleId, value),
         setEnforced,
+        setGateOutcomes,
       ),
     apply: (compoundRuleId, wanted) =>
-      void toggle(
+      toggle(
         compoundRuleId,
         wanted,
         (value) =>
           setCompoundRuleApplication(criteriaSet.id, compoundRuleId, value),
         setApplied,
+        setCompoundOutcomes,
+      ),
+    // A gate newly enforced is a gate, as the server makes it.
+    outcomeOfGate: (matchRuleId) => gateOutcomes[matchRuleId] ?? "not_matching",
+    outcomeOfCompoundRule: (rule) => compoundOutcomes[rule.id] ?? rule.outcome,
+    holdGateAs: (matchRuleId, outcome) =>
+      void save(
+        () => setMatchRuleEnforcement(criteriaSet.id, matchRuleId, true, outcome),
+        () => setGateOutcomes((current) => ({ ...current, [matchRuleId]: outcome })),
+      ),
+    holdCompoundRuleAs: (compoundRuleId, outcome) =>
+      void save(
+        () =>
+          setCompoundRuleApplication(criteriaSet.id, compoundRuleId, true, outcome),
+        () =>
+          setCompoundOutcomes((current) => ({ ...current, [compoundRuleId]: outcome })),
       ),
   };
+}
+
+function withoutOutcome(current: Outcomes, id: string): Outcomes {
+  return Object.fromEntries(Object.entries(current).filter(([held]) => held !== id));
 }
 
 /** These reads are always enabled, so never idle; this says so to the type. */

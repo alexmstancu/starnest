@@ -3,6 +3,7 @@ import {
   type CompoundRule,
   type CriteriaSet,
   type MatchRule,
+  type RuleOutcome,
 } from "../../../api/endpoints";
 import { useCandidateNames } from "../../../api/useCandidateNames";
 import type { Read } from "../../../api/read";
@@ -71,7 +72,6 @@ export function RulesPanel({
         onRetry={rules.reloadMatchRules}
         empty="No gate is defined at this level."
         caption="Gates. Enforcing one lets it rule a candidate out."
-        columnLabel="Gate — removes from the ranking"
         rows={(listed: MatchRule[]) =>
           listed.map((rule) => ({
             id: rule.id,
@@ -90,6 +90,8 @@ export function RulesPanel({
             on: rules.isEnforced(rule.id),
             toggleLabel: `Enforce ${rule.name}`,
             onToggle: (wanted: boolean) => rules.enforce(rule.id, wanted),
+            outcome: rules.outcomeOfGate(rule.id),
+            onOutcome: (outcome: RuleOutcome) => rules.holdGateAs(rule.id, outcome),
           }))
         }
       />
@@ -101,7 +103,6 @@ export function RulesPanel({
         onRetry={rules.reloadCompoundRules}
         empty="No compound rule is defined at this level."
         caption="Compound rules, with what each one does when it fires."
-        columnLabel="Warning — keeps it, flags it"
         rows={(listed: CompoundRule[]) =>
           listed.map((rule) => ({
             id: rule.id,
@@ -114,6 +115,9 @@ export function RulesPanel({
             on: rules.isApplied(rule.id),
             toggleLabel: `Apply ${rule.name}`,
             onToggle: (wanted: boolean) => rules.apply(rule.id, wanted),
+            // Its kind from its outcome in this set (PL-158), never from the list it sits in.
+            outcome: rules.outcomeOfCompoundRule(rule),
+            onOutcome: (outcome: RuleOutcome) => rules.holdCompoundRuleAs(rule.id, outcome),
           }))
         }
       />
@@ -133,7 +137,15 @@ interface RuleRow {
   on: boolean;
   toggleLabel: string;
   onToggle: (wanted: boolean) => void;
+  /** What it does when it fires, in this set. */
+  outcome: RuleOutcome;
+  onOutcome: (outcome: RuleOutcome) => void;
 }
+
+const OUTCOME_LABELS: Record<RuleOutcome, string> = {
+  not_matching: "Gate — removes from the ranking",
+  warning: "Warning — keeps it, flags it",
+};
 
 /**
  * One list of rules with one switch each. Written once for both kinds because the shape of the
@@ -145,7 +157,6 @@ function RuleList<Rule>({
   onRetry,
   empty,
   caption,
-  columnLabel,
   rows,
 }: {
   read: Read<{ items: Rule[] }>;
@@ -154,7 +165,6 @@ function RuleList<Rule>({
   onRetry: () => Promise<void>;
   empty: string;
   caption: string;
-  columnLabel: string;
   rows: (items: Rule[]) => RuleRow[];
 }) {
   return (
@@ -170,7 +180,7 @@ function RuleList<Rule>({
         return listed.length === 0 ? (
           <p className="screen__note">{empty}</p>
         ) : (
-          <RuleRows caption={caption} columnLabel={columnLabel} listed={listed} />
+          <RuleRows caption={caption} listed={listed} />
         );
       }}
     </LoadedRegion>
@@ -179,11 +189,9 @@ function RuleList<Rule>({
 
 function RuleRows({
   caption,
-  columnLabel,
   listed,
 }: {
   caption: string;
-  columnLabel: string;
   listed: RuleRow[];
 }) {
   return (
@@ -223,7 +231,24 @@ function RuleRows({
               {row.effect}
             </span>
           </span>
-          <span className="rule-row__kind">{columnLabel}</span>
+          {/* **Held, not disabled, while the rule is off** (D56): the server keeps an outcome
+              only for a rule that is on, and refuses one sent with the switch going off. */}
+          <select
+            className="field__control rule-row__kind"
+            aria-label={`What ${row.name} does when it fires`}
+            aria-disabled={!row.on}
+            title={row.on ? undefined : "Switch the rule on to choose whether it acts as a gate or a warning."}
+            value={row.outcome}
+            onChange={(event) => {
+              if (row.on) row.onOutcome(event.target.value as RuleOutcome);
+            }}
+          >
+            {(Object.keys(OUTCOME_LABELS) as RuleOutcome[]).map((outcome) => (
+              <option key={outcome} value={outcome}>
+                {OUTCOME_LABELS[outcome]}
+              </option>
+            ))}
+          </select>
         </li>
       ))}
     </ul>

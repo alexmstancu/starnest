@@ -1,7 +1,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { makeCriteriaSetDetails } from "../../../mocks/fixtures";
 import { mockServer } from "../../../mocks/server";
 import { renderShell } from "../../../testing/renderShell";
 
@@ -333,5 +334,124 @@ describe("what each rule says it is doing", () => {
         "The answers could not be read, so what this rule does is not known.",
       ),
     );
+  });
+});
+
+/**
+ * PL-157 and PL-158 (D56). **Each set holds a rule as a gate or as a warning**, and the select
+ * says which -- from the rule's outcome in this set, never from the list it sits in.
+ */
+describe("a rule as a gate or a warning", () => {
+  function outcomeOf(name: string): Promise<HTMLSelectElement> {
+    return screen.findByRole("combobox", { name: `What ${name} does when it fires` });
+  }
+
+  /** Every body the set's rule writes sent, in order. */
+  function recordRuleWrites(): unknown[] {
+    const sent: unknown[] = [];
+    const record = async ({ request }: { request: Request }) => {
+      if (request.method === "PUT" && /\/(match|compound)-rules\//.test(request.url)) {
+        sent.push(await request.clone().json());
+      }
+    };
+    mockServer.events.on("request:start", record);
+    onTestFinished(() => mockServer.events.removeListener("request:start", record));
+    return sent;
+  }
+
+  it("shows each rule's outcome in this set, a compound rule's from its own outcome", async () => {
+    renderShell("/configure");
+    await panel();
+
+    expect(await outcomeOf("A visa route exists")).toHaveValue("not_matching");
+    // The catalog holds "Mild and connected" as a gate and the rent rule as a warning: the
+    // label follows each, never the heading above them.
+    expect(await outcomeOf("Mild and connected")).toHaveValue("not_matching");
+    expect(await outcomeOf("Rent fits the target spend")).toHaveValue("warning");
+  });
+
+  it("takes a set's own outcome over the catalog's", async () => {
+    const shipped = makeCriteriaSetDetails()["default"]!;
+    mockServer.use(
+      http.get("/v1/criteria-sets/default", () =>
+        HttpResponse.json({
+          ...shipped,
+          applied_compound_rules: ["country.rent_within_budget"],
+          compound_rule_outcomes: { "country.rent_within_budget": "not_matching" },
+        }),
+      ),
+    );
+    renderShell("/configure");
+    await panel();
+
+    expect(await outcomeOf("Rent fits the target spend")).toHaveValue("not_matching");
+  });
+
+  it("softens a gate to a warning once the server has accepted it", async () => {
+    const sent = recordRuleWrites();
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    const select = await outcomeOf("A visa route exists");
+
+    await user.selectOptions(select, "warning");
+
+    await waitFor(() => expect(select).toHaveValue("warning"));
+    expect(sent).toEqual([{ is_enforced: true, outcome: "warning" }]);
+  });
+
+  it("leaves the outcome as it was when the server refuses it, and says why", async () => {
+    mockServer.use(
+      http.put("/v1/criteria-sets/:criteriaSetId/match-rules/:matchRuleId", () =>
+        HttpResponse.json(
+          { code: "invalid_criteria_set", message: "a rule that is off holds no outcome" },
+          { status: 422 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const rules = await panel();
+    const select = await outcomeOf("A visa route exists");
+
+    await user.selectOptions(select, "warning");
+
+    expect(
+      await rules.findByText("The criteria set is not valid as written."),
+    ).toBeInTheDocument();
+    expect(rules.queryByText(/a rule that is off holds no outcome/)).toBeNull();
+    expect(select).toHaveValue("not_matching");
+  });
+
+  it("holds the choice while the rule is off, and sends nothing", async () => {
+    const sent = recordRuleWrites();
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    const select = await outcomeOf("Free movement applies");
+    expect(select).toHaveAttribute("aria-disabled", "true");
+
+    await user.selectOptions(select, "warning");
+
+    expect(select).toHaveValue("not_matching");
+    expect(sent).toEqual([]);
+  });
+
+  /** Switched off, a rule drops its outcome on the server; switched on, it is a gate again. */
+  it("is a gate again once switched off and on", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    const select = await outcomeOf("A visa route exists");
+    await user.selectOptions(select, "warning");
+    await waitFor(() => expect(select).toHaveValue("warning"));
+    const toggle = screen.getByRole("switch", { name: "Enforce A visa route exists" });
+
+    await user.click(toggle);
+    await waitFor(() => expect(toggle).not.toBeChecked());
+    await user.click(toggle);
+    await waitFor(() => expect(toggle).toBeChecked());
+
+    expect(select).toHaveValue("not_matching");
   });
 });

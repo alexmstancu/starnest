@@ -152,6 +152,9 @@ export function makeCriteriaSetDetails(): Record<string, CriteriaSet> {
       criteria: defaultCriteria(),
       enforced_match_rules: ["country.visa_route_exists"],
       applied_compound_rules: [],
+      // One outcome per rule that is on, as the server serves them (D56).
+      match_rule_outcomes: { "country.visa_route_exists": "not_matching" },
+      compound_rule_outcomes: {},
     },
     "remote-only": {
       id: "remote-only",
@@ -167,6 +170,8 @@ export function makeCriteriaSetDetails(): Record<string, CriteriaSet> {
       criteria: remoteOnlyCriteria(),
       enforced_match_rules: [],
       applied_compound_rules: [],
+      match_rule_outcomes: {},
+      compound_rule_outcomes: {},
     },
   };
 }
