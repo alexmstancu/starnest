@@ -45,6 +45,8 @@ export interface RuleToggles {
    * is hidden; when it failed, the panel says the sentences count every level (PL-151).
    */
   rosterFailed: boolean;
+  /** The roster's read as it stands, for focus to follow its Try again. */
+  rosterStatus: "loading" | "ready" | "error";
   reloadRoster: () => void;
   /** Candidates by name, from the same roster, so reading it again names them too (NEW-06). */
   candidateNames: CandidateNames;
@@ -242,6 +244,7 @@ export function useRuleToggles(
       levelId,
     ),
     rosterFailed: roster.status === "error",
+    rosterStatus: roster.status,
     reloadRoster: roster.reload,
     candidateNames,
     matchRuleResultsStatus: statusOf(results.read),

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useMemo, useRef, type ReactNode } from "react";
 import {
   type CompoundRule,
   type CriteriaSet,
@@ -9,6 +9,7 @@ import type { Read } from "../../../api/read";
 import { candidateName } from "../../../format/display";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { ReadFailureCard } from "../../../shell/ReadFailureCard";
+import { useRetryFocus } from "../../../shell/useRetryFocus";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import {
   describeClearance,
@@ -43,6 +44,14 @@ export function RulesPanel({
   children?: ReactNode;
 }) {
   const rules = useRuleToggles(criteriaSet, levelId, answersFreshness);
+  // **Try again takes its own button away** (RULES "Focus"): the note's place holds focus while
+  // the roster is read again, and hands it to the next Try again if that fails too.
+  const rosterPlace = useRef<HTMLDivElement>(null);
+  const rosterRead = useMemo(() => readOfStatus(rules.rosterStatus), [rules.rosterStatus]);
+  const { retryButton: rosterRetry, hold: holdRosterFocus } = useRetryFocus(
+    rosterRead,
+    rosterPlace,
+  );
   // Candidates by name in the sentences, never by id (NEW-06).
   const names = rules.candidateNames;
   const evidence = useGateEvidence(
@@ -94,14 +103,25 @@ export function RulesPanel({
       <h3 className="panel__heading">Gates</h3>
       {/* Hides nothing rather than guess a level: the sentences below then count every
           level's answers, and say so (PL-151). */}
-      {rules.rosterFailed && (
-        <p className="screen__note" role="status">
-          The list of places could not be read, so each gate counts its answers at every level.{" "}
-          <button type="button" className="button" onClick={rules.reloadRoster}>
-            Try again
-          </button>
-        </p>
-      )}
+      <div ref={rosterPlace} tabIndex={-1}>
+        {rules.rosterFailed && (
+          <p className="screen__note" role="status">
+            The list of places could not be read, so each gate counts its answers at every
+            level.{" "}
+            <button
+              ref={rosterRetry}
+              type="button"
+              className="button"
+              onClick={() => {
+                holdRosterFocus();
+                rules.reloadRoster();
+              }}
+            >
+              Try again
+            </button>
+          </p>
+        )}
+      </div>
       <RuleList
         read={rules.matchRules}
         what="The gates"
@@ -323,3 +343,12 @@ function rulesInForce(rules: RuleToggles): string | null {
     ),
   ].join(",");
 }
+
+/** The roster's read as `useRetryFocus` reads one: only whether it has settled matters. */
+function readOfStatus(status: "loading" | "ready" | "error"): Read<null> {
+  if (status === "loading") return { state: "pending" };
+  if (status === "error") return { state: "failed", error: null };
+  return { state: "ready", data: null, readAt: ROSTER_READ_AT, refresh: "idle" };
+}
+
+const ROSTER_READ_AT = new Date(0);

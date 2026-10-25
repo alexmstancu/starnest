@@ -688,6 +688,41 @@ describe("a gate's answers at the panel's level", () => {
       rules.queryByText(/The list of places could not be read/),
     ).toBeNull();
   });
+
+  /** Try again takes its own button away; focus waits nearby rather than on the page. */
+  it("keeps focus off the page while the roster is read again, and on Try again if it fails again", async () => {
+    let rosterAnswered: () => void = () => undefined;
+    mockServer.use(
+      http.get("/v1/candidates", () =>
+        HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const rules = await panel();
+    const note = await rules.findByText(/The list of places could not be read/);
+    mockServer.use(
+      http.get(
+        "/v1/candidates",
+        async () => {
+          await new Promise<void>((resolve) => {
+            rosterAnswered = resolve;
+          });
+          return HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 });
+        },
+        { once: true },
+      ),
+    );
+
+    await user.click(within(note).getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(rules.queryByText(/The list of places could not be read/)).toBeNull());
+    expect(document.activeElement).not.toBe(document.body);
+    rosterAnswered();
+    const failedAgain = await rules.findByText(/The list of places could not be read/);
+    const again = within(failedAgain).getByRole("button", { name: "Try again" });
+    await waitFor(() => expect(again).toHaveFocus());
+  });
 });
 
 /**
