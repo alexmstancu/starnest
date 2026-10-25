@@ -96,6 +96,10 @@ OBJECTIVE = {
     "match_rule_candidate",
     # What each gate-research call billed, beside the runs' own spend (BE-34).
     "match_rule_research_spend",
+    # Which citizenships clear a gate is the law, and what an answer assumed is part of the
+    # answer as written (Q239). Both name places, never the household.
+    "match_rule_clearing_citizenship",
+    "match_rule_answer_citizenship",
     "compound_rule",
     "compound_rule_condition",
     "compound_rule_input",
@@ -131,6 +135,7 @@ SUBJECTIVE = {
     "candidate_gate_warning",
     "non_match_reason",
     "non_match_input",
+    "evaluation_citizenship",
     "household",
     "household_citizenship",
     "settings",
