@@ -93,25 +93,31 @@ class TestPlanningARun:
         assert planned["items_total"] == detail["progress"]["items_total"] == 32
         assert planned["by_source"] == [{"data_source": "eurostat", "items": 32}]
 
-    async def test_a_plan_of_nothing_but_fresh_attributes_plans_nothing_and_the_run_refuses(
+    async def test_a_plan_of_nothing_but_fresh_attributes_is_refused_as_the_run_is(
         self, database_url: str
     ) -> None:
         """The two must agree at the edge too: a plan promising work the run then refuses as
-        `nothing_to_fetch` is the same disagreement, at its largest."""
+        `nothing_to_fetch` is the same disagreement, at its largest -- so an estimate of nothing
+        is refused at the estimate, with the reason the start gives (PL-120)."""
         only_overburden = {"level": COUNTRY, "attributes": [OVERBURDEN]}
         async with an_api(database_url, (a_stub_source(silent_about=()),)) as api:
             await api.put("/v1/settings", json={"refetch_older_than_days": 30})
             await api.post("/v1/data-acquisition-runs", json=only_overburden)
 
-            planned = (
-                await api.post("/v1/data-acquisition-runs/plan", json=only_overburden)
-            ).json()
+            planned = await api.post("/v1/data-acquisition-runs/plan", json=only_overburden)
             refused = await api.post("/v1/data-acquisition-runs", json=only_overburden)
 
-        assert (planned["items_total"], planned["estimated_cost_eur"]) == (0, 0)
-        assert planned["by_source"] == []
-        assert refused.status_code == 409
-        assert refused.json()["code"] == "nothing_to_fetch"
+        assert (planned.status_code, refused.status_code) == (409, 409)
+        validate("planRun", planned.json(), status=409)
+        assert planned.json()["code"] == refused.json()["code"] == "nothing_to_fetch"
+        assert (
+            planned.json()["details"]
+            == refused.json()["details"]
+            == {
+                "reason": "still_fresh",
+                "refetch_older_than_days": 30,
+            }
+        )
 
     async def test_a_fresh_paid_attribute_is_not_priced(self, database_url: str) -> None:
         """Where being wrong costs the most to believe: a fresh attribute the run will not ask
@@ -124,10 +130,11 @@ class TestPlanningARun:
             before = (await api.post("/v1/data-acquisition-runs/plan", json=only_overburden)).json()
             await api.post("/v1/data-acquisition-runs", json=only_overburden)
 
-            after = (await api.post("/v1/data-acquisition-runs/plan", json=only_overburden)).json()
+            after = await api.post("/v1/data-acquisition-runs/plan", json=only_overburden)
 
         assert before["estimated_cost_eur"] > 0, "the source does charge, so the first plan prices"
-        assert (after["llm_call_count"], after["estimated_cost_eur"]) == (0, 0)
+        assert after.status_code == 409, "nothing is left to price, so nothing is offered"
+        assert after.json()["details"]["reason"] == "still_fresh"
 
     async def test_with_no_refetch_age_the_plan_counts_everything(self, database_url: str) -> None:
         """The control, and the shipped state: with no age set nothing is fresh, so a run just
@@ -258,6 +265,52 @@ class TestARunOfNothingButFreshFigures:
         assert "0:00:00" not in message
 
 
+class TestAnEstimateWithNothingToAsk:
+    """PL-120. An estimate of zero items used to come back 200, so the screen offered to start a
+    run the start then refused. It is refused at the estimate now, with the reason in `details`,
+    and the start refuses the same way -- so no confirmation is ever offered for nothing."""
+
+    async def test_every_source_switched_off_is_refused_at_the_estimate_and_the_start(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        await api.patch("/v1/data-sources/eurostat", json={"is_enabled": False})
+        try:
+            planned = await api.post("/v1/data-acquisition-runs/plan", json={"level": COUNTRY})
+            started = await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+            runs = (await api.get("/v1/data-acquisition-runs")).json()["total"]
+        finally:
+            restored = await api.patch("/v1/data-sources/eurostat", json={"is_enabled": True})
+            assert restored.status_code == 200
+
+        assert (planned.status_code, started.status_code) == (409, 409)
+        validate("planRun", planned.json(), status=409)
+        validate("startRun", started.json(), status=409)
+        assert planned.json()["code"] == started.json()["code"] == "nothing_to_fetch"
+        assert (
+            planned.json()["details"]
+            == started.json()["details"]
+            == {"reason": "no_source_switched_on"}
+        )
+        assert runs == 0
+
+    @pytest.mark.parametrize(
+        "scope",
+        [
+            {"level": COUNTRY, "candidates": []},
+            {"level": COUNTRY, "attributes": []},
+        ],
+        ids=["no candidate", "no attribute"],
+    )
+    async def test_an_empty_scope_is_refused_at_the_estimate(
+        self, api: httpx.AsyncClient, scope: dict[str, object]
+    ) -> None:
+        planned = await api.post("/v1/data-acquisition-runs/plan", json=scope)
+        started = await api.post("/v1/data-acquisition-runs", json=scope)
+
+        assert (planned.status_code, started.status_code) == (409, 409)
+        assert planned.json()["details"] == started.json()["details"] == {"reason": "empty_scope"}
+
+
 class TestAScopeThatNamesSomethingUnknown:
     """BE-24. A misspelled candidate or an id from another level used to fall out of the
     intersection with what exists, and the run proceeded on the rest -- fetching, and where a
@@ -365,15 +418,15 @@ class TestAScopeThatNamesSomethingUnknown:
         assert details["unknown_candidates"] == ["country.greece"]
         assert details["unknown_attributes"] == [OVERBURDEN]
 
-    async def test_a_catalogued_level_with_nothing_to_fetch_still_plans(
+    async def test_a_catalogued_level_with_nothing_to_fetch_is_refused_as_empty(
         self, api: httpx.AsyncClient
     ) -> None:
-        """The control: `city` exists and no source answers it yet, which is a plan of nothing
-        rather than a scope naming something unknown."""
+        """The control: `city` exists and nothing answers it yet, which is a plan with nothing
+        to ask (PL-120) rather than a scope naming something unknown."""
         response = await api.post("/v1/data-acquisition-runs/plan", json={"level": "city"})
 
-        assert response.status_code == 200
-        assert response.json()["items_total"] == 0
+        assert response.status_code == 409
+        assert response.json()["code"] == "nothing_to_fetch"
 
 
 class TestWatchingARun:
@@ -1026,10 +1079,11 @@ class TestARejectedFigureIsNotFresh:
         Portugal's pair worth asking about again is its rejection and nothing else."""
         the_pair = {"level": COUNTRY, "candidates": ["country.spain"], "attributes": [TEMPERATURE]}
         async with _an_api_after_a_rejection(database_url) as api:
-            planned = (await api.post("/v1/data-acquisition-runs/plan", json=the_pair)).json()
+            planned = await api.post("/v1/data-acquisition-runs/plan", json=the_pair)
             refused = await api.post("/v1/data-acquisition-runs", json=the_pair)
 
-        assert planned["items_total"] == 0
+        assert planned.status_code == 409
+        assert planned.json()["details"]["reason"] == "still_fresh"
         assert refused.status_code == 409
         assert refused.json()["code"] == "nothing_to_fetch"
 

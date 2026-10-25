@@ -36,12 +36,11 @@ from starnest.data_acquisition import (
     RunStatus,
     ask_again,
     asked_this_run,
-    attributes_still_fresh,
     continue_run,
     open_run,
-    plan_sources,
     priced,
     retry_run,
+    settle_scope,
     stand_ins_if_enabled,
     switched_on,
 )
@@ -232,33 +231,32 @@ async def plan_run(
 
     # The plan counts the same sources the run would ask, so an estimate for an unscoped run
     # does not promise paid work that would not happen -- and a source switched off is not
-    # counted, for the same reason.
-    planned = asked_this_run(
-        switched_on(adapters, await catalog.read_data_sources()),
-        attributes_named=scope.attributes is not None,
-    )
-    answerable = [a for a in wanted if any(a.id in adapter.attributes for adapter in planned)]
-    fresh = await attributes_still_fresh(
+    # counted, for the same reason. **Settled as `open_run` settles it** (BE-25, PL-120): the
+    # same freshness rule, and the same refusal when nothing is left to ask, so an estimate of
+    # zero items is refused here rather than confirmed and refused at the start.
+    settled = await settle_scope(
+        adapters=asked_this_run(
+            switched_on(adapters, await catalog.read_data_sources()),
+            attributes_named=scope.attributes is not None,
+        ),
+        attributes=wanted,
+        candidates=roster,
         runs=runs,
         level=scope.level,
-        attributes=answerable,
-        candidates=roster,
         refetch_older_than=_refetch_age((await households.get_settings()).refetch_older_than_days),
     )
-    answerable = [a for a in answerable if str(a.id) not in fresh]
 
     # **Counted and priced as a started run records its plan and ceiling** (BE-25, D17): each
     # adapter prices its own share, because each is the only thing that knows what it charges --
     # and a free one prices nothing, which is every structured source.
-    sources = plan_sources(planned, answerable, roster)
     items_by_source: dict[str, int] = {}
-    for source in sources:
+    for source in settled.sources:
         name = str(source.adapter.data_source)
         items_by_source[name] = items_by_source.get(name, 0) + source.items
-    estimate = priced(sources)
+    estimate = priced(settled.sources)
 
     return RunPlanBody(
-        items_total=len(answerable) * len(roster),
+        items_total=settled.items_total,
         llm_call_count=estimate.calls,
         estimated_cost_eur=float(estimate.cost_eur),
         by_source=tuple(

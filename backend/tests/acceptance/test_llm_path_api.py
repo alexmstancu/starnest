@@ -190,9 +190,7 @@ class TestWhatMoneyRefuses:
     ) -> None:
         """An estimate that promised paid work the run would not do would be worse than none."""
         async with an_api(database_url, (a_stub_source(charges=True),)) as api:
-            unscoped = (
-                await api.post("/v1/data-acquisition-runs/plan", json={"level": COUNTRY})
-            ).json()
+            unscoped = await api.post("/v1/data-acquisition-runs/plan", json={"level": COUNTRY})
             scoped = (
                 await api.post(
                     "/v1/data-acquisition-runs/plan",
@@ -200,7 +198,9 @@ class TestWhatMoneyRefuses:
                 )
             ).json()
 
-        assert unscoped["items_total"] == 0
+        # Nothing it may ask, so the estimate is refused rather than offered at zero (PL-120).
+        assert unscoped.status_code == 409
+        assert unscoped.json()["details"] == {"reason": "no_source_switched_on"}
         assert scoped["items_total"] == 32
 
     async def test_the_plan_prices_the_paid_work_and_says_what_the_price_rests_on(

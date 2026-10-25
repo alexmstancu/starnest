@@ -932,9 +932,8 @@ paths:
           description: |
             Three refusals share this status and are told apart by `code`.
 
-            `nothing_to_fetch` — nothing in the scope can be asked: every source is switched off,
-            none answers what was named, or everything named is still fresh under the refetch
-            setting. The message names which.
+            `nothing_to_fetch` — nothing in the scope can be asked, refused exactly as `planRun`
+            refuses it; `details` is a `NothingToFetchDetails` saying why.
 
             `spend_cap_not_set` — the run would ask a source that charges and no spend cap is
             set. Set `run_spend_cap_eur`, or send `accept_uncapped_spend: true` to accept an
@@ -968,6 +967,22 @@ paths:
           description: OK
           content:
             application/json: { schema: { $ref: "#/components/schemas/RunPlan" } }
+        "409":
+          description: |
+            `nothing_to_fetch` — the plan has no items, so there is nothing to confirm. Refused
+            here rather than estimated at zero, and `startRun` refuses the same scope the same
+            way, so no confirmation is ever offered for a run that cannot open. `details` is a
+            `NothingToFetchDetails`: its `reason` lets a screen word the remedy (source priority
+            for `no_source_switched_on`, the refetch setting for `still_fresh`).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Error" }
+                  - type: object
+                    required: [details]
+                    properties:
+                      details: { $ref: "#/components/schemas/NothingToFetchDetails" }
         "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /data-acquisition-runs/{runId}:
@@ -2175,6 +2190,25 @@ components:
         level: { type: string }
         candidates: { type: [array, "null"], items: { type: string }, description: Null means every candidate at the level. }
         attributes: { type: [array, "null"], items: { type: string }, description: Null means every attribute at the level. }
+
+    NothingToFetchDetails:
+      type: object
+      required: [reason]
+      description: Why a plan, a start or a retry would ask nothing.
+      properties:
+        reason:
+          type: string
+          enum: [empty_scope, still_fresh, no_source_switched_on, nothing_answerable, sources_switched_off]
+          description: >-
+            empty_scope: the scope names no candidate, no attribute or no pair (or the level has
+            no candidate). still_fresh: every attribute named was fetched within the refetch
+            age. no_source_switched_on: no source the run may ask is on -- every source is off,
+            or the only ones on charge and a run that names no attribute does not ask them.
+            nothing_answerable: the sources on answer nothing in the scope. sources_switched_off:
+            a retry whose every failure belongs to a source now off or no longer declaring it.
+        refetch_older_than_days: { type: integer, description: "The refetch age, with still_fresh." }
+        candidates: { type: integer, description: "Candidates in scope, with nothing_answerable." }
+        attributes: { type: integer, description: "Attributes in scope, with nothing_answerable." }
 
     RunPlan:
       type: object

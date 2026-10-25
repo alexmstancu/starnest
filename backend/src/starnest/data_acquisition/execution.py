@@ -19,6 +19,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequenc
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from enum import StrEnum
 
 from starnest.candidates import Candidate
 from starnest.data import (
@@ -156,52 +157,45 @@ def _run_plan(
     )
 
 
-async def open_run(
+@dataclass(frozen=True)
+class SettledScope:
+    """What a run will ask, once every reason it would ask nothing has been refused.
+
+    **One answer for an estimate and for the run it estimates** (PL-120, BE-25): `POST /plan`
+    and `open_run` both come through `settle_scope`, so an estimate with no items is refused
+    with the same code and reason the start would have been -- and no confirmation is offered
+    for a run that cannot open.
+    """
+
+    scope: RunScope
+    answerable: list[Attribute]
+    in_scope: list[Attribute]
+    sources: tuple[SourcePlan, ...]
+
+    @property
+    def items_total(self) -> int:
+        """The run's items: its exact pairs, or the rectangle its two lists span."""
+        if self.scope.pairs is not None:
+            return len(self.scope.pairs)
+        return len(self.scope.candidates or ()) * len(self.scope.attributes or ())
+
+
+async def settle_scope(
     *,
     adapters: Sequence[SourceAdapter],
     attributes: Sequence[Attribute],
     candidates: Sequence[Candidate],
-    values: ValueStore,
     runs: RunStore,
     level: str,
     stand_ins: Sequence[StandIn] = (),
-    triggered_by: str = MANUAL,
-    spend_cap_eur: Decimal | None = None,
-    uncapped_is_accepted: bool = False,
     may_borrow_alone: bool = False,
     pairs: tuple[tuple[str, str], ...] | None = None,
     refetch_older_than: timedelta | None = None,
     now: datetime | None = None,
-) -> "OpenedRun":
-    """Settle every refusal, write the run row, and hand back what the fetching will need.
+) -> SettledScope:
+    """The scope a run over these sources will record and ask, or `NothingToFetchError`.
 
-    **Split from the fetching so a caller may answer before the work is done** (P35). Everything
-    that can refuse a request happens here -- an empty scope, and the spend cap -- so a client
-    gets its 409 or its run id, and nothing after this point has anybody to answer to.
-
-    The run row exists before any figure is fetched, which is what makes a process that dies
-    mid-run leave a visibly unfinished run rather than nothing at all.
-
-    **Every source, in one run.** A run is one pass, and the plan the household confirmed
-    counted the work of all of them; an earlier version handed this the first adapter only,
-    which fetched a sixth of what the plan promised while reporting the run completed. **Then
-    the declared stand-ins**, visibly and at `low` confidence, where a neighbour's figure is the
-    least-bad answer for a place no source covers (`stand_in.py`). Both are `continue_run`'s.
-
-    **The scope recorded is what was asked for, not what worked.** Every candidate and every
-    attribute some source could answer goes in, so a country that produced nothing is
-    distinguishable afterwards from one nobody asked about -- which is the difference selective
-    retry turns on.
-
-    The run is closed `completed` even when items failed. A run completes for everything that
-    works and reports the rest (`reqs.md` 6.4); `failed` is for a run that could not proceed at
-    all, and treating a sparse indicator as a failed run would mean never completing one.
-
-    **Money, if any source charges** (`reqs.md` 6.3). Nothing is fetched until the cap question
-    is settled: a run that can spend and has no cap refuses unless this request accepts an
-    uncapped one. Afterwards the spend accumulates per source, and reaching the cap **halts**
-    the run -- in-flight work has already committed, everything fetched is kept, and the status
-    says why it stopped rather than pretending it finished.
+    Writes nothing, so the estimate can call it as freely as the run does.
     """
     answerable = [
         attribute
@@ -279,8 +273,12 @@ async def open_run(
     )
     scope_is_empty = (not scope_pairs) if scope_pairs is not None else (not in_scope)
     if scope_is_empty or not candidates:
-        # Named separately, because it is the one cause with an obvious remedy: there is
-        # nothing to ask rather than nothing worth asking about.
+        if not candidates or not attributes or pairs == ():
+            raise NothingToFetchError(
+                "this run's scope names no candidate, no attribute or no pair, so there is "
+                "nothing to ask",
+                reason=NothingToFetchReason.EMPTY_SCOPE,
+            )
         if fresh:
             # Named separately: the scope was not empty, it was emptied by the freshness
             # rule, and "nothing to fetch" would read as a fault rather than as a run that
@@ -288,18 +286,93 @@ async def open_run(
             raise NothingToFetchError(
                 f"every attribute in this run's scope was fetched within the last "
                 f"{_in_days(refetch_older_than)}, so there is nothing to ask about again. Lower "
-                f"'refetch data older than' in Configure to ask anyway"
+                f"'refetch data older than' in Configure to ask anyway",
+                reason=NothingToFetchReason.STILL_FRESH,
+                refetch_older_than_days=refetch_older_than.days if refetch_older_than else None,
             )
         if not adapters:
             raise NothingToFetchError(
-                "no data source is switched on, so there is nothing to ask. Switch one on in "
-                "Configure, or this run would fetch nothing and record that it had run"
+                "no data source this run may ask is switched on, so there is nothing to ask: "
+                "every source is off, or the only ones on charge and are asked only about the "
+                "attributes a run names. Switch one on in Configure's source priority",
+                reason=NothingToFetchReason.NO_SOURCE_SWITCHED_ON,
             )
         raise NothingToFetchError(
             "nothing in this run's scope can be answered by the sources it may ask or borrowed "
             f"from a declared stand-in: {len(candidates)} candidate(s), "
-            f"{len(answerable)} answerable and {len(borrowable)} borrowable attribute(s)"
+            f"{len(answerable)} answerable and {len(borrowable)} borrowable attribute(s)",
+            reason=NothingToFetchReason.NOTHING_ANSWERABLE,
+            candidates=len(candidates),
+            attributes=len(attributes),
         )
+    return SettledScope(
+        scope=scope,
+        answerable=answerable,
+        in_scope=in_scope,
+        sources=plan_sources(adapters, answerable, candidates, pairs=scope_pairs),
+    )
+
+
+async def open_run(
+    *,
+    adapters: Sequence[SourceAdapter],
+    attributes: Sequence[Attribute],
+    candidates: Sequence[Candidate],
+    values: ValueStore,
+    runs: RunStore,
+    level: str,
+    stand_ins: Sequence[StandIn] = (),
+    triggered_by: str = MANUAL,
+    spend_cap_eur: Decimal | None = None,
+    uncapped_is_accepted: bool = False,
+    may_borrow_alone: bool = False,
+    pairs: tuple[tuple[str, str], ...] | None = None,
+    refetch_older_than: timedelta | None = None,
+    now: datetime | None = None,
+) -> "OpenedRun":
+    """Settle every refusal, write the run row, and hand back what the fetching will need.
+
+    **Split from the fetching so a caller may answer before the work is done** (P35). Everything
+    that can refuse a request happens here -- an empty scope, and the spend cap -- so a client
+    gets its 409 or its run id, and nothing after this point has anybody to answer to.
+
+    The run row exists before any figure is fetched, which is what makes a process that dies
+    mid-run leave a visibly unfinished run rather than nothing at all.
+
+    **Every source, in one run.** A run is one pass, and the plan the household confirmed
+    counted the work of all of them; an earlier version handed this the first adapter only,
+    which fetched a sixth of what the plan promised while reporting the run completed. **Then
+    the declared stand-ins**, visibly and at `low` confidence, where a neighbour's figure is the
+    least-bad answer for a place no source covers (`stand_in.py`). Both are `continue_run`'s.
+
+    **The scope recorded is what was asked for, not what worked.** Every candidate and every
+    attribute some source could answer goes in, so a country that produced nothing is
+    distinguishable afterwards from one nobody asked about -- which is the difference selective
+    retry turns on.
+
+    The run is closed `completed` even when items failed. A run completes for everything that
+    works and reports the rest (`reqs.md` 6.4); `failed` is for a run that could not proceed at
+    all, and treating a sparse indicator as a failed run would mean never completing one.
+
+    **Money, if any source charges** (`reqs.md` 6.3). Nothing is fetched until the cap question
+    is settled: a run that can spend and has no cap refuses unless this request accepts an
+    uncapped one. Afterwards the spend accumulates per source, and reaching the cap **halts**
+    the run -- in-flight work has already committed, everything fetched is kept, and the status
+    says why it stopped rather than pretending it finished.
+    """
+    settled = await settle_scope(
+        adapters=adapters,
+        attributes=attributes,
+        candidates=candidates,
+        runs=runs,
+        level=level,
+        stand_ins=stand_ins,
+        may_borrow_alone=may_borrow_alone,
+        pairs=pairs,
+        refetch_older_than=refetch_older_than,
+        now=now,
+    )
+    answerable, in_scope, scope_pairs = settled.answerable, settled.in_scope, settled.scope.pairs
     refuse_unless_capped(
         costs_money=_a_paid_source_would_be_asked(adapters, answerable),
         cap_eur=spend_cap_eur,
@@ -310,12 +383,12 @@ async def open_run(
     # sources over the answerable attributes, then the borrows over the whole scope, each held to
     # the run's exact pairs -- the same arguments `acquire` and `stand_in` are given below.
     plan = _run_plan(
-        plan_sources(adapters, answerable, candidates, pairs=scope_pairs),
+        settled.sources,
         declarations_in_scope(stand_ins, in_scope, candidates, pairs=scope_pairs),
         spend_cap_eur=spend_cap_eur,
         uncapped_is_accepted=uncapped_is_accepted,
     )
-    run = await runs.start_run(scope, triggered_by=triggered_by, plan=plan)
+    run = await runs.start_run(settled.scope, triggered_by=triggered_by, plan=plan)
     _log.info(
         "run %d started by %s over %d candidates and %d attributes, from %d source(s)",
         run,
@@ -662,7 +735,25 @@ class NothingToFetchError(ValueError):
 
     A retry raises it too, before opening anything, when every failure it would go back to
     belongs to a source nobody may ask any more (FU-A2).
+
+    **It carries its reason in `details`** (PL-120), because an estimate is refused with it too
+    and a screen words each cause with its own remedy -- source priority for a source switched
+    off, the refetch setting for a scope still fresh.
     """
+
+    def __init__(self, message: str, *, reason: "NothingToFetchReason", **details: object) -> None:
+        super().__init__(message)
+        self.details = {"reason": str(reason), **details}
+
+
+class NothingToFetchReason(StrEnum):
+    """Why a run would ask nothing, as `details.reason` spells it."""
+
+    EMPTY_SCOPE = "empty_scope"
+    STILL_FRESH = "still_fresh"
+    NO_SOURCE_SWITCHED_ON = "no_source_switched_on"
+    NOTHING_ANSWERABLE = "nothing_answerable"
+    SOURCES_SWITCHED_OFF = "sources_switched_off"
 
 
 class RunAlreadyInFlightError(ValueError):
@@ -751,7 +842,8 @@ async def retry_run(
         raise NothingToFetchError(
             f"every source run {failed.id} failed on is now switched off or can no longer answer "
             f"what it failed on, so a retry would ask nobody. If a source was switched off, "
-            f"switch it back on in Configure and retry run {failed.id}"
+            f"switch it back on in Configure and retry run {failed.id}",
+            reason=NothingToFetchReason.SOURCES_SWITCHED_OFF,
         )
 
     failed_on = _what_each_source_failed_on(reachable)
