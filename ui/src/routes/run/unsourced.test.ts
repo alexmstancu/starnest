@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { handEnterable, unsourcedAttributes } from "./unsourced";
+import { handEnterable, unsourcedAttributes, WEIGHTS_PENDING } from "./unsourced";
 
 /**
  * Every source in every attribute's priority, as the server resolves it since BE-39: an
@@ -82,6 +82,20 @@ describe("attributes with nobody to ask", () => {
       [],
     );
     expect(found?.type).toBe("Measured in weeks");
+  });
+
+  it("says no weight, in name order, while the set is still being read", () => {
+    const gaps = unsourcedAttributes(
+      [
+        { ...unfetchable, id: "b", name: "Beta" },
+        { ...unfetchable, id: "a", name: "Alpha" },
+      ],
+      WEIGHTS_PENDING,
+    );
+    expect(gaps.map((gap) => [gap.name, gap.weight])).toEqual([
+      ["Alpha", WEIGHTS_PENDING],
+      ["Beta", WEIGHTS_PENDING],
+    ]);
   });
 
   /** Heaviest first: 45% of a pillar is a different problem from 5%. */

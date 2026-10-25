@@ -4,15 +4,16 @@ import { fetchAttributes, fetchCriteriaSet } from "../../api/endpoints";
 import { combine, map, type Read } from "../../api/read";
 import { type PillarNames, usePillarNames } from "../../api/usePillarNames";
 import { useRead } from "../../api/useRead";
-import { formatPercentage, pillarName } from "../../format/display";
+import { ABSENT, formatPercentage, pillarName } from "../../format/display";
 import { LoadedRegion } from "../../shell/LoadedRegion";
-import { useSelection, type Selection } from "../../shell/SelectionContext";
+import { useSelection } from "../../shell/SelectionContext";
 import { highlighted, linkToHandEntry, UNSOURCED } from "../../navigation/highlight";
 import { alwaysAsked } from "./alwaysAsked";
 import {
-  type CatalogAttribute,
   type UnsourcedAttribute,
   unsourcedAttributes,
+  type WeightedCriterion,
+  WEIGHTS_PENDING,
 } from "./unsourced";
 
 /**
@@ -52,13 +53,18 @@ export function UnsourcedAttributes({ level }: { level: string }) {
   );
   const catalog = alwaysAsked(attributes.read);
   // The weights come from the set: without one, from the selection that says there is none.
-  // While the set is read the card waits whole (PL-001), so no weight reads "not scored here"
-  // before the set has said so.
-  const gaps: Read<UnsourcedAttribute[]> =
+  const weights: Read<readonly WeightedCriterion[]> =
     set.read.state === "idle"
-      ? withoutASet(catalog, selection)
-      : map(combine(catalog, set.read), ([read, chosen]) =>
-          unsourcedAttributes(read.items, chosen.criteria ?? []),
+      ? map(selection.read, () => [])
+      : map(set.read, (chosen) => chosen.criteria ?? []);
+  // **The gaps are the catalog's; only what each is worth waits for the set** (PL-088). While
+  // it is read, each weight is a dash, never "not scored here"; if it fails, the card says so
+  // and offers Try again, rather than draw a weight it does not have.
+  const gaps: Read<UnsourcedAttribute[]> =
+    weights.state === "pending"
+      ? map(catalog, (read) => unsourcedAttributes(read.items, WEIGHTS_PENDING))
+      : map(combine(catalog, weights), ([read, criteria]) =>
+          unsourcedAttributes(read.items, criteria),
         );
 
   // **Arrived at from Configure's "No source yet →".** The route carries which card was asked
@@ -122,17 +128,6 @@ export function UnsourcedAttributes({ level }: { level: string }) {
   );
 }
 
-/**
- * The weights when no set is chosen: none, once the selection has said there is no set to
- * choose -- and not before, since a set still being read would weigh them.
- */
-function withoutASet(
-  catalog: Read<{ items: readonly CatalogAttribute[] }>,
-  selection: Selection,
-): Read<UnsourcedAttribute[]> {
-  return map(combine(catalog, selection.read), ([read]) => unsourcedAttributes(read.items, []));
-}
-
 function Gaps({
   gaps,
   pillars,
@@ -174,10 +169,12 @@ function Gaps({
                     where the id says `economics`, and a title-cased id is this screen
                     guessing at a name somebody already chose. */}
                 <td>{pillarName(pillars, gap.pillar)}</td>
-                <td>
-                  {gap.weight === null
-                    ? "not scored here"
-                    : formatPercentage(gap.weight)}
+                <td aria-busy={gap.weight === WEIGHTS_PENDING || undefined}>
+                  {gap.weight === WEIGHTS_PENDING
+                    ? ABSENT
+                    : gap.weight === null
+                      ? "not scored here"
+                      : formatPercentage(gap.weight)}
                 </td>
                 <td>
                   {/* The remedy takes the reader to the form, where there is one (PL-088). */}

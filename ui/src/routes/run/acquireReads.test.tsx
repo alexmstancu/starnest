@@ -128,7 +128,9 @@ const READS: ScreenRead[] = [
     refusal: NOT_FOUND,
     owners: [UNSOURCED],
     facts: [/not scored here/i, /every attribute at this level has at least one source/i],
-    drawnFromIt: [/nobody measures this/i],
+    // PL-088: the rows are the catalog's; only the weights are the set's, and wait for it
+    // as a dash.
+    drawnFromIt: [/not scored here/i, /\d%/],
   },
   {
     what: "the list of criteria sets",
@@ -136,7 +138,9 @@ const READS: ScreenRead[] = [
     refusal: INVALID,
     owners: [UNSOURCED],
     facts: [/not scored here/i, /every attribute at this level has at least one source/i],
-    drawnFromIt: [/nobody measures this/i],
+    // PL-088: the rows are the catalog's; only the weights are the set's, and wait for it
+    // as a dash.
+    drawnFromIt: [/not scored here/i, /\d%/],
   },
 ];
 
@@ -227,6 +231,51 @@ describe.each(READS)("Acquire while $what is read", (read) => {
       expect(await drawn.findByText(/could not be loaded/i)).toBeInTheDocument();
     }
     expectNoFactInferred(read);
+  });
+});
+
+/**
+ * PL-088 (UF-092). **The gaps are the catalog's; only what each is worth is the set's.** While
+ * the set is read, each weight is a dash -- never "not scored here", which is a claim the set
+ * has not made -- and the rows stand in name order. A failed set read is the failure card.
+ */
+describe("the attributes with no source while the set is read", () => {
+  function weightCells(card: HTMLElement): HTMLElement[] {
+    return within(card)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[2]!);
+  }
+
+  it.each([
+    ["the criteria set", `${BASE}/criteria-sets/:criteriaSetId`],
+    ["the list of criteria sets", `${BASE}/criteria-sets`],
+  ])("shows a dash in each weight while %s is on its way", async (_what, path) => {
+    const answer = heldAnswer();
+    mockServer.use(
+      http.get(path, async () => {
+        await answer.held;
+      }),
+    );
+    try {
+      renderShell("/acquire");
+      const card = await findRegion(UNSOURCED);
+      const names = (await within(card).findAllByRole("rowheader")).map(
+        (header) => header.textContent,
+      );
+
+      expect(names).toEqual([...names].sort((left, right) => left.localeCompare(right)));
+      for (const cell of weightCells(card)) {
+        expect(cell).toHaveTextContent(/^—$/);
+        expect(cell).toHaveAttribute("aria-busy", "true");
+      }
+      expect(card).not.toHaveTextContent(/not scored here/i);
+    } finally {
+      answer.release();
+    }
+    const card = region(UNSOURCED);
+    await waitFor(() => expect(card).toHaveTextContent(/not scored here/i));
+    expect(card.querySelector('[aria-busy="true"]')).toBeNull();
   });
 });
 

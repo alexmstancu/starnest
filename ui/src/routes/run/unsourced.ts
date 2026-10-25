@@ -39,14 +39,20 @@ export interface WeightedCriterion {
   is_scored?: boolean;
 }
 
+/** The set's criteria are still being read, so no weight can be said yet (PL-088). */
+export const WEIGHTS_PENDING = "pending";
+
 export interface UnsourcedAttribute {
   id: string;
   name: string;
   pillar: string;
   /** Its value type in words, so the reader knows what kind of figure is missing. */
   type: string;
-  /** What it is worth inside its pillar, or null when the active set does not score it. */
-  weight: number | null;
+  /**
+   * What it is worth inside its pillar, null when the active set does not score it, and
+   * pending while the set is still being read -- which says nothing either way.
+   */
+  weight: number | null | typeof WEIGHTS_PENDING;
   manualEntry: boolean;
   /** Which editor the form needs, or null where hand entry is not permitted or not built. */
   manualKind: "LabelSet" | "AssignedScore" | null;
@@ -108,12 +114,12 @@ function editorFor(
  */
 export function unsourcedAttributes(
   attributes: readonly CatalogAttribute[],
-  criteria: readonly WeightedCriterion[],
+  criteria: readonly WeightedCriterion[] | typeof WEIGHTS_PENDING,
 ): UnsourcedAttribute[] {
   // **Only what the set scores has a weight** (PL-088): a kept-but-unscored criterion still
   // carries the weight it would have, and printing it claims a share of the pillar it has not.
   const weights = new Map(
-    criteria
+    (criteria === WEIGHTS_PENDING ? [] : criteria)
       .filter((criterion) => criterion.is_scored !== false)
       .map((criterion) => [criterion.attribute, criterion.weight]),
   );
@@ -125,13 +131,19 @@ export function unsourcedAttributes(
       name: attribute.name,
       pillar: attribute.pillar ?? NO_PILLAR,
       type: typeOf(attribute),
-      weight: typeof weight === "number" ? weight : null,
+      weight:
+        criteria === WEIGHTS_PENDING
+          ? WEIGHTS_PENDING
+          : typeof weight === "number"
+            ? weight
+            : null,
       manualEntry: attribute.manual_entry === true,
       manualKind: editorFor(attribute),
       remedy: remedyFor(attribute),
     };
   });
-  // Equal weights by name, so the same catalog always reads in the same order.
+  // By name while the weights are pending, and among equal weights, so the same catalog
+  // always reads in the same order.
   return gaps.sort(
     (left, right) =>
       worth(right) - worth(left) || left.name.localeCompare(right.name),
