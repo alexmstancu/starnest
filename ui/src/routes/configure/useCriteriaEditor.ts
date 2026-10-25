@@ -18,7 +18,7 @@ import {
 import { titleOf, type AttributeCatalog } from "./criteria/criterionReading";
 import type { Answers } from "./useAnswers";
 import type { ChangeHistory, RecordedChange } from "./useChangeHistory";
-import { settled, UnconfirmedWrite } from "./unknownOutcome";
+import { confirmation, settled, UnconfirmedWrite } from "./unknownOutcome";
 
 /**
  * One criteria set, and the one write the Configure screen makes.
@@ -159,10 +159,13 @@ export function useCriteriaEditor(
    */
   const noteOrReport = useCallback(
     (sentFor: string, error: unknown, entry: ChangeEntry) => {
-      if (error instanceof UnconfirmedWrite) history?.note({ ...entry, unconfirmed: error.check });
-      else reportFor(sentFor, error);
+      if (error instanceof UnconfirmedWrite) {
+        // Confirmed later, what it read back reaches the editor showing the set then.
+        const show = (read: RebalancedPillar) => deliver(sentFor, read.criteria);
+        history?.note({ ...entry, unconfirmed: confirmation(error, show) });
+      } else reportFor(sentFor, error);
     },
-    [history, reportFor],
+    [history, reportFor, deliver],
   );
 
   const setWeight = useCallback(

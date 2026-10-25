@@ -97,6 +97,20 @@ describe("recording a change", () => {
     expect(history[0]?.caveat).toBe("inexact");
   });
 
+  /** PL-033. Folded together, resolving the unconfirmed step would take the confirmed one too. */
+  it.each([
+    ["onto an unconfirmed one", { latest: true, next: false }],
+    ["an unconfirmed one onto a confirmed one", { latest: false, next: true }],
+  ])("never collapses a repeat %s", (_, { latest, next }) => {
+    const unconfirmed = () => Promise.resolve(false);
+    const history = record(
+      record([], { ...change(1, "housing", 10, 20), ...(latest ? { unconfirmed } : {}) }),
+      { ...change(2, "housing", 20, 30), ...(next ? { unconfirmed } : {}) },
+    );
+
+    expect(history.map((each) => each.id)).toEqual([2, 1]);
+  });
+
   it("does not carry a caveat across to another target", () => {
     const history = record(
       record([], { ...change(1, "housing", 10, 100), caveat: "inexact" }),

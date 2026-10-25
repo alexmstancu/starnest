@@ -11,7 +11,7 @@ import { formatPercentage, pillarName } from "../../../format/display";
 import type { ChangeHistory } from "../useChangeHistory";
 import { useNotePillarChange } from "./useNotePillarChange";
 import type { Answers } from "../useAnswers";
-import { settled, UnconfirmedWrite } from "../unknownOutcome";
+import { confirmation, settled, UnconfirmedWrite } from "../unknownOutcome";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { useWeightDrag } from "../useWeightDrag";
 import {
@@ -128,8 +128,9 @@ export function PillarWeightsPanel({
         note.weight(pillar, weights, rebalanced.items, weight);
       } catch (error) {
         // Lost and not yet read back, it may have taken effect: listed, unconfirmed (PL-033).
-        if (error instanceof UnconfirmedWrite) note.weight(pillar, weights, null, weight, error.check);
-        else setFailure(error);
+        if (error instanceof UnconfirmedWrite) {
+          note.weight(pillar, weights, null, weight, confirmation(error, (read: Rebalanced) => showAnswer(criteriaSet.id, read.items)));
+        } else setFailure(error);
       } finally {
         inFlight.current = false;
         setSaving(false);
@@ -169,8 +170,9 @@ export function PillarWeightsPanel({
         showAnswer(sentFor, rebalanced.items);
         note.lock(pillar, locked);
       } catch (error) {
-        if (error instanceof UnconfirmedWrite) note.lock(pillar, locked, error.check);
-        else setFailure(error);
+        if (error instanceof UnconfirmedWrite) {
+          note.lock(pillar, locked, confirmation(error, (read: Rebalanced) => showAnswer(criteriaSet.id, read.items)));
+        } else setFailure(error);
       } finally {
         inFlight.current = false;
         setSaving(false);
@@ -496,4 +498,9 @@ async function pillarsIf(
 ): Promise<{ items: PillarWeight[] } | null> {
   const items = (await fetchCriteriaSet(criteriaSetId, { signal })).pillar_weights ?? [];
   return items.some(tookEffect) ? { items } : null;
+}
+
+/** What a pillar's write answers, and what a confirmation reads back in its place (PL-033). */
+interface Rebalanced {
+  items: PillarWeight[];
 }

@@ -15,7 +15,13 @@
 import { ApiError, CLIENT_ERROR_CODES, apiErrorFromResponse } from "./ApiError";
 import type { paths } from "./schema";
 import { isUnreachable, noteAnswered } from "./reachability";
-import { beginSetWrite, EVERY_SET, readWhenSettled, untilSettled } from "./setWrites";
+import {
+  beginSetWrite,
+  EVERY_SET,
+  readWhenSettled,
+  untilSettled,
+  WRITE_PATIENCE_MS,
+} from "./setWrites";
 
 /** Matches the `/v1` prefix that nginx and the Vite dev server both proxy. */
 export const API_PREFIX = "/v1";
@@ -272,19 +278,41 @@ function setWriteKeys(path: string, pathParams: PathValues | undefined, body?: u
  * Sends a write, **counted as in flight under every set it changes until it settles**, however
  * it settles (PL-142): a refused write changed nothing, but the read it overlapped is read again
  * all the same, which costs one request and decides nothing.
+ *
+ * **Settled within `WRITE_PATIENCE_MS` at the latest** (PL-033): past it, the request is
+ * abandoned and fails as one whose answer was lost -- its outcome unknown, for the writer to
+ * read back -- rather than holding every read of the set for ever.
  */
 async function sendWrite<Result>(
   path: string,
   pathParams: PathValues | undefined,
   body: unknown,
-  send: () => Promise<Result>,
+  signal: AbortSignal | undefined,
+  send: (signal: AbortSignal | undefined) => Promise<Result>,
 ): Promise<Result> {
   const keys = setWriteKeys(path, pathParams, body);
-  if (keys.length === 0) return send();
+  if (keys.length === 0) return send(signal);
   const settle = beginSetWrite(keys);
+  const patience = new AbortController();
+  const forward = () => patience.abort(signal?.reason);
+  if (signal?.aborted) forward();
+  signal?.addEventListener("abort", forward, { once: true });
+  let overdue = false;
+  const timer = setTimeout(() => {
+    overdue = true;
+    patience.abort();
+  }, WRITE_PATIENCE_MS);
   try {
-    return await send();
+    return await send(patience.signal);
+  } catch (error) {
+    if (!overdue) throw error;
+    throw new ApiError({
+      code: CLIENT_ERROR_CODES.unreachable,
+      message: `${path} did not answer in time, so whether it took effect is not known.`,
+    });
   } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", forward);
     settle();
   }
 }
@@ -301,12 +329,12 @@ export async function postJson<Path extends PostPath>(
   const savedFrom = (body as { criteria_set?: unknown } | undefined)?.criteria_set;
   if (typeof savedFrom === "string") await untilSettled(savedFrom, options.signal);
   const pathParams = options.pathParams as PathValues | undefined;
-  return sendWrite(path, pathParams, body, () =>
+  return sendWrite(path, pathParams, body, options.signal, (signal) =>
     request<PostResult<Path>>(buildUrl(path, undefined, pathParams), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: serialise(body),
-      signal: options.signal,
+      signal,
     }),
   );
 }
@@ -322,12 +350,12 @@ export async function patchJson<Path extends PatchPath>(
   options: CallOptions<PathValuesOf<PatchOperation<Path>>> = {},
 ): Promise<PatchResult<Path>> {
   const pathParams = options.pathParams as PathValues | undefined;
-  return sendWrite(path, pathParams, body, () =>
+  return sendWrite(path, pathParams, body, options.signal, (signal) =>
     request<PatchResult<Path>>(buildUrl(path, undefined, pathParams), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: serialise(body),
-      signal: options.signal,
+      signal,
     }),
   );
 }
@@ -425,12 +453,12 @@ export async function putJson<Path extends PutPath>(
   options: CallOptions<PathValuesOf<PutOperation<Path>>> = {},
 ): Promise<PutResult<Path>> {
   const pathParams = options.pathParams as PathValues | undefined;
-  return sendWrite(path, pathParams, body, () =>
+  return sendWrite(path, pathParams, body, options.signal, (signal) =>
     request<PutResult<Path>>(buildUrl(path, undefined, pathParams), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: serialise(body),
-      signal: options.signal,
+      signal,
     }),
   );
 }
@@ -441,10 +469,10 @@ export async function deleteResource<Path extends DeletePath>(
   options: CallOptions<PathValuesOf<DeleteOperation<Path>>> = {},
 ): Promise<void> {
   const pathParams = options.pathParams as PathValues | undefined;
-  await sendWrite(path as string, pathParams, undefined, () =>
+  await sendWrite(path as string, pathParams, undefined, options.signal, (signal) =>
     request(buildUrl(path as string, undefined, pathParams), {
       method: "DELETE",
-      signal: options.signal,
+      signal,
     }),
   );
 }

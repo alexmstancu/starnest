@@ -12,6 +12,7 @@ import {
 } from "./client";
 import { fetchCandidates, fetchLevels, fetchRanking, fetchRuns } from "./endpoints";
 import { mockServer } from "../mocks/server";
+import { WRITE_PATIENCE_MS } from "./setWrites";
 
 describe("buildUrl", () => {
   it("keeps every path relative and under /v1, so requests are same-origin", () => {
@@ -394,6 +395,71 @@ describe("a set read and the writes to its set (PL-142)", () => {
 
   /** Long enough for a request that is going to be sent to have been. */
   const aMoment = () => new Promise((resolve) => setTimeout(resolve, 30));
+
+  it("does not answer a read with a set a write begun in the same turn has outdated", async () => {
+    const write = deferred();
+    let committed = false;
+    let reads = 0;
+    mockServer.use(
+      http.put(MATCH_RULE, async () => {
+        await write.promise;
+        committed = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.get("/v1/criteria-sets/default", () => {
+        reads += 1;
+        return HttpResponse.json({ id: "default", name: committed ? "after" : "before" });
+      }),
+    );
+
+    const reading = readSet("default");
+    const writing = enforce("default");
+    await aMoment();
+    write.resolve();
+
+    await writing;
+    expect(await reading).toMatchObject({ name: "after" });
+    // Not sent while the write was in flight, so not sent twice either.
+    expect(reads).toBe(1);
+  });
+
+  it("gives up on a write that never answers, as one whose outcome is unknown, and frees reads", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      mockServer.use(
+        http.put(MATCH_RULE, () => new Promise<Response>(() => undefined)),
+        http.get("/v1/criteria-sets/default", () => HttpResponse.json({ id: "default" })),
+      );
+
+      const writing = enforce("default").catch((error: unknown) => error);
+      const reading = readSet("default");
+      await vi.advanceTimersByTimeAsync(WRITE_PATIENCE_MS);
+
+      const lost = await writing;
+      expect(isApiError(lost) && lost.code).toBe(CLIENT_ERROR_CODES.unreachable);
+      expect(await reading).toMatchObject({ id: "default" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reads a set again at most three times while writes keep overlapping it, then fails", async () => {
+    let reads = 0;
+    mockServer.use(
+      http.get("/v1/criteria-sets/default", async () => {
+        reads += 1;
+        // Another write lands while every read is out, for as long as the reader keeps asking.
+        if (reads <= 10) await enforce("default");
+        return HttpResponse.json({ id: "default" });
+      }),
+      http.put(MATCH_RULE, () => new HttpResponse(null, { status: 204 })),
+    );
+
+    const failure = await readSet("default").catch((error: unknown) => error);
+
+    expect(isApiError(failure) && failure.code).toBe(CLIENT_ERROR_CODES.keptChanging);
+    expect(reads).toBe(4);
+  });
 
   it("sends no read of a set while a write to it is in flight, and reads once it settles", async () => {
     const write = deferred();

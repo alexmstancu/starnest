@@ -84,6 +84,11 @@ export const WORDS = {
     "A value in this change is not a number that can be saved, so nothing was sent. " +
       "Check the figures typed, then save again.",
   ),
+  [CLIENT_ERROR_CODES.keptChanging]: {
+    cause: () => "The set kept changing while it was being read. Try again once it has settled.",
+    retryable: true,
+    kind: "fault",
+  },
   "client.unexpected": {
     cause: () => "Something went wrong in this interface.",
     retryable: false,

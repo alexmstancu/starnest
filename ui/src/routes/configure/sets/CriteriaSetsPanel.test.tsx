@@ -16,6 +16,7 @@ import {
   followChromiumFocusFixup,
 } from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
+import { WRITE_PATIENCE_MS } from "../../../api/setWrites";
 import { READ_PATIENCE_MS } from "../unknownOutcome";
 
 /**
@@ -1541,6 +1542,7 @@ describe("a write whose answer was lost", () => {
       path: "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId",
       press: async (user: UserEvent) =>
         user.click(await screen.findByRole("button", { name: "Lock Economy" })),
+      control: () => screen.findByRole("button", { name: "Lock Economy" }),
       entry: "Locked the Economy pillar, in Default",
     },
     {
@@ -1548,12 +1550,14 @@ describe("a write whose answer was lost", () => {
       method: "patch" as const,
       path: "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
       press: async (user: UserEvent) => user.click(await criterionLockOf(user)),
+      control: () => criterionLockOf(userEvent.setup()),
       entry: "Locked Cost of living index, in Default",
     },
-  ])("lists $what unconfirmed when its answer is lost and the read-back fails", async ({
+  ])("lists $what unconfirmed when its answer is lost, and shows it once Check again confirms it", async ({
     method,
     path,
     press,
+    control,
     entry,
   }) => {
     const user = userEvent.setup();
@@ -1583,7 +1587,114 @@ describe("a write whose answer was lost", () => {
 
     const listed = (await (await historyPanel()).findByText(entry)).closest("li")!;
     expect(within(listed).getByText(/not confirmed/i)).toBeInTheDocument();
-    expect(within(listed).getByRole("button", { name: "Check again" })).toBeInTheDocument();
+    await user.click(within(listed).getByRole("button", { name: "Check again" }));
+
+    await waitFor(() => expect(within(listed).queryByText(/not confirmed/i)).toBeNull());
+    const shown = await control();
+    await waitFor(() => expect(shown).toHaveAttribute("aria-pressed", "true"));
+  });
+
+  it("keeps a confirmed rename apart from a later one that never landed, and its undo", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settledScreen();
+    const rename = async (from: string, to: string) => {
+      await user.click((await row(from)).getByRole("button", { name: "Rename" }));
+      await user.keyboard(`{Control>}a{/Control}${to}{Enter}`);
+    };
+    await rename("Default", "One");
+    const history = await historyPanel();
+    await history.findByText("Renamed Default to One");
+    // The next never reaches the server, and the read-back cannot say so either.
+    mockServer.use(
+      http.patch(
+        "/v1/criteria-sets/:criteriaSetId",
+        () => {
+          mockServer.use(
+            http.get(
+              "/v1/criteria-sets/default",
+              () =>
+                HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+              { once: true },
+            ),
+          );
+          return HttpResponse.error();
+        },
+        { once: true },
+      ),
+    );
+
+    await rename("One", "Two");
+
+    const lost = (await history.findByText("Renamed One to Two")).closest("li")!;
+    expect(history.getByText("Renamed Default to One")).toBeInTheDocument();
+    await user.click(within(lost).getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(history.queryByText("Renamed One to Two")).toBeNull());
+    await user.click(history.getByRole("button", { name: "Undo this" }));
+    expect(await row("Default")).toBeTruthy();
+  });
+
+  it("names a rename after an unconfirmed one from the name the list shows, not the run's", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settledScreen();
+    const rename = async (from: string, to: string) => {
+      await user.click((await row(from)).getByRole("button", { name: "Rename" }));
+      await user.keyboard(`{Control>}a{/Control}${to}{Enter}`);
+    };
+    // Lands, its answer is lost, and the read-back cannot say so.
+    mockServer.use(
+      http.patch(
+        "/v1/criteria-sets/:criteriaSetId",
+        async ({ request }) => {
+          await getResponse(handlers, request);
+          mockServer.use(
+            http.get(
+              "/v1/criteria-sets/default",
+              () =>
+                HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+              { once: true },
+            ),
+          );
+          return HttpResponse.error();
+        },
+        { once: true },
+      ),
+    );
+    await rename("Default", "Two");
+    const history = await historyPanel();
+    await history.findByText("Renamed Default to Two");
+
+    await rename("Two", "Three");
+
+    expect(await history.findByText("Renamed Two to Three")).toBeInTheDocument();
+  });
+
+  it("gives up on a write that never answers, reads it back, and frees the screen", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderShell("/configure");
+    await settledScreen();
+    const lock = holdRequests("put", "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId");
+    await user.click(await screen.findByRole("button", { name: "Lock Economy" }));
+    await waitFor(() => expect(lock.sent).toHaveLength(1));
+    const remove = (await row("Remote only")).getByRole("button", { name: "Delete" });
+    expectHeld(remove);
+
+    act(() => {
+      vi.advanceTimersByTime(WRITE_PATIENCE_MS);
+    });
+
+    // Read back, it never landed: refused, and nothing waits on it any longer.
+    expect(await screen.findByText(/did not go through/)).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(remove));
+    expect(await screen.findByRole("button", { name: "Lock Economy" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("never claims a set another tab made under the same name", async () => {

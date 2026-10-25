@@ -13,18 +13,34 @@ export function outcomeUnknown(error: unknown): boolean {
 
 /**
  * A write whose answer was lost and whose read-back could not say either -- it failed, or never
- * answered. **What it did is still unknown**, so the writer lists it unconfirmed with `check`,
- * which reads back again: true when it took effect, false when it did not, throwing while the
- * server still cannot say.
+ * answered. **What it did is still unknown**, so the writer lists it unconfirmed, and
+ * `readAgain` reads back again: what the write would have answered if it took effect, null if
+ * it did not, throwing while the server still cannot say.
  */
 export class UnconfirmedWrite extends Error {
-  readonly check: () => Promise<boolean>;
+  readonly readAgain: () => Promise<unknown>;
 
-  constructor(check: () => Promise<boolean>) {
+  constructor(readAgain: () => Promise<unknown>) {
     super("The write's answer was lost, and reading it back could not say whether it took effect.");
     this.name = "UnconfirmedWrite";
-    this.check = check;
+    this.readAgain = readAgain;
   }
+}
+
+/**
+ * The check an unconfirmed change carries (PL-033): reads back again and, **when the write took
+ * effect, shows it as an answered write would** -- to whatever shows its set now -- so a
+ * confirmation never leaves the screen showing the state before it.
+ */
+export function confirmation<Answer>(
+  error: UnconfirmedWrite,
+  show: (answer: Answer) => void,
+): () => Promise<boolean> {
+  return async () => {
+    const landed = (await error.readAgain()) as Answer | null;
+    if (landed !== null) show(landed);
+    return landed !== null;
+  };
 }
 
 /** A read-back of what a write did: what it would have answered, or null if it did not land. */
@@ -48,7 +64,7 @@ export async function settled<Answer>(
     try {
       landed = await withPatience(readBack);
     } catch {
-      throw new UnconfirmedWrite(async () => (await withPatience(readBack)) !== null);
+      throw new UnconfirmedWrite(() => withPatience(readBack));
     }
     if (landed === null) throw error;
     return landed;

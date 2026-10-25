@@ -15,6 +15,8 @@
  * A write from another tab is invisible here; nothing in the browser can see it.
  */
 
+import { ApiError, CLIENT_ERROR_CODES } from "./ApiError";
+
 interface Ledger {
   inFlight: number;
   /** Moves whenever a write to the set starts or settles. */
@@ -82,20 +84,43 @@ export function untilSettled(key: string, signal?: AbortSignal): Promise<void> {
   });
 }
 
+/** How often a read is taken again while writes keep overlapping it, before it fails. */
+export const MAX_REREADS = 3;
+
 /**
- * Reads `key` once no write to it is in flight, and **again for as long as a write overlapped
- * the read**: one began or settled while it was out.
+ * How long a write is waited for before its outcome counts as unknown (PL-033): its request is
+ * abandoned, and the writer reads back what it did. A write that never settles would otherwise
+ * hold every read of its set for ever.
+ */
+export const WRITE_PATIENCE_MS = 10_000;
+
+/**
+ * Reads `key` once no write to it is in flight, and **again while a write overlapped the read**:
+ * one began or settled while it was out, or is still in flight -- begun in the very turn the
+ * read was waiting to be sent in. **At most `MAX_REREADS` times**: under a steady stream of
+ * writes the loop would be a storm of requests against a backend with one pooled connection,
+ * so it fails instead, and the reader offers Try again.
  */
 export async function readWhenSettled<Answer>(
   key: string,
   read: () => Promise<Answer>,
   signal?: AbortSignal,
 ): Promise<Answer> {
-  for (;;) {
+  for (let reread = 0; ; reread += 1) {
+    if (reread > MAX_REREADS) {
+      throw new ApiError({
+        code: CLIENT_ERROR_CODES.keptChanging,
+        message: `${key} kept changing while it was read, ${String(MAX_REREADS)} times over.`,
+      });
+    }
     await untilSettled(key, signal);
-    const begun = ledgerOf(key).epoch;
+    const ledger = ledgerOf(key);
+    if (ledger.inFlight > 0) continue;
+    const begun = ledger.epoch;
     const answer = await read();
-    if (ledgerOf(key).epoch === begun) return answer;
+    const now = ledgerOf(key);
+    // In flight now means begun since `begun`, which the epoch already says.
+    if (now.epoch === begun) return answer;
   }
 }
 

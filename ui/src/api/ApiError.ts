@@ -31,6 +31,11 @@ export const CLIENT_ERROR_CODES = {
    * as null, which this contract reads as "unset".
    */
   unsendableNumber: "client.unsendable_number",
+  /**
+   * A read of a set that writes kept overlapping, read again as often as is reasonable and
+   * still not one no write overlapped (PL-142).
+   */
+  keptChanging: "client.kept_changing",
 } as const;
 
 export class ApiError extends Error {

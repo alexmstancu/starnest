@@ -29,7 +29,13 @@ import {
   type CriteriaSet,
 } from "../../../api/endpoints";
 import type { Selection } from "../../../shell/SelectionContext";
-import { READ_PATIENCE_MS, type ReadBack, settled, UnconfirmedWrite } from "../unknownOutcome";
+import {
+  confirmation,
+  READ_PATIENCE_MS,
+  type ReadBack,
+  settled,
+  UnconfirmedWrite,
+} from "../unknownOutcome";
 import type { ChangeHistory, RecordedChange } from "../useChangeHistory";
 import { copyName, identifierFrom, ownIdentifier } from "./setIdentifier";
 
@@ -151,7 +157,8 @@ export function useCriteriaSets(options: {
   async function act<Answer>(
     send: () => Promise<Answer>,
     readBack: ReadBack<Answer>,
-    entry: SetEntry,
+    /** Its entry; `confirmed` false when it is listed unconfirmed, and so on its own. */
+    entry: (confirmed: boolean) => SetEntry,
     landed: (answer: Answer) => void = () => undefined,
   ): Promise<boolean> {
     if (!listSettled) return false;
@@ -160,13 +167,17 @@ export function useCriteriaSets(options: {
     setFailure(null);
     try {
       landed(await settled(send, readBack));
-      history.note(entry);
+      history.note(entry(true));
     } catch (error) {
       if (!(error instanceof UnconfirmedWrite)) {
         setFailure(error);
         return false;
       }
-      history.note({ ...entry, unconfirmed: error.check });
+      // Confirmed later, the list is read again so the rows show what the server holds.
+      history.note({
+        ...entry(false),
+        unconfirmed: confirmation(error, () => selection.reload()),
+      });
     } finally {
       done();
     }
@@ -202,19 +213,22 @@ export function useCriteriaSets(options: {
       const name = renameDraft.trim();
       const was = nameOf(target);
       const targetKey = `criteria-set:${target}:renamed`;
-      // A run of renames is one entry, so it reads from the name the run started from.
+      // A run of renames is one entry, so it reads from the name the run started from -- but
+      // only a run of confirmed ones: an unconfirmed rename stands alone (PL-033).
       const latest = history.changes[0];
       const first =
-        latest?.target === targetKey ? (latest.before as { name: string }).name : was;
+        latest?.target === targetKey && latest.unconfirmed === undefined
+          ? (latest.before as { name: string }).name
+          : was;
       const renamedTo = (wanted: string) => async (signal: AbortSignal) =>
         (await setNow(target, signal))?.name === wanted ? { name: wanted } : null;
       const sent = await act(
         () => renameCriteriaSet(target, name),
         renamedTo(name),
-        {
+        (confirmed) => ({
           target: targetKey,
           stage: STAGE,
-          label: `Renamed ${first} to ${name}`,
+          label: `Renamed ${confirmed ? first : was} to ${name}`,
           before: { name: was },
           after: { name },
           reverse: async (before) => {
@@ -223,7 +237,7 @@ export function useCriteriaSets(options: {
             selection.reload();
           },
           undoes: { criteriaSetId: target, by: "write" },
-        },
+        }),
       );
       if (sent) {
         setRenaming(null);
@@ -244,7 +258,7 @@ export function useCriteriaSets(options: {
       await act(
         () => createCriteriaSet(id, name),
         (signal) => setNow(id, signal),
-        {
+        () => ({
           target: `criteria-set:${id}:created`,
           stage: STAGE,
           label: `Created ${name}`,
@@ -252,7 +266,7 @@ export function useCriteriaSets(options: {
           after: { exists: true },
           reverse: () => deleteAndReread(id),
           undoes: { criteriaSetId: id, by: "delete" },
-        },
+        }),
         () => {
           setNewName("");
           selection.selectCriteriaSet(id);
@@ -267,7 +281,7 @@ export function useCriteriaSets(options: {
       await act(
         () => duplicateCriteriaSet(criteriaSetId, id, name),
         (signal) => setNow(id, signal),
-        {
+        () => ({
           target: `criteria-set:${id}:duplicated`,
           stage: STAGE,
           label: `Duplicated ${currentName} as ${name}`,
@@ -275,7 +289,7 @@ export function useCriteriaSets(options: {
           after: { exists: true },
           reverse: () => deleteAndReread(id),
           undoes: { criteriaSetId: id, by: "delete" },
-        },
+        }),
         () => selection.selectCriteriaSet(id),
       );
     },
@@ -295,7 +309,7 @@ export function useCriteriaSets(options: {
       return act(
         () => deleteCriteriaSet(criteriaSetId).then(() => true as const),
         async (signal) => ((await setNow(criteriaSetId, signal)) === null ? true : null),
-        {
+        () => ({
           target: `criteria-set:${criteriaSetId}:deleted`,
           stage: STAGE,
           label: `Deleted ${name}`,
@@ -312,7 +326,7 @@ export function useCriteriaSets(options: {
             selection.reload();
           },
           undoes: { criteriaSetId, by: "restore" },
-        },
+        }),
       );
     },
     listPending: !listSettled,

@@ -13,12 +13,6 @@ export type Reverse = (before: unknown) => Promise<void> | void;
 
 export interface RecordedChange extends Change {
   reverse: Reverse;
-  /**
-   * Present while it is unknown whether the change took effect (PL-033): its answer was lost and
-   * reading it back could not say. Reads back again -- true when it did, false when it did not.
-   * Nothing is undone through it until it is confirmed.
-   */
-  unconfirmed?: () => Promise<boolean>;
 }
 
 export interface ChangeHistory {

@@ -44,6 +44,12 @@ export interface Change<Value = unknown> {
   caveat?: string;
   /** The set undoing this writes to, and how; absent for a change outside any set (PL-033). */
   undoes?: SetUndo;
+  /**
+   * Present while it is unknown whether the change took effect (PL-033): its answer was lost and
+   * reading it back could not say. Reads back again -- true when it did, false when it did not --
+   * and shows what it found. Nothing is undone through it until it is confirmed.
+   */
+  unconfirmed?: () => Promise<boolean>;
 }
 
 /**
@@ -98,7 +104,10 @@ export function record<Value>(
   change: Change<Value>,
 ): Change<Value>[] {
   const latest = history[0];
-  if (latest?.target === change.target) {
+  // **Never across a change nobody knows took effect** (PL-033): folded into a confirmed one, its
+  // resolution would take the confirmed step with it, or confirm a step that never landed.
+  const bothKnown = latest?.unconfirmed === undefined && change.unconfirmed === undefined;
+  if (latest?.target === change.target && bothKnown) {
     // The latest `at`, because the collapsed entry is the gesture as it now stands -- the
     // reading a user checks it against is "when did I last touch this", not when they
     // started. **The earlier caveat survives**: proportions one step destroyed are in no
