@@ -198,9 +198,11 @@ export const handlers = [
   http.post(
     `${BASE}/criteria-sets/:criteriaSetId/duplicate`,
     async ({ params, request }) => {
+      const body = (await request.json()) as { id: string; name: string };
+      const malformed = malformedIdRefusal(body.id);
+      if (malformed) return malformed;
       const source = criteriaSetDetails[String(params["criteriaSetId"])];
       if (!source) return notFound(String(params["criteriaSetId"]));
-      const body = (await request.json()) as { id: string; name: string };
       return createFrom(source, body);
     },
   ),
@@ -208,6 +210,8 @@ export const handlers = [
   // A new set is a full copy of the default, deleted or not (PL-034); no default is a 409.
   http.post(`${BASE}/criteria-sets`, async ({ request }) => {
     const body = (await request.json()) as { id: string; name: string };
+    const malformed = malformedIdRefusal(body.id);
+    if (malformed) return malformed;
     const source =
       criteriaSetDetails[DEFAULT_CRITERIA_SET] ??
       deletedCriteriaSets[DEFAULT_CRITERIA_SET];
@@ -1588,19 +1592,26 @@ function isItemOf(
   return listed(scope?.candidates, pair.candidate) && listed(scope?.attributes, pair.attribute);
 }
 
+/**
+ * A new set's id refused at the boundary, located in the body (PL-003): before anything is
+ * read, so it comes ahead of a 404 for the set copied or a 409 for a missing default.
+ */
+function malformedIdRefusal(id: string) {
+  if (/^[a-z][a-z0-9_]*$/.test(id)) return null;
+  return HttpResponse.json(
+    invalidRequest({
+      location: ["body", "id"],
+      problem:
+        `Value error, '${id}' is not a valid identifier: the segment '${id}' ` +
+        "must be lowercase letters, digits and underscores, and must start with a letter",
+      kind: "malformed_identifier",
+    }),
+    { status: 422 },
+  );
+}
+
 /** The checks the server makes on a new set's id and name, in its order, then the copy. */
 function createFrom(source: CriteriaSet, body: { id: string; name: string }) {
-  if (!/^[a-z][a-z0-9_]*$/.test(body.id)) {
-    return HttpResponse.json(
-      {
-        code: "invalid_request",
-        message:
-          `'${body.id}' is not a valid identifier: the segment '${body.id}' must be lowercase ` +
-          "letters, digits and underscores, and must start with a letter",
-      },
-      { status: 422 },
-    );
-  }
   if (criteriaSetDetails[body.id] || deletedCriteriaSets[body.id]) {
     return HttpResponse.json(
       {

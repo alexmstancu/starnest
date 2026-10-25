@@ -1,4 +1,5 @@
 import { ActRefusal } from "../../../shell/ActRefusal";
+import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { HeldButton } from "../../../shell/HeldButton";
 import { useSelection } from "../../../shell/SelectionContext";
 import type { CriteriaSetsForm } from "./useCriteriaSets";
@@ -67,6 +68,11 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
       </header>
 
       <ActRefusal act="The change to the criteria sets" error={form.failure} />
+      {/* Every set action waits until the list shows it, so a read that failed says so and
+          offers the way on, rather than leaving the stage held with no reason (PL-033). */}
+      {form.listFailure !== null && (
+        <ErrorNotice error={form.listFailure} onRetry={form.retryList} />
+      )}
 
       <ul className="set-list">
         {criteriaSets.map((set) => {

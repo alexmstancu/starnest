@@ -873,4 +873,30 @@ describe("the mock criteria sets", () => {
     ]);
     expect([malformed.status, malformed.code]).toEqual([422, "invalid_request"]);
   });
+
+  /** PL-003, b19ff01: the server locates a malformed id in the body, as a `FieldProblem`. */
+  it.each([
+    ["a new set", () => createCriteriaSet("Remote-Only", "Remote")],
+    ["a copy", () => duplicateCriteriaSet("default", "Remote-Only", "Remote")],
+    // The body is read before the set it names, so the 422 comes before the 404.
+    ["a copy of a set there is not", () => duplicateCriteriaSet("nowhere", "Remote-Only", "Remote")],
+  ])("names where a malformed id is, for %s, as the server does", async (_, send) => {
+    const malformed = await refusal(send());
+
+    expect([malformed.status, malformed.code, malformed.details]).toEqual([
+      422,
+      "invalid_request",
+      {
+        errors: [
+          {
+            location: ["body", "id"],
+            problem:
+              "Value error, 'Remote-Only' is not a valid identifier: the segment 'Remote-Only' " +
+              "must be lowercase letters, digits and underscores, and must start with a letter",
+            kind: "malformed_identifier",
+          },
+        ],
+      },
+    ]);
+  });
 });

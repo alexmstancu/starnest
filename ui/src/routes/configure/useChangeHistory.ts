@@ -1,5 +1,13 @@
 import { useCallback, useRef, useState } from "react";
-import { type Change, reachOf, record, without } from "./changeHistory";
+import {
+  type Change,
+  type Write,
+  conflicts,
+  mustWait,
+  reachOf,
+  record,
+  without,
+} from "./changeHistory";
 
 /**
  * How a change gets undone: by making the opposite request, never by restoring local state.
@@ -22,9 +30,21 @@ export interface ChangeHistory {
    *
    * **The id and the time are stamped here, not passed in.** Both are facts about the
    * recording rather than decisions of the caller, and a caller that could supply its own
-   * would be able to record a change as having happened at a moment it did not.
+   * would be able to record a change as having happened at a moment it did not. A change sent
+   * through `begin` takes the id its write was given then, which is its place in the order.
    */
-  note: (entry: Omit<RecordedChange, "id" | "at">) => void;
+  note: (entry: Omit<RecordedChange, "id" | "at">, write?: Write) => void;
+  /**
+   * **Every set write goes through here** (PL-033): it takes its place in the order as it is
+   * sent, or null when it must wait -- while an undo runs, or while a write it does not commute
+   * with is in flight (`conflicts`). End it once it has answered, whichever way.
+   */
+  begin: (criteriaSetId: string, reshapes?: boolean) => Write | null;
+  end: (write: Write) => void;
+  /** Whether `begin` would refuse now, so a control can be held rather than ignore a press. */
+  waits: (criteriaSetId: string, reshapes?: boolean) => boolean;
+  /** The writes sent and not yet answered. */
+  writes: readonly Write[];
   /** Undo this change and every change made after it. */
   undoThrough: (id: number) => void;
   /** Undo everything this session did, oldest last. */
@@ -44,19 +64,36 @@ export function useChangeHistory(): ChangeHistory {
   // so they still take a press; a ref, because two can arrive before the first has re-rendered,
   // and the second would reverse what the first is already reversing.
   const inFlight = useRef(false);
+  // A ref for the refusal, as above, and state for the holds drawn from it.
+  const sent = useRef<Write[]>([]);
+  const [writes, setWrites] = useState<readonly Write[]>([]);
 
-  const note = useCallback((entry: Omit<RecordedChange, "id" | "at">) => {
-    setChanges((history) =>
-      record(history, {
-        ...entry,
-        id: nextId.current++,
-        at: new Date(),
-      }) as RecordedChange[],
-    );
+  const note = useCallback(
+    (entry: Omit<RecordedChange, "id" | "at">, write?: Write) => {
+      const id = write?.id ?? nextId.current++;
+      setChanges(
+        (history) => record(history, { ...entry, id, at: new Date() }) as RecordedChange[],
+      );
+    },
+    [],
+  );
+
+  const begin = useCallback((criteriaSetId: string, reshapes = false) => {
+    if (inFlight.current) return null;
+    if (sent.current.some((write) => conflicts(write, criteriaSetId, reshapes))) return null;
+    const write = { id: nextId.current++, criteriaSetId, reshapes };
+    sent.current = [...sent.current, write];
+    setWrites(sent.current);
+    return write;
+  }, []);
+
+  const end = useCallback((write: Write) => {
+    sent.current = sent.current.filter((each) => each !== write);
+    setWrites(sent.current);
   }, []);
 
   const undo = useCallback(async (reach: RecordedChange[]) => {
-    if (inFlight.current) return;
+    if (inFlight.current || mustWait(reach, sent.current)) return;
     inFlight.current = true;
     setUndoing(true);
     setFailure(null);
@@ -81,6 +118,11 @@ export function useChangeHistory(): ChangeHistory {
   return {
     changes,
     note,
+    begin,
+    end,
+    waits: (criteriaSetId, reshapes = false) =>
+      undoing || writes.some((write) => conflicts(write, criteriaSetId, reshapes)),
+    writes,
     undoThrough: (id) => void undo(reachOf(changes, id) as RecordedChange[]),
     reset: () => void undo([...changes]),
     undoing,

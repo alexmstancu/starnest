@@ -42,6 +42,67 @@ export interface Change<Value = unknown> {
    * where re-sending a value does not put everything back (`undoCanRestore`).
    */
   caveat?: string;
+  /** The set undoing this writes to, and how; absent for a change outside any set (PL-033). */
+  undoes?: SetUndo;
+}
+
+/**
+ * What undoing a change does to a set: writes to it, which needs it there; deletes it, which
+ * undoes its creation; or restores it, which undoes its deletion.
+ */
+export interface SetUndo {
+  criteriaSetId: string;
+  by: "write" | "delete" | "restore";
+}
+
+/**
+ * A write sent and not yet answered, with its place in the order: its entry's id, taken when it
+ * was sent (PL-033). `reshapes` when it creates, deletes or restores its set.
+ */
+export interface Write {
+  id: number;
+  criteriaSetId: string;
+  reshapes: boolean;
+}
+
+/**
+ * Whether two requests to one set must not be in flight together: a set created, deleted or
+ * restored, and any other write to it. Two writes that are neither commute, so either order of
+ * committing them is the same state, and the order they were sent in is a true one.
+ */
+export function conflicts(write: Write, criteriaSetId: string, reshapes: boolean): boolean {
+  return write.criteriaSetId === criteriaSetId && (write.reshapes || reshapes);
+}
+
+/** Whether undoing these must wait for a write in flight that it does not commute with. */
+export function mustWait(reach: readonly Change[], writes: readonly Write[]): boolean {
+  return reach.some(
+    ({ undoes }) =>
+      undoes !== undefined &&
+      writes.some((write) => conflicts(write, undoes.criteriaSetId, undoes.by !== "write")),
+  );
+}
+
+/**
+ * The changes whose undo would find their set deleted, given the sets deleted now (PL-033).
+ *
+ * Walked newest first, as an undo runs, so a restore above a change brings its set back in time
+ * and a deletion above it -- undoing a creation -- takes it away. A change here would answer 404;
+ * restoring its set is what makes it undoable again.
+ */
+export function stranded(
+  history: readonly Change[],
+  deleted: ReadonlySet<string>,
+): Set<number> {
+  const gone = new Set(deleted);
+  const found = new Set<number>();
+  for (const { id, undoes } of history) {
+    if (undoes === undefined) continue;
+    if (undoes.by === "restore") gone.delete(undoes.criteriaSetId);
+    else if (gone.has(undoes.criteriaSetId)) found.add(id);
+    else if (undoes.by === "delete") gone.add(undoes.criteriaSetId);
+  }
+  return found;
 }
 
 /**
@@ -55,12 +116,20 @@ export interface Change<Value = unknown> {
  * **Only a repeat of the most recent change collapses.** Editing housing, then career, then
  * housing again is three decisions, and folding the two housing edits together would undo a
  * career change nobody asked to undo.
+ *
+ * **Placed by when it was sent, not when it answered** (PL-033). The id is taken as the write
+ * is sent, so an answer that lands after a newer change goes beneath it, never on top.
  */
 export function record<Value>(
   history: readonly Change<Value>[],
   change: Change<Value>,
 ): Change<Value>[] {
   const latest = history[0];
+  if (latest !== undefined && change.id < latest.id) {
+    const below = history.findIndex((each) => each.id < change.id);
+    const at = below === -1 ? history.length : below;
+    return [...history.slice(0, at), change, ...history.slice(at)];
+  }
   if (latest?.target === change.target) {
     // The latest `at`, because the collapsed entry is the gesture as it now stands -- the
     // reading a user checks it against is "when did I last touch this", not when they

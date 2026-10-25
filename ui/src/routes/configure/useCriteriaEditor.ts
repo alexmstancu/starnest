@@ -48,14 +48,13 @@ export interface CriteriaEditor {
    */
   savingRuleFor: string | null;
   /**
-   * Whether a write to this set is in flight: a change, or the undo of one.
+   * Whether a write to this set is in flight -- a change, or the undo of one -- or must wait
+   * while the set itself is being deleted or restored (PL-033).
    *
    * **One at a time** (UI-04). Every answer is a whole pillar rebalanced, so two writes in
    * flight can answer in either order, and the later answer would be shown over newer weights.
    */
   busy: boolean;
-  /** The set a write is in flight to, which may no longer be the set on screen (S8). */
-  writingTo: string | null;
   /** The failure of the last weight or lock change. Shown; never swallowed. A rule's is its own. */
   saveError: unknown;
   setWeight: (attribute: string, weight: number) => void;
@@ -102,7 +101,6 @@ export function useCriteriaEditor(
   const criteriaSet = read.state === "ready" ? read.data : null;
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [savingAttribute, setSavingAttribute] = useState<string | null>(null);
-  const [writingTo, setWritingTo] = useState<string | null>(null);
   const [savingRuleFor, setSavingRuleFor] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
 
@@ -143,11 +141,13 @@ export function useCriteriaEditor(
   const setWeight = useCallback(
     (attribute: string, weight: number) => {
       if (criteriaSetId === null || inFlight.current || undoing) return;
+      // Its place in the order, or a wait while its set is being deleted (PL-033).
+      const write = history?.begin(criteriaSetId);
+      if (write === null) return;
       inFlight.current = true;
       const sentFor = criteriaSetId;
 
       setSavingAttribute(attribute);
-      setWritingTo(sentFor);
       setSaveError(null);
 
       // Read before the request, because the answer replaces it and an undo needs the value
@@ -186,13 +186,14 @@ export function useCriteriaEditor(
               );
               mergeInto(sentFor, back.criteria);
             },
-          });
+            undoes: { criteriaSetId: sentFor, by: "write" },
+          }, write);
         })
         .catch((error: unknown) => reportFor(sentFor, error))
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
-          setWritingTo(null);
+          if (write !== undefined) history?.end(write);
         });
     },
     [
@@ -210,11 +211,13 @@ export function useCriteriaEditor(
   const setLock = useCallback(
     (attribute: string, weightLocked: boolean) => {
       if (criteriaSetId === null || inFlight.current || undoing) return;
+      // Its place in the order, or a wait while its set is being deleted (PL-033).
+      const write = history?.begin(criteriaSetId);
+      if (write === null) return;
       inFlight.current = true;
       const sentFor = criteriaSetId;
 
       setSavingAttribute(attribute);
-      setWritingTo(sentFor);
       setSaveError(null);
       const named = titleOf(attribute, catalog?.get(attribute));
       const inSet = setName ?? sentFor;
@@ -236,13 +239,14 @@ export function useCriteriaEditor(
               );
               mergeInto(sentFor, back.criteria);
             },
-          });
+            undoes: { criteriaSetId: sentFor, by: "write" },
+          }, write);
         })
         .catch((error: unknown) => reportFor(sentFor, error))
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
-          setWritingTo(null);
+          if (write !== undefined) history?.end(write);
         });
     },
     [criteriaSetId, history, undoing, catalog, setName, mergeInto, reportFor],
@@ -251,11 +255,13 @@ export function useCriteriaEditor(
   const setRule = useCallback(
     (attribute: string, rule: CriterionRule): Promise<unknown> => {
       if (criteriaSetId === null || inFlight.current || undoing) return Promise.resolve(null);
+      // Its place in the order, or a wait while its set is being deleted (PL-033).
+      const write = history?.begin(criteriaSetId);
+      if (write === null) return Promise.resolve(null);
       inFlight.current = true;
       const sentFor = criteriaSetId;
 
       setSavingAttribute(attribute);
-      setWritingTo(sentFor);
       setSavingRuleFor(attribute);
       setSaveError(null);
 
@@ -274,11 +280,11 @@ export function useCriteriaEditor(
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
-          setWritingTo(null);
+          if (write !== undefined) history?.end(write);
           setSavingRuleFor(null);
         });
     },
-    [criteriaSetId, undoing, mergeInto],
+    [criteriaSetId, history, undoing, mergeInto],
   );
 
   return {
@@ -287,8 +293,10 @@ export function useCriteriaEditor(
     criteria,
     savingAttribute,
     savingRuleFor,
-    busy: savingAttribute !== null || undoing,
-    writingTo,
+    busy:
+      savingAttribute !== null ||
+      undoing ||
+      (criteriaSetId !== null && history?.waits(criteriaSetId) === true),
     saveError,
     setWeight,
     setLock,

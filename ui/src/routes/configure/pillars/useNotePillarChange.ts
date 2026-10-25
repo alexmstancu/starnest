@@ -7,6 +7,7 @@ import {
   UNDO_CANNOT_RESTORE_THE_PILLARS,
   undoCanRestore,
   type PillarShare,
+  type Write,
 } from "../changeHistory";
 import type { ChangeHistory } from "../useChangeHistory";
 
@@ -30,7 +31,13 @@ export function useNotePillarChange(
     const { id: sentFor, name: inSet } = criteriaSet;
     const named = (pillar: string) => pillarName(names, pillar);
     return {
-      weight(pillar: string, was: PillarWeight[], answer: PillarWeight[], weight: number) {
+      weight(
+        pillar: string,
+        was: PillarWeight[],
+        answer: PillarWeight[],
+        weight: number,
+        write?: Write,
+      ) {
         const before = was.find((each) => each.pillar === pillar)?.weight;
         history?.note({
           target: `pillar:${sentFor}:${pillar}`,
@@ -45,9 +52,10 @@ export function useNotePillarChange(
             if (typeof back !== "number") return;
             showAnswer(sentFor, (await updatePillarWeight(sentFor, pillar, back)).items);
           },
-        });
+          undoes: { criteriaSetId: sentFor, by: "write" },
+        }, write);
       },
-      lock(pillar: string, locked: boolean) {
+      lock(pillar: string, locked: boolean, write?: Write) {
         history?.note({
           target: `pillar-lock:${sentFor}:${pillar}`,
           stage: "Pillar weights",
@@ -57,7 +65,8 @@ export function useNotePillarChange(
           reverse: async (back) => {
             showAnswer(sentFor, (await updatePillarLock(sentFor, pillar, back === true)).items);
           },
-        });
+          undoes: { criteriaSetId: sentFor, by: "write" },
+        }, write);
       },
     };
   }, [criteriaSet, names, showAnswer, history]);

@@ -1,6 +1,12 @@
 import { useId, useRef, useState } from "react";
 import { ActRefusal } from "../../shell/ActRefusal";
-import { describeReach, describeWhen, reachOf } from "./changeHistory";
+import {
+  describeReach,
+  describeWhen,
+  mustWait,
+  reachOf,
+  stranded,
+} from "./changeHistory";
 import type { ChangeHistory } from "./useChangeHistory";
 import { useFocusAfterUndo } from "./useFocusAfterUndo";
 
@@ -18,6 +24,7 @@ import { useFocusAfterUndo } from "./useFocusAfterUndo";
 export function RecentChanges({
   history,
   busy,
+  isDeleted,
 }: {
   history: ChangeHistory;
   /**
@@ -25,6 +32,8 @@ export function RecentChanges({
    * meanwhile would race it, and the two answers could land in either order.
    */
   busy: boolean;
+  /** Whether a set is deleted now, as the list of sets says once it has settled (PL-033). */
+  isDeleted: (criteriaSetId: string) => boolean;
 }) {
   const headingId = useId();
   const resetCaveatId = `${headingId}-reset-caveat`;
@@ -37,15 +46,30 @@ export function RecentChanges({
   // button the moment it is disabled, so an undo pressed from the keyboard put the reader back
   // on the page. Held, a button keeps focus and says so, and pressing it does nothing.
   const held = history.undoing || busy;
+  // **An entry never outlives its set** (PL-033): one whose undo would find its set deleted is
+  // held and says why, and so is everything its undo would have to pass through, until the set
+  // is restored. One whose undo does not commute with a write in flight waits for it.
+  const deleted = new Set(
+    history.changes.flatMap(({ undoes }) =>
+      undoes !== undefined && isDeleted(undoes.criteriaSetId) ? [undoes.criteriaSetId] : [],
+    ),
+  );
+  const strandedIds = stranded(history.changes, deleted);
+  const reasonIdOf = (id: number) => `${headingId}-stranded-${String(id)}`;
+  const blocked = (reach: readonly { id: number }[]) =>
+    reach.some((each) => strandedIds.has(each.id));
+  const heldFor = (reach: Parameters<typeof mustWait>[0]) =>
+    held || blocked(reach) || mustWait(reach, history.writes);
   const heading = useRef<HTMLButtonElement>(null);
   const focus = useFocusAfterUndo(history, heading);
   const undoThrough = (id: number) => {
-    if (held) return;
+    if (heldFor(reachOf(history.changes, id))) return;
     focus.pressed();
     history.undoThrough(id);
   };
+  const resetHeld = heldFor(history.changes);
   const reset = () => {
-    if (held) return;
+    if (resetHeld) return;
     focus.pressed();
     history.reset();
   };
@@ -84,7 +108,7 @@ export function RecentChanges({
           <button
             type="button"
             className="action"
-            aria-disabled={held || undefined}
+            aria-disabled={resetHeld || undefined}
             aria-describedby={resetIsInexact ? resetCaveatId : undefined}
             onClick={reset}
           >
@@ -118,10 +142,12 @@ export function RecentChanges({
               const reaching = reachOf(history.changes, change.id);
               // An undo takes every change after it too, so it is described by each of their
               // caveats as well as its own.
-              const caveats = reaching
-                .filter((each) => each.caveat !== undefined)
-                .map((each) => caveatIdOf(each.id))
-                .join(" ");
+              const caveats = [
+                ...reaching
+                  .filter((each) => each.caveat !== undefined)
+                  .map((each) => caveatIdOf(each.id)),
+                ...reaching.filter((each) => strandedIds.has(each.id)).map((each) => reasonIdOf(each.id)),
+              ].join(" ");
               return (
                 <li key={change.id} className="history__entry">
                   {/* Where it was made and when, above what it was. Six weight changes read
@@ -144,10 +170,15 @@ export function RecentChanges({
                       {change.caveat}
                     </span>
                   )}
+                  {strandedIds.has(change.id) && (
+                    <span id={reasonIdOf(change.id)} className="panel__hint" role="note">
+                      Its set was deleted: restore it to undo this.
+                    </span>
+                  )}
                   <button
                     type="button"
                     className="action"
-                    aria-disabled={held || undefined}
+                    aria-disabled={heldFor(reaching) || undefined}
                     aria-describedby={caveats === "" ? undefined : caveats}
                     onClick={() => undoThrough(change.id)}
                   >

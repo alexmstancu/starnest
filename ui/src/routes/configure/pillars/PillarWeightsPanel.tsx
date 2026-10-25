@@ -49,7 +49,6 @@ export function PillarWeightsPanel({
   unsourcedShares,
   criteriaFor,
   history,
-  onSaving,
   catalog,
   answers,
 }: {
@@ -63,12 +62,6 @@ export function PillarWeightsPanel({
   catalog?: AttributeCatalogRead;
   /** Where each answered change is noted with the request that reverses it (PL-138a). */
   history?: ChangeHistory;
-  /**
-   * Told when a write to a set starts and settles, so an undo and that set's Delete wait for it
-   * (D41, S8). Told from the write itself, because it can outlive this panel: switching sets
-   * remounts it before the answer lands.
-   */
-  onSaving?: (criteriaSetId: string, saving: boolean) => void;
   /** How many criteria each pillar holds, for the line under its name. */
   criteriaCounts?: ReadonlyMap<string, number>;
   /**
@@ -99,7 +92,8 @@ export function PillarWeightsPanel({
   // name rather than a member expression. `useWeightDrag` keeps it stable for exactly that.
   const { preview, previewFor, moveTo, ended } = useWeightDrag();
   const undoing = history?.undoing === true;
-  const held = saving || undoing;
+  // Held too while the set is being deleted or restored: the two never overlap (PL-033).
+  const held = saving || undoing || history?.waits(criteriaSet.id) === true;
   useEffect(() => answers?.listen(criteriaSet.id, setWeights), [answers, criteriaSet.id]);
   const showAnswer = useCallback(
     (setId: string, answer: PillarWeight[]) => {
@@ -113,27 +107,30 @@ export function PillarWeightsPanel({
   const move = useCallback(
     async (pillar: string, weight: number) => {
       if (inFlight.current || undoing) return;
+      // Its place in the order, and what holds the undo and the set's Delete (D41, S8): told
+      // from the write itself, which outlives this panel when a set switch remounts it.
+      const write = history?.begin(criteriaSet.id);
+      if (write === null) return;
       inFlight.current = true;
       setSaving(true);
-      onSaving?.(criteriaSet.id, true);
       setFailure(null);
       try {
         const rebalanced = await updatePillarWeight(criteriaSet.id, pillar, weight);
         setWeights(rebalanced.items);
-        note.weight(pillar, weights, rebalanced.items, weight);
+        note.weight(pillar, weights, rebalanced.items, weight, write);
       } catch (error) {
         setFailure(error);
       } finally {
         inFlight.current = false;
         setSaving(false);
-        onSaving?.(criteriaSet.id, false);
+        if (write !== undefined) history?.end(write);
         // **Here rather than on release**, so the preview stands until the answer that replaces
         // it. A refusal ends the gesture too: the weights it previewed are not the stored ones
         // and never will be, so the rows go back to what is stored and the notice says why.
         ended();
       }
     },
-    [criteriaSet.id, ended, undoing, note, weights, onSaving],
+    [criteriaSet.id, ended, undoing, note, weights, history],
   );
 
   // **Its own request, carrying no weight** (P68). See `updatePillarLock`: a lock sent with a
@@ -141,23 +138,26 @@ export function PillarWeightsPanel({
   const lock = useCallback(
     async (pillar: string, locked: boolean) => {
       if (inFlight.current || undoing) return;
+      // Its place in the order, and what holds the undo and the set's Delete (D41, S8): told
+      // from the write itself, which outlives this panel when a set switch remounts it.
+      const write = history?.begin(criteriaSet.id);
+      if (write === null) return;
       inFlight.current = true;
       setSaving(true);
-      onSaving?.(criteriaSet.id, true);
       setFailure(null);
       try {
         const rebalanced = await updatePillarLock(criteriaSet.id, pillar, locked);
         setWeights(rebalanced.items);
-        note.lock(pillar, locked);
+        note.lock(pillar, locked, write);
       } catch (error) {
         setFailure(error);
       } finally {
         inFlight.current = false;
         setSaving(false);
-        onSaving?.(criteriaSet.id, false);
+        if (write !== undefined) history?.end(write);
       }
     },
-    [criteriaSet.id, undoing, note, onSaving],
+    [criteriaSet.id, undoing, note, history],
   );
 
   // The weights as a rebalance sees them: what the drag snapshots, and what the total is read

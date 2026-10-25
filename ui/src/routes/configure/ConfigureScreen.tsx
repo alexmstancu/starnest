@@ -38,19 +38,12 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   const selection = useSelection();
   const { criteriaSetId, levelId } = selection;
   const history = useChangeHistory();
-  // **An undo waits for a pillar's write as it does for a criterion's** (D41): the pillar panel
-  // keeps its own write, so it says when one is in flight, and to which set -- one entry per
-  // write, since one sent before a set switch can still be in flight after it. An undo waits
-  // for a write to the set on screen; a set's Delete, for any write to that set.
-  const [pillarWrites, setPillarWrites] = useState<readonly string[]>([]);
-  const notePillarWrite = useCallback((criteriaSetId: string, saving: boolean) => {
-    setPillarWrites((writes) => {
-      if (saving) return [...writes, criteriaSetId];
-      const settled = writes.indexOf(criteriaSetId);
-      return writes.filter((_, at) => at !== settled);
-    });
-  }, []);
-  const pillarSaving = criteriaSetId !== null && pillarWrites.includes(criteriaSetId);
+  // **An undo waits for a pillar's write as it does for a criterion's** (D41): every write is
+  // in the history's ledger, so one to the set on screen holds every undo; one to another set
+  // holds only an undo that does not commute with it (PL-033).
+  const pillarSaving = history.writes.some(
+    (write) => !write.reshapes && write.criteriaSetId === criteriaSetId,
+  );
   const pillarAnswers = usePillarAnswers();
   // Once for the screen rather than once per opened pillar: every criterion row wants the
   // same copy of what the attributes are, and the panel inside a pillar is mounted and
@@ -59,12 +52,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   const editor = useCriteriaEditor(criteriaSetId, history, catalog.catalog);
   // **The one writer of sets, here rather than in its panel** (D-C03-9): its entries and the
   // holds between it and the other writers belong to the screen that owns the history.
-  const sets = useCriteriaSets({
-    selection,
-    history,
-    writingTo:
-      editor.writingTo === null ? pillarWrites : [...pillarWrites, editor.writingTo],
-  });
+  const sets = useCriteriaSets({ selection, history });
   // **One signal that the gate answers have moved** (UI-12). The rules and the proposals read
   // the answers separately, so a confirm or a research pass re-read only the proposals, and a
   // gate went on describing answers that had since changed until the screen was remounted.
@@ -142,7 +130,6 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                     : "unknown"
                 }
                 history={history}
-                onSaving={notePillarWrite}
                 answers={pillarAnswers}
                 catalog={catalog}
                 criteriaFor={(pillar) => (
@@ -209,6 +196,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
           <RecentChanges
             history={history}
             busy={editor.busy || pillarSaving || sets.busy}
+            isDeleted={sets.isDeleted}
           />
         </aside>
       </div>

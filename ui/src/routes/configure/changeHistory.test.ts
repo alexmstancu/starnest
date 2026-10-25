@@ -105,6 +105,16 @@ describe("recording a change", () => {
 
     expect(history[0]?.caveat).toBeUndefined();
   });
+
+  /** PL-033. A late answer is placed by when its write was sent, never on top of a newer one. */
+  it("places a change sent before the newest beneath it, without collapsing the two", () => {
+    const history = record(
+      record([], change(3, "housing", 20, 30)),
+      change(2, "housing", 10, 20),
+    );
+
+    expect(history.map((each) => each.id)).toEqual([3, 2]);
+  });
 });
 
 /**

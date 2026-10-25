@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
-import { getResponse, http } from "msw";
+import { HttpResponse, getResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createCriteriaSet,
@@ -866,6 +866,224 @@ describe("a set action beside another request in flight", () => {
       expect(screen.queryByRole("listitem", { name: "Remote only" })).toBeNull(),
     );
     expect(writes).toEqual(["DELETE /v1/criteria-sets/remote_only"]);
+  });
+});
+
+/**
+ * PL-033, the root of the residual races. **A history entry never outlives, or overtakes, the set
+ * it targets**: a write and the deletion of its set never overlap, an entry is placed by when its
+ * write was sent, an entry whose set is gone is held and says why, and every set action waits for
+ * the list to show what it did.
+ */
+describe("an entry and the set it targets", () => {
+  let writes: string[] = [];
+  afterEach(() => {
+    mockServer.events.removeAllListeners("request:start");
+    writes = [];
+  });
+
+  /** Opens the Economy pillar and finds a criterion's lock inside it. */
+  async function criterionLock(user: UserEvent): Promise<HTMLElement> {
+    await user.click(await screen.findByRole("button", { name: /^Economy/ }));
+    return screen.findByRole("button", { name: "Lock the weight for Cost of living index" });
+  }
+
+  it.each([
+    { what: "a criterion's lock", find: criterionLock },
+    {
+      what: "a pillar's lock",
+      find: () => screen.findByRole("button", { name: "Lock Economy" }),
+    },
+  ])("holds $what on a set while its deletion is being sent", async ({ find }) => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    const lock = await find(user);
+    const deletion = holdRequests("delete", "/v1/criteria-sets/:criteriaSetId");
+    writes = recordWrites();
+
+    await deleteSet(user, "Default");
+    await waitFor(() => expect(deletion.sent).toHaveLength(1));
+    expectHeld(lock);
+    await user.click(lock);
+    deletion.release();
+
+    await (await historyPanel()).findByText("Deleted Default");
+    expect(writes).toEqual(["DELETE /v1/criteria-sets/default"]);
+  });
+
+  it("holds the undo of a creation while a write to that set is still answering", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await create("Partner");
+    const history = await historyPanel();
+    await history.findByText("Created Partner");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("partner"));
+    const answer = holdAnswers("put", "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId");
+    await user.click(await screen.findByRole("button", { name: "Lock Economy" }));
+    await waitFor(() => expect(answer.sent).toEqual([expect.stringContaining("/partner/")]));
+    await user.click((await row("Remote only")).getByRole("button", { name: "Use" }));
+    await waitFor(() => expect(sidebarSets()).toHaveValue("remote_only"));
+    const undo = history.getByRole("button", { name: "Undo this" });
+    writes = recordWrites();
+
+    expectHeld(undo);
+    await user.click(undo);
+    expect(writes).toEqual([]);
+    answer.release();
+
+    await history.findByText("Locked the Economy pillar, in Partner");
+    await user.click(history.getByRole("button", { name: "Undo this and the 1 after it" }));
+    await waitFor(() => expect(screen.queryByRole("listitem", { name: "Partner" })).toBeNull());
+    expect(writes).toEqual([
+      "PUT /v1/criteria-sets/partner/pillar-weights/economics",
+      "DELETE /v1/criteria-sets/partner",
+    ]);
+    expect(history.getByText("No changes yet.")).toBeInTheDocument();
+  });
+
+  it("holds Rename until the list read after an undo has landed", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await create("Partner");
+    const history = await historyPanel();
+    await history.findByText("Created Partner");
+    const list = holdRequests("get", "/v1/criteria-sets");
+    writes = recordWrites();
+
+    await user.click(history.getByRole("button", { name: "Undo this" }));
+    await waitFor(() => expect(list.sent).toHaveLength(1));
+    const rename = (await row("Partner")).getByRole("button", { name: "Rename" });
+    expectHeld(rename);
+    await user.click(rename);
+    expect(screen.queryByRole("textbox", { name: "New name for Partner" })).toBeNull();
+    list.release();
+
+    await waitFor(() => expect(screen.queryByRole("listitem", { name: "Partner" })).toBeNull());
+    expect(writes).toEqual(["DELETE /v1/criteria-sets/partner"]);
+  });
+
+  it("keeps Delete held after the list fails to be read again, and offers Try again", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const remove = (await row("Remote only")).getByRole("button", { name: "Delete" });
+    mockServer.use(
+      http.get(
+        "/v1/criteria-sets",
+        () =>
+          HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+        { once: true },
+      ),
+    );
+    writes = recordWrites();
+
+    await user.click(remove);
+    const retry = await (await panel()).findByRole("button", { name: "Try again" });
+    expectHeld(remove);
+    await user.click(remove);
+    await user.click(retry);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("listitem", { name: "Remote only" })).toBeNull(),
+    );
+    expect(writes).toEqual(["DELETE /v1/criteria-sets/remote_only"]);
+  });
+
+  it("holds an entry whose set was deleted elsewhere, says why, and frees it once the set is back", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    await user.click(await screen.findByRole("button", { name: "Lock Economy" }));
+    const history = await historyPanel();
+    const label = "Locked the Economy pillar, in Default";
+    await history.findByText(label);
+    await user.click((await row("Remote only")).getByRole("button", { name: "Use" }));
+    await waitFor(() => expect(sidebarSets()).toHaveValue("remote_only"));
+    const renameRemoteOnly = async (from: string, to: string) => {
+      await user.click((await row(from)).getByRole("button", { name: "Rename" }));
+      await user.keyboard(`{Control>}a{/Control}${to}{Enter}`);
+      await row(to);
+    };
+
+    // Another tab deletes it; the next set action reads the list that says so.
+    await deleteCriteriaSet("default");
+    await renameRemoteOnly("Remote only", "Remote");
+    await waitFor(() => expect(screen.queryByRole("listitem", { name: "Default" })).toBeNull());
+
+    const entry = history.getByText(label).closest("li")!;
+    expect(within(entry).getByText("Its set was deleted: restore it to undo this.")).toBeTruthy();
+    expectHeld(within(entry).getByRole("button"));
+    expectNotHeld(history.getByRole("button", { name: "Undo this" }));
+
+    await restoreCriteriaSet("default");
+    await renameRemoteOnly("Remote", "Remote only");
+    await row("Default");
+    await waitFor(() => expectNotHeld(within(entry).getByRole("button")));
+    expect(within(entry).queryByText(/Its set was deleted/)).toBeNull();
+  });
+
+  const PILLAR_LOCK = {
+    method: "put" as const,
+    path: "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId",
+    press: async (user: UserEvent) =>
+      user.click(await screen.findByRole("button", { name: "Lock Economy" })),
+    entry: "Locked the Economy pillar, in Default",
+  };
+  const CRITERION_LOCK = {
+    method: "patch" as const,
+    path: "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+    press: async (user: UserEvent) => user.click(await criterionLock(user)),
+    entry: "Locked Cost of living index, in Default",
+  };
+
+  it.each([
+    { late: "a pillar's lock", first: PILLAR_LOCK, then: CRITERION_LOCK },
+    { late: "a criterion's lock", first: CRITERION_LOCK, then: PILLAR_LOCK },
+  ])("lists $late by when it was sent, so its late answer never buries a newer change", async ({
+    first,
+    then,
+  }) => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    const late = holdAnswers(first.method, first.path);
+    await first.press(user);
+    await waitFor(() => expect(late.sent).toHaveLength(1));
+    await then.press(user);
+    const history = await historyPanel();
+    await history.findByText(then.entry);
+
+    late.release();
+
+    await history.findByText(first.entry);
+    const entries = history.getAllByRole("listitem").map((item) => item.textContent ?? "");
+    expect(entries.findIndex((text) => text.includes(then.entry))).toBeLessThan(
+      entries.findIndex((text) => text.includes(first.entry)),
+    );
+  });
+
+  it("keeps an entry below its set's deletion undoable, because the undo restores the set first", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    await PILLAR_LOCK.press(user);
+    const history = await historyPanel();
+    await history.findByText(PILLAR_LOCK.entry);
+    await user.click((await row("Remote only")).getByRole("button", { name: "Use" }));
+    await deleteSet(user, "Default");
+    await history.findByText("Deleted Default");
+    await waitFor(() => expect(screen.queryByRole("listitem", { name: "Default" })).toBeNull());
+    const undo = history.getByRole("button", { name: "Undo this and the 1 after it" });
+    writes = recordWrites();
+
+    expectNotHeld(undo);
+    await user.click(undo);
+
+    await waitFor(() => expect(history.getByText("No changes yet.")).toBeInTheDocument());
+    expect(writes).toEqual([
+      "POST /v1/criteria-sets/default/restore",
+      "PUT /v1/criteria-sets/default/pillar-weights/economics",
+    ]);
   });
 });
 
