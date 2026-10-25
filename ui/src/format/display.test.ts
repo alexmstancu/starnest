@@ -15,6 +15,7 @@ import {
   formatSigned,
   attributeName,
   candidateName,
+  matchRuleName,
   pillarName,
   criteriaSetName,
   safeHttpUrl,
@@ -396,6 +397,20 @@ describe("naming a candidate", () => {
     expect(candidateName(new Map([["country.malta", ""]]), "country.malta")).toBe(
       "Malta",
     );
+  });
+});
+
+/** PL-150. A gate by its catalog name, never its id. */
+describe("naming a gate", () => {
+  it("uses the catalog's name", () => {
+    const names = new Map([["uk_skilled_worker", "UK Skilled Worker route"]]);
+
+    expect(matchRuleName(names, "uk_skilled_worker")).toBe("UK Skilled Worker route");
+  });
+
+  it("reads the id as words, without a level, when the catalog has not answered", () => {
+    expect(matchRuleName(new Map(), "uk_skilled_worker")).toBe("Uk skilled worker");
+    expect(matchRuleName(new Map(), "country.visa_route_exists")).toBe("Visa route exists");
   });
 });
 

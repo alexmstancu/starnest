@@ -30,8 +30,12 @@ import { renderShell } from "../../../testing/renderShell";
  */
 
 const BASE = "/v1";
-const PROPOSED_GATE = "country.visa_route_exists";
-const PROPOSED_FOR = "country.portugal";
+/** The mock's proposal, as the panel names it: the gate's and the candidate's catalog names. */
+const PROPOSED_GATE = "A visa route exists";
+const PROPOSED_FOR = "Portugal";
+const CONFIRM_PROPOSED = `Confirm ${PROPOSED_GATE} for ${PROPOSED_FOR}`;
+const PROPOSED_GATE_ID = "country.visa_route_exists";
+const PROPOSED_FOR_ID = "country.portugal";
 
 /**
  * How a pass over the mock's five gates ends when nothing interrupts it: three of them are gates
@@ -111,15 +115,76 @@ describe("what the panel shows", () => {
     await settled();
 
     // Scoped to this panel. A gate now states which candidates it rules out, so a candidate
-    // id appears in the Rules table too and a global row lookup matches both.
-    const row = await within(
-      await screen.findByRole("region", { name: "Gate proposals" }),
-    ).findByRole("row", { name: new RegExp(PROPOSED_FOR) });
-    expect(row).toHaveTextContent(PROPOSED_GATE);
-    expect(row).toHaveTextContent("not_matching");
+    // appears in the Rules table too and a global row lookup matches both.
+    const row = await theProposals().findByRole("row", { name: new RegExp(PROPOSED_FOR) });
     expect(
-      screen.getByRole("link", { name: "https://example.gov/skilled-worker" }),
+      within(row).getByRole("link", { name: "https://example.gov/skilled-worker" }),
     ).toBeInTheDocument();
+  });
+
+  it("names the gate and the candidate in the row and in Confirm, never their ids", async () => {
+    renderShell("/configure");
+    await settled();
+
+    const row = await theProposals().findByRole("row", { name: new RegExp(PROPOSED_FOR) });
+    expect(within(row).getByRole("rowheader")).toHaveTextContent(PROPOSED_GATE);
+    expect(row).not.toHaveTextContent("country.");
+    expect(
+      await within(row).findByRole("button", { name: CONFIRM_PROPOSED }),
+    ).toBeInTheDocument();
+  });
+
+  it("says Not matching rather than not_matching", async () => {
+    renderShell("/configure");
+    await settled();
+
+    const row = await theProposals().findByRole("row", { name: new RegExp(PROPOSED_FOR) });
+    expect(row).toHaveTextContent("Not matching");
+    expect(row).not.toHaveTextContent("not_matching");
+  });
+
+  it("falls back to the gate read as words when the gates cannot be read, and still lists it", async () => {
+    mockServer.use(
+      http.get(`${BASE}/match-rules`, ({ request }) =>
+        new URL(request.url).searchParams.get("level") === null
+          ? HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 })
+          : undefined,
+      ),
+    );
+    renderShell("/configure");
+    await settled();
+
+    const row = await theProposals().findByRole("row", { name: new RegExp(PROPOSED_FOR) });
+    expect(within(row).getByRole("rowheader")).toHaveTextContent("Visa route exists");
+    expect(row).not.toHaveTextContent("country.");
+  });
+
+  it("prints a page that is not a web address as text, never as a link", async () => {
+    mockServer.use(
+      http.get(`${BASE}/match-rule-results`, () =>
+        HttpResponse.json({
+          items: [
+            {
+              match_rule: "country.visa_route_exists",
+              candidate: "country.portugal",
+              match_result: "not_matching",
+              data_source: "llm",
+              retrieval_date: "2026-09-12T09:00:00Z",
+              citations: ["javascript:alert(1)", "https://example.gov/skilled-worker"],
+              is_proposal: true,
+            },
+          ],
+        }),
+      ),
+    );
+    renderShell("/configure");
+    await settled();
+
+    const row = await theProposals().findByRole("row", { name: new RegExp(PROPOSED_FOR) });
+    expect(within(row).getByText("javascript:alert(1)")).toBeInTheDocument();
+    expect(within(row).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+      "https://example.gov/skilled-worker",
+    ]);
   });
 
   it("says a proposal rules nothing out, rather than leaving it implied", async () => {
@@ -379,8 +444,8 @@ describe("confirming a proposal", () => {
           sent.push(body);
           return HttpResponse.json({
             ...body,
-            match_rule: PROPOSED_GATE,
-            candidate: PROPOSED_FOR,
+            match_rule: PROPOSED_GATE_ID,
+            candidate: PROPOSED_FOR_ID,
             retrieval_date: "2026-09-12T10:00:00Z",
             is_proposal: false,
           });
@@ -759,7 +824,7 @@ describe("a research pass, one gate at a time", () => {
     // What the pass stored, in this list and in the gate's own sentence above it.
     expect(
       await theProposals().findByRole("button", {
-        name: "Confirm country.uk_skilled_worker for country.united_kingdom",
+        name: "Confirm UK Skilled Worker route for United Kingdom",
       }),
     ).toBeInTheDocument();
     await waitFor(() =>
@@ -841,8 +906,8 @@ describe("the period a proposal holds for", () => {
         HttpResponse.json({
           items: [
             {
-              match_rule: PROPOSED_GATE,
-              candidate: PROPOSED_FOR,
+              match_rule: PROPOSED_GATE_ID,
+              candidate: PROPOSED_FOR_ID,
               match_result: "not_matching",
               data_source: "llm",
               retrieval_date: "2026-09-12T09:00:00Z",
@@ -1380,9 +1445,9 @@ describe("the gate proposals while a write is in flight", () => {
    * person's answer, so the next read lists it no longer.
    */
   function twoProposals(): void {
-    const answers: Record<string, unknown>[] = [PROPOSED_FOR, "country.spain"].map(
+    const answers: Record<string, unknown>[] = [PROPOSED_FOR_ID, "country.spain"].map(
       (candidate) => ({
-        match_rule: PROPOSED_GATE,
+        match_rule: PROPOSED_GATE_ID,
         candidate,
         match_result: "matching",
         data_source: "llm",
@@ -1432,7 +1497,7 @@ describe("the gate proposals while a write is in flight", () => {
     await waitFor(() =>
       expect(
         theProposals().getByRole("button", {
-          name: `Confirm ${PROPOSED_GATE} for country.spain`,
+          name: `Confirm ${PROPOSED_GATE} for Spain`,
         }),
       ).toHaveFocus(),
     );
@@ -1538,7 +1603,7 @@ describe("the gate proposals while a write is in flight", () => {
       name: CONFIRM,
     });
     const other = theProposals().getByRole("button", {
-      name: `Confirm ${PROPOSED_GATE} for country.spain`,
+      name: `Confirm ${PROPOSED_GATE} for Spain`,
     });
     reads.start();
     act(() => confirm.focus());
@@ -1565,8 +1630,8 @@ describe("the gate proposals while a write is in flight", () => {
         HttpResponse.json({
           items: [
             {
-              match_rule: PROPOSED_GATE,
-              candidate: PROPOSED_FOR,
+              match_rule: PROPOSED_GATE_ID,
+              candidate: PROPOSED_FOR_ID,
               match_result: "not_matching",
               data_source: "llm",
               retrieval_date: "2026-09-12T09:00:00Z",
@@ -1574,7 +1639,7 @@ describe("the gate proposals while a write is in flight", () => {
               is_proposal: true,
             },
             {
-              match_rule: PROPOSED_GATE,
+              match_rule: PROPOSED_GATE_ID,
               candidate: "country.spain",
               match_result: "matching",
               data_source: "llm",
@@ -1591,7 +1656,7 @@ describe("the gate proposals while a write is in flight", () => {
     renderShell("/configure");
     await settled();
     const other = await theProposals().findByRole("button", {
-      name: `Confirm ${PROPOSED_GATE} for country.spain`,
+      name: `Confirm ${PROPOSED_GATE} for Spain`,
     });
 
     await user.click(theProposals().getByRole("button", { name: CONFIRM }));

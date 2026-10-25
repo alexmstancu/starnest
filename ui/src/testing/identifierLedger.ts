@@ -22,24 +22,6 @@ export interface KnownOffender {
   readonly removedBy: string;
 }
 
-const GATE_PROPOSALS: readonly KnownOffender[] = [
-  {
-    identifier: "country.visa_route_exists",
-    where: "gate proposals: the gate column, and the row's Confirm button",
-    removedBy: "PL-150 (C13)",
-  },
-  {
-    identifier: "country.portugal",
-    where: "gate proposals: the candidate column, and the row's Confirm button",
-    removedBy: "PL-150 (C13)",
-  },
-  {
-    identifier: "not_matching",
-    where: "gate proposals: the proposed answer",
-    removedBy: "PL-150 (C13)",
-  },
-];
-
 const MANUAL_SOURCE: KnownOffender = {
   identifier: "manual",
   where: 'the hand-entry card\'s lead and its open form: "stored under the manual source"',
@@ -47,9 +29,9 @@ const MANUAL_SOURCE: KnownOffender = {
 };
 
 export const IDENTIFIER_LEDGER = {
-  "Configure, a pillar and a rule editor open": [...GATE_PROPOSALS],
-  "Configure, a weight change refused": [...GATE_PROPOSALS],
-  "Configure, nothing set": [...GATE_PROPOSALS],
+  "Configure, a pillar and a rule editor open": [],
+  "Configure, a weight change refused": [],
+  "Configure, nothing set": [],
   "Configure, no criteria set": [],
   "Configure, the server unreachable": [],
 

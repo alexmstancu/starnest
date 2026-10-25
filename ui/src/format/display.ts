@@ -266,6 +266,18 @@ export function sourceName(names: ReadonlyMap<string, string>, source: string): 
 }
 
 /**
+ * One gate's name, or its id made readable (PL-150).
+ *
+ * The real catalog's gate ids carry no level (`uk_skilled_worker`), but a prefix is dropped all
+ * the same, as for a candidate: a level read out in front of every gate says nothing.
+ */
+export function matchRuleName(names: ReadonlyMap<string, string>, rule: string): string {
+  const named = names.get(rule);
+  if (named !== undefined && named !== "") return named;
+  return formatIdentifier(rule.slice(rule.indexOf(".") + 1));
+}
+
+/**
  * One attribute's name, or its id made readable.
  *
  * **The design states this as a rule**: "No programmatic identifiers in rendered text -- no

@@ -1,6 +1,14 @@
 import { useRef, useState } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
-import { formatMoney } from "../../../format/display";
+import { useCandidateNames } from "../../../api/useCandidateNames";
+import { useMatchRuleNames } from "../../../api/useMatchRuleNames";
+import {
+  candidateName,
+  formatMatchStatus,
+  formatMoney,
+  matchRuleName,
+  safeHttpUrl,
+} from "../../../format/display";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { CheckboxField } from "../../../shell/CheckboxField";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
@@ -46,6 +54,10 @@ export function ProposalsPanel({
   pass: ResearchPass;
 }) {
   const proposals = useProposals(onAnswered, answersFreshness);
+  // Gates and candidates by name, never by id (PL-150). Either read failing leaves the id read
+  // as words, and the proposals are listed all the same.
+  const gateNames = useMatchRuleNames();
+  const candidateNames = useCandidateNames();
   const [acceptUncapped, setAcceptUncapped] = useState(false);
   const estimateButton = useRef<HTMLButtonElement>(null);
   useFocusAfterPass(pass.end, estimateButton);
@@ -218,6 +230,8 @@ export function ProposalsPanel({
                   <ProposalRow
                     key={proposalKey(proposal)}
                     proposal={proposal}
+                    gate={matchRuleName(gateNames, proposal.match_rule)}
+                    candidate={candidateName(candidateNames, proposal.candidate)}
                     held={confirmHeld}
                     confirmRef={confirmFocus.buttonRef(proposal)}
                     onConfirm={() => {
@@ -239,11 +253,16 @@ export function ProposalsPanel({
 
 function ProposalRow({
   proposal,
+  gate,
+  candidate,
   held,
   confirmRef,
   onConfirm,
 }: {
   proposal: MatchRuleResult;
+  /** The gate's name, which the row and its Confirm say instead of the id. */
+  gate: string;
+  candidate: string;
   /**
    * A write or a pass is in flight, or the list predates the last write to the answers: the
    * button keeps focus, and its press is turned away.
@@ -257,9 +276,9 @@ function ProposalRow({
 
   return (
     <tr className="table__row">
-      <th scope="row">{proposal.match_rule}</th>
-      <td>{proposal.candidate}</td>
-      <td>{proposal.match_result}</td>
+      <th scope="row">{gate}</th>
+      <td>{candidate}</td>
+      <td>{formatMatchStatus(proposal.match_result)}</td>
       <td>{describePeriod(proposal.reference_period)}</td>
       <td>
         <p>{proposal.reason}</p>
@@ -268,9 +287,7 @@ function ProposalRow({
         <ul className="lock-list">
           {pages.map((page) => (
             <li key={page}>
-              <a href={page} rel="noreferrer noopener" target="_blank">
-                {page}
-              </a>
+              <PageLink page={page} />
             </li>
           ))}
         </ul>
@@ -283,9 +300,23 @@ function ProposalRow({
           aria-disabled={held || undefined}
           onClick={onConfirm}
         >
-          Confirm {proposal.match_rule} for {proposal.candidate}
+          Confirm {gate} for {candidate}
         </button>
       </td>
     </tr>
+  );
+}
+
+/**
+ * A page the model read, as a link only when it is a web address (PL-150). The server stores
+ * any string a caller sends as a page, and a `javascript:` one behind a click is a script.
+ */
+function PageLink({ page }: { page: string }) {
+  const address = safeHttpUrl(page);
+  if (address === null) return <>{page}</>;
+  return (
+    <a href={address} rel="noreferrer noopener" target="_blank">
+      {page}
+    </a>
   );
 }

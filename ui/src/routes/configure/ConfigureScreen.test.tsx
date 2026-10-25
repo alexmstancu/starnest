@@ -1876,7 +1876,7 @@ describe("a gate's sentence once its answers change", () => {
 
     await userEvent.click(
       await screen.findByRole("button", {
-        name: "Confirm country.visa_route_exists for country.portugal",
+        name: "Confirm A visa route exists for Portugal",
       }),
     );
 
@@ -1970,7 +1970,7 @@ describe("a gate's sentence once its answers change", () => {
     // In the list too, where it can be confirmed rather than paid for a second time.
     expect(
       await screen.findByRole("button", {
-        name: "Confirm country.visa_route_exists for country.spain",
+        name: "Confirm A visa route exists for Spain",
       }),
     ).toBeInTheDocument();
   });
@@ -2011,7 +2011,7 @@ describe("a gate's sentence once its answers change", () => {
     await screen.findByText(shown);
     await user.click(
       await screen.findByRole("button", {
-        name: "Confirm country.visa_route_exists for country.portugal",
+        name: "Confirm A visa route exists for Portugal",
       }),
     );
     await waitFor(() => expect(gate).toHaveTextContent("Removes Portugal."));

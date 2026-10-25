@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll } from "vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { forgetAttributeNames } from "./api/useAttributeNames";
 import { forgetCandidateNames } from "./api/useCandidateNames";
+import { forgetMatchRuleNames } from "./api/useMatchRuleNames";
 import { forgetPillarNames } from "./api/usePillarNames";
 import { forgetSourceNames } from "./api/useSourceNames";
 import { forgetAnsweredWrites } from "./api/setWrites";
@@ -49,6 +50,7 @@ afterEach(() => {
   forgetAttributeNames();
   forgetCandidateNames();
   forgetSourceNames();
+  forgetMatchRuleNames();
   forgetAnsweredWrites();
   forgetFailedReads();
   // The session store mirrors to both browser stores (PL-016, PL-017), so one test's open rows

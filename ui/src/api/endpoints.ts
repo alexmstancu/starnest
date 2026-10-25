@@ -671,12 +671,15 @@ export function putMatchRuleResult(
 }
 export type CompoundRule = components["schemas"]["CompoundRule"];
 
-/** The gates that exist at a level. Which of them a set enforces is the set's own business. */
+/**
+ * The gates that exist at a level, or at every level when it is null. Which of them a set
+ * enforces is the set's own business.
+ */
 export function fetchMatchRules(
-  level: string,
+  level: string | null,
   options?: RequestOptions,
 ): Promise<{ items: MatchRule[] }> {
-  return getJson("/match-rules", { level }, options);
+  return getJson("/match-rules", { level: level ?? undefined }, options);
 }
 
 export function fetchCompoundRules(

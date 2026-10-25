@@ -370,9 +370,10 @@ export const handlers = [
 
   http.get(`${BASE}/match-rules`, ({ request }) => {
     const level = new URL(request.url).searchParams.get("level");
-    // A rule with no level is asked at every level, so it stays in every answer.
+    // A rule with no level is asked at every level, so it stays in every answer; no level
+    // asked for is every gate, as the server answers it.
     const items = MATCH_RULES.filter(
-      (rule) => rule.level === null || rule.level === level,
+      (rule) => level === null || rule.level === null || rule.level === level,
     );
     return HttpResponse.json({ items });
   }),
