@@ -83,7 +83,23 @@ def before_it(connection: psycopg.Connection) -> Iterator[tuple[psycopg.Connecti
         ).fetchone()
         assert row is not None
         run = int(row[0])
+        connection.execute(
+            "INSERT INTO data_acquisition_run_attribute (data_acquisition_run, attribute, level) "
+            "VALUES (%s, %s, 'country')",
+            (run, OVERBURDEN),
+        )
         for candidate in (ONE_ROW, TWO_ROWS):
+            # Each re-confirmation is one of its run's items (0513).
+            connection.execute(
+                "INSERT INTO data_acquisition_run_candidate "
+                "(data_acquisition_run, candidate, level) VALUES (%s, %s, 'country')",
+                (run, candidate),
+            )
+            connection.execute(
+                "INSERT INTO data_acquisition_run_item "
+                "(data_acquisition_run, candidate, attribute) VALUES (%s, %s, %s)",
+                (run, candidate, OVERBURDEN),
+            )
             connection.execute(
                 "INSERT INTO data_acquisition_run_reuse "
                 "(data_acquisition_run, data_source, candidate, attribute) "

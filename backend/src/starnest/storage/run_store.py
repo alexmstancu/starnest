@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from psycopg.errors import UniqueViolation
+from psycopg.errors import ForeignKeyViolation, UniqueViolation
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.data import DataSourceId
@@ -65,6 +65,20 @@ class PostgresRunStore(RunStore):
                 "already have been resolved from the level"
             )
         started_at = datetime.now(tz=UTC)
+        try:
+            return await self._open(scope, triggered_by, plan, started_at)
+        except ForeignKeyViolation as outside:
+            # **The scope is held to the run's level by its keys** (0513): a candidate or an
+            # attribute at another level, or a plan for an attribute outside the scope, is refused
+            # whole -- the transaction leaves no run behind.
+            raise ValueError(
+                f"a run at the {scope.level!r} level may plan only candidates and attributes at "
+                "the run's level, and sources only for attributes in its scope"
+            ) from outside
+
+    async def _open(
+        self, scope: RunScope, triggered_by: str, plan: RunPlan | None, started_at: datetime
+    ) -> int:
         async with acquire(self._pool) as connection:
             try:
                 row = await self._queries.insert_run(

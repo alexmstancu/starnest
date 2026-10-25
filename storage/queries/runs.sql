@@ -32,16 +32,22 @@ RETURNING id;
 -- name: insert_run_candidates(data_acquisition_run, candidates)!
 -- The candidates the run means to cover. ON CONFLICT DO NOTHING so a scope assembled from two
 -- overlapping sources -- a retry of two failed items on the same candidate, say -- does not
--- have to be deduplicated by the caller first.
-INSERT INTO data_acquisition_run_candidate (data_acquisition_run, candidate)
-SELECT :data_acquisition_run, candidate
-FROM   unnest(:candidates::text[]) AS candidate
+-- have to be deduplicated by the caller first. **The level is the run's own** (0513): copied from
+-- the run row, so a candidate at another level is refused by its key rather than trusted.
+INSERT INTO data_acquisition_run_candidate (data_acquisition_run, candidate, level)
+SELECT r.id, candidate, r.level
+FROM   data_acquisition_run AS r
+CROSS  JOIN unnest(:candidates::text[]) AS candidate
+WHERE  r.id = :data_acquisition_run
 ON CONFLICT DO NOTHING;
 
 -- name: insert_run_attributes(data_acquisition_run, attributes)!
-INSERT INTO data_acquisition_run_attribute (data_acquisition_run, attribute)
-SELECT :data_acquisition_run, attribute
-FROM   unnest(:attributes::text[]) AS attribute
+-- The run's level, as for the candidates above (0513).
+INSERT INTO data_acquisition_run_attribute (data_acquisition_run, attribute, level)
+SELECT r.id, attribute, r.level
+FROM   data_acquisition_run AS r
+CROSS  JOIN unnest(:attributes::text[]) AS attribute
+WHERE  r.id = :data_acquisition_run
 ON CONFLICT DO NOTHING;
 
 -- name: insert_run_items_as_rectangle(data_acquisition_run)!

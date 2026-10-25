@@ -410,28 +410,12 @@ class TestARunScopedToExactPairs:
 
         assert run.items_total == 2
 
-    async def test_only_the_pairs_it_asked_are_listed_re_confirmed(
+    async def test_a_re_confirmation_of_a_pair_it_never_asked_about_is_refused(
         self, pool: AsyncConnectionPool, a_retry_of_two_pairs: int
     ) -> None:
-        """FU-A1, PL-049. A re-confirmation stamped with the run for a pair it never asked about
-        is not something the run produced, so the diff must not be handed it."""
-        await PostgresValueStore(pool).record_reuse(
-            a_retry_of_two_pairs,
-            "eurostat",
-            {("country.portugal", OVERBURDEN): None, ("country.portugal", OVERCROWDING): None},
-        )
-
-        run = await PostgresRunStore(pool).read_run(a_retry_of_two_pairs)
-
-        assert [(item.candidate, item.attribute) for item in run.reconfirmed] == [
-            ("country.portugal", OVERBURDEN)
-        ]
-
-    async def test_the_values_it_re_confirmed_are_exactly_the_ones_it_lists(
-        self, pool: AsyncConnectionPool, a_retry_of_two_pairs: int
-    ) -> None:
-        """PL-049. The diff reads the figures through `reconfirmed_by_run`, so a value named for
-        a pair the run never asked about must not reach it by that road either."""
+        """FU-A1, PL-049, PL-048. A re-confirmation stamped with the run for a pair it never asked
+        about is not something the run produced: the database refuses it (0513), so neither the
+        run read nor `reconfirmed_by_run` can hand it to the diff."""
         values = PostgresValueStore(pool)
         (asked, not_asked) = await values.append(
             [
@@ -439,22 +423,20 @@ class TestARunScopedToExactPairs:
                 a_figure(None, "country.portugal", OVERCROWDING),
             ]
         )
+        with pytest.raises(errors.ForeignKeyViolation):
+            await values.record_reuse(
+                a_retry_of_two_pairs, "eurostat", {("country.portugal", OVERCROWDING): not_asked.id}
+            )
         await values.record_reuse(
-            a_retry_of_two_pairs,
-            "eurostat",
-            {
-                ("country.portugal", OVERBURDEN): asked.id,
-                ("country.portugal", OVERCROWDING): not_asked.id,
-            },
+            a_retry_of_two_pairs, "eurostat", {("country.portugal", OVERBURDEN): asked.id}
         )
 
         run = await PostgresRunStore(pool).read_run(a_retry_of_two_pairs)
         listed = await values.read_values(reconfirmed_by_run=a_retry_of_two_pairs)
-        total = await values.count_values(reconfirmed_by_run=a_retry_of_two_pairs)
 
         assert [item.value for item in run.reconfirmed] == [asked.id]
         assert [listing.value.id for listing in listed] == [asked.id]
-        assert total == 1
+        assert await values.count_values(reconfirmed_by_run=a_retry_of_two_pairs) == 1
 
     async def test_only_the_pairs_it_asked_are_counted_or_listed_unanswered(
         self, pool: AsyncConnectionPool, a_retry_of_two_pairs: int
@@ -833,106 +815,6 @@ class TestWhichSourceGotItThere:
 
         assert await reach_of(pool, later) == {"eurostat": (1, 0)}
         assert await reach_of(pool, a_two_source_run) == {"eurostat": (0, 1)}
-
-
-class TestARunCountsOnlyItsOwnItems:
-    """FU-A1 (PL-042). Every value, re-confirmation and failure stamped with a run counted toward
-    it, whether or not it named a pair the run had asked about. A retry's borrow written outside
-    its pairs then made it read "3 of 2" -- more answered than it had items.
-
-    A row outside the run's items is evidence the run should never have written, not progress.
-    Nothing in the schema forbids one yet, so the fixture writes them directly: one of each kind
-    from the source that also has the run's real answers, each on its own pair so no row can mask
-    another, and three from a source with nothing inside the items at all.
-    """
-
-    @pytest.fixture
-    async def a_run_with_rows_outside_its_items(self, pool: AsyncConnectionPool) -> int:
-        runs, values = PostgresRunStore(pool), PostgresValueStore(pool)
-        run = await runs.start_run(
-            RunScope(
-                level="country",
-                candidates=("country.liechtenstein", "country.portugal"),
-                attributes=(OVERBURDEN, OVERCROWDING),
-                pairs=(("country.portugal", OVERBURDEN), ("country.liechtenstein", OVERCROWDING)),
-            ),
-            triggered_by="test",
-        )
-        await values.append(
-            [
-                a_figure(run, "country.portugal", OVERBURDEN),
-                a_figure(run, "country.spain", OVERBURDEN),
-                a_figure(run, "country.spain", OVERCROWDING).model_copy(
-                    update={"rejection_reason": NOT_CREDIBLE}
-                ),
-                a_figure(run, "country.liechtenstein", OVERBURDEN, source="stand_in"),
-            ]
-        )
-        await values.record_reuse(run, "eurostat", {("country.greece", OVERBURDEN): None})
-        await values.record_reuse(run, "stand_in", {("country.portugal", OVERCROWDING): None})
-        await runs.record_failures(
-            run,
-            [
-                AcquisitionFailure(
-                    OVERCROWDING, "403", candidate="country.liechtenstein", data_source="eurostat"
-                ),
-                AcquisitionFailure(
-                    OVERCROWDING, "403", candidate="country.greece", data_source="eurostat"
-                ),
-                AcquisitionFailure(
-                    OVERBURDEN, "no figure", candidate="country.italy", data_source="stand_in"
-                ),
-            ],
-        )
-        return run
-
-    async def test_the_detail_counts_only_its_items(
-        self, pool: AsyncConnectionPool, a_run_with_rows_outside_its_items: int
-    ) -> None:
-        run = await PostgresRunStore(pool).read_run(a_run_with_rows_outside_its_items)
-
-        assert (
-            run.items_total,
-            run.items_completed,
-            run.items_failed,
-            run.items_unanswered,
-        ) == (2, 1, 1, 0)
-
-    async def test_the_detail_lists_only_its_items(
-        self, pool: AsyncConnectionPool, a_run_with_rows_outside_its_items: int
-    ) -> None:
-        """The lists are read from the same items as the counts (ST-11). Greece and Italy were
-        never asked about, so their failures are not this run's to list -- nor, since the list
-        is a retry's scope, to send a retry back to."""
-        run = await PostgresRunStore(pool).read_run(a_run_with_rows_outside_its_items)
-
-        assert [(f.data_source, f.candidate, f.attribute) for f in run.failures] == [
-            ("eurostat", "country.liechtenstein", OVERCROWDING)
-        ]
-        assert run.unanswered == ()
-
-    async def test_the_history_row_counts_only_its_items(
-        self, pool: AsyncConnectionPool, a_run_with_rows_outside_its_items: int
-    ) -> None:
-        (row,) = [
-            run
-            for run in await PostgresRunStore(pool).read_runs()
-            if run.id == a_run_with_rows_outside_its_items
-        ]
-
-        assert (
-            row.items_total,
-            row.items_completed,
-            row.items_failed,
-            row.items_unanswered,
-        ) == (2, 1, 1, 0)
-
-    async def test_each_source_is_credited_only_with_its_items(
-        self, pool: AsyncConnectionPool, a_run_with_rows_outside_its_items: int
-    ) -> None:
-        """Eurostat stored one item and failed on one; everything else it wrote lies outside.
-        The stand-in source wrote nothing inside the items, so it did not reach this run."""
-        assert await reach_of(pool, a_run_with_rows_outside_its_items) == {"eurostat": (1, 1)}
 
 
 class CommitsMidRead:

@@ -123,7 +123,7 @@ class TestWhatTheStoreRecords:
             accepted_uncapped=False,
         )
 
-        with pytest.raises(errors.ForeignKeyViolation):
+        with pytest.raises(ValueError, match="only for attributes in its scope"):
             await PostgresRunStore(pool).start_run(A_SCOPE, triggered_by="test", plan=outside)
 
         assert await _rows(pool, "SELECT 1 FROM data_acquisition_run") == []

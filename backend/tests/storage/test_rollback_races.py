@@ -204,13 +204,31 @@ def a_run(*then: str, status: str = "completed", stop: str = "NULL") -> str:
     )
 
 
+#: Romania's homicide rate as one of the run's items, so its evidence may name it (0513).
+AN_ITEM = (
+    "INSERT INTO data_acquisition_run_candidate (data_acquisition_run, candidate, level) "
+    "VALUES (run_id, 'country.romania', 'country'); "
+    "INSERT INTO data_acquisition_run_attribute (data_acquisition_run, attribute, level) "
+    "VALUES (run_id, 'country.homicide_rate', 'country'); "
+    "INSERT INTO data_acquisition_run_item (data_acquisition_run, candidate, attribute) "
+    "VALUES (run_id, 'country.romania', 'country.homicide_rate');"
+)
+
+
 RUN_UNDONE = (
     "DO $$ BEGIN "
-    "DELETE FROM data_acquisition_run_reuse WHERE data_acquisition_run IN "
-    f"(SELECT id FROM data_acquisition_run WHERE triggered_by = '{HISTORY}'); "
-    "DELETE FROM data_acquisition_failure WHERE data_acquisition_run IN "
-    f"(SELECT id FROM data_acquisition_run WHERE triggered_by = '{HISTORY}'); "
-    f"DELETE FROM data_acquisition_run WHERE triggered_by = '{HISTORY}'; END $$"
+    + " ".join(
+        f"DELETE FROM {table} WHERE data_acquisition_run IN "
+        f"(SELECT id FROM data_acquisition_run WHERE triggered_by = '{HISTORY}');"
+        for table in (
+            "data_acquisition_run_reuse",
+            "data_acquisition_failure",
+            "data_acquisition_run_item",
+            "data_acquisition_run_candidate",
+            "data_acquisition_run_attribute",
+        )
+    )
+    + f" DELETE FROM data_acquisition_run WHERE triggered_by = '{HISTORY}'; END $$"
 )
 
 
@@ -328,11 +346,11 @@ REFUSALS = (
         write="DO $$ DECLARE run_id bigint; BEGIN "
         "INSERT INTO data_acquisition_run (started_at, triggered_by, run_status, level) "
         "VALUES (now(), 'FU-A5 race row', 'completed', 'country') RETURNING id INTO run_id; "
-        "INSERT INTO data_acquisition_run_candidate (data_acquisition_run, candidate) "
-        "VALUES (run_id, 'country.romania'), (run_id, 'country.portugal'); "
-        "INSERT INTO data_acquisition_run_attribute (data_acquisition_run, attribute) "
-        "VALUES (run_id, 'country.homicide_rate'), "
-        "(run_id, 'country.housing_cost_overburden_rate'); "
+        "INSERT INTO data_acquisition_run_candidate (data_acquisition_run, candidate, level) "
+        "VALUES (run_id, 'country.romania', 'country'), (run_id, 'country.portugal', 'country'); "
+        "INSERT INTO data_acquisition_run_attribute (data_acquisition_run, attribute, level) "
+        "VALUES (run_id, 'country.homicide_rate', 'country'), "
+        "(run_id, 'country.housing_cost_overburden_rate', 'country'); "
         "INSERT INTO data_acquisition_run_item (data_acquisition_run, candidate, attribute) "
         "VALUES (run_id, 'country.romania', 'country.homicide_rate'), "
         "(run_id, 'country.portugal', 'country.housing_cost_overburden_rate'); END $$",
@@ -353,6 +371,13 @@ REFUSALS = (
         write="DO $$ DECLARE run_id bigint; figure bigint; BEGIN "
         "INSERT INTO data_acquisition_run (started_at, triggered_by, run_status, level) "
         "VALUES (now(), 'PL-049 race row', 'completed', 'country') RETURNING id INTO run_id; "
+        # The re-confirmation must be one of its run's items (0513).
+        "INSERT INTO data_acquisition_run_candidate (data_acquisition_run, candidate, level) "
+        "VALUES (run_id, 'country.romania', 'country'); "
+        "INSERT INTO data_acquisition_run_attribute (data_acquisition_run, attribute, level) "
+        "VALUES (run_id, 'country.homicide_rate', 'country'); "
+        "INSERT INTO data_acquisition_run_item (data_acquisition_run, candidate, attribute) "
+        "VALUES (run_id, 'country.romania', 'country.homicide_rate'); "
         "INSERT INTO value (candidate, attribute, value_type, data_source, "
         "reference_period_start, reference_period_end, retrieval_date, confidence_level) "
         "VALUES ('country.romania', 'country.homicide_rate', 'Quantity', 'eurostat', "
@@ -371,6 +396,12 @@ REFUSALS = (
         "AND data_source = 'eurostat'); "
         "DELETE FROM value WHERE attribute = 'country.homicide_rate' "
         "AND candidate = 'country.romania' AND data_source = 'eurostat'; "
+        "DELETE FROM data_acquisition_run_item WHERE data_acquisition_run IN "
+        "(SELECT id FROM data_acquisition_run WHERE triggered_by = 'PL-049 race row'); "
+        "DELETE FROM data_acquisition_run_candidate WHERE data_acquisition_run IN "
+        "(SELECT id FROM data_acquisition_run WHERE triggered_by = 'PL-049 race row'); "
+        "DELETE FROM data_acquisition_run_attribute WHERE data_acquisition_run IN "
+        "(SELECT id FROM data_acquisition_run WHERE triggered_by = 'PL-049 race row'); "
         "DELETE FROM data_acquisition_run WHERE triggered_by = 'PL-049 race row'; END $$",
         says="cannot roll back 0511: 1 re-confirmation",
     ),
@@ -425,9 +456,10 @@ REFUSALS = (
     Refusal(
         migration="0501-a-run-records-the-figures-it-re-confirmed",
         write=a_run(
+            AN_ITEM,
             "INSERT INTO data_acquisition_run_reuse "
             "(data_acquisition_run, data_source, candidate, attribute) "
-            "VALUES (run_id, 'oecd', 'country.romania', 'country.homicide_rate');"
+            "VALUES (run_id, 'oecd', 'country.romania', 'country.homicide_rate');",
         ),
         undo=RUN_UNDONE,
         says="cannot roll back 0501: 1 reuse row(s)",
@@ -435,9 +467,10 @@ REFUSALS = (
     Refusal(
         migration="0461-a-failure-names-its-source",
         write=a_run(
+            AN_ITEM,
             "INSERT INTO data_acquisition_failure "
             "(data_acquisition_run, candidate, attribute, error_message, data_source) "
-            "VALUES (run_id, 'country.romania', 'country.homicide_rate', 'race', 'oecd');"
+            "VALUES (run_id, 'country.romania', 'country.homicide_rate', 'race', 'oecd');",
         ),
         undo=RUN_UNDONE,
         says="cannot roll back 0461: 1 recorded failure(s)",

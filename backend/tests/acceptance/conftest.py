@@ -340,9 +340,10 @@ async def values_from_a_run(database_url: str) -> AsyncIterator[int]:
     async with AsyncConnectionPool(database_url, min_size=1, open=False) as pool:
         await pool.open(wait=True)
         run = await PostgresRunStore(pool).start_run(
+            # Greece is in scope: a run's figure must be one of its items (0513).
             RunScope(
                 level="country",
-                candidates=("country.portugal",),
+                candidates=("country.portugal", "country.greece"),
                 attributes=("country.overcrowding_rate",),
             ),
             triggered_by="user",
