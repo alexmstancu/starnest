@@ -1774,10 +1774,11 @@ like `Household`, and edited in the Settings tab (section 8.2).
 ## 4. Two-level evaluation
 
 **Country level.** Cheap evaluation across all candidate countries using structured
-sources. Countries below the **country match threshold** do not have cities extracted.
+sources. A country that does not match under the active criteria set has no cities proposed,
+and a city run leaves its cities out unless it names them (Q248).
 
-**City level.** Detailed evaluation of cities within matching countries, using
-structured and LLM-assisted sources.
+**City level.** Detailed evaluation of cities within matching countries, using structured
+sources -- the LLM only for employer lists and city proposals (section 6.10, `arch.md` 12.10).
 
 Both levels run on the same machinery. Scoring, filtering, active-value selection and comparison are
 written once against `Candidate` and must not be duplicated per level. What differs is the
@@ -1786,8 +1787,10 @@ independently of the other.
 
 **A city's score never inherits arithmetic from its country's score.** The country score
 appears alongside the city for context — so a strong city in a weak country is visible — but
-is never added into the city total. National factors are already represented by city-level
-criteria; adding the country score would count them twice.
+is never added into the city total. **National factors enter the city score as city criteria
+that judge the country's attribute through the parent** (Q242) -- the 7.2 catalog has none of its
+own, so without them tax and governance would count for nothing -- and adding the country score
+as well would count them twice.
 
 ---
 
@@ -1986,6 +1989,11 @@ Four mechanisms, designed to coexist:
 - **Manual add** — type a name; it enters immediately as `approved`.
 - **Top N by population** — automatic from a population dataset. **N defaults to 5** per
   matching country, configurable.
+
+> **v2.0 builds three of the four** (Q241, 2026-10-24). The seed list is the 79 cities of the EU
+> *Quality of Life in European Cities* survey; manual add and LLM proposals are built as described
+> here. **Top N by population is not**, because the largest places in a population dataset
+> include suburbs and fragments of one conurbation. The approval state is `arch.md` 12.2.
 
 The country list auto-seeds with the full geographic scope — **EU 27 + Iceland, Norway,
 Liechtenstein + United Kingdom + Switzerland**, 32 countries.
@@ -2226,7 +2234,7 @@ adopted mid-implementation.
 | 1 | **Fallback source for a measurable attribute** — no dataset covers this candidate | A number, with the sources it read | `low` | Both |
 | 2 | `country.international_employers`, `city.international_employers` | **A `LabelSet` of named firms** — the type section 7.1 declares — user-overridable, and the names are the evidence | `low` | Both |
 | 3 | **Match rule research** — visa pathways, quotas, timing (section 7.3) | A proposed result and reason, citing official pages, **always confirmed by a human** before it stands. A proposal is stored, displayed with its sources and **rules nothing out**; confirming it means writing the same answer as `manual`, which replaces it as the live answer while the proposal is kept as an earlier version (Q218, Q237) | `low` until confirmed | Country |
-| 4 | **Candidate nomination** — proposing cities in a matching country | A list of names for approval, never a value | n/a | City, post-MVP |
+| 4 | **Candidate nomination** — proposing cities in a matching country | A list of names for approval, never a value | n/a | City, v2.0 |
 
 **Where the LLM is explicitly not used:**
 
@@ -2601,18 +2609,29 @@ way by the active-value rule (section 3.6).
 
 ### 7.2 City level
 
+> **Status 2026-10-25: partly superseded by the city source research**
+> (`research/city-level-sources-2026-10-23.md`, every coverage figure fetched live). This catalog
+> was written before Q223 barred composites and before Numbeo's terms forbade automated
+> collection (Q251): the rows sourced from Numbeo cannot be fetched, and its safety, purchasing
+> power and public transport indices cannot be scored. `city.sunshine_hours` cannot come from
+> Open-Meteo, whose modelled sunshine runs 30-68% high (`0497`). And the catalog has no national
+> factors, which a city criterion now reads through its parent country (Q242). **The research's
+> verdict table (its section 4) is the input to the city catalog migrations**; the rows below
+> stay as written, with each superseded source struck through, until those migrations replace
+> them (`devplan-v2.md`).
+
 #### Economics — 10%
 
 | Attribute | Weight | Value type | Sources |
 |---|---|---|---|
-| `city.cost_of_living_monthly` | 60% | **Monetary** — EUR/month, multi-value, keyed by `occupancy` | Numbeo **(R)**, LLM fallback |
-| `city.purchasing_power` | 40% | **Index** — Numbeo 0–100+ | Numbeo **(R)**, Eurostat Urban Audit **(R)** |
+| `city.cost_of_living_monthly` | 60% | **Monetary** — EUR/month, multi-value, keyed by `occupancy` | ~~Numbeo **(R)**, LLM fallback~~ **Derived at scoring time** from city rent and national price levels (Q243) |
+| `city.purchasing_power` | 40% | **Index** — Numbeo 0–100+ | ~~Numbeo **(R)**~~ (Q223, Q251), Eurostat Urban Audit **(R)**; the research proposes regional household income in PPS (NUTS 2) |
 
 #### Housing — 15%
 
 | Attribute | Weight | Value type | Sources |
 |---|---|---|---|
-| `city.rent_centre` | 45% | **Monetary** — EUR/month, multi-value, keyed by `bedroom_count` | Numbeo **(R)**, national listings, LLM |
+| `city.rent_centre` | 45% | **Monetary** — EUR/month, multi-value, keyed by `bedroom_count` | ~~Numbeo **(R)**~~ (Q251), national listings, LLM; the research proposes Deloitte and Urban Audit, per m² |
 | `city.property_purchase_price_m2` | 35% | **Monetary** — EUR/m² | National land registries, Eurostat **(R)** |
 | `city.rooms_per_person` | 10% | **Quantity** — rooms | Eurostat Urban Audit **(R)** |
 | `city.overcrowding_rate` | 10% | **Ratio** — share of households overcrowded | Eurostat Urban Audit **(R)** |
@@ -2659,7 +2678,7 @@ way by the active-value rule (section 3.6).
 
 | Attribute | Weight | Value type | Sources |
 |---|---|---|---|
-| `city.safety` | 100% | **Index** — Numbeo 0–100 | Eurostat Urban Audit **(R)**, Numbeo **(R)**, regional police |
+| `city.safety` | 100% | **Index** — Numbeo 0–100 | Eurostat Urban Audit **(R)**, ~~Numbeo **(R)**~~, regional police. **Split by Q245**: the survey's safety answers and NUTS 3 homicide are scored, recorded crime displayed |
 
 > **One crowdsourced index carrying an entire pillar is a placeholder.** Numbeo's safety index is
 > perception, not incidence, and a single number cannot distinguish a city with pickpocketing
@@ -2688,7 +2707,7 @@ way by the active-value rule (section 3.6).
 | Attribute | Weight | Value type | Sources |
 |---|---|---|---|
 | `city.temperature` | 30% | **Quantity** — °C | Open-Meteo **(C)** |
-| `city.sunshine_hours` | 25% | **Quantity** — hours/year | Open-Meteo **(C)** |
+| `city.sunshine_hours` | 25% | **Quantity** — hours/year | ~~Open-Meteo **(C)**~~ WMO 1991-2020 normals, nearest station (`0497`) |
 | `city.air_quality` | 45% | **Quantity** — µg/m³ PM2.5 | OpenAQ, EEA nearest station **(C)** |
 
 > **`city.temperature` is an annual mean, which hides the thing you actually care about.** After
@@ -2703,7 +2722,7 @@ way by the active-value rule (section 3.6).
 | Attribute | Weight | Value type | Sources |
 |---|---|---|---|
 | `city.internet_quality` | 30% | **Quantity** — Mbps | Ookla Open Data, ~610 m tiles **(C)** |
-| `city.public_transport` | 25% | **Index** — Numbeo 0–100 | Overpass **(C)**, Urban Audit |
+| `city.public_transport` | 25% | **Index** — Numbeo 0–100 | ~~Overpass~~ OpenStreetMap from Geofabrik extracts **(C)** (Q249), Urban Audit; the research proposes the survey's transport answers |
 | `city.flights_to_home` | 25% | **Count** — direct routes per week to `home_city` (section 3.9) | Flight APIs, manual, via the `nearest_airport` attribute |
 | `city.proximity_to_hub` | 20% | **Quantity** — km | Computed from coordinates **(C)** |
 
@@ -2741,7 +2760,7 @@ point where further distance stops mattering.
 
 | Attribute | Weight | Value type | Sources |
 |---|---|---|---|
-| `city.admin_ease` | 100% | **AssignedScore** — 0–100, derived from procedure | **Official administrative sources** — municipal service pages. See section 6.9 |
+| `city.admin_ease` | 100% | **AssignedScore** — 0–100, derived from procedure | **Official administrative sources** — municipal service pages. See section 6.9. The research proposes the survey's local-administration answers (79 cities) in place of an assigned score |
 
 #### Family & education — 6%
 
@@ -2765,7 +2784,7 @@ not matching regardless of score** — and stays visible, with its score, showin
 | `ch_eu_efta_quota` | country | The annual Swiss EU/EFTA permit quota has capacity for this household | Manual, LLM-assisted (section 6.9) |
 | `li_eea_quota` | country | The annual Liechtenstein EEA residence-permit quota (a minimum of 56 a year under the EEA Agreement's sectoral adaptation) has capacity for this household | Manual, LLM-assisted (section 6.9) |
 | `not_manually_excluded` | both | You have not ruled this candidate out by hand. The seeded country list is broad by design (section 6.1), and pruning it is a **preference**: `alex` may enforce this rule while `partner` does not, and the excluded candidate stays visible with its score and your stated reason | Manual |
-| `two_role_feasibility` | **city** | The local market can plausibly support **two** tech roles — engineering *and* product | **Manual** for now — you judge each city. Becomes derived from `city.tech_software_jobs` and `city.tech_product_jobs` against a configurable floor once those have a source (section 9) |
+| `two_role_feasibility` | **city** | The local market can plausibly support **two** tech roles — engineering *and* product | **Manual** for now — you judge each city. Becomes derived from `city.tech_software_jobs` and `city.tech_product_jobs` against a configurable floor once those have a source (section 9). **Both are retired** (`0487`), so it stays manual unless a regional tech-employment floor is accepted as its input |
 
 > **`two_role_feasibility` is the one that cannot be replaced by a criterion.** A strong
 > national tech market does not mean a specific small city has room for two people, and product
@@ -2816,7 +2835,7 @@ supplies the comparison.
 | `rent_vs_spend` | city | `ShareOfHouseholdField` | `city.rent_centre`, `household.target_monthly_spend` | Rent consumes more than `threshold_max` of total household spend. Provisionally 0.40 | warning |
 | `cost_of_living_vs_income` | city | `ShareOfHouseholdField` | `city.cost_of_living_monthly`, `household.net_income` | Total living costs consume more than `threshold_max` of net income. Provisionally 0.60 | warning |
 | `expat_bubble` | city | `AllConditionsHold` | `city.expat_community_size` above a floor, **and** `country.openness_to_foreigners` below a ceiling — **an input from the parent country** | A large expat community sits inside a country with low openness. **Both bands TBD** | warning |
-| `two_role_feasibility` | city | `SumBelowFloor` | `city.tech_software_jobs`, `city.tech_product_jobs` | The two counts together fall below a floor. **Stays a manual match rule (section 7.3) until those attributes have a source** (section 9) | not matching |
+| `two_role_feasibility` | city | `SumBelowFloor` | `city.tech_software_jobs`, `city.tech_product_jobs` | The two counts together fall below a floor. **Stays a manual match rule (section 7.3) until those attributes have a source** (section 9); both are retired (`0487`) | not matching |
 
 > **`two_role_feasibility` is one rule in two catalogs, and only one of them is real.** In the
 > MVP it exists **solely as the manual match rule of section 7.3** — no `compound_rule` row is
@@ -3387,3 +3406,15 @@ Recorded from a front-to-back read of this document.
 | Q238 | **A rule's outcome is per set: each set holds each rule it applies as a gate or as a warning** (2026-10-25, PL-157, UF-041, D56; revises sections 3.7 and 3.7a) | A gate always ruled a candidate out and a compound rule did what `compound_rule.outcome` said, in every set, so softening the Swiss quota to a flag for one set meant softening it for all. Whether a rule counts was already the set's preference; what it does when it counts is a preference of the same kind, so it moved beside it: an `outcome` on `criteria_set_match_rule` and `criteria_set_compound_rule` (`0516`), **set exactly while the rule is on**, as the sparse model requires -- off is the absence of the row, outcome and all. A gate defaults to a gate and a compound rule to its catalog outcome, so `0516` changes no ranking. **A gate held as a warning** flags a candidate it fails with the answer version it read, the mirror of a gate refusal (Q237), and the candidate stays matching with its score untouched; **a rule held as a warning never rules out**. A saved ranking freezes each rule's outcome beside its rule list (`0507`) and keeps a gate warning in `candidate_gate_warning`, so a reopened ranking means what it meant. The outcome is read and written through the set's rule toggles; leaving it out keeps the one held, and sending one for a rule being switched off is refused. **The rollback refuses** while any set or saved ranking holds a rule otherwise than by default. Rejected: recording the divergence and drawing the fixed text as plain text (the alternative D56 offered), and a separate sparse table of overrides (two rows describing one rule in one set) |
 | Q239 | **The household's citizenships drive the gates that name them** (2026-10-25, PL-164: UF-029, G-S6, D59; recorded as Q237 in the plan, a number PL-143 already held) | A citizenship reached no gate: a British passport did not clear the UK Skilled Worker route, and nothing derived `eu_free_movement`, so that enforced gate never fired. **Which citizenship clears which gate is the law, so it is catalog data** (`match_rule_clearing_citizenship`, `0517`), seeded from section 7.3 and the design and nowhere else. Evaluation receives the household's citizenships as data -- as it already received the home country -- so its import table is unchanged. A gate a held citizenship clears matches with no answer; **`eu_free_movement` is decided by citizenship** (`match_rule.decided_by_citizenship`), concerning the 30 EU and EEA states, so it rules out where none clears it, naming the citizenships it read, and a saved ranking keeps them (`evaluation_citizenship`). **It is cleared by an EU, EEA or Swiss citizenship, and in Ireland alone by a British one** -- the Common Travel Area, a clearing row scoped to the one candidate it is about (`0526`), so a British household is not ruled out of Ireland; the others by TFEU Art. 21 and 45, the EEA Agreement Art. 28, the EU–Swiss Agreement on the Free Movement of Persons (1999) -- and **a citizen of a gate's own country clears it** (`li_eea_quota` by Liechtenstein's), so the seed never rules a household out wrongly. Research never pays to ask about a pair a held citizenship clears. No household decides nothing, and an answer recorded about a candidate the gate does not concern decides nothing either. **Each answer records the citizenships it assumed and is flagged `needs_recheck` when they change**; one written before `0517` has an unknown (null) assumption and is flagged whenever the household holds any. **Only a gate a citizenship can change is flagged**: one with a clearing row or decided by citizenship. Section 7.3's "Matches when" offers no sharper test -- the quotas say "for this household" without saying how nationality enters -- so the catalog's own rows decide, and a manual exclusion, about no nationality, is never flagged, since settling the flag would re-date an audited exclusion -- never expired, never overwritten (household policy 2026-10-13), building on the re-check of D53. Rejected: gates reading only recorded answers, with free movement answered by hand (D59's alternative -- the requirement and the design both ask for derivation); citizenship rules in code (nothing is hardcoded) |
 | Q240 | **Weights are kept to ten decimal places, and a sum is exact to the twentieth** (2026-10-25, P107) | A pillar drag answered 500 and `local_employment` stopped reading at all: rebalances kept shares at Decimal's 28 significant digits, so the residue correction summed at that precision believed a total was 100 and stored 100.000000000000000000000000004, which the set's own check, summing the other way, read as 99.99999999999999999999999999. **A redistributed weight is now kept to ten decimal places and the residue placed in exact arithmetic**, so every sum of weights is exact in Python and in SQL alike (5.1 still rounds for display only). **The check sums every digit and accepts a residue past the twentieth place**, which is earlier arithmetic and never anyone's choice, so the weights such rebalances already stored read again. Rejected: re-saving every stored weight by migration (the read now tolerates them, and the next move in a pillar rewrites its absorbers to ten places); an exact check alone (it made a 4e-27 residue a set nobody could open) |
+| Q241 | **The city roster is seeded from the 79 cities of the EU Quality of Life survey; a manual add enters `approved` and an LLM proposal waits as `proposed`; top N by population is not built in v2.0** (2026-10-24, the household; revises section 6.1's default) | Top 5 by population per matching country would nominate 160 places, suburbs and fragments of one conurbation included (Tallaght, Petržalka, Malta's five localities), because a population dataset's largest places are not cities. The survey's 79 cities in 31 of the 32 countries are the best-measured places there are, about 850 interviews each, and a deliberate pick (Cassis, Annecy, Vaduz) is one manual add away. **Every nomination step is a row kept once written**, as a gate answer is (Q237): a proposal keeps its pages and a rejection its reason, and a place proposed again gains a step rather than a second candidate. `arch.md` 12.2 |
+| Q242 | **A city criterion may judge its parent country's attribute, read through the parent and never copied, and a criterion carries its own level** (2026-10-24 decision B; the mechanism 2026-10-25; revises section 4) | Section 4 said national factors were already represented by city criteria, and the 7.2 catalog has none: no tax rate, health system, rule of law or English. Ranked on it, Cluj and Zurich would differ on rent and climate while tax and governance counted for nothing. Copying the national figure into a city attribute would store one fact once per city; reading it through the parent stores it once and labels it as national. A criterion's level was its attribute's and a set held one criterion per attribute, both of which this breaks -- a set judges the tax rate at country level and again at city level -- so the level becomes a column in the criterion's identity, checked against the level hierarchy. **An ancestor's figure is normalised over the distinct ancestors**, never once per city, or the number of cities seeded in a country would move every national score. The city score still never adds the country's score. `arch.md` 12.5 |
+| Q243 | **The city cost of living is derived at scoring time from stored figures and the household; Numbeo is not used** (2026-10-24 decision C; at scoring time 2026-10-25) | City rent per m² times the household's dwelling size, plus its non-housing spend scaled by the destination's national price level excluding housing, relative to home. Two inputs are the household's, so a stored result would go stale the moment the household changed and turn a household edit into a re-fetch, against section 5.6. A derived attribute names a shape in code and its inputs as rows, never a formula (`arch.md` 1.3), and reports its inputs' provenance, their lowest confidence and their oldest reference date. `arch.md` 12.6 |
+| Q244 | **The country screen narrows by hand with `not_manually_excluded`; there is no score cutoff** (2026-10-24 decision E) | All 32 countries match under `local_employment`, so the screen filters nothing until the household prunes it. The designed mechanism is a gate per set with a reason and a date (section 6.1); a cutoff would be a threshold nobody set. |
+| Q245 | **Survey answers are scored and labelled as a resident survey; homicide by NUTS 3 is scored; recorded robbery, burglary and vehicle theft are displayed only** (2026-10-24 decision D) | The Quality of Life survey asks single questions by one method in every city, so Q223 does not bar it, and the drill-down names it as a resident survey with its year and sample size. Eurostat states that police-recorded crime is not comparable across countries, homicide excepted, so scoring robbery would partly rank police forces. |
+| Q246 | **Both shipped criteria sets carry the city level, and the interface features deferred from the MVP move to v2.1** (2026-10-24) | A set already spans levels -- pillar weights are keyed by set, pillar and level -- so `local_employment` and `remote_only` gain city weights and criteria rather than city twins. Gradient maps, favourites, annotations, saved comparisons and `relocation_window` go to v2.1, so v2.0 is the city level and nothing else. |
+| Q247 | **A footprint is a property of the attribute, and every figure records the place it was measured for** (2026-10-25) | A city figure is measured at a point, the city, its region or the nation, and a city showing its region's unemployment rate must say so. Declared per attribute, every source answers an attribute at one footprint, so a criterion never ranks one city on its own figure against another on its region's -- the Adzuna lesson (`0487`) one level down. Each figure names its region, station or grid cell, and its distance where it is a proxy. The footprint is shown, never weighed. `arch.md` 12.4 |
+| Q248 | **Evaluating a set at the city level evaluates the same set at the country level first; a city records its parent's match status, is flagged `parent_not_matching` whenever that status is not `matching`, and a city run leaves out only the cities of a `not_matching` country by default** (2026-10-25) | The flag was specified and never built: `evaluation/ranking.py` says so, and the v2 draft took it as built. A boolean would lose what section 4 asks the interface to say -- a country that does not match, or was never evaluated -- so the parent's status and reasons are recorded in the one vocabulary. The set being run is the only unambiguous judge of the parent. A city keeps its score and its reason; a country with insufficient data has ruled nothing out, so only a `not_matching` country's cities wait to be named by a run, because a fetch is always explicit (section 6.2). `arch.md` 12.8 |
+| Q249 | **City geography is resolved once, from vendored datasets processed offline, and there is no PostGIS** (2026-10-25; closes `arch.md` 11's first item) | Every city adapter needs coordinates and regions; resolving them once, from a GeoNames dump and GISCO boundaries kept on disk, needs no network and gives the same answer twice. Every spatial question is asked at nomination or fetch time and stored as a code or a quantity, so nothing at query time is spatial. The public Overpass server refuses and throttles a run, so OpenStreetMap is read from Geofabrik extracts. `arch.md` 12.3 |
+| Q250 | **v2.0 is built in vertical slices, each gated and reviewed on its own, and its four gates are written as failing tests before any feature code** (2026-10-25) | The MVP's large parallel batches, reviewed after the fact, produced round after round of findings. A slice small enough to review whole, landing with its gate passing, finds a defect in the slice that made it. The gates are written first, once the revised architecture is approved, and kept out of `make check` until each passes. `devplan-v2.md` 0 |
+| Q251 | **Numbeo is not fetched** (2026-10-23, the city source research; revises `datasources.md` 9.1) | Numbeo's terms now say automated collection is "strictly prohibited" without prior written permission, and three of its indices are composites barred by Q223 regardless. Typing a figure in for personal use remains allowed, at `low` confidence. |
+| Q252 | **What evaluation read for a candidate and an attribute -- for any criterion or rule -- is an evaluated figure, carrying the published figure and its bounds and frozen with its evidence; matching thresholds, compound rules, the snapshot and comparison read it rather than a stored value** (2026-10-25) | The MVP read, froze and compared stored values: a saved ranking may only cite its own candidate's value at its own level (`0523`), and comparison rebuilds magnitudes from stored values. A national figure read through the parent is another candidate's value, and a derived figure is no value at all, so both would be refused or never seen. The evaluated figure exists for every attribute a criterion judges or a rule reads, since a rule may read one no criterion scores (P46); it carries the magnitude with its published bounds, which normalisation and comparison need, and its evidence -- one value and the candidate it was measured for, or a derivation's shape, values and household figures, each as read. For an attribute at the evaluation's own level it is exactly the candidate's own active value, so no country ranking moves. `arch.md` 12.7 |

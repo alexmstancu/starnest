@@ -2,16 +2,17 @@
 
 The architecture of Starnest. Terms used here are defined in `reqs.md` Appendix A.
 
-**Status: complete for the MVP.** Ontology, storage, module architecture, runtime flows, the
-interface and operations are all settled, and **the stack is decided** (section 10.2). What remains
-open is listed in section 11 and blocks nothing.
+**Status: complete for the MVP, and revised for v2.0 — the city level — on 2026-10-25.**
+Ontology, storage, module architecture, runtime flows, the interface and operations are settled,
+and **the stack is decided** (section 10.2). What remains open is listed in section 11.
 
-> **This is the MVP architecture — the country level** (`reqs.md` 1.3). It is deliberately
-> built so the city level adds *sources and rows* rather than machinery, but it has not yet had
-> to prove that. **A second pass revises this document before post-MVP work begins**, because
-> the city level makes the LLM-plus-search acquisition path load-bearing where the MVP exercises
-> it for a single attribute. `devplan.md` covers the MVP only; a second development plan is
-> written against the revised architecture. See `devplan.md` 8.
+> **Sections 1–10 are the MVP architecture — the country level** (`reqs.md` 1.3), built so the
+> city level would add *sources and rows* rather than machinery. **Section 12 is the second
+> pass** that `devplan.md` 8 required before post-MVP work: what the city level adds, what it
+> changes, and what it leaves alone. It replaces the expectation that the LLM-plus-search path
+> would become load-bearing — the source research found structured sources for nearly every city
+> attribute (`research/city-level-sources-2026-10-23.md`). `devplan-v2.md` is the development
+> plan written against it.
 
 ---
 
@@ -580,7 +581,7 @@ rather than the part of the problem it belongs to.
 | Outside the policy core | Contains | Depends on |
 |---|---|---|
 | `api/` | The REST surface: routing, request parsing, DTO-to-JSON serialisation, status codes, error shapes | every use case it exposes |
-| `data_sources/` | One adapter per data source — Eurostat, Numbeo, the LLM path, manual entry | `data_acquisition`, `data` |
+| `data_sources/` | One adapter per data source — Eurostat, OECD, the ECB, the LLM path, manual entry | `data_acquisition`, `data` |
 | `storage/` | The schema, its migrations, all SQL, and the store implementations | every module whose store interface it implements |
 
 **The user interface is not in this list.** It is a **separate client**, built and deployed on its
@@ -1275,11 +1276,21 @@ The figures that justify the architecture:
 This is the whole argument for evaluating in levels rather than one uniform pass, and it is the reason the
 country level is v1.
 
+> **What v2.0 actually starts from** (2026-10-25). All 32 countries match under
+> `local_employment`, so the country screen saves nothing until the household prunes it
+> (`reqs.md` Q244); the roster is the 79 seeded survey cities plus manual adds and approved
+> proposals (Q241), not ~100 by population; and the LLM answers one attribute per city rather
+> than most of them (section 12.10). The levels still earn their place -- a national figure is
+> fetched once per country and read by every city in it (12.5), and a pruned country takes its
+> cities out of the default run (12.8) -- but the saving is in fetches and attention more than
+> in LLM spend.
+
 ### 10.6 Setup
 
 The qualitative path needs a **dedicated Anthropic API key** from console.anthropic.com,
-separate from a Claude.ai subscription and billed per use. The cost is a few dozen calls per
-city, not millions.
+separate from a Claude.ai subscription and billed per use. At the city level the model answers
+one attribute per city and proposes names (section 12.10), so the cost is a few calls per city,
+estimated before it is spent.
 
 ### 10.7 Auditing is the database's own statement log
 
@@ -1335,11 +1346,11 @@ queryable.
 
 ## 11. Open
 
-- **PostGIS, or geometry computed at fetch time.** Whether distances to coast, mountains and
-  protected areas are queried spatially in the database or computed once by the adapter and stored
-  as plain `Quantity` values. Nothing today needs a spatial query, so the plain-numbers answer is
-  the likely one — decidable when the first geographic adapter is written. **The stack is
-  otherwise settled** (section 10.2).
+- ~~**PostGIS, or geometry computed at fetch time.**~~ **Closed 2026-10-25: no PostGIS**
+  (section 12.3, `reqs.md` Q249). Every spatial question is asked once, at fetch or nomination
+  time, over vendored geometry, and stored as a code or a plain `Quantity`. **The stack is
+  otherwise settled** (section 10.2); the geometry library is chosen with the first geometry
+  adapter (12.9).
 - **Time-series reducers.** Which rows scoring uses when an attribute has several reference
   periods — latest, a three-year mean, a trend. A preference rather than a fact, so it belongs
   in `CriteriaSet`. **Not in v1**, and it needs no schema change: the rows are already separate
@@ -1347,12 +1358,336 @@ queryable.
 
   *(The multi-value reducer is **not** open — it is in v1. `CRITERION.reducer_mode` plus
   `CRITERION.breakdown_option` select which rent applies, `reqs.md` 3.4.)*
-- **Derived attributes**, deferred to post-MVP. `two_role_feasibility` and
-  `country.natural_diversity` both want one. When built, a derivation is an **adapter that reads
-  other attributes** rather than a formula in config — which keeps section 1.3's guardrail intact and
-  gives a derived value provenance, confidence and a reference period like any other.
+- **Derived attributes** -- **settled for v2.0 by section 12.6** (`reqs.md` Q243). A derived
+  attribute is computed at scoring time from stored figures and never stored, whether or not it
+  reads the household; the attribute names a shape in code and its inputs as rows, which keeps
+  section 1.3's guardrail intact and still gives the figure provenance, confidence and a
+  reference period. The earlier idea -- an **adapter that reads other attributes** and stores
+  what it derives -- is superseded: a stored derivation would have to be recomputed every time
+  one of its inputs changed.
+- **Caching at city scale.** Decided on a measurement of the read path with the full city
+  roster (`devplan-v2.md`), never on an intuition -- the MVP's reasoning (`devplan.md` 8) applies
+  unchanged, and a stale plausible ranking is still the failure to avoid.
+- **The household fields the cost of living reads** -- a dwelling size and a non-housing monthly
+  spend (12.6) -- are provisional, as every household default is, and settled with real figures in
+  the slice that builds the derivation.
 
 - **The interface's component library.** React is settled; whether the tables, sliders and charts
   come from a component kit or are assembled directly is not. It affects no backend decision.
 - **First implementation order** — repo scaffolding, then the database schema, then structured
   data acquisition as the first end-to-end sanity check. Sequencing belongs in `devplan.md`.
+
+---
+
+## 12. The city level — the v2.0 revision
+
+> **Revised 2026-10-25 for v2.0**, as `devplan.md` 8 required before post-MVP work. Sections
+> 1–10 still describe the machinery; this section says what the city level adds to it, what it
+> changes, and -- the test the MVP was built to pass -- what it leaves alone. The decisions are
+> logged in `reqs.md` Appendix B, Q241–Q252. The evidence for every data choice is
+> `research/city-level-sources-2026-10-23.md`, each coverage figure fetched live.
+
+### 12.1 The bet, and where it held
+
+The MVP was built so that the city level would be **sources and rows, not machinery**
+(`devplan-v2.md` 0). Read against the city level's needs on 2026-10-25:
+
+| Held | Did not hold |
+|---|---|
+| `Candidate` and `Level` are rows; the `city` level exists, nested under `country` (`0100`, `0114`), and identifiers already build `city.portugal.lisbon` | **`parent_not_matching` is not built.** `evaluation/ranking.py` says so and the evaluation store writes `False`; the draft plan and the research note both took it as built (12.8) |
+| No policy module branches on `country` or `city`: the only such literals in backend policy code and the SQL queries are in docstrings | **A criterion's level is read off its attribute** (`criteria/criteria_set.py`), so a city criterion cannot judge a national figure (12.5) |
+| A criteria set already spans levels: pillar weights are keyed by set, pillar *and* level, so `local_employment` takes a city opinion without a new set | **Nomination has no state** -- v1 seeds every candidate and needs none (12.2) |
+| Runs, the spend cap, exact-pair scope, retry and active-value selection are written against `Candidate`, and the contract's ranking, comparison and candidate operations already take a level | **A figure cannot say where it was measured** (12.4), and **no figure can be computed from the household at scoring time** (12.6) |
+| | **A criterion is identified by its set and attribute** (`criterion_natural_key`), so one set cannot judge a national attribute at two levels (12.5) |
+| | **The snapshot, the matching thresholds, the compound rules and comparison all read a figure as the candidate's own stored value** (`0523`'s foreign keys, `evaluation/rules.py`, `api/comparisons.py`), so a national or derived figure has nowhere to go (12.7) |
+
+The right-hand column is the whole of the new machinery. Most of it is small and sits in one
+module, which is what the bet promised: where the abstraction leaked, the module that leaked is
+named. **The last row is the exception**: what a ranking reads, freezes and compares spans
+`evaluation/`, `comparison/` and `storage/`, and it is the largest change v2.0 makes to v1 code.
+
+### 12.2 Nomination: how a candidate enters
+
+`reqs.md` 6.1's four ways in, as v2.0 builds them (Q241):
+
+| Way in | Enters as | In v2.0 |
+|---|---|---|
+| **Seed** -- the 79 cities of the EU *Quality of Life in European Cities* survey (2023), in 31 of the 32 countries | `approved` | Yes, by migration, as v1 seeded the countries |
+| **Manual add** -- a name, resolved to a place (12.3) | `approved` | Yes, **at any level**: adding a country is the same operation (`reqs.md` 6.1, "first-class, reusable") |
+| **LLM proposal** -- names for a matching country, with the pages the model read | `proposed`, until a person approves or rejects it | Yes (12.10) |
+| **Top N by population** | -- | **No.** GeoNames' largest places include suburbs and fragments of one conurbation (Tallaght, Petržalka, Malta's five localities); the survey seed replaces it |
+
+**Nomination is a property of the candidate, not of an evaluation, and it is kept as a
+history.** `candidates/candidate.py` keeps match status off the candidate because it changes with
+the criteria set; whether a place was proposed or approved does not. Every step is a
+`candidate_nomination` row -- proposed (by the model, with the pages it read), approved or
+rejected (by a person, with the reason), or added (by a seed or a manual add) -- **written once
+and never updated or deleted**, as a gate answer is (Q237). The candidate's state is its latest
+step; a rejected place proposed again gains a new step on the same candidate, found by its
+GeoNames identity, never a second candidate. The 32 countries and the 79 seeded cities migrate
+with one `approved` step each.
+
+**Only an approved candidate is acquired, scored or compared.** A proposal is stored with the
+pages its model read and stays visible in the Candidates panel; a rejected one keeps its row and
+its reason, because nothing is discarded (section 3.4) and a later proposal of the same place
+must find it. **Rejection is not exclusion**: ruling an approved place out remains the
+`not_manually_excluded` gate, per criteria set -- a preference, never a fact on the candidate
+(`reqs.md` 6.1).
+
+### 12.3 Place: a city's geography, resolved once
+
+Every adapter that answers a city needs to know where it is: coordinates for a weather grid,
+NUTS 2 and NUTS 3 regions for Eurostat's regional tables, an Urban Audit code, a survey city.
+**None resolves this on its own.** A `place` row per candidate holds the GeoNames id and name,
+coordinates and population; the NUTS 2 and NUTS 3 codes, by point-in-polygon against the GISCO
+boundaries; the Urban Audit city code and the survey city where they exist; and the edition each
+came from (the GeoNames dump's date, the NUTS classification's year), as provenance.
+
+**Resolved from vendored datasets, offline** (Q249). The GeoNames dump and GISCO's NUTS and Urban
+Audit boundaries are downloaded once and kept (section 5.4), so resolving a manual add needs no
+network and gives the same answer twice. **The nearest weather station and airports are not on
+the place row**: they belong to the source that measures through them, so its adapter finds them
+and the figure records them (12.4). The place row stays one row per candidate, whatever sources
+arrive later.
+
+**A port declared by `candidates/`.** `PlaceResolver` turns a name and a parent into the places
+it could mean, for a person to choose from; a plugin in `data_sources/` implements it over the
+vendored files, and adapters read stored places through the run. **No PostGIS** (closing
+section 11's first item): every spatial question -- which region, how far to the coast, which
+station is nearest -- is asked once, at nomination or fetch time, by Python over vendored
+geometry, and the answer is stored as a code or a plain quantity. Nothing at query time is
+spatial.
+
+### 12.4 Footprint: where a figure was measured
+
+A city figure is measured at one of four **footprints**: a **point** (a weather grid cell, an
+internet-speed tile, a distance), the **city** (the survey, Urban Audit, Deloitte), its **region**
+(NUTS 2 or 3: unemployment, tech employment, homicide) or the **nation** (tax, rule of law). A
+city showing its region's unemployment rate must say so, for the reason a stand-in names
+Switzerland for Liechtenstein: a proxy that says so is honest, and one that hides is fabrication
+with the paperwork filled in.
+
+**The footprint is a property of the attribute** (Q247). `attribute.footprint` names one of the
+four, from a `footprint` reference table, and every source that answers an attribute answers it
+at that footprint. **This is what keeps a criterion honest**: it never ranks one city on its own
+figure against another on its region's, which is the Adzuna lesson (`0487`) one level down.
+Where a city-footprint source covers some countries and a regional one covers all -- Urban Audit
+unemployment beside NUTS 2 -- they are two attributes, and the one with even coverage is the one
+scored. Country attributes are `nation`.
+
+**Every figure records the place it was measured for.** `value.measured_for` names it -- a NUTS
+code, a station, a grid cell -- and `value.measured_distance` how far that is from the candidate
+where the measurement is a proxy (the nearest WMO station, the nearest airport). Both are
+provenance, displayed beside the two dates. The database refuses a figure of a `region` or
+`point` attribute that names no place, as it refuses a payload that does not match its type
+(section 3.3b).
+
+**A stand-in names where its figure was measured.** A stand-in copies its substitute's figure
+whole (`data_acquisition/stand_in.py`). At a point or region footprint it keeps the substitute's
+`measured_for`, which is true, and its distance must be measured again from the candidate it
+stands in for; until that is built, no stand-in is declared for a point or region attribute.
+
+**The footprint is shown, never weighed.** The active-value rule (section 4) is unchanged, and a
+coarse figure is not penalised for being coarse. Within one region a regional figure cannot
+separate two cities -- Lyon and Villeurbanne share a NUTS 3 code -- which is correct: regional
+criteria rank regions, and the point and city tiers separate the cities.
+
+### 12.5 A criterion may judge an attribute of a level above
+
+A city ranked on rent and climate alone would make tax, the health system and the rule of law
+count for nothing, and the city catalog of `reqs.md` 7.2 has none of them. **A city criterion may
+judge its parent country's attribute, read through the parent and never copied** (Q242): one
+stored national figure, shared by every city in the country, labelled in the drill-down as
+national -- "37.2%, Romania's figure".
+
+**A criterion carries its own level, and its identity includes it.** Today a criterion's level
+is its attribute's, and a set holds one criterion per attribute (`criterion_natural_key`,
+`CriteriaSet`'s own check, and the contract's criterion operation keyed by attribute). Both break
+here: `local_employment` must judge `country.total_tax_rate_effective` at country level *and* at
+city level, with separate weights, goals and anchors. `criterion.level` becomes a column, the
+natural key becomes set, level and attribute, and the attribute's level must be the criterion's
+or an ancestor of it, checked against a `level_ancestor` relation derived from the level rows, so
+nothing assumes two levels. The set's checks -- weights sum to 100 within a pillar and within a
+level, every criterion's pillar weighted at its level -- group by the criterion's level, as do
+`CriteriaSet.levels()`, the contract's criterion operations and the interface's keys.
+
+**Evaluation reads through the ancestor.** For a criterion whose attribute sits at a level above,
+the figure for a candidate is the active value of that attribute for the candidate's ancestor at
+the attribute's level. It counts toward coverage like any other, and it is an evaluated figure
+naming the ancestor it was measured for (12.7).
+
+**An ancestor's figure is normalised over the ancestors, not over the candidates.** Percentile
+counts every candidate a figure beats (`evaluation/normalisation.py`), so repeating Germany's
+national figure for each of its seven seeded cities and Croatia's for its one would let the
+roster's make-up move every national score. An ancestor-read criterion is normalised across the
+distinct ancestors of the candidates being ranked, and each candidate takes its ancestor's score;
+`fixed` and `as_is` give the same answer either way. A regional figure is not treated so: it is
+the city's own attribute measured at a regional footprint, and each city is a candidate in its
+own right.
+
+**It never reads the country's score**: `reqs.md` 4's rule that a city's score inherits no arithmetic from its country's still
+holds, and the country's score is shown beside the city for context only.
+
+### 12.6 Figures computed at scoring time from the household
+
+The city cost of living cannot be fetched: Numbeo's terms forbid it (Q251) and its index is a
+composite (Q223). **It is derived** (Q243): city rent per m² times the household's dwelling
+size, plus the household's non-housing spend scaled by the destination's national price level
+excluding housing, relative to the home country's. Two of its inputs are the household's, so it
+is **computed at scoring time and never stored**: change the dwelling size and the ranking moves
+at once, nothing is re-fetched (`reqs.md` 5.6), and no stored figure goes stale because the
+household changed.
+
+**A derived attribute is a row naming a shape and its inputs** -- section 1.3's guardrail. The
+shape (`MonthlyCostOfLiving`) is code in `evaluation/`, an archetype like the compound-rule
+shapes; the attribute row names it, and an `attribute_derivation_input` row binds each of the
+shape's roles to an attribute -- at the candidate's level, an ancestor's, or the household's home
+country -- or to a household field. No formula is stored.
+
+**It answers like a stored figure in every way the user sees.** Its provenance is its inputs',
+each with source, both dates and footprint, plus the household fields it read; its confidence is
+the lowest of its inputs'; its reference date the oldest of theirs; and a candidate missing an
+input has no figure, so coverage reports the gap rather than inventing a number. The computation
+lives in `evaluation/`, which may import `household/`; `data/` only declares the attribute, so
+section 6.2's rule 3 holds. **The household gains the fields it reads** -- a dwelling size and a
+non-housing monthly spend, provisional like every household default.
+
+**Every derived attribute is computed this way, whether or not it reads the household.**
+`country.house_price_to_income_ratio` -- an absolute house price level over median income
+(`reqs.md` Q204) -- reads none; the household-salary tax (Q205) reads the household's income.
+One mechanism, and no stored result to fall out of step with the figures it was computed from.
+
+**The two compound-rule shapes that are silent today arrive here.** `evaluation/rules.py` leaves a
+share of a household field and a sum of inputs unimplemented because they belong to the city
+level. The first is built in v2.0 for `rent_vs_spend` (`reqs.md` 7.4, specified and never
+seeded), whose rent becomes the monthly rent derived from rent per m² and the household's
+dwelling size. The second's only rule, `two_role_feasibility`, reads two
+retired attributes (`0487`), so it stays silent until a rule needs it.
+
+### 12.7 What a ranking reads, freezes and compares: the evaluated figure
+
+**The MVP reads, freezes and compares stored values**, and this is the one place the city level
+reaches into machinery the bet hoped to leave alone. A saved ranking's frozen criterion must
+judge an attribute at the evaluation's level, and each frozen score must cite a value of its own
+candidate (`0523`: `evaluation_criterion_judges_an_attribute_at_that_level`,
+`candidate_attribute_score_cites_its_own_measurement`). Matching thresholds and compound rules
+read values (`evaluation/rules.py`), and comparison rebuilds its magnitudes from the ranking's
+stored values (`api/comparisons.py`). A national figure read through the parent is another
+candidate's value, and a derived figure is no value at all, so each of these would refuse it or
+never see it.
+
+**An evaluated figure is what evaluation read for a candidate and an attribute**, for every
+attribute a criterion judges *or a rule reads* -- descriptive ones included, because a rule may
+read an attribute no criterion scores (`evaluation/ranking.py`, P46). It is produced once and read
+by everything after it, and it carries the **published figure** -- the magnitude with its
+published bounds (`PublishedFigure`), which normalisation and comparison need to read a figure on
+its own scale -- and its evidence: either one stored value, naming the candidate it was measured
+for (the candidate itself or an ancestor), or a derivation's shape, the stored values it read and
+the household figures it used, each frozen as read. Thresholds, compound rules, the snapshot, the
+drill-down and comparison all read it. **For an attribute at the evaluation's own level it is
+exactly the candidate's own active value**, so a country ranking does not move by a point, and
+Gates A to D still hold.
+
+**The snapshot freezes it.** A frozen criterion records its own level, and its attribute's level
+must be that level or an ancestor's. A frozen score cites a value of the candidate it was measured
+for, which must be the result's candidate or one of its ancestors. A derived score keeps its
+inputs -- each value it read and each household figure it used -- in child rows, so a saved
+ranking still says what it read after the household has changed. **A derived figure is in no
+`value` row**: its output and evidence exist in the evaluation and, once saved, in the snapshot. Every new snapshot table
+cascades with its evaluation, as `0482` requires; none cascades from `value`.
+
+### 12.8 The country screen, and `parent_not_matching`
+
+**Evaluating a set at the city level evaluates the same set at the country level first** (Q248).
+A city's result records its **parent's match status** -- `matching`, `not_matching`,
+`insufficient_data`, or none where the set holds no opinion at the parent's level -- with the
+parent's reasons, and the snapshot freezes both. **`parent_not_matching` is shown whenever that
+status is anything but `matching`**, and the drill-down says which, in the one vocabulary:
+`reqs.md` 4 flags a city whose country "does not match, or was never evaluated". The city keeps
+its score and stays visible, like every non-matching candidate. The status is the evaluation's,
+never the candidate's, and which opinion judged the country is never ambiguous: it is the set
+being run, whose country weights and gates sit in the same rows.
+
+**The screen saves work, not just rank.** A city run's default scope leaves out the approved
+cities whose country is `not_matching` under the active set -- a country with insufficient data,
+or none, has ruled nothing out -- and such a city is fetched only when a run names it, because a
+fetch is always explicit (`reqs.md` 6.2). Today all 32 countries match, so
+the screen narrows by hand with `not_manually_excluded` (Q244) -- no score cutoff, as before.
+
+### 12.9 Acquisition at the city level
+
+**The run machinery is unchanged**: planned, estimated, capped, scoped to exact pairs, retried by
+what failed. What is new is sources, in tiers by footprint:
+
+- **Region** -- Eurostat NUTS 2 and 3 through the existing adapter (unemployment, high-tech
+  employment, life expectancy, homicide, the census's foreign-born share) and Copernicus heat
+  days at NUTS 3.
+- **City** -- the Quality of Life survey and Deloitte's property index as transcribed published
+  tables (like RSF), Urban Audit beside them for display, and Eurostat `avia_par_*` for flights
+  home.
+- **Point** -- Open-Meteo (already an adapter), the WMO 1991-2020 normals for sunshine, Ookla's
+  tiles, air quality, and the geometry attributes (coast, terrain, protected areas, bathing
+  water, night sky, land cover), computed from vendored files at fetch time so a manual add
+  needs nothing re-run.
+
+**A national attribute is never fetched per city**; a city reads it through its country (12.5).
+OpenStreetMap is read from Geofabrik extracts processed offline, never from the public Overpass
+server, which refuses and throttles a run (research note, section 7). Survey answers are scored
+and labelled as a resident survey with its year and sample size (Q245). Each new adapter lands
+with its live coverage measured against the roster, as `make live` does today. **Python gains a
+geometry library** -- shapely and pyproj or their equivalent, chosen with the first geometry
+adapter -- under the stack's existing rules (section 10.2).
+
+### 12.10 The LLM at the city level
+
+Two of `reqs.md` 6.10's uses are built at the city level in v2.0: **use 2**,
+`city.international_employers`, a `LabelSet` per city; and **use 4**, nomination proposals --
+**names only, never a value**, each with the pages the model read, `proposed` until a person
+approves (12.2, as Q218 treats gate proposals). Both are estimated before they spend, refused
+without a cap, and kept out of `make check` like `make live-llm`. **Use 1**, a fallback figure
+where no dataset answers, is permitted at both levels by 6.10 but **not planned for cities**: the
+research found structured sources for nearly every city attribute, and a gap reads as missing
+data. Building it is an open decision (`devplan-v2.md` 5).
+
+### 12.11 The interface
+
+No new tab, following `reqs.md` 8:
+
+- **Configure gains a Candidates panel**: the roster per country with each candidate's
+  nomination state; add by name, choosing among the places the resolver offers; the proposal
+  queue, approved or rejected with the pages shown; and pruning by `not_manually_excluded`, as
+  now.
+- **The level toggle** already offers a level as soon as it holds a candidate
+  (`design-brief.md`); with proposals stored it must count approved candidates only.
+- **The criteria panel at city level** lists a criterion that judges a level above under its
+  pillar, labelled with the level it reads.
+- **Rank and Compare at city level** are the same screens on the same contract. The drill-down
+  shows each figure's footprint and the place it was measured for; a national figure says whose
+  it is; a derived figure lists its inputs and the household fields it read. A city shows its
+  country's score beside it, and `parent_not_matching` with the reason.
+
+### 12.12 What changes, by module
+
+| Module | What v2.0 adds |
+|---|---|
+| `candidates/` | The nomination history and the state read from it; `Place`; the `PlaceResolver` port |
+| `data/` | `Attribute.footprint`; a figure's `measured_for` and `measured_distance`; an attribute's derivation (shape and inputs) |
+| `criteria/` | `Criterion.level` in the criterion's identity, the set's checks grouped by it, and the ancestor rule |
+| `evaluation/` | The evaluated figure, read by thresholds and rules (12.7); a criterion's figure read through an ancestor and normalised over the ancestors; derivation shapes and their provenance; the household-share rule shape; the parent's match status |
+| `household/` | The fields the first derivation reads |
+| `data_acquisition/` | A city run's default scope (12.8); places read for adapters |
+| `comparison/` | Magnitudes read from the ranking's evaluated figures rather than its stored values (12.7) |
+| `data_sources/` | The new adapters, and the place resolver |
+| `storage/`, `api/` | The schema, the snapshot's evidence rows and the operations behind the above, including criterion operations keyed by level and attribute |
+
+**The import table of section 6.1 does not change.** Every arrow v2.0 needs already exists:
+`evaluation` imports `household`, every module may import `candidates`, and the resolver
+implements a port its declaring module owns. That is the bet's most mechanical confirmation, and
+`make boundaries` holds it.
+
+### 12.13 What v2.0 deliberately leaves alone
+
+Section 4's active-value rule; the run lifecycle, the spend cap and retry; the score scale an
+evaluation freezes; the synthesis templated from weighted contributions; and the existing
+operations of the contract that already take a level. **A `city` branch in any of them is a design failure**
+(`devplan-v2.md` 0), and the place to fix it is the module where it appears, loudly.

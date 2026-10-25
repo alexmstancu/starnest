@@ -240,6 +240,11 @@ Gate B coverage assertion for a real reason rather than a defect.
 
 ### the city level — city
 
+> **Status 2026-10-25: superseded wherever it names Numbeo.** Numbeo's terms forbid automated
+> collection (`reqs.md` Q251) and its indices are composites (Q223), so none of its rows below can
+> be fetched. The city source research (`research/city-level-sources-2026-10-23.md`, section 4)
+> re-sources each attribute and is the input to the city catalog.
+
 **R** = registry-bound (fails below a population floor), **C** = coordinate-bound (works anywhere)
 
 | Attribute | Primary | Type | Small-town outlook |
@@ -414,8 +419,10 @@ That is roughly **5% of the tier being paid for**. The objection is not the mone
 abstract, it is that there is no tier matching the shape of this usage; a ~$25 tier at 10k
 requests would be bought without hesitation. Absent that, the value is not there.
 
-**Decision: scrape, do not subscribe.** Personal, non-commercial use. Revisit only if usage
-ever justifies the tier, which on current projections it will not.
+~~**Decision: scrape, do not subscribe.**~~ **Superseded 2026-10-23** (`reqs.md` Q251): Numbeo's
+terms now say automated collection is "strictly prohibited" without prior written permission, so
+it is neither scraped nor subscribed to. A figure typed in by hand for personal use remains
+allowed, at `low` confidence.
 
 ### 9.2 Coverage — measured **[verified]**
 
