@@ -242,7 +242,7 @@ async def research_gates(
             )
             continue
 
-        proposal = _proposal_from(rule, candidate, found)
+        proposal = _proposal_from(rule, candidate, found, citizenships)
         if recheck is not None:
             # Beside the person's answer, never over it (D53). `gates_to_ask` saw one for every
             # pair, and nothing deletes it, so a decline here is a store that disagrees.
@@ -325,8 +325,12 @@ def _was_or_were(count: int) -> str:
     return "was" if count == 1 else "were"
 
 
-def _proposal_from(rule: MatchRule, candidate: Candidate, found: Researched) -> MatchRuleResult:
-    """What the researcher found, as an answer nobody has confirmed (`reqs.md` 6.10 use 3)."""
+def _proposal_from(
+    rule: MatchRule, candidate: Candidate, found: Researched, citizenships: Sequence[str]
+) -> MatchRuleResult:
+    """What the researcher found, as an answer nobody has confirmed (`reqs.md` 6.10 use 3),
+    assuming the citizenships the model was asked about (Q239) -- not whatever the household
+    holds by the time it is stored."""
     return MatchRuleResult(
         match_rule=rule.id,
         candidate=candidate.id,
@@ -336,6 +340,7 @@ def _proposal_from(rule: MatchRule, candidate: Candidate, found: Researched) -> 
         reason=found.reason,
         citations=found.citations,
         is_proposal=True,
+        assumed_citizenships=tuple(sorted(CandidateId(held) for held in citizenships)),
     )
 
 

@@ -692,12 +692,14 @@ WHERE  (:candidate::text IS NULL OR r.candidate = :candidate)
   AND  (:level::text IS NULL OR c.level = :level)
 ORDER  BY r.candidate, r.match_rule;
 
--- name: insert_match_rule_answer(match_rule, candidate, match_result, reason, data_source, reference_period_start, reference_period_end, retrieval_date, override_reason, override_date, beside_answer)<!
+-- name: insert_match_rule_answer(match_rule, candidate, match_result, reason, data_source, reference_period_start, reference_period_end, retrieval_date, override_reason, override_date, beside_answer, assumed)<!
 -- One version of a gate's answer, never changed once written (Q237). The live row is pointed at
 -- it by upsert_match_rule_result in the same transaction.
 --
--- **With the household citizenships it assumed** (Q239), copied in the same statement, so the
--- copy is the household as this version was written against it and no edit lands in between.
+-- **With the household citizenships it assumed** (Q239). :assumed names them where the writer
+-- knows -- a research pass, the citizenships its model was asked about, which an edit made while
+-- it waited must not replace. Null copies the household in the same statement, so a person's
+-- answer assumes the household it was written against and no edit lands in between.
 WITH version AS (
     INSERT INTO match_rule_answer (
         match_rule, candidate, match_result, reason, data_source,
@@ -709,8 +711,11 @@ WITH version AS (
     RETURNING id
 ), assumed AS (
     INSERT INTO match_rule_answer_citizenship (answer, citizenship)
-    SELECT version.id, held.candidate
-    FROM   version CROSS JOIN household_citizenship AS held
+    SELECT version.id, held
+    FROM   version
+    CROSS  JOIN unnest(COALESCE(:assumed::text[],
+                                ARRAY(SELECT h.candidate FROM household_citizenship AS h)))
+           AS held
 )
 SELECT id FROM version;
 

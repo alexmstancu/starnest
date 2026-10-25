@@ -81,7 +81,7 @@ class PostgresMatchRuleResultStore(MatchRuleResultStore):
                         connection, match_rule=answer["match_rule"], candidate=answer["candidate"]
                     )
                     version = await self._queries.insert_match_rule_answer(
-                        connection, beside_answer=None, **answer
+                        connection, beside_answer=None, assumed=_assumed(result), **answer
                     )
                     written = await self._queries.upsert_match_rule_result(
                         connection, answer=version.id, **answer
@@ -131,11 +131,18 @@ class PostgresMatchRuleResultStore(MatchRuleResultStore):
                 override_reason=None,
                 override_date=None,
                 beside_answer=live.answer,
+                assumed=_assumed(result),
             )
             await self._queries.insert_match_rule_answer_citations(
                 connection, answer=version.id, urls=list(result.citations)
             )
         return True
+
+
+def _assumed(result: MatchRuleResult) -> list[str] | None:
+    """The citizenships the writer says this answer assumed, or None to copy the household's."""
+    held = result.assumed_citizenships
+    return None if held is None else [str(each) for each in held]
 
 
 def _answer_from(row: Any) -> MatchRuleResult:

@@ -918,3 +918,20 @@ class TestWhatACitizenshipAlreadyClears:
         )
 
         assert [str(candidate.id) for _, candidate in asked] == ["country.switzerland"]
+
+
+async def test_a_proposal_records_the_citizenships_the_model_was_asked_about() -> None:
+    """Q239: the store keeps these, not the household as it stands when the proposal lands."""
+    store = RecordingResults()
+
+    await research_gates(
+        researcher=StubResearcher(),
+        rules=[THE_SWISS_QUOTA],
+        candidates=[SWITZERLAND],
+        citizenships=["country.romania", "country.italy"],
+        results=store,
+        spend_cap_eur=Decimal(1),
+    )
+
+    (proposal,) = store.recorded
+    assert proposal.assumed_citizenships == ("country.italy", "country.romania")

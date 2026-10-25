@@ -508,7 +508,7 @@ class TestAPendingProposalIsNamedByTheAnswerItStandsBeside:
                 an_answer("llm", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON, is_proposal=True)
             )
             version = await queries.insert_match_rule_answer(
-                connection, beside_answer=None, **written
+                connection, beside_answer=None, assumed=None, **written
             )
             await queries.upsert_match_rule_result(connection, answer=version.id, **written)
 
@@ -527,3 +527,42 @@ class TestAPendingProposalIsNamedByTheAnswerItStandsBeside:
         )
 
         assert (await the_answer(answers)).pending_proposal is not None
+
+
+class TestAProposalRecordsTheCitizenshipsItWasAskedAbout:
+    """Q239. A research pass may wait on its model while the household is edited: what it stores
+    assumed the citizenships the model was told, never the household at write time."""
+
+    async def test_a_proposal_keeps_the_citizenships_it_was_asked_about(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        await hold_citizenships(pool, "country.united_kingdom")
+
+        await answers.record(
+            an_answer(
+                "llm", MatchResult.NOT_MATCHING, OFFICIAL_PAGE, at=NOON, is_proposal=True
+            ).model_copy(update={"assumed_citizenships": ("country.romania",)})
+        )
+
+        stored = await the_answer(answers)
+        assert (stored.assumed_citizenships, stored.needs_recheck) == (("country.romania",), True)
+
+    async def test_a_proposal_kept_beside_an_answer_keeps_them_too(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        await hold_citizenships(pool, "country.united_kingdom")
+        await answers.record(an_answer("manual", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING))
+
+        await answers.propose_beside(
+            an_answer(
+                "llm", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON, is_proposal=True
+            ).model_copy(update={"assumed_citizenships": ("country.romania",)})
+        )
+
+        async with pool.connection() as connection:
+            cursor = await connection.execute(
+                "SELECT citizenship FROM match_rule_answer_citizenship AS held"
+                " JOIN match_rule_answer AS version ON version.id = held.answer"
+                " WHERE version.beside_answer IS NOT NULL"
+            )
+            assert await cursor.fetchall() == [("country.romania",)]
