@@ -1179,6 +1179,9 @@ components:
         data_source:
           title: Data Source
           type: string
+        is_current:
+          title: Is Current
+          type: boolean
         methodology_url:
           anyOf:
           - type: string
@@ -1208,10 +1211,15 @@ components:
           format: date-time
           title: Retrieval Date
           type: string
+        series:
+          title: Series
+          type: string
       required:
       - candidate
       - data_source
+      - series
       - published_scale
+      - is_current
       - reference_period
       - retrieval_date
       title: ExternalScoreBody
@@ -4488,7 +4496,8 @@ paths:
       - evaluation
   /v1/external-scores:
     get:
-      description: 'What outside indices published about a candidate.
+      description: 'What outside indices published about a candidate, every edition,
+        the current one marked.
 
 
         **Displayed beside the score, never ingested as an input** (`reqs.md` 3.5a):
@@ -4501,7 +4510,9 @@ paths:
         of an
 
         attribute, and a client that could confuse the two would eventually score
-        one.'
+        one. Which edition
+
+        is current, and the order, are `editions_of`''s (ST-10, D64).'
       operationId: listExternalScores
       parameters:
       - in: query

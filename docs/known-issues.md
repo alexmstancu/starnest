@@ -498,8 +498,11 @@ red.
 - **`evaluation_criterion` is the one evaluation child `0108` did not pin to its level**, and
   `candidate_attribute_score` has no foreign key to it -- so a drill-down over a frozen set that
   does not cover a scored criterion would raise on a NULL pillar. Both unreachable today.
-- **Re-fetching an external score stores a second row and both are served**, while
-  `append_external_score` claims a current edition is derived. Nothing derives it.
+- ~~**Re-fetching an external score stores a second row and both are served**, while
+  `append_external_score` claims a current edition is derived. Nothing derives it.~~ **Fixed
+  2026-10-25** (PL-171: ST-10, D64). `0522` gives an outside opinion its `series`;
+  `editions_of` collapses re-reads, marks one current edition per candidate, provider and series,
+  and serves every edition in one total order as `ExternalScore.is_current`.
 - ~~**Documentation drift**~~ **Fixed 2026-10-08.** `CLAUDE.md` now says 45 operations (both
   contract files hold 45, in exact step), and `pyproject.toml`'s coverage comments say 85 rather
   than 75. The "40 / 42" this note itself carried was stale a second time over -- the count had

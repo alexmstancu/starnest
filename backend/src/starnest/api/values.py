@@ -35,6 +35,7 @@ from starnest.data import (
     ValueListing,
     a_manual_value,
     confirm_published,
+    editions_of,
     restates,
 )
 from starnest.evaluation.wording import stored_text_in_words
@@ -383,7 +384,9 @@ class ExternalScoreBody(BaseModel):
 
     candidate: str
     data_source: str
+    series: str
     published_scale: str
+    is_current: bool
     published_value: float | None = None
     published_rank: int | None = None
     published_rank_of: int | None = None
@@ -400,32 +403,46 @@ class ExternalScoresBody(BaseModel):
 @router.get(
     "/external-scores", operation_id="listExternalScores", response_model=ExternalScoresBody
 )
-async def list_external_scores(values: Values, candidate: str | None = None) -> ExternalScoresBody:
-    """What outside indices published about a candidate.
+async def list_external_scores(
+    values: Values, catalog: Catalog, candidate: str | None = None
+) -> ExternalScoresBody:
+    """What outside indices published about a candidate, every edition, the current one marked.
 
     **Displayed beside the score, never ingested as an input** (`reqs.md` 3.5a): we do not
     recycle another product's interpretation of what matters. The endpoint is separate from
     `/values` for the same reason the table is -- an external score is not a measurement of an
-    attribute, and a client that could confuse the two would eventually score one.
+    attribute, and a client that could confuse the two would eventually score one. Which edition
+    is current, and the order, are `editions_of`'s (ST-10, D64).
     """
+    switched_off = {
+        str(source.id) for source in await catalog.read_data_sources() if not source.is_enabled
+    }
+    listings = editions_of(
+        await values.read_external_scores(candidate=candidate), switched_off=switched_off
+    )
     return ExternalScoresBody(
         items=tuple(
             ExternalScoreBody(
-                candidate=str(score.candidate),
-                data_source=str(score.data_source),
-                published_scale=score.published_scale,
+                candidate=str(listing.score.candidate),
+                data_source=str(listing.score.data_source),
+                series=listing.score.series,
+                published_scale=listing.score.published_scale,
+                is_current=listing.is_current,
                 published_value=(
-                    None if score.published_value is None else float(score.published_value)
+                    None
+                    if listing.score.published_value is None
+                    else float(listing.score.published_value)
                 ),
-                published_rank=score.published_rank,
-                published_rank_of=score.published_rank_of,
+                published_rank=listing.score.published_rank,
+                published_rank_of=listing.score.published_rank_of,
                 reference_period=ReferencePeriodBody(
-                    start=score.reference_period.start, end=score.reference_period.end
+                    start=listing.score.reference_period.start,
+                    end=listing.score.reference_period.end,
                 ),
-                retrieval_date=score.retrieval_date,
-                methodology_url=score.methodology_url,
-                caveats=score.caveats,
+                retrieval_date=listing.score.retrieval_date,
+                methodology_url=listing.score.methodology_url,
+                caveats=listing.score.caveats,
             )
-            for score in await values.read_external_scores(candidate=candidate)
+            for listing in listings
         )
     )

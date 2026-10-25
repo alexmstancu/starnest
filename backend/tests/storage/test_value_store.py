@@ -672,12 +672,19 @@ async def test_the_three_filters_narrow_independently(values: PostgresValueStore
 # --- external scores -----------------------------------------------------------------------
 
 
-def an_external_score(*, candidate: str = A_CANDIDATE, rank: int | None = None) -> ExternalScore:
+def an_external_score(
+    *,
+    candidate: str = A_CANDIDATE,
+    rank: int | None = None,
+    period: ReferencePeriod = A_PERIOD,
+    series: str = "Crime Index",
+) -> ExternalScore:
     return ExternalScore(
         candidate=candidate,
         data_source="numbeo",
+        series=series,
         published_scale="0-100",
-        reference_period=A_PERIOD,
+        reference_period=period,
         retrieval_date=RETRIEVED,
         published_value=Decimal("72.4"),
         published_rank=rank,
@@ -707,6 +714,35 @@ async def test_external_scores_filter_by_candidate_and_by_level(
     assert len(await values.read_external_scores(level="country")) == 1
     assert await values.read_external_scores(candidate=ANOTHER_CANDIDATE) == ()
     assert await values.read_external_scores(level="city") == ()
+
+
+async def test_editions_sharing_a_start_come_back_in_one_order(
+    values: PostgresValueStore,
+) -> None:
+    """ST-10: ordered by both ends of the period, so two editions starting together never tie.
+
+    The monthly edition is stored first: a read ordered by start alone returns insertion order.
+    """
+    monthly = an_external_score(
+        period=ReferencePeriod(start=date(2025, 1, 1), end=date(2025, 1, 31))
+    )
+    annual = an_external_score(period=A_PERIOD)
+    await values.append_external_score(monthly)
+    await values.append_external_score(annual)
+
+    assert await values.read_external_scores(candidate=A_CANDIDATE) == (annual, monthly)
+
+
+async def test_two_series_of_one_publisher_are_two_editions_of_one_period(
+    values: PostgresValueStore,
+) -> None:
+    """D64: the series is part of what identifies an edition, so neither displaces the other."""
+    crime = an_external_score()
+    quality_of_life = an_external_score(series="Quality of Life Index")
+    await values.append_external_score(quality_of_life)
+    await values.append_external_score(crime)
+
+    assert await values.read_external_scores(candidate=A_CANDIDATE) == (crime, quality_of_life)
 
 
 async def test_no_external_score_has_ever_been_published_about_anyone(

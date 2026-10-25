@@ -214,6 +214,7 @@ class TestTheValueStore:
         score = ExternalScore(
             candidate="country.portugal",
             data_source="numbeo",
+            series="Crime Index",
             published_scale="0-100",
             published_value=Decimal("74.3"),
             reference_period=ReferencePeriod.covering_year(2026),

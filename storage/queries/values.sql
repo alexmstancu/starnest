@@ -406,6 +406,7 @@ VALUES (:value_id, 'Text', :body);
 SELECT e.id,
        e.candidate,
        e.data_source,
+       e.series,
        e.published_value,
        e.published_scale,
        e.published_rank,
@@ -419,13 +420,15 @@ FROM   external_score AS e
 JOIN   candidate AS c ON c.id = e.candidate
 WHERE  (:candidate::text IS NULL OR e.candidate = :candidate)
   AND  (:level::text IS NULL OR c.level = :level)
-ORDER  BY e.candidate, e.data_source, e.reference_period_start DESC;
+-- A total order (ST-10): two editions sharing a start never tie, nor do two reads of one.
+ORDER  BY e.candidate, e.data_source, e.series, e.reference_period_end DESC,
+          e.reference_period_start DESC, e.retrieval_date DESC, e.id DESC;
 
--- name: insert_external_score(candidate, data_source, published_value, published_scale, published_rank, published_rank_of, reference_period_start, reference_period_end, retrieval_date, methodology_url, caveats)<!
-INSERT INTO external_score (candidate, data_source, published_value, published_scale,
+-- name: insert_external_score(candidate, data_source, series, published_value, published_scale, published_rank, published_rank_of, reference_period_start, reference_period_end, retrieval_date, methodology_url, caveats)<!
+INSERT INTO external_score (candidate, data_source, series, published_value, published_scale,
                             published_rank, published_rank_of, reference_period_start,
                             reference_period_end, retrieval_date, methodology_url, caveats)
-VALUES (:candidate, :data_source, :published_value, :published_scale,
+VALUES (:candidate, :data_source, :series, :published_value, :published_scale,
         :published_rank, :published_rank_of, :reference_period_start,
         :reference_period_end, :retrieval_date, :methodology_url, :caveats)
 RETURNING id;

@@ -437,6 +437,7 @@ erDiagram
         bigint id PK
         text candidate FK
         text data_source FK
+        text series
         numeric published_value
         text published_scale
         int published_rank
@@ -1367,6 +1368,7 @@ using different methods.
 | Field | Notes |
 |---|---|
 | `candidate`, `data_source` | What it is about, and who published it. The provider is a **foreign key to `DATA_SOURCE`**, not a name — Numbeo supplies both values and a composite, and one row for it means one reliability tier and one place to record a paywall |
+| `series` | Which of the provider's indices this is an edition of — Numbeo's Crime Index and its Quality of Life Index are two series, and neither is the other's history (D64, `0522`) |
 | `published_value` | The published number |
 | `published_scale` | What the number means — `0-100`, `0-10`, `rank`, `index` |
 | `published_rank`, `published_rank_of` | Where the provider publishes a position rather than a score — 12th of 95 |
@@ -1374,9 +1376,12 @@ using different methods.
 | `methodology_url` | So the reader can see how it was built |
 | `caveats` | Paywalled, discontinued, known quirks |
 
-**Which published figure is current is derived, not stored** — the most recent per candidate and
-provider, on the same principle as the active value (section 3.6). Numbeo republishes annually; older
-editions are retained and shown as history rather than deleted or silently replaced.
+**Which published figure is current is derived, not stored** — the latest per candidate,
+provider and series, on the same principle as the active value (section 3.6): by period end, then
+period start. A re-read of one edition is one edition, served once as its latest read, and a
+switched-off provider has no current edition (Q232). Numbeo republishes annually; older editions are
+retained and shown as history rather than deleted or silently replaced. Every edition is served in
+one total order, the current one first in its series (ST-10).
 
 **Hard rule: an `ExternalScore` must never enter the weighted calculation.** It is a second
 opinion, not an input. Ingesting one would import that provider's weights and normalisation,
@@ -3254,7 +3259,7 @@ Recorded from a front-to-back read of this document.
 | Q145 | **An evaluation freezes the criteria it used** | A criteria set stays editable, which is the point of saving one; an evaluation must not change underneath you. The snapshot also records which attributes were in scope, so a coverage figure keeps its meaning after the catalog grows |
 | Q146 | Application settings live in a **single-row `Settings` table** | Typed columns the database can check. A key/value table would make `min_coverage` and `comparator_limit` both text, which is the JSON objection in row form |
 | Q147 | **A source-priority override is partial**: listed sources first, then the rest in global order | Keeps an override a short statement about the sources you have an opinion on, and means connecting a new adapter never requires revisiting existing overrides |
-| Q148 | Three integrity constraints added: one-of on `NonMatchReason`, singleton checks on `Household` and `Settings`, derived supersession for `ExternalScore` | Each closes a way for the database to hold a state no code expects |
+| Q148 | Three integrity constraints added: one-of on `NonMatchReason`, singleton checks on `Household` and `Settings`, derived supersession for `ExternalScore` | Each closes a way for the database to hold a state no code expects. **The third was prose until 2026-10-25** (ST-10): nothing derived it. It is now `editions_of` in `data/external_score.py`, per candidate, provider and series (`0522`, D64), and served as `ExternalScore.is_current` |
 | Q149 | **The catalog is data in the database, not config files** | A file and a table holding the same rows are two stores that drift, with no link between them and no way for either to win in every code path. One store gives referential integrity for free, puts catalog changes under the same audit as every other table, and makes them transactional. Git remains the history, through migration scripts |
 | Q150 | **Auditing is PostgreSQL's own statement log**, not an audit table we maintain | `log_statement = 'mod'` records every statement that changes state, with no schema, no triggers and nothing to keep in sync. It logs statements rather than row states, which is enough because the three changes that could silently alter a result are each covered by something stronger: the catalog by migrations in git, a past ranking's criteria by the evaluation snapshot, and measurements by the value table never being overwritten. `'mod'` rather than `'all'` so reads do not bury writes |
 | Q151 | `Candidate` gains a `name` for display; official and alternate names stay descriptive attributes | The most common query in the application should not need a join to learn that `country.portugal` is called Portugal. The sourced official form remains an attribute with provenance |

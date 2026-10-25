@@ -943,8 +943,31 @@ class TestExternalScores:
 
         (score,) = body["items"]
         assert score["data_source"] == "numbeo"
+        assert score["series"] == "Crime Index"
         assert score["published_scale"] == "0-100, higher is safer"
         assert score["caveats"]
+        assert score["is_current"] is True
+
+    async def test_an_older_edition_is_served_as_history(
+        self, api: httpx.AsyncClient, an_external_score: None, database_url: str
+    ) -> None:
+        """ST-10 (D64): exactly one current edition per publisher and series; the rest history,
+        in one order."""
+        async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as db:
+            await db.execute(
+                "INSERT INTO external_score (candidate, data_source, series, published_value, "
+                "published_scale, reference_period_start, reference_period_end, retrieval_date) "
+                "VALUES ('country.portugal', 'numbeo', 'Crime Index', 69.0, "
+                "'0-100, higher is safer', '2025-01-01', '2025-12-31', now())"
+            )
+
+        response = await api.get("/v1/external-scores", params={"candidate": "country.portugal"})
+
+        validate("listExternalScores", response.json())
+        assert [
+            (score["reference_period"]["end"], score["is_current"])
+            for score in response.json()["items"]
+        ] == [("2026-06-30", True), ("2025-12-31", False)]
 
     async def test_another_candidates_scores_are_not_returned(
         self, api: httpx.AsyncClient, an_external_score: None

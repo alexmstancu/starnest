@@ -193,17 +193,21 @@ THE_MONTH_END = date(2026, 1, 31)
 
 
 def _publish_an_external_score(
-    connection: psycopg.Connection, *, period_end: date, retrieved: datetime
+    connection: psycopg.Connection,
+    *,
+    period_end: date,
+    retrieved: datetime,
+    series: str = "Crime Index",
 ) -> None:
     """One published composite score. Never ingested as an input -- displayed alongside."""
     connection.execute(
         """
-        INSERT INTO external_score (candidate, data_source, published_value, published_scale,
-                                    reference_period_start, reference_period_end,
-                                    retrieval_date)
-        VALUES (%s, %s, 71.4, '0-100', %s, %s, %s)
+        INSERT INTO external_score (candidate, data_source, series, published_value,
+                                    published_scale, reference_period_start,
+                                    reference_period_end, retrieval_date)
+        VALUES (%s, %s, %s, 71.4, '0-100', %s, %s, %s)
         """,
-        (A_CANDIDATE, A_PUBLISHER, A_PERIOD_START_FOR_BOTH, period_end, retrieved),
+        (A_CANDIDATE, A_PUBLISHER, series, A_PERIOD_START_FOR_BOTH, period_end, retrieved),
     )
 
 
@@ -237,6 +241,26 @@ class TestAnExternalScoreIsIdentifiedByBothEndsOfItsPeriod:
 
         with pytest.raises(errors.UniqueViolation):
             _publish_an_external_score(connection, period_end=THE_YEAR_END, retrieved=retrieved)
+
+    def test_another_series_of_the_same_publisher_and_period_stores(
+        self, connection: psycopg.Connection
+    ) -> None:
+        """D64: a publisher's second index is not a re-read of its first."""
+        retrieved = datetime.now(UTC)
+        _publish_an_external_score(connection, period_end=THE_YEAR_END, retrieved=retrieved)
+
+        _publish_an_external_score(
+            connection, period_end=THE_YEAR_END, retrieved=retrieved, series="Quality of Life"
+        )
+
+    @pytest.mark.parametrize("series", [None, "", "  "])
+    def test_an_edition_names_its_series(
+        self, connection: psycopg.Connection, series: str | None
+    ) -> None:
+        with pytest.raises((errors.NotNullViolation, errors.CheckViolation)):
+            _publish_an_external_score(
+                connection, period_end=THE_YEAR_END, retrieved=datetime.now(UTC), series=series
+            )
 
 
 def _concern(connection: psycopg.Connection, *, gate: str, candidate: str, level: str) -> None:

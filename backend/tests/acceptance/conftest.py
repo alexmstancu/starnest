@@ -401,6 +401,7 @@ async def an_external_score(database_url: str) -> AsyncIterator[None]:
             ExternalScore(
                 candidate="country.portugal",
                 data_source="numbeo",
+                series="Crime Index",
                 published_scale="0-100, higher is safer",
                 published_value=Decimal("72.4"),
                 reference_period=ReferencePeriod(start=date(2026, 1, 1), end=date(2026, 6, 30)),

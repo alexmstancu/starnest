@@ -54,7 +54,12 @@ from starnest.data.confidence import (
     UnknownReliabilityTierError,
     derive_confidence,
 )
-from starnest.data.external_score import ExternalScore, MalformedExternalScoreError
+from starnest.data.external_score import (
+    ExternalScore,
+    ExternalScoreListing,
+    MalformedExternalScoreError,
+    editions_of,
+)
 from starnest.data.fx import (
     EURO,
     CurrencyMismatchError,
@@ -184,6 +189,7 @@ __all__ = [
     "DataSource",
     "DataSourceId",
     "ExternalScore",
+    "ExternalScoreListing",
     "FxRate",
     "FxRateProvider",
     "FxRateStore",
@@ -246,6 +252,7 @@ __all__ = [
     "a_manual_value",
     "confirm_published",
     "derive_confidence",
+    "editions_of",
     "payload_class_for",
     "reorder_keeping_tiers",
     "restates",

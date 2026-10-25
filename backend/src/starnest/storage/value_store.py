@@ -320,15 +320,16 @@ class PostgresValueStore(ValueStore):
         """Store one published figure.
 
         It comes back unchanged. `ExternalScore` carries no identifier -- an edition is
-        identified by its candidate, its source and its reference period, which is also how
-        "the current edition" is derived rather than stored -- so there is nothing the database
-        assigns for this record to be given back.
+        identified by its candidate, its source, its series and its reference period, which is
+        also how "the current edition" is derived rather than stored (`editions_of`) -- so there
+        is nothing the database assigns for this record to be given back.
         """
         async with acquire(self._pool) as connection:
             await self._queries.insert_external_score(
                 connection,
                 candidate=str(score.candidate),
                 data_source=str(score.data_source),
+                series=score.series,
                 published_value=score.published_value,
                 published_scale=score.published_scale,
                 published_rank=score.published_rank,
@@ -557,6 +558,7 @@ def _external_score_from(row: Any) -> ExternalScore:
     return ExternalScore(
         candidate=CandidateId(row.candidate),
         data_source=DataSourceId(row.data_source),
+        series=row.series,
         published_scale=row.published_scale,
         reference_period=ReferencePeriod(
             start=row.reference_period_start, end=row.reference_period_end
