@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { formatDateTime } from "../../format/display";
 import {
   type Change,
-  describeReach,
+  describeUndoAll,
   describeWhen,
+  heldByLater,
   reachOf,
   record,
   undoCanRestore,
@@ -21,7 +22,7 @@ const change = (
 ): Change<number> => ({
   id,
   target,
-  label: target,
+  describe: () => target,
   stage: "Pillar weights",
   at,
   before,
@@ -219,10 +220,8 @@ describe("what undoing a change would take with it", () => {
     expect(reachOf([change(1, "a", 1, 2)], 99)).toEqual([]);
   });
 
-  it("states the reach before it is taken", () => {
-    expect(describeReach(0)).toBe("Nothing to undo");
-    expect(describeReach(1)).toBe("Undo this");
-    expect(describeReach(4)).toBe("Undo this and the 3 after it");
+  it("names Undo all by how many changes it takes", () => {
+    expect(describeUndoAll(4)).toBe("Undo all 4");
   });
 
   it("leaves the rest of the history behind", () => {
@@ -270,5 +269,51 @@ describe("the clock Recent changes reads", () => {
   it("is the one every other time on screen is shown in", () => {
     const instant = "2026-08-29T18:02:00Z";
     expect(formatDateTime(instant)).toContain(describeWhen(new Date(instant)));
+  });
+});
+
+/** PL-140. A change is undone alone only while no later change touched the same setting. */
+describe("whether a change can be undone alone", () => {
+  const inSet = (
+    id: number,
+    target: string,
+    criteriaSetId: string,
+    by: "write" | "delete" | "restore" = "write",
+    setting?: string,
+  ): Change<number> => ({
+    ...change(id, target, 1, 2),
+    undoes: { criteriaSetId, by },
+    ...(setting === undefined ? {} : { setting }),
+  });
+
+  it("can, when every later change is to another setting", () => {
+    const history = [inSet(2, "gate:a", "a"), inSet(1, "rule:a", "a")];
+    expect(heldByLater(history, 1)).toBeNull();
+  });
+
+  it("cannot, when a later change shares its setting", () => {
+    const history = [
+      inSet(2, "criterion:a:tax", "a", "write", "weights:a:economics"),
+      inSet(1, "criterion:a:rent", "a", "write", "weights:a:economics"),
+    ];
+    expect(heldByLater(history, 1)).toBe("same_setting");
+    expect(heldByLater(history, 2)).toBeNull();
+  });
+
+  it("cannot, when a later change made or unmade its set, nor a set it made", () => {
+    expect(
+      heldByLater([inSet(2, "deleted:a", "a", "restore"), inSet(1, "rule:a", "a")], 1),
+    ).toBe("same_setting");
+    expect(
+      heldByLater([inSet(2, "rule:a", "a"), inSet(1, "created:a", "a", "delete")], 1),
+    ).toBe("same_setting");
+    expect(
+      heldByLater([inSet(2, "rule:b", "b"), inSet(1, "created:a", "a", "delete")], 1),
+    ).toBeNull();
+  });
+
+  it("waits for a later change to its set to be confirmed", () => {
+    const pending = { ...inSet(2, "gate:a", "a"), unconfirmed: () => Promise.resolve(true) };
+    expect(heldByLater([pending, inSet(1, "rule:a", "a")], 1)).toBe("unconfirmed");
   });
 });

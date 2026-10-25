@@ -27,6 +27,7 @@ import { useRead } from "../../../api/useRead";
 import { useCandidateRosterState } from "../../../api/useCandidateRoster";
 import type { CandidateNames } from "../../../api/useCandidateNames";
 import { useConfigurationSession } from "../useConfigurationSession";
+import type { LabelParts } from "../changeHistory";
 import { pendingEntry, settled as settledWrite, UnconfirmedWrite } from "../unknownOutcome";
 import { holdsRule, ruleChangeLabel, sendRule, type RuleState } from "./ruleSwitches";
 
@@ -193,13 +194,16 @@ export function useRuleToggles(
   const write = (after: RuleState) => {
     const sentFor = criteriaSet.id;
     const before = stateOf(after.kind, after.id);
+    const named = nameOf(after.kind, after.id);
+    const setName = criteriaSet.name;
     const done = history.begin(sentFor);
     if (done === null) return;
     setFailure(null);
     const entry = {
       target: `${after.kind}:${sentFor}:${after.id}`,
       stage: RULES_STAGE,
-      label: `${ruleChangeLabel(nameOf(after.kind, after.id), before, after)}, in ${criteriaSet.name}`,
+      describe: ({ before: from, after: to, inSet }: LabelParts) =>
+        `${ruleChangeLabel(named, from as RuleState, to as RuleState)}, in ${inSet ?? setName}`,
       before,
       after,
       reverse: async (back: unknown) => {

@@ -42,8 +42,12 @@ export function useNotePillarChange(
         const before = was.find((each) => each.pillar === pillar)?.weight;
         history?.note({
           target: `pillar:${sentFor}:${pillar}`,
+          // A pillar's weight is a share of its level's hundred, so every pillar's weight and
+          // lock in the set is one setting (PL-140).
+          setting: `pillar-weights:${sentFor}`,
           stage: "Pillar weights",
-          label: `Pillar weight for ${named(pillar)}: ${formatPercentage(before)} to ${formatPercentage(weight)}, in ${inSet}`,
+          describe: ({ before: from, after: to, inSet: now }) =>
+            `Pillar weight for ${named(pillar)}: ${formatPercentage(from as number)} to ${formatPercentage(to as number)}, in ${now ?? inSet}`,
           before,
           after: weight,
           caveat:
@@ -61,8 +65,10 @@ export function useNotePillarChange(
       lock(pillar: string, locked: boolean, pending?: Pending) {
         history?.note({
           target: `pillar-lock:${sentFor}:${pillar}`,
+          setting: `pillar-weights:${sentFor}`,
           stage: "Pillar weights",
-          label: `${locked ? "Locked" : "Unlocked"} the ${named(pillar)} pillar, in ${inSet}`,
+          describe: ({ after: to, inSet: now }) =>
+            `${to === true ? "Locked" : "Unlocked"} the ${named(pillar)} pillar, in ${now ?? inSet}`,
           before: !locked,
           after: locked,
           reverse: async (back) => {

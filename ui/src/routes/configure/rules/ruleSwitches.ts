@@ -41,7 +41,10 @@ export function ruleChangeLabel(name: string, before: RuleState, after: RuleStat
   if (before.on !== after.on) {
     const [on, off] =
       after.kind === "gate" ? ["Enforced", "Stopped enforcing"] : ["Applied", "Stopped applying"];
-    return `${after.on ? on : off} ${name}`;
+    // Switched on with a kind chosen -- a gesture that went on to choose it -- says which.
+    const kind =
+      after.on && after.outcome !== null ? ` as ${after.outcome === "warning" ? "a warning" : "a gate"}` : "";
+    return `${after.on ? on : off} ${name}${kind}`;
   }
   return `Made ${name} ${after.outcome === "warning" ? "a warning" : "a gate"}`;
 }

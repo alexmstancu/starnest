@@ -243,21 +243,18 @@ export function useCriteriaSets(options: {
       const name = renameDraft.trim();
       const was = nameOf(target);
       const targetKey = `criteria-set:${target}:renamed`;
-      // A run of renames is one entry, so it reads from the name the run started from. Never
-      // from an unconfirmed one: a rename waits while one to its set is (PL-033).
-      const latest = history.changes[0];
-      const first =
-        latest?.target === targetKey ? (latest.before as { name: string }).name : was;
       const renamedTo = (wanted: string) => async (signal: AbortSignal) =>
         (await setNow(target, signal))?.name === wanted ? { name: wanted } : null;
       const sent = await act(
         target,
         () => renameCriteriaSet(target, name),
         renamedTo(name),
-        (confirmed) => ({
+        () => ({
           target: targetKey,
           stage: STAGE,
-          label: `Renamed ${confirmed ? first : was} to ${name}`,
+          // From the name a run of renames started from: a merged entry keeps its first `before`.
+          describe: ({ before: from, after: to }) =>
+            `Renamed ${(from as { name: string }).name} to ${(to as { name: string }).name}`,
           before: { name: was },
           after: { name },
           reverse: async (before) => {
@@ -294,7 +291,7 @@ export function useCriteriaSets(options: {
         () => ({
           target: `criteria-set:${id}:created`,
           stage: STAGE,
-          label: `Created ${name}`,
+          describe: () => `Created ${name}`,
           before: { exists: false },
           after: { exists: true },
           reverse: () => deleteAndReread(id),
@@ -319,7 +316,7 @@ export function useCriteriaSets(options: {
         () => ({
           target: `criteria-set:${id}:duplicated`,
           stage: STAGE,
-          label: `Duplicated ${currentName} as ${name}`,
+          describe: () => `Duplicated ${currentName} as ${name}`,
           before: { exists: false },
           after: { exists: true },
           reverse: () => deleteAndReread(id),
@@ -348,7 +345,7 @@ export function useCriteriaSets(options: {
         () => ({
           target: `criteria-set:${criteriaSetId}:deleted`,
           stage: STAGE,
-          label: `Deleted ${name}`,
+          describe: () => `Deleted ${name}`,
           before: { deleted: false, wasInUse },
           after: { deleted: true },
           reverse: async () => {

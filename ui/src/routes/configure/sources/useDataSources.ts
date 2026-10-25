@@ -5,6 +5,7 @@ import {
   updateDataSource,
 } from "../../../api/endpoints";
 import { useRead } from "../../../api/useRead";
+import type { LabelParts } from "../changeHistory";
 import { useConfigurationSession } from "../useConfigurationSession";
 import { inPriorityOrder, orderAfterDrop, orderAfterMove } from "./sourceOrder";
 import { noteRankingInputsChanged } from "../../../api/rankingInputs";
@@ -74,7 +75,10 @@ export function useDataSources() {
     const name = sources.find((source) => source.id === id)?.name ?? id;
     void change(id, () => reorderDataSources(order), {
       target: `source-order:${id}`,
-      label: `Moved ${name} from position ${String(before.indexOf(id) + 1)} to ${String(order.indexOf(id) + 1)}`,
+      // Every move rewrites the whole order, so the order is one setting (PL-140).
+      setting: "source-order",
+      describe: ({ before: from, after: to }) =>
+        `Moved ${name} from position ${String((from as string[]).indexOf(id) + 1)} to ${String((to as string[]).indexOf(id) + 1)}`,
       before,
       after: order,
       reverse: (back) => reorderDataSources(back as string[]),
@@ -85,7 +89,7 @@ export function useDataSources() {
     const name = sources.find((source) => source.id === id)?.name ?? id;
     void change(id, () => updateDataSource(id, { is_enabled: isEnabled }), {
       target: `source-enabled:${id}`,
-      label: `${isEnabled ? "Switched on" : "Switched off"} ${name}`,
+      describe: ({ after: to }) => `${to === true ? "Switched on" : "Switched off"} ${name}`,
       before: !isEnabled,
       after: isEnabled,
       reverse: (back) => updateDataSource(id, { is_enabled: back === true }),
@@ -121,7 +125,8 @@ const SOURCES_STAGE = "Source priority";
 /** A change to the sources, as `change` is given it: what it was, is, and how it goes back. */
 interface SourceChange {
   target: string;
-  label: string;
+  setting?: string;
+  describe: (parts: LabelParts) => string;
   before: unknown;
   after: unknown;
   reverse: (before: unknown) => Promise<unknown>;

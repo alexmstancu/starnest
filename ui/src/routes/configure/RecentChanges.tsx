@@ -1,21 +1,31 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ActRefusal } from "../../shell/ActRefusal";
 import { refocusIfLost } from "../../shell/focusReturn";
-import { describeReach, describeWhen, reachOf, stranded } from "./changeHistory";
+import { useSelection } from "../../shell/SelectionContext";
+import { describeUndoAll, describeWhen, heldByLater, reachOf, stranded } from "./changeHistory";
 import type { ChangeHistory, RecordedChange } from "./useChangeHistory";
 import { useFocusAfterUndo } from "./useFocusAfterUndo";
 
 /**
  * What this session has changed, newest first, and the way back.
  *
- * **Every button names its own reach.** Undoing a change takes everything made after it too --
- * a configuration is a state rather than a list of independent facts, and putting one weight
- * back without the changes made since would produce a set that never existed. Saying so on
- * the button is what stops that being a surprise.
+ * **Two ways back, each saying what it takes** (PL-140). "Undo this" undoes one change, and is
+ * offered only while no later change touched the same setting: re-sending what it replaced over
+ * a later change would undo that one too. "↑ Undo all N" undoes it and everything above it --
+ * the arrow points up a list that runs newest first. Pointed at or focused, either marks the
+ * entries it would undo before it is pressed.
  *
  * **Session-scoped, and the panel says so.** The backend records no change log; inventing one
  * here would be a second account of the truth the server cannot confirm.
  */
+const NOTHING_PREVIEWED: ReadonlySet<number> = new Set();
+
+/** Why "Undo this" is held, in the design's words. */
+const HELD_BY = {
+  same_setting: "Held by a later change to the same setting.",
+  unconfirmed: "Held by a later change to this set that is not confirmed yet.",
+} as const;
+
 export function RecentChanges({
   history,
   busy,
@@ -71,20 +81,44 @@ export function RecentChanges({
     focus.pressed();
     history.undoThrough(id);
   };
+  const undoOnly = (change: RecordedChange) => {
+    if (heldFor([change]) || heldByLater(history.changes, change.id) !== null) return;
+    focus.pressed();
+    history.undoOnly(change.id);
+  };
+  // **A button shows what it would take before it is pressed** (PL-140): pointed at or focused,
+  // the entries it would undo are marked, and the mark goes when it is left.
+  const [previewed, setPreviewed] = useState<ReadonlySet<number>>(NOTHING_PREVIEWED);
+  const previewing = (ids: readonly number[]) => ({
+    onMouseEnter: () => setPreviewed(new Set(ids)),
+    onFocus: () => setPreviewed(new Set(ids)),
+    onMouseLeave: () => setPreviewed(NOTHING_PREVIEWED),
+    onBlur: () => setPreviewed(NOTHING_PREVIEWED),
+  });
+  // **In the set's name as it is now** (PL-140, D42), from the list every screen reads.
+  const { criteriaSets } = useSelection();
+  const nameOfSet = (criteriaSetId: string | undefined) =>
+    criteriaSets.find((set) => set.id === criteriaSetId)?.name;
   const resetHeld = heldFor(history.changes);
   // **Check again takes its own button away** once the change is resolved -- by a press, or by
   // its request settling on its own (PL-033) -- so focus on it goes to the change's own undo, or,
   // if it turned out not to have happened, to the heading. Followed by focus rather than by the
   // press: a settlement can take the button away long after the check it pressed came back.
   const undoIdOf = (id: number) => `${headingId}-undo-${String(id)}`;
+  const undoAllIdOf = (id: number) => `${headingId}-undo-all-${String(id)}`;
+  const heldIdOf = (id: number) => `${headingId}-held-${String(id)}`;
   const checkFocused = useRef<number | null>(null);
   useEffect(() => {
     const id = checkFocused.current;
     if (id === null) return;
     if (history.changes.find((each) => each.id === id)?.unconfirmed !== undefined) return;
     checkFocused.current = null;
-    refocusIfLost(document.getElementById(undoIdOf(id)), heading.current);
-    // `undoIdOf` is derived from `headingId`, which never changes.
+    refocusIfLost(
+      document.getElementById(undoIdOf(id)),
+      document.getElementById(undoAllIdOf(id)),
+      heading.current,
+    );
+    // `undoIdOf` and `undoAllIdOf` are derived from `headingId`, which never changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [history.changes]);
   const reset = () => {
@@ -177,18 +211,23 @@ export function RecentChanges({
           <ul className="history">
             {history.changes.map((change) => {
               const reaching = reachOf(history.changes, change.id) as RecordedChange[];
-              // An undo takes every change after it too, so it is described by each of their
-              // caveats as well as its own.
-              const caveats = [
-                ...reaching
-                  .filter((each) => each.caveat !== undefined)
-                  .map((each) => caveatIdOf(each.id)),
-                ...reaching
-                  .filter((each) => each.unconfirmed !== undefined)
-                  .map((each) => unconfirmedIdOf(each.id)),
-              ].join(" ");
+              // An undo is described by the caveat and the doubt of every change it takes.
+              const describedBy = (taken: readonly RecordedChange[]) =>
+                [
+                  ...taken
+                    .filter((each) => each.caveat !== undefined)
+                    .map((each) => caveatIdOf(each.id)),
+                  ...taken
+                    .filter((each) => each.unconfirmed !== undefined)
+                    .map((each) => unconfirmedIdOf(each.id)),
+                ].join(" ") || undefined;
+              const heldBy = heldByLater(history.changes, change.id);
               return (
-                <li key={change.id} className="history__entry">
+                <li
+                  key={change.id}
+                  className="history__entry"
+                  data-previewed={previewed.has(change.id) ? "true" : undefined}
+                >
                   {/* Where it was made and when, above what it was. Six weight changes read
                       as one heap without them, and the stage is what tells a reader which
                       card to look at to see the change they are about to undo. */}
@@ -198,7 +237,13 @@ export function RecentChanges({
                       {describeWhen(change.at)}
                     </span>
                   </div>
-                  <span className="history__label">{change.label}</span>
+                  <span className="history__label">
+                    {change.describe({
+                      before: change.before,
+                      after: change.after,
+                      inSet: nameOfSet(change.undoes?.criteriaSetId),
+                    })}
+                  </span>
                   {/* Before the button, so it is read before the undo is taken. */}
                   {change.caveat !== undefined && (
                     <span
@@ -239,16 +284,45 @@ export function RecentChanges({
                       </button>
                     </>
                   )}
-                  <button
-                    id={undoIdOf(change.id)}
-                    type="button"
-                    className="action"
-                    aria-disabled={heldFor(reaching) || undefined}
-                    aria-describedby={caveats === "" ? undefined : caveats}
-                    onClick={() => undoThrough(change.id)}
-                  >
-                    {describeReach(reaching.length)}
-                  </button>
+                  <div className="history__undo">
+                    {/* **Offered only when no later change touched the same setting** (PL-140):
+                        re-sent over it, this change's `before` would undo that one too. Held
+                        rather than taken away, with the reason, so focus on it stays (NEW-45). */}
+                    {heldBy !== null && (
+                      <span id={heldIdOf(change.id)} className="panel__hint" role="note">
+                        {HELD_BY[heldBy]}
+                      </span>
+                    )}
+                    <button
+                      id={undoIdOf(change.id)}
+                      type="button"
+                      className="action"
+                      title={heldBy === null ? "Undoes this change alone." : HELD_BY[heldBy]}
+                      aria-disabled={heldFor([change]) || heldBy !== null || undefined}
+                      aria-describedby={
+                        heldBy === null ? describedBy([change]) : heldIdOf(change.id)
+                      }
+                      onClick={() => undoOnly(change)}
+                      {...previewing([change.id])}
+                    >
+                      Undo this
+                    </button>
+                    {reaching.length > 1 && (
+                      <button
+                        id={undoAllIdOf(change.id)}
+                        type="button"
+                        className="action"
+                        title={`Undoes this change and the ${String(reaching.length - 1)} above it.`}
+                        aria-disabled={heldFor(reaching) || undefined}
+                        aria-describedby={describedBy(reaching)}
+                        onClick={() => undoThrough(change.id)}
+                        {...previewing(reaching.map((each) => each.id))}
+                      >
+                        <span aria-hidden="true">↑ </span>
+                        {describeUndoAll(reaching.length)}
+                      </button>
+                    )}
+                  </div>
                 </li>
               );
             })}

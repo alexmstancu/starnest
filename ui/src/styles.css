@@ -1733,10 +1733,14 @@ select.field__control {
   gap: 8px;
 }
 
+/* Small uppercase teal, as the design draws it (PL-140): the stage is what tells a reader which
+   card to look at, so it is the louder of the two. */
 .history__stage {
   font-size: 10.5px;
   font-weight: var(--weight-strong);
-  color: var(--colour-text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--colour-accent);
 }
 
 .history__when {
@@ -5225,4 +5229,26 @@ select.field__control {
   font-size: 12px;
   font-weight: var(--weight-strong);
   white-space: nowrap;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════
+   Recent changes: the two undos and their preview (PL-140)
+   ══════════════════════════════════════════════════════════════════════════════════════ */
+
+/* "Undo this" and "↑ Undo all N" side by side, with the reason one is held above them. */
+.history__undo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+/* What a pointed-at or focused undo would take: marked before it is pressed. An attribute
+   rather than a modifier, so a unit test can read the state the stylesheet draws. */
+.history__entry[data-previewed="true"] {
+  background: var(--colour-warning-surface);
+}
+
+.history__entry[data-previewed="true"] .history__label {
+  text-decoration: line-through;
 }

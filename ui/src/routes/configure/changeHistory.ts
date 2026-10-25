@@ -21,8 +21,18 @@ export interface Change<Value = unknown> {
    * collapse, and a target spelled two ways would not.
    */
   target: string;
-  /** What to call it on screen. */
-  label: string;
+  /**
+   * What to call it on screen, **composed when it is drawn** (PL-140, D42): from the change's
+   * original `before` and latest `after`, so a merged gesture reads from where it started, and
+   * in the set's name as it is now rather than when the change was made.
+   */
+  describe: (parts: LabelParts<Value>) => string;
+  /**
+   * The setting it changes, when that is wider than its target: a weight is one share of its
+   * pillar's hundred, so every weight and lock in the pillar is one setting. Two changes to one
+   * setting cannot be undone one without the other. Absent, it is the target.
+   */
+  setting?: string;
   /**
    * The stage the change was made in, named rather than numbered.
    *
@@ -50,6 +60,14 @@ export interface Change<Value = unknown> {
    * and shows what it found. Nothing is undone through it until it is confirmed.
    */
   unconfirmed?: () => Promise<boolean>;
+}
+
+/** What a change's description is composed from when it is drawn. */
+export interface LabelParts<Value = unknown> {
+  before: Value;
+  after: Value;
+  /** The set's name now, or undefined where no list names it -- a set since deleted. */
+  inSet: string | undefined;
 }
 
 /**
@@ -167,11 +185,8 @@ export function undoCanRestore(
 }
 
 /**
- * The changes undoing this one would take with it, newest first.
- *
- * **Everything after it goes too.** A configuration is a state, not a list of independent
- * facts: putting one weight back without the changes made since would produce a set that
- * never existed. Naming the reach on the button is what stops that being a surprise.
+ * The changes "Undo all" would take with this one, newest first: it and everything above it.
+ * Undoing those in order walks the configuration back through the states it passed through.
  */
 export function reachOf<Value>(
   history: readonly Change<Value>[],
@@ -181,11 +196,46 @@ export function reachOf<Value>(
   return at === -1 ? [] : history.slice(0, at + 1);
 }
 
-/** What the button says, so the reach is stated before it is taken rather than after. */
-export function describeReach(reach: number): string {
-  if (reach <= 0) return "Nothing to undo";
-  if (reach === 1) return "Undo this";
-  return `Undo this and the ${reach - 1} after it`;
+/**
+ * Why a change cannot be undone on its own, or null when it can (PL-140): undone alone, it would
+ * re-send what it replaced over a later change to the same setting, or reach past one whose set
+ * it makes or unmakes, or act on a set a later change to which is not yet confirmed.
+ */
+export function heldByLater<Value>(
+  history: readonly Change<Value>[],
+  id: number,
+): "same_setting" | "unconfirmed" | null {
+  const at = history.findIndex((change) => change.id === id);
+  const change = history[at];
+  if (change === undefined) return null;
+  for (const later of history.slice(0, at)) {
+    if (touchSameSetting(change, later)) return "same_setting";
+  }
+  for (const later of history.slice(0, at)) {
+    if (later.unconfirmed !== undefined && sameSet(change, later)) return "unconfirmed";
+  }
+  return null;
+}
+
+/** What decides whether two changes touch one setting. */
+type Touching = Pick<Change, "target" | "setting" | "undoes">;
+
+function touchSameSetting(one: Touching, other: Touching): boolean {
+  if ((one.setting ?? one.target) === (other.setting ?? other.target)) return true;
+  // A set made, deleted or restored is the setting every change in it depends on.
+  const existence = (change: Touching) => change.undoes?.by !== "write";
+  return sameSet(one, other) && (existence(one) || existence(other));
+}
+
+function sameSet(one: Touching, other: Touching): boolean {
+  return (
+    one.undoes !== undefined && one.undoes.criteriaSetId === other.undoes?.criteriaSetId
+  );
+}
+
+/** What undoing a change and everything above it is called: the arrow points up the list. */
+export function describeUndoAll(reach: number): string {
+  return `Undo all ${String(reach)}`;
 }
 
 /**

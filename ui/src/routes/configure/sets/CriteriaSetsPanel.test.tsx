@@ -942,7 +942,7 @@ describe("an entry and the set it targets", () => {
     answer.release();
 
     await history.findByText("Locked the Economy pillar, in Partner");
-    await user.click(history.getByRole("button", { name: "Undo this and the 1 after it" }));
+    await user.click(history.getByRole("button", { name: "Undo all 2" }));
     await waitFor(() => expect(screen.queryByRole("listitem", { name: "Partner" })).toBeNull());
     expect(writes).toEqual([
       expect.stringMatching(/^PUT \/v1\/criteria-sets\/partner_\w+\/pillar-weights\/economics$/),
@@ -1189,7 +1189,7 @@ describe("an entry and the set it targets", () => {
     await waitFor(() => expect(unlock.sent).toHaveLength(1));
     await user.click((await row("Partner")).getByRole("button", { name: "Use" }));
     await waitFor(() => expect(sidebarSets()).toHaveValue("partner"));
-    const undo = history.getByRole("button", { name: "Undo this and the 1 after it" });
+    const undo = history.getByRole("button", { name: "Undo all 2" });
     writes = recordWrites();
 
     expectHeld(undo);
@@ -1218,7 +1218,7 @@ describe("an entry and the set it targets", () => {
     await deleteSet(user, "Default");
     await history.findByText("Deleted Default");
     await waitFor(() => expect(screen.queryByRole("listitem", { name: "Default" })).toBeNull());
-    const undo = history.getByRole("button", { name: "Undo this and the 1 after it" });
+    const undo = history.getByRole("button", { name: "Undo all 2" });
     writes = recordWrites();
 
     expectNotHeld(undo);

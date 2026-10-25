@@ -15,6 +15,7 @@ import {
   UNDO_CANNOT_RESTORE_THE_PILLAR,
   undoCanRestore,
 } from "./changeHistory";
+import { formatPercentage } from "../../format/display";
 import { titleOf, type AttributeCatalog } from "./criteria/criterionReading";
 import { holdsCriterionRule, ruleBefore, ruleChangeWords } from "./criteria/ruleChange";
 import type { Answers } from "./useAnswers";
@@ -200,6 +201,7 @@ export function useCriteriaEditor(
       const was = criteria.find((each) => each.attribute === attribute)?.weight;
       // The locks this is sent under, which are the ones a refusal will be about.
       const around = pillarAround(criteria, attribute);
+      const pillarOf = around.pillar ?? attribute;
       const named = titleOf(attribute, catalog?.get(attribute));
       const inSet = setName ?? sentFor;
 
@@ -213,7 +215,10 @@ export function useCriteriaEditor(
         // pillar's, so it is changed inside the pillar weights rather than anywhere of
         // its own.
         stage: "Pillar weights",
-        label: `Weight for ${named}: ${String(was)} to ${String(weight)}, in ${inSet}`,
+        // Every weight and lock in a pillar shares its hundred, so they are one setting (PL-140).
+        setting: `criterion-weights:${sentFor}:${pillarOf}`,
+        describe: ({ before: from, after: to, inSet: now }) =>
+          `Weight for ${named}: ${formatPercentage(from as number)} to ${formatPercentage(to as number)}, in ${now ?? inSet}`,
         before: was,
         after: weight,
         caveat:
@@ -280,7 +285,9 @@ export function useCriteriaEditor(
       const entry = (): ChangeEntry => ({
         target: `lock:${sentFor}:${attribute}`,
         stage: "Pillar weights",
-        label: `${weightLocked ? "Locked" : "Unlocked"} ${named}, in ${inSet}`,
+        setting: `criterion-weights:${sentFor}:${around.pillar ?? attribute}`,
+        describe: ({ after: to, inSet: now }) =>
+          `${to === true ? "Locked" : "Unlocked"} ${named}, in ${now ?? inSet}`,
         before: !weightLocked,
         after: weightLocked,
         reverse: async (before) => {
@@ -344,7 +351,8 @@ export function useCriteriaEditor(
       const entry: ChangeEntry = {
         target: `rule:${sentFor}:${attribute}`,
         stage: "Pillar weights",
-        label: `Rule for ${named}: ${ruleChangeWords(before, rule)}, in ${inSet}`,
+        describe: ({ before: from, after: to, inSet: now }) =>
+          `Rule for ${named}: ${ruleChangeWords(from as CriterionRule, to as CriterionRule)}, in ${now ?? inSet}`,
         before,
         after: rule,
         reverse: async (back) => {

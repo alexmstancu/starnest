@@ -20,7 +20,7 @@ describe("an undo while another is on its way", () => {
       result.current.note({
         target: "criterion:default:a",
         stage: "Pillar weights",
-        label: "Weight for A: 50 to 40, in Default",
+        describe: () => "Weight for A: 50 to 40, in Default",
         before: 50,
         after: 40,
         reverse: (before) => {
@@ -50,7 +50,7 @@ describe("a write and an undo", () => {
   const entry = (reversed: unknown[]) => ({
     target: "criterion:default:a",
     stage: "Pillar weights",
-    label: "Weight for A: 50 to 40, in Default",
+    describe: () => "Weight for A: 50 to 40, in Default",
     before: 50,
     after: 40,
     reverse: (before: unknown) => {
@@ -87,7 +87,7 @@ describe("a set with an unconfirmed change", () => {
       result.current.note({
         target: "criteria-set:default:renamed",
         stage: "Criteria set",
-        label: "Renamed Default to Two",
+        describe: () => "Renamed Default to Two",
         before: { name: "Default" },
         after: { name: "Two" },
         reverse: () => undefined,
@@ -115,7 +115,7 @@ describe("a change whose request settles before it is rendered", () => {
       result.current.note({
         target: "lock:default:economics",
         stage: "Pillar weights",
-        label: "Locked the Economy pillar, in Default",
+        describe: () => "Locked the Economy pillar, in Default",
         before: false,
         after: true,
         reverse: () => undefined,

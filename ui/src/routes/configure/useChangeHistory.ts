@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type Change, reachOf, record, without } from "./changeHistory";
+import { type Change, heldByLater, reachOf, record, without } from "./changeHistory";
 
 /**
  * How a change gets undone: by making the opposite request, never by restoring local state.
@@ -49,6 +49,11 @@ export interface ChangeHistory {
   busy: boolean;
   /** Undo this change and every change made after it. */
   undoThrough: (id: number) => void;
+  /**
+   * Undo this change alone (PL-140). Refused while a later change touched the same setting, or
+   * while one to its set is unconfirmed: re-sent over it, its `before` would undo that too.
+   */
+  undoOnly: (id: number) => void;
   /**
    * Read back an unconfirmed change, as Configure's one write in flight: confirmed, it stays
    * listed as any other; found not to have taken effect, it leaves the list.
@@ -214,6 +219,11 @@ export function useChangeHistory(): ChangeHistory {
     writing,
     busy: writing || undoing,
     undoThrough: (id) => void undo(reachOf(changes, id) as RecordedChange[]),
+    undoOnly: (id) => {
+      const change = changes.find((each) => each.id === id);
+      if (change === undefined || heldByLater(changes, id) !== null) return;
+      void undo([change]);
+    },
     confirm: (id) => {
       const change = changes.find((each) => each.id === id);
       if (change !== undefined) void check(change, false);
