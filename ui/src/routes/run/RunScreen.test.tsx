@@ -11,6 +11,7 @@ import { HttpResponse, delay, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ATTRIBUTES,
+  COUNTRY_CANDIDATES,
   DATA_SOURCES,
   HOLDINGS_GAPS,
   HOLDINGS_PAIRS_TOTAL,
@@ -1401,6 +1402,162 @@ describe("re-asking about part of a run", () => {
     );
   });
 });
+
+/**
+ * PL-125, UF-088 (`reqs.md` 5.6). **One candidate, one attribute or one pillar, on purpose**, as
+ * exact pairs. A pick can start paid work, so it only ever estimates and arms the strip.
+ */
+describe("acquiring one candidate, attribute or pillar", () => {
+  const COUNTRY_ATTRIBUTES = ATTRIBUTES.filter((attribute) => attribute.level === "country");
+  const COUNTRIES = COUNTRY_CANDIDATES.filter((candidate) => candidate.level === "country");
+
+  function thePicker() {
+    return within(screen.getByRole("region", { name: /acquire part of the level/i }));
+  }
+
+  async function pick(kind: string, which: string): Promise<void> {
+    renderShell("/acquire");
+    const picker = within(await screen.findByRole("region", { name: /acquire part of the level/i }));
+    await userEvent.selectOptions(picker.getByRole("combobox", { name: "What to acquire" }), kind);
+    await userEvent.selectOptions(await picker.findByRole("combobox", { name: "Which" }), which);
+  }
+
+  function recordScopedPlans(): unknown[] {
+    const planned: unknown[] = [];
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, async ({ request }) => {
+        planned.push(await request.clone().json());
+        return undefined;
+      }),
+    );
+    return planned;
+  }
+
+  it("estimates one candidate over every attribute, and starts nothing until agreed", async () => {
+    const planned = recordScopedPlans();
+    const started = recordStartsOf();
+    await pick("One candidate", "Spain");
+    const pairs = COUNTRY_ATTRIBUTES.map((attribute) => ({ candidate: "country.spain", attribute: attribute.id }));
+
+    await userEvent.click(thePicker().getByRole("button", { name: `Estimate ${pairs.length} items` }));
+
+    const strip = await thePicker().findByRole("alert");
+    expect(planned).toEqual([{ level: "country", pairs }]);
+    expect(started).toEqual([]);
+    expect(strip).toHaveTextContent(`over ${pairs.length} values`);
+    expect(strip).toHaveTextContent(/It asks Eurostat about/);
+
+    await userEvent.click(within(strip).getByRole("button", { name: /yes, start it/i }));
+
+    await waitFor(() => expect(started).toEqual([{ level: "country", pairs, accept_uncapped_spend: false }]));
+  });
+
+  it("estimates one attribute over every candidate", async () => {
+    const planned = recordScopedPlans();
+    await pick("One attribute", "Total effective tax rate");
+
+    await userEvent.click(thePicker().getByRole("button", { name: /^Estimate \d+ items?$/ }));
+
+    await thePicker().findByRole("alert");
+    expect(planned).toEqual([
+      {
+        level: "country",
+        pairs: COUNTRIES.map((candidate) => ({
+          candidate: candidate.id,
+          attribute: "country.total_tax_rate_effective",
+        })),
+      },
+    ]);
+  });
+
+  it("estimates one pillar's attributes over every candidate, the pillar named as the catalog does", async () => {
+    const planned = recordScopedPlans();
+    await pick("One pillar", "Economy");
+    const economics = COUNTRY_ATTRIBUTES.filter((attribute) => attribute.pillar === "economics");
+
+    await userEvent.click(thePicker().getByRole("button", { name: /^Estimate \d+ items?$/ }));
+
+    await thePicker().findByRole("alert");
+    expect(planned).toEqual([
+      {
+        level: "country",
+        pairs: COUNTRIES.flatMap((candidate) =>
+          economics.map((attribute) => ({ candidate: candidate.id, attribute: attribute.id })),
+        ),
+      },
+    ]);
+  });
+
+  it("asks nothing while nothing is picked", async () => {
+    const planned = recordScopedPlans();
+    renderShell("/acquire");
+    const picker = within(await screen.findByRole("region", { name: /acquire part of the level/i }));
+    await picker.findByRole("combobox", { name: "Which" });
+
+    const estimateIt = picker.getByRole("button", { name: "Estimate" });
+    expect(estimateIt).toBeDisabled();
+    await userEvent.click(estimateIt);
+
+    expect(planned).toEqual([]);
+  });
+
+  it.each<[string, string, string]>([
+    ["another of the same kind", "Which", "Portugal"],
+    ["another kind", "What to acquire", "One pillar"],
+  ])("is disarmed when the pick changes: %s", async (_, field, choice) => {
+    const started = recordStartsOf();
+    await pick("One candidate", "Spain");
+    await userEvent.click(thePicker().getByRole("button", { name: /^Estimate \d+ items?$/ }));
+    await thePicker().findByRole("alert");
+
+    await userEvent.selectOptions(thePicker().getByRole("combobox", { name: field }), choice);
+
+    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+    expect(started).toEqual([]);
+  });
+
+  it("is refused at the estimate with every source switched off", async () => {
+    for (const source of ["eurostat", "llm"]) await updateDataSource(source, { is_enabled: false });
+    await pick("One candidate", "Spain");
+
+    await userEvent.click(thePicker().getByRole("button", { name: /^Estimate \d+ items?$/ }));
+
+    expect(await screen.findByText(/every data source it may ask is switched off/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+  });
+
+  it("says when what can be picked could not be read, and reads it again", async () => {
+    let asked = 0;
+    mockServer.use(
+      http.get(`${BASE}/attributes`, ({ request }) => {
+        // Only the picker's read names the level; the names lookup reads every level.
+        if (new URL(request.url).searchParams.get("level") === null) return undefined;
+        asked += 1;
+        return asked === 1
+          ? HttpResponse.json({ code: "internal_error", message: "SENTINEL_MESSAGE" }, { status: 500 })
+          : undefined;
+      }),
+    );
+    renderShell("/acquire");
+    const picker = within(await screen.findByRole("region", { name: /acquire part of the level/i }));
+
+    await userEvent.click(await picker.findByRole("button", { name: "Try again" }));
+
+    expect(await picker.findByRole("combobox", { name: "Which" })).toBeInTheDocument();
+  });
+});
+
+/** Records every start sent. */
+function recordStartsOf(): unknown[] {
+  const started: unknown[] = [];
+  mockServer.use(
+    http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
+      started.push(await request.json());
+      return HttpResponse.json({ ...RUNS[0], id: 15 }, { status: 202 });
+    }),
+  );
+  return started;
+}
 
 describe("picking out individual items", () => {
   async function failureGroup() {

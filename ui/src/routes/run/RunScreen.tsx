@@ -24,6 +24,8 @@ import { HeldButton } from "../../shell/HeldButton";
 import { ItemGroups } from "./ItemGroups";
 import { OpenToHandEntry } from "./OpenToHandEntry";
 import { RemedyLink } from "./RemedyLink";
+import { ScopePickerPanel } from "./ScopePickerPanel";
+import { useScopePicker } from "./useScopePicker";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";
 import { type Progress, progressBar } from "./runProgress";
 import { type Item, type RemedyKind, proposalFor } from "./runScope";
@@ -195,6 +197,10 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                 />
               )}
             </LoadedRegion>
+          )}
+
+          {levelId !== null && (
+            <PickerCard levelId={levelId} run={run} propose={propose} onCancel={cancel} />
           )}
 
           {levelId === null ? (
@@ -408,6 +414,38 @@ function GapRemedies({
         </GapCard>
       )}
     </>
+  );
+}
+
+/**
+ * One candidate, attribute or pillar, acquired on purpose (PL-125). Exact pairs, estimated and
+ * confirmed like every other remedy, because a pair named can be asked of a paid source.
+ */
+function PickerCard({
+  levelId,
+  run,
+  propose,
+  onCancel,
+}: {
+  levelId: string;
+  run: RunScreenState;
+  propose: RunScreenState["propose"];
+  onCancel: () => void;
+}) {
+  const picker = useScopePicker(levelId, run.disarm);
+  return (
+    <GapCard
+      count=""
+      what="Acquire part of the level"
+      lead="One candidate, one attribute or one pillar, asked about again whether or not it has a gap."
+    >
+      <ScopePickerPanel
+        picker={picker}
+        held={run.busy !== null}
+        onEstimate={() => propose({ via: "scoped", scope: { level: levelId, pairs: picker.pairs } }, "picked")}
+      />
+      <GapEstimate kind="picked" run={run} onCancel={onCancel} />
+    </GapCard>
   );
 }
 

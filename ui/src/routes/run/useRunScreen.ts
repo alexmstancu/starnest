@@ -56,7 +56,7 @@ export type RunAct = "planning" | "running" | "opening" | "stopping";
  * three it is about -- a reader who clicked *Retry* reads the figure for *Ask again* and has
  * no way to tell.
  */
-export type GapKind = "failed" | "unanswered" | "not_reached" | "everything";
+export type GapKind = "failed" | "unanswered" | "not_reached" | "everything" | "picked";
 
 /**
  * A run that has been estimated and is waiting to be agreed to.
@@ -87,7 +87,7 @@ function stillDrawnFrom(armed: ArmedRun, gaps: string | null): boolean {
 }
 
 function gapsOf(holdings: Read<Holdings> | Idle, origin: GapKind): string | null {
-  if (holdings.state !== "ready" || origin === "everything") return null;
+  if (holdings.state !== "ready" || origin === "everything" || origin === "picked") return null;
   return JSON.stringify(holdings.data.gaps[origin]);
 }
 
