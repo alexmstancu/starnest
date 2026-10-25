@@ -1762,7 +1762,7 @@ describe("when every set has been discarded", () => {
     await discardTheLastSet();
 
     expect(
-      await screen.findByText("Choose a criteria set to see its criteria."),
+      await screen.findByRole("region", { name: "No criteria set yet" }),
     ).toBeInTheDocument();
     // The stage stays drawn (PL-013); it holds no pillar of a set that is gone.
     expect(
@@ -1773,7 +1773,7 @@ describe("when every set has been discarded", () => {
   it("selects a set created once the last one has gone", async () => {
     renderShell("/configure");
     await discardTheLastSet();
-    await screen.findByText("Choose a criteria set to see its criteria.");
+    await screen.findByRole("region", { name: "No criteria set yet" });
 
     await create("Partner");
 

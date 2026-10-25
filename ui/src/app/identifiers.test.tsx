@@ -138,7 +138,7 @@ const ARRANGEMENTS: Record<ScreenState, () => Promise<void>> = {
   "Configure, no criteria set": async () => {
     mockServer.use(http.get("/v1/criteria-sets", () => HttpResponse.json({ items: [] })));
     renderShell("/configure");
-    await screen.findByText(/choose a criteria set to see its criteria/i);
+    await screen.findByRole("region", { name: "No criteria set yet" });
   },
   "Configure, the server unreachable": async () => {
     serverUnreachable();

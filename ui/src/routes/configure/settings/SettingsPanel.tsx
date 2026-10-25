@@ -1,8 +1,10 @@
-import { useCallback } from "react";
+import { type ReactNode, useCallback } from "react";
 import { fetchSettings, type Settings } from "../../../api/endpoints";
 import { useRead } from "../../../api/useRead";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
+import { COMPARATOR_LIMIT, REFETCH_AGE, SCORE_RANGE } from "../../../navigation/highlight";
+import { useLanding } from "../../../shell/useLanding";
 import { Stage } from "../Stage";
 import { NumberField } from "../../../shell/NumberField";
 import { SETTING_FIELDS, describeUnset, isBlocked, unsetFields } from "./settingsForm";
@@ -102,31 +104,32 @@ function SettingsFields({ settings }: { settings: Settings }) {
             decisions to make in order, and they are independent. */}
         <div className="field-grid">
           {SETTING_FIELDS.map(({ name, label, unit, description, consequence, severity, rule }) => (
-            <NumberField
-              key={name}
-              id={`setting-${name}`}
-              label={label}
-              value={form.draft[name]}
-              onChange={(text) => form.change(name, text)}
-              rule={rule}
-              problem={form.problems[name] ?? null}
-              placeholder="Not set"
-              unset={severity}
-              // **The unit beside the box, described by**: what the number means, which a
-              // reader who cannot see it needs announced with the field -- and not the label,
-              // because "Spend cap per acquisition €" is not what the field is called.
-              suffix={unit}
-              note={
-                <>
-                  {description}
-                  {/* What is true *while it is blank*: the question somebody looking at an
-                      empty field is actually asking. */}
-                  {form.draft[name].trim() === "" && (
-                    <span className="field__consequence"> {consequence}</span>
-                  )}
-                </>
-              }
-            />
+            <LandingField key={name} name={name}>
+              <NumberField
+                id={`setting-${name}`}
+                label={label}
+                value={form.draft[name]}
+                onChange={(text) => form.change(name, text)}
+                rule={rule}
+                problem={form.problems[name] ?? null}
+                placeholder="Not set"
+                unset={severity}
+                // **The unit beside the box, described by**: what the number means, which a
+                // reader who cannot see it needs announced with the field -- and not the label,
+                // because "Spend cap per acquisition €" is not what the field is called.
+                suffix={unit}
+                note={
+                  <>
+                    {description}
+                    {/* What is true *while it is blank*: the question somebody looking at an
+                        empty field is actually asking. */}
+                    {form.draft[name].trim() === "" && (
+                      <span className="field__consequence"> {consequence}</span>
+                    )}
+                  </>
+                }
+              />
+            </LandingField>
           ))}
         </div>
         {/* **Disabled while nothing can be sent; held while a save is in flight** (NEW-34).
@@ -142,5 +145,24 @@ function SettingsFields({ settings }: { settings: Settings }) {
         </button>
       </form>
     </>
+  );
+}
+
+/** The `?show=` name a route lands on each setting with (PL-018), where one does. */
+const LANDS_ON: Partial<Record<string, string>> = {
+  score_scale_max: SCORE_RANGE,
+  comparator_limit: COMPARATOR_LIMIT,
+  refetch_older_than_days: REFETCH_AGE,
+};
+
+/** A setting a route can name: its box is focused, and the field marked until the reader acts. */
+function LandingField({ name, children }: { name: string; children: ReactNode }) {
+  const { target, landed } = useLanding<HTMLDivElement>(LANDS_ON[name] ?? [], {
+    focus: `setting-${name}`,
+  });
+  return (
+    <div ref={target} className={landed ? "is-landed" : undefined}>
+      {children}
+    </div>
   );
 }

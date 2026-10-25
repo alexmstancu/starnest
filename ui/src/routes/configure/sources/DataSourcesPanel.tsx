@@ -1,4 +1,5 @@
 import { ActRefusal } from "../../../shell/ActRefusal";
+import { SOURCE_PRIORITY } from "../../../navigation/highlight";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { Stage } from "../Stage";
 import { describeOrderRefusal, inPriorityOrder, positionsOf } from "./sourceOrder";
@@ -66,6 +67,7 @@ export function DataSourcesPanel({
   return (
     <Stage
       id="data-sources"
+      landsOn={[SOURCE_PRIORITY]}
       title="Source priority"
       lead={
         <>

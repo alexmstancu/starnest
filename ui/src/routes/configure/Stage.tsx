@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useLanding } from "../../shell/useLanding";
 
 /**
  * One numbered stage card on Configure (PL-013).
@@ -12,17 +13,26 @@ export function Stage({
   id,
   title,
   lead,
+  landsOn = [],
   children,
 }: {
   /** Names the heading, which names the region. */
   id: string;
+  /** The `?show=` names a route lands on this stage with (PL-018). */
+  landsOn?: readonly string[];
   title: ReactNode;
   lead: ReactNode;
   children?: ReactNode;
 }) {
   const headingId = `${id}-heading`;
+  const { target, asked, landed } = useLanding<HTMLElement>(landsOn);
   return (
-    <section className="stage" aria-labelledby={headingId}>
+    <section
+      ref={target}
+      tabIndex={asked ? -1 : undefined}
+      className={landed ? "stage is-landed" : "stage"}
+      aria-labelledby={headingId}
+    >
       <header className="stage__head">
         <span className="stage__number" aria-hidden="true" />
         <div className="stage__titles">

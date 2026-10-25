@@ -784,7 +784,7 @@ describe("the household panel when the list of places is not there", () => {
     ).toBeInTheDocument();
   });
 
-  it("says the list of places is still loading while it loads", async () => {
+  it("marks the list of places busy with a skeleton while it loads (PL-012)", async () => {
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -797,16 +797,14 @@ describe("the household panel when the list of places is not there", () => {
       }),
     );
     renderShell("/configure");
-    const household = await panel();
-
-    expect(
-      await household.findByText("Loading the list of places…"),
-    ).toBeInTheDocument();
+    const region = await screen.findByRole("region", { name: "Household" });
+    // The household itself is read; only the places are on their way.
+    await within(region).findByRole("button", { name: /save/i });
+    expect(region.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(region).not.toHaveTextContent(/Loading/);
 
     release();
 
-    await waitFor(() =>
-      expect(household.queryByText("Loading the list of places…")).toBeNull(),
-    );
+    await waitFor(() => expect(region.querySelector('[aria-busy="true"]')).toBeNull());
   });
 });

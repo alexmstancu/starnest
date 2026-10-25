@@ -11,6 +11,8 @@ import { useCandidateRosterState } from "../../../api/useCandidateRoster";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { ReadFailureCard } from "../../../shell/ReadFailureCard";
+import { HOUSEHOLD } from "../../../navigation/highlight";
+import { Skeleton } from "../../../shell/Skeleton";
 import { Stage } from "../Stage";
 import { NumberField } from "../../../shell/NumberField";
 import {
@@ -40,6 +42,7 @@ export function HouseholdPanel() {
   return (
     <Stage
       id="household"
+      landsOn={[HOUSEHOLD]}
       title="Household"
       lead={
         <>
@@ -105,7 +108,10 @@ function HouseholdFields({
       {/* **Why the pickers below are empty** (UI-27). Two of them are required, and a list
           offering nothing reads as a database with no places in it. */}
       {roster.status === "loading" && (
-        <p className="screen__note">Loading the list of places…</p>
+        // A skeleton, not a sentence (PL-012): the pickers' list is on its way.
+        <div aria-busy="true">
+          <Skeleton shape="lines" />
+        </div>
       )}
       {roster.status === "error" && (
         <>

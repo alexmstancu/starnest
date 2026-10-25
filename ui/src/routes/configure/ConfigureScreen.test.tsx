@@ -542,9 +542,10 @@ describe("when the criteria set cannot be shown", () => {
     const configure = within(
       await screen.findByRole("region", { name: "Configure" }),
     );
-    await waitFor(() =>
-      expect(configure.getByText(/choose a criteria set/i)).toBeInTheDocument(),
-    );
+    // No set at all: the card that offers to create one (PL-011).
+    expect(
+      await configure.findByRole("region", { name: "No criteria set yet" }),
+    ).toBeInTheDocument();
   });
 });
 

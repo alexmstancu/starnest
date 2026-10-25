@@ -2,8 +2,10 @@ import { useCallback, useRef, useState } from "react";
 import type { RouteDefinition } from "../../navigation/routes";
 import type { Idle, Read } from "../../api/read";
 import type { CriteriaSet, MatchRuleResult } from "../../api/endpoints";
+import { CRITERIA, PILLAR_WEIGHTS } from "../../navigation/highlight";
+import { EmptyCard } from "../../shell/EmptyCard";
 import { LoadedRegion } from "../../shell/LoadedRegion";
-import { useSelection } from "../../shell/SelectionContext";
+import { type SelectionLists, useSelection } from "../../shell/SelectionContext";
 import { type AnswerForm, GateAnswersPanel } from "./answers/GateAnswersPanel";
 import { CriteriaPanel } from "./criteria/CriteriaPanel";
 import { CriteriaSetsPanel } from "./sets/CriteriaSetsPanel";
@@ -220,6 +222,8 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
 
 const PILLAR_WEIGHTS_STAGE = {
   id: "pillar-weights",
+  // The criteria are inside the weights: a route to either lands here (PL-018).
+  landsOn: [PILLAR_WEIGHTS, CRITERIA],
   title: "Pillar weights",
   lead:
     "What matters, and how much. Moving one weight rebalances the unlocked others in " +
@@ -246,7 +250,7 @@ function SetNotRead({
   read: Read<CriteriaSet> | Idle;
   onRetry: () => Promise<void>;
   /** The lists a set is chosen from: until they are read, "choose a set" is not yet true. */
-  lists: Read<unknown>;
+  lists: Read<SelectionLists>;
   onRetryLists: () => Promise<void>;
   idleNote: string;
   /** The full card once, in stage 3; stage 4 says the same in a line (N4). */
@@ -265,6 +269,10 @@ function SetNotRead({
       </LoadedRegion>
     );
   }
+  // **No set at all, read and confirmed** (PL-011): the full card once, in stage 3.
+  const noSets = read.state === "idle" && lists.state === "ready" && lists.data.criteriaSets.length === 0;
+  if (noSets && prominence === "screen") return <NoCriteriaSetYet />;
+  if (noSets) return <p className="screen__note">Once a criteria set exists, its rules are listed here.</p>;
   if (read.state === "idle") return <p className="screen__note">{idleNote}</p>;
   return (
     <LoadedRegion
@@ -278,3 +286,32 @@ function SetNotRead({
     </LoadedRegion>
   );
 }
+
+/**
+ * Every weight, rule and limit below belongs to a set, so with none there is nothing to show
+ * in stages 3 and 4. **Create a first set** takes the reader to stage 1's name field, which is
+ * where a set is created; the household, sources and limits are global and stay.
+ */
+function NoCriteriaSetYet() {
+  return (
+    <EmptyCard
+      title="No criteria set yet"
+      detail={
+        "Every weight and rule in this stage and the next belongs to a criteria set. " +
+        "Create one to begin; it can be duplicated and renamed later."
+      }
+      action={
+        <button
+          type="button"
+          className="button button--primary"
+          onClick={() => document.getElementById(NEW_SET_FIELD)?.focus()}
+        >
+          Create a first set
+        </button>
+      }
+    />
+  );
+}
+
+/** Stage 1's name field for a new set (`sets/CriteriaSetsPanel.tsx`). */
+const NEW_SET_FIELD = "new-criteria-set";
