@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 import httpx
+import psycopg
 import pytest
 from psycopg_pool import AsyncConnectionPool
 
@@ -518,6 +519,37 @@ class TestTheGates:
         response = await api.put(path, json={"match_result": "matching"})
 
         assert response.status_code == status
+
+    async def test_a_candidate_at_another_level_is_refused_with_422(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """A country gate is not asked of a city (NEW-64, G-S3), and nothing is stored."""
+        async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as db:
+            await db.execute(
+                "INSERT INTO candidate (id, name, level, parent_level, parent_candidate,"
+                " parent_required) SELECT 'city.portugal.porto', 'Porto', l.id, 'country',"
+                " 'country.portugal', l.requires_parent FROM level AS l WHERE l.id = 'city'"
+            )
+            try:
+                response = await api.put(
+                    "/v1/match-rule-results/uk_skilled_worker/city.portugal.porto",
+                    json={"match_result": "matching"},
+                )
+                (stored,) = await (
+                    await db.execute(
+                        "SELECT count(*) FROM match_rule_answer"
+                        " WHERE candidate = 'city.portugal.porto'"
+                    )
+                ).fetchone()
+            finally:
+                await db.execute("DELETE FROM candidate WHERE id = 'city.portugal.porto'")
+
+        assert (response.status_code, response.json()["code"]) == (
+            422,
+            "invalid_match_rule_result",
+        )
+        validate("putMatchRuleResult", response.json(), status=422)
+        assert stored == 0
 
     async def test_an_unknown_source_is_refused(self, api: httpx.AsyncClient) -> None:
         response = await api.put(

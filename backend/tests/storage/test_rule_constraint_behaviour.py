@@ -17,6 +17,8 @@ import psycopg
 import pytest
 from psycopg import errors
 
+from .evaluation_rows import record_a_city
+
 pytestmark = pytest.mark.storage
 
 A_GATE = "eu_free_movement"
@@ -235,3 +237,57 @@ class TestAnExternalScoreIsIdentifiedByBothEndsOfItsPeriod:
 
         with pytest.raises(errors.UniqueViolation):
             _publish_an_external_score(connection, period_end=THE_YEAR_END, retrieved=retrieved)
+
+
+def _concern(connection: psycopg.Connection, *, gate: str, candidate: str, level: str) -> None:
+    connection.execute(
+        "INSERT INTO match_rule_candidate (match_rule, candidate, level) VALUES (%s, %s, %s)",
+        (gate, candidate, level),
+    )
+
+
+class TestAGateConcernsCandidatesAtItsLevel:
+    """A candidate a gate is a question about sits at the gate's level (`0514`, NEW-64).
+
+    Checked only on read before, where a mistake was silent: a country gate listing a city
+    concerned no country, so research asked nobody about it.
+    """
+
+    def test_a_city_listed_for_a_country_gate_is_refused(
+        self, connection: psycopg.Connection
+    ) -> None:
+        city = record_a_city(connection, city="city.portugal.porto", country="country.portugal")
+
+        with pytest.raises(errors.ForeignKeyViolation):
+            _concern(connection, gate="uk_skilled_worker", candidate=city, level="country")
+
+    def test_a_city_listed_at_its_own_level_for_a_country_gate_is_refused(
+        self, connection: psycopg.Connection
+    ) -> None:
+        """The other key: claiming the city's level does not make the gate asked at it."""
+        city = record_a_city(connection, city="city.portugal.porto", country="country.portugal")
+
+        with pytest.raises(errors.ForeignKeyViolation):
+            _concern(connection, gate="uk_skilled_worker", candidate=city, level="city")
+
+    def test_a_row_for_a_gate_with_no_level_is_refused(
+        self, connection: psycopg.Connection
+    ) -> None:
+        """D55: a gate asked at every level lists nobody, since no rows already means everyone."""
+        with pytest.raises(errors.ForeignKeyViolation):
+            _concern(
+                connection,
+                gate="not_manually_excluded",
+                candidate="country.portugal",
+                level="country",
+            )
+
+    def test_a_country_listed_for_a_country_gate_is_stored(
+        self, connection: psycopg.Connection
+    ) -> None:
+        """The control: the keys refuse a level that disagrees, not every new row."""
+        _concern(connection, gate="uk_skilled_worker", candidate="country.ireland", level="country")
+
+        assert connection.execute(
+            "SELECT level FROM match_rule_candidate WHERE candidate = 'country.ireland'"
+        ).fetchall() == [("country",)]

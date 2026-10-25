@@ -409,6 +409,7 @@ erDiagram
     MATCH_RULE_CANDIDATE {
         text match_rule FK
         text candidate FK
+        text level FK
     }
     MATCH_RULE_RESEARCH_SPEND {
         bigint id PK
@@ -628,6 +629,7 @@ erDiagram
     LEVEL ||--o{ DATA_ACQUISITION_RUN : scopes
     LEVEL ||--o{ ATTRIBUTE : scopes
     LEVEL ||--o{ MATCH_RULE : scopes
+    LEVEL ||--o{ MATCH_RULE_CANDIDATE : scopes
     LEVEL ||--o{ EVALUATION : "is evaluated at"
     CANDIDATE ||--o{ CANDIDATE : "parent of"
     PILLAR ||--o{ ATTRIBUTE : groups
@@ -725,6 +727,7 @@ erDiagram
 | `LEVEL \|\|--o{ DATA_ACQUISITION_RUN` | A run addresses one level | Part of the run's planned scope (section 3.8) |
 | `LEVEL \|\|--o{ ATTRIBUTE` | Attributes are declared per level | `country.safety` and `city.safety` are different questions with different sources |
 | `LEVEL \|\|--o{ MATCH_RULE` | Gates are declared per level | A visa is national; `two_role_feasibility` is local |
+| `LEVEL \|\|--o{ MATCH_RULE_CANDIDATE` | A gate and the candidates it concerns sit at one level | A city listed for a country gate is refused outright, and a gate asked at every level lists nobody (`0514`, D55) |
 | `LEVEL \|\|--o{ EVALUATION` | An evaluation runs at one level | Comparisons never mix levels (section 8.5); this enforces it in the schema |
 | `LEVEL \|\|--o{ LEVEL` | Which level nests under which | `city` nests under `country`; `country` under nothing. Combined with the pair `(level, parent_level)` on a candidate, this makes a city parented to a city **impossible to insert** rather than merely wrong |
 | `CANDIDATE \|\|--o{ CANDIDATE` | A city points at its country | Gives the parent chain that `parent_not_matching` and the context column depend on |
@@ -784,7 +787,7 @@ erDiagram
 | `CANDIDATE \|\|--o{ MATCH_RULE_RESULT` | One candidate, many rules | The result is a **fact about the world** — whether a visa route exists — so it lives on the objective side, like a value |
 | `MATCH_RULE \|\|--o{ MATCH_RULE_RESULT_CITATION` | The pages a gate's verdict was read from | A `MATCH_RULE_RESULT` is decided by manual or LLM-assisted research (section 6.9), which must show its sources exactly as a value does. The citation's key is the pair `(match_rule, candidate)` — the result's own key — so the diagram shows both halves rather than one line to the result |
 | `CANDIDATE \|\|--o{ MATCH_RULE_RESULT_CITATION` | The other half of that pair | |
-| `MATCH_RULE \|\|--o{ MATCH_RULE_CANDIDATE` | The candidates a gate is a question about | The UK route concerns the United Kingdom and nowhere else, so research asks a model about it there only (Q236). **No rows means every candidate at the gate's level**, which is what every gate declared without any has always meant |
+| `MATCH_RULE \|\|--o{ MATCH_RULE_CANDIDATE` | The candidates a gate is a question about | The UK route concerns the United Kingdom and nowhere else, so research asks a model about it there only (Q236). **No rows means every candidate at the gate's level**, which is what every gate declared without any has always meant. A row carries its gate's level, so the candidate it names sits at that level and a gate asked at every level names nobody (`0514`) |
 | `CANDIDATE \|\|--o{ MATCH_RULE_CANDIDATE` | The other half | |
 | `MATCH_RULE \|\|--o{ MATCH_RULE_RESEARCH_SPEND` | What researching a gate billed, one row per call | Research writes gate answers rather than values, so it is not a run and has no run row to accrue on (section 3.8). Written as each call returns, so a pass that dies keeps the record of what it paid for (Q236) |
 | `CANDIDATE \|\|--o{ MATCH_RULE_RESEARCH_SPEND` | Which candidate the billed question was about | |
@@ -1512,7 +1515,7 @@ eligibility but are not measurements of the place.
 | `id`, `name` | Identifier and display name |
 | `level` | Which level it applies at |
 | `researchable` | Whether a model may be asked to research it (section 6.10 use 3). True only for a gate decided by reading official pages -- the "Manual, LLM-assisted" gates of section 7.3 (Q236) |
-| `match_rule_candidate` | The candidates the gate is a question about, one row each. **None means every candidate at its level**, so a gate that concerns everybody names nobody |
+| `match_rule_candidate` | The candidates the gate is a question about, one row each. **None means every candidate at its level**, so a gate that concerns everybody names nobody. **Each sits at the gate's level**, and a gate asked at every level lists nobody -- both held by foreign keys (`0514`, D55) |
 
 **The result** (`match_rule_result`) is one rule's answer for one candidate:
 
@@ -2718,7 +2721,8 @@ not matching regardless of score** — and stays visible, with its score, showin
 `match_rule.researchable` marks the three "Manual, LLM-assisted" gates above, and
 `match_rule_candidate` names the one country each is a question about -- `uk_skilled_worker` the
 United Kingdom, `ch_eu_efta_quota` Switzerland, `li_eea_quota` Liechtenstein. A gate with no such
-rows concerns every candidate at its level. `eu_free_movement` is definitional and
+rows concerns every candidate at its level, and a candidate it names sits at its level (`0514`);
+a gate asked at every level names nobody. `eu_free_movement` is definitional and
 `not_manually_excluded` is the household's own, so neither is researched: a pass over the
 country level asks three questions, not 160.
 
