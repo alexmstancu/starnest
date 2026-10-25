@@ -109,6 +109,15 @@ describe("the diverging bar", () => {
     expect(divergingBar(90, 50, 100).alpha).toBeCloseTo(0.42, 5);
   });
 
+  it("draws a gap below the noise floor softer, however far its bar reaches", () => {
+    // The largest gap of its row, so the bar is full length; a fiftieth of the focus, so noise.
+    const noise = divergingBar(-2, 2, 100);
+
+    expect(noise.width).toBe(50);
+    expect(noise.faint).toBe(true);
+    expect(noise.barOpacity).toBeLessThan(1);
+  });
+
   it("adds an edge only to the longest bars", () => {
     // Below 60% of the ruler: no edge, however large the gap is for its focus.
     expect(divergingBar(20, 50, 30).edge).toBe(false);

@@ -102,10 +102,12 @@ export function divergingBar(
   const reach = scale > 0 ? Math.min(1, size / scale) : 0;
   const width = Math.max(MIN_WIDTH, reach * 50);
   const left = direction === "behind" ? 50 - width : 50;
-  const barOpacity = reach < SHORT ? SHORT_OPACITY : 1;
 
   const anchor = isFiniteNumber(focusValue) ? Math.abs(focusValue) : 0;
   const lit = anchor > 0 && size / anchor >= NOTICEABLE;
+  // Noise is drawn softer however far its bar reaches: a row whose largest gap is 2 draws that
+  // gap full length, and a full-strength bar under no tint would contradict the muted text.
+  const barOpacity = reach < SHORT || !lit ? SHORT_OPACITY : 1;
 
   return {
     direction,
