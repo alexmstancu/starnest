@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { patchJson } from "../../../api/client";
 import { fetchDataSources } from "../../../api/endpoints";
 import { DATA_SOURCES } from "../../../mocks/fixtures";
 import { mockServer } from "../../../mocks/server";
@@ -157,6 +158,29 @@ describe("the source priority panel", () => {
     ).toBeDisabled();
     // Disabled outright rather than held: nothing is in flight, there is only nowhere to go.
     expectNotHeld(sources.getByRole("button", { name: "Move Eurostat up" }));
+  });
+
+  /**
+   * PL-137. **Two sources sharing a priority are swapped, not refused**: the reorder hands the
+   * pair distinct numbers, read back by id, and every other tier is left where it was.
+   */
+  it("swaps two sources that share a priority", async () => {
+    const user = userEvent.setup();
+    await patchJson("/data-sources/{dataSourceId}", { default_priority: 10 }, {
+      pathParams: { dataSourceId: "manual" },
+    });
+    renderShell("/configure");
+    const sources = await panel();
+
+    const up = await sources.findByRole("button", { name: "Move Manual entry up" });
+    expect(up).toBeEnabled();
+    await user.click(up);
+
+    await waitFor(() =>
+      expect(namesInOrder(sources)).toEqual(["Manual entry", "Eurostat", "LLM with web search"]),
+    );
+    expect(await storedPriorities()).toEqual({ manual: 10, eurostat: 11, llm: 90 });
+    expect(sources.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("reports a refusal to change a source, and keeps the list readable", async () => {

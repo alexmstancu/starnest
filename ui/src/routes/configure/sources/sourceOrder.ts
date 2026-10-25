@@ -30,8 +30,8 @@ export function inPriorityOrder<Source extends OrderedSource>(
  * out in this order, so the tiers between them survive, and it alone decides what a tie reads
  * as. The interface only says where each source stands.
  *
- * Priorities are deliberately not unique -- two sources share 16 in the shipped catalog -- so
- * a move against an equal neighbour is refused rather than faked.
+ * **A tie is swapped like any other pair** (PL-137): priorities are deliberately not unique --
+ * two sources share 16 in the shipped catalog -- and the server gives the pair distinct numbers.
  *
  * Null when there is no neighbour in that direction, which is what disables the button.
  */
@@ -46,7 +46,6 @@ export function orderAfterMove<Source extends OrderedSource>(
   const here = ordered[at];
   const neighbour = ordered[to];
   if (at === -1 || !here || !neighbour) return null;
-  if (here.default_priority === neighbour.default_priority) return null;
 
   ordered[at] = neighbour;
   ordered[to] = here;

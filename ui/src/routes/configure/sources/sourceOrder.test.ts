@@ -45,16 +45,17 @@ describe("moving a source", () => {
   });
 
   /**
-   * Priorities are not unique -- two sources share 16 in the shipped catalog -- so a move
-   * against an equal neighbour would change nothing, and a button that appears to act and
-   * does not is worse than one that is disabled.
+   * PL-137. Priorities are not unique -- two sources share 16 in the shipped catalog -- and a
+   * tied pair is swapped like any other: the order is sent, and the server gives the pair
+   * distinct numbers.
    */
-  it("will not move a source that is already level with its neighbour", () => {
+  it("swaps a source with a neighbour that shares its priority", () => {
     const tied = [
       { id: "ecb", default_priority: 16 },
       { id: "unodc", default_priority: 16 },
     ];
-    expect(orderAfterMove(tied, "unodc", "up")).toBeNull();
+    expect(orderAfterMove(tied, "unodc", "up")).toEqual(["unodc", "ecb"]);
+    expect(orderAfterMove(tied, "ecb", "down")).toEqual(["unodc", "ecb"]);
   });
 
   it("knows nothing about a source that is not in the list", () => {
