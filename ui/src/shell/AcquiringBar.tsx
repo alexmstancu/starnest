@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ROUTES } from "../navigation/routes";
 import { useSelection } from "./SelectionContext";
@@ -35,11 +36,17 @@ export function AcquiringBar() {
     acquisitionsStarted + screenChanges,
   );
   const onAcquire = useLocation().pathname === ACQUIRE.path;
+  // **Said once, on the screen where it was heard** (from review). Blanked on Acquire and put
+  // back on every return, the last start or end was announced again each time. So it is
+  // remembered with the screen change it arrived on, and a later change retires it.
+  const [heard, setHeard] = useState({ announcement, at: screenChanges });
+  if (heard.announcement !== announcement) setHeard({ announcement, at: screenChanges });
+  const current = !onAcquire && heard.at === screenChanges ? announcement : "";
 
   return (
     <>
       <p className="visually-hidden" role="status" data-testid="acquisition-announcer">
-        {onAcquire ? "" : announcement}
+        {current}
       </p>
       {acquiring !== null && !onAcquire && <Strip acquiring={acquiring} />}
     </>

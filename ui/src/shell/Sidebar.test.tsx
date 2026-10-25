@@ -2,7 +2,8 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, delay, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { COUNTRY_CANDIDATES } from "../mocks/fixtures";
+import { replaceSettings } from "../api/endpoints";
+import { COUNTRY_CANDIDATES, SETTINGS } from "../mocks/fixtures";
 import { mockServer } from "../mocks/server";
 import { renderShell } from "../testing/renderShell";
 
@@ -62,6 +63,26 @@ describe("PL-005: the candidates card while the score range is unset", () => {
     expect(counts.queryByText("Matching")).toBeNull();
     expect(counts.queryByRole("alert")).toBeNull();
     expect(card(/^candidates$/i)).not.toHaveTextContent("score_scale_not_set");
+  });
+
+  /**
+   * From review. The reason was looked for only on a first read that failed: once counts had
+   * been shown, a re-read refused for an unset range kept them on screen as "could not be
+   * refreshed", with a Try again the server will refuse for as long as the range stays unset.
+   */
+  it("takes shown counts away, with the reason, when the range is cleared meanwhile", async () => {
+    renderShell("/acquire");
+    const counts = within(await screen.findByRole("region", { name: /^candidates$/i }));
+    await counts.findByText("Matching");
+
+    await replaceSettings({ ...SETTINGS, score_scale_max: null });
+    await userEvent.setup().click(screen.getByRole("link", { name: "Compare" }));
+
+    expect(await counts.findByText(/depend on a score/i)).toBeInTheDocument();
+    expect(counts.queryByText("Matching")).toBeNull();
+    expect(counts.queryByText(/could not be refreshed/i)).toBeNull();
+    expect(counts.queryByRole("button", { name: /try again/i })).toBeNull();
+    expect(figure(/^candidates$/i, "Total")).toHaveTextContent(String(COUNTRY_CANDIDATES.length));
   });
 
   it("says the set cannot be ranked, in words, when the server says so", async () => {

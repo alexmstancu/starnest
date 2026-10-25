@@ -363,7 +363,16 @@ function MatchCountsRegion({
   onRetry: () => Promise<void>;
 }) {
   if (counts.state === "idle") return null;
-  const unranked = counts.state === "failed" ? noRankingBecause(counts.error) : null;
+  // **A re-read refused for an unset range takes the shown counts with it**: they cannot be
+  // computed now, so they are not current, and a Try again would be refused for as long as
+  // the range stays unset.
+  const failure =
+    counts.state === "failed"
+      ? counts.error
+      : counts.state === "ready" && typeof counts.refresh === "object"
+        ? counts.refresh.failed
+        : null;
+  const unranked = noRankingBecause(failure);
   if (unranked !== null) {
     return <p className="sidebar__note sidebar__note--warning">{unranked}</p>;
   }

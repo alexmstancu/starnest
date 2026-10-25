@@ -187,6 +187,27 @@ describe("PL-131: what the strip says, and what it announces", () => {
     expect(queryStrip()).toBeNull();
   });
 
+  /**
+   * From review. The status went blank on Acquire and came back on every return, so a screen
+   * reader said "An acquisition is running." again each time the reader left Acquire, about a
+   * start it had already heard.
+   */
+  it("announces a start once, not again on the way back from Acquire", async () => {
+    acquisitionIsRunning(24, 96);
+    renderShell("/rank");
+    await strip();
+    const announcer = screen.getByTestId("acquisition-announcer");
+    expect(announcer).toHaveTextContent("An acquisition is running.");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("link", { name: "Acquire" }));
+    await screen.findByRole("heading", { name: "Acquire", level: 1 });
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+
+    expect(await strip()).toHaveTextContent("24 of 96");
+    expect(announcer).toBeEmptyDOMElement();
+  });
+
   it("announces nothing when nothing has run", async () => {
     renderShell("/rank");
     await screen.findByRole("heading", { name: "Rank" });
