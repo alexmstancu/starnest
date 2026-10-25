@@ -190,6 +190,8 @@ export interface RunScreenState {
    */
   disarm: () => void;
   open: (run: Run) => void;
+  /** Opens a run by its number, as "Open acquisition N" does (PL-119). */
+  openAcquisition: (runId: number) => void;
 }
 
 /**
@@ -712,6 +714,7 @@ export function useRunScreen(
     // Through `act` like everything else. A backend that is down or a run that cannot be read
     // now says so, where before the promise rejected into nothing and the click looked ignored.
     open: (run) => void readBack(run.id, { focus: true }),
+    openAcquisition: (runId) => void readBack(runId, { focus: true }),
   };
 }
 

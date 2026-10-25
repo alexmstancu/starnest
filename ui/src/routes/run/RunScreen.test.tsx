@@ -2936,10 +2936,23 @@ describe("a run that did not reach everything", () => {
   });
 
   /**
-   * PL-050. While a run is going, an item it has not answered yet may still be answered, so the
-   * verdict "retrying changes nothing" is not yet true and its Retry waits for the run to end.
+   * The not-reached card is what a running acquisition is answering: a pair it asks about becomes
+   * its latest run's, and reads as not reached until it is asked (`select_holdings`). So that
+   * card is held while it runs, naming the run, and Ask waits for the end -- it would only be
+   * refused as in flight. **The unanswered card is not held**: a pair counts as unanswered only
+   * once its latest run has settled it, so that verdict is final whatever is running.
    */
-  it("holds the unanswered verdict and its retry while an acquisition is running", async () => {
+  const ASKED_NOW = [
+    { candidate: "country.portugal", attribute: "country.total_tax_rate_effective", data_acquisition_run: 7 },
+  ];
+
+  function cardOf(heading: RegExp) {
+    return screen
+      .findByRole("heading", { name: heading })
+      .then((found) => within(found.closest("section")!));
+  }
+
+  it("holds the not-reached card while an acquisition is asking about it, naming the run", async () => {
     serveRun({
       ...HALTED,
       run_status: "running",
@@ -2947,21 +2960,24 @@ describe("a run that did not reach everything", () => {
       finished_at: null,
       progress: { ...HALTED.progress, items_completed: 1, items_not_reached: 2 },
     });
+    serveGaps({ unanswered: HOLDINGS_GAPS.unanswered, not_reached: ASKED_NOW });
     renderShell("/acquire");
-    const gaps = within(
-      (await screen.findByRole("heading", { name: /^\d+\s*unanswered$/ })).closest("section")!,
-    );
+    const notReached = await cardOf(/^\d+\s*not reached$/);
 
-    expect(
-      await gaps.findByText(/^Acquisition 7 is still running, so these may yet be answered/),
-    ).toBeInTheDocument();
-    expect(gaps.queryByText(/changes nothing/)).toBeNull();
-    expectHeld(gaps.getByRole("button", { name: "Retry 2 unanswered" }));
+    expect(await notReached.findByText(/^Acquisition 7 is asking these now\./)).toBeInTheDocument();
+    expect(notReached.queryByText(/worth asking/i)).toBeNull();
+    expectHeld(notReached.getByRole("button", { name: "Ask 1 not reached" }));
+    expect(notReached.getByRole("button", { name: "Open acquisition 7" })).toBeInTheDocument();
+
+    const unanswered = await cardOf(/^\d+\s*unanswered$/);
+    expect(unanswered.getByText(/changes nothing/)).toBeInTheDocument();
+    expectNotHeld(unanswered.getByRole("button", { name: "Retry 2 unanswered" }));
   });
 
   /** A failed read of the card is not the end of the run: the history still says it is going. */
-  it("keeps the retry held by the history when the run's own read fails", async () => {
+  it("keeps the not-reached card held by the history when the run's own read fails", async () => {
     serveRun({ ...HALTED, run_status: "running", stop_requested_at: null, finished_at: null });
+    serveGaps({ not_reached: ASKED_NOW });
     mockServer.use(
       http.get(`${BASE}/data-acquisition-runs/7`, () =>
         HttpResponse.json(
@@ -2975,13 +2991,20 @@ describe("a run that did not reach everything", () => {
     expect(
       await screen.findByText(/the last acquisition could not be loaded/i),
     ).toBeInTheDocument();
-    const gaps = within(
-      (await screen.findByRole("heading", { name: /^\d+\s*unanswered$/ })).closest("section")!,
-    );
-    expect(
-      await gaps.findByText(/^Acquisition 7 is still running/),
-    ).toBeInTheDocument();
-    expectHeld(gaps.getByRole("button", { name: "Retry 2 unanswered" }));
+    const notReached = await cardOf(/^\d+\s*not reached$/);
+    expect(await notReached.findByText(/^Acquisition 7 is asking these now/)).toBeInTheDocument();
+    expectHeld(notReached.getByRole("button", { name: "Ask 1 not reached" }));
+  });
+
+  it("offers the not-reached card again once nothing is running", async () => {
+    serveRun(HALTED);
+    serveGaps({ not_reached: ASKED_NOW });
+    renderShell("/acquire");
+    const notReached = await cardOf(/^\d+\s*not reached$/);
+
+    expect(await notReached.findByText(/worth asking/i)).toBeInTheDocument();
+    expectNotHeld(notReached.getByRole("button", { name: "Ask 1 not reached" }));
+    expect(notReached.queryByRole("button", { name: /open acquisition/i })).toBeNull();
   });
 
   it("gives the verdict and a live retry once nothing is running", async () => {
@@ -3957,6 +3980,7 @@ describe("whose failure the screen reports", () => {
           {
             code: "run_already_in_flight",
             message: "run 7 is still going, and one household runs one pass at a time",
+            details: { run: 7 },
           },
           { status: 409 },
         );
@@ -4073,6 +4097,10 @@ describe("what the busy label says while two acts overlap", () => {
   });
 });
 
+// NEW-49's other way to overtake a stop -- a start the server refused while the stop was
+// written -- can no longer be pressed: Start is held while any run is in flight, a stopping one
+// included (PL-119, `runInFlight.test.tsx`).
+
 /**
  * NEW-49. **A refresh that overtakes a stop does not take the stop off the card.** Refresh is
  * live while a stop is sent (NEW-10), and its read can be answered before the stop is written --
@@ -4081,113 +4109,6 @@ describe("what the busy label says while two acts overlap", () => {
  * "Acquiring now" and offered Stop again until the reader refreshed. **Only a read of the same
  * run gives way**; anything else the reader did meanwhile still outranks the stop (UI-04).
  */
-/**
- * NEW-49, the other way to overtake a stop: **a start the server refused.** While a stop is
- * being sent the run is still going, so a start is refused with `run_already_in_flight` -- and,
- * holding the newest ticket while reading nothing back, it kept the stop's own read off the card,
- * which went on offering Stop for a run already stopping.
- */
-describe("a stop a refused start overtook", () => {
-  /** Every start refused as the server refuses one while a run is going, when the test says. */
-  function refuseStarts(): { release: () => void } {
-    const answer = heldAnswer();
-    mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs`, async () => {
-        await answer.held;
-        return HttpResponse.json(
-          {
-            code: "run_already_in_flight",
-            message: "run 7 is still going, and one household runs one pass at a time",
-          },
-          { status: 409 },
-        );
-      }),
-    );
-    return answer;
-  }
-
-  /** Run 7 on the card, an acquisition estimated, then its stop clicked and held. */
-  async function aStopHeldBesideAnEstimate() {
-    const stop = aRunWhoseStopIsHeld();
-    renderShell("/acquire");
-    const card = within(
-      await screen.findByRole("region", { name: /acquisition 7/i }),
-    );
-    await estimate();
-    const startIt = await screen.findByRole("button", {
-      name: /start this acquisition/i,
-    });
-    await userEvent.click(
-      card.getByRole("button", { name: /stop — keep what completed/i }),
-    );
-    return { stop, startIt };
-  }
-
-  function expectTheStopOnTheCard(): void {
-    const card = within(
-      screen.getByRole("region", { name: /acquisition 7/i }),
-    );
-    expect(
-      card.queryByRole("button", { name: /stop — keep what completed/i }),
-    ).toBeNull();
-    expect(card.getByText("stopping")).toBeInTheDocument();
-  }
-
-  it("shows the stop once it is answered, though a start was refused before", async () => {
-    const { stop, startIt } = await aStopHeldBesideAnEstimate();
-    refuseStarts().release();
-
-    await userEvent.click(startIt);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The start did not go through",
-    );
-    stop.release();
-
-    await waitFor(() => expectTheStopOnTheCard());
-  });
-
-  it("shows the stop, though the start was refused only after it was answered", async () => {
-    const { stop, startIt } = await aStopHeldBesideAnEstimate();
-    const refusal = refuseStarts();
-
-    await userEvent.click(startIt);
-    stop.release();
-    refusal.release();
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The start did not go through",
-    );
-    await waitFor(() => expectTheStopOnTheCard());
-  });
-
-  /**
-   * NEW-52, in the start's order. The stop is written while the start is still the newest act,
-   * so the stop's own read is dropped and the card shows run 7 as read before it -- with Stop
-   * drawn. Let go once its stop had ended, Stop was pressable again until the refused start
-   * read the card back, and for good if that read failed. **Accepted, a stop stays asked.**
-   */
-  it("keeps Stop held after its stop is written, while the start pressed meanwhile is unanswered", async () => {
-    const history = countHistoryReads();
-    const { stop, startIt } = await aStopHeldBesideAnEstimate();
-    const refusal = refuseStarts();
-    await userEvent.click(startIt);
-    // The opening read and the estimate's: every act that ends reads the history again.
-    await waitFor(() => expect(history.count).toBe(2));
-
-    stop.release();
-    // The stop has ended -- written, read back, and kept off the card by the newer start.
-    await waitFor(() => expect(history.count).toBe(3));
-
-    const card = within(
-      screen.getByRole("region", { name: /acquisition 7/i }),
-    );
-    expectHeld(card.getByRole("button", { name: "Stopping…" }));
-
-    refusal.release();
-    await waitFor(() => expectTheStopOnTheCard());
-  });
-});
-
 describe("a stop a refresh overtook", () => {
   /**
    * Run 7 on the card, still going, its stop clicked and held. `actsEnded` counts the acts that
@@ -4914,7 +4835,8 @@ describe("acting from the keyboard", () => {
   }
 
   function refusal(code: string, message: string, status = 409) {
-    return () => HttpResponse.json({ code, message }, { status });
+    const details = code === "run_already_in_flight" ? { run: 7 } : undefined;
+    return () => HttpResponse.json({ code, message, details }, { status });
   }
 
   /** Puts focus on `control` and presses Enter there, as a keyboard user does. */
@@ -5274,46 +5196,6 @@ describe("acting from the keyboard", () => {
     release();
     await everyActHasEnded();
     expect(starts.requests.sent).toBe(1);
-  });
-
-  /**
-   * RB-1. **Stop is held during a start too.** The card looks only every two seconds, so a run
-   * that finished on the server can still read as going, Stop beside it, while a new one is
-   * started -- and Stop
-   * claimed the card from the start as Refresh did.
-   */
-  it("holds Stop on a card still reading as going while a start is in flight", async () => {
-    mockServer.use(
-      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
-        HttpResponse.json({
-          ...STARTED_RUN_DETAIL,
-          id: Number(params["runId"]),
-          run_status: "running",
-          finished_at: null,
-        }),
-      ),
-    );
-    const user = userEvent.setup();
-    renderShell("/acquire");
-    const card = within(
-      await screen.findByRole("region", { name: /acquisition 7/i }),
-    );
-    await estimate();
-    const startIt = await screen.findByRole("button", {
-      name: /start this acquisition/i,
-    });
-    const { release } = await aStartInFlight(user, startIt);
-    const stops = holdEach("post", "/data-acquisition-runs/:runId/stop");
-    const stop = card.getByRole("button", { name: /stop — keep what completed/i });
-
-    expectHeld(stop);
-    await user.click(stop);
-    expect(stops.requests.sent).toBe(0);
-
-    release();
-    expect(
-      await screen.findByRole("region", { name: /acquisition 8/i }),
-    ).toBeInTheDocument();
   });
 
   it("holds Refresh, Dismiss and the history while a start is in flight, so the run it started reaches the card", async () => {

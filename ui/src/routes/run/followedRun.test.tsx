@@ -162,33 +162,26 @@ describe("following a live acquisition", () => {
   });
 
   /** The guard against a look through `act`, which clears the refusal on screen. */
-  it("leaves a refused start's banner standing through three looks", async () => {
+  it("leaves a refused stop's banner standing through three looks", async () => {
     const run = serveRun7(() => ({}));
     mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs`, () =>
+      http.post(`${BASE}/data-acquisition-runs/7/stop`, () =>
         HttpResponse.json(
-          {
-            code: "run_already_in_flight",
-            message: "run 7 is still going, and one household runs one pass at a time",
-            details: { run: 7 },
-          },
-          { status: 409 },
+          { code: "not_found", message: "no run 7" },
+          { status: 404 },
         ),
       ),
     );
     renderShell("/acquire");
-    await theCard();
-    await userEvent.click(await screen.findByRole("button", { name: /estimate an acquisition/i }));
-    await userEvent.click(
-      await screen.findByRole("button", { name: /start this acquisition|yes, start it/i }),
-    );
-    expect(await screen.findByText(/the start did not go through/i)).toBeInTheDocument();
+    const card = await theCard();
+    await userEvent.click(card.getByRole("button", { name: /stop — keep what completed/i }));
+    expect(await screen.findByText(/stopping acquisition 7 did not go through/i)).toBeInTheDocument();
     const before = run.reads;
 
     await threeLooks();
 
     expect(run.reads).toBeGreaterThan(before);
-    expect(screen.getByText(/the start did not go through/i)).toBeInTheDocument();
+    expect(screen.getByText(/stopping acquisition 7 did not go through/i)).toBeInTheDocument();
   });
 
   /** A look through `act` would hold every control while it read. */
@@ -212,8 +205,8 @@ describe("following a live acquisition", () => {
     look.release();
   });
 
-  /** The guard against a look that claims: run 8, which the reader started, stays on the card. */
-  it("never brings back the old run over one the reader started", async () => {
+  /** The guard against a look shown without its checks: run 6, which the reader opened, stays. */
+  it("never brings back the run it was following over one the reader opened", async () => {
     let reads = 0;
     const look = heldAnswer();
     mockServer.use(
@@ -222,23 +215,23 @@ describe("following a live acquisition", () => {
         if (reads > 1) await look.held;
         return HttpResponse.json(detailOf(7));
       }),
-      http.get(`${BASE}/data-acquisition-runs/8`, () =>
-        HttpResponse.json(detailOf(8, { run_status: "completed" })),
+      http.get(`${BASE}/data-acquisition-runs/6`, () =>
+        HttpResponse.json(detailOf(6, { run_status: "completed" })),
       ),
     );
     renderShell("/acquire");
     await theCard();
     await waitFor(() => expect(reads).toBeGreaterThan(1));
-    await userEvent.click(await screen.findByRole("button", { name: /estimate an acquisition/i }));
-    await userEvent.click(
-      await screen.findByRole("button", { name: /start this acquisition|yes, start it/i }),
+    const history = within(
+      await screen.findByRole("region", { name: "Every acquisition so far" }),
     );
-    await screen.findByRole("region", { name: /acquisition 8/i });
+    await userEvent.click(history.getByRole("button", { name: /6/ }));
+    await screen.findByRole("region", { name: /acquisition 6/i });
 
     look.release();
     await threeLooks();
 
-    expect(screen.getByRole("region", { name: /acquisition 8/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /acquisition 6/i })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: /acquisition 7/i })).toBeNull();
   });
 
@@ -285,7 +278,12 @@ describe("following a live acquisition", () => {
     );
     renderShell("/acquire");
     await theCard();
-    await userEvent.click(within(await screen.findByRole("table")).getByRole("button", { name: /6/ }));
+    await userEvent.click(
+      within(await screen.findByRole("region", { name: "Every acquisition so far" })).getByRole(
+        "button",
+        { name: /6/ },
+      ),
+    );
     await screen.findByRole("region", { name: /acquisition 6/i });
     const opened = run.reads;
 

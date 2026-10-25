@@ -1116,7 +1116,19 @@ export const handlers = [
     return nothingToFetchIn(scope) ?? HttpResponse.json(planOf(scope));
   }),
 
+  // One run at a time, refused as the server refuses: naming the run going in `details.run`.
   http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
+    const going = RUNS.find((run) => run.run_status === "running");
+    if (going !== undefined) {
+      return HttpResponse.json(
+        {
+          code: "run_already_in_flight",
+          message: `run ${String(going.id)} is still going, and one household runs one pass at a time`,
+          details: { run: going.id },
+        },
+        { status: 409 },
+      );
+    }
     const scope = (await request.json().catch(() => ({}))) as ScopeAsked;
     return nothingToFetchIn(scope) ?? HttpResponse.json(STARTED_RUN, { status: 202 });
   }),

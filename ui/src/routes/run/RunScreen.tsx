@@ -24,6 +24,7 @@ import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
 import { describeGaps, describeScope } from "./databaseHolds";
 import { describeFailures, failuresIn } from "./failureGroups";
 import { HeldButton } from "../../shell/HeldButton";
+import { runRefusedFor } from "./inFlightRefusal";
 import { ItemGroups } from "./ItemGroups";
 import { OpenToHandEntry } from "./OpenToHandEntry";
 import { RemedyLink } from "./RemedyLink";
@@ -84,6 +85,11 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
     }
   };
   const gapsHeading = useRef<HTMLHeadingElement>(null);
+  // The acquisition still going, if any: one runs at a time, so it holds every way to start.
+  const stillRunning = acquisitionInFlight(
+    run.current,
+    run.history.state === "ready" ? run.history.data : [],
+  );
   // Dismiss takes its card with it, so focus goes to what the reader came to act on.
   const dismiss = () => {
     run.close();
@@ -138,6 +144,11 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
       {run.refusal !== null && (
         <RefusalNotice {...run.refusal} onDismiss={run.dismissFailure}>
           <RemedyLink error={run.refusal.error} />
+          <OpenTheRunGoing
+            runId={runRefusedFor(run.refusal.error)}
+            held={run.starting}
+            onOpen={run.openAcquisition}
+          />
         </RefusalNotice>
       )}
 
@@ -190,10 +201,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                 <GapRemedies
                   gaps={gaps}
                   levelId={levelId}
-                  stillRunning={acquisitionInFlight(
-                    run.current,
-                    run.history.state === "ready" ? run.history.data : [],
-                  )}
+                  stillRunning={stillRunning}
                   run={run}
                   propose={propose}
                   onCancel={cancel}
@@ -203,7 +211,13 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           )}
 
           {levelId !== null && (
-            <PickerCard levelId={levelId} run={run} propose={propose} onCancel={cancel} />
+            <PickerCard
+              levelId={levelId}
+              run={run}
+              stillRunning={stillRunning}
+              propose={propose}
+              onCancel={cancel}
+            />
           )}
 
           {levelId === null ? (
@@ -228,6 +242,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
               <GapEstimate
                 kind="everything"
                 run={run}
+                stillRunning={stillRunning}
                 onCancel={cancel}
                 onStart={() => run.start(levelId)}
               />
@@ -291,8 +306,10 @@ function GapRemedies({
   gaps: Holdings["gaps"];
   levelId: string;
   /**
-   * The acquisition still going, if any (PL-050). An item it has not answered yet may still be
-   * answered, so "retrying changes nothing" is not yet true and Retry is held until it ends.
+   * The acquisition still going, if any. **It is answering the not-reached card**: a pair it asks
+   * about becomes its latest run's and reads as not reached until it is asked, so that card is
+   * held until it ends -- Ask would only be refused as in flight. The unanswered card is never
+   * held: a pair is unanswered only once its latest run has settled it, so the verdict is final.
    */
   stillRunning: number | null;
   run: RunScreenState;
@@ -355,7 +372,12 @@ function GapRemedies({
           held={run.busy !== null}
           onClick={() => proposeFrom("failed", failures, failedPicks)}
         />
-        <GapEstimate kind="failed" run={run} onCancel={onCancel} />
+        <GapEstimate
+            kind="failed"
+            run={run}
+            stillRunning={stillRunning}
+            onCancel={onCancel}
+          />
       </GapCard>
 
       <GapCard
@@ -365,9 +387,7 @@ function GapRemedies({
         lead={
           gaps.unanswered.length === 0
             ? "No value is missing because every source lacked a row."
-            : stillRunning !== null
-              ? `Acquisition ${stillRunning} is still running, so these may yet be answered. Retry once it ends.`
-              : "Every source answered, and none had a row. Retrying the same sources changes nothing."
+            : "Every source answered, and none had a row. Retrying the same sources changes nothing."
         }
       >
         {gaps.unanswered.length > 0 && (
@@ -386,18 +406,28 @@ function GapRemedies({
           count={gaps.unanswered.length}
           label={actionLabel("Retry", gaps.unanswered.length, "unanswered", unansweredPicks)}
           empty="Nothing went unanswered"
-          held={run.busy !== null || stillRunning !== null}
+          held={run.busy !== null}
           onClick={() => proposeFrom("unanswered", gaps.unanswered, unansweredPicks)}
         />
-        <GapEstimate kind="unanswered" run={run} onCancel={onCancel} />
+        <GapEstimate
+            kind="unanswered"
+            run={run}
+            stillRunning={stillRunning}
+            onCancel={onCancel}
+          />
       </GapCard>
 
       {gaps.not_reached.length > 0 && (
         <GapCard
           count={formatCount(gaps.not_reached.length)}
           what="not reached"
-          lead="No source was asked yet. Worth asking."
+          lead={
+            stillRunning === null
+              ? "No source was asked yet. Worth asking."
+              : `Acquisition ${stillRunning} is asking these now. Ask about what is left once it ends.`
+          }
         >
+          <OpenTheRunGoing runId={stillRunning} held={run.starting} onOpen={run.openAcquisition} />
           <ItemGroups
             items={gaps.not_reached}
             groupedBy="attribute"
@@ -410,10 +440,15 @@ function GapRemedies({
             count={gaps.not_reached.length}
             label={actionLabel("Ask", gaps.not_reached.length, "not reached", notReachedPicks)}
             empty=""
-            held={run.busy !== null}
+            held={run.busy !== null || stillRunning !== null}
             onClick={() => proposeFrom("not_reached", gaps.not_reached, notReachedPicks)}
           />
-          <GapEstimate kind="not_reached" run={run} onCancel={onCancel} />
+          <GapEstimate
+            kind="not_reached"
+            run={run}
+            stillRunning={stillRunning}
+            onCancel={onCancel}
+          />
         </GapCard>
       )}
     </>
@@ -427,11 +462,13 @@ function GapRemedies({
 function PickerCard({
   levelId,
   run,
+  stillRunning,
   propose,
   onCancel,
 }: {
   levelId: string;
   run: RunScreenState;
+  stillRunning: number | null;
   propose: RunScreenState["propose"];
   onCancel: () => void;
 }) {
@@ -447,8 +484,29 @@ function PickerCard({
         held={run.busy !== null}
         onEstimate={() => propose({ via: "scoped", scope: { level: levelId, pairs: picker.pairs } }, "picked")}
       />
-      <GapEstimate kind="picked" run={run} onCancel={onCancel} />
+      <GapEstimate kind="picked" run={run} stillRunning={stillRunning} onCancel={onCancel} />
     </GapCard>
+  );
+}
+
+/**
+ * The way to the acquisition in flight (PL-119): wherever starting is held for it, and in the
+ * refusal that names it. Nothing when no run is named.
+ */
+function OpenTheRunGoing({
+  runId,
+  held,
+  onOpen,
+}: {
+  runId: number | null;
+  held: boolean;
+  onOpen: (runId: number) => void;
+}) {
+  if (runId === null) return null;
+  return (
+    <HeldButton className="link-button" held={held} onClick={() => onOpen(runId)}>
+      Open acquisition {runId}
+    </HeldButton>
   );
 }
 
@@ -539,11 +597,14 @@ function GapCard({
 function GapEstimate({
   kind,
   run,
+  stillRunning,
   onStart,
   onCancel,
 }: {
   kind: GapKind;
   run: RunScreenState;
+  /** The acquisition in flight, if any: every way to start is held while it runs (PL-119). */
+  stillRunning: number | null;
   onCancel: () => void;
   /** Only the whole-level card starts from a bare plan; the others arm through `propose`. */
   onStart?: () => void;
@@ -567,6 +628,13 @@ function GapEstimate({
         />
       </dl>
 
+      {stillRunning !== null && (armed !== null || onStart !== undefined) && (
+        <p className="gap-card__note">
+          Acquisition {stillRunning} is still going, and one runs at a time.{" "}
+          <OpenTheRunGoing runId={stillRunning} held={run.starting} onOpen={run.openAcquisition} />
+        </p>
+      )}
+
       {/* No confirmation is ever offered for nothing (PL-120): the server refuses such an
           estimate, and a plan of nought items is not one to start either way. */}
       {armed === null
@@ -575,7 +643,7 @@ function GapEstimate({
             // the action a screen exists to take, and this screen exists to start a run.
             <HeldButton
               className="button button--primary"
-              held={run.starting}
+              held={run.starting || stillRunning !== null}
               onClick={onStart}
             >
               {run.starting ? "Running…" : "Start this acquisition"}
@@ -595,7 +663,7 @@ function GapEstimate({
               <div className="confirm__acts">
                 <HeldButton
                   className="button button--primary"
-                  held={run.starting}
+                  held={run.starting || stillRunning !== null}
                   onClick={run.commit}
                 >
                   {run.starting ? "Starting…" : "Yes, start it"}
