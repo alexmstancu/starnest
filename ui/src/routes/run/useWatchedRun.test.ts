@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { STARTED_RUN_DETAIL } from "../../mocks/fixtures";
 import { UNCLAIMED, useWatchedRun } from "./useWatchedRun";
 
 /**
@@ -95,5 +96,56 @@ describe("claiming again once an act's request has been answered", () => {
     const again = result.current.reclaim(stop, 7);
 
     expect(result.current.isCurrent(again)).toBe(false);
+  });
+});
+
+/** PL-117: what a look the card took on its own may change, which is far less than an act may. */
+describe("a look's answer", () => {
+  const running = { ...STARTED_RUN_DETAIL, id: 7, run_status: "running" as const, finished_at: null };
+  const ended = { ...running, run_status: "completed" as const };
+
+  it("takes no ticket, so the reader's act still outranks it", () => {
+    const { result } = renderHook(() => useWatchedRun());
+    const before = result.current.ticketNow();
+
+    expect(result.current.ticketNow()).toBe(before);
+    expect(result.current.isCurrent(before)).toBe(true);
+  });
+
+  it("is shown only while the card still shows that run", () => {
+    const { result } = renderHook(() => useWatchedRun());
+    act(() => result.current.show(result.current.claim(7), running));
+
+    let shown = false;
+    act(() => {
+      shown = result.current.showIfStillShown(result.current.ticketNow(), { ...running, id: 6 });
+    });
+
+    expect(shown).toBe(false);
+    expect(result.current.current?.id).toBe(7);
+  });
+
+  it("never takes a run that has ended back to running", () => {
+    const { result } = renderHook(() => useWatchedRun());
+    act(() => result.current.show(result.current.claim(7), ended));
+
+    act(() => void result.current.showIfStillShown(result.current.ticketNow(), running));
+
+    expect(result.current.current?.run_status).toBe("completed");
+  });
+
+  it("is not shown once the reader has acted since it was sent", () => {
+    const { result } = renderHook(() => useWatchedRun());
+    act(() => result.current.show(result.current.claim(7), running));
+    const sentWith = result.current.ticketNow();
+    result.current.claim(7);
+
+    let shown = true;
+    act(() => {
+      shown = result.current.showIfStillShown(sentWith, ended);
+    });
+
+    expect(shown).toBe(false);
+    expect(result.current.current?.run_status).toBe("running");
   });
 });

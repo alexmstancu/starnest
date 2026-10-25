@@ -19,6 +19,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { RunDetail } from "../../api/endpoints";
+import { inFlight, runState } from "./sourceReach";
 
 /** The ticket nobody has taken: the opening view's, which any act of the reader's outranks. */
 export const UNCLAIMED = 0;
@@ -44,6 +45,17 @@ export interface WatchedRun {
   clear: () => void;
   /** Whether the reader has acted yet -- the opening view gives way once they have. */
   unclaimed: () => boolean;
+  /**
+   * The newest ticket, **read, never taken** (PL-117): a look the card takes on its own sends
+   * with it, so any act of the reader's after the send outranks the look's answer.
+   */
+  ticketNow: () => number;
+  /**
+   * Shows a look's `detail` only while `ticket` is still the newest **and the card still shows
+   * that run**, and never takes a run that has ended back to going. Returns whether the reader is
+   * still on that run, read from what was last drawn.
+   */
+  showIfStillShown: (ticket: number, detail: RunDetail) => boolean;
 }
 
 export function useWatchedRun(): WatchedRun {
@@ -71,19 +83,51 @@ export function useWatchedRun(): WatchedRun {
     [],
   );
 
+  // The run the card was last told to show, for a look's answer to be checked against.
+  const shownId = useRef<number | null>(null);
   const show = useCallback(
     (ticket: number, detail: RunDetail) => {
-      if (isCurrent(ticket)) setCurrent(detail);
+      if (!isCurrent(ticket)) return;
+      shownId.current = detail.id;
+      setCurrent(detail);
     },
     [isCurrent],
   );
 
   const clear = useCallback(() => {
     claim();
+    shownId.current = null;
     setCurrent(null);
   }, [claim]);
 
   const unclaimed = useCallback(() => newest.current === UNCLAIMED, []);
+  const ticketNow = useCallback(() => newest.current, []);
 
-  return { current, claim, reclaim, isCurrent, show, clear, unclaimed };
+  const showIfStillShown = useCallback(
+    (ticket: number, detail: RunDetail) => {
+      if (!isCurrent(ticket) || shownId.current !== detail.id) return false;
+      setCurrent((shown) =>
+        shown?.id !== detail.id || (!isLive(shown) && isLive(detail)) ? shown : detail,
+      );
+      return true;
+    },
+    [isCurrent],
+  );
+
+  return {
+    current,
+    claim,
+    reclaim,
+    isCurrent,
+    show,
+    clear,
+    unclaimed,
+    ticketNow,
+    showIfStillShown,
+  };
+}
+
+/** Whether a run is still going, a stop asked included. */
+export function isLive(run: Pick<RunDetail, "run_status" | "stop_requested_at">): boolean {
+  return inFlight(runState(run.run_status, run.stop_requested_at));
 }

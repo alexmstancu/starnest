@@ -10,6 +10,7 @@ import { forgetAnsweredWrites } from "./api/setWrites";
 import { forgetFailedReads } from "./api/reachability";
 import { resetMockData } from "./mocks/handlers";
 import { forgetStoredSession } from "./shell/sessionState";
+import { followEvery } from "./routes/run/useFollowedRun";
 import { mockServer } from "./mocks/server";
 
 // Every wait in the suite is for a mocked request that resolves in milliseconds. The default
@@ -24,6 +25,14 @@ configure({ asyncUtilTimeout: 5_000 });
  * `onUnhandledRequest: "error"` is deliberate: a request the mock does not know about is a
  * test silently hitting the network, which is the failure mode that makes a suite unreliable.
  */
+
+/**
+ * **Acquire's card looks at a running run on its own** (PL-117), every two seconds in the app.
+ * Here it looks once an hour unless a test asks for its pace, so a held or counted read in a
+ * test on real timers is never taken by a look nobody wrote the test about.
+ */
+const FOLLOW_ONLY_WHEN_ASKED = 3_600_000;
+followEvery(FOLLOW_ONLY_WHEN_ASKED);
 
 let restoreFetch: (() => void) | null = null;
 let restoreConsole: (() => void) | null = null;
@@ -57,6 +66,7 @@ afterEach(() => {
   // or chosen set would otherwise be the next test's reload. The provider's own state goes with
   // `cleanup()`, which unmounts it.
   forgetStoredSession();
+  followEvery(FOLLOW_ONLY_WHEN_ASKED);
   // Last, so the resets above happen whether or not this throws.
   failOnAnythingWrittenToConsoleError();
 });

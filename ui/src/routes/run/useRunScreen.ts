@@ -12,7 +12,8 @@
  *
  * **The card shows the run the reader chose last** (`useWatchedRun.ts`): every act that reads a
  * run back takes a ticket on the click, and the opening view gives way to all of them. A read
- * the reader has left neither changes the card nor reports its failure.
+ * the reader has left neither changes the card nor reports its failure. **A running run is
+ * followed without a click** (`useFollowedRun.ts`), by looks that take no ticket and are no act.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -33,6 +34,7 @@ import {
 } from "../../api/endpoints";
 import { newestRun, startOfLocalMonth } from "./databaseHolds";
 import { type Commitment, describeCommitment } from "./spendCommitment";
+import { useFollowedRun } from "./useFollowedRun";
 import { UNCLAIMED, useWatchedRun } from "./useWatchedRun";
 import type { Idle, Read } from "../../api/read";
 import { useRead } from "../../api/useRead";
@@ -221,7 +223,7 @@ export function useRunScreen(
 ): RunScreenState {
   const [plan, setPlan] = useState<RunPlan | null>(null);
   const [planOrigin, setPlanOrigin] = useState<GapKind | null>(null);
-  const { current, claim, reclaim, isCurrent, show, clear, unclaimed } =
+  const { current, claim, reclaim, isCurrent, show, clear, unclaimed, ticketNow, showIfStillShown } =
     useWatchedRun();
   const [busy, setBusy] = useState<RunAct | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -305,6 +307,12 @@ export function useRunScreen(
       : null;
 
   const reloadHistory = history.reload;
+  // The card follows a running acquisition on its own, outside `act` (PL-117); the end it sees
+  // moves the history and what the database holds, so both are read again, once.
+  useFollowedRun({ current, ticketNow, showIfStillShown }, () => {
+    void reloadHistory();
+    void reloadHoldings();
+  });
   const act = useCallback(
     async (
       what: RunAct,

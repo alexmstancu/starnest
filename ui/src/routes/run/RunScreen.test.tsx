@@ -5277,8 +5277,9 @@ describe("acting from the keyboard", () => {
   });
 
   /**
-   * RB-1. **Stop is held during a start too.** The card does not poll, so a run that finished on
-   * the server can still read as going, Stop beside it, while a new one is started -- and Stop
+   * RB-1. **Stop is held during a start too.** The card looks only every two seconds, so a run
+   * that finished on the server can still read as going, Stop beside it, while a new one is
+   * started -- and Stop
    * claimed the card from the start as Refresh did.
    */
   it("holds Stop on a card still reading as going while a start is in flight", async () => {

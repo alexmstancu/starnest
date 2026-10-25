@@ -721,8 +721,8 @@ function RunProgress({ progress }: { progress?: Progress | null }) {
  *
  * **Refresh is ours, not the design's.** The prototype animates a fake run on a timer, so it
  * never needs one; `POST /data-acquisition-runs` really does return 202 and hand the fetching
- * to a background task (P35), and nothing here polls. A card that could not be re-read would
- * show "Acquiring now" for ever.
+ * to a background task (P35). The card follows a running run by itself (`useFollowedRun.ts`,
+ * PL-117), and Refresh reads it now, reporting what the quiet looks do not.
  */
 function RunReport({
   run,
@@ -832,10 +832,9 @@ function RunReport({
           {describeSpend(run)}
         </span>
         <div className="acquisition__acts">
-          {/* **Refresh, not a poll.** A run that finished is not going to change, and a screen
-              that re-read it every second would spend the reader's backend on nothing. Held
-              while it reads, and Stop once it has been asked for, never disabled (NEW-44,
-              NEW-52). */}
+          {/* **Refresh reads now, and reports.** The card's own looks follow a running run
+              and stop at its end; a finished run is not going to change. Held while it reads,
+              and Stop once it has been asked for, never disabled (NEW-44, NEW-52). */}
           <HeldButton
             ref={refresh}
             className="button"

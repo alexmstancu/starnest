@@ -39,7 +39,8 @@ export interface AcquiringState {
   announcement: string;
 }
 
-const WHILE_RUNNING = 2_000;
+/** How often a running acquisition is looked at: the strip here, and Acquire's card (PL-117). */
+export const WHILE_RUNNING = 2_000;
 const WHILE_IDLE = 30_000;
 /** Looks at the running pace after a start, before settling back: about ten seconds. */
 const QUICK_LOOKS_AFTER_A_START = 5;
