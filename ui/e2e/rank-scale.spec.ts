@@ -33,6 +33,9 @@ interface Ranking {
 }
 
 test("draws and labels the ranking on the scale it was scored on", async ({ page }) => {
+  // The design's width: below 1468px the narrow layout hides the Pillars column (PL-082), and
+  // its bars are what this spec reads.
+  await page.setViewportSize({ width: 1560, height: 900 });
   const original = await scaleToPutBack(page.request);
   try {
     await setScale(page.request, A_SCALE_THAT_IS_NOT_100);
