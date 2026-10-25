@@ -322,7 +322,7 @@ async function scoreRangeUnset(): Promise<void> {
 
 async function startAnAcquisition(): Promise<void> {
   await userEvent.click(await screen.findByRole("button", { name: /estimate an acquisition/i }));
-  await userEvent.click(screen.getByRole("button", { name: /start this acquisition/i }));
+  await userEvent.click(screen.getByRole("button", { name: /yes, start it/i }));
   await screen.findByRole("region", { name: /acquisition 8/i });
 }
 

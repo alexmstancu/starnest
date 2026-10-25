@@ -199,3 +199,39 @@ export function describeGaps(holdings: { level: string; pairs_total: number } | 
     "Each action starts a new acquisition, and nothing is fetched or charged until you agree to an estimate."
   );
 }
+
+const ESTIMATE_FIRST =
+  "The estimate first: what would be fetched, and what it would cost, before anything is.";
+
+/**
+ * What refreshing every value at a level would re-ask (PL-121), from the holdings.
+ *
+ * **Worded from the refetch setting.** With none set a refresh re-asks everything, fresh values
+ * included; with one set it re-asks only what was fetched longer ago, which the holdings count --
+ * so "re-asks everything" over an estimate of half the values is never said.
+ */
+export function describeRefresh(
+  holdings: {
+    level: string;
+    pairs_total: number;
+    values_past_allowed_age: number;
+    values_older_than_refetch_age: number | null;
+  } | null,
+): string {
+  if (holdings === null) return `Re-asks every value at this level. ${ESTIMATE_FIRST}`;
+  const older = holdings.values_older_than_refetch_age;
+  const reasks =
+    older === null
+      ? `Re-asks all ${formatCount(holdings.pairs_total)} ${valuesWord(holdings.pairs_total)} at ${holdings.level} level, fresh ones included`
+      : `Re-asks the ${formatCount(older)} ${valuesWord(older)} fetched longer ago than the refetch setting allows; fresher ones are left alone`;
+  const aged = holdings.values_past_allowed_age;
+  if (aged <= 0) return `${reasks}. ${ESTIMATE_FIRST}`;
+  const agedSentence = `${formatCount(aged)} in use ${aged === 1 ? "is past its" : "are past their"} allowed age.`;
+  return older === null
+    ? `${reasks}; ${agedSentence} ${ESTIMATE_FIRST}`
+    : `${reasks}. ${agedSentence} ${ESTIMATE_FIRST}`;
+}
+
+function valuesWord(count: number): string {
+  return count === 1 ? "value" : "values";
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describeGaps,
+  describeRefresh,
   describeScope,
   holdingsFigures,
   lastFilledBy,
@@ -212,5 +213,45 @@ describe("the line over the remedies", () => {
 
   it("does not claim a level with no pairs holds values", () => {
     expect(describeGaps({ level: "city", pairs_total: 0 })).toBe(describeGaps(null));
+  });
+});
+
+/** UF-082 (PL-121): the refresh card says how much it re-asks, as the refetch setting has it. */
+describe("what refreshing everything re-asks", () => {
+  const holdings = {
+    level: "country",
+    pairs_total: 1152,
+    values_past_allowed_age: 37,
+    values_older_than_refetch_age: null,
+  };
+
+  it("re-asks every value while no refetch age is set, and counts the aged ones", () => {
+    expect(describeRefresh(holdings)).toBe(
+      "Re-asks all 1,152 values at country level, fresh ones included; 37 in use are past their allowed age. The estimate first: what would be fetched, and what it would cost, before anything is.",
+    );
+  });
+
+  it("re-asks only what the refetch age leaves, once one is set", () => {
+    expect(describeRefresh({ ...holdings, values_older_than_refetch_age: 544 })).toBe(
+      "Re-asks the 544 values fetched longer ago than the refetch setting allows; fresher ones are left alone. 37 in use are past their allowed age. The estimate first: what would be fetched, and what it would cost, before anything is.",
+    );
+  });
+
+  it("names no aged values when none are", () => {
+    expect(describeRefresh({ ...holdings, values_past_allowed_age: 0 })).toBe(
+      "Re-asks all 1,152 values at country level, fresh ones included. The estimate first: what would be fetched, and what it would cost, before anything is.",
+    );
+  });
+
+  it("says one value in the singular", () => {
+    expect(
+      describeRefresh({ ...holdings, values_older_than_refetch_age: 1, values_past_allowed_age: 1 }),
+    ).toMatch(/^Re-asks the 1 value fetched .*\. 1 in use is past its allowed age\./);
+  });
+
+  it("claims no count before the holdings are read", () => {
+    expect(describeRefresh(null)).toBe(
+      "Re-asks every value at this level. The estimate first: what would be fetched, and what it would cost, before anything is.",
+    );
   });
 });

@@ -50,7 +50,7 @@ async function sendAStart(): Promise<void> {
   await screen.findByRole("region", { name: /acquisition 7/i });
   await userEvent.click(await screen.findByRole("button", { name: /estimate an acquisition/i }));
   await userEvent.click(
-    await screen.findByRole("button", { name: /start this acquisition|yes, start it/i }),
+    await screen.findByRole("button", { name: /yes, start it/i }),
   );
 }
 
@@ -82,7 +82,7 @@ describe("a start sent from an Acquire since left", () => {
     expectHeld(history.getAllByRole("button")[0]!);
     await userEvent.click(await screen.findByRole("button", { name: /estimate an acquisition/i }));
     expectHeld(
-      await screen.findByRole("button", { name: /start this acquisition|yes, start it|running…|starting…/i }),
+      await screen.findByRole("button", { name: /yes, start it|starting…/i }),
     );
 
     start.release();
@@ -95,7 +95,7 @@ describe("a start sent from an Acquire since left", () => {
         }),
       ),
     );
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/did not go through/)).toBeNull();
   });
 
   it("reports a refusal that landed while Acquire was closed, once, on return", async () => {
@@ -111,8 +111,9 @@ describe("a start sent from an Acquire since left", () => {
     });
     await goTo("Acquire");
 
-    const refusal = await screen.findByRole("alert");
-    expect(refusal).toHaveTextContent(/the start did not go through/i);
+    const refusal = (await screen.findByText(/the start did not go through/i)).closest<HTMLElement>(
+      '[role="alert"]',
+    )!;
     // The card keeps the newest run, and nothing is held any more.
     const card = within(await screen.findByRole("region", { name: /acquisition 7/i }));
     expectNotHeld(card.getByRole("button", { name: "Refresh" }));
@@ -143,6 +144,6 @@ describe("a start sent from an Acquire since left", () => {
 
     const card = within(await screen.findByRole("region", { name: /acquisition 8/i }));
     expectNotHeld(card.getByRole("button", { name: "Refresh" }));
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/did not go through/)).toBeNull();
   });
 });

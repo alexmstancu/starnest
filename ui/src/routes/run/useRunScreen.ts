@@ -117,6 +117,7 @@ export interface CardFocus {
 }
 
 export interface RunScreenState {
+  /** An estimate shown but never armed: one with nothing in it (PL-120). */
   plan: RunPlan | null;
   /** Which card the estimate belongs to, so it can be shown inside that one. */
   planOrigin: GapKind | null;
@@ -161,8 +162,6 @@ export interface RunScreenState {
   holdings: Read<Holdings> | Idle;
   reloadHoldings: () => Promise<void>;
   dismissFailure: () => void;
-  estimate: (levelId: string) => void;
-  start: (levelId: string) => void;
   refresh: () => void;
   /** Put the run away. It stays in the history; this is the screen's view of it, not the run. */
   close: () => void;
@@ -259,9 +258,7 @@ export function useRunScreen(
     setPlan(null);
     setPlanOrigin(null);
   }
-  const levelVersion = useRef(0);
   useEffect(() => {
-    levelVersion.current += 1;
     selectionVersion.current += 1;
   }, [levelId]);
   // Every act still going, oldest first. The label is the newest of them, so the first act to
@@ -585,32 +582,6 @@ export function useRunScreen(
     holdings: holdings.read,
     reloadHoldings,
     dismissFailure: () => setFailure(null),
-    estimate: (levelId) => {
-      const version = levelVersion.current;
-      const stillAsked = () => version === levelVersion.current;
-      void estimateFor("everything", stillAsked, async () => {
-        setArmed(null);
-        setPlanOrigin("everything");
-        const planned = await planRun({ level: levelId });
-        if (stillAsked()) setPlan(planned);
-      });
-    },
-    // **Every act that reads a run back claims on the click**, before its first await, so a
-    // read already on its way when the reader acts again can never land over the newer choice.
-    start: (levelId) => {
-      const ticket = claim();
-      const onCard = current?.id;
-      void act("running", () =>
-        holdingStarts(async () => {
-          const started = await startedOrLeft(startRun({ level: levelId }), ticket, onCard);
-          if (started === null) return;
-          setPlan(null);
-          setPlanOrigin(null);
-          await watch(ticket, started.id);
-          focusCardOf(ticket, started.id);
-        }),
-      );
-    },
     propose: (proposal, origin) => {
       const version = selectionVersion.current;
       const stillAsked = () => version === selectionVersion.current;

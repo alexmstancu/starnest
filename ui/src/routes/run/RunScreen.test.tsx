@@ -65,6 +65,12 @@ function holdingsServed(over: Partial<Holdings> = {}): Holdings {
   };
 }
 
+/** The refusal notice, told apart from the confirmation strip, which is an alert as well. */
+async function refusalNotice(): Promise<HTMLElement> {
+  const title = await screen.findByText(/ did not go through$/);
+  return title.closest<HTMLElement>('[role="alert"]')!;
+}
+
 async function estimate() {
   await userEvent.click(
     await screen.findByRole("button", { name: /estimate an acquisition/i }),
@@ -133,7 +139,7 @@ describe("estimating a run", () => {
 
     await screen.findByText("At most");
     // The money, which is the only figure on this plan that is not also a count of items.
-    expect(screen.getByText(/2\.10/)).toBeInTheDocument();
+    expect(screen.getByText(/^€2\.10$/)).toBeInTheDocument();
     // The assumptions sit on the figure, not in a paragraph under it: a cost with no stated
     // assumptions can only be trusted, never judged.
     expect(
@@ -155,7 +161,7 @@ describe("estimating a run", () => {
 
     expect(started).toEqual([]);
     expect(
-      screen.getByRole("button", { name: /start this acquisition/i }),
+      screen.getByRole("button", { name: /yes, start it/i }),
     ).toBeInTheDocument();
   });
 
@@ -199,7 +205,7 @@ describe("an estimate with nothing to ask", () => {
     expect(
       within(refusal).getByRole("link", { name: "Open Source priority in Configure" }),
     ).toHaveAttribute("href", "/configure");
-    expect(screen.queryByRole("button", { name: /start this acquisition/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /yes, start it|start this acquisition/i })).toBeNull();
     expect(screen.queryByText("Items")).toBeNull();
   });
 
@@ -286,7 +292,7 @@ describe("an estimate with nothing to ask", () => {
 
     const card = within(screen.getByRole("region", { name: /an acquisition over every country/i }));
     expect(await card.findByText("Items")).toBeInTheDocument();
-    expect(card.queryByRole("button", { name: /start this acquisition/i })).toBeNull();
+    expect(card.queryByRole("button", { name: /yes, start it|start this acquisition/i })).toBeNull();
   });
 });
 
@@ -309,7 +315,7 @@ describe("a refused act", () => {
   }
 
   async function theRefusal() {
-    return within(await screen.findByRole("alert"));
+    return within(await refusalNotice());
   }
 
   it("can be dismissed, and is gone", async () => {
@@ -333,7 +339,7 @@ describe("a refused act", () => {
 
     expect(await screen.findByText("At most")).toBeInTheDocument();
     expect(plans.asked).toBe(2);
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/did not go through/)).toBeNull();
   });
 
   it("says so again when the estimate sent again fails too", async () => {
@@ -362,7 +368,7 @@ describe("a refused act", () => {
     );
     renderShell("/acquire");
     await estimate();
-    await userEvent.click(screen.getByRole("button", { name: /start this acquisition/i }));
+    await userEvent.click(screen.getByRole("button", { name: /yes, start it/i }));
 
     const refusal = await theRefusal();
     expect(refusal.getByText(/the start did not go through/i)).toBeInTheDocument();
@@ -412,7 +418,7 @@ describe("a refused act", () => {
     mockServer.use(http.post(`${BASE}/data-acquisition-runs`, () => HttpResponse.error()));
     renderShell("/acquire");
     await estimate();
-    await userEvent.click(screen.getByRole("button", { name: /start this acquisition/i }));
+    await userEvent.click(screen.getByRole("button", { name: /yes, start it/i }));
 
     const refusal = await theRefusal();
     expect(
@@ -429,7 +435,7 @@ describe("running and retrying", () => {
     await estimate();
 
     await userEvent.click(
-      screen.getByRole("button", { name: /start this acquisition/i }),
+      screen.getByRole("button", { name: /yes, start it/i }),
     );
 
     expect(
@@ -454,7 +460,7 @@ describe("running and retrying", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this acquisition/i }),
+      screen.getByRole("button", { name: /yes, start it/i }),
     );
     await screen.findByRole("region", { name: /acquisition 8/i });
     const started = recordRetries(12);
@@ -727,7 +733,7 @@ describe("what nobody answered", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this acquisition/i }),
+      screen.getByRole("button", { name: /yes, start it/i }),
     );
     return await screen.findByRole("region", { name: /acquisition 8/i });
   }
@@ -1108,7 +1114,7 @@ describe("when there is nothing to show", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this acquisition/i }),
+      screen.getByRole("button", { name: /yes, start it/i }),
     );
 
     const before = polled;
@@ -1132,7 +1138,7 @@ describe("a run's progress", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this acquisition/i }),
+      screen.getByRole("button", { name: /yes, start it/i }),
     );
     await screen.findByRole("region", { name: /acquisition 8/i });
 
@@ -1156,7 +1162,7 @@ describe("re-asking about part of a run", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this acquisition/i }),
+      screen.getByRole("button", { name: /yes, start it/i }),
     );
     await screen.findByRole("region", { name: /acquisition 8/i });
   }
@@ -1565,7 +1571,7 @@ describe("picking out individual items", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this acquisition/i }),
+      screen.getByRole("button", { name: /yes, start it/i }),
     );
     await screen.findByRole("region", { name: /acquisition 8/i });
     const group = within(
@@ -2396,7 +2402,7 @@ describe("the two acquisitions chosen in the diff", () => {
     await theHistoryRead(2);
 
     await userEvent.click(
-      screen.getByRole("button", { name: /start this acquisition/i }),
+      screen.getByRole("button", { name: /yes, start it/i }),
     );
     await theHistoryRead(3);
 
@@ -2682,7 +2688,7 @@ describe("the acquisition card", () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
-      screen.getByRole("button", { name: /start this acquisition/i }),
+      screen.getByRole("button", { name: /yes, start it/i }),
     );
     await screen.findByRole("region", { name: /acquisition 8/i });
     return within(screen.getByRole("region", { name: /acquisition 8/i }));
@@ -3798,7 +3804,7 @@ describe("which run the card shows", () => {
 
     await estimate();
     await userEvent.click(
-      await screen.findByRole("button", { name: /start this acquisition/i }),
+      await screen.findByRole("button", { name: /yes, start it/i }),
     );
     await screen.findByRole("region", { name: /acquisition 8/i });
     history.release();
@@ -3991,14 +3997,12 @@ describe("whose failure the screen reports", () => {
 
     await estimate();
     await userEvent.click(
-      await screen.findByRole("button", { name: /start this acquisition/i }),
+      await screen.findByRole("button", { name: /yes, start it/i }),
     );
     await openFromHistory("6");
     refusal.release();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The start did not go through",
-    );
+    expect(await refusalNotice()).toHaveTextContent("The start did not go through");
     expect(
       screen.getByRole("region", { name: /acquisition 7/i }),
     ).toBeInTheDocument();
@@ -4958,7 +4962,7 @@ describe("acting from the keyboard", () => {
     renderShell("/acquire");
     await estimate();
     const startIt = await screen.findByRole("button", {
-      name: /start this acquisition/i,
+      name: /yes, start it/i,
     });
     const starts = holdEach(
       "post",
@@ -4971,14 +4975,12 @@ describe("acting from the keyboard", () => {
 
     expect(startIt).toHaveFocus();
     expectHeld(startIt);
-    expect(startIt).toHaveTextContent("Running…");
+    expect(startIt).toHaveTextContent("Starting…");
     await user.keyboard("{Enter}");
 
     starts.release();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The start did not go through",
-    );
+    expect(await refusalNotice()).toHaveTextContent("The start did not go through");
     await waitFor(() => expectNotHeld(startIt));
     expect(startIt).toHaveFocus();
     await user.keyboard("{Enter}");
@@ -5168,12 +5170,12 @@ describe("acting from the keyboard", () => {
     await screen.findByRole("region", { name: /acquisition 7/i });
     await estimate();
     const startIt = await screen.findByRole("button", {
-      name: /start this acquisition/i,
+      name: /yes, start it/i,
     });
     const { starts, release } = await aStartInFlight(user, startIt);
 
     expectHeld(startIt);
-    expect(startIt).toHaveTextContent("Running…");
+    expect(startIt).toHaveTextContent("Starting…");
     await user.click(startIt);
 
     release();
@@ -5206,7 +5208,7 @@ describe("acting from the keyboard", () => {
     );
     await estimate();
     const startIt = await screen.findByRole("button", {
-      name: /start this acquisition/i,
+      name: /yes, start it/i,
     });
     const { release } = await aStartInFlight(user, startIt);
     const reads = holdEach("get", "/data-acquisition-runs/:runId");
@@ -5561,7 +5563,7 @@ describe("where focus goes when the pressed control goes", () => {
     await estimate();
 
     await userEvent.click(
-      await screen.findByRole("button", { name: /start this acquisition/i }),
+      await screen.findByRole("button", { name: /yes, start it/i }),
     );
 
     const card = await screen.findByRole("region", { name: /acquisition 8/i });
@@ -5715,47 +5717,6 @@ describe("a change of level", () => {
     );
   }
 
-  it("puts away the estimate behind Start, and it does not come back", async () => {
-    const { result, rerender } = renderAtLevel();
-    act(() => result.current.estimate("country"));
-    await waitFor(() => expect(result.current.plan).not.toBeNull());
-
-    rerender({ level: "city" });
-    expect(result.current.plan).toBeNull();
-    rerender({ level: "country" });
-
-    expect(result.current.plan).toBeNull();
-  });
-
-  it("shows no estimate that was still being read when the level changed", async () => {
-    const plan = holdThePlan();
-    const { result, rerender } = renderAtLevel();
-    act(() => result.current.estimate("country"));
-    await waitFor(() => expect(result.current.busy).toBe("planning"));
-
-    rerender({ level: "city" });
-    plan.release();
-    await waitFor(() => expect(result.current.busy).toBeNull());
-    // Asserted before going back, which clears whatever was estimated for the level left.
-    expect(result.current.plan).toBeNull();
-    rerender({ level: "country" });
-
-    expect(result.current.plan).toBeNull();
-  });
-
-  it("reports no refusal of an estimate still being read when the level changed", async () => {
-    const plan = holdThePlan(refused);
-    const { result, rerender } = renderAtLevel();
-    act(() => result.current.estimate("country"));
-    await waitFor(() => expect(result.current.busy).toBe("planning"));
-
-    rerender({ level: "city" });
-    plan.release();
-    await waitFor(() => expect(result.current.busy).toBeNull());
-
-    expect(result.current.refusal).toBeNull();
-  });
-
   it("reports no refusal of a proposal still being read when the level changed", async () => {
     const plan = holdThePlan(refused);
     const { result, rerender } = renderAtLevel();
@@ -5773,7 +5734,7 @@ describe("a change of level", () => {
   it("still reports the refusal of an estimate for the level on screen", async () => {
     const plan = holdThePlan(refused);
     const { result } = renderAtLevel();
-    act(() => result.current.estimate("country"));
+    act(() => result.current.propose({ via: "scoped", scope: { level: "country" } }, "everything"));
     await waitFor(() => expect(result.current.busy).toBe("planning"));
 
     plan.release();
@@ -5833,7 +5794,7 @@ describe("a run started on Acquire", () => {
     const before = looks.count;
 
     await userEvent.click(
-      screen.getByRole("button", { name: /start this acquisition/i }),
+      screen.getByRole("button", { name: /yes, start it/i }),
     );
 
     await waitFor(() => expect(looks.count).toBeGreaterThan(before));

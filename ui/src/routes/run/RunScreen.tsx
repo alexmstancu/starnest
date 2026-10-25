@@ -21,7 +21,7 @@ import { RunStatusChip } from "../../shell/RunStatusChip";
 import { useSelection } from "../../shell/SelectionContext";
 import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
-import { describeGaps, describeScope } from "./databaseHolds";
+import { describeGaps, describeRefresh, describeScope } from "./databaseHolds";
 import { describeFailures, failuresIn } from "./failureGroups";
 import { HeldButton } from "../../shell/HeldButton";
 import { runRefusedFor } from "./inFlightRefusal";
@@ -228,12 +228,14 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
             <GapCard
               count=""
               what={`An acquisition over every ${levelId} candidate`}
-              lead="Re-asks everything, including what is already stored and still fresh. The estimate first: what would be fetched, and what it would cost, before anything is."
+              lead={describeRefresh(run.holdings.state === "ready" ? run.holdings.data : null)}
             >
+              {/* **Confirmed like the other remedies** (PL-121): the estimate arms the strip,
+                  and nothing starts on a click. */}
               <HeldButton
                 className="button"
                 held={run.busy !== null}
-                onClick={() => run.estimate(levelId)}
+                onClick={() => propose({ via: "scoped", scope: { level: levelId } }, "everything")}
               >
                 {run.estimating === "everything"
                   ? "Estimating…"
@@ -244,15 +246,12 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                 run={run}
                 stillRunning={stillRunning}
                 onCancel={cancel}
-                onStart={() => run.start(levelId)}
               />
             </GapCard>
           )}
         </div>
 
-        {run.plan && run.planOrigin !== null && (
-          <PerSourcePlan plan={run.plan} />
-        )}
+        {run.armed?.origin === "everything" && <PerSourcePlan plan={run.armed.plan} />}
       </section>
 
       {/* Beside the failures deliberately: the three reasons a figure is missing look the
@@ -598,7 +597,6 @@ function GapEstimate({
   kind,
   run,
   stillRunning,
-  onStart,
   onCancel,
 }: {
   kind: GapKind;
@@ -606,8 +604,6 @@ function GapEstimate({
   /** The acquisition in flight, if any: every way to start is held while it runs (PL-119). */
   stillRunning: number | null;
   onCancel: () => void;
-  /** Only the whole-level card starts from a bare plan; the others arm through `propose`. */
-  onStart?: () => void;
 }) {
   const armed = run.armed?.origin === kind ? run.armed : null;
   const plan = run.planOrigin === kind ? run.plan : (armed?.plan ?? null);
@@ -628,7 +624,7 @@ function GapEstimate({
         />
       </dl>
 
-      {stillRunning !== null && (armed !== null || onStart !== undefined) && (
+      {stillRunning !== null && armed !== null && (
         <p className="gap-card__note">
           Acquisition {stillRunning} is still going, and one runs at a time.{" "}
           <OpenTheRunGoing runId={stillRunning} held={run.starting} onOpen={run.openAcquisition} />
@@ -637,19 +633,7 @@ function GapEstimate({
 
       {/* No confirmation is ever offered for nothing (PL-120): the server refuses such an
           estimate, and a plan of nought items is not one to start either way. */}
-      {armed === null
-        ? onStart !== undefined && plan.items_total > 0 && (
-            // The one filled button in the application. The design reserves the primary for
-            // the action a screen exists to take, and this screen exists to start a run.
-            <HeldButton
-              className="button button--primary"
-              held={run.starting || stillRunning !== null}
-              onClick={onStart}
-            >
-              {run.starting ? "Running…" : "Start this acquisition"}
-            </HeldButton>
-          )
-        : (
+      {armed !== null && (
             <div
               className={
                 armed.commitment.uncapped

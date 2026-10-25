@@ -61,7 +61,7 @@ describe("starting while an acquisition is in flight", () => {
 
     const card = whole();
     expectHeld(
-      await card.findByRole("button", { name: /start this acquisition|yes, start it/i }),
+      await card.findByRole("button", { name: /yes, start it/i }),
     );
     expect(card.getByText("Acquisition 7 is still going, and one runs at a time.")).toBeInTheDocument();
     expect(card.getByRole("button", { name: "Open acquisition 7" })).toBeInTheDocument();
@@ -86,7 +86,7 @@ describe("starting while an acquisition is in flight", () => {
 
     const card = whole();
     expectNotHeld(
-      await card.findByRole("button", { name: /start this acquisition|yes, start it/i }),
+      await card.findByRole("button", { name: /yes, start it/i }),
     );
     expect(card.queryByText(/is still going/)).toBeNull();
   });
@@ -118,10 +118,13 @@ describe("a start refused as in flight", () => {
     await screen.findByRole("region", { name: /acquisition 7/i });
     await estimateEverything();
     await userEvent.click(
-      await screen.findByRole("button", { name: /start this acquisition|yes, start it/i }),
+      await screen.findByRole("button", { name: /yes, start it/i }),
     );
-    const refusal = within(await screen.findByRole("alert"));
-    expect(refusal.getByText(/the start did not go through/i)).toBeInTheDocument();
+    const refusal = within(
+      (await screen.findByText(/the start did not go through/i)).closest<HTMLElement>(
+        '[role="alert"]',
+      )!,
+    );
 
     await userEvent.click(refusal.getByRole("button", { name: "Open acquisition 9" }));
 
@@ -136,10 +139,14 @@ describe("a start refused as in flight", () => {
     await screen.findByRole("region", { name: /acquisition 7/i });
     await estimateEverything();
     await userEvent.click(
-      await screen.findByRole("button", { name: /start this acquisition|yes, start it/i }),
+      await screen.findByRole("button", { name: /yes, start it/i }),
     );
 
-    const refusal = within(await screen.findByRole("alert"));
+    const refusal = within(
+      (await screen.findByText(/the start did not go through/i)).closest<HTMLElement>(
+        '[role="alert"]',
+      )!,
+    );
     expect(refusal.queryByRole("button", { name: /open acquisition/i })).toBeNull();
     expect(refusal.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
   });
