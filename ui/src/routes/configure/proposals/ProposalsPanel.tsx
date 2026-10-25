@@ -13,6 +13,7 @@ import {
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { CheckboxField } from "../../../shell/CheckboxField";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
+import { refocusIfLost } from "../focusReturn";
 import { describePeriod } from "./proposalReading";
 import { leavesEstimateUnspent } from "./researchPass";
 import { proposalKey, useFocusAfterConfirm } from "./useFocusAfterConfirm";
@@ -46,6 +47,7 @@ export function ProposalsPanel({
   onAnswered,
   answersFreshness,
   pass,
+  standsAlone = false,
 }: {
   levelId: string;
   /** A gate answer has been written here, so anything else describing the answers re-reads. */
@@ -54,6 +56,11 @@ export function ProposalsPanel({
   answersFreshness: number;
   /** The research pass the screen holds: running, or how the last one ended. */
   pass: ResearchPass;
+  /**
+   * Drawn for the pass alone, beside a set that is not read: dismissing its outcome removes the
+   * panel, Estimate included.
+   */
+  standsAlone?: boolean;
 }) {
   const proposals = useProposals(onAnswered, answersFreshness, levelId);
   // Gates and candidates by name, never by id (PL-150). Either read failing leaves the id read
@@ -62,6 +69,7 @@ export function ProposalsPanel({
   const candidateNames = useCandidateNames();
   const [acceptUncapped, setAcceptUncapped] = useState(false);
   const estimateButton = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLElement>(null);
   useFocusAfterPass(pass.end, estimateButton);
   const confirmFocus = useFocusAfterConfirm(proposals, estimateButton);
   // **Held while an estimate, a pass or a confirmation is in flight, never disabled** (NEW-44):
@@ -84,7 +92,7 @@ export function ProposalsPanel({
   }, [end, levelId, restorePlan]);
 
   return (
-    <section className="panel" aria-labelledby="proposals-heading">
+    <section ref={panel} className="panel" aria-labelledby="proposals-heading">
       {/* An h3 under the rules stage's h2, a sibling of Gates and Compound rules (PL-162) --
           and still an h3 when the panel is drawn alone in that stage, beside an unread set. */}
       <h3 id="proposals-heading" className="panel__heading">
@@ -200,7 +208,8 @@ export function ProposalsPanel({
       </p>
       {/* **Kept until put away** (PL-052): what a pass spent is said here through a visit to
           another tab and a reload, and only the reader's Dismiss removes it. Focus goes to
-          Estimate, the act the next pass needs, as the button leaves with the line. */}
+          Estimate, the act the next pass needs, as the button leaves with the line -- or, when
+          the panel leaves with it, to what stays in its stage. */}
       {pass.end !== null && !pass.running && (
         <div className="rule-form__actions">
           <button
@@ -208,8 +217,9 @@ export function ProposalsPanel({
             className="button"
             aria-label="Dismiss the last pass"
             onClick={() => {
+              if (standsAlone) handFocusToStage(panel.current);
+              else estimateButton.current?.focus();
               pass.dismiss();
-              estimateButton.current?.focus();
             }}
           >
             Dismiss
@@ -304,6 +314,25 @@ export function ProposalsPanel({
         )}
       </LoadedRegion>
     </section>
+  );
+}
+
+/**
+ * Before a panel drawn for the pass alone leaves with its outcome: focus goes to the set's
+ * failure card when that is what the stage shows, else to the stage's heading -- never to the
+ * page (RULES "Focus").
+ */
+function handFocusToStage(panel: HTMLElement | null): void {
+  const stage = panel?.parentElement?.closest("section");
+  if (!stage) return;
+  const failureCard = Array.from(stage.children).find(
+    (child) => child.matches('[tabindex="-1"]') && child.querySelector(".failure-card") !== null,
+  );
+  const heading = stage.querySelector(":scope > header h2");
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  refocusIfLost(
+    failureCard instanceof HTMLElement ? failureCard : null,
+    heading instanceof HTMLElement ? heading : null,
   );
 }
 

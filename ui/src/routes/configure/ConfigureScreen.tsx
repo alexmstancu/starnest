@@ -69,6 +69,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
       onAnswered={noteAnswered}
       answersFreshness={answersVersion}
       pass={pass}
+      standsAlone
     />
   );
 

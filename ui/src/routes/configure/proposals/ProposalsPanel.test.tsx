@@ -2131,3 +2131,73 @@ describe("the last pass's outcome, kept until it is dismissed", () => {
     expect(research.sent).toEqual([]);
   });
 });
+
+/**
+ * PL-052. **Dismiss takes the panel with it when only the outcome drew it.** With the criteria
+ * set unread, the proposals are drawn in the rules stage for the pass alone, so putting its
+ * outcome away removes the panel and Estimate with it: focus goes to what stays instead -- the
+ * set's failure card, or the stage's heading -- never to the page.
+ */
+describe("dismissing the outcome while the set is unread", () => {
+  async function aPassThenTheSetUnread(setRead: Parameters<typeof http.get>[1]): Promise<void> {
+    watchResearch();
+    renderShell("/configure");
+    await settled();
+    await researched();
+    await passSays(ALL_ASKED);
+    mockServer.use(http.get(`${BASE}/criteria-sets/:id`, setRead));
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: /active criteria set/i }),
+      "remote-only",
+    );
+    await waitFor(() =>
+      expect(within(rulesStage()).queryByRole("region", { name: /^Gates/ })).toBeNull(),
+    );
+  }
+
+  function rulesStage(): HTMLElement {
+    return screen.getByRole("region", { name: /^Match rules/ });
+  }
+
+  async function dismissByKeyboard(): Promise<void> {
+    theProposals().getByRole("button", { name: "Dismiss the last pass" }).focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Gate proposals" })).toBeNull(),
+    );
+  }
+
+  it("puts focus on the set's failure card, not the page", async () => {
+    await aPassThenTheSetUnread(() =>
+      HttpResponse.json(
+        { code: "internal_error", message: "the criteria set could not be read" },
+        { status: 500 },
+      ),
+    );
+    const card = await within(rulesStage()).findByText(/criteria set could not be loaded/i);
+
+    await dismissByKeyboard();
+
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toContainElement(card);
+    expect(rulesStage()).toContainElement(document.activeElement as HTMLElement);
+  });
+
+  it("puts focus on the rules stage's heading while the set is still read", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    onTestFinished(() => release());
+    await aPassThenTheSetUnread(async () => {
+      await held;
+      return undefined;
+    });
+
+    await dismissByKeyboard();
+
+    expect(document.activeElement).toBe(
+      within(rulesStage()).getByRole("heading", { level: 2 }),
+    );
+  });
+});

@@ -26,7 +26,8 @@ export function Stage({
       <header className="stage__head">
         <span className="stage__number" aria-hidden="true" />
         <div className="stage__titles">
-          <h2 id={headingId} className="stage__title">
+          {/* Focusable by script, so a stage can be where focus goes when what was in it leaves. */}
+          <h2 id={headingId} className="stage__title" tabIndex={-1}>
             {title}
           </h2>
           <p className="stage__lead">{lead}</p>
