@@ -681,8 +681,8 @@ class RunAlreadyInFlightError(ValueError):
     """
 
     def __init__(self, in_flight: int | None) -> None:
-        """`in_flight` is None where the database refused the second run and did not say which
-        run holds the slot."""
+        """`in_flight` is None only where the run holding the slot ended before it could be
+        named (PL-119): the database's refusal is followed by a read of the winner."""
         running = "another run" if in_flight is None else f"run {in_flight}"
         poll = "the run that is going" if in_flight is None else f"run {in_flight}"
         super().__init__(

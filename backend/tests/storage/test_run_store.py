@@ -74,13 +74,17 @@ class TestOnlyOneRunIsRunningAtOnce:
     async def test_a_second_running_run_cannot_be_opened(
         self, pool: AsyncConnectionPool, a_run: int
     ) -> None:
-        with pytest.raises(RunAlreadyInFlightError):
+        with pytest.raises(RunAlreadyInFlightError) as refused:
             await PostgresRunStore(pool).start_run(
                 RunScope(
                     level="country", candidates=("country.spain",), attributes=(OVERCROWDING,)
                 ),
                 triggered_by="the second",
             )
+
+        # The race's loser names the run holding the slot, as the API's own check does, so a
+        # screen can open it rather than guess (PL-119).
+        assert refused.value.details == {"run": a_run}
 
     async def test_a_new_run_opens_once_the_first_has_finished(
         self, pool: AsyncConnectionPool, a_run: int

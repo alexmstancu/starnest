@@ -941,9 +941,11 @@ paths:
             uncapped run; nothing invents a ceiling on the household's behalf (`reqs.md` 6.3).
 
             `run_already_in_flight` — a run is already going, and one household runs one pass
-            at a time (`reqs.md` 10). `details.run` names the run, where the database said which
-            one: poll it rather than starting another. This is what stops a client timeout, which
-            is indistinguishable from a failure, from being retried into a second concurrent run.
+            at a time (`reqs.md` 10). `details.run` is that run's id, so a screen can open it
+            ("Open acquisition N") and poll it rather than starting another; it is left out only
+            if the run ended between the refusal and the read that names it. This is what stops a
+            client timeout, which is indistinguishable from a failure, from being retried into a
+            second concurrent run.
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
@@ -1067,8 +1069,8 @@ paths:
             `nothing_to_fetch` — every failure belongs to a source now switched off or no longer
             declaring the attribute, so the retry would ask nobody. The message names the remedy.
 
-            `run_already_in_flight` — a run is already going; poll it rather than starting
-            another.
+            `run_already_in_flight` — a run is already going; `details.run` is its id, as for
+            `startRun`. Poll it rather than starting another.
 
             `spend_cap_not_set` — the retry would reach a source that charges and no spend cap
             is set.

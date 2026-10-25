@@ -70,6 +70,14 @@ class PostgresRunStore(RunStore):
         started_at = datetime.now(tz=UTC)
         try:
             return await self._open(scope, triggered_by, plan, started_at)
+        except UniqueViolation as clash:
+            # Another run won the race to the one `running` slot the `0498` partial unique
+            # index allows (ST-01). The caller's own `run_in_flight` check may have passed --
+            # the point of the index is that it does not have to -- so this is the same
+            # refusal, raised where the database made it certain. **Naming the winner** (PL-119),
+            # read once the failed transaction is gone, so the screen can open the run that holds
+            # the slot; null only if that run ended in between.
+            raise RunAlreadyInFlightError(await self.run_in_flight()) from clash
         except ForeignKeyViolation as outside:
             # **The scope is held to the run's level by its keys** (0513): a candidate or an
             # attribute at another level, or a plan for an attribute outside the scope, is refused
@@ -83,24 +91,17 @@ class PostgresRunStore(RunStore):
         self, scope: RunScope, triggered_by: str, plan: RunPlan | None, started_at: datetime
     ) -> int:
         async with acquire(self._pool) as connection:
-            try:
-                row = await self._queries.insert_run(
-                    connection,
-                    started_at=started_at,
-                    triggered_by=triggered_by,
-                    run_status=str(RunStatus.RUNNING),
-                    level=scope.level,
-                    plan_recorded_at=None if plan is None else started_at,
-                    estimate_ceiling_eur=None if plan is None else plan.estimate_ceiling_eur,
-                    spend_cap_eur=None if plan is None else plan.spend_cap_eur,
-                    accepted_uncapped=None if plan is None else plan.accepted_uncapped,
-                )
-            except UniqueViolation as clash:
-                # Another run won the race to the one `running` slot the `0498` partial unique
-                # index allows (ST-01). The caller's own `run_in_flight` check may have passed --
-                # the point of the index is that it does not have to -- so this is the same
-                # refusal, raised where the database made it certain.
-                raise RunAlreadyInFlightError(None) from clash
+            row = await self._queries.insert_run(
+                connection,
+                started_at=started_at,
+                triggered_by=triggered_by,
+                run_status=str(RunStatus.RUNNING),
+                level=scope.level,
+                plan_recorded_at=None if plan is None else started_at,
+                estimate_ceiling_eur=None if plan is None else plan.estimate_ceiling_eur,
+                spend_cap_eur=None if plan is None else plan.spend_cap_eur,
+                accepted_uncapped=None if plan is None else plan.accepted_uncapped,
+            )
             await self._queries.insert_run_candidates(
                 connection, data_acquisition_run=row.id, candidates=list(scope.candidates)
             )
