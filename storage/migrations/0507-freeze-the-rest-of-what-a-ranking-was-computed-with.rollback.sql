@@ -10,15 +10,16 @@
 -- from every saved ranking, breaking a stronger guarantee than the one the rollback restores --
 -- exactly the shape of 0478's refusal over frozen figures.
 --
--- The two dropped columns cannot be refused per row (a column takes its whole table's data with
--- it), but any ranking that froze a rule list or a not_matching input is one whose pillar lock
--- and warning order were frozen in the same save, so the table rows are the faithful witness.
+-- **The two dropped columns refuse too** (SV-N1, D70). A ranking from a set with no enforced
+-- gate and no applied compound rule writes none of the three tables' rows, yet still froze its
+-- pillar locks; the tables were not a faithful witness for it. A column takes its whole table's
+-- data with it, so any saved criterion row or warning input row is history this would drop.
 --
 -- **Locked before it counts** (FU-A5, following 0478/0503). The count reads the three tables; a
 -- save committed between the read and the drop would escape the refusal. SHARE ROW EXCLUSIVE
 -- waits for a write in flight and holds off new ones until this commits, while reads go on.
-LOCK TABLE evaluation_match_rule, evaluation_compound_rule, non_match_input
-           IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE evaluation_match_rule, evaluation_compound_rule, non_match_input,
+           evaluation_criterion, candidate_warning_input IN SHARE ROW EXCLUSIVE MODE;
 
 DO $$
 DECLARE
@@ -35,6 +36,24 @@ BEGIN
             'enforced and applied and the figures behind a not_matching rule, and this drops the '
             'tables that hold them. A saved evaluation must still explain its score (0107), so '
             'restore from the backup make migrate took instead of forcing this.', frozen;
+    END IF;
+END $$;
+
+DO $$
+DECLARE
+    frozen integer;
+BEGIN
+    SELECT (SELECT count(*) FROM evaluation_criterion)
+         + (SELECT count(*) FROM candidate_warning_input)
+    INTO   frozen;
+
+    IF frozen > 0 THEN
+        RAISE EXCEPTION
+            'cannot roll back 0507: % saved-evaluation row(s) freeze the pillar locks of a '
+            'ranking or the order of the figures behind a warning, and this drops the columns '
+            'that hold them. '
+            'A saved evaluation must still explain its score (0107), so restore from the backup '
+            'make migrate took instead of forcing this.', frozen;
     END IF;
 END $$;
 

@@ -139,6 +139,63 @@ ANSWERS_UNDONE = (
     "DELETE FROM match_rule_answer WHERE match_rule = 'li_eea_quota'; END $$"
 )
 
+#: Marks every row the history cases below write, so each undo finds exactly its own.
+HISTORY = "TL-N2 race row"
+
+
+def a_saved_ranking(*then: str) -> str:
+    """A saved evaluation, then `then` with its id as `ranking`, in one block so the parent
+    exists before its children."""
+    return (
+        "DO $$ DECLARE ranking bigint; result bigint; figure bigint; BEGIN "
+        "INSERT INTO evaluation (criteria_set, level, computed_at, score_scale_max, note) "
+        f"VALUES ('minimal', 'country', now(), 100, '{HISTORY}') RETURNING id INTO ranking; "
+        + " ".join(then)
+        + " END $$"
+    )
+
+
+A_FROZEN_CRITERION = (
+    "INSERT INTO evaluation_criterion (evaluation, attribute, pillar, is_scored, weight, "
+    "pillar_weight, goal, normalisation_method, blocks_if_missing, value_type, weight_locked) "
+    "VALUES (ranking, 'country.homicide_rate', 'safety', true, 100, 10, 'minimise', "
+    "'percentile', false, 'Quantity', true);"
+)
+A_RESULT = (
+    "INSERT INTO candidate_result (evaluation, candidate, score, coverage, match_status, "
+    "score_scale_max, level, coverage_high) VALUES (ranking, 'country.romania', 50, 90, "
+    "'matching', 100, 'country', 50) RETURNING id INTO result;"
+)
+RANKING_UNDONE = (
+    "DO $$ BEGIN "
+    f"DELETE FROM evaluation WHERE note = '{HISTORY}'; "
+    f"DELETE FROM value WHERE data_source = 'oecd' AND reference_period_start = '2021-01-01'; "
+    "END $$"
+)
+
+
+def a_run(*then: str, status: str = "completed", stop: str = "NULL") -> str:
+    """A run, then `then` with its id as `run_id`."""
+    return (
+        "DO $$ DECLARE run_id bigint; BEGIN "
+        "INSERT INTO data_acquisition_run "
+        "(started_at, triggered_by, run_status, level, stop_requested_at) "
+        f"VALUES (now(), '{HISTORY}', '{status}', 'country', {stop}) RETURNING id INTO run_id; "
+        + " ".join(then)
+        + " END $$"
+    )
+
+
+RUN_UNDONE = (
+    "DO $$ BEGIN "
+    "DELETE FROM data_acquisition_run_reuse WHERE data_acquisition_run IN "
+    f"(SELECT id FROM data_acquisition_run WHERE triggered_by = '{HISTORY}'); "
+    "DELETE FROM data_acquisition_failure WHERE data_acquisition_run IN "
+    f"(SELECT id FROM data_acquisition_run WHERE triggered_by = '{HISTORY}'); "
+    f"DELETE FROM data_acquisition_run WHERE triggered_by = '{HISTORY}'; END $$"
+)
+
+
 REFUSALS = (
     Refusal(
         migration="0503-gate-research-spend-is-ledgered",
@@ -298,6 +355,69 @@ REFUSALS = (
         write="UPDATE criteria_set SET deleted_at = now() WHERE id = 'minimal'",
         undo="UPDATE criteria_set SET deleted_at = NULL WHERE id = 'minimal'",
         says="cannot roll back 0508: 1 criteria set(s) are deleted (minimal)",
+    ),
+    # Recorded history the rollbacks below used to drop or rewrite without refusing (TL-N2,
+    # SV-N1): each case writes one row of it.
+    Refusal(
+        migration="0500-freeze-value-type-lock-and-threshold-in-the-evaluation-snapshot",
+        write=a_saved_ranking(A_FROZEN_CRITERION),
+        undo=RANKING_UNDONE,
+        says="cannot roll back 0500: 1 saved-evaluation criterion row(s)",
+    ),
+    Refusal(
+        migration="0507-freeze-the-rest-of-what-a-ranking-was-computed-with",
+        case="columns",
+        write=a_saved_ranking(A_FROZEN_CRITERION),
+        undo=RANKING_UNDONE,
+        says="cannot roll back 0507: 1 saved-evaluation row(s) freeze the pillar locks",
+    ),
+    Refusal(
+        migration="0486-a-saved-ranking-keeps-its-reason-and-its-confidence-split",
+        write=a_saved_ranking(A_RESULT),
+        undo=RANKING_UNDONE,
+        says="cannot roll back 0486: 1 saved result(s)",
+    ),
+    Refusal(
+        migration="0504-a-saved-warning-keeps-the-figures-behind-it",
+        write=a_saved_ranking(
+            A_RESULT,
+            "INSERT INTO candidate_warning (candidate_result, compound_rule, detail) "
+            "VALUES (result, 'cheap_but_taxed', 'race');",
+            "INSERT INTO value (candidate, attribute, value_type, data_source, "
+            "reference_period_start, reference_period_end, retrieval_date, confidence_level) "
+            "VALUES ('country.romania', 'country.homicide_rate', 'Quantity', 'oecd', "
+            "'2021-01-01', '2021-12-31', now(), 'high') RETURNING id INTO figure;",
+            "INSERT INTO candidate_warning_input (candidate_result, compound_rule, value_id) "
+            "VALUES (result, 'cheap_but_taxed', figure);",
+        ),
+        undo=RANKING_UNDONE,
+        says="cannot roll back 0504: 1 saved warning input row(s)",
+    ),
+    Refusal(
+        migration="0501-a-run-records-the-figures-it-re-confirmed",
+        write=a_run(
+            "INSERT INTO data_acquisition_run_reuse "
+            "(data_acquisition_run, data_source, candidate, attribute) "
+            "VALUES (run_id, 'oecd', 'country.romania', 'country.homicide_rate');"
+        ),
+        undo=RUN_UNDONE,
+        says="cannot roll back 0501: 1 reuse row(s)",
+    ),
+    Refusal(
+        migration="0461-a-failure-names-its-source",
+        write=a_run(
+            "INSERT INTO data_acquisition_failure "
+            "(data_acquisition_run, candidate, attribute, error_message, data_source) "
+            "VALUES (run_id, 'country.romania', 'country.homicide_rate', 'race', 'oecd');"
+        ),
+        undo=RUN_UNDONE,
+        says="cannot roll back 0461: 1 recorded failure(s)",
+    ),
+    Refusal(
+        migration="0483-a-run-can-be-stopped",
+        write=a_run(status="halted_by_user", stop="now()"),
+        undo=RUN_UNDONE,
+        says="cannot roll back 0483: 1 run(s) were stopped",
     ),
 )
 
