@@ -19,6 +19,18 @@ describe("the diverging bar", () => {
     expect(divergingBar(Number.NaN, ANY_SCALE, ANY_FOCUS).direction).toBe("level");
   });
 
+  /** The design draws a tie on its track, muted, and draws no track where a figure is missing. */
+  it("gauges a tie, and not a missing figure", () => {
+    const tie = divergingBar(0, ANY_SCALE, ANY_FOCUS);
+    expect(tie.gauged).toBe(true);
+    expect(tie.faint).toBe(true);
+
+    const missing = divergingBar(null, ANY_SCALE, ANY_FOCUS);
+    expect(missing.gauged).toBe(false);
+    // Whether a missing figure is muted depends on whose is missing, which only the cell knows.
+    expect(missing.faint).toBe(false);
+  });
+
   it("goes right when ahead and left when behind", () => {
     expect(divergingBar(12, ANY_SCALE, ANY_FOCUS).direction).toBe("ahead");
     expect(divergingBar(-12, ANY_SCALE, ANY_FOCUS).direction).toBe("behind");
@@ -61,9 +73,29 @@ describe("the diverging bar", () => {
   });
 
   it("draws a short reach softer than a long one", () => {
-    // A focus of 100, so both gaps are above the noise floor and only their reach differs.
-    expect(divergingBar(10, 100, 100).barOpacity).toBe(0.62);
-    expect(divergingBar(30, 100, 100).barOpacity).toBe(1);
+    expect(divergingBar(10, 100, ANY_FOCUS).barOpacity).toBe(0.62);
+    expect(divergingBar(30, 100, ANY_FOCUS).barOpacity).toBe(1);
+  });
+
+  /**
+   * **A longer bar is also a darker one** -- the design's ramp, pale to mid to deep along
+   * `reach ** 0.7` -- so two long gaps of different lengths do not read as the same colour.
+   */
+  it("deepens the bar's colour with its reach", () => {
+    // A tenth of the scale is 0.2 of the ramp: two fifths of the way from pale to mid.
+    const short = divergingBar(-10, 100, ANY_FOCUS).shade;
+    expect(short).toMatchObject({ base: "pale", over: "mid" });
+    expect(short.amount).toBeCloseTo(0.399, 3);
+
+    // Half the scale is 0.62 of the ramp: past mid, on the way to deep.
+    const half = divergingBar(50, 100, ANY_FOCUS).shade;
+    expect(half).toMatchObject({ base: "mid", over: "deep" });
+    expect(half.amount).toBeCloseTo(0.231, 3);
+
+    // The whole scale stops a hair short of the deepest stop, as the design's ramp does.
+    const full = divergingBar(-100, 100, ANY_FOCUS).shade;
+    expect(full).toMatchObject({ base: "mid", over: "deep" });
+    expect(full.amount).toBeCloseTo(0.998, 3);
   });
 
   /**
@@ -83,46 +115,32 @@ describe("the diverging bar", () => {
     expect(divergingBar(4.99, ANY_SCALE, 100).faint).toBe(true);
   });
 
-  /**
-   * **The tint grows with the bar, never ahead of it.** A gap of 17 on a focus of 61, against a
-   * largest gap of 50, drew a third of a bar under a near-full tint: the colour said "huge" where
-   * the bar said "middling".
-   */
-  it("tints as strongly as its bar reaches, and no more", () => {
-    const middling = divergingBar(-17, 50, 61);
-
-    expect(middling.width).toBeCloseTo((17 / 50) * 50, 5);
-    expect(middling.alpha).toBeCloseTo(0.09 + (17 / 50) * 0.33, 5);
+  it("tints more strongly the larger the gap is relative to the focus, without steps", () => {
+    const gentle = divergingBar(10, ANY_SCALE, 100).alpha;
+    const firmer = divergingBar(20, ANY_SCALE, 100).alpha;
+    expect(gentle).toBeGreaterThan(0);
+    expect(firmer).toBeGreaterThan(gentle);
+    expect(divergingBar(13, ANY_SCALE, 100).alpha).not.toBe(firmer);
   });
 
-  it("tints more strongly the longer its bar, without steps", () => {
-    const shorter = divergingBar(10, 40, 100);
-    const longer = divergingBar(20, 40, 100);
-
-    expect(longer.width).toBeGreaterThan(shorter.width);
-    expect(longer.alpha).toBeGreaterThan(shorter.alpha);
-    expect(divergingBar(13, 40, 100).alpha).not.toBe(shorter.alpha);
+  it("never tints past the strongest the design goes to", () => {
+    // 30% of the focus and beyond is the strongest; 0.09 + 0.33 = 0.42.
+    expect(divergingBar(30, ANY_SCALE, 100).alpha).toBeCloseTo(0.42, 5);
+    expect(divergingBar(90, ANY_SCALE, 100).alpha).toBeCloseTo(0.42, 5);
   });
 
-  it("gives the strongest tint to the longest bar on screen, and never more", () => {
-    // 0.09 + 0.33 = 0.42, the strongest the design goes to.
-    expect(divergingBar(50, 50, 100).alpha).toBeCloseTo(0.42, 5);
-    expect(divergingBar(90, 50, 100).alpha).toBeCloseTo(0.42, 5);
+  it("adds an edge only where the gap is a large share of the focus", () => {
+    // Below 60% of the ramp: no edge. 10% of the focus is a fifth of the way up.
+    expect(divergingBar(10, ANY_SCALE, 100).edge).toBe(false);
+    // 24% of the focus is past 60% of the ramp.
+    expect(divergingBar(24, ANY_SCALE, 100).edge).toBe(true);
   });
 
-  it("draws a gap below the noise floor softer, however far its bar reaches", () => {
-    // The largest gap of its row, so the bar is full length; a fiftieth of the focus, so noise.
-    const noise = divergingBar(-2, 2, 100);
-
-    expect(noise.width).toBe(50);
-    expect(noise.faint).toBe(true);
-    expect(noise.barOpacity).toBeLessThan(1);
-  });
-
-  it("adds an edge only to the longest bars", () => {
-    // Below 60% of the ruler: no edge, however large the gap is for its focus.
-    expect(divergingBar(20, 50, 30).edge).toBe(false);
-    expect(divergingBar(35, 50, 100).edge).toBe(true);
+  it("draws the edge deeper the stronger the claim, and not at all below the top band", () => {
+    expect(divergingBar(10, ANY_SCALE, 100).borderAlpha).toBe(0);
+    // 24% of the focus is 0.76 of the ramp: 0.45 + 0.35 * 0.76.
+    expect(divergingBar(24, ANY_SCALE, 100).borderAlpha).toBeCloseTo(0.716, 5);
+    expect(divergingBar(90, ANY_SCALE, 100).borderAlpha).toBeCloseTo(0.8, 5);
   });
 
   it("cannot tint when there is no focus value to measure against", () => {

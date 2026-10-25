@@ -1189,6 +1189,16 @@ describe("the attribute figures inside a pillar", () => {
     await userEvent.click(screen.getByRole("radio", { name: /^scores$/i }));
 
     expect(note).toHaveTextContent(/^no value for Romania$/);
+    // No baseline to measure from: the focus reads a dash, and Spain's score keeps its ink with
+    // no track beneath it, as the design draws a row the focus has no figure on.
+    const [, romania, spain] = within(
+      screen.getByRole("row", { name: /median rent/i }),
+    ).getAllByRole("cell");
+    expect(romania?.querySelector(".matrix__score")).toHaveClass("matrix__score--faint");
+    expect(romania?.querySelector(".matrix__delta")).toHaveTextContent(/^—$/);
+    expect(spain?.querySelector(".matrix__score")).toHaveTextContent(/^40$/);
+    expect(spain?.querySelector(".matrix__score")).not.toHaveClass("matrix__score--faint");
+    expect(spain?.querySelector(".matrix__track")).toBeNull();
   });
 
   /** PL-101. Words where nothing can be shown; a dash only where a gap would be. */
@@ -1211,6 +1221,9 @@ describe("the attribute figures inside a pillar", () => {
     const [, , netherlands] = within(row).getAllByRole("cell");
     expect(netherlands?.querySelector(".matrix__score")).toHaveTextContent(/^No value$/);
     expect(netherlands?.querySelector(".matrix__delta")).toHaveTextContent(/^—$/);
+    // Muted, and with no track: there is no gap to gauge.
+    expect(netherlands?.querySelector(".matrix__score")).toHaveClass("matrix__score--faint");
+    expect(netherlands?.querySelector(".matrix__track")).toBeNull();
     // No comparator has a raw gap, so the note promises none.
     expect(row.querySelector(".matrix__attr-note")).toHaveTextContent(
       /^in EU27 = 100, as published$/,
@@ -1420,6 +1433,8 @@ describe("when a comparison cannot be drawn", () => {
     const netherlands = within(total).getAllByRole("cell")[2];
     expect(netherlands?.querySelector(".matrix__score")).toHaveTextContent(/^No score$/);
     expect(netherlands?.querySelector(".matrix__delta")).toHaveTextContent(/^—$/);
+    expect(netherlands?.querySelector(".matrix__score")).toHaveClass("matrix__score--faint");
+    expect(netherlands?.querySelector(".matrix__track")).toBeNull();
     const card = await cardOf("Netherlands");
     expect(within(card).getByText("No comparable score")).toBeInTheDocument();
     expect(card).toHaveTextContent("Not comparable, no data: Economy");

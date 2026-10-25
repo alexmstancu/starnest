@@ -88,6 +88,14 @@
   --colour-warning-deep: #7a2e0e;
   --colour-danger-bar: #f04438;
   --colour-danger-deep: #7a271a;
+  /* A comparison bar's three steps, short to full (the design's RAMP): a longer gap is also a
+     darker one. The deep red is also a strong gap's text. */
+  --colour-success-bar-pale: #a7f3d0;
+  --colour-success-bar-mid: #10b981;
+  --colour-success-bar-deep: #047857;
+  --colour-danger-bar-pale: #fecdca;
+  --colour-danger-bar-mid: #f04438;
+  --colour-danger-bar-deep: #912018;
   /* The accent's two data steps, for a scale that has to read as one hue getting stronger:
      a coverage bar drops from high to mid before it turns amber. */
   --colour-data-mid: #5eead4;
@@ -134,6 +142,7 @@
      underline and the strip's 1px border. */
   --tabbar-height: 47px;
   --weight-normal: 400;
+  --weight-medium: 500;
   --weight-strong: 600;
 
   /* Layout */
@@ -1936,26 +1945,18 @@ select.field__control {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  border: var(--border-width) solid transparent;
+  gap: 4px;
   border-radius: var(--radius-medium);
 }
 
-/* An attribute row's cell, opened under its pillar: the same box, a size smaller. */
-.matrix__cell--compact {
-  gap: 5px;
-}
-
-/* **The padding has to outrank the table's.** `.table--matrix > tbody > tr > td` sets every
-   cell's padding to 0 and weighs one class and three elements against `.matrix__cell`'s one
-   class, so the cell's own padding never applied: the tint sat flush on the figure and the track
-   on its bottom edge -- the bug this box exists to fix. */
+/* **The padding and the border have to outrank the table's.** `.table--matrix > tbody > tr > td`
+   sets every cell's padding and border to 0 and weighs one class and three elements against
+   `.matrix__cell`'s one class, so the cell's own never applied: the tint sat flush on the figure
+   and the track on its bottom edge, and the tint had no border box to cover. The border is
+   transparent; the tint draws over it, so a cell that gains one does not move. */
 .table--matrix .matrix__cell {
-  padding: 9px 11px 10px;
-}
-
-.table--matrix .matrix__cell--compact {
-  padding: 6px 9px 7px;
+  padding: 5px 7px;
+  border: var(--border-width) solid transparent;
 }
 
 /* Above the tint layer, which is absolutely positioned under everything in the cell. */
@@ -1981,8 +1982,22 @@ select.field__control {
   font-variant-numeric: tabular-nums;
 }
 
+/* An attribute's figure is a reading rather than a score: lighter, in body text. */
+.matrix__cell--compact .matrix__score {
+  font-size: 12.5px;
+  font-weight: var(--weight-normal);
+  color: var(--colour-text-strong);
+}
+
+/* A figure below the threshold, or none at all, is muted with its gap. Written after the
+   attribute rule, which it has to win over. */
+.matrix__cell .matrix__score--faint {
+  color: var(--colour-text-muted);
+}
+
 .matrix__delta {
-  font-size: 11.5px;
+  font-size: 11px;
+  font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
   color: var(--colour-text-muted);
 }
@@ -2014,7 +2029,7 @@ select.field__control {
 }
 
 .matrix__delta--behind.matrix__delta--strong {
-  color: var(--colour-danger-deep);
+  color: var(--colour-danger-bar-deep);
 }
 
 /* **The track is the thing the bar is read against**, so it has to be visible in its own right:
@@ -2051,7 +2066,8 @@ select.field__control {
   bottom: -2px;
 }
 
-/* The bar fills the track; only its start and width are data, carried as SVG geometry. */
+/* The bar fills the track; its start, its width and the blend between two shades are data,
+   carried as SVG attributes. */
 .matrix__bar {
   position: absolute;
   inset: 0;
@@ -2059,45 +2075,61 @@ select.field__control {
   height: 100%;
 }
 
-.matrix__bar-fill--ahead {
-  fill: var(--colour-success-bar);
+.matrix__bar-shade--ahead-pale {
+  fill: var(--colour-success-bar-pale);
 }
 
-.matrix__bar-fill--behind {
-  fill: var(--colour-danger-bar);
+.matrix__bar-shade--ahead-mid {
+  fill: var(--colour-success-bar-mid);
+}
+
+.matrix__bar-shade--ahead-deep {
+  fill: var(--colour-success-bar-deep);
+}
+
+.matrix__bar-shade--behind-pale {
+  fill: var(--colour-danger-bar-pale);
+}
+
+.matrix__bar-shade--behind-mid {
+  fill: var(--colour-danger-bar-mid);
+}
+
+.matrix__bar-shade--behind-deep {
+  fill: var(--colour-danger-bar-deep);
 }
 
 /* **The tint starts at a gap worth noticing** -- a twentieth of the focus's own figure; below
-   that a difference is noise -- **and grows with the bar**, to the strongest on the longest bar
-   on screen (`divergingBar.ts`). The hue is here and the opacity is data on the rect, which is
-   what lets it be continuous without design leaving this file.
+   that a difference is noise -- and deepens with the gap's share of the focus to the strongest
+   at 30%, where the top band also takes a border (`divergingBar.ts`). The hue is here and both
+   opacities are data on the rect, which is what lets them be continuous without design leaving
+   this file.
 
-   A layer rather than a background, so it sits under the number without tinting the text. */
+   A layer rather than a background, so it sits under the number without tinting the text. It
+   covers the cell's border box, as a background does, and is clipped to its rounded corners: a
+   2px stroke clipped in half is the 1px border, drawn over the wash as a CSS border is. */
 .matrix__tint {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  /* Clipped rather than rounded: an SVG's own box keeps square corners under `border-radius`. */
+  top: calc(-1 * var(--border-width));
+  left: calc(-1 * var(--border-width));
+  width: calc(100% + 2 * var(--border-width));
+  height: calc(100% + 2 * var(--border-width));
   clip-path: inset(0 round var(--radius-medium));
   pointer-events: none;
 }
 
-.matrix__tint-fill--ahead {
+.matrix__tint-shape {
+  stroke-width: calc(2 * var(--border-width));
+}
+
+.matrix__tint-shape--ahead {
   fill: var(--colour-success-bar);
+  stroke: var(--colour-success-bar);
 }
 
-.matrix__tint-fill--behind {
+.matrix__tint-shape--behind {
   fill: var(--colour-danger-bar);
-}
-
-/* The border appears only where the cell is making a real claim. */
-.matrix__cell--ahead {
-  border-color: var(--colour-success-border);
-}
-
-.matrix__cell--behind {
-  border-color: var(--colour-danger-border);
+  stroke: var(--colour-danger-bar);
 }
 
 /* ── The per-comparator synthesis ─────────────────────────────────────────────────────

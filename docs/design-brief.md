@@ -135,15 +135,15 @@ it at 40, which is four and a half times an even share of eleven pillars -- righ
 wrong for three, where it silently clamps a weight the server would accept. The floor is still
 40, so the eleven-pillar case is drawn exactly as designed.
 
-**Cell tints in the comparison matrix grow with the bar, not with the gap's share of the focus**
-(a divergence, 2026-10-25, at the user's call). The design ramps the tint from 0.09 at a gap of
-5% of the focus's own figure to 0.42 at 30%, while the bar is measured against the largest gap
-on screen. With two rulers they disagreed: a gap of 17 on a focus of 61 drew a third of a bar
-under a near-full tint. The tint's strength now follows the bar's reach (0.09 plus 0.33 times
-the share of the largest gap, `divergingBar.ts`), so the strongest tint is always the longest
-bar, and only the longest bars (60% of the ruler and over) take the border. The design's 5%-of-
-the-focus floor still decides whether a cell is tinted at all. The hue is a class in
-`styles.css` and the alpha the SVG `fill-opacity` attribute, as before.
+**The comparison matrix's cells follow the design exactly** (2026-10-25, at the user's call,
+replacing a short-lived divergence that tied the tint to the bar). The box and its padding, the
+type, the tint's ramp from 5% to 30% of the focus's own figure, the border in its top band and
+the bar's colour deepening with its reach are the design's own formulas (`divergingBar.ts`).
+One consequence is worth knowing: every gap past 30% of the focus's figure takes the full tint,
+so on real data several large gaps share one background, and their bars' length and shade carry
+the difference. A cell with no gap to read -- a figure missing on either side -- draws no track,
+as the design's does. The hues are classes in `styles.css`; only opacities and geometry are SVG
+attributes, because `routes/` carries no inline style.
 
 **A level is offered as soon as it holds a candidate.** The design disables City outright.
 Which levels exist and which hold candidates are catalog rows, so the condition is read off

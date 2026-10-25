@@ -7,22 +7,39 @@
  * left can only show size -- the sign has to be read off a minus in the text, one cell at a
  * time. Anchored in the middle, a column of them reads as a shape.
  *
- * **One ruler for size, one floor for noise.** The bar's reach is measured against the largest gap
- * *on the screen* (`scale`), so a column of bars shows which differences are big relative to the
- * rest, and **the tint grows with that same reach**: a longer bar is always a stronger tint, and
- * the strongest tint is the longest bar. The two used to have rulers of their own -- the tint
- * measured against the focus's value -- and a gap of 17 on a focus of 61 drew a short bar under a
- * near-full tint, the colour shouting a size the bar contradicted. **Whether to tint at all** is
- * still judged against the *focus's own value* (`focusValue`): a five-point gap on a figure of ten
+ * **Two denominators, two jobs.** The bar's reach is measured against the largest gap *on the
+ * screen* (`scale`), so a column of bars shows which differences are big relative to the rest
+ * -- the same five-point gap looks large in a table of small gaps and small in a table of large
+ * ones, which is what a reader comparing places actually wants. The tint, in contrast, is
+ * measured against the *focus's own value* (`focusValue`): a five-point gap on a figure of ten
  * is half of it, on a figure of ninety it is noise, and only the first is worth colouring.
  *
  * A `.tsx` under `routes/` may not call `Number` (`CLAUDE.md`), so the arithmetic is here.
  */
 
+/** The bar's three colours, from a short reach to a full one (the design's `RAMP`). */
+export type Shade = "pale" | "mid" | "deep";
+
+/**
+ * The bar's colour as one shade over another: `over` at `amount` opacity on `base`, which is the
+ * design's linear blend between two neighbouring stops, drawn as two rects so the colours stay in
+ * `styles.css` and only the blend is data.
+ */
+export interface BarShade {
+  base: Shade;
+  over: Shade;
+  amount: number;
+}
+
 /** Which way a cell goes, and how it is drawn, for the bar and the tint layers. */
 export interface Divergence {
   /** Ahead of the focus, behind it, or level -- which is also the colour. */
   direction: "ahead" | "behind" | "level";
+  /**
+   * Whether there is a gap to read at all. False where either side has no figure, and then no
+   * track is drawn, as the design draws none; an exact tie is gauged, on a track with no bar.
+   */
+  gauged: boolean;
   /**
    * The bar's drawn width, as a percentage of the track (0 to 50).
    *
@@ -42,9 +59,14 @@ export interface Divergence {
   alpha: number;
   /** A border, in the top of the range only, where the cell is making a real claim. */
   edge: boolean;
+  /** The border's opacity, in the tint's hue: 0 without one, deeper the stronger the claim. */
+  borderAlpha: number;
+  /** **The bar's colour deepens with its reach**, so a longer gap is also a darker one. */
+  shade: BarShade;
   /**
-   * The gap is real but below the threshold worth colouring, so the delta text is muted and
-   * nothing is tinted. Distinct from `level`: level is "the same", faint is "barely apart".
+   * The gap is below the threshold worth colouring, so the figure and its delta are muted and
+   * nothing is tinted -- an exact tie included. Not where there is no gap to read: whether a
+   * missing figure is muted depends on whose figure is missing, which the cell knows.
    */
   faint: boolean;
   /**
@@ -56,26 +78,39 @@ export interface Divergence {
 
 /** Below this share of the focus's value a difference is noise, and a tint would claim it is not. */
 const NOTICEABLE = 0.05;
-/** The faintest tint worth drawing, and the span it ramps across, with the bar, to the strongest. */
+/** Where the tint stops getting stronger, as a share of the focus's value. */
+const FULL = 0.3;
+/** The faintest tint worth drawing, and the span it ramps across to the strongest. */
 const FAINT_ALPHA = 0.09;
 const RAMP_ALPHA = 0.33;
-/** Past this much of the ruler the cell takes a border as well: the longest bars only. */
+/** Past this much of the tint's ramp the cell takes a border as well. */
 const EMPHATIC = 0.6;
 /** The smallest bar drawn for a non-zero gap, so a real difference is never invisible. */
 const MIN_WIDTH = 1.5;
 /** A reach below this share of the scale is drawn softer. */
 const SHORT = 0.22;
 const SHORT_OPACITY = 0.62;
+/** The border's opacity at the bottom of the top band, and the span it deepens across. */
+const BORDER_ALPHA = 0.45;
+const BORDER_RAMP = 0.35;
+/** How the bar's colour follows its reach: `reach ** 0.7`, so short bars darken quickly. */
+const SHADE_CURVE = 0.7;
+const SHADES: readonly Shade[] = ["pale", "mid", "deep"];
 
 const LEVEL: Divergence = {
   direction: "level",
+  gauged: true,
   width: 0,
   left: 50,
   alpha: 0,
   edge: false,
+  borderAlpha: 0,
+  shade: { base: "pale", over: "mid", amount: 0 },
   faint: true,
   barOpacity: 1,
 };
+
+const NO_GAP: Divergence = { ...LEVEL, gauged: false, faint: false };
 
 function isFiniteNumber(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -87,14 +122,15 @@ function isFiniteNumber(value: number | null | undefined): value is number {
  * `scale` is the largest absolute delta the whole set of cells carries, so every bar is drawn
  * against the same ruler and one column is comparable with the next. `focusValue` is what the
  * focus itself reads on this row, against which the gap's *relative* size -- and so the tint --
- * is judged -- whether to tint, never how strongly.
+ * is judged.
  */
 export function divergingBar(
   delta: number | null | undefined,
   scale: number,
   focusValue: number | null | undefined,
 ): Divergence {
-  if (!isFiniteNumber(delta) || delta === 0) return LEVEL;
+  if (!isFiniteNumber(delta)) return NO_GAP;
+  if (delta === 0) return LEVEL;
 
   const size = Math.abs(delta);
   const direction = delta > 0 ? "ahead" : "behind";
@@ -102,21 +138,38 @@ export function divergingBar(
   const reach = scale > 0 ? Math.min(1, size / scale) : 0;
   const width = Math.max(MIN_WIDTH, reach * 50);
   const left = direction === "behind" ? 50 - width : 50;
+  const barOpacity = reach < SHORT ? SHORT_OPACITY : 1;
 
   const anchor = isFiniteNumber(focusValue) ? Math.abs(focusValue) : 0;
-  const lit = anchor > 0 && size / anchor >= NOTICEABLE;
-  // Noise is drawn softer however far its bar reaches: a row whose largest gap is 2 draws that
-  // gap full length, and a full-strength bar under no tint would contradict the muted text.
-  const barOpacity = reach < SHORT || !lit ? SHORT_OPACITY : 1;
+  const relative = anchor > 0 ? size / anchor : 0;
+  const lit = relative >= NOTICEABLE;
+  const ramp = lit ? Math.min(1, (relative - NOTICEABLE) / (FULL - NOTICEABLE)) : 0;
 
   return {
     direction,
+    gauged: true,
     width,
     left,
     barOpacity,
-    alpha: lit ? FAINT_ALPHA + reach * RAMP_ALPHA : 0,
-    edge: lit && reach >= EMPHATIC,
+    alpha: lit ? FAINT_ALPHA + ramp * RAMP_ALPHA : 0,
+    edge: lit && ramp >= EMPHATIC,
+    borderAlpha: lit && ramp >= EMPHATIC ? BORDER_ALPHA + BORDER_RAMP * ramp : 0,
     faint: !lit,
+    shade: shadeOf(reach),
+  };
+}
+
+/**
+ * The bar's colour for a reach: the design's three stops, pale to deep, with `reach ** 0.7`
+ * blended linearly between the two it falls between.
+ */
+function shadeOf(reach: number): BarShade {
+  const position = Math.min(0.999, Math.max(0, reach ** SHADE_CURVE)) * 2;
+  const step = Math.floor(position);
+  return {
+    base: SHADES[step] ?? "pale",
+    over: SHADES[step + 1] ?? "deep",
+    amount: position - step,
   };
 }
 

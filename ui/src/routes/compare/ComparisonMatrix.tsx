@@ -167,12 +167,13 @@ export function ComparisonMatrix({
               <td className="matrix__weight">
                 {formatPercentage(totalRow.weight, 1)}
               </td>
-              <FocusCell text={scoreText(totalRow.focus)} />
+              <FocusCell text={scoreText(totalRow.focus)} absent={totalRow.focus === null} />
               {totalRow.cells.map((cell) => (
                 <Cell
                   key={cell.candidate}
                   bar={scale.drawn ? divergingBar(cell.delta, totalScale, totalRow.focus) : null}
                   scoreText={scoreText(cell.score)}
+                  absent={cell.score === null}
                   deltaText={deltaText(cell)}
                 />
               ))}
@@ -197,6 +198,7 @@ export function ComparisonMatrix({
                   candidate: cell.candidate,
                   bar: scale.drawn ? divergingBar(cell.delta, pillarScale, row.focus) : null,
                   scoreText: readingText(cell.score, measure),
+                  absent: cell.score === null,
                   deltaText: deltaText(cell, measure),
                 }))}
                 attributes={attributes}
@@ -247,7 +249,13 @@ function PillarGroup({
   open: boolean;
   canOpen: boolean;
   onToggle: () => void;
-  cells: { candidate: string; bar: Divergence | null; scoreText: string; deltaText: string }[];
+  cells: {
+    candidate: string;
+    bar: Divergence | null;
+    scoreText: string;
+    absent: boolean;
+    deltaText: string;
+  }[];
   attributes: readonly AttributeRow[];
   shownAs: "score" | "raw";
   scale: ScaleReading;
@@ -289,12 +297,13 @@ function PillarGroup({
           )}
         </th>
         <td className="matrix__weight">{formatPercentage(weight, 1)}</td>
-        <FocusCell text={focusText} />
+        <FocusCell text={focusText} absent={pillarFocus === null} />
         {cells.map((cell) => (
           <Cell
             key={cell.candidate}
             bar={cell.bar}
             scoreText={cell.scoreText}
+            absent={cell.absent}
             deltaText={cell.deltaText}
           />
         ))}
@@ -358,6 +367,7 @@ function AttributeRowView({
       <td className="matrix__weight">{formatPercentage(row.weight, 1)}</td>
       <FocusCell
         text={raw ? figureText(row.focusFigure) : scoreText(row.focusScore)}
+        absent={raw ? !hasFigure(row.focusFigure) : row.focusScore === null}
         provenance={row.focusProvenance}
         compact
       />
@@ -376,6 +386,7 @@ function AttributeRowView({
             compact
             provenance={cell.provenance}
             scoreText={raw ? figureText(cell.figure) : scoreText(cell.score)}
+            absent={raw ? !hasFigure(cell.figure) : cell.score === null}
             deltaText={
               impact
                 ? formatSigned(cell.worth, decimalsFor(measure))
@@ -406,10 +417,13 @@ function figureText(figure: string): string {
 /** The baseline column: the line everything else is measured from, so it carries no bar. */
 function FocusCell({
   text,
+  absent,
   compact,
   provenance,
 }: {
   text: string;
+  /** The focus has no figure here, so there is no baseline to measure from. */
+  absent: boolean;
   compact?: boolean;
   provenance?: Provenance | null;
 }) {
@@ -420,8 +434,14 @@ function FocusCell({
     >
       <ProvenanceNote provenance={provenance} />
       <div className="matrix__cell-head">
-        <span className="matrix__score">{text}</span>
-        <span className="matrix__delta matrix__delta--faint">baseline</span>
+        <span className={absent ? "matrix__score matrix__score--faint" : "matrix__score"}>
+          {text}
+        </span>
+        {absent ? (
+          <span className="matrix__delta matrix__delta--level">—</span>
+        ) : (
+          <span className="matrix__delta">baseline</span>
+        )}
       </div>
     </td>
   );
@@ -438,6 +458,7 @@ function FocusCell({
 function Cell({
   bar,
   scoreText,
+  absent,
   deltaText,
   compact,
   provenance,
@@ -445,14 +466,18 @@ function Cell({
   /** Null when the comparison carried no scale: the figures print, with no track, tint or bar. */
   bar: Divergence | null;
   scoreText: string;
+  /** The comparator has no figure here: "No score" or "No value", muted. */
+  absent: boolean;
   deltaText: string;
   compact?: boolean;
   /** Where the figure came from; absent on a pillar row, null where there is no figure. */
   provenance?: Provenance | null;
 }) {
-  const cellClass =
-    `matrix__cell${compact ? " matrix__cell--compact" : ""}` +
-    (bar?.edge ? ` matrix__cell--${bar.direction}` : "");
+  const cellClass = `matrix__cell${compact ? " matrix__cell--compact" : ""}`;
+  // Below the threshold the figure is muted with its gap, and so is a missing one; a figure the
+  // focus has nothing to set against keeps its ink, as the design draws it.
+  const scoreClass =
+    absent || bar?.faint ? "matrix__score matrix__score--faint" : "matrix__score";
   const deltaClass = bar
     ? `matrix__delta matrix__delta--${bar.direction}` +
       (bar.edge ? " matrix__delta--strong" : bar.faint ? " matrix__delta--faint" : "")
@@ -461,46 +486,51 @@ function Cell({
   return (
     <td className={cellClass} title={provenance?.description}>
       <ProvenanceNote provenance={provenance} />
+      {/* The wash and, in the top band, the border: one rounded rect whose fill and stroke
+          opacities are the data, in the hue its class gives it. */}
       {bar && bar.alpha > 0 && (
-        <svg
-          className="matrix__tint"
-          viewBox="0 0 1 1"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
+        <svg className="matrix__tint" aria-hidden="true">
           <rect
-            className={`matrix__tint-fill matrix__tint-fill--${bar.direction}`}
-            width="1"
-            height="1"
+            className={`matrix__tint-shape matrix__tint-shape--${bar.direction}`}
+            width="100%"
+            height="100%"
+            rx="4"
+            ry="4"
             fillOpacity={bar.alpha}
+            strokeOpacity={bar.borderAlpha}
           />
         </svg>
       )}
       <div className="matrix__cell-head">
-        <span className="matrix__score">{scoreText}</span>
+        <span className={scoreClass}>{scoreText}</span>
         <span className={deltaClass}>{deltaText}</span>
       </div>
-      {/* No scale, no gauge: an empty track and its tick would still imply a top. */}
-      {bar && (
+      {/* No scale, no gauge: an empty track and its tick would still imply a top. Nor where
+          there is no gap to read, as the design draws none. */}
+      {bar?.gauged && (
         <div className={compact ? "matrix__track matrix__track--compact" : "matrix__track"}>
           <span className="matrix__tick" />
+          {/* Two rects in one place: the darker shade over the lighter at the blend the reach
+              gives, so the bar deepens with its length (the design's three-stop ramp). */}
           {bar.direction !== "level" && (
-            <svg
-              className="matrix__bar"
-              viewBox="0 0 100 10"
-              preserveAspectRatio="none"
-              aria-hidden="true"
-            >
-              <rect
-                className={`matrix__bar-fill matrix__bar-fill--${bar.direction}`}
-                x={bar.left}
-                y="0"
-                width={bar.width}
-                height="10"
-                rx="1.5"
-                ry="1.5"
-                fillOpacity={bar.barOpacity}
-              />
+            <svg className="matrix__bar" aria-hidden="true">
+              <g opacity={bar.barOpacity}>
+                <rect
+                  className={`matrix__bar-shade--${bar.direction}-${bar.shade.base}`}
+                  x={`${bar.left}%`}
+                  width={`${bar.width}%`}
+                  height="100%"
+                  rx="2"
+                />
+                <rect
+                  className={`matrix__bar-shade--${bar.direction}-${bar.shade.over}`}
+                  x={`${bar.left}%`}
+                  width={`${bar.width}%`}
+                  height="100%"
+                  rx="2"
+                  fillOpacity={bar.shade.amount}
+                />
+              </g>
             </svg>
           )}
         </div>
