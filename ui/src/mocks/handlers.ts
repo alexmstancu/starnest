@@ -441,6 +441,7 @@ export const handlers = [
           {
             code: "weights_all_locked",
             message: `${pillarId} is itself locked. A lock holds that weight where it is, so unlock it before moving it.`,
+            details: { reason: "moved_is_locked", locked: [pillarId] },
           },
           { status: 409 },
         );
@@ -848,7 +849,7 @@ export const handlers = [
           {
             code: "weights_all_locked",
             message: `cannot change the weight of ${attributeId}: it is itself locked. A lock holds that weight where it is, so unlock it before moving it.`,
-            details: { locked: [attributeId] },
+            details: { reason: "moved_is_locked", locked: [attributeId] },
           },
           { status: 409 },
         );
@@ -1902,6 +1903,44 @@ function notFound(id: string) {
 }
 
 /**
+ * The three refusals a rebalance can meet once the moved weight is free, in
+ * `criteria/rebalancing.py`'s order, each with the `details.reason` the screen words it from
+ * (PL-112): nothing else in the pillar, every other weight locked, or the locks holding more than
+ * the move leaves room for.
+ */
+function lockedOut(
+  siblings: number,
+  locked: string[],
+  unlocked: number,
+  held: number,
+  room: number,
+) {
+  const refusal = (message: string, details: Record<string, unknown>) =>
+    HttpResponse.json({ code: "weights_all_locked", message, details }, { status: 409 });
+  if (siblings === 0) {
+    return refusal("it is the only weight, so there is nothing to absorb a change.", {
+      reason: "only_weight",
+      locked: [],
+    });
+  }
+  if (unlocked === 0) {
+    return refusal("every other weight is locked. Unlock at least one, or change it instead.", {
+      reason: "others_all_locked",
+      locked,
+    });
+  }
+  if (room < 0) {
+    return refusal(`the locked weights hold ${held} between them, so the move does not fit.`, {
+      reason: "locks_leave_no_room",
+      locked,
+      held,
+      at_most: 100 - held,
+    });
+  }
+  return null;
+}
+
+/**
  * The server's arithmetic, standing in for the server's arithmetic (`arch.md` 8.3).
  *
  * **It lives here rather than in the interface on purpose.** The screen sends one weight and
@@ -1922,21 +1961,14 @@ function rebalancePillar(
     .reduce((total, entry) => total + (entry.weight ?? 0), 0);
   const room = 100 - weight - lockedTotal;
 
-  if (unlocked.length === 0 || room < 0) {
-    return HttpResponse.json(
-      {
-        code: "weights_all_locked",
-        message:
-          "The change cannot be absorbed: the other weights in this pillar are locked.",
-        details: {
-          locked: siblings
-            .filter((entry) => entry.weight_locked)
-            .map((entry) => entry.attribute),
-        },
-      },
-      { status: 409 },
-    );
-  }
+  const refused = lockedOut(
+    siblings.length,
+    siblings.filter((entry) => entry.weight_locked).map((entry) => entry.attribute),
+    unlocked.length,
+    lockedTotal,
+    room,
+  );
+  if (refused) return refused;
 
   const before = unlocked.reduce(
     (total, entry) => total + (entry.weight ?? 0),
@@ -1976,21 +2008,14 @@ function rebalancePillarWeights(
     .reduce((total, entry) => total + entry.weight, 0);
   const room = 100 - weight - lockedTotal;
 
-  if (unlocked.length === 0 || room < 0) {
-    return HttpResponse.json(
-      {
-        code: "weights_all_locked",
-        message:
-          "The change cannot be absorbed: the other pillar weights are locked.",
-        details: {
-          locked: others
-            .filter((entry) => entry.weight_locked)
-            .map((entry) => entry.pillar),
-        },
-      },
-      { status: 409 },
-    );
-  }
+  const refused = lockedOut(
+    others.length,
+    others.filter((entry) => entry.weight_locked).map((entry) => entry.pillar),
+    unlocked.length,
+    lockedTotal,
+    room,
+  );
+  if (refused) return refused;
 
   const before = unlocked.reduce((total, entry) => total + entry.weight, 0);
   edited.weight = weight;

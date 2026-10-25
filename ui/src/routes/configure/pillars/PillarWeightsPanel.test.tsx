@@ -291,7 +291,11 @@ describe("the pillar weights panel", () => {
     await setWeight("Economy", "10");
 
     const pillars = await panel();
-    expect(await pillars.findByText(/every other weight in this pillar is locked/i)).toBeInTheDocument();
+    expect(await pillars.findByText(/every other weight here is locked/i)).toBeInTheDocument();
+    // Named as the rows name them: the design's banner names the locks to undo (UF-035).
+    const locks = within(pillars.getByRole("list", { name: /locked/i }));
+    expect(locks.getByText("Housing")).toBeInTheDocument();
+    expect(locks.getByText("Safety")).toBeInTheDocument();
     // The refused weight is not shown as though it had been stored.
     expect(weightBox("Housing")).toHaveValue("35");
   });
@@ -341,6 +345,58 @@ describe("the pillar weights panel", () => {
  * does not sit visibly off 100 for the length of a drag. Every figure asserted here is checked
  * **before** any release, so nothing in this block can be read off a response by accident.
  */
+describe("a locked pillar weight", () => {
+  /**
+   * **Held, so the move is never made to be refused** (UF-035). A live slider previewed the move,
+   * sent it, and the server refused it every time.
+   */
+  it("holds the slider, and sends nothing when it is moved", async () => {
+    renderShell("/configure");
+    await screen.findByRole("slider", { name: "Economy weight" });
+    await lockPillar("Housing");
+    const sent = recordWeightRequests();
+
+    expect(weightBox("Housing")).toHaveAttribute("aria-disabled", "true");
+    expect(weightBox("Housing")).toHaveAttribute(
+      "title",
+      expect.stringMatching(/unlock it to move/i),
+    );
+    await setWeight("Housing", "50");
+    // Proved by the next write: had the move gone, it would be listed before this one.
+    await setWeight("Economy", "45");
+
+    await waitFor(() => expect(sent).toEqual([{ weight: 45 }]));
+  });
+
+  /**
+   * **Worded from the refusal's reason, with its figures** (UF-035), and gone once the lock it
+   * describes changes -- here by an undo in Recent changes, which never passes through the row.
+   */
+  it("says how much the locks leave, and clears once the lock is undone from Recent changes", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await screen.findByRole("slider", { name: "Economy weight" });
+    await lockPillar("Housing");
+
+    await setWeight("Economy", "70");
+
+    const pillars = await panel();
+    expect(
+      await pillars.findByText(
+        /the locked weights hold 35% between them, so this one can be at most 65%/i,
+      ),
+    ).toBeInTheDocument();
+    const history = within(await screen.findByRole("region", { name: /^recent changes/i }));
+    await user.click(history.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() => expect(pillars.queryByText(/the locked weights hold/i)).toBeNull());
+    expect(screen.getByRole("button", { name: "Lock Housing" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+});
+
 describe("the pillar weights panel while a pointer is down", () => {
   it("moves the other pillars as the pointer moves, before anything is sent", async () => {
     const sent = recordWeightRequests();
@@ -453,7 +509,7 @@ describe("the pillar weights panel while a pointer is down", () => {
 
     // The refusal is the server's, with the locks it names.
     expect(
-      await (await panel()).findByText(/every other weight in this pillar is locked/i),
+      await (await panel()).findByText(/every other weight here is locked/i),
     ).toBeInTheDocument();
     expect(readingOf("Housing")).toBe("35.0%");
   });
@@ -553,9 +609,9 @@ describe("the pillar weights panel while a pointer is down", () => {
 
     drag("Economy", "60", "40");
     release("Economy");
-    await user.click(screen.getByRole("button", { name: "Lock Economy" }));
+    await user.click(screen.getByRole("button", { name: "Lock Housing" }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Lock Economy" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "Lock Housing" })).toHaveAttribute(
         "aria-pressed",
         "true",
       ),
@@ -563,11 +619,12 @@ describe("the pillar weights panel while a pointer is down", () => {
 
     drag("Economy", "50");
 
-    // Economy is locked now, so nothing can be previewed at all: housing holds where it is and
-    // the total says the set no longer adds up, which is the refusal coming.
+    // Housing is locked now, so it holds and Safety alone absorbs the change. Previewed from the
+    // weights two gestures ago, Housing would still be free and take its share: 29.2%.
     await waitFor(() => expect(readingOf("Economy")).toBe("50.0%"));
     expect(readingOf("Housing")).toBe("35.0%");
-    expect(await runningTotal()).toContain("110.0%");
+    expect(readingOf("Safety")).toBe("15.0%");
+    expect(await runningTotal()).toContain("100.0%");
   });
 });
 
@@ -705,7 +762,7 @@ describe("the pillar weights panel while a change is being saved", () => {
     fireEvent.change(slider, { target: { value: "50" } });
     fireEvent.pointerUp(slider);
     expect(
-      await (await panel()).findByText(/every other weight in this pillar is locked/i),
+      await (await panel()).findByText(/this change cannot be made/i),
     ).toBeInTheDocument();
 
     await waitFor(() => expect(weightBox("Economy")).toHaveValue("40"));
@@ -821,7 +878,7 @@ describe("the pillar weights panel while a change is being saved", () => {
       await pressArrowRight(user);
 
       expect(
-      await (await panel()).findByText(/every other weight in this pillar is locked/i),
+      await (await panel()).findByText(/this change cannot be made/i),
     ).toBeInTheDocument();
       await waitFor(() => expectNotHeld(slider));
       expect(slider).toHaveFocus();

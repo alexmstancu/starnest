@@ -14,9 +14,9 @@
 import { ApiError, CLIENT_ERROR_CODES, isApiError, type ErrorCode } from "./ApiError";
 
 /**
- * The refusal a weight change can meet: every other weight in the pillar is locked, so there
- * is nothing to rebalance into. Named here because two modules branch on it -- the table below
- * and `lockedAttributes` -- and a code spelled twice is a code that can be spelled wrong once.
+ * The refusal a weight change can meet when locks are in the way, for one of four reasons
+ * (`details.reason`). Named here because two things branch on it -- the table below and
+ * `locksInTheWay` -- and a code spelled twice is a code that can be spelled wrong once.
  */
 export const WEIGHTS_ALL_LOCKED = "weights_all_locked";
 
@@ -98,9 +98,7 @@ export const WORDS = {
   not_found: refusal("It is not there any more: it may have been deleted meanwhile."),
   candidate_not_found: refusal("That place is not among the candidates."),
   household_not_configured: unset("Nothing has been recorded about the household yet."),
-  [WEIGHTS_ALL_LOCKED]: refusal(
-    "Every other weight in this pillar is locked, so there is nothing to rebalance into.",
-  ),
+  [WEIGHTS_ALL_LOCKED]: refusal(lockedOut),
   criteria_set_exists: refusal("A criteria set with that name already exists."),
   criteria_set_name_taken: refusal((details) => {
     const name = text(details["name"]);
@@ -286,6 +284,37 @@ function fieldKinds(details: Details): string[] {
   );
 }
 
+/**
+ * Why a weight could not move, from the refusal's own reason (PL-112). Four situations need four
+ * sentences; the one sentence this used to say was wrong in three of them. The locks in the way
+ * are named beside the banner, from `details.locked` (`lockedAttributes`).
+ */
+function lockedOut(details: Details): string {
+  switch (details["reason"]) {
+    case "moved_is_locked":
+      return "This weight is locked: unlock it first to move it.";
+    case "only_weight":
+      return "This is the only weight here, so nothing else can take up a change to it.";
+    case "others_all_locked":
+      return "Every other weight here is locked, so nothing can take up the change. Unlock one of them first.";
+    case "locks_leave_no_room": {
+      const held = number(details["held"]);
+      const most = number(details["at_most"]);
+      return held === null || most === null
+        ? "The locked weights leave too little room for that. Unlock one of them, or ask for less."
+        : `The locked weights hold ${percent(held)} between them, so this one can be at most ${percent(most)}.`;
+    }
+    default:
+      return "The other weights here are locked, so this change cannot be made.";
+  }
+}
+
+const PERCENT = new Intl.NumberFormat("en-GB", { maximumFractionDigits: 2 });
+
+function percent(value: number): string {
+  return `${PERCENT.format(value)}%`;
+}
+
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
 }
@@ -299,19 +328,36 @@ function whole(value: unknown): number | null {
   return figure !== null && Number.isInteger(figure) ? figure : null;
 }
 
+/** The design's banner names "up to three to unlock" (README, weight rebalancing; UF-035). */
+const LOCKS_NAMED = 3;
+
+/** The locks a refused weight change names: at most `LOCKS_NAMED`, and how many more there are. */
+export interface LocksInTheWay {
+  /** Ids -- attributes or pillars, whichever the refused weights were -- for the caller to name. */
+  named: string[];
+  more: number;
+}
+
+const NO_LOCKS: LocksInTheWay = { named: [], more: 0 };
+
 /**
- * The attributes whose locks blocked a weight change.
+ * The locks that blocked a weight change, from `details.locked`.
  *
- * `docs/openapi.yaml` types `Error.details` as a free-form object, and its one example for
- * this code carries `details.locked` as a list of attribute ids. So this reads that shape
- * defensively and returns nothing when it is absent: showing which locks are in the way is
- * worth doing, and guessing at them is not.
+ * Read defensively, because `Error.details` is a free-form object: nothing when the list is
+ * absent, since showing which locks are in the way is worth doing and guessing at them is not.
+ * **Nothing when the moved weight is itself the lock** (`moved_is_locked`): the sentence says so,
+ * and listing the weight as the lock in its own way sent the reader looking for another.
  */
-export function lockedAttributes(error: unknown): string[] {
-  if (!isApiError(error) || error.code !== WEIGHTS_ALL_LOCKED) return [];
+export function locksInTheWay(error: unknown): LocksInTheWay {
+  if (!isApiError(error) || error.code !== WEIGHTS_ALL_LOCKED) return NO_LOCKS;
+  if (error.details?.["reason"] === "moved_is_locked") return NO_LOCKS;
 
   const locked = error.details?.["locked"];
-  if (!Array.isArray(locked)) return [];
+  if (!Array.isArray(locked)) return NO_LOCKS;
 
-  return locked.filter((entry): entry is string => typeof entry === "string");
+  const ids = locked.filter((entry): entry is string => typeof entry === "string");
+  return {
+    named: ids.slice(0, LOCKS_NAMED),
+    more: Math.max(0, ids.length - LOCKS_NAMED),
+  };
 }

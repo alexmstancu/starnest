@@ -19,6 +19,13 @@ import { titleOf, type AttributeCatalog } from "./criteria/criterionReading";
 import type { Answers } from "./useAnswers";
 import type { ChangeHistory, RecordedChange } from "./useChangeHistory";
 import { confirmation, settled, UnconfirmedWrite } from "./unknownOutcome";
+import {
+  refusedUnder,
+  standingFailure,
+  weightedCriteria,
+  type Refused,
+  type WeightedItem,
+} from "./weights";
 
 /**
  * One criteria set, and the one write the Configure screen makes.
@@ -57,8 +64,13 @@ export interface CriteriaEditor {
    * flight can answer in either order, and the later answer would be shown over newer weights.
    */
   busy: boolean;
-  /** The failure of the last weight or lock change. Shown; never swallowed. A rule's is its own. */
-  saveError: unknown;
+  /**
+   * The failure of the last weight or lock change, for a panel showing one pillar -- or every
+   * pillar, given none. Shown, never swallowed; a rule's is its own. **Only inside the pillar it
+   * was about, and only while the locks it was answered under stand** (UF-035): one editor serves
+   * whichever pillar is open, and an undo in Recent changes moves a lock without passing here.
+   */
+  saveErrorFor: (pillar: string | undefined) => unknown;
   setWeight: (attribute: string, weight: number) => void;
   /**
    * Lock or unlock a weight. **Its own change, not part of a weight change** -- the server
@@ -105,14 +117,14 @@ export function useCriteriaEditor(
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [savingAttribute, setSavingAttribute] = useState<string | null>(null);
   const [savingRuleFor, setSavingRuleFor] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<unknown>(null);
+  const [saveFailure, setSaveFailure] = useState<PillarFailure | null>(null);
 
   // A newly fetched set replaces everything, including a stale refusal: the error belonged to
   // weights that are no longer on screen. A re-read of the same set keeps its data until the
   // answer lands (PL-010), so this runs when that answer does and not in between.
   useEffect(() => {
     setCriteria(criteriaSet?.criteria ?? []);
-    setSaveError(null);
+    setSaveFailure(null);
   }, [criteriaSet]);
 
   // **Which set is on screen when an answer lands**, not when it was asked for (UI-04). A set
@@ -149,8 +161,8 @@ export function useCriteriaEditor(
   }, [answers, criteriaSetId]);
 
   /** A refusal for one set, reported only while that set is the one on screen. */
-  const reportFor = useCallback((sentFor: string, error: unknown) => {
-    if (shownSet.current === sentFor) setSaveError(error);
+  const reportFor = useCallback((sentFor: string, failure: PillarFailure) => {
+    if (shownSet.current === sentFor) setSaveFailure(failure);
   }, []);
 
   /**
@@ -158,12 +170,12 @@ export function useCriteriaEditor(
    * listed unconfirmed instead, with Check again (PL-033): it may well have taken effect.
    */
   const noteOrReport = useCallback(
-    (sentFor: string, error: unknown, entry: ChangeEntry) => {
+    (sentFor: string, error: unknown, entry: ChangeEntry, around: PillarAround) => {
       if (error instanceof UnconfirmedWrite) {
         // Confirmed later, what it read back reaches the editor showing the set then.
         const show = (read: RebalancedPillar) => deliver(sentFor, read.criteria);
         history?.note({ ...entry, unconfirmed: confirmation(error, show) });
-      } else reportFor(sentFor, error);
+      } else reportFor(sentFor, { pillar: around.pillar, ...refusedUnder(error, around.items) });
     },
     [history, reportFor, deliver],
   );
@@ -178,12 +190,14 @@ export function useCriteriaEditor(
       const sentFor = criteriaSetId;
 
       setSavingAttribute(attribute);
-      setSaveError(null);
+      setSaveFailure(null);
 
       // Read before the request, because the answer replaces it and an undo needs the value
       // that was there rather than the one that came back. The names too: the history says
       // what the change was when it was made, whichever set is on screen when it lands.
       const was = criteria.find((each) => each.attribute === attribute)?.weight;
+      // The locks this is sent under, which are the ones a refusal will be about.
+      const around = pillarAround(criteria, attribute);
       const named = titleOf(attribute, catalog?.get(attribute));
       const inSet = setName ?? sentFor;
 
@@ -227,7 +241,7 @@ export function useCriteriaEditor(
           deliver(sentFor, rebalanced.criteria);
           history?.note(entry(rebalanced));
         })
-        .catch((error: unknown) => noteOrReport(sentFor, error, entry()))
+        .catch((error: unknown) => noteOrReport(sentFor, error, entry(), around))
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
@@ -256,7 +270,8 @@ export function useCriteriaEditor(
       const sentFor = criteriaSetId;
 
       setSavingAttribute(attribute);
-      setSaveError(null);
+      setSaveFailure(null);
+      const around = pillarAround(criteria, attribute);
       const named = titleOf(attribute, catalog?.get(attribute));
       const inSet = setName ?? sentFor;
 
@@ -291,14 +306,14 @@ export function useCriteriaEditor(
           deliver(sentFor, rebalanced.criteria);
           history?.note(entry());
         })
-        .catch((error: unknown) => noteOrReport(sentFor, error, entry()))
+        .catch((error: unknown) => noteOrReport(sentFor, error, entry(), around))
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
           done?.();
         });
     },
-    [criteriaSetId, history, undoing, catalog, setName, deliver, noteOrReport],
+    [criteriaSetId, criteria, history, undoing, catalog, setName, deliver, noteOrReport],
   );
 
   const setRule = useCallback(
@@ -312,7 +327,7 @@ export function useCriteriaEditor(
 
       setSavingAttribute(attribute);
       setSavingRuleFor(attribute);
-      setSaveError(null);
+      setSaveFailure(null);
 
       return updateCriterionRule(sentFor, attribute, rule)
         .then(
@@ -323,7 +338,7 @@ export function useCriteriaEditor(
             return null;
           },
           // **A refused rule is the rule form's to report** (PL-026), field by field inside it,
-          // never the pillar's `saveError` -- and only while its set is the one on screen.
+          // never the pillar's weight refusal -- and only while its set is the one on screen.
           (error: unknown) => (shownSet.current === sentFor ? error : null),
         )
         .finally(() => {
@@ -336,6 +351,17 @@ export function useCriteriaEditor(
     [criteriaSetId, history, undoing, deliver],
   );
 
+  const saveErrorFor = useCallback(
+    (pillar: string | undefined): unknown => {
+      if (saveFailure === null) return null;
+      if (pillar !== undefined && saveFailure.pillar !== undefined && pillar !== saveFailure.pillar) {
+        return null;
+      }
+      return standingFailure(saveFailure, weightsIn(criteria, saveFailure.pillar));
+    },
+    [saveFailure, criteria],
+  );
+
   return {
     read,
     criteriaSet,
@@ -346,7 +372,7 @@ export function useCriteriaEditor(
       savingAttribute !== null ||
       undoing ||
       history?.busy === true,
-    saveError,
+    saveErrorFor,
     setWeight,
     setLock,
     setRule,
@@ -392,3 +418,23 @@ async function criteriaIf(
 
 /** A change as the history is given it, before it stamps the id and the time. */
 type ChangeEntry = Omit<RecordedChange, "id" | "at">;
+
+/** A failed weight or lock change, with the pillar it was about -- unknown for an attribute the set lacks. */
+interface PillarFailure extends Refused {
+  pillar: string | undefined;
+}
+
+/** The pillar a criterion shares its hundred with, as a rebalance sees it. */
+interface PillarAround {
+  pillar: string | undefined;
+  items: WeightedItem[];
+}
+
+function pillarAround(criteria: readonly Criterion[], attribute: string): PillarAround {
+  const pillar = criteria.find((each) => each.attribute === attribute)?.pillar;
+  return { pillar, items: weightsIn(criteria, pillar) };
+}
+
+function weightsIn(criteria: readonly Criterion[], pillar: string | undefined): WeightedItem[] {
+  return weightedCriteria(criteria.filter((each) => each.pillar === pillar));
+}

@@ -128,6 +128,37 @@ export function weightedCriteria(
   }));
 }
 
+/**
+ * A failed weight or lock change, kept with the locks it was answered under (UF-035).
+ *
+ * A weights refusal describes the locks as they stood -- "every other weight here is locked",
+ * "the locked weights hold 70%" -- so it stands only while they do. **A key rather than a reset
+ * in each lock control**, because a lock also changes by an undo in Recent changes, and the
+ * banner outlived exactly that.
+ */
+export interface Refused {
+  error: unknown;
+  locks: string;
+}
+
+/** Which of these weights are locked, and at what, as one comparable key. */
+function lockKey(items: readonly WeightedItem[]): string {
+  return items
+    .filter((item) => item.locked)
+    .map((item) => `${item.identifier}=${String(item.weight)}`)
+    .sort()
+    .join(",");
+}
+
+export function refusedUnder(error: unknown, items: readonly WeightedItem[]): Refused {
+  return { error, locks: lockKey(items) };
+}
+
+/** The failure while the locks are as they were when it came; nothing once any of them moved. */
+export function standingFailure(refused: Refused | null, items: readonly WeightedItem[]): unknown {
+  return refused !== null && refused.locks === lockKey(items) ? refused.error : null;
+}
+
 /** What a set of weights comes to, which is the one thing a rebalance may never change. */
 const TOTAL = 100;
 
@@ -367,3 +398,9 @@ export function lockTitle(locked: boolean): string {
     ? "Held where it is, and takes no share of a rebalance"
     : "Moves in proportion when another weight changes";
 }
+
+/**
+ * Why a locked weight's slider does not move (UF-035). Held rather than live, because a live one
+ * previewed a move the server was always going to refuse.
+ */
+export const LOCKED_SLIDER_TITLE = "Locked: unlock it to move this weight";

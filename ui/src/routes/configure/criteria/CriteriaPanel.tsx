@@ -2,7 +2,6 @@ import { useId } from "react";
 import { usePillarNames, type PillarNames } from "../../../api/usePillarNames";
 import { Link } from "react-router-dom";
 import type { Criterion, CriterionRule } from "../../../api/endpoints";
-import { lockedAttributes } from "../../../api/errorPresentation";
 import { formatPercentage, pillarName } from "../../../format/display";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { useEffect, useRef, useState } from "react";
@@ -18,8 +17,10 @@ import {
   weightFrom,
   weightReading,
   lockTitle,
+  LOCKED_SLIDER_TITLE,
 } from "../weights";
 import { LockIcon } from "../LockIcon";
+import { LocksInTheWay } from "../LocksInTheWay";
 import {
   chipsFor,
   titleOf,
@@ -75,6 +76,7 @@ export function CriteriaPanel({
       ? editor.criteria
       : editor.criteria.filter((criterion) => criterion.pillar === pillar);
   const ceiling = sliderCeiling(shown.length, CRITERION_CEILING_FLOOR);
+  const refusal = editor.saveErrorFor(pillar);
   // Destructured, because `ended` is listed as a dependency below and `react-hooks` reads a
   // name rather than a member expression. `useWeightDrag` keeps it stable for exactly that.
   const { preview, previewFor, moveTo, ended } = useWeightDrag();
@@ -117,9 +119,7 @@ export function CriteriaPanel({
         criteria={previewedCriteria(shown, preview)}
       />
 
-      {editor.saveError !== null && (
-        <SaveFailure error={editor.saveError} catalog={catalog} />
-      )}
+      {refusal !== null && <SaveFailure error={refusal} catalog={catalog} />}
 
       {shown.length === 0 ? (
         <p className="screen__note">This criteria set has no criteria.</p>
@@ -342,7 +342,8 @@ function CriterionRow({
   // **Held, not live, when the criterion is not scored** (PL-111): its weight counts for nothing,
   // so moving it would change nothing a ranking reads.
   const notScored = criterion.is_scored === false;
-  const sliderHeld = held || notScored;
+  // **Held when locked too** (UF-035): a live one previewed a move the server always refuses.
+  const sliderHeld = held || notScored || locked;
 
   return (
     /* **Named for the attribute, never by its id.** The design bars programmatic identifiers
@@ -373,7 +374,13 @@ function CriterionRow({
             value={typed}
             aria-disabled={sliderHeld || undefined}
             aria-label={`Weight for ${title}`}
-            title={notScored ? "Not scored: this criterion only decides matching" : undefined}
+            title={
+              notScored
+                ? "Not scored: this criterion only decides matching"
+                : locked
+                  ? LOCKED_SLIDER_TITLE
+                  : undefined
+            }
             onChange={(event) => {
               if (sliderHeld) return;
               unreleased.current = true;
@@ -479,39 +486,24 @@ function CriterionRow({
 }
 
 /**
- * A refused weight change, with the locks that refused it. `details.locked` names them
- * (`openapi.yaml`, `updateCriterion` 409) and they are the only thing the user can act on --
- * "it is locked somewhere" would be a dead end.
+ * A refused weight change, with the locks that refused it: they are the only thing the user can
+ * act on, and "it is locked somewhere" would be a dead end. Named as the rows above name them --
+ * these ids arrive in the error payload, not from a row on screen.
  */
 function SaveFailure({
   error,
   catalog,
 }: {
   error: unknown;
-  /** For the names: these ids arrive in the error payload, not from a row on screen. */
   catalog?: AttributeCatalog;
 }) {
-  const locked = lockedAttributes(error);
-
   return (
     <div className="save-failure">
       <ActRefusal act="The weight change" error={error}>
-        {locked.length > 0 && (
-          <>
-            <p className="screen__note" id="lock-list-heading">
-              Locked, so unable to absorb the change:
-            </p>
-            {/* Named, because these attributes also appear in the rows above: a reader arriving
-                at the list out of context needs to be told which one it is -- by the name those
-                rows use, and in the same words. It was `<code>` around the id, which told them
-                to go looking for a key that is nowhere on the screen. */}
-            <ul className="lock-list" aria-labelledby="lock-list-heading">
-              {locked.map((attribute) => (
-                <li key={attribute}>{titleOf(attribute, catalog?.get(attribute))}</li>
-              ))}
-            </ul>
-          </>
-        )}
+        <LocksInTheWay
+          error={error}
+          nameOf={(attribute) => titleOf(attribute, catalog?.get(attribute))}
+        />
       </ActRefusal>
     </div>
   );

@@ -13,6 +13,8 @@ import {
   weightReading,
   describePillarCount,
   unsourcedShareByPillar,
+  refusedUnder,
+  standingFailure,
   type WeightedItem,
 } from "./weights";
 
@@ -485,6 +487,41 @@ describe("the weights a rebalance sees", () => {
   it("has nothing to say about no weights", () => {
     expect(weightedPillars([])).toEqual([]);
     expect(weightedCriteria([])).toEqual([]);
+  });
+});
+
+/** A weights refusal describes the locks it was answered under, and stands only while they do. */
+describe("a refusal kept with its locks", () => {
+  const REFUSED = new Error("refused");
+  const ANSWERED_UNDER: WeightedItem[] = [
+    { identifier: "economics", weight: 40, locked: false },
+    { identifier: "housing", weight: 35, locked: true },
+    { identifier: "safety", weight: 25, locked: true },
+  ];
+  const refused = refusedUnder(REFUSED, ANSWERED_UNDER);
+  const changed = (identifier: string, change: Partial<WeightedItem>) =>
+    ANSWERED_UNDER.map((item) => (item.identifier === identifier ? { ...item, ...change } : item));
+
+  it("stands while the locks are as they were", () => {
+    expect(standingFailure(refused, ANSWERED_UNDER)).toBe(REFUSED);
+  });
+
+  it("stands when only an unlocked weight moved, or the rows arrive in another order", () => {
+    expect(standingFailure(refused, changed("economics", { weight: 20 }))).toBe(REFUSED);
+    expect(standingFailure(refused, [...ANSWERED_UNDER].reverse())).toBe(REFUSED);
+  });
+
+  it("goes once a lock is released, or another taken", () => {
+    expect(standingFailure(refused, changed("safety", { locked: false }))).toBeNull();
+    expect(standingFailure(refused, changed("economics", { locked: true }))).toBeNull();
+  });
+
+  it("goes once a locked weight holds something else, because its figures were about what they held", () => {
+    expect(standingFailure(refused, changed("housing", { weight: 30 }))).toBeNull();
+  });
+
+  it("has nothing to show when nothing was refused", () => {
+    expect(standingFailure(null, ANSWERED_UNDER)).toBeNull();
   });
 });
 

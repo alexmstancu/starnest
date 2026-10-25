@@ -481,6 +481,16 @@ rather than the design's "default 5" (UI-31).
 has no control for exclusion, so how such a row reads was ours to choose: the chip, the slider
 held, and "Required" only where a criterion is scored and blocks.
 
+**A refused weight says which of four things stopped it, and a locked weight cannot be dragged**
+(PL-112, UF-035). The design draws one banner, "naming up to three to unlock", for every other
+weight being locked. The server refuses a move for four reasons, so the banner words each: the
+weight is itself locked ("unlock it first"), it is the only one, every other one is locked, or
+the locks hold too much ("The locked weights hold 35% between them, so this one can be at most
+65%."). It names up to three locks by their rows' names and counts the rest ("and 2 more"), for
+pillars as for criteria, and it goes as soon as any of those locks changes, an undo included. A
+locked weight's own slider is held, titled "Locked: unlock it to move this weight", because a
+live one previewed a move the server always refuses.
+
 **An enforced gate's cost line is the live ranking's** (PL-164, PL-156). The design's prototype
 derives it from its own data. Here it lists the candidates whose reasons for not matching, or
 warnings, name the gate in the ranking the server computed, because a citizenship that clears a

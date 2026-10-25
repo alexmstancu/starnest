@@ -25,8 +25,13 @@ import {
   weightReading,
   lockTitle,
   describePillarCount,
+  LOCKED_SLIDER_TITLE,
+  refusedUnder,
+  standingFailure,
+  type Refused,
 } from "../weights";
 import { LockIcon } from "../LockIcon";
+import { LocksInTheWay } from "../LocksInTheWay";
 import { ReadFailureCard } from "../../../shell/ReadFailureCard";
 import type { AttributeCatalogRead } from "../useAttributeCatalog";
 
@@ -84,7 +89,8 @@ export function PillarWeightsPanel({
   const [weights, setWeights] = useState<PillarWeight[]>(
     criteriaSet.pillar_weights ?? [],
   );
-  const [failure, setFailure] = useState<unknown>(null);
+  // Kept with the locks it was answered under, and shown only while they stand (UF-035).
+  const [failure, setFailure] = useState<Refused | null>(null);
   // **One write at a time** (UI-04): every answer is the whole level rebalanced, so two in
   // flight can land in either order and the older answer would be shown over the newer one.
   // The state holds the rows still; the ref refuses what arrives before they have re-rendered.
@@ -130,7 +136,7 @@ export function PillarWeightsPanel({
         // Lost and not yet read back, it may have taken effect: listed, unconfirmed (PL-033).
         if (error instanceof UnconfirmedWrite) {
           note.weight(pillar, weights, null, weight, confirmation(error, (read: Rebalanced) => showAnswer(criteriaSet.id, read.items)));
-        } else setFailure(error);
+        } else setFailure(refusedUnder(error, weightedPillars(weights)));
       } finally {
         inFlight.current = false;
         setSaving(false);
@@ -172,19 +178,20 @@ export function PillarWeightsPanel({
       } catch (error) {
         if (error instanceof UnconfirmedWrite) {
           note.lock(pillar, locked, confirmation(error, (read: Rebalanced) => showAnswer(criteriaSet.id, read.items)));
-        } else setFailure(error);
+        } else setFailure(refusedUnder(error, weightedPillars(weights)));
       } finally {
         inFlight.current = false;
         setSaving(false);
         done?.();
       }
     },
-    [criteriaSet.id, undoing, note, history, showAnswer],
+    [criteriaSet.id, undoing, note, weights, history, showAnswer],
   );
 
   // The weights as a rebalance sees them: what the drag snapshots, and what the total is read
   // from so that it counts the preview the rows are showing rather than the stored figures.
   const items = weightedPillars(weights);
+  const refused = standingFailure(failure, items);
   const total = previewedTotal(items, preview);
   const ceiling = sliderCeiling(weights.length, PILLAR_CEILING_FLOOR);
   const [open, setOpen] = useState<string | null>(null);
@@ -202,7 +209,9 @@ export function PillarWeightsPanel({
       {/* No "try again" button: the way to retry a save is the save button, which is still
           there. A second control that only cleared the message would offer a retry it does not
           perform. */}
-      <ActRefusal act="The weight change" error={failure} />
+      <ActRefusal act="The weight change" error={refused}>
+        <LocksInTheWay error={refused} nameOf={(pillar) => pillarName(names, pillar)} />
+      </ActRefusal>
 
       <div className="stage__summary">
         {/* The design's own line, verbatim. It reads oddly beside a pillar total -- the rule
@@ -317,6 +326,8 @@ function PillarRow({
   // reads a rebalanced 29.17 back as 29): a weight nobody chose. Set by a movement and spent by
   // the release that follows it. A ref, because the four can arrive in one tick.
   const unreleased = useRef(false);
+  // **Held when locked too** (UF-035): a live one previewed a move the server always refuses.
+  const sliderHeld = saving || weight.weight_locked;
 
   // A rebalance moves this row's weight without this row having been dragged -- the server's
   // on the way back, and the preview's while another row's pointer is down -- so the slider
@@ -353,7 +364,7 @@ function PillarRow({
     // A release with no movement before it, or the same release arriving again -- its answer
     // ends the gesture, so this does not -- or one while a write is in flight, which no gesture
     // can have started: the slider takes no movement then.
-    if (!unreleased.current || saving) return;
+    if (!unreleased.current || sliderHeld) return;
     unreleased.current = false;
     setMoving(false);
     // A range input always holds a number, so this never fires -- it is here because
@@ -434,10 +445,11 @@ function PillarRow({
           max={ceiling}
           step={PILLAR_SLIDER.step}
           value={typed}
-          aria-disabled={saving || undefined}
+          aria-disabled={sliderHeld || undefined}
           aria-label={`${pillarName(names, weight.pillar)} weight`}
+          title={weight.weight_locked ? LOCKED_SLIDER_TITLE : undefined}
           onChange={(event) => {
-            if (saving) return;
+            if (sliderHeld) return;
             unreleased.current = true;
             setMoving(true);
             setTyped(event.target.value);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, CLIENT_ERROR_CODES } from "./ApiError";
-import { WORDS, presentError } from "./errorPresentation";
+import { WORDS, locksInTheWay, presentError } from "./errorPresentation";
 
 describe("presentError", () => {
   it("branches on the code, not on the message", () => {
@@ -270,5 +270,76 @@ describe("a number the client would not send", () => {
       message: expect.stringMatching(/not a number/i) as unknown,
       retryable: false,
     });
+  });
+});
+
+/** A weight the locks will not let move: four situations, four sentences (UF-035). */
+describe("a refused weight change", () => {
+  const refused = (details?: Record<string, unknown>) =>
+    new ApiError({ code: "weights_all_locked", message: "SENTINEL_MESSAGE", status: 409, details });
+
+  it.each([
+    ["moved_is_locked", { locked: ["country.rent"] }, /^This weight is locked: unlock it first/],
+    ["only_weight", { locked: [] }, /only weight here, so nothing else can take up a change/],
+    ["others_all_locked", { locked: ["a", "b"] }, /^Every other weight here is locked.*Unlock one of them first/],
+  ])("words %s for what it is", (reason, details, sentence) => {
+    expect(presentError(refused({ reason, ...details })).message).toMatch(sentence);
+  });
+
+  it("says what the locks hold and how far this weight may go, when they leave no room", () => {
+    const presented = presentError(
+      refused({ reason: "locks_leave_no_room", locked: ["a"], held: 72.5, at_most: 27.5 }),
+    );
+
+    expect(presented.message).toBe(
+      "The locked weights hold 72.5% between them, so this one can be at most 27.5%.",
+    );
+  });
+
+  it("does without the figures rather than printing a gap where one is missing", () => {
+    expect(presentError(refused({ reason: "locks_leave_no_room", locked: ["a"] })).message).toBe(
+      "The locked weights leave too little room for that. Unlock one of them, or ask for less.",
+    );
+  });
+
+  it("still says the locks are in the way when the reason is missing or unknown", () => {
+    for (const details of [undefined, { reason: "a_reason_from_a_newer_server" }]) {
+      expect(presentError(refused(details)).message).toMatch(/other weights here are locked/);
+    }
+  });
+});
+
+/** Which locks a refused weight change names: at most three, never the moved weight itself. */
+describe("the locks in the way", () => {
+  const refused = (details: Record<string, unknown>) =>
+    new ApiError({ code: "weights_all_locked", message: "x", status: 409, details });
+
+  it("names every lock when there are three or fewer", () => {
+    expect(locksInTheWay(refused({ reason: "others_all_locked", locked: ["a", "b", "c"] }))).toEqual({
+      named: ["a", "b", "c"],
+      more: 0,
+    });
+  });
+
+  it("names three and counts the rest", () => {
+    expect(
+      locksInTheWay(refused({ reason: "others_all_locked", locked: ["a", "b", "c", "d", "e"] })),
+    ).toEqual({ named: ["a", "b", "c"], more: 2 });
+  });
+
+  it("names nothing when the moved weight is itself the lock", () => {
+    expect(locksInTheWay(refused({ reason: "moved_is_locked", locked: ["a"] }))).toEqual({
+      named: [],
+      more: 0,
+    });
+  });
+
+  it("names nothing for a list it cannot read, or for any other refusal", () => {
+    expect(locksInTheWay(refused({ locked: "a" }))).toEqual({ named: [], more: 0 });
+    expect(locksInTheWay(refused({ locked: [1, "b"] }))).toEqual({ named: ["b"], more: 0 });
+    expect(
+      locksInTheWay(new ApiError({ code: "not_found", message: "x", status: 404, details: { locked: ["a"] } })),
+    ).toEqual({ named: [], more: 0 });
+    expect(locksInTheWay(new Error("x"))).toEqual({ named: [], more: 0 });
   });
 });

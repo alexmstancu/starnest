@@ -403,9 +403,7 @@ describe("changing a weight", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).not.toHaveTextContent("weights_all_locked");
-    expect(alert).toHaveTextContent(
-      /every other weight in this pillar is locked/i,
-    );
+    expect(alert).toHaveTextContent(/every other weight here is locked/i);
 
     // Scoped to the list: every attribute id here is also a row heading in the table above, so
     // an unscoped query matches twice and proves nothing about the refusal.
@@ -643,11 +641,50 @@ describe("locking a criterion's weight", () => {
 
     await saveWeight(COST_OF_LIVING, "40");
 
-    // The client's own wording, not the server's: `errorPresentation` maps this code to a
-    // sentence of its own, which is the one a reader sees.
+    // The client's own wording, not the server's: `errorPresentation` words the refusal from
+    // its reason, which is the sentence a reader sees.
     expect(
-      await screen.findByText(/nothing to rebalance into/i),
+      await screen.findByText(/every other weight here is locked/i),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * **A refusal describes the locks it was answered under, so it goes when they do** (UF-035).
+   * Unlocking from the row clears it on the way out; an undo in Recent changes moves the lock
+   * without passing through the row, which is how the banner used to outlive its cause.
+   */
+  it("clears the refusal once a lock it was about is undone from Recent changes", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    await user.click(await findLockAnywhere(TAX));
+    const panel = await historyPanel();
+    await panel.findByText(/Locked Total effective tax rate/);
+
+    await saveWeight(COST_OF_LIVING, "40");
+    expect(
+      await screen.findByText(/every other weight here is locked/i),
+    ).toBeInTheDocument();
+
+    await user.click(panel.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/every other weight here is locked/i)).toBeNull(),
+    );
+    expect(lockFor(TAX)).toHaveAttribute("aria-pressed", "false");
+  });
+
+  /** One editor serves whichever pillar is open, so its refusal must stay with its own. */
+  it("keeps a pillar's refusal inside that pillar", async () => {
+    renderShell("/configure");
+    await saveWeight(HOMICIDE, "80");
+    expect(
+      await screen.findByText(/every other weight here is locked/i),
+    ).toBeInTheDocument();
+
+    await openThePillarOf(COST_OF_LIVING);
+
+    expect(screen.queryByText(/every other weight here is locked/i)).toBeNull();
   });
 });
 
@@ -660,16 +697,34 @@ describe("locking a criterion's weight", () => {
  * a while, which certified a protocol the server rejects.
  */
 describe("a locked weight holds where it is", () => {
-  it("refuses a weight change on a criterion that is itself locked", async () => {
+  /**
+   * **Held, so the move is never made to be refused** (UF-035). A live slider previewed the move,
+   * sent it, and then listed the weight itself as the lock in its own way.
+   */
+  it("holds a locked criterion's slider, and sends nothing when it is moved", async () => {
+    const user = userEvent.setup();
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.patch(
+        "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+        async ({ request }) => {
+          sent.push(await request.clone().json());
+        },
+      ),
+    );
     renderShell("/configure");
     await settled();
-    await weightSlider(OUTLOOK);
+    const slider = await weightSlider(OUTLOOK);
+    expect(slider).toHaveAttribute("aria-disabled", "true");
+    expect(slider).toHaveAttribute("title", expect.stringMatching(/unlock it to move/i));
 
     await saveWeight(OUTLOOK, "25");
+    // Proved by the next write: had the move gone, it would be listed before the unlock.
+    await user.click(await findLockAnywhere(OUTLOOK));
 
-    expect(
-      await screen.findByText(/nothing to rebalance into/i),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(sent).toEqual([{ weight_locked: false }]));
+    expect(shownWeight(OUTLOOK)).toBe("20");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("unlocks without touching the weight, so the weight can then move", async () => {
@@ -914,7 +969,7 @@ describe("what this session changed", () => {
     await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
 
     expect(await panel.findByRole("alert")).toHaveTextContent(
-      /nothing to rebalance into/i,
+      /this change cannot be made/i,
     );
     // A half-finished undo is a real state, so what was not undone stays listed.
     expect(
@@ -1068,7 +1123,7 @@ describe("what this session changed in the pillar weights", () => {
     await userEvent.click(panel.getByRole("button", { name: "Undo this" }));
 
     expect(await panel.findByRole("alert")).toHaveTextContent(
-      /nothing to rebalance into/i,
+      /this change cannot be made/i,
     );
     expect(panel.getByText(ECONOMY_MOVED)).toBeInTheDocument();
   });
@@ -1260,7 +1315,7 @@ describe("while a change is being saved", () => {
         screen.getByRole("slider", { name: `Weight for ${COST_OF_LIVING}` }),
       ),
     );
-    expect(screen.queryByText(/nothing to rebalance into/i)).toBeNull();
+    expect(screen.queryByText(/this change cannot be made/i)).toBeNull();
   });
 
   it("holds every other criterion still while one is being saved", async () => {
@@ -1604,7 +1659,7 @@ describe("while a change is being saved", () => {
       await user.keyboard("{Enter}");
 
       expect(await panel.findByRole("alert")).toHaveTextContent(
-        /nothing to rebalance into/i,
+        /this change cannot be made/i,
       );
       await waitFor(() => expectNotHeld(undo));
       expect(undo).toHaveFocus();
@@ -1654,7 +1709,7 @@ describe("while a change is being saved", () => {
       await pressArrowRight(user);
 
       expect(
-        await screen.findByText(/nothing to rebalance into/i),
+        await screen.findByText(/this change cannot be made/i),
       ).toBeInTheDocument();
       await waitFor(() => expectNotHeld(slider));
       expect(slider).toHaveFocus();
