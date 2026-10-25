@@ -2063,6 +2063,28 @@ describe("a rule's write the session holds (PL-033 round 10)", () => {
     );
   });
 
+  /**
+   * A deletion's successor is where a keyboard that pressed Delete goes; a Delete pressed while
+   * focus was elsewhere has no claim on it, however late its list arrives (PL-033 round 10).
+   */
+  it("leaves focus to others when a set was deleted while focus was elsewhere", async () => {
+    renderShell("/configure");
+    await settledScreen();
+    const heading = screen.getByRole("button", { name: /^recent changes/i });
+    heading.focus();
+    const list = holdRequests("get", "/v1/criteria-sets");
+
+    fireEvent.click((await row("Remote only")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(list.sent).toHaveLength(1));
+    // Focus is lost meanwhile for a reason of its own -- a button some other answer took away.
+    act(() => heading.blur());
+    list.release();
+
+    await waitFor(() => expect(screen.queryByRole("listitem", { name: "Remote only" })).toBeNull());
+    const onlyDelete = (await row("Default")).getByRole("button", { name: "Delete" });
+    expect(onlyDelete).not.toHaveFocus();
+  });
+
   it("keeps following a focused Check again through another change and the window losing focus", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     onTestFinished(() => {

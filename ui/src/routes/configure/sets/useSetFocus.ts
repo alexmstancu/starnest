@@ -16,7 +16,8 @@ type Verb = "rename" | "delete";
  * row's Rename after a rename closes; after a deletion, the same slot on the row that takes the
  * deleted one's place, else the row above, else the new-set field. A deletion's row leaves only
  * once the refreshed list arrives, so that is what this waits for. Focus that a reader moved
- * meanwhile is left where they put it (`refocusIfLost`).
+ * meanwhile is left where they put it (`refocusIfLost`), and a Delete pressed without focus on
+ * it claims none.
  */
 export function useSetFocus(
   criteriaSets: readonly CriteriaSetSummary[],
@@ -97,11 +98,19 @@ export function useSetFocus(
     newName,
     buttonId,
     renameClosed: (criteriaSetId: string) => expect({ to: "rename", criteriaSetId }),
-    deleted: (criteriaSetId: string) =>
+    deleted: (criteriaSetId: string) => {
+      // **Only a keyboard on the Delete it pressed has a successor to go to** (PL-033): a Delete
+      // pressed with focus elsewhere has no claim on where focus goes, and its list can arrive
+      // just as another answer has placed focus -- a confirmation on its Undo -- which a stale
+      // successor would take away.
+      if (document.activeElement !== document.getElementById(buttonId(criteriaSetId, "delete"))) {
+        return;
+      }
       expect({
         to: "successor",
         gone: criteriaSetId,
         index: criteriaSets.findIndex((set) => set.id === criteriaSetId),
-      }),
+      });
+    },
   };
 }
