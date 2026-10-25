@@ -390,7 +390,6 @@ describe("typed text becomes a number in one place", () => {
   const LEDGER: Record<string, string> = {
     "routes/configure/weights.ts": "permanent: a range slider's value is always a number in range",
     "routes/run/acquisitionDiff.ts": "permanent: a select's value, never typed",
-    "routes/run/manualEntry.ts": "C06 (PL-085) moves hand entry onto readNumber",
   };
 
   it("happens nowhere else in a screen, unless the ledger says why", () => {

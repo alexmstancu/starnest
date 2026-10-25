@@ -15,13 +15,18 @@
  */
 
 import type { ManualValueInput } from "../../api/endpoints";
+import { readNumber, type NumberRule } from "../../format/typedNumber";
 
 export type ManualKind = "LabelSet" | "AssignedScore";
 
 /** Every field as the string that was typed, so a half-finished entry is exactly what is there. */
 export interface ManualDraft {
   candidate: string;
-  /** Comma-separated as typed; split on submit. `LabelSet` only. */
+  /**
+   * One label per line, as typed (D22). **Not comma-separated**: a label may hold a comma --
+   * "Booking Holdings, Inc." -- and the employers path stores such names, so a comma that split
+   * would make a stored label impossible to type. `LabelSet` only.
+   */
   labels: string;
   /** `AssignedScore` only. */
   value: string;
@@ -53,9 +58,22 @@ export const NOTHING_TYPED: ManualDraft = {
   citation: "",
 };
 
+export type ManualField = keyof ManualDraft;
+
+/** Why there is nothing to send yet, and the fields the reason is about, so each is marked. */
+export interface Problem {
+  readonly fields: readonly ManualField[];
+  readonly message: string;
+}
+
 export type Built =
   | { readonly body: ManualValueInput; readonly problems: readonly [] }
-  | { readonly body: null; readonly problems: readonly string[] };
+  | { readonly body: null; readonly problems: readonly Problem[] };
+
+/** The first problem a field is named in, or null. */
+export function problemFor(problems: readonly Problem[], field: ManualField): string | null {
+  return problems.find((problem) => problem.fields.includes(field))?.message ?? null;
+}
 
 /**
  * The request, or the reasons there is not one yet.
@@ -71,23 +89,25 @@ export function buildManualValue(
   draft: ManualDraft,
   retrievalDate: string,
 ): Built {
-  const problems: string[] = [];
+  const problems: Problem[] = [];
+  const refuse = (message: string, ...fields: ManualField[]) => problems.push({ fields, message });
 
-  if (draft.candidate.trim() === "") problems.push("Choose the candidate this figure is about.");
+  if (draft.candidate.trim() === "") refuse("Choose the candidate this figure is about.", "candidate");
 
   // **Both dates, never one.** The reference period is what the figure describes and the
   // retrieval date is when we learned it; merging them is the invariant this application is
   // built to keep (`reqs.md` 3.6), and a period nobody stated cannot be guessed from the other.
   if (draft.periodStart === "" || draft.periodEnd === "") {
-    problems.push("Say what period this figure describes — both dates.");
+    const missing = (["periodStart", "periodEnd"] as const).filter((field) => draft[field] === "");
+    refuse("Say what period this figure describes — both dates.", ...missing);
   } else if (draft.periodStart > draft.periodEnd) {
-    problems.push("The period ends before it starts.");
+    refuse("The period ends before it starts.", "periodStart", "periodEnd");
   }
 
   const payload =
     kind === "LabelSet"
-      ? labelSetPayload(draft, problems)
-      : assignedScorePayload(draft, problems);
+      ? labelSetPayload(draft, refuse)
+      : assignedScorePayload(draft, refuse);
 
   if (problems.length > 0 || payload === null) {
     return { body: null, problems };
@@ -108,22 +128,25 @@ export function buildManualValue(
   };
 }
 
-function labelSetPayload(
-  draft: ManualDraft,
-  problems: string[],
-): { labels: string[] } | null {
+type Refuse = (message: string, ...fields: ManualField[]) => void;
+
+function labelSetPayload(draft: ManualDraft, refuse: Refuse): { labels: string[] } | null {
   const labels = splitLabels(draft.labels);
   if (labels.length === 0) {
-    problems.push("Name at least one — separate several with commas.");
+    refuse("Name at least one — one per line.", "labels");
     return null;
   }
   return { labels };
 }
 
-/** Trimmed, blanks dropped, duplicates dropped, order kept as typed. */
+/**
+ * One label per line (D22): trimmed, blanks dropped, duplicates dropped, order kept as typed. A
+ * comma stays part of the name, so a pasted comma list is one label -- which the preview shows
+ * before anything is stored.
+ */
 export function splitLabels(typed: string): string[] {
   const seen = new Set<string>();
-  for (const label of typed.split(",")) {
+  for (const label of typed.split(/\r?\n/)) {
     const trimmed = label.trim();
     if (trimmed !== "") seen.add(trimmed);
   }
@@ -132,7 +155,7 @@ export function splitLabels(typed: string): string[] {
 
 function assignedScorePayload(
   draft: ManualDraft,
-  problems: string[],
+  refuse: Refuse,
 ): {
   value: number;
   range_min: number;
@@ -144,13 +167,16 @@ function assignedScorePayload(
   const min = numberFrom(draft.rangeMin);
   const max = numberFrom(draft.rangeMax);
 
-  if (value === null) problems.push("The score must be a number.");
+  if (value === null) refuse("The score must be a number.", "value");
   if (min === null || max === null) {
-    problems.push("Give the scale the score sits on — its lowest and highest points.");
+    const missing = (["rangeMin", "rangeMax"] as const).filter(
+      (field) => numberFrom(draft[field]) === null,
+    );
+    refuse("Give the scale the score sits on — its lowest and highest points.", ...missing);
   } else if (min >= max) {
-    problems.push("The scale's lowest point must be below its highest.");
+    refuse("The scale's lowest point must be below its highest.", "rangeMin", "rangeMax");
   } else if (value !== null && (value < min || value > max)) {
-    problems.push(`The score must sit between ${String(min)} and ${String(max)}.`);
+    refuse(`The score must sit between ${String(min)} and ${String(max)}.`, "value");
   }
 
   if (value === null || min === null || max === null) return null;
@@ -166,8 +192,14 @@ function assignedScorePayload(
   };
 }
 
+/**
+ * Any figure, negative included: World Bank governance sits on -2.5 to 2.5. **Read by the one
+ * grammar every number box uses** (PL-024), so "7,5" and "1e3" are refused here as they are
+ * everywhere, rather than read as something nobody typed.
+ */
+export const SCORE_RULE: NumberRule = { kind: "decimal", signed: true, optional: false };
+
 function numberFrom(typed: string): number | null {
-  if (typed.trim() === "") return null;
-  const parsed = Number(typed);
-  return Number.isFinite(parsed) ? parsed : null;
+  const reading = readNumber(typed, SCORE_RULE);
+  return reading.kind === "number" ? reading.value : null;
 }

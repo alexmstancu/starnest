@@ -1,8 +1,8 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockServer } from "../../mocks/server";
 import { AppConfigProvider } from "../../config/AppConfigContext";
 import { TEST_CONFIG } from "../../testing/renderShell";
@@ -11,6 +11,7 @@ import {
   expectNotHeld,
   followChromiumFocusFixup,
 } from "../../testing/keyboard";
+import { formatDateTime } from "../../format/display";
 import { ManualEntryPanel } from "./ManualEntryPanel";
 
 /**
@@ -37,6 +38,13 @@ function renderEntry() {
       </MemoryRouter>
     </AppConfigProvider>,
   );
+}
+
+/** The read-back, once it says something: the region is there, empty, before it speaks. */
+async function readBack(text: RegExp | string): Promise<HTMLElement> {
+  const status = screen.getByRole("status");
+  await waitFor(() => expect(status).toHaveTextContent(text));
+  return status;
 }
 
 function field(name: string): HTMLInputElement {
@@ -89,15 +97,16 @@ describe("storing a figure typed by hand", () => {
 
     await user.click(screen.getByRole("button", { name: "Store this figure" }));
     await waitFor(() => expect(writes.sent).toHaveLength(1));
-    await user.type(field("Values"), ", Bosch");
+    await user.type(field("Values"), "{Enter}Bosch");
 
     writes.release();
 
     // Still said, because it names what was stored rather than what is on screen.
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      /Stored .*Siemens.* for Portugal/,
-    );
-    expect(field("Values")).toHaveValue("Siemens, Bosch");
+    await readBack(/Stored Siemens for Portugal/);
+    expect(field("Values")).toHaveValue("Siemens\nBosch");
+    expect(
+      within(screen.getByRole("group", { name: "Will store" })).getAllByRole("listitem"),
+    ).toHaveLength(2);
     expect(screen.getByLabelText("Describes, from")).toHaveValue("2025-01-01");
   });
 
@@ -108,7 +117,7 @@ describe("storing a figure typed by hand", () => {
 
     await user.click(screen.getByRole("button", { name: "Store this figure" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/for Portugal/);
+    await readBack(/for Portugal/);
     expect(field("Values")).toHaveValue("");
   });
 
@@ -123,12 +132,7 @@ describe("storing a figure typed by hand", () => {
 
     await user.click(screen.getByRole("button", { name: "Store this figure" }));
 
-    const stored = await screen.findByRole("status");
-    await waitFor(() =>
-      expect(stored).toHaveTextContent(
-        "Stored Siemens for Portugal, under Manual entry.",
-      ),
-    );
+    const stored = await readBack("Stored Siemens for Portugal, under Manual entry.");
     expect(stored).not.toHaveTextContent(/\bmanual\b/);
   });
 
@@ -200,7 +204,7 @@ describe("storing a figure from the keyboard", () => {
 
     writes.release();
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/for Portugal/);
+    await readBack(/for Portugal/);
     await waitFor(() => expectNotHeld(store));
     expect(store).toHaveTextContent("Store this figure");
     expect(store).toHaveFocus();
@@ -297,5 +301,126 @@ describe("the hand-entry form when the candidates are not there", () => {
       await screen.findByRole("option", { name: "Portugal" }),
     ).toBeInTheDocument();
     expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+});
+
+/**
+ * PL-085 (UF-089, NEW-55-S2). **The form as the design's round 4 draws it**: two bands, the
+ * retrieval date shown before it is sent, labels previewed as the chips that will be stored,
+ * every problem marking its field, and a read-back a screen reader hears.
+ */
+describe("the hand-entry form as designed", () => {
+  afterEach(() => vi.useRealTimers());
+
+  function renderScore() {
+    return render(
+      <AppConfigProvider config={TEST_CONFIG}>
+        <MemoryRouter>
+          <ManualEntryPanel
+            attribute="country.residency_admin_ease"
+            attributeName="Residency admin ease"
+            kind="AssignedScore"
+            level="country"
+          />
+        </MemoryRouter>
+      </AppConfigProvider>,
+    );
+  }
+
+  it("announces a stored figure from a status line that was already there", async () => {
+    const user = userEvent.setup();
+    renderEntry();
+
+    const status = screen.getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    await fillAFigure();
+    await user.click(screen.getByRole("button", { name: "Store this figure" }));
+
+    await waitFor(() => expect(status).toHaveTextContent(/Stored Siemens for Portugal/));
+    expect(screen.getByRole("status")).toBe(status);
+  });
+
+  it("marks each field its problem is about", async () => {
+    const user = userEvent.setup();
+    renderScore();
+    await screen.findByRole("option", { name: "Portugal" });
+
+    await user.click(screen.getByRole("button", { name: "Store this figure" }));
+
+    for (const name of ["Candidate", "Score", "Scale, lowest", "Scale, highest", "Describes, from", "Describes, to"]) {
+      const control = screen.getByLabelText(name);
+      expect(control, name).toHaveAttribute("aria-invalid", "true");
+      expect(control, name).toHaveAccessibleDescription(expect.stringMatching(/\S/) as unknown);
+    }
+    expect(screen.getByLabelText("Candidate")).toHaveAccessibleDescription(
+      "Choose the candidate this figure is about.",
+    );
+    expect(screen.getByLabelText("Where this came from")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("groups the figure and where it came from", () => {
+    renderEntry();
+
+    expect(screen.getByRole("group", { name: "The figure" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Where it came from" })).toBeInTheDocument();
+  });
+
+  it("shows the retrieval date it will stamp", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-25T09:15:00.000Z") });
+    const user = userEvent.setup();
+    const writes = holdManualWrites();
+    renderEntry();
+
+    const retrieved = screen.getByRole("textbox", { name: "Retrieved" });
+    expect(retrieved).toHaveAttribute("readonly");
+    expect(retrieved).toHaveValue(formatDateTime("2026-10-25T09:15:00.000Z"));
+
+    await fillAFigure();
+    await user.click(screen.getByRole("button", { name: "Store this figure" }));
+
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+    expect(writes.sent[0]).toMatchObject({ retrieval_date: "2026-10-25T09:15:00.000Z" });
+    writes.release();
+  });
+
+  it("previews the labels exactly as they will be stored", async () => {
+    const user = userEvent.setup();
+    const writes = holdManualWrites();
+    renderEntry();
+    await fillAFigure();
+    await user.clear(field("Values"));
+    fireEvent.change(field("Values"), {
+      target: { value: "SAP\nSiemens\nSAP\n\nBooking Holdings, Inc." },
+    });
+
+    const preview = within(screen.getByRole("group", { name: "Will store" }));
+    expect(preview.getAllByRole("listitem").map((chip) => chip.textContent)).toEqual([
+      "SAP",
+      "Siemens",
+      "Booking Holdings, Inc.",
+    ]);
+
+    await user.click(screen.getByRole("button", { name: "Store this figure" }));
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+    expect(writes.sent[0]).toMatchObject({
+      payload: { labels: ["SAP", "Siemens", "Booking Holdings, Inc."] },
+    });
+    writes.release();
+  });
+
+  it("names its confidence levels in capitals, starting at Medium", () => {
+    renderEntry();
+
+    const confidence = screen.getByRole("combobox", { name: "Confidence" });
+    expect(confidence).toHaveDisplayValue("Medium");
+    expect(
+      within(confidence).getAllByRole("option").map((option) => option.textContent),
+    ).toEqual(["Absolute", "High", "Medium", "Low"]);
+  });
+
+  it("moves focus to the candidate it asks first when it opens", async () => {
+    renderEntry();
+
+    expect(await screen.findByRole("combobox", { name: "Candidate" })).toHaveFocus();
   });
 });

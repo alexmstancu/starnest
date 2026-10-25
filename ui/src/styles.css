@@ -4991,3 +4991,66 @@ select.field__control {
   font-size: 11px;
   font-weight: var(--weight-normal);
 }
+
+/* The hand-entry form as round 4 draws it (PL-085): two bands, the open row tinted, the labels
+   previewed as the chips they will be stored as, and a status line that is always there. */
+.hand-entry__row--open > th,
+.hand-entry__row--open > td {
+  background: var(--colour-accent-surface);
+}
+
+.hand-entry__row--open .button--quiet {
+  color: var(--colour-accent);
+}
+
+.manual-entry__band {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.manual-entry__band-label {
+  padding: 0;
+  margin-bottom: 10px;
+  color: var(--colour-text-muted);
+  font-size: 11px;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.manual-entry__labels {
+  grid-column: span 2;
+}
+
+.manual-entry__preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.manual-entry__preview-label {
+  color: var(--colour-text-muted);
+  font-size: 11px;
+}
+
+.manual-entry__chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  vertical-align: middle;
+}
+
+.manual-entry__status {
+  margin: 0;
+}
+
+.manual-entry__actions {
+  display: flex;
+  gap: 8px;
+}

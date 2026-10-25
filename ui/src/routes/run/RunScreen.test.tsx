@@ -4121,13 +4121,29 @@ describe("a figure typed by hand", () => {
 
   it("stores a label set and reads back what it wrote", async () => {
     // **What it stored, not "done".** A typo is invisible in a success message.
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.post(`${BASE}/values/manual`, async ({ request }) => {
+        // Recorded, then left to the mock's own handler to store.
+        sent.push(await request.clone().json());
+      }),
+    );
     const form = await theForm(/international employers/i);
 
     await userEvent.selectOptions(
       form.getByRole("combobox", { name: "Candidate" }),
       "country.portugal",
     );
-    await userEvent.type(form.getByRole("textbox", { name: "Values" }), "Farfetch, OutSystems");
+    // One per line (D22): a comma stays part of the name.
+    await userEvent.type(
+      form.getByRole("textbox", { name: "Values" }),
+      "Farfetch{Enter}OutSystems, S.A.",
+    );
+    expect(
+      within(form.getByRole("group", { name: "Will store" }))
+        .getAllByRole("listitem")
+        .map((chip) => chip.textContent),
+    ).toEqual(["Farfetch", "OutSystems, S.A."]);
     fireEvent.change(form.getByLabelText("Describes, from"), {
       target: { value: "2026-01-01" },
     });
@@ -4139,13 +4155,35 @@ describe("a figure typed by hand", () => {
     // **"for Portugal", not "for country.portugal".** This panel already fetched every
     // candidate to fill the select above, so the name was one lookup away in data it held.
     // And "under Manual entry", the catalog's name for the source, never its id (RB-4).
-    const stored = await form.findByRole("status");
+    const stored = form.getByRole("status");
     await waitFor(() =>
       expect(stored).toHaveTextContent(
-        /Farfetch, OutSystems for Portugal, under Manual entry\./,
+        /Farfetch OutSystems, S\.A\. for Portugal, under Manual entry\./,
       ),
     );
+    expect(
+      within(stored).getAllByRole("listitem").map((chip) => chip.textContent),
+    ).toEqual(["Farfetch", "OutSystems, S.A."]);
     expect(stored).not.toHaveTextContent(/\bmanual\b/);
+    expect(sent).toEqual([
+      expect.objectContaining({ payload: { labels: ["Farfetch", "OutSystems, S.A."] } }),
+    ]);
+  });
+
+  /** PL-085, N8. Close sits beside Store, and gives focus back to the row that opened it. */
+  it("closing returns focus to the row that opened it", async () => {
+    const form = await theForm(/residency admin ease/i);
+    expect(await form.findByRole("combobox", { name: "Candidate" })).toHaveFocus();
+
+    await userEvent.click(form.getByRole("button", { name: "Close" }));
+
+    expect(screen.queryByRole("region", { name: /enter a value for/i })).toBeNull();
+    const row = within(
+      screen.getByRole("region", { name: /figures you can enter by hand/i }),
+    )
+      .getAllByRole("row")
+      .find((each) => within(each).queryByRole("rowheader", { name: /residency admin ease/i }))!;
+    expect(within(row).getByRole("button", { name: /enter a value by hand/i })).toHaveFocus();
   });
 
   it("stores the score as a human's, never the model's", async () => {

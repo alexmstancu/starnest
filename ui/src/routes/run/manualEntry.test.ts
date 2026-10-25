@@ -2,12 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   buildManualValue,
   NOTHING_TYPED,
+  problemFor,
   splitLabels,
+  type Built,
   type ManualDraft,
 } from "./manualEntry";
 
 const NOW = "2026-09-30T10:00:00.000Z";
 const A_PERIOD = { periodStart: "2026-01-01", periodEnd: "2026-12-31" };
+
+/** What the form would say, in order. */
+function said(built: Built): string[] {
+  return built.problems.map((problem) => problem.message);
+}
 
 function typed(overrides: Partial<ManualDraft> = {}): ManualDraft {
   return { ...NOTHING_TYPED, candidate: "country.portugal", ...A_PERIOD, ...overrides };
@@ -18,7 +25,7 @@ describe("a label set typed by hand", () => {
     const built = buildManualValue(
       "country.international_employers",
       "LabelSet",
-      typed({ labels: "Farfetch, OutSystems", quote: "Careers pages, Sept 2026" }),
+      typed({ labels: "Farfetch\nOutSystems", quote: "Careers pages, Sept 2026" }),
       NOW,
     );
 
@@ -36,15 +43,28 @@ describe("a label set typed by hand", () => {
   });
 
   it("refuses an empty list rather than storing a figure that says nothing", () => {
-    const built = buildManualValue("a", "LabelSet", typed({ labels: "  ,  " }), NOW);
+    const built = buildManualValue("a", "LabelSet", typed({ labels: "  \n \n" }), NOW);
 
     expect(built.body).toBeNull();
-    expect(built.problems).toContain("Name at least one — separate several with commas.");
+    expect(said(built)).toContain("Name at least one — one per line.");
+    expect(problemFor(built.problems, "labels")).toBe("Name at least one — one per line.");
   });
 
   it("keeps the order typed, drops blanks and drops repeats", () => {
     // Order is the reader's, not ours: they typed the important one first.
-    expect(splitLabels(" Spain , , Spain, Portugal ")).toEqual(["Spain", "Portugal"]);
+    expect(splitLabels(" Spain \n\n Spain\r\nPortugal ")).toEqual(["Spain", "Portugal"]);
+  });
+
+  /**
+   * D22, PL-090 (NEW-59). **A comma stays part of the name**: the employers path stores
+   * "Booking Holdings, Inc.", and a comma that split could never type it back.
+   */
+  it("keeps a label holding a comma as one label", () => {
+    expect(splitLabels("SAP\nSiemens\nSAP\n\nBooking Holdings, Inc.")).toEqual([
+      "SAP",
+      "Siemens",
+      "Booking Holdings, Inc.",
+    ]);
   });
 });
 
@@ -84,7 +104,7 @@ describe("a score somebody assigned", () => {
     // anything, so an unstated one is a missing fact rather than a default.
     const built = buildManualValue("a", "AssignedScore", typed({ value: "7" }), NOW);
 
-    expect(built.problems).toContain(
+    expect(said(built)).toContain(
       "Give the scale the score sits on — its lowest and highest points.",
     );
   });
@@ -97,7 +117,7 @@ describe("a score somebody assigned", () => {
       NOW,
     );
 
-    expect(built.problems).toContain("The score must sit between 0 and 10.");
+    expect(said(built)).toContain("The score must sit between 0 and 10.");
   });
 
   it("refuses a scale that runs backwards or has no width", () => {
@@ -114,10 +134,10 @@ describe("a score somebody assigned", () => {
       NOW,
     );
 
-    expect(backwards.problems).toContain(
+    expect(said(backwards)).toContain(
       "The scale's lowest point must be below its highest.",
     );
-    expect(flat.problems).toContain("The scale's lowest point must be below its highest.");
+    expect(said(flat)).toContain("The scale's lowest point must be below its highest.");
   });
 
   it("refuses text where a number belongs", () => {
@@ -128,7 +148,7 @@ describe("a score somebody assigned", () => {
       NOW,
     );
 
-    expect(built.problems).toContain("The score must be a number.");
+    expect(said(built)).toContain("The score must be a number.");
   });
 
   it("accepts a negative score on a scale that has one", () => {
@@ -154,7 +174,7 @@ describe("what every hand-typed figure must carry", () => {
       NOW,
     );
 
-    expect(built.problems).toContain("Choose the candidate this figure is about.");
+    expect(said(built)).toContain("Choose the candidate this figure is about.");
   });
 
   it("asks what period it describes, and will not guess it from the clock", () => {
@@ -167,7 +187,7 @@ describe("what every hand-typed figure must carry", () => {
       NOW,
     );
 
-    expect(built.problems).toContain(
+    expect(said(built)).toContain(
       "Say what period this figure describes — both dates.",
     );
   });
@@ -180,7 +200,7 @@ describe("what every hand-typed figure must carry", () => {
       NOW,
     );
 
-    expect(built.problems).toContain("The period ends before it starts.");
+    expect(said(built)).toContain("The period ends before it starts.");
   });
 
   it("stamps the retrieval date it was given rather than reading a clock", () => {
@@ -218,5 +238,34 @@ describe("what every hand-typed figure must carry", () => {
     );
 
     expect(built.problems.length).toBeGreaterThan(2);
+  });
+
+  /** PL-085. Every problem names the fields it is about, so each can be marked. */
+  it("names the fields each problem is about", () => {
+    const built = buildManualValue("a", "AssignedScore", NOTHING_TYPED, NOW);
+
+    for (const field of [
+      "candidate",
+      "value",
+      "rangeMin",
+      "rangeMax",
+      "periodStart",
+      "periodEnd",
+    ] as const) {
+      expect(problemFor(built.problems, field), field).not.toBeNull();
+    }
+    expect(problemFor(built.problems, "quote")).toBeNull();
+  });
+
+  it("marks only the date left blank", () => {
+    const built = buildManualValue(
+      "a",
+      "LabelSet",
+      typed({ labels: "Spain", periodEnd: "" }),
+      NOW,
+    );
+
+    expect(problemFor(built.problems, "periodEnd")).not.toBeNull();
+    expect(problemFor(built.problems, "periodStart")).toBeNull();
   });
 });

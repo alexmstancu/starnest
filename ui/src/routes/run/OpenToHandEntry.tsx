@@ -154,9 +154,12 @@ function Row({
   open: boolean;
   onToggle: () => void;
 }) {
+  const toggle = useRef<HTMLButtonElement>(null);
+  // The open row and its form read as one, tinted as the design's open row is.
+  const tint = open ? "hand-entry__row hand-entry__row--open" : "hand-entry__row";
   return (
     <>
-      <tr>
+      <tr className={tint}>
         <th scope="row">
           {attribute.name}
           <span className="hand-entry__type">{attribute.type}</span>
@@ -169,6 +172,7 @@ function Row({
             attribute.noForm
           ) : (
             <button
+              ref={toggle}
               type="button"
               className="button button--quiet"
               aria-expanded={open}
@@ -180,13 +184,18 @@ function Row({
         </td>
       </tr>
       {open && attribute.kind !== null && (
-        <tr>
+        <tr className={tint}>
           <td colSpan={4}>
             <ManualEntryPanel
               attribute={attribute.id}
               attributeName={attribute.name}
               kind={attribute.kind}
               level={level}
+              onClose={() => {
+                onToggle();
+                // Back to the control that opened it, which stays: never to the page.
+                toggle.current?.focus();
+              }}
             />
           </td>
         </tr>

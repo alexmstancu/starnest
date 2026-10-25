@@ -19,13 +19,20 @@ import {
   NOTHING_TYPED,
   type ManualDraft,
   type ManualKind,
+  type Problem,
 } from "./manualEntry";
 
 export interface ManualEntryState {
   draft: ManualDraft;
   change: (field: keyof ManualDraft, value: string) => void;
   /** Why there is nothing to send yet. Empty until a submit has been attempted. */
-  problems: readonly string[];
+  problems: readonly Problem[];
+  /**
+   * The retrieval date the next figure will carry, shown before it is sent. **Stamped once,
+   * when the form opens and again after each store**, so what is shown is what is sent -- a
+   * stamp taken at submit could differ from the one on screen across midnight.
+   */
+  retrievedAt: string;
   saving: boolean;
   /** The value the server stored, so the panel can say what it wrote rather than "done". */
   saved: StoredValue | null;
@@ -39,7 +46,8 @@ export function useManualEntry(
   kind: ManualKind,
 ): ManualEntryState {
   const [draft, setDraft] = useState<ManualDraft>(NOTHING_TYPED);
-  const [problems, setProblems] = useState<readonly string[]>([]);
+  const [problems, setProblems] = useState<readonly Problem[]>([]);
+  const [retrievedAt, setRetrievedAt] = useState(() => new Date().toISOString());
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<StoredValue | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
@@ -61,9 +69,9 @@ export function useManualEntry(
 
   const submit = useCallback(() => {
     if (inFlight.current) return;
-    // The retrieval date is *now* for a hand-typed figure: it is when this application learned
-    // the value. What period the figure describes is a different question, and the form asks it.
-    const built = buildManualValue(attribute, kind, draft, new Date().toISOString());
+    // The retrieval date is when this application learned the value, which for typing is the
+    // moment of typing. What period the figure describes is a different question.
+    const built = buildManualValue(attribute, kind, draft, retrievedAt);
     setProblems(built.problems);
     if (built.body === null) return;
 
@@ -75,6 +83,7 @@ export function useManualEntry(
       .then((stored) => {
         // Said even over newer typing: it names the figure stored, not what is on screen.
         setSaved(stored);
+        setRetrievedAt(new Date().toISOString());
         if (revision.current === sentAt) {
           setDraft(NOTHING_TYPED);
           setProblems([]);
@@ -86,7 +95,7 @@ export function useManualEntry(
         inFlight.current = false;
         setSaving(false);
       });
-  }, [attribute, kind, draft]);
+  }, [attribute, kind, draft, retrievedAt]);
 
-  return { draft, change, problems, saving, saved, failure, submit };
+  return { draft, change, problems, retrievedAt, saving, saved, failure, submit };
 }
