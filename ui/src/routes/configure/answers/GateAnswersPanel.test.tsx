@@ -187,8 +187,8 @@ describe("where the form lives", () => {
     await userEvent.type(theForm().getByLabelText("Reason"), "Half typed");
 
     const sets = screen.getByRole("combobox", { name: /active criteria set/i });
-    await userEvent.selectOptions(sets, "remote-only");
-    await waitFor(() => expect(sets).toHaveValue("remote-only"));
+    await userEvent.selectOptions(sets, "remote_only");
+    await waitFor(() => expect(sets).toHaveValue("remote_only"));
     await waitFor(() => expect(screen.queryByText("Loading…")).not.toBeInTheDocument());
     await screen.findByRole("heading", { name: "Gates" });
 
