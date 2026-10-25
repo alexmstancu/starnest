@@ -7,6 +7,7 @@ import {
   deleteCriteriaSet,
   duplicateCriteriaSet,
   fetchCriteriaSet,
+  fetchMatchRuleResults,
   fetchDataSources,
   fetchHoldings,
   fetchCriteriaSets,
@@ -14,6 +15,7 @@ import {
   fetchRun,
   planRetry,
   planRun,
+  putMatchRuleResult,
   renameCriteriaSet,
   replaceHousehold,
   replaceSettings,
@@ -28,6 +30,7 @@ import {
   updateDataSource,
   type CriterionRule,
   type ManualValueInput,
+  type MatchRuleResultInput,
 } from "../api/endpoints";
 import {
   HOUSEHOLD,
@@ -1021,5 +1024,98 @@ describe("the mock's retry of exact pairs", () => {
         }),
       ),
     ).toEqual(["nothing_to_fetch", { reason: "no_source_switched_on" }]);
+  });
+});
+
+describe("the mock's gate answer", () => {
+  const AN_ANSWER: MatchRuleResultInput = { match_result: "not_matching", data_source: "manual" };
+
+  async function refusalOf(
+    gate: string,
+    candidate: string,
+    answer: MatchRuleResultInput,
+  ): Promise<ApiError> {
+    return (await putMatchRuleResult(gate, candidate, answer).catch(
+      (thrown: unknown) => thrown,
+    )) as ApiError;
+  }
+
+  it("refuses a malformed body before it looks for the gate", async () => {
+    const error = await refusalOf("no_such_gate", "country.portugal", {
+      ...AN_ANSWER,
+      override_reason: "",
+    });
+
+    expect([error.status, error.code]).toEqual([422, "invalid_request"]);
+  });
+
+  it("refuses an unknown gate, then an unknown candidate, with 404", async () => {
+    const gate = await refusalOf("no_such_gate", "country.atlantis", AN_ANSWER);
+    const candidate = await refusalOf("country.uk_skilled_worker", "country.atlantis", AN_ANSWER);
+
+    expect([gate.status, gate.code, candidate.status, candidate.code]).toEqual([
+      404,
+      "not_found",
+      404,
+      "not_found",
+    ]);
+  });
+
+  it("refuses a candidate at another level than its gate, the pair in its details", async () => {
+    const error = await refusalOf("country.uk_skilled_worker", "city.lisbon", {
+      ...AN_ANSWER,
+      data_source: "a_blog",
+    });
+
+    expect([error.status, error.code, error.details]).toEqual([
+      422,
+      "invalid_match_rule_result",
+      { match_rule: "country.uk_skilled_worker", candidate: "city.lisbon" },
+    ]);
+  });
+
+  it("refuses an unknown source before a period that ends first", async () => {
+    const error = await refusalOf("country.uk_skilled_worker", "country.united_kingdom", {
+      ...AN_ANSWER,
+      data_source: "a_blog",
+      reference_period: { start: "2026-12-31", end: "2026-01-01" },
+    });
+
+    expect([error.status, error.code]).toEqual([422, "unknown_data_source"]);
+  });
+
+  it("refuses a period that ends before it begins", async () => {
+    const error = await refusalOf("country.uk_skilled_worker", "country.united_kingdom", {
+      ...AN_ANSWER,
+      reference_period: { start: "2026-12-31", end: "2026-01-01" },
+    });
+
+    expect([error.status, error.code]).toEqual([422, "invalid_reference_period"]);
+  });
+
+  it("refuses a model's answer over a person's with 409, and keeps the person's", async () => {
+    const error = await refusalOf("country.eu_free_movement", "country.spain", {
+      ...AN_ANSWER,
+      data_source: "llm",
+    });
+    const stored = (await fetchMatchRuleResults()).items.find(
+      (answer) => answer.candidate === "country.spain",
+    );
+
+    expect([error.status, error.code, error.details]).toEqual([
+      409,
+      "answer_recorded_by_a_person",
+      { match_rule: "country.eu_free_movement", candidate: "country.spain" },
+    ]);
+    expect(stored?.match_result).toBe("matching");
+  });
+
+  it("stores a model's answer where nobody answered as a proposal", async () => {
+    const stored = await putMatchRuleResult("country.uk_skilled_worker", "country.united_kingdom", {
+      ...AN_ANSWER,
+      data_source: "llm",
+    });
+
+    expect(stored.is_proposal).toBe(true);
   });
 });

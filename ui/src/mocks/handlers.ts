@@ -594,11 +594,34 @@ export const handlers = [
   /**
    * Confirming a proposal **replaces** it rather than sitting beside it (`reqs.md` 6.10 use 3):
    * one row, so a proposal and a finding can never disagree about the same gate.
+   *
+   * **Refused as `api/rules.py` refuses, in its order**: the body first, then the gate, the
+   * candidate, the candidate's level, the source, the period's order, and last a model's answer
+   * over one a person recorded.
    */
   http.put(
     `${BASE}/match-rule-results/:matchRuleId/:candidateId`,
     async ({ params, request }) => {
       const body = (await request.json()) as Partial<MatchRuleResult>;
+      const pair = {
+        match_rule: String(params["matchRuleId"]),
+        candidate: String(params["candidateId"]),
+      };
+      const refused = refusedGateAnswer(pair, body);
+      if (refused) return refused;
+      const source = dataSources.find((each) => each.id === (body.data_source ?? "manual"));
+      const isProposal = source?.source_kind === "llm";
+      const stored = matchRuleResults.find((each) => isSameAnswer(each, pair));
+      if (isProposal && stored !== undefined && stored.is_proposal !== true) {
+        return HttpResponse.json(
+          {
+            code: "answer_recorded_by_a_person",
+            message: "a person has answered this gate for this candidate: nothing was stored.",
+            details: pair,
+          },
+          { status: 409 },
+        );
+      }
       // **Only the fields the contract lets a caller send.** Spreading the whole body echoed
       // anything at all back, so the mock could never be seen refusing a field the server
       // refuses -- and a test sending one would pass on a response the API would not give.
@@ -606,11 +629,10 @@ export const handlers = [
       // override were dropped here, so a screen sending them could never be seen keeping them.
       const now = new Date().toISOString();
       const answer: MatchRuleResult = {
+        ...pair,
         match_result: body.match_result ?? "unknown",
         reason: body.reason ?? null,
         data_source: body.data_source ?? "manual",
-        match_rule: String(params["matchRuleId"]),
-        candidate: String(params["candidateId"]),
         reference_period: body.reference_period ?? null,
         retrieval_date: body.retrieval_date ?? now,
         override_reason: body.override_reason ?? null,
@@ -618,16 +640,13 @@ export const handlers = [
         // audited party supplies is not one (`api/rules.py`).
         override_date: body.override_reason ? now : null,
         citations: body.citations ?? [],
-        is_proposal: false,
+        is_proposal: isProposal,
+        recorded_at: now,
+        // Recording an answer is what takes a pending proposal: it is pending no longer.
+        pending_proposal: null,
       };
       matchRuleResults = [
-        ...matchRuleResults.filter(
-          (stored) =>
-            !(
-              stored.match_rule === answer.match_rule &&
-              stored.candidate === answer.candidate
-            ),
-        ),
+        ...matchRuleResults.filter((each) => !isSameAnswer(each, pair)),
         answer,
       ];
       return HttpResponse.json(answer);
@@ -1788,6 +1807,66 @@ function nameTakenRefusal(name: string, refused: string) {
   );
 }
 
+/**
+ * What `putMatchRuleResult` refuses before it stores anything, in the server's order: the body
+ * (pydantic, before the route runs), an unknown gate or candidate (404), a candidate at another
+ * level than its gate (422, the pair in `details`), an unknown source, and a period that ends
+ * before it begins.
+ */
+function refusedGateAnswer(
+  pair: { match_rule: string; candidate: string },
+  body: Partial<MatchRuleResult>,
+) {
+  const problems: FieldProblem[] = [];
+  if (!["matching", "not_matching", "unknown"].includes(String(body.match_result))) {
+    problems.push({
+      location: ["body", "match_result"],
+      problem: "Input should be 'matching', 'not_matching' or 'unknown'",
+      kind: body.match_result === undefined ? "missing" : "enum",
+    });
+  }
+  if (body.override_reason === "") {
+    problems.push({
+      location: ["body", "override_reason"],
+      problem: "String should have at least 1 character",
+      kind: "string_too_short",
+    });
+  }
+  if (problems.length > 0) return HttpResponse.json(invalidRequest(...problems), { status: 422 });
+  const rule = MATCH_RULES.find((each) => each.id === pair.match_rule);
+  if (!rule) return notFound(pair.match_rule);
+  const candidate = candidatesForLevel(null).find((each) => each.id === pair.candidate);
+  if (!candidate) return notFound(pair.candidate);
+  if (rule.level !== null && candidate.level !== rule.level) {
+    return HttpResponse.json(
+      {
+        code: "invalid_match_rule_result",
+        message: `${rule.name} is asked of ${rule.level} candidates, and ${candidate.name} is not one`,
+        details: pair,
+      },
+      { status: 422 },
+    );
+  }
+  const source = body.data_source ?? "manual";
+  if (!dataSources.some((each) => each.id === source)) {
+    return HttpResponse.json(
+      { code: "unknown_data_source", message: `there is no data source ${source}` },
+      { status: 422 },
+    );
+  }
+  const period = body.reference_period;
+  if (period && period.end < period.start) {
+    return HttpResponse.json(
+      {
+        code: "invalid_reference_period",
+        message: `a reference period from ${period.start} to ${period.end} ends before it begins`,
+      },
+      { status: 422 },
+    );
+  }
+  return null;
+}
+
 function notFound(id: string) {
   return HttpResponse.json(
     { code: "not_found", message: `No such resource: ${id}.` },
@@ -1943,7 +2022,10 @@ function round(value: number): number {
 }
 
 /** Two answers about the same gate for the same candidate: one row, whoever wrote it. */
-function isSameAnswer(one: MatchRuleResult, other: MatchRuleResult): boolean {
+function isSameAnswer(
+  one: Pick<MatchRuleResult, "match_rule" | "candidate">,
+  other: Pick<MatchRuleResult, "match_rule" | "candidate">,
+): boolean {
   return one.match_rule === other.match_rule && one.candidate === other.candidate;
 }
 

@@ -4,6 +4,7 @@ import type { Idle, Read } from "../../api/read";
 import type { CriteriaSet } from "../../api/endpoints";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { useSelection } from "../../shell/SelectionContext";
+import { GateAnswersPanel } from "./answers/GateAnswersPanel";
 import { CriteriaPanel } from "./criteria/CriteriaPanel";
 import { CriteriaSetsPanel } from "./sets/CriteriaSetsPanel";
 import { useCriteriaSets } from "./sets/useCriteriaSets";
@@ -170,6 +171,16 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                   pass={pass}
                 />
               </RulesPanel>
+            )}
+            {/* **Outside the set's rules, keyed by level only** (D4): an answer belongs to no
+                set, so a set switch keeps a half-typed one and a failed set read hides none. */}
+            {levelId !== null && (
+              <GateAnswersPanel
+                key={`answers-${levelId}`}
+                levelId={levelId}
+                onAnswered={noteAnswered}
+                researching={pass.running}
+              />
             )}
           </Stage>
 

@@ -5086,3 +5086,24 @@ select.field__control {
 .gap-card--danger .group__message-text {
   color: var(--colour-danger);
 }
+
+/* Gate answers (UI-29, BE-36): the form a person records one with, and the answers recorded.
+   The design draws neither, so they borrow the field and table rules and add only this. */
+.gate-answers__heading {
+  margin: var(--space-single) 0 var(--space-half);
+  font-size: var(--font-size-base);
+  font-weight: var(--weight-strong);
+  color: var(--colour-text-strong);
+}
+
+.gate-answer-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+}
+
+.gate-answer-form__period {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
