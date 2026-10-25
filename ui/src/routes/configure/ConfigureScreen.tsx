@@ -205,9 +205,8 @@ const PILLAR_WEIGHTS_STAGE = {
 const RULES_STAGE = {
   id: "rules",
   title: "Match rules & gates",
-  lead:
-    "A gate can make a candidate not matching, which costs it its rank and leaves its score " +
-    "intact. A compound rule mostly warns. A rule nobody has answered never fires either way.",
+  // What a gate and a warning are is the panel's note; said here too, it was said twice (PL-162).
+  lead: "Which rules this set lets act, and what each one does when it fires.",
 };
 
 /** Stages 3 and 4 while the set they show is not on screen: none chosen, pending or failed. */

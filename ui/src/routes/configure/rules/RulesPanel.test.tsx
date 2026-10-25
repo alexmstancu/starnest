@@ -30,7 +30,39 @@ describe("the rules panel", () => {
     // step out to: the listitem is the row.
     expect(
       rules.getByRole("listitem", { name: "Not excluded by hand" }),
-    ).toHaveTextContent("every level");
+    ).toBeInTheDocument();
+  });
+
+  /** PL-155. What a gate tests is the catalog's sentence, never only the level it is asked at. */
+  it("says what each gate tests, in the catalog's words", async () => {
+    renderShell("/configure");
+    const rules = await panel();
+
+    const visa = await rules.findByRole("listitem", { name: "A visa route exists" });
+    expect(visa).toHaveTextContent("A realistic visa route exists for this household.");
+    expect(visa).not.toHaveTextContent(/Asked at/);
+  });
+
+  /** PL-162. The switch says what pressing it does before it is pressed. */
+  it("gives each switch a tooltip that says what pressing it does", async () => {
+    renderShell("/configure");
+    await panel();
+
+    expect(
+      await screen.findByRole("switch", { name: "Enforce A visa route exists" }),
+    ).toHaveAttribute("title", "On in this set. Switch it off and it stops being applied.");
+    expect(
+      screen.getByRole("switch", { name: "Apply Rent fits the target spend" }),
+    ).toHaveAttribute("title", "Off in this set. Switch it on to apply it.");
+  });
+
+  /** PL-162. The difference between a gate and a warning is said once, in the note. */
+  it("says what a gate and a warning are once, not twice", async () => {
+    renderShell("/configure");
+    const rules = await panel();
+    await rules.findByRole("listitem", { name: "A visa route exists" });
+
+    expect(rules.getAllByText(/never fires either way/)).toHaveLength(1);
   });
 
   it("shows which gates this set enforces", async () => {
@@ -134,8 +166,13 @@ describe("the rules panel", () => {
     const row = await rules.findByRole("listitem", {
       name: "Mild and connected",
     });
-    expect(row).toHaveTextContent("AllConditionsHold");
-    expect(row).toHaveTextContent("not_matching");
+    // PL-155: written from its conditions, naming attributes and bands -- never the shape or
+    // the outcome as the vocabulary spells them.
+    expect(row).toHaveTextContent(
+      "Rules a candidate out when Summer daytime high is at most 30 and Broadband coverage is at least 90.",
+    );
+    expect(row).not.toHaveTextContent("AllConditionsHold");
+    expect(row).not.toHaveTextContent("not_matching");
   });
 
   it("applies a compound rule once the server has accepted it", async () => {

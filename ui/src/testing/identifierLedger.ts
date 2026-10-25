@@ -22,24 +22,6 @@ export interface KnownOffender {
   readonly removedBy: string;
 }
 
-const COMPOUND_RULES: readonly KnownOffender[] = [
-  {
-    identifier: "ShareOfHouseholdField",
-    where: "stage 4, a compound rule's shape under its name",
-    removedBy: "PL-155 (C13)",
-  },
-  {
-    identifier: "AllConditionsHold",
-    where: "stage 4, a compound rule's shape under its name",
-    removedBy: "PL-155 (C13)",
-  },
-  {
-    identifier: "not_matchings",
-    where: 'stage 4, a compound rule\'s outcome: "and not_matchings when it fires"',
-    removedBy: "PL-155 (C13)",
-  },
-];
-
 const GATE_PROPOSALS: readonly KnownOffender[] = [
   {
     identifier: "country.visa_route_exists",
@@ -65,15 +47,9 @@ const MANUAL_SOURCE: KnownOffender = {
 };
 
 export const IDENTIFIER_LEDGER = {
-  "Configure, a pillar and a rule editor open": [
-    ...COMPOUND_RULES,
-    ...GATE_PROPOSALS,
-  ],
-  "Configure, a weight change refused": [
-    ...COMPOUND_RULES,
-    ...GATE_PROPOSALS,
-  ],
-  "Configure, nothing set": [...COMPOUND_RULES, ...GATE_PROPOSALS],
+  "Configure, a pillar and a rule editor open": [...GATE_PROPOSALS],
+  "Configure, a weight change refused": [...GATE_PROPOSALS],
+  "Configure, nothing set": [...GATE_PROPOSALS],
   "Configure, no criteria set": [],
   "Configure, the server unreachable": [],
 

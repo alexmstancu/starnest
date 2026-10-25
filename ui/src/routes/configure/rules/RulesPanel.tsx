@@ -76,13 +76,9 @@ export function RulesPanel({
           listed.map((rule) => ({
             id: rule.id,
             name: rule.name,
-            // The level *and* the effect. A switch saying only "enforced" makes a reader
-            // guess whether it matters; dropping the level to make room would lose which
-            // candidates it is even asked about.
-            detail: `Asked at ${rule.level ?? "every"} level.`,
-            // The level *and* the effect, because a switch saying only "enforced" makes a
-            // reader guess whether it matters -- and dropping the level to make room would
-            // lose which candidates it is even asked about.
+            // What the gate tests, as the catalog words it (PL-155): its level alone left a
+            // reader to guess what "A visa route exists" is actually checked against.
+            detail: rule.description,
             effect:
               answers === "ready"
                 ? describeEffect(rule.id, rules.matchRuleResults, {
@@ -110,9 +106,9 @@ export function RulesPanel({
           listed.map((rule) => ({
             id: rule.id,
             name: rule.name,
-            // A phrase, not two facts joined by a separator: the middle dot is barred
-            // outright, and the fix that matters is saying the thing in words.
-            detail: `${rule.shape}, and ${rule.outcome}s when it fires.`,
+            // Written by the server from the rule's conditions, naming attributes and bands
+            // (PL-155): the shape and outcome as vocabulary tokens told a reader nothing.
+            detail: rule.description,
             effect: describeCompoundEffect(rules.isApplied(rule.id)),
             idle: true,
             on: rules.isApplied(rule.id),
@@ -202,6 +198,11 @@ function RuleRows({
             role="switch"
             aria-checked={row.on}
             aria-label={row.toggleLabel}
+            title={
+              row.on
+                ? "On in this set. Switch it off and it stops being applied."
+                : "Off in this set. Switch it on to apply it."
+            }
             className="switch"
             onClick={() => row.onToggle(!row.on)}
           >
