@@ -382,6 +382,14 @@ class TestAScoreRangeBelowAnAnchor:
             "attribute": OVERBURDEN,
             "anchor_score": 150,
             "score_scale_max": 100,
+            "errors": [
+                {
+                    "location": ["body", "scale_anchors"],
+                    "problem": body["message"],
+                    "kind": "invalid_criterion",
+                    "limit": 100,
+                }
+            ],
         }
 
     async def test_a_refused_anchor_is_not_stored(
@@ -476,8 +484,10 @@ class TestAScoreRangeBelowAnAnchor:
 
         rescaled, anchored = await asyncio.gather(scale, anchor)
         assert rescaled.status_code == 200
-        assert (anchored.status_code, anchored.json().get("details")) == (
+        details = anchored.json().get("details", {})
+        assert (anchored.status_code, details.pop("errors", None) is not None, details) == (
             422,
+            True,
             {
                 "reason": "anchor_above_scale",
                 "attribute": OVERBURDEN,
@@ -578,6 +588,48 @@ async def _an_anchor_stored_above_the_range(
     anchored = await _anchor_overburden_up_to(api, criteria_set, 150)
     assert anchored.status_code == 200, "the arrangement needs the anchor stored"
     await _store_past_the_check(database_url, 100)
+
+
+class TestARefusedRuleNamesItsFields:
+    """PL-026: a rule the domain refuses lists the fields it refused, as a malformed one does.
+
+    The same `details.errors` a 422 `invalid_request` carries, so the rule form marks a band the
+    domain refused with the mapper that marks a figure the boundary refused.
+    """
+
+    @pytest.mark.parametrize(
+        ("rule", "fields"),
+        [
+            (
+                {
+                    "goal": "target_range",
+                    "target_range_min": 10,
+                    "target_range_max": 30,
+                    "normalisation_method": "percentile",
+                },
+                ["goal", "normalisation_method"],
+            ),
+            ({"matching_threshold": {"min_value": 50, "max_value": 10}}, ["matching_threshold"]),
+        ],
+        ids=["a band percentile cannot draw", "a backwards threshold"],
+    )
+    async def test_the_refusal_lists_each_field_it_concerns(
+        self,
+        api: httpx.AsyncClient,
+        a_scratch_criteria_set: str,
+        rule: dict[str, object],
+        fields: list[str],
+    ) -> None:
+        response = await api.patch(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}", json=rule
+        )
+
+        body = response.json()
+        assert (response.status_code, body["code"]) == (422, "invalid_criterion")
+        assert body["details"]["errors"] == [
+            {"location": ["body", field], "problem": body["message"], "kind": "invalid_criterion"}
+            for field in fields
+        ]
 
 
 async def _anchor_overburden_up_to(

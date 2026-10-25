@@ -263,24 +263,38 @@ async def domain_error_handler(request: Request, error: Exception) -> JSONRespon
     status, code = refusal
     return JSONResponse(
         status_code=status,
-        content=ErrorBody(code=code, message=str(error), details=_details_of(error)).model_dump(
-            exclude_none=True
-        ),
+        content=ErrorBody(
+            code=code, message=str(error), details=_details_of(error, code)
+        ).model_dump(exclude_none=True),
     )
 
 
-def _details_of(error: Exception) -> dict[str, Any] | None:
+def _details_of(error: Exception, code: str) -> dict[str, Any] | None:
     """What the refusal is about, in fields a client can word without parsing the sentence.
 
     One convention for any domain error: an optional `details` mapping, passed through as it is
     (PL-006, PL-007), which `WeightsAllLockedError` follows too -- its reason and the locks in
     the way, which the screen names (`reqs.md` 5.2, PL-112). A message a user cannot act on is
     barely better than none.
+
+    **A refusal naming request fields lists them as a 422 does** (PL-026): `details.errors`,
+    one `FieldProblem` per field, of the refusal's own kind -- so a form marks a band the domain
+    refused exactly as it marks a figure the boundary refused, with one mapper.
     """
     details = getattr(error, "details", None)
-    if isinstance(details, Mapping) and details:
-        return dict(details)
-    return None
+    rendered = dict(details) if isinstance(details, Mapping) else {}
+    fields = getattr(error, "fields", ())
+    if fields:
+        rendered["errors"] = [_domain_field_problem(error, field, code) for field in fields]
+    return rendered or None
+
+
+def _domain_field_problem(error: Exception, field: str, code: str) -> dict[str, Any]:
+    problem: dict[str, Any] = {"location": ["body", field], "problem": str(error), "kind": code}
+    limit = getattr(error, "limit", None)
+    if _is_a_number(limit):
+        problem["limit"] = float(limit)
+    return problem
 
 
 async def refusal_handler(request: Request, error: Exception) -> JSONResponse:

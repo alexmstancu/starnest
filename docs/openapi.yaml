@@ -1265,7 +1265,11 @@ components:
         weight between them. All but the first list their pillars in `details.pillars`.
         `invalid_criterion` raised against
         the score range carries `details.reason: anchor_above_scale`, with the `attribute`, its
-        `anchor_score` and the `score_scale_max` it is above.
+        `anchor_score` and the `score_scale_max` it is above. A domain refusal about request
+        fields -- `invalid_criterion` -- lists them the same way in `details.errors`, one entry
+        per field of the rule it refused (`location` `[body, target_range_max]`, say), with
+        `kind: invalid_criterion`, the domain's sentence as `problem`, and `limit` where a bound
+        refused it.
       content: { application/json: { schema: { $ref: "#/components/schemas/InvalidRequestError" } } }
     NotFound:
       description: No such resource.
@@ -1289,7 +1293,8 @@ components:
     InvalidRequestError:
       description: >-
         The `Error` a 422 answers with. `details` stays open, because a domain refusal carries
-        its own fields there; a malformed request lists its fields in `details.errors`.
+        its own fields there; a malformed request, or a refused rule, lists its fields in
+        `details.errors`.
       allOf:
         - { $ref: "#/components/schemas/Error" }
         - type: object
@@ -1306,9 +1311,9 @@ components:
       type: object
       required: [location, problem, kind]
       properties:
-        location: { type: array, items: { type: string }, description: "Where the offending value is, e.g. [body, comparator_limit] or [query, level]." }
-        problem: { type: string, description: "The validator's own sentence, for a developer. A form words the refusal from kind and limit." }
-        kind: { type: string, description: "Stable. The validator's error type: less_than_equal, greater_than_equal, int_parsing, float_parsing, finite_number, missing, extra_forbidden, and so on." }
+        location: { type: array, items: { type: string }, description: "Where the offending value is, e.g. [body, comparator_limit], [body, scale_anchors, '0', score] or [query, level]." }
+        problem: { type: string, description: "The validator's or the domain's own sentence, for a developer. A form words the refusal from kind and limit." }
+        kind: { type: string, description: "Stable. The validator's error type (less_than_equal, greater_than_equal, greater_than, int_from_float, int_parsing, float_parsing, finite_number, missing, extra_forbidden, and so on) or invalid_criterion." }
         limit: { type: number, description: "The bound that refused the value, present only where kind names a numeric bound." }
 
     ErrorCode:

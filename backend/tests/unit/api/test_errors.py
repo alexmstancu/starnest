@@ -31,8 +31,22 @@ from starnest.api.errors import (
     request_validation_handler,
 )
 from starnest.candidates import MalformedIdentifierError
-from starnest.criteria import ScaleAnchor, ThresholdShapeError, WeightedItem, rebalance
-from starnest.data import InvalidReferencePeriodError, ReferencePeriod
+from starnest.criteria import (
+    CriteriaSet,
+    Criterion,
+    CriterionDeclarationError,
+    Goal,
+    LabelThreshold,
+    NormalisationMethod,
+    PillarWeight,
+    RangeThreshold,
+    ScaleAnchor,
+    ShareThreshold,
+    ThresholdShapeError,
+    WeightedItem,
+    rebalance,
+)
+from starnest.data import InvalidReferencePeriodError, ReferencePeriod, ValueType
 from starnest.evaluation import RankingError
 from starnest.household import Household, HouseholdPlaceError
 
@@ -109,7 +123,12 @@ class TestTheRefusalsTheTableGained:
         ("error", "refusal"),
         [
             (MalformedIdentifierError("Eurostat"), (422, "invalid_request")),
-            (ThresholdShapeError("minimum 50 is above maximum 10"), (422, "invalid_criterion")),
+            (
+                ThresholdShapeError(
+                    "minimum 50 is above maximum 10", fields=("matching_threshold",)
+                ),
+                (422, "invalid_criterion"),
+            ),
             (InvalidReferencePeriodError("backwards"), (422, "invalid_reference_period")),
         ],
         ids=["a malformed identifier", "a threshold of no shape", "a backwards period"],
@@ -175,6 +194,175 @@ class TestTheDetailsARefusalCarries:
             "reason": "only_weight",
             "locked": [],
         }
+
+
+RENT = "country.rent_centre"
+
+
+def a_rent_set() -> CriteriaSet:
+    """One monetary criterion carrying its whole pillar: the smallest set a rule can be put to."""
+    rent = Criterion(
+        criteria_set="mine",
+        attribute=RENT,
+        value_type=ValueType.MONETARY,
+        pillar="housing",
+        weight=Decimal(100),
+        goal=Goal.MINIMISE,
+    )
+    return CriteriaSet(
+        id="mine",
+        name="Mine",
+        criteria=(rent,),
+        pillar_weights=(PillarWeight(pillar="housing", level="country", weight=Decimal(100)),),
+    )
+
+
+async def _the_field_problems_of(refusal: Exception) -> list[dict[str, object]]:
+    response = await domain_error_handler(A_REQUEST, refusal)
+    body = json.loads(bytes(response.body))
+    assert (response.status_code, body["code"]) == (422, "invalid_criterion")
+    return body["details"]["errors"]
+
+
+def _named(*fields: str, problem: str, limit: float | None = None) -> list[dict[str, object]]:
+    bound = {} if limit is None else {"limit": limit}
+    return [
+        {"location": ["body", field], "problem": problem, "kind": "invalid_criterion"} | bound
+        for field in fields
+    ]
+
+
+class TestARefusedRuleNamesItsFields:
+    """PL-026: a refused rule says which of its fields it refused, as a 422 does.
+
+    The same `FieldProblem` list `invalid_request` serves, so a form marks a band the domain
+    refused exactly as it marks a figure the boundary refused. Built through
+    `with_criterion_scoring`, the path a rule's save takes, so the fields survive pydantic's
+    wrapping.
+    """
+
+    async def _refusing(self, rule: dict[str, object]) -> list[dict[str, object]]:
+        with pytest.raises(CriterionDeclarationError) as refused:
+            a_rent_set().with_criterion_scoring(RENT, rule)
+        return await self._problems(refused.value)
+
+    async def _problems(self, refusal: Exception) -> list[dict[str, object]]:
+        problems = await _the_field_problems_of(refusal)
+        assert {problem["problem"] for problem in problems} == {str(refusal)}
+        return problems
+
+    async def test_a_band_with_no_top_names_the_missing_bound(self) -> None:
+        problems = await self._refusing(
+            {"goal": Goal.TARGET_RANGE, "target_range_min": Decimal(500)}
+        )
+
+        assert problems == _named("target_range_max", problem=problems[0]["problem"])
+
+    async def test_a_zero_point_inside_the_band_names_both_ends_of_the_contradiction(
+        self,
+    ) -> None:
+        problems = await self._refusing(
+            {
+                "goal": Goal.TARGET_RANGE,
+                "target_range_min": Decimal(500),
+                "target_range_max": Decimal(900),
+                "zero_score_below": Decimal(600),
+            }
+        )
+
+        assert problems == _named(
+            "target_range_min", "zero_score_below", problem=problems[0]["problem"]
+        )
+
+    async def test_a_band_the_method_cannot_draw_names_the_goal_and_the_method(self) -> None:
+        problems = await self._refusing(
+            {
+                "goal": Goal.TARGET_RANGE,
+                "target_range_min": Decimal(500),
+                "target_range_max": Decimal(900),
+                "normalisation_method": NormalisationMethod.PERCENTILE,
+            }
+        )
+
+        assert problems == _named("goal", "normalisation_method", problem=problems[0]["problem"])
+
+    async def test_anchors_against_the_goal_name_the_goal_and_the_anchors(self) -> None:
+        problems = await self._refusing(
+            {
+                "scale_anchors": (
+                    ScaleAnchor(input_value=Decimal(500), score=0),
+                    ScaleAnchor(input_value=Decimal(1500), score=100),
+                )
+            }
+        )
+
+        assert problems == _named("goal", "scale_anchors", problem=problems[0]["problem"])
+
+    async def test_a_goal_no_rule_has_is_named_where_it_was_sent(self) -> None:
+        problems = await self._refusing({"goal": "sideways"})
+
+        assert problems == _named("goal", problem=problems[0]["problem"])
+
+    async def test_an_anchor_above_the_scale_names_the_anchors_and_the_ceiling(self) -> None:
+        anchored = a_rent_set().with_criterion_scoring(
+            RENT,
+            {
+                "scale_anchors": (
+                    ScaleAnchor(input_value=Decimal(500), score=150),
+                    ScaleAnchor(input_value=Decimal(1500), score=0),
+                )
+            },
+        )
+        with pytest.raises(CriterionDeclarationError) as refused:
+            anchored.refuse_unless_its_anchors_fit(100)
+
+        problems = await self._problems(refused.value)
+
+        assert problems == _named("scale_anchors", problem=problems[0]["problem"], limit=100)
+
+    async def test_a_threshold_of_the_wrong_shape_names_the_threshold(self) -> None:
+        problems = await self._refusing(
+            {"matching_threshold": LabelThreshold(label="Cfb", containment_rule="must_contain")}
+        )
+
+        assert problems == _named("matching_threshold", problem=problems[0]["problem"])
+
+    async def test_a_backwards_threshold_names_the_threshold(self) -> None:
+        with pytest.raises(ValidationError) as wrapped:
+            RangeThreshold(min_value=Decimal(50), max_value=Decimal(10))
+
+        problems = await self._problems(wrapped.value.errors()[0]["ctx"]["error"])
+
+        assert problems == _named("matching_threshold", problem=problems[0]["problem"])
+
+    async def test_a_share_beyond_a_hundred_names_the_threshold_and_the_bound(self) -> None:
+        with pytest.raises(ValidationError) as wrapped:
+            ShareThreshold(label="owned", max_share=Decimal(120))
+
+        problems = await self._problems(wrapped.value.errors()[0]["ctx"]["error"])
+
+        assert problems == _named("matching_threshold", problem=problems[0]["problem"], limit=100)
+
+    async def test_the_details_a_refusal_already_carried_are_kept_beside_its_fields(
+        self,
+    ) -> None:
+        refused = CriterionDeclarationError(
+            "above the scale", fields=("scale_anchors",), details={"reason": "anchor_above_scale"}
+        )
+
+        response = await domain_error_handler(A_REQUEST, refused)
+
+        assert json.loads(bytes(response.body))["details"] == {
+            "reason": "anchor_above_scale",
+            "errors": _named("scale_anchors", problem="above the scale"),
+        }
+
+    async def test_a_refusal_naming_no_field_lists_none(self) -> None:
+        refused = CriterionDeclarationError("about no field", fields=())
+
+        response = await domain_error_handler(A_REQUEST, refused)
+
+        assert "details" not in json.loads(bytes(response.body))
 
 
 def _paging(page: int = 1, page_size: Annotated[int, Query(alias="page-size")] = 10) -> int:

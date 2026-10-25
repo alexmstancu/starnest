@@ -23,6 +23,7 @@ from starnest.candidates import LevelId
 from starnest.criteria.criterion import Criterion, CriterionDeclarationError
 from starnest.criteria.identifiers import CriteriaSetId
 from starnest.criteria.rebalancing import TOTAL, WeightedItem, rebalance
+from starnest.criteria.refusals import RuleRefusalError
 from starnest.data import AttributeId, CompoundRuleId, MatchRuleId, PillarId
 
 THE_SCORING_RULE = frozenset(
@@ -359,7 +360,8 @@ class CriteriaSet(BaseModel):
         **The refusal is re-raised as the domain's own.** Pydantic wraps a validator's
         `ValueError` in a `ValidationError` -- itself a `ValueError`, but one the API's error
         table has no row for -- so a criterion refusing to be a rule reached the client as a 500
-        rather than as the sentence it wrote. What comes out is the sentence.
+        rather than as the sentence it wrote. What comes out is the sentence, and the fields
+        every wrapped refusal named (PL-026).
         """
         try:
             revalidated = Criterion.model_validate(dict(fields))
@@ -368,7 +370,9 @@ class CriteriaSet(BaseModel):
                 "; ".join(
                     str(problem["msg"]).removeprefix("Value error, ")
                     for problem in refused.errors()
-                )
+                ),
+                fields=_the_fields_refused(refused),
+                limit=_the_limit_refused(refused),
             ) from refused
         return self.model_copy(
             update={
@@ -431,3 +435,28 @@ def _grouped_pillar_weights(
     for weight in pillar_weights:
         grouped.setdefault(weight.level, []).append(weight.weight)
     return grouped
+
+
+def _the_fields_refused(refused: ValidationError) -> tuple[str, ...]:
+    """Every rule field the wrapped problems name, in order and each once.
+
+    A domain refusal names its own fields; a field pydantic itself refused is named by where it
+    was, so a goal no enum holds still points at `goal`.
+    """
+    named: list[str] = []
+    for problem in refused.errors():
+        cause = problem.get("ctx", {}).get("error")
+        if isinstance(cause, RuleRefusalError):
+            named.extend(cause.fields)
+        else:
+            named.extend(str(part) for part in problem["loc"][:1])
+    return tuple(dict.fromkeys(named))
+
+
+def _the_limit_refused(refused: ValidationError) -> int | None:
+    """The bound a wrapped refusal names, where one does."""
+    for problem in refused.errors():
+        cause = problem.get("ctx", {}).get("error")
+        if isinstance(cause, RuleRefusalError) and cause.limit is not None:
+            return cause.limit
+    return None

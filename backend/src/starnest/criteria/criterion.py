@@ -10,7 +10,6 @@ criteria sets and neither is wrong.
 not a rule at all.
 """
 
-from collections.abc import Mapping
 from decimal import Decimal
 from enum import StrEnum
 from itertools import pairwise
@@ -19,6 +18,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from starnest.criteria.identifiers import CriteriaSetId
+from starnest.criteria.refusals import RuleRefusalError
 from starnest.criteria.thresholds import MatchingThreshold
 from starnest.data import AttributeId, BreakdownOptionId, PillarId, ValueType
 
@@ -27,20 +27,13 @@ from starnest.data import AttributeId, BreakdownOptionId, PillarId, ValueType
 _ANCHORS_NEEDED_TO_INTERPOLATE = 2
 
 
-class CriterionDeclarationError(ValueError):
+class CriterionDeclarationError(RuleRefusalError):
     """A criterion declares a combination that is not a rule.
 
     Distinct from `ThresholdShapeError`, which is about a threshold suiting a value type. This
     is about the criterion's own fields contradicting each other -- a `target_range` goal with
-    no band, a `select` reducer naming no option.
-
-    `details`, where a refusal gives them, say the same in fields a client can word without
-    parsing the sentence (PL-006).
+    no band, a `select` reducer naming no option. Each names the fields it concerns (PL-026).
     """
-
-    def __init__(self, message: str, *, details: Mapping[str, object] | None = None) -> None:
-        super().__init__(message)
-        self.details = details
 
 
 class Goal(StrEnum):
@@ -123,7 +116,8 @@ class ScaleAnchor(BaseModel):
         """
         if self.label is not None and not self.label.strip():
             raise CriterionDeclarationError(
-                "a band label is a word or it is absent; an empty one displays as nothing"
+                "a band label is a word or it is absent; an empty one displays as nothing",
+                fields=("scale_anchors",),
             )
         return self
 
@@ -230,10 +224,19 @@ class Criterion(BaseModel):
         """
         if self.goal is not Goal.TARGET_RANGE:
             return
-        if self.target_range_min is None or self.target_range_max is None:
+        unset = tuple(
+            name
+            for name, bound in (
+                ("target_range_min", self.target_range_min),
+                ("target_range_max", self.target_range_max),
+            )
+            if bound is None
+        )
+        if unset:
             raise CriterionDeclarationError(
                 f"{self.attribute} aims at a target range but names no band; a target range "
-                "needs both a minimum and a maximum, in the attribute's own unit"
+                "needs both a minimum and a maximum, in the attribute's own unit",
+                fields=unset,
             )
 
     def _reject_a_target_range_the_method_cannot_draw(self) -> None:
@@ -257,7 +260,8 @@ class Criterion(BaseModel):
                 f"`{self.normalisation_method}`, which cannot express a band: `percentile` "
                 "scores by standing among the candidates and `as_is` reads the figure as a "
                 "score. A target range is a `fixed` scale -- the band, and where the score "
-                "reaches zero on each side"
+                "reaches zero on each side",
+                fields=("goal", "normalisation_method"),
             )
 
     def _reject_a_method_illegal_for_the_value_type(self) -> None:
@@ -282,7 +286,8 @@ class Criterion(BaseModel):
         raise CriterionDeclarationError(
             f"{self.attribute} is a {self.value_type} and normalises "
             f"`{self.normalisation_method}`, which `reqs.md` 3.3a does not permit for that "
-            f"type; the legal methods for a {self.value_type} are: {permitted}"
+            f"type; the legal methods for a {self.value_type} are: {permitted}",
+            fields=("normalisation_method",),
         )
 
     def _reject_a_zero_score_inside_the_band(self) -> None:
@@ -298,7 +303,8 @@ class Criterion(BaseModel):
         ):
             raise CriterionDeclarationError(
                 f"the target range of {self.attribute} runs "
-                f"{self.target_range_min} to {self.target_range_max}, which is backwards"
+                f"{self.target_range_min} to {self.target_range_max}, which is backwards",
+                fields=("target_range_min", "target_range_max"),
             )
         if (
             self.zero_score_below is not None
@@ -307,7 +313,8 @@ class Criterion(BaseModel):
         ):
             raise CriterionDeclarationError(
                 f"{self.attribute} scores 0 below {self.zero_score_below}, which is inside "
-                f"its target band starting at {self.target_range_min}"
+                f"its target band starting at {self.target_range_min}",
+                fields=("target_range_min", "zero_score_below"),
             )
         if (
             self.zero_score_above is not None
@@ -316,19 +323,22 @@ class Criterion(BaseModel):
         ):
             raise CriterionDeclarationError(
                 f"{self.attribute} scores 0 above {self.zero_score_above}, which is inside "
-                f"its target band ending at {self.target_range_max}"
+                f"its target band ending at {self.target_range_max}",
+                fields=("target_range_max", "zero_score_above"),
             )
 
     def _reject_a_reducer_that_disagrees_with_its_option(self) -> None:
         """Selecting one option means naming it; aggregating means not naming one."""
         if self.reducer_mode is ReducerMode.SELECT and self.breakdown_option is None:
             raise CriterionDeclarationError(
-                f"{self.attribute} selects one breakdown option but names none; say which"
+                f"{self.attribute} selects one breakdown option but names none; say which",
+                fields=("reducer_mode", "breakdown_option"),
             )
         if self.reducer_mode is ReducerMode.AGGREGATE and self.breakdown_option is not None:
             raise CriterionDeclarationError(
                 f"{self.attribute} aggregates across every breakdown option and also names "
-                f"{self.breakdown_option}; it does one or the other"
+                f"{self.breakdown_option}; it does one or the other",
+                fields=("reducer_mode", "breakdown_option"),
             )
 
     def _reject_a_scale_that_cannot_be_read(self) -> None:
@@ -343,13 +353,15 @@ class Criterion(BaseModel):
         if len(self.scale_anchors) == 1:
             raise CriterionDeclarationError(
                 f"{self.attribute} has one scale anchor, which maps that single value and "
-                "nothing else; a fixed scale needs at least two points, or none at all"
+                "nothing else; a fixed scale needs at least two points, or none at all",
+                fields=("scale_anchors",),
             )
         inputs = [anchor.input_value for anchor in self.scale_anchors]
         if len(set(inputs)) != len(inputs):
             raise CriterionDeclarationError(
                 f"{self.attribute} anchors the same input value twice, so it maps to two "
-                "different scores"
+                "different scores",
+                fields=("scale_anchors",),
             )
 
     def _reject_anchors_that_run_against_the_goal(self) -> None:
@@ -371,12 +383,14 @@ class Criterion(BaseModel):
         if self.goal is Goal.MINIMISE and rising:
             raise CriterionDeclarationError(
                 f"{self.attribute} is to minimise, but its anchors' scores rise as the value "
-                "rises -- it would reward exactly what it means to penalise"
+                "rises -- it would reward exactly what it means to penalise",
+                fields=("goal", "scale_anchors"),
             )
         if self.goal is Goal.MAXIMISE and falling:
             raise CriterionDeclarationError(
                 f"{self.attribute} is to maximise, but its anchors' scores fall as the value "
-                "rises -- it would penalise exactly what it means to reward"
+                "rises -- it would penalise exactly what it means to reward",
+                fields=("goal", "scale_anchors"),
             )
 
     def _reject_a_threshold_of_the_wrong_shape(self) -> None:
@@ -411,6 +425,8 @@ class Criterion(BaseModel):
                 raise CriterionDeclarationError(
                     f"{self.attribute} anchors {anchor.input_value} to a score of "
                     f"{anchor.score}, and the score scale stops at {score_scale_max}",
+                    fields=("scale_anchors",),
+                    limit=score_scale_max,
                     details={
                         "reason": "anchor_above_scale",
                         "attribute": str(self.attribute),

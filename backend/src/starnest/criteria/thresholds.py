@@ -16,10 +16,14 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from starnest.criteria.refusals import RuleRefusalError
 from starnest.data import ValueType
 
+_THRESHOLD = ("matching_threshold",)
+"""The rule field every threshold refusal concerns: the threshold is one field of the rule."""
 
-class ThresholdShapeError(ValueError):
+
+class ThresholdShapeError(RuleRefusalError):
     """A threshold that cannot apply to the attribute it was written for."""
 
 
@@ -39,7 +43,8 @@ class MatchingThreshold(BaseModel, ABC):
             legal = ", ".join(sorted(self.applicable_value_types))
             raise ThresholdShapeError(
                 f"a {type(self).__name__} cannot judge a {value_type} attribute; "
-                f"this shape applies to: {legal}"
+                f"this shape applies to: {legal}",
+                fields=_THRESHOLD,
             )
 
 
@@ -76,14 +81,17 @@ class RangeThreshold(MatchingThreshold):
         if self.min_value is None and self.max_value is None:
             raise ThresholdShapeError(
                 "a range threshold needs a minimum, a maximum, or both; "
-                "one open at both ends excludes nothing"
+                "one open at both ends excludes nothing",
+                fields=_THRESHOLD,
             )
         if (
             self.min_value is not None
             and self.max_value is not None
             and self.min_value > self.max_value
         ):
-            raise ThresholdShapeError(f"minimum {self.min_value} is above maximum {self.max_value}")
+            raise ThresholdShapeError(
+                f"minimum {self.min_value} is above maximum {self.max_value}", fields=_THRESHOLD
+            )
         return self
 
 
@@ -106,10 +114,11 @@ class LabelThreshold(MatchingThreshold):
         if self.containment_rule not in {"must_contain", "must_not_contain"}:
             raise ThresholdShapeError(
                 f"unknown containment rule {self.containment_rule!r}; "
-                "expected must_contain or must_not_contain"
+                "expected must_contain or must_not_contain",
+                fields=_THRESHOLD,
             )
         if not self.label.strip():
-            raise ThresholdShapeError("a label threshold needs a label")
+            raise ThresholdShapeError("a label threshold needs a label", fields=_THRESHOLD)
         return self
 
 
@@ -140,18 +149,27 @@ class ShareThreshold(MatchingThreshold):
     @model_validator(mode="after")
     def _declares_an_ordered_bound(self) -> "ShareThreshold":
         if not self.label.strip():
-            raise ThresholdShapeError("a share threshold needs the label of the slice it bounds")
+            raise ThresholdShapeError(
+                "a share threshold needs the label of the slice it bounds", fields=_THRESHOLD
+            )
         if self.min_share is None and self.max_share is None:
-            raise ThresholdShapeError("a share threshold needs a minimum, a maximum, or both")
+            raise ThresholdShapeError(
+                "a share threshold needs a minimum, a maximum, or both", fields=_THRESHOLD
+            )
         for name, share in (("min_share", self.min_share), ("max_share", self.max_share)):
             if share is not None and not (0 <= share <= 100):
-                raise ThresholdShapeError(f"{name} is a percentage 0-100, not {share}")
+                raise ThresholdShapeError(
+                    f"{name} is a percentage 0-100, not {share}",
+                    fields=_THRESHOLD,
+                    limit=0 if share < 0 else 100,
+                )
         if (
             self.min_share is not None
             and self.max_share is not None
             and self.min_share > self.max_share
         ):
             raise ThresholdShapeError(
-                f"minimum share {self.min_share} is above maximum {self.max_share}"
+                f"minimum share {self.min_share} is above maximum {self.max_share}",
+                fields=_THRESHOLD,
             )
         return self
