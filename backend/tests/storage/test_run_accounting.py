@@ -344,3 +344,51 @@ class TestARunBeforePlansWereRecorded:
 
         await holds_its_arithmetic(pool, read)
         assert (read.items_unanswered, read.items_not_reached) == (unanswered, not_reached)
+
+
+async def stop_after_this_source(pool: AsyncConnectionPool) -> None:
+    runs = PostgresRunStore(pool)
+    running = await runs.run_in_flight()
+    assert running is not None
+    await runs.request_stop(running)
+
+
+async def the_process_dies() -> None:
+    raise ProcessKilled
+
+
+class TestWhatTheDatabaseHoldsAgrees:
+    """PL-050, PL-051. The holdings read classified a gap by its latest run's status alone, so a
+    stopped run's item nobody had a row for read "not reached" there and "unanswered" in the run
+    read. Both now read the run's plan, and must name the same pairs."""
+
+    @pytest.mark.parametrize("ending", ["stopped", "killed"])
+    async def test_holdings_and_the_run_name_the_same_pairs_not_reached_and_unanswered(
+        self, pool: AsyncConnectionPool, ending: str
+    ) -> None:
+        if ending == "stopped":
+            sources = (eurostat(lambda: stop_after_this_source(pool)), world_bank())
+        else:
+            sources = (eurostat(), world_bank(the_process_dies))
+        run = await PostgresRunStore(pool).read_run(await a_sweep(pool, *sources))
+
+        held = await PostgresRunStore(pool).read_holdings(
+            level="country",
+            declared=(
+                ("eurostat", OVERBURDEN),
+                ("eurostat", OVERCROWDING),
+                ("world_bank", OVERCROWDING),
+            ),
+            since=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+
+        def this_runs(gaps: Sequence[object]) -> list[tuple[str, str]]:
+            return [
+                (gap.candidate, gap.attribute)  # type: ignore[attr-defined]
+                for gap in gaps
+                if gap.data_acquisition_run == run.id  # type: ignore[attr-defined]
+            ]
+
+        assert this_runs(held.not_reached) == pairs(run.not_reached)
+        assert this_runs(held.unanswered) == pairs(run.unanswered)
+        assert pairs(run.unanswered) == [(str(LIECHTENSTEIN.id), OVERBURDEN)], "the premise"

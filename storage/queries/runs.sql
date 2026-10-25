@@ -522,9 +522,10 @@ ORDER  BY v.candidate, v.attribute;
 -- A gap is a pair with no value in use, classified by the LATEST run whose items include it,
 -- never by the newest run overall. `failed`: that run has a failure row for it, or stored a
 -- figure that cannot be used (rejected, or from a source since switched off). `unanswered`:
--- that run completed and nobody had a row. `not_reached`: it did not complete -- with no record
--- of which sources finished, a halted run cannot say nobody had a row (C04-N6) -- or no run has
--- ever asked (`data_acquisition_run` null).
+-- that run settled the pair's attribute and nobody had a row. `not_reached`: it did not, or no
+-- run has ever asked (`data_acquisition_run` null). **Settled is select_run's rule, so the two
+-- reads never disagree** (PL-050): every source the run planned for the attribute finished it
+-- (0512), never vacuously; for a run from before plans were recorded, the run completed (C04-N6).
 --
 -- Spend is every run started and every research call ledgered at or after `since`, the reader's
 -- month start (C04-N10): the ledger's sum is served, never its rows (C04-N1).
@@ -572,7 +573,17 @@ gap AS (
 ),
 latest AS (
     SELECT DISTINCT ON (item.candidate, item.attribute)
-           item.candidate, item.attribute, item.data_acquisition_run, r.run_status
+           item.candidate, item.attribute, item.data_acquisition_run,
+           CASE WHEN r.plan_recorded_at IS NOT NULL THEN
+                    EXISTS (SELECT 1 FROM data_acquisition_run_plan AS p
+                            WHERE  (p.data_acquisition_run, p.attribute)
+                                   = (item.data_acquisition_run, item.attribute))
+                    AND NOT EXISTS (SELECT 1 FROM data_acquisition_run_plan AS p
+                                    WHERE  (p.data_acquisition_run, p.attribute)
+                                           = (item.data_acquisition_run, item.attribute)
+                                      AND  p.finished_at IS NULL)
+                ELSE r.run_status = 'completed'
+           END AS is_settled
     FROM   data_acquisition_run_item AS item
     JOIN   gap USING (candidate, attribute)
     JOIN   data_acquisition_run AS r ON r.id = item.data_acquisition_run
@@ -610,7 +621,7 @@ classified AS (
            gap.attribute,
            latest.data_acquisition_run,
            CASE WHEN failures.listed IS NOT NULL THEN 'failed'
-                WHEN latest.run_status = 'completed' THEN 'unanswered'
+                WHEN latest.is_settled THEN 'unanswered'
                 ELSE 'not_reached'
            END AS outcome,
            failures.listed AS failures
