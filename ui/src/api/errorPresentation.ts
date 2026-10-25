@@ -118,6 +118,9 @@ export const WORDS = {
   }),
   llm_not_configured: unset("The LLM source is switched off, or has no key configured."),
   manual_entry_not_permitted: refusal("This attribute does not accept a manually entered value."),
+  manual_entry_switched_off: refusal(
+    "Manual entry is switched off, so a figure typed now could not count. Switch it on under Source priority to type one.",
+  ),
   invalid_value: refusal("That value is not one this attribute accepts."),
   conflicting_observation: refusal(
     "A different figure is already recorded for this place, attribute, source and period.",

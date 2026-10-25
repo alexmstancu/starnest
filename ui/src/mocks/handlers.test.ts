@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "../api/ApiError";
 import { getJson, postJson } from "../api/client";
 import {
+  enterValueManually,
   fetchCriteriaSet,
   fetchHoldings,
   fetchRanking,
@@ -10,7 +11,9 @@ import {
   replaceSettings,
   researchMatchRules,
   updateCriterionRule,
+  updateDataSource,
   type CriterionRule,
+  type ManualValueInput,
 } from "../api/endpoints";
 import {
   HOUSEHOLD,
@@ -572,5 +575,65 @@ describe("the mock's re-confirmed figures", () => {
         },
       ],
     });
+  });
+});
+
+/**
+ * PL-089, PL-086. **A figure typed by hand, refused as the server refuses it**: the body is
+ * validated before the route runs, so a citation that is not a full web address is refused
+ * first, every one named; then `data/manual.py`'s order, permission before the switch.
+ */
+describe("the mock's manual entry", () => {
+  const TYPED: ManualValueInput = {
+    candidate: "country.portugal",
+    attribute: "country.residency_admin_ease",
+    payload: { value: 3, range_min: 0, range_max: 10, assigned_by: "human" },
+    reference_period: { start: "2026-01-01", end: "2026-12-31" },
+    retrieval_date: "2026-10-25",
+    confidence_level: "medium",
+    citations: ["https://example.com/page"],
+  };
+
+  async function refusalOf(input: ManualValueInput): Promise<ApiError> {
+    return (await enterValueManually(input).catch((thrown: unknown) => thrown)) as ApiError;
+  }
+
+  it("names every citation that is not a full web address, before any other check", async () => {
+    const error = await refusalOf({
+      ...TYPED,
+      attribute: "country.total_tax_rate_effective",
+      citations: ["https://example.com", "javascript:alert(1)", "https://"],
+    });
+
+    expect([error.status, error.code]).toEqual([422, "invalid_request"]);
+    expect(
+      (error.details?.["errors"] as { location: string[]; kind: string }[]).map((problem) => [
+        problem.location,
+        problem.kind,
+      ]),
+    ).toEqual([
+      [["body", "citations", "1"], "string_pattern_mismatch"],
+      [["body", "citations", "2"], "string_pattern_mismatch"],
+    ]);
+  });
+
+  it("refuses while the manual source is switched off", async () => {
+    await updateDataSource("manual", { is_enabled: false });
+
+    const error = await refusalOf(TYPED);
+
+    expect([error.status, error.code]).toEqual([409, "manual_entry_switched_off"]);
+  });
+
+  it("refuses an attribute that takes no typed figure before it looks at the switch", async () => {
+    await updateDataSource("manual", { is_enabled: false });
+
+    const error = await refusalOf({ ...TYPED, attribute: "country.total_tax_rate_effective" });
+
+    expect([error.status, error.code]).toEqual([409, "manual_entry_not_permitted"]);
+  });
+
+  it("stores a typed figure while the source is on", async () => {
+    expect((await enterValueManually(TYPED)).data_source).toBe("manual");
   });
 });

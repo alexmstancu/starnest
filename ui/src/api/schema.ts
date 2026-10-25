@@ -234,15 +234,18 @@ export interface paths {
          *     an early estimate is captured so a real dataset can supersede it later without deleting
          *     anything.
          *
-         *     Rejected with `409 manual_entry_not_permitted` when the attribute does not allow it, and
-         *     with `409 conflicting_observation` when another figure is already on record under the
+         *     Rejected with `409 manual_entry_not_permitted` when the attribute does not allow it; with
+         *     `409 manual_entry_switched_off` while the `manual` source is switched off, because a
+         *     switched-off source is left out of scoring (`reqs.md` Q232), so a figure stored then
+         *     could not count, and nothing is stored; and with `409 conflicting_observation` when another figure is already on record under the
          *     same candidate, attribute, breakdown, period and retrieval date: a correction is a new
          *     observation with its own retrieval date. Its `details` name the observation that stands:
          *     `value_id`, `candidate`, `attribute`, `data_source`, `breakdown_option` (only where it
          *     has one), `reference_period` (`start`, `end`) and `retrieval_date`. Of two submissions
          *     racing for one observation, the one whose figure was not stored is refused the same way.
          *     Resubmitting the same figure, whatever its quote or pages, returns the value already
-         *     stored.
+         *     stored. A citation that is not a full web address is refused with `422 invalid_request`,
+         *     naming the field.
          */
         post: operations["enterValueManually"];
         delete?: never;
@@ -975,7 +978,7 @@ export interface components {
          * @description Every refusal this API makes, by code. A client words each one and branches on it; `message` is for a person reading the API directly and may change.
          * @enum {string}
          */
-        ErrorCode: "not_found" | "candidate_not_found" | "household_not_configured" | "weights_all_locked" | "criteria_set_exists" | "criteria_set_name_taken" | "no_default_criteria_set" | "nothing_to_retry" | "nothing_to_ask_again" | "spend_cap_not_set" | "nothing_to_fetch" | "run_already_in_flight" | "llm_not_configured" | "manual_entry_not_permitted" | "invalid_value" | "conflicting_observation" | "answer_recorded_by_a_person" | "score_scale_not_set" | "score_scale_below_anchors" | "comparator_limit_not_set" | "comparator_limit_exceeded" | "invalid_comparison" | "invalid_criteria_set" | "invalid_criterion" | "unknown_place" | "invalid_reference_period" | "invalid_request" | "cannot_be_scored" | "cannot_be_ranked" | "invalid_match_rule_result" | "unknown_data_source" | "unknown_scope" | "invalid_source_order";
+        ErrorCode: "not_found" | "candidate_not_found" | "household_not_configured" | "weights_all_locked" | "criteria_set_exists" | "criteria_set_name_taken" | "no_default_criteria_set" | "nothing_to_retry" | "nothing_to_ask_again" | "spend_cap_not_set" | "nothing_to_fetch" | "run_already_in_flight" | "llm_not_configured" | "manual_entry_not_permitted" | "manual_entry_switched_off" | "invalid_value" | "conflicting_observation" | "answer_recorded_by_a_person" | "score_scale_not_set" | "score_scale_below_anchors" | "comparator_limit_not_set" | "comparator_limit_exceeded" | "invalid_comparison" | "invalid_criteria_set" | "invalid_criterion" | "unknown_place" | "invalid_reference_period" | "invalid_request" | "cannot_be_scored" | "cannot_be_ranked" | "invalid_match_rule_result" | "unknown_data_source" | "unknown_scope" | "invalid_source_order";
         /** @description The span the data describes. Start equals end for a single day. */
         ReferencePeriod: {
             /** Format: date */
@@ -1092,6 +1095,7 @@ export interface components {
         BooleanPayload: {
             value: boolean;
         };
+        /** @description A judgement given on a range the figure itself declares. It is read on that range, never on the score scale: 7 on 0 to 10 is seventy per cent of the way up, whatever the top of the score scale is (PL-083). */
         AssignedScorePayload: {
             value: number;
             range_min: number;
@@ -1147,6 +1151,7 @@ export interface components {
             confidence_level: "absolute" | "high" | "medium" | "low";
             /** @description Where this came from, in words. */
             quote?: string | null;
+            /** @description The pages the figure was read from. Each is a full web address, http or https, kept exactly as typed: the interface links only to web addresses, so anything else would be a citation nobody can follow, and is refused with 422 invalid_request naming it. */
             citations?: string[];
         };
         HouseholdInput: {
@@ -2155,7 +2160,7 @@ export interface operations {
                     "application/json": components["schemas"]["Value"];
                 };
             };
-            /** @description The attribute does not permit manual entry, the value failed validation, or another figure is already on record for the same observation (`conflicting_observation`, with that observation's id and natural key in `details`). */
+            /** @description `manual_entry_not_permitted`: the attribute does not permit manual entry. `manual_entry_switched_off`: the manual source is switched off. `invalid_value`: the value is not one the attribute can hold. `conflicting_observation`: another figure is already on record for the same observation, with that observation's id and natural key in `details`. */
             409: {
                 headers: {
                     [name: string]: unknown;

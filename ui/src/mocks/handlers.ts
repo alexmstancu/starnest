@@ -736,12 +736,42 @@ export const handlers = [
       quote?: string | null;
       citations?: string[];
     };
+    // The body is validated before the route runs, so a citation that is not a full web
+    // address is refused before any catalog check, every such citation named.
+    const notWebAddresses = (body.citations ?? []).flatMap((citation, index) =>
+      WEB_ADDRESS.test(citation) ? [] : [index],
+    );
+    if (notWebAddresses.length > 0) {
+      return HttpResponse.json(
+        invalidRequest(
+          ...notWebAddresses.map((index) => ({
+            // `errors.py` names every part of a location as a string, an index included.
+            location: ["body", "citations", String(index)],
+            problem: `String should match pattern '${WEB_ADDRESS_PATTERN}'`,
+            kind: "string_pattern_mismatch",
+          })),
+        ),
+        { status: 422 },
+      );
+    }
     const attribute = ATTRIBUTES.find((each) => each.id === body.attribute);
     if (attribute?.manual_entry !== true) {
       return HttpResponse.json(
         {
           code: "manual_entry_not_permitted",
           message: `${body.attribute} does not accept a figure typed by hand`,
+        },
+        { status: 409 },
+      );
+    }
+    // `data/manual.py`'s order: permission, then the switch, so the refusal names the remedy
+    // that applies first. A switched-off source is left out of scoring, so nothing is stored.
+    if (dataSources.some((each) => each.id === "manual" && !each.is_enabled)) {
+      return HttpResponse.json(
+        {
+          code: "manual_entry_switched_off",
+          message:
+            "manual entry is switched off, and a switched-off source is left out of scoring, so a figure typed now could not count. Switch it on in Configure to type one.",
         },
         { status: 409 },
       );
@@ -1367,6 +1397,13 @@ function refusedFields(body: object, bounds: readonly FieldBound[]): FieldProble
     return [];
   });
 }
+
+/**
+ * `api/values.py`'s `WEB_ADDRESS`, character for character: a citation typed by hand must be a
+ * full http or https address, and the refusal quotes the pattern as Pydantic does.
+ */
+const WEB_ADDRESS_PATTERN = "^[Hh][Tt][Tt][Pp][Ss]?://[^\\s/?#]+[^\\s]*$";
+const WEB_ADDRESS = new RegExp(WEB_ADDRESS_PATTERN);
 
 /**
  * A body field refused at the boundary, as `errors.py` renders it: the one sentence for every
