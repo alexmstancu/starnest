@@ -2,9 +2,8 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { replaceSettings } from "../../api/endpoints";
 import type { components } from "../../api/schema";
-import { ATTRIBUTES, SETTINGS } from "../../mocks/fixtures";
+import { ATTRIBUTES } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -38,11 +37,19 @@ async function compare(focus: string, comparator: string) {
 }
 
 /** Compare with no comparator limit set, as a fresh installation has, and return the refusal. */
+/** A comparison refused for an unset limit: cleared elsewhere after this screen read it. */
 async function compareWithNoLimit(): Promise<HTMLElement> {
-  await replaceSettings({ ...SETTINGS, comparator_limit: null });
+  mockServer.use(
+    http.get(`${BASE}/comparisons`, () =>
+      HttpResponse.json(
+        { code: "comparator_limit_not_set", message: "SENTINEL_MESSAGE" },
+        { status: 409 },
+      ),
+    ),
+  );
   renderShell("/compare");
   await compare("Portugal", "Netherlands");
-  return screen.findByRole("alert");
+  return screen.findByRole("region", { name: "Nothing to compare" });
 }
 
 /** The synthesis card headed by this comparator's name. */
@@ -272,6 +279,47 @@ describe("the comparison", () => {
    * `comparator_limit_not_set`, raised before the comparators are counted at all; the mock
    * answered `invalid_comparison`, a code the server keeps for a request built wrong.
    */
+  /** PL-007: only a setting to blame earns the way to Configure, and candidates are named. */
+  it("names the candidates of a comparison that cannot be made, with no way to Configure", async () => {
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, () =>
+        HttpResponse.json(
+          {
+            code: "invalid_comparison",
+            message: "SENTINEL_MESSAGE",
+            details: { candidates: ["country.portugal"] },
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderShell("/compare");
+
+    await compare("Portugal", "Netherlands");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("These candidates cannot be compared as chosen: Portugal.");
+    expect(within(alert).queryByRole("link", { name: /configure/i })).toBeNull();
+    expect(alert).not.toHaveTextContent("country.portugal");
+  });
+
+  it("offers the way to Configure for a comparison over the limit", async () => {
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, () =>
+        HttpResponse.json(
+          { code: "comparator_limit_exceeded", message: "x", details: { limit: 1, asked: 2 } },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderShell("/compare");
+
+    await compare("Portugal", "Netherlands");
+
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByRole("link", { name: /change it in configure/i })).toBeInTheDocument();
+  });
+
   it("names an unset comparator limit as the reason a comparison is refused", async () => {
     expect(await compareWithNoLimit()).toHaveTextContent(
       /until the most candidates a comparison may hold is set/i,
@@ -848,7 +896,8 @@ describe("when a comparison cannot be drawn", () => {
     ).toBeInTheDocument();
   });
 
-  it("says so when no comparator limit is configured", async () => {
+  /** PL-019: the shipped state, said before anything is picked -- never a code or a key. */
+  it("shows the unset limit as a calm card before a pick, with the way to it", async () => {
     mockServer.use(
       http.get(`${BASE}/settings`, () =>
         HttpResponse.json({
@@ -860,9 +909,14 @@ describe("when a comparison cannot be drawn", () => {
     );
     renderShell("/compare");
 
-    expect(
-      await screen.findByText(/no comparator limit is configured/i),
-    ).toBeInTheDocument();
+    const unset = within(await screen.findByRole("region", { name: "Nothing to compare" }));
+    expect(unset.getByText(/most candidates a comparison may hold/i)).toBeInTheDocument();
+    expect(unset.getByRole("link", { name: /set it in configure/i })).toHaveAttribute(
+      "href",
+      "/configure",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(document.body).not.toHaveTextContent(/comparator_limit/);
   });
 
   /**

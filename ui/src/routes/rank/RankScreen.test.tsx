@@ -460,6 +460,42 @@ describe("when the ranking cannot be shown", () => {
     expect(rank.queryByText("score_scale_not_set")).toBeNull();
   });
 
+  /**
+   * PL-006: a set that scores nothing, and a score range below a live anchor, are states a
+   * setting lifts -- said in words with the way to it, never a red notice made of ids.
+   */
+  it.each([
+    [
+      "a set that scores nothing",
+      { code: "cannot_be_ranked", details: { reason: "scores_nothing" } },
+      /scores nothing at this level/i,
+      /change it in configure/i,
+    ],
+    [
+      "an anchor above the score range",
+      {
+        code: "invalid_criterion",
+        details: { reason: "anchor_above_scale", attribute: "country.homicide_rate", anchor_score: 120, score_scale_max: 100 },
+      },
+      /a score of 120, above the top of the score range, 100/i,
+      /set it in configure/i,
+    ],
+  ])("explains %s calmly, with the way to Configure", async (_case, body, said, way) => {
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        HttpResponse.json({ ...body, message: "SENTINEL_MESSAGE" }, { status: 422 }),
+      ),
+    );
+    renderShell("/rank");
+
+    const unset = within(await screen.findByRole("region", { name: "No ranking" }));
+    expect(unset.getByText(said)).toBeInTheDocument();
+    expect(unset.getByRole("link", { name: way })).toHaveAttribute("href", "/configure");
+    const rank = within(screen.getByRole("region", { name: "Rank" }));
+    expect(rank.queryByRole("alert")).toBeNull();
+    expect(rank.queryByText(/SENTINEL_MESSAGE|homicide_rate|cannot_be_ranked/)).toBeNull();
+  });
+
   it("shows no ranking table at all while the score range is unset", async () => {
     mockServer.use(
       http.get("/v1/rankings", () =>

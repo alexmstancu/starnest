@@ -26,13 +26,26 @@ export interface Remedy {
  */
 const REMEDIES: Record<string, Remedy> = {
   [SCORE_SCALE_NOT_SET]: { label: "Set it in Configure", path: "/configure" },
-  invalid_comparison: { label: "Change it in Configure", path: "/configure" },
   // Unseeded like the score scale, so a fresh installation compares nothing until it is set.
   comparator_limit_not_set: { label: "Set it in Configure", path: "/configure" },
+  // **Only the limit is a setting to blame** (PL-007): a candidate compared with itself or
+  // missing from the ranking is not lifted by anything in Configure.
+  comparator_limit_exceeded: { label: "Change it in Configure", path: "/configure" },
+  // A set that scores nothing is lifted where its criteria are weighed (PL-006).
+  cannot_be_ranked: { label: "Change it in Configure", path: "/configure" },
 };
 
-export function remedyFor(code: string): Remedy | null {
-  const remedy = REMEDIES[code];
+/** An invalid rule is a setting to blame only when its anchor stands above the score range. */
+const ANCHOR_ABOVE_THE_RANGE: Remedy = { label: "Set it in Configure", path: "/configure" };
+
+export function remedyFor(
+  code: string,
+  details: Readonly<Record<string, unknown>> = {},
+): Remedy | null {
+  const remedy =
+    code === "invalid_criterion" && details["reason"] === "anchor_above_scale"
+      ? ANCHOR_ABOVE_THE_RANGE
+      : REMEDIES[code];
   // A remedy pointing at a route the shell does not have would render a dead link.
   if (!remedy || !findRouteByPath(remedy.path)) return null;
   return remedy;

@@ -20,7 +20,7 @@ import { usePillarNames } from "../../api/usePillarNames";
 import type { RouteDefinition } from "../../navigation/routes";
 import { deltaTone, formatSigned, pillarName } from "../../format/display";
 import { NothingSelected } from "../../shell/NothingSelected";
-import { UnsetSetting } from "../../shell/UnsetSetting";
+import { NO_COMPARATOR_LIMIT, UnsetSetting } from "../../shell/UnsetSetting";
 import { useSelection } from "../../shell/SelectionContext";
 
 /**
@@ -139,6 +139,8 @@ function TheComparison({
     <>
       {criteriaSetId === null || levelId === null ? (
         <NothingSelected toSee="to compare candidates" />
+      ) : settings.resource.status === "ready" && limit === null ? (
+        <UnsetSetting error={NO_COMPARATOR_LIMIT} title="Nothing to compare" detail="" />
       ) : (
         <ComparisonPicker
           roster={roster}
@@ -186,6 +188,7 @@ function TheComparison({
           title="Nothing to compare"
           detail="A comparison is a difference between two scores, and no score can be computed without a top of the range. Set it and the comparison returns."
           onRetry={comparison.reload}
+          names={{ candidate: (id) => roster.find((each) => each.id === id)?.name }}
         />
       )}
       {comparison.resource.status === "ready" && (
@@ -237,7 +240,7 @@ function ComparisonPicker({
         <span className="picker__limit">
           <span className={full ? "picker__limit-note picker__limit-note--full" : "picker__limit-note"}>
             {limit === null
-              ? "No comparator limit is configured, so the server will refuse a comparison."
+              ? ""
               : full
                 ? `You have ${String(comparators.length)} of ${String(limit)} — the limit set in Configure. Remove one to add another, or raise the limit there.`
                 : `Up to ${String(limit)} comparators, the limit set in Configure.`}

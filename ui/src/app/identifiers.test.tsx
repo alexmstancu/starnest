@@ -276,8 +276,7 @@ const ARRANGEMENTS: Record<ScreenState, () => Promise<void>> = {
   "Compare, no comparator limit set": async () => {
     await replaceSettings({ ...SETTINGS, comparator_limit: null });
     renderShell("/compare");
-    await askForAComparison();
-    await screen.findByRole("alert");
+    await screen.findByRole("region", { name: "Nothing to compare" });
   },
   "Compare, the score range unset": async () => {
     await scoreRangeUnset();

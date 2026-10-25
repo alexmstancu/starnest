@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { presentError } from "../api/errorPresentation";
+import { isApiError } from "../api/ApiError";
+import { type Names, presentError } from "../api/errorPresentation";
 import { isUnreachable, useWaitingForServer } from "../api/reachability";
 import { remedyFor } from "./refusalRemedy";
 
@@ -10,9 +11,18 @@ import { remedyFor } from "./refusalRemedy";
  * **The code is never shown** (PL-003): it is for branching on, and the sentence is the
  * interface's own wording of it.
  */
-export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+export function ErrorNotice({
+  error,
+  onRetry,
+  names,
+}: {
+  error: unknown;
+  onRetry?: () => void;
+  /** Names for the ids a refusal carries: the candidates a comparison concerned. */
+  names?: Names;
+}) {
   const waitingForServer = useWaitingForServer();
-  const presented = presentError(error);
+  const presented = presentError(error, names);
   // The screen's card already says the server did not answer (PL-002, P1-06).
   if (onRetry && waitingForServer && isUnreachable(error)) {
     return (
@@ -26,7 +36,7 @@ export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () =
   }
   // Some refusals are the shipped state rather than a fault -- an unset score scale is the
   // one every reader meets first. Those get a way out instead of a dead end (UX review R3).
-  const remedy = remedyFor(presented.code);
+  const remedy = remedyFor(presented.code, isApiError(error) ? error.details : undefined);
 
   return (
     <div className="notice notice--error" role="alert">

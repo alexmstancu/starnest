@@ -14,11 +14,27 @@ describe("the way out of a refusal", () => {
     });
   });
 
-  it("sends a comparator over the limit to Configure", () => {
-    expect(remedyFor("invalid_comparison")).toEqual({
+  it("sends a comparator over the limit to Configure (PL-007)", () => {
+    expect(remedyFor("comparator_limit_exceeded")).toEqual({
       label: "Change it in Configure",
       path: "/configure",
     });
+  });
+
+  it("offers nothing for a comparison refused for any other reason (PL-007)", () => {
+    expect(remedyFor("invalid_comparison")).toBeNull();
+  });
+
+  it("sends a set that cannot be ranked to Configure (PL-006)", () => {
+    expect(remedyFor("cannot_be_ranked")?.path).toBe("/configure");
+  });
+
+  it("sends an anchor above the score range to Configure, and no other invalid rule", () => {
+    expect(remedyFor("invalid_criterion", { reason: "anchor_above_scale" })).toEqual({
+      label: "Set it in Configure",
+      path: "/configure",
+    });
+    expect(remedyFor("invalid_criterion")).toBeNull();
   });
 
   /**
@@ -53,8 +69,9 @@ describe("the way out of a refusal", () => {
   it("only ever points at a real route", () => {
     for (const code of [
       SCORE_SCALE_NOT_SET,
-      "invalid_comparison",
+      "comparator_limit_exceeded",
       "comparator_limit_not_set",
+      "cannot_be_ranked",
     ]) {
       expect(remedyFor(code)?.path).toBe("/configure");
     }
