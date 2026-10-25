@@ -1,4 +1,5 @@
-"""Published exchange rates, as `fx_rate` holds them (`0001`, `0112`, `0521`)."""
+"""Published exchange rates, as `fx_rate` and `fx_rate_answer` hold them (`0001`, `0112`,
+`0521`, `0525`)."""
 
 from datetime import date
 
@@ -62,3 +63,13 @@ class PostgresFxRateStore(FxRateStore):
         return await self.read_rate(
             base_currency=rate.base_currency, quote_currency=rate.quote_currency, on=rate.rate_date
         )
+
+    async def record_answer(self, rate: FxRate, *, asked_for: date) -> None:
+        async with acquire(self._pool) as connection:
+            await self._queries.insert_fx_rate_answer(
+                connection,
+                base_currency=str(rate.base_currency),
+                quote_currency=str(rate.quote_currency),
+                asked_for=asked_for,
+                rate_date=rate.rate_date,
+            )

@@ -3,6 +3,7 @@
 from datetime import date
 from decimal import Decimal
 
+import psycopg
 import pytest
 from psycopg_pool import AsyncConnectionPool
 
@@ -61,3 +62,49 @@ async def test_a_rate_not_on_record_is_unavailable(
 
     with pytest.raises(FxRateUnavailableError, match=currency):
         await rates.read_rate(base_currency=currency, quote_currency=EURO, on=on)
+
+
+SATURDAY, SUNDAY = date(2026, 6, 27), date(2026, 6, 28)
+
+
+async def test_a_day_answered_with_an_earlier_rate_reads_that_rate_with_its_own_day(
+    rates: PostgresFxRateStore,
+) -> None:
+    """PL-170 (`0525`): Saturday reads Friday's rate, still dated Friday."""
+    await rates.record_rate(RON_ON_FRIDAY)
+
+    await rates.record_answer(RON_ON_FRIDAY, asked_for=SATURDAY)
+
+    assert await rates.read_rate(base_currency="RON", quote_currency=EURO, on=SATURDAY) == (
+        RON_ON_FRIDAY
+    )
+
+
+async def test_an_answer_answers_only_its_own_day_and_pair(rates: PostgresFxRateStore) -> None:
+    await rates.record_rate(RON_ON_FRIDAY)
+    await rates.record_answer(RON_ON_FRIDAY, asked_for=SATURDAY)
+
+    with pytest.raises(FxRateUnavailableError):
+        await rates.read_rate(base_currency="RON", quote_currency=EURO, on=SUNDAY)
+    with pytest.raises(FxRateUnavailableError):
+        await rates.read_rate(base_currency="CHF", quote_currency=EURO, on=SATURDAY)
+
+
+async def test_the_first_answer_for_a_day_stands(rates: PostgresFxRateStore) -> None:
+    thursday = RON_ON_FRIDAY.model_copy(update={"rate_date": date(2026, 6, 25)})
+    await rates.record_rate(thursday)
+    await rates.record_rate(RON_ON_FRIDAY)
+    await rates.record_answer(RON_ON_FRIDAY, asked_for=SATURDAY)
+
+    await rates.record_answer(thursday, asked_for=SATURDAY)
+
+    assert await rates.read_rate(base_currency="RON", quote_currency=EURO, on=SATURDAY) == (
+        RON_ON_FRIDAY
+    )
+
+
+async def test_an_answer_naming_a_rate_not_on_record_is_refused(
+    rates: PostgresFxRateStore,
+) -> None:
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        await rates.record_answer(RON_ON_FRIDAY, asked_for=SATURDAY)

@@ -104,16 +104,27 @@ class RatesOnRecord(FxRateStore):
 
     def __init__(self, *rates: FxRate) -> None:
         self.recorded = {(r.base_currency, r.quote_currency, r.rate_date): r for r in rates}
+        self.answers: dict[tuple[str, str, date], date] = {}
 
     async def read_rate(self, *, base_currency, quote_currency, on):
+        day = on
+        if (base_currency, quote_currency, on) not in self.recorded:
+            day = self.answers.get((base_currency, quote_currency, on), on)
         try:
-            return self.recorded[(base_currency, quote_currency, on)]
+            return self.recorded[(base_currency, quote_currency, day)]
         except KeyError:
             raise FxRateUnavailableError(f"no {base_currency} rate on record for {on}") from None
 
     async def record_rate(self, rate: FxRate) -> FxRate:
         return self.recorded.setdefault(
             (rate.base_currency, rate.quote_currency, rate.rate_date), rate
+        )
+
+    async def record_answer(self, rate: FxRate, *, asked_for: date) -> None:
+        assert (rate.base_currency, rate.quote_currency, rate.rate_date) in self.recorded
+        assert rate.rate_date < asked_for
+        self.answers.setdefault(
+            (rate.base_currency, rate.quote_currency, asked_for), rate.rate_date
         )
 
 
@@ -129,6 +140,116 @@ class APublisher(FxRateProvider):
         if self.answer is None:
             raise FxRateUnavailableError("the publisher had nothing for that day")
         return self.answer
+
+
+def chf_on(day: date) -> FxRate:
+    return CHF_TO_EUR.model_copy(update={"rate_date": day})
+
+
+THURSDAY, FRIDAY, SATURDAY, SUNDAY = (date(2026, 7, day) for day in (2, 3, 4, 5))
+GOOD_FRIDAY, MAUNDY_THURSDAY = date(2026, 4, 3), date(2026, 4, 2)
+LONG_AFTER = date(2026, 12, 31)
+
+
+class TheEcb(FxRateProvider):
+    """The ECB, faked: it answers a day with the last rate it published on or before it, and
+    counts how often it was asked. Unreachable, it refuses as the real adapter does."""
+
+    def __init__(self, *published: date, reachable: bool = True) -> None:
+        self.published = published
+        self.reachable = reachable
+        self.asked = 0
+
+    async def rate_for(self, *, base_currency, quote_currency, on):
+        self.asked += 1
+        if not self.reachable:
+            raise FxRateUnavailableError("the ECB did not answer when asked for the rate")
+        return chf_on(max(day for day in self.published if day <= on))
+
+
+class TestADayWithoutARateOfItsOwn:
+    """PL-170: a weekend or a holiday is answered with an earlier day's rate, and that answer is
+    recorded, so the ECB is reached once for the day -- never with a rate it would not use."""
+
+    @staticmethod
+    def rates(store: RatesOnRecord, ecb: TheEcb, *, today: date = LONG_AFTER) -> PublishedRates:
+        return PublishedRates(store, publisher=ecb, today=lambda: today)
+
+    async def test_a_saturday_asked_twice_reaches_the_ecb_once(self) -> None:
+        store, ecb = RatesOnRecord(), TheEcb(THURSDAY, FRIDAY)
+        rates = self.rates(store, ecb)
+
+        first = await rates.rate_for(base_currency="CHF", quote_currency=EURO, on=SATURDAY)
+        again = await rates.rate_for(base_currency="CHF", quote_currency=EURO, on=SATURDAY)
+
+        assert first == again == chf_on(FRIDAY)
+        assert ecb.asked == 1
+        assert list(store.recorded.values()) == [chf_on(FRIDAY)]
+
+    async def test_a_holiday_is_answered_with_the_day_before_and_asked_once(self) -> None:
+        store, ecb = RatesOnRecord(), TheEcb(MAUNDY_THURSDAY)
+        rates = self.rates(store, ecb)
+
+        await rates.rate_for(base_currency="CHF", quote_currency=EURO, on=GOOD_FRIDAY)
+        rate = await rates.rate_for(base_currency="CHF", quote_currency=EURO, on=GOOD_FRIDAY)
+
+        assert rate.rate_date == MAUNDY_THURSDAY
+        assert ecb.asked == 1
+
+    async def test_an_older_rate_on_record_does_not_answer_a_later_day(self) -> None:
+        """Thursday's rate on record says nothing about whether Friday had one; the ECB does."""
+        store, ecb = RatesOnRecord(chf_on(THURSDAY)), TheEcb(THURSDAY, FRIDAY)
+
+        rate = await self.rates(store, ecb).rate_for(
+            base_currency="CHF", quote_currency=EURO, on=SATURDAY
+        )
+
+        assert rate == chf_on(FRIDAY)
+        assert ecb.asked == 1
+
+    async def test_one_days_answer_does_not_answer_another(self) -> None:
+        store, ecb = RatesOnRecord(), TheEcb(FRIDAY)
+        rates = self.rates(store, ecb)
+
+        await rates.rate_for(base_currency="CHF", quote_currency=EURO, on=SATURDAY)
+        await rates.rate_for(base_currency="CHF", quote_currency=EURO, on=SUNDAY)
+
+        assert ecb.asked == 2
+
+    @pytest.mark.parametrize(
+        "today", [pytest.param(SATURDAY, id="today"), pytest.param(FRIDAY, id="a future day")]
+    )
+    async def test_a_day_not_yet_over_is_asked_again(self, today: date) -> None:
+        """Before the day's rate is published the ECB answers with yesterday's; later it will
+        not, so that answer is not the day's and is not recorded as it."""
+        store, ecb = RatesOnRecord(), TheEcb(FRIDAY)
+        rates = self.rates(store, ecb, today=today)
+
+        await rates.rate_for(base_currency="CHF", quote_currency=EURO, on=SATURDAY)
+        await rates.rate_for(base_currency="CHF", quote_currency=EURO, on=SATURDAY)
+
+        assert ecb.asked == 2
+        assert store.answers == {}
+
+    async def test_the_ecb_unreachable_is_refused_and_records_nothing(self) -> None:
+        store = RatesOnRecord(chf_on(THURSDAY))
+
+        with pytest.raises(FxRateUnavailableError, match="did not answer"):
+            await self.rates(store, TheEcb(reachable=False)).rate_for(
+                base_currency="CHF", quote_currency=EURO, on=SATURDAY
+            )
+        assert list(store.recorded.values()) == [chf_on(THURSDAY)]
+        assert store.answers == {}
+
+    async def test_a_typed_saturday_is_still_refused_once_saturday_is_answered(self) -> None:
+        """The answer is Friday's rate, dated Friday; a claim dated Saturday was never published."""
+        store, ecb = RatesOnRecord(), TheEcb(FRIDAY)
+        rates = self.rates(store, ecb)
+        await rates.rate_for(base_currency="CHF", quote_currency=EURO, on=SATURDAY)
+
+        with pytest.raises(FxRateUnavailableError, match="2026-07-04"):
+            await confirm_published(chf_on(SATURDAY), rates=rates)
+        assert ecb.asked == 1
 
 
 class TestPublishedRates:

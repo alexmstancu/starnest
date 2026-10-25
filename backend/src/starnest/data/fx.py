@@ -12,7 +12,8 @@ consistent and auditable.
 """
 
 from abc import ABC, abstractmethod
-from datetime import date
+from collections.abc import Callable
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -105,7 +106,12 @@ class FxRateStore(ABC):
     async def read_rate(
         self, *, base_currency: CurrencyCode, quote_currency: CurrencyCode, on: date
     ) -> FxRate:
-        """The rate recorded for exactly `on`. Raises `FxRateUnavailableError` when none is."""
+        """The rate recorded for `on`, or else the earlier one recorded as `on`'s answer.
+
+        Never the latest rate before `on` merely because it is on record: whether the publisher
+        would have answered `on` with it depends on holidays only the publisher knows.
+        Raises `FxRateUnavailableError` when neither is recorded.
+        """
 
     @abstractmethod
     async def record_rate(self, rate: FxRate) -> FxRate:
@@ -113,6 +119,16 @@ class FxRateStore(ABC):
 
         Idempotent: a rate already recorded for the day stands, and is what comes back.
         """
+
+    @abstractmethod
+    async def record_answer(self, rate: FxRate, *, asked_for: date) -> None:
+        """Record that the publisher answered `asked_for`, a day without a rate of its own,
+        with `rate`, which is already recorded and dated earlier. The first answer stands.
+        """
+
+
+def _today_in_utc() -> date:
+    return datetime.now(UTC).date()
 
 
 class PublishedRates(FxRateProvider):
@@ -122,11 +138,22 @@ class PublishedRates(FxRateProvider):
     (`0112`, `0521`): a rate that was used and not recorded would leave the figure pointing at
     nothing. Without a publisher only the record answers, which is the state of a client that
     must never reach the network (the acceptance suite).
+
+    **A day answered with an earlier day's rate** -- a weekend, a holiday -- is recorded as that
+    answer, so it is not asked again. Only once the day is over: until then the publisher may
+    still publish the day's own rate, and today's answer is not tomorrow's.
     """
 
-    def __init__(self, store: FxRateStore, *, publisher: FxRateProvider | None = None) -> None:
+    def __init__(
+        self,
+        store: FxRateStore,
+        *,
+        publisher: FxRateProvider | None = None,
+        today: Callable[[], date] = _today_in_utc,
+    ) -> None:
         self._store = store
         self._publisher = publisher
+        self._today = today
 
     async def rate_for(
         self, *, base_currency: CurrencyCode, quote_currency: CurrencyCode, on: date
@@ -141,7 +168,10 @@ class PublishedRates(FxRateProvider):
             published = await self._publisher.rate_for(
                 base_currency=base_currency, quote_currency=quote_currency, on=on
             )
-        return await self._store.record_rate(published)
+        recorded = await self._store.record_rate(published)
+        if recorded.rate_date < on < self._today():
+            await self._store.record_answer(recorded, asked_for=on)
+        return recorded
 
 
 async def confirm_published(rate: FxRate, *, rates: FxRateProvider) -> None:

@@ -82,6 +82,8 @@ OBJECTIVE = {
     "data_acquisition_run_item",
     "external_score",
     "fx_rate",
+    # Which earlier day's rate answered a day without one -- what the ECB said (0525).
+    "fx_rate_answer",
     # A gate's ANSWER is objective -- whether a visa route exists is a fact. Whether the gate
     # is enforced is a preference, and that lives on the subjective side below.
     "match_rule",

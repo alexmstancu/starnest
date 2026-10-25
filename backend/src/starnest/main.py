@@ -363,7 +363,10 @@ def _the_rates(store: FxRateStore) -> FxRateProvider:
     """The rates on record, then the ECB -- the publisher every conversion names (D63, `0112`).
 
     Asked only when a converted amount arrives and its rate is not on record yet, so a free,
-    keyless publisher is reached once per currency and day at most.
+    keyless publisher is reached once per currency and day at most -- a weekend or a holiday
+    included, once that day is over, because the earlier day's rate it was answered with is
+    recorded as its answer (`0525`). A day not yet over is asked again: its own rate may still
+    be published.
     """
     import httpx
 
