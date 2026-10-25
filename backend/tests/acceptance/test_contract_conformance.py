@@ -18,7 +18,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from starnest.api.document import served_schema
 
-from .contract import response_schema, undeclared_fields, validate
+from .contract import ContractViolationError, response_schema, undeclared_fields, validate
 
 pytestmark = pytest.mark.acceptance
 
@@ -264,6 +264,21 @@ async def test_the_run_endpoints_match_the_designed_shapes(
     polled = await api.get(f"/v1/data-acquisition-runs/{started.json()['id']}")
     validate("getRun", polled.json())
     assert undeclared_fields("getRun", polled.json()) == []
+
+
+@pytest.mark.parametrize("left_out", ["scope", "progress", "not_reached", "plan_recorded"])
+async def test_a_run_detail_without_what_the_server_always_sends_does_not_conform(
+    api: httpx.AsyncClient, left_out: str
+) -> None:
+    """IN-D3 (PL-061). The server always sends a run's scope, progress, lists and plan fields,
+    so the design requires them: a client generated from it may rely on each. Mutation: drop the
+    `required` list and a detail without them validates."""
+    started = await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY})
+    polled = (await api.get(f"/v1/data-acquisition-runs/{started.json()['id']}")).json()
+    validate("getRun", polled)
+
+    with pytest.raises(ContractViolationError):
+        validate("getRun", {key: value for key, value in polled.items() if key != left_out})
 
 
 async def test_manual_entry_and_a_gate_answer_match_the_designed_shapes(

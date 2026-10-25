@@ -10,7 +10,12 @@
 -- The scope stored here is PLANNED, not achieved. Deriving it from the values a run wrote would
 -- report an empty scope for a run that failed entirely, which is exactly the case where the
 -- scope matters most: selective retry and the dry-run estimate both need to know what was meant
--- to happen.
+-- to happen. It is three things, all at the run's level: the candidate list, the attribute list,
+-- and the items -- the exact (candidate, attribute) pairs asked about, which are the two lists'
+-- rectangle for a sweep and only the pairs gone back to for a retry or an ask-again (BE-11). The
+-- items are what every count reads, and the only pairs a run's evidence may name (0513). Beside
+-- them, the plan says which source was to be asked about which attribute, and how far each got
+-- (0512).
 --
 -- "Null means every candidate at the level" is a shape the contract accepts and this file does
 -- not: the planner expands it into rows before the run starts, so the scope on disk is always

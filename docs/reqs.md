@@ -1652,24 +1652,35 @@ is a run — the word was ambiguous and is now narrow:
 |---|---|
 | `started_at`, `finished_at` | Wall-clock bounds |
 | `triggered_by` | Who or what started it — for now always a person pressing Run |
-| `run_status` | `running` \| `completed` \| `halted_on_spend_cap` \| `failed` |
+| `run_status` | `running` \| `completed` \| `halted_on_spend_cap` \| `halted_by_user` \| `failed` |
 | `llm_call_count`, `cost_eur` | What it spent. Zero for a run touching only structured sources |
 | `level` | The level the run addresses. Part of its scope |
 
 **The scope is structure, not a note.** A run records the level it addressed, plus the
 candidates and attributes it was asked to cover, as
-`data_acquisition_run_candidate` and `data_acquisition_run_attribute` rows.
+`data_acquisition_run_candidate` and `data_acquisition_run_attribute` rows -- both held to the
+run's level -- and its **items**, the exact (candidate, attribute) pairs it asks about, as
+`data_acquisition_run_item` rows. For a sweep the items are the rectangle of the two lists; for a
+retry or an ask-again they are only the pairs it went back to, never the corners their lists span.
+Every count a run reports reads its items, and every value, failure and re-confirmation it leaves
+must be one of them: the database refuses any other. Beside them the run records its **plan**
+once, as it opens: which source is to be asked about which attribute for how many candidates, with
+a mark as each source finishes an attribute, plus the ceiling its estimate priced and the spend cap
+it was held to. An item with neither a figure nor a failure is *unanswered* once every planned
+source has finished its attribute, and *not reached* until then.
 
 > **It records what was *planned*, not what was achieved.** Selective retry and the dry-run
 > estimate (section 6.3) both need the intent. Deriving the scope from the values a run wrote would
 > report an empty scope for a run that failed entirely — precisely the case where knowing what
 > it was meant to do matters most. A JSON column was the alternative and is ruled out by section 3.0.
 
-**Failures are rows, not a blob.** Each `data_acquisition_failure` records the run, the
-candidate, the attribute and the error, which is exactly the unit selective retry needs: retry what failed, nothing else (section 6.4).
+**Failures are rows, not a blob.** Each `data_acquisition_failure` records the run, the source,
+the candidate, the attribute and the error, which is exactly the unit selective retry needs: retry what failed, nothing else (section 6.4).
 
 Values link back to the run that produced them, which is what makes retry and
-"what changed since last run" possible.
+"what changed since last run" possible. A figure re-read from a transcribed table stores no new
+row, so the run records it as a re-confirmation naming the figure it restated
+(`data_acquisition_run_reuse`), and counts the item answered.
 
 **Gate research is not a run, and what it spends is ledgered beside the runs** (Q236). It writes
 gate answers rather than values, so it has no run row to accrue on. Each research call that
@@ -3274,7 +3285,7 @@ Recorded from a front-to-back read of this document.
 | Q183 | **All technical configuration lives in `.env`**, never in code; `.gitignore` ignores every `.env*` and re-includes only `.env.example` | A new variant like `.env.local` is then ignored by default rather than by someone remembering. The Anthropic key reaches no log, no row and no error message, and `Environment.__repr__` redacts it with a test asserting so |
 | Q184 | **No caching layer in the MVP** | Not an oversight. The expensive thing is already cached: values are fetched once and stored, and scoring never re-fetches (section 5.6) — the `value` table *is* the cache. What remains is two queries and pure arithmetic. A cache would add invalidation to something already fast, and a stale ranking that looks plausible is the exact failure this application exists to prevent. Revisit on a measurement, not an intuition |
 | Q185 | **Weights and coverage are percentages, 0–100**, and `openapi.yaml` was corrected to match | The contract said 0–1 in three places and was unbounded in a fourth, while this document, the audit tool and the seeded catalog all said 100. One number format now runs end to end, matching the 0–100 score scale, and "40% of the housing pillar" is how the quantity is actually thought about. The alternative would have meant a conversion at a boundary where an error is invisible — a weight wrong by 100× still renders as a plausible ranking |
-| Q186 | **A run's planned scope is normalised**: `level` on the run, plus `data_acquisition_run_candidate` and `data_acquisition_run_attribute` | `openapi.yaml` returned a scope that no table held. It records what was **planned**, not what was achieved — selective retry and the dry-run estimate both need the intent, and a run that failed entirely would otherwise report an empty scope. A JSON column was rejected under section 3.0 |
+| Q186 | **A run's planned scope is normalised**: `level` on the run, plus `data_acquisition_run_candidate` and `data_acquisition_run_attribute` | `openapi.yaml` returned a scope that no table held. It records what was **planned**, not what was achieved — selective retry and the dry-run estimate both need the intent, and a run that failed entirely would otherwise report an empty scope. A JSON column was rejected under section 3.0. Refined since: the exact pairs asked about are recorded as items (0506), the plan, ceiling and cap as the run opens (0512), and the lists, items and evidence are pinned to each other and to the run's level (0513) |
 | Q187 | **A pillar carries no level.** One row per concern; `pillar_weight` gains the level | section 7 calls pillars "the same named concerns at both levels", so `housing` is one concept whose *weight* differs by level, not two pillars. Found independently by two agents: the previous shape made `city.housing` unrepresentable, which is harmless while v1 is country-only and fatal the moment the city level arrives. Prefixed ids and a composite key were the alternatives; both duplicate each pillar's name and description across rows that can drift |
 | Q188 | **Scale anchors are derived from real data and reviewed, not invented** | 26 of 41 criteria normalise `fixed` and no anchors exist, so only 13 can currently score. Rather than guess bands before seeing figures, the first acquisition run computes each attribute's observed range across the 32 countries and proposes anchors for approval. This is what "provisional by design, to be revisited after a first real run" always meant. Defaulting the 26 to `percentile` was rejected: section 5.1 chose `fixed` precisely so a score does not move when a candidate is added or pruned |
 | Q189 | **`RatioBetweenAttributes` is deleted; `AllConditionsHold` replaces it** | The shape was arithmetically wrong for every rule that used it. Celsius is an interval scale, so a ratio of Celsius values is meaningless; degrees divided by a count of days is not a quantity; Norway and Finland sit near 1–2 °C where the ratio explodes and flips sign; and an index divided by a percentage has no meaning either. All three rules were conjunctions of independent thresholds all along. Found by an external review of the documents |

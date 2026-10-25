@@ -6,7 +6,9 @@ say which pass fetched it.
 
 **The scope stored is the PLANNED scope, not the achieved one.** Deriving it from the values a
 run wrote would lose exactly the information selective retry and the dry-run estimate need --
-a candidate that produced nothing would be indistinguishable from one nobody asked about.
+a candidate that produced nothing would be indistinguishable from one nobody asked about. Its
+**items** are the exact (candidate, attribute) pairs asked about -- the rectangle of its two lists
+for a sweep, only the pairs gone back to for a retry -- and every count and list reads them.
 
 **Failures are rows, not a blob.** A run continues past a failure (`reqs.md` 6.4), and the
 (candidate, attribute) pair is the unit a retry addresses.

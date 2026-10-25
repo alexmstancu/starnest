@@ -2393,9 +2393,7 @@ components:
           title: Plan Recorded
           type: boolean
         progress:
-          anyOf:
-          - $ref: '#/components/schemas/ProgressBody'
-          - type: 'null'
+          $ref: '#/components/schemas/ProgressBody'
         reconfirmed:
           default: []
           items:
@@ -2406,9 +2404,7 @@ components:
           title: Run Status
           type: string
         scope:
-          anyOf:
-          - $ref: '#/components/schemas/RunScopeBody'
-          - type: 'null'
+          $ref: '#/components/schemas/RunScopeBody'
         scope_attributes:
           default: 0
           title: Scope Attributes
@@ -2446,6 +2442,8 @@ components:
       - run_status
       - started_at
       - triggered_by
+      - scope
+      - progress
       title: RunDetailBody
       type: object
     RunPlanBody:

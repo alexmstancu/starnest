@@ -1,9 +1,12 @@
 """`RunStore` against PostgreSQL: what a run planned, did and failed at.
 
-`arch.md` 6.3. The scope is written **expanded** -- one row per candidate and one per attribute
--- rather than as "everything at this level". A scope recorded as "everything" would mean
-something different after the catalog grew, and both selective retry and the dry-run estimate
-need to know what was actually asked for on the day.
+`arch.md` 6.3. The scope is written **expanded** -- one row per candidate and one per attribute,
+each at the run's level -- rather than as "everything at this level". A scope recorded as
+"everything" would mean something different after the catalog grew, and both selective retry and
+the dry-run estimate need to know what was actually asked for on the day. **The run's items are
+the exact (candidate, attribute) pairs it asks about** within those lists: their rectangle for a
+sweep, only the pairs it went back to for a retry or an ask-again (BE-11). Every value, failure and
+re-confirmation a run leaves is one of its items, and the database refuses any other (0513).
 
 One statement serves a poll (`arch.md` 8.4): status, progress, counts and lists arrive together,
 from one snapshot (ST-11), so a commit landing mid-poll cannot split a count from its list -- and

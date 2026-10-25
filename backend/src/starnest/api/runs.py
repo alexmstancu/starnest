@@ -180,8 +180,9 @@ class ReconfirmedBody(BaseModel):
 
 
 class RunDetailBody(RunBody):
-    scope: RunScopeBody | None = None
-    progress: ProgressBody | None = None
+    # Always sent, so required in both contracts (IN-D3): a run read in detail has its scope.
+    scope: RunScopeBody
+    progress: ProgressBody
     failures: tuple[FailureBody, ...] = ()
     unanswered: tuple[UnansweredBody, ...] = ()
     not_reached: tuple[NotReachedBody, ...] = ()
@@ -494,15 +495,7 @@ async def get_run(run_id: int, runs: Runs) -> RunDetailBody:
     run = await runs.read_run(run_id)
     return RunDetailBody(
         **_run_body(run).model_dump(),
-        scope=(
-            RunScopeBody(
-                level=run.scope.level,
-                candidates=run.scope.candidates,
-                attributes=run.scope.attributes,
-            )
-            if run.scope
-            else None
-        ),
+        scope=_scope_of(run),
         progress=ProgressBody(
             items_total=run.items_total,
             items_completed=run.items_completed,
@@ -550,6 +543,15 @@ async def get_run(run_id: int, runs: Runs) -> RunDetailBody:
         estimate_ceiling_eur=_euros(run.estimate_ceiling_eur),
         spend_cap_eur=_euros(run.spend_cap_eur),
         accepted_uncapped=run.accepted_uncapped,
+    )
+
+
+def _scope_of(run: Run) -> RunScopeBody:
+    """The scope a detail read always carries. A history row has none, and is never served here."""
+    if run.scope is None:
+        raise ValueError(f"run {run.id} was read without its scope, so it cannot be detailed")
+    return RunScopeBody(
+        level=run.scope.level, candidates=run.scope.candidates, attributes=run.scope.attributes
     )
 
 

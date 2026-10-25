@@ -909,7 +909,11 @@ paths:
             application/json: { schema: { $ref: "#/components/schemas/Run" } }
         "409":
           description: |
-            Two refusals share this status and are told apart by `code`.
+            Three refusals share this status and are told apart by `code`.
+
+            `nothing_to_fetch` — nothing in the scope can be asked: every source is switched off,
+            none answers what was named, or everything named is still fresh under the refetch
+            setting. The message names which.
 
             `spend_cap_not_set` — the run would ask a source that charges and no spend cap is
             set. Set `run_spend_cap_eur`, or send `accept_uncapped_spend: true` to accept an
@@ -992,10 +996,11 @@ paths:
       description: |
         Creates a **new** run over part of the run named, which keeps its own record either way.
 
-        `items: failed` (the default) asks only the sources that failed, only about the
-        attributes each failed on, across the candidates that failed. Its scope is the smallest
-        covering the failures -- every failed candidate against every failed attribute -- because
-        the scope is recorded as two lists, and every pair in it is asked of at least one source.
+        `items: failed` (the default) asks each source that failed only about the exact
+        (candidate, attribute) pairs it failed on. Its items are those pairs, never the rectangle
+        their candidate and attribute lists span; a failure of a source since switched off, or
+        that no longer declares the attribute, has nobody to ask and is left out. Declared
+        stand-ins borrow only for the retry's own pairs.
 
         `items: unanswered` asks again about the items that produced neither a figure nor a
         failure -- the unanswered ones and the ones the run never reached. There is no source to
@@ -1030,9 +1035,22 @@ paths:
             application/json: { schema: { $ref: "#/components/schemas/Run" } }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
-          description: >-
-            The run has nothing of that kind, so the new run would be a no-op -- or the retry
-            would reach a source that charges and no spend cap is set (`spend_cap_not_set`).
+          description: |
+            Told apart by `code`.
+
+            `nothing_to_retry` — `items: failed`, and the run failed on nothing.
+
+            `nothing_to_ask_again` — `items: unanswered`, and the run has no unanswered or
+            not-reached item.
+
+            `nothing_to_fetch` — every failure belongs to a source now switched off or no longer
+            declaring the attribute, so the retry would ask nobody. The message names the remedy.
+
+            `run_already_in_flight` — a run is already going; poll it rather than starting
+            another.
+
+            `spend_cap_not_set` — the retry would reach a source that charges and no spend cap
+            is set.
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
@@ -2119,8 +2137,13 @@ components:
             How many candidates the pass was asked about. The scope is stored expanded, so a
             history row carries its size rather than its contents.
         scope_attributes: { type: integer, description: How many attributes the pass was asked about. }
-        items_total: { type: integer, description: "The planned cross product: every attribute in scope, for every candidate in scope." }
-        items_completed: { type: integer, description: Pairs that produced a value row. }
+        items_total:
+          type: integer
+          description: >-
+            The run's items: the exact (candidate, attribute) pairs it asked about. For a sweep
+            that is every attribute in scope for every candidate in scope; for a retry or an
+            ask-again, only the pairs it went back to, never the rectangle their lists span.
+        items_completed: { type: integer, description: "Items some source answered: a value row stored by the run (rejected ones included), or a figure already on record that it re-confirmed." }
         items_failed:
           type: integer
           description: >-
@@ -2131,8 +2154,13 @@ components:
       allOf:
         - $ref: "#/components/schemas/Run"
         - type: object
+          required: [scope, progress, failures, unanswered, not_reached, by_source, reconfirmed, plan_recorded, estimate_ceiling_eur, spend_cap_eur, accepted_uncapped]
           properties:
-            scope: { $ref: "#/components/schemas/RunScope" }
+            scope:
+              description: >-
+                What the run was asked to cover, as stored: both lists always expanded, never null.
+                The run's items are the exact pairs within them it asked about (items_total).
+              allOf: [ { $ref: "#/components/schemas/RunScope" } ]
             progress:
               type: object
               required: [items_total, items_completed, items_failed, items_unanswered, items_not_reached]

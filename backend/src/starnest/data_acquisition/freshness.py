@@ -4,9 +4,10 @@
 since the beginning and was called by nothing, so every run re-fetched everything in its
 scope -- wasted work for a free source and money for a paid one.
 
-**Whole attributes, not individual pairs.** A run's scope is a rectangle: a list of candidates
-and a list of attributes, asked as their product. A per-pair skip cannot be expressed in that
-shape without restructuring the fetch, so an attribute is dropped only when *every* candidate
+**Whole attributes, not individual pairs.** A sweep's scope is a rectangle: a list of candidates
+and a list of attributes, asked as their product (a retry's exact pairs are never judged by age).
+A per-pair skip cannot be expressed in that shape without restructuring the fetch, so an attribute
+is dropped only when *every* candidate
 in scope already has a fresh figure for it. That is the case a re-run mostly hits -- ask
 again right after asking, and there is nothing to do -- and it is honest about what it does
 rather than appearing to be finer-grained than it is.
